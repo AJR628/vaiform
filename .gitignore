@@ -131,3 +131,14 @@ dist
 
 # Replit debugger
 .breakpoints
+
+# Replit config
+.replit
+*.replit
+
+# Firebase & service accounts
+*.json
+
+# OS files
+.DS_Store
+Thumbs.db
