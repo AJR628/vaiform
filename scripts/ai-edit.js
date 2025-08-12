@@ -123,21 +123,31 @@ async function main() {
       { role: "system", content: system },
       { role: "user", content: user }
     ],
-    response_format: { type: "json_schema", json_schema: { name: "repo_edits", schema, strict: true } }
+    // NOTE: response_format moved to text.format in the Responses API
+    text: {
+      format: "json_schema",
+      schema,
+      name: "repo_edits",
+      strict: true
+    }
   });
 
-  const out = resp.output_text || "";
-  if (!out) {
-    console.log("Model returned no output_text, skipping.");
-    return;
-  }
+  // Preferred: use structured output directly
+  let plan = resp.output_parsed;
 
-  let plan;
-  try {
-    plan = JSON.parse(out);
-  } catch (e) {
-    console.error("Structured output was not valid JSON:", e);
-    process.exit(1);
+  // Fallback: try to parse any text the model returned
+  if (!plan) {
+    const txt = resp.output_text || "";
+    if (!txt) {
+      console.log("Model returned no output, skipping.");
+      return;
+    }
+    try {
+      plan = JSON.parse(txt);
+    } catch (e) {
+      console.error("Structured output was not valid JSON:", e);
+      process.exit(1);
+    }
   }
 
   if (!plan.edits || plan.edits.length === 0) {
