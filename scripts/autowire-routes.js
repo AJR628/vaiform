@@ -8,8 +8,7 @@ const INDEX_FILE = path.join(ROUTES_DIR, "index.js");
 function detectPrefix() {
   if (!fs.existsSync(INDEX_FILE)) return "";
   const txt = fs.readFileSync(INDEX_FILE, "utf8");
-  const hasApi = /\/api\//.test(txt);
-  return hasApi ? "/api" : "";
+  return /\/api\//.test(txt) ? "/api" : "";
 }
 
 function pascalCase(name) {
@@ -33,8 +32,8 @@ function main() {
   const mounts = [];
 
   for (const file of files) {
-    const base = file.replace(".routes.js", "");       // e.g., "generate"
-    const importName = pascalCase(base) + "Router";    // e.g., "GenerateRouter"
+    const base = file.replace(".routes.js", "");              // e.g., "generate"
+    const importName = pascalCase(base) + "Router";           // e.g., "GenerateRouter"
     const routePath = `${prefix}/${base}`.replace(/\/+/g, "/"); // "/api/generate" or "/generate"
     imports.push(`import ${importName} from "./${file}";`);
     mounts.push(`router.use("${routePath}", ${importName});`);
@@ -52,7 +51,7 @@ export default router;
 
   fs.mkdirSync(ROUTES_DIR, { recursive: true });
   fs.writeFileSync(INDEX_FILE, content);
-  console.log(\`Auto-generated \${INDEX_FILE} with \${files.length} routes (prefix="\${prefix || "/"}")\`);
+  console.log(`Auto-generated ${INDEX_FILE} with ${files.length} routes (prefix="${prefix || "/"}")`);
 }
 
 main();
