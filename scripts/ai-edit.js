@@ -113,7 +113,6 @@ Return ONLY a compact JSON object with this shape (no prose, no markdown):
   const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
   const resp = await openai.responses.create({
     model: MODEL,
-    reasoning: { effort: "medium" },
     input: [
       { role: "system", content: system },
       { role: "user", content: user }
