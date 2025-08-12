@@ -123,19 +123,21 @@ async function main() {
       { role: "system", content: system },
       { role: "user", content: user }
     ],
-    // NOTE: response_format moved to text.format in the Responses API
+    // New Responses API: use text.format + text.json_schema
     text: {
       format: "json_schema",
-      schema,
-      name: "repo_edits",
-      strict: true
+      json_schema: {
+        name: "repo_edits",
+        schema,
+        strict: true
+      }
     }
   });
 
-  // Preferred: use structured output directly
+  // Use structured output if available
   let plan = resp.output_parsed;
 
-  // Fallback: try to parse any text the model returned
+  // Fallback to parsing text
   if (!plan) {
     const txt = resp.output_text || "";
     if (!txt) {
