@@ -93,7 +93,7 @@ Return ONLY a compact JSON object with this shape (no prose, no markdown):
     "Keep changes minimal and modular.",
     "When adding a route: create controller and (if needed) service, a *.routes.js file, and ensure it can be mounted via src/routes/index.js.",
     "Write FULL file contents (not patches).",
-    "Return ONLY valid JSON. Do NOT include any extra text."
+    "Return ONLY valid JSON. Do NOT include any extra text or markdown fences."
   ].join(" ");
 
   const user = [
@@ -119,10 +119,18 @@ Return ONLY a compact JSON object with this shape (no prose, no markdown):
     ]
   });
 
-  const txt = resp.output_text || "";
-  if (!txt) {
-    console.error("Model returned no output.");
-    process.exit(1);
+  // Sanitize model output into valid JSON
+  let txt = (resp.output_text || "").trim();
+
+  // Strip markdown fences if present
+  const fenced = txt.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fenced) txt = fenced[1].trim();
+
+  // As a fallback, grab substring between first { and last }
+  const firstBrace = txt.indexOf("{");
+  const lastBrace = txt.lastIndexOf("}");
+  if (firstBrace !== -1 && lastBrace !== -1) {
+    txt = txt.slice(firstBrace, lastBrace + 1);
   }
 
   let plan;
@@ -130,7 +138,7 @@ Return ONLY a compact JSON object with this shape (no prose, no markdown):
     plan = JSON.parse(txt);
   } catch (e) {
     console.error("Model did not return valid JSON:", e);
-    console.error("Raw text:", txt.slice(0, 1200));
+    console.error("Raw text (first 1200 chars):", (resp.output_text || "").slice(0, 1200));
     process.exit(1);
   }
 
