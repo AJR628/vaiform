@@ -77,31 +77,23 @@ async function main() {
   const repo = snapshotRepo();
   const taskBundle = tasks.map(f => `## ${path.basename(f)}\n${fs.readFileSync(f, "utf8")}`).join("\n\n---\n\n");
 
-  const schema = {
-    type: "object",
-    properties: {
-      edits: {
-        type: "array",
-        items: {
-          type: "object",
-          properties: {
-            path: { type: "string" },
-            contents: { type: "string" },
-            rationale: { type: "string" }
-          },
-          required: ["path", "contents"]
-        }
-      },
-      commit_message: { type: "string" }
-    },
-    required: ["edits"]
-  };
+  const schemaHint = `
+Return ONLY a compact JSON object with this shape (no prose, no markdown):
+
+{
+  "edits": [
+    { "path": "repo/relative/file", "contents": "FULL FILE CONTENTS", "rationale": "short optional note" }
+  ],
+  "commit_message": "brief commit line"
+}
+`;
 
   const system = [
     "You are a senior Node/Express engineer working on the Vaiform codebase.",
     "Keep changes minimal and modular.",
     "When adding a route: create controller and (if needed) service, a *.routes.js file, and ensure it can be mounted via src/routes/index.js.",
-    "Write full file contents; do not output patches."
+    "Write FULL file contents (not patches).",
+    "Return ONLY valid JSON. Do NOT include any extra text."
   ].join(" ");
 
   const user = [
@@ -112,7 +104,10 @@ async function main() {
     taskBundle,
     "",
     "# Repo Snapshot (selected files)",
-    ...Object.entries(repo).map(([f, c]) => `--- FILE: ${f} ---\n${c}`)
+    ...Object.entries(repo).map(([f, c]) => `--- FILE: ${f} ---\n${c}`),
+    "",
+    "# Output Format",
+    schemaHint
   ].join("\n");
 
   const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -122,42 +117,31 @@ async function main() {
     input: [
       { role: "system", content: system },
       { role: "user", content: user }
-    ],
-    // New Responses API: use text.format + text.json_schema
-    text: {
-      format: "json_schema",
-      json_schema: {
-        name: "repo_edits",
-        schema,
-        strict: true
-      }
-    }
+    ]
   });
 
-  // Use structured output if available
-  let plan = resp.output_parsed;
-
-  // Fallback to parsing text
-  if (!plan) {
-    const txt = resp.output_text || "";
-    if (!txt) {
-      console.log("Model returned no output, skipping.");
-      return;
-    }
-    try {
-      plan = JSON.parse(txt);
-    } catch (e) {
-      console.error("Structured output was not valid JSON:", e);
-      process.exit(1);
-    }
+  const txt = resp.output_text || "";
+  if (!txt) {
+    console.error("Model returned no output.");
+    process.exit(1);
   }
 
-  if (!plan.edits || plan.edits.length === 0) {
+  let plan;
+  try {
+    plan = JSON.parse(txt);
+  } catch (e) {
+    console.error("Model did not return valid JSON:", e);
+    console.error("Raw text:", txt.slice(0, 1200));
+    process.exit(1);
+  }
+
+  if (!plan.edits || !Array.isArray(plan.edits) || plan.edits.length === 0) {
     console.log("No edits proposed.");
     return;
   }
 
   for (const edit of plan.edits) {
+    if (!edit.path || typeof edit.contents !== "string") continue;
     writeFileSafe(edit.path, edit.contents);
   }
 }
