@@ -2,12 +2,13 @@ name: Vaiform Auto-Edit
 
 on:
   push:
-    branches: [ main ]
+    branches:
+      - main
     paths:
-      - ".ai-tasks/**"
-      - ".ai-rules/**"
-      - "src/**"
-      - "server.js"
+      - .ai-tasks/**
+      - .ai-rules/**
+      - src/**
+      - server.js
   workflow_dispatch:
 
 jobs:
@@ -20,15 +21,16 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with: { fetch-depth: 0 }
+        with:
+          fetch-depth: 0
 
       - name: Setup Node
         uses: actions/setup-node@v4
-        with: { node-version: "20" }
+        with:
+          node-version: '20'
 
       - name: Install runtime deps for scripts
-        run: |
-          npm i openai@^4
+        run: npm i openai@^4
 
       - name: Run AI edit (writes files but does not commit)
         env:
@@ -43,6 +45,7 @@ jobs:
         with:
           commit-message: "chore(ai): apply .ai-tasks + autowire routes"
           title: "AI edits + Auto-wired routes"
-          body: "Automated changes from \`.ai-tasks/**\` and route autowiring."
-          branch: "ai/auto-edit-${{ github.run_id }}"
+          body: |
+            Automated changes from `.ai-tasks/**` and route autowiring.
+          branch: ai/auto-edit-${{ github.run_id }}
           delete-branch: true
