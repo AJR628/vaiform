@@ -1,0 +1,1 @@
+export const ENHANCE_COST = 1;

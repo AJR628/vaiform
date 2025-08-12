@@ -1,5 +1,8 @@
 {
   "name": "vaiform",
   "version": "0.1.0",
-  "type": "module"
+  "type": "module",
+  "dependencies": {
+    "openai": "^4.104.0"
+  }
 }
