@@ -33,24 +33,22 @@ export async function stripeWebhook(req, res) {
   let event;
   try {
     event = stripe.webhooks.constructEvent(req.body, sig, WEBHOOK_SECRET);
-  } catch (err) {
-    console.error('⚠️ Webhook signature verification failed:', err.message);
-    return res.status(400).send(`Webhook Error: ${err.message}`);
+  } catch (_e) {
+    console.error('⚠️ Webhook signature verification failed:', _e.message);
+    return res.status(400).send(`Webhook Error: ${_e.message}`);
   }
 
   // Basic replay guard (Stripe also signs with a timestamp; we add a soft time window)
   const nowSec = Math.floor(Date.now() / 1000);
   if (typeof event.created === 'number' && nowSec - event.created > MAX_EVENT_AGE_SEC) {
-    console.warn(
-      `⏰ Dropping stale event ${event.id} (${event.type}); age ${nowSec - event.created}s`
-    );
+    console.warn(`⏰ Dropping stale event ${event.id} (${event.type}); age ${nowSec - event.created}s`);
     return res.status(200).json({ received: true, stale: true });
   }
 
   // Idempotency: ensure we only process each event.id once
   try {
     await markEventProcessing(event);
-  } catch (e) {
+  } catch (_e) {
     // Firestore .create() throws if already exists
     console.log(`🔁 Duplicate delivery for event ${event.id}; skipping.`);
     return res.status(200).json({ received: true, duplicate: true });
