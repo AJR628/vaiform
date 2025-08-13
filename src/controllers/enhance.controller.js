@@ -1,4 +1,3 @@
-// src/controllers/enhance.controller.js
 import admin from 'firebase-admin';
 import { enhancePrompt } from '../services/enhance.service.js';
 import { ensureUserDoc } from '../services/credit.service.js';

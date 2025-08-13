@@ -1,4 +1,3 @@
-// src/services/enhance.service.js
 import OpenAI from 'openai';
 
 // Single client instance (reads OPENAI_API_KEY from env)
