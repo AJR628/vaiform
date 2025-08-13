@@ -1,10 +1,10 @@
-import { replicate } from "../config/replicate.js";
+import { replicate } from '../config/replicate.js';
 
-const ESRGAN_VERSION = "nightmareai/real-esrgan:latest";
+const ESRGAN_VERSION = 'nightmareai/real-esrgan:latest';
 
 export default {
-  name: "realesrgan",
-  mode: "upscale",
+  name: 'realesrgan',
+  mode: 'upscale',
   async invoke({ refs = [] }) {
     const imageUrl = refs[0];
     const prediction = await replicate.predictions.create({

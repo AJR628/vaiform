@@ -1,24 +1,24 @@
 // src/config/firebase.js
-import admin from "firebase-admin";
-import { readFile } from "fs/promises";
+import admin from 'firebase-admin';
+import { readFile } from 'fs/promises';
 
 function parseMaybeBase64(jsonish) {
   if (!jsonish) return null;
-  const text = jsonish.trim().startsWith("{")
+  const text = jsonish.trim().startsWith('{')
     ? jsonish
-    : Buffer.from(jsonish, "base64").toString("utf8");
+    : Buffer.from(jsonish, 'base64').toString('utf8');
   const obj = JSON.parse(text);
-  if (obj.private_key?.includes("\\n")) {
-    obj.private_key = obj.private_key.replace(/\\n/g, "\n");
+  if (obj.private_key?.includes('\\n')) {
+    obj.private_key = obj.private_key.replace(/\\n/g, '\n');
   }
   return obj;
 }
 
 async function getCredential() {
   // 1) Path on disk (optional)
-  const path = process.env.FIREBASE_SERVICE_ACCOUNT_PATH || "firebase-service-account.json";
+  const path = process.env.FIREBASE_SERVICE_ACCOUNT_PATH || 'firebase-service-account.json';
   try {
-    const json = await readFile(path, "utf-8");
+    const json = await readFile(path, 'utf-8');
     const sa = JSON.parse(json);
     return { cred: admin.credential.cert(sa), projectId: sa.project_id };
   } catch (_) {}
@@ -39,7 +39,7 @@ async function getCredential() {
 const { cred, projectId } = await getCredential();
 
 const resolvedBucketName =
-  process.env.FIREBASE_STORAGE_BUCKET ||   // Prefer explicit, e.g. "vaiform.appspot.com"
+  process.env.FIREBASE_STORAGE_BUCKET || // Prefer explicit, e.g. "vaiform.appspot.com"
   process.env.FIREBASE_BUCKET ||
   (projectId ? `${projectId}.appspot.com` : null);
 
@@ -55,5 +55,5 @@ export const db = admin.firestore();
 export const bucket = admin.storage().bucket(resolvedBucketName || undefined);
 export default admin; // 👈 so middleware can import the initialized Admin
 
-console.log("🔥 Firestore project:", projectId || "(unknown)");
-console.log("🔥 Storage bucket (resolved):", resolvedBucketName || "(none)");
+console.log('🔥 Firestore project:', projectId || '(unknown)');
+console.log('🔥 Storage bucket (resolved):', resolvedBucketName || '(none)');

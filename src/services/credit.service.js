@@ -1,5 +1,5 @@
-import admin from "firebase-admin";
-import { db } from "../config/firebase.js";
+import admin from 'firebase-admin';
+import { db } from '../config/firebase.js';
 
 // Pricing: 1→20, 2→40, else→70 (4)
 export function computeCost(numImages = 1) {
@@ -10,7 +10,7 @@ export function computeCost(numImages = 1) {
 }
 
 export async function ensureUserDoc(email) {
-  const userRef = db.collection("users").doc(email);
+  const userRef = db.collection('users').doc(email);
   const snap = await userRef.get();
   if (!snap.exists) {
     await userRef.set({

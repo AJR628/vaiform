@@ -1,5 +1,5 @@
 // src/services/enhance.service.js
-import OpenAI from "openai";
+import OpenAI from 'openai';
 
 // Single client instance (reads OPENAI_API_KEY from env)
 const openai = new OpenAI({
@@ -20,7 +20,7 @@ export async function enhancePrompt(prompt, strength = 0.5) {
   // Map strength to creativity + detail
   // lower strength => keep close to original
   // higher strength => add more specificity and style guidance
-  const temperature = 0.2 + 0.6 * s;          // 0.2..0.8
+  const temperature = 0.2 + 0.6 * s; // 0.2..0.8
   const maxTokens = 120 + Math.round(180 * s); // 120..300
 
   const system = `
@@ -45,24 +45,22 @@ Guidelines:
   try {
     // Chat Completions API (compatible with openai v4 client)
     const resp = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
+      model: 'gpt-4o-mini',
       temperature,
       messages: [
-        { role: "system", content: system },
-        { role: "user", content: user },
+        { role: 'system', content: system },
+        { role: 'user', content: user },
       ],
       max_tokens: maxTokens,
     });
 
-    const text =
-      resp?.choices?.[0]?.message?.content?.trim() ||
-      `${prompt} [enhanced:${s}]`;
+    const text = resp?.choices?.[0]?.message?.content?.trim() || `${prompt} [enhanced:${s}]`;
 
     // Safety: collapse newlines to a single line
-    return text.replace(/\s*\n+\s*/g, " ");
+    return text.replace(/\s*\n+\s*/g, ' ');
   } catch (err) {
     // Don't hard-crash the request—fallback to simple enhancement
-    console.error("Enhance service error:", err?.message || err);
+    console.error('Enhance service error:', err?.message || err);
     return `${prompt} [enhanced:${s}]`;
   }
 }

@@ -43,8 +43,8 @@ jobs:
       - name: Create Pull Request (if changes)
         uses: peter-evans/create-pull-request@v6
         with:
-          commit-message: "chore(ai): apply .ai-tasks + autowire routes"
-          title: "AI edits + Auto-wired routes"
+          commit-message: 'chore(ai): apply .ai-tasks + autowire routes'
+          title: 'AI edits + Auto-wired routes'
           body: |
             Automated changes from `.ai-tasks/**` and route autowiring.
           branch: ai/auto-edit-${{ github.run_id }}

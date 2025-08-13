@@ -1,4 +1,5 @@
 # Goal
+
 Add a POST /enhance-image route that:
 
 - Validates { prompt: string, strength?: number in [0,1] }.
@@ -7,10 +8,12 @@ Add a POST /enhance-image route that:
 - Responds with { enhancedPrompt }.
 
 # Files to create/touch
+
 - src/services/enhance.service.js
 - src/controllers/enhance.controller.js
 - src/routes/enhance.routes.js
 - src/config/pricing.js (export ENHANCE_COST=1 if not present)
 
 # Notes
+
 - ESM only. Minimal validation ok if zod not present.

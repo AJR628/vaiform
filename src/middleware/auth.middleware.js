@@ -1,5 +1,5 @@
 // Auth & authorization helpers for Express (ESM)
-import admin from "firebase-admin";
+import admin from 'firebase-admin';
 
 // Only init if not already initialized elsewhere
 if (!admin.apps.length) {
@@ -7,8 +7,8 @@ if (!admin.apps.length) {
 }
 
 function getBearer(req) {
-  const h = req.headers?.authorization || "";
-  if (!h.startsWith("Bearer ")) return null;
+  const h = req.headers?.authorization || '';
+  if (!h.startsWith('Bearer ')) return null;
   return h.slice(7).trim();
 }
 
@@ -17,8 +17,8 @@ export async function requireAuth(req, res, next) {
     const token = getBearer(req);
     if (!token) {
       return res.status(401).json({
-        error: "UNAUTHENTICATED",
-        message: "Missing Authorization: Bearer <token>",
+        error: 'UNAUTHENTICATED',
+        message: 'Missing Authorization: Bearer <token>',
       });
     }
     const d = await admin.auth().verifyIdToken(token);
@@ -30,8 +30,8 @@ export async function requireAuth(req, res, next) {
     return next();
   } catch {
     return res.status(401).json({
-      error: "UNAUTHENTICATED",
-      message: "Invalid or expired token",
+      error: 'UNAUTHENTICATED',
+      message: 'Invalid or expired token',
     });
   }
 }
@@ -57,24 +57,24 @@ export async function optionalAuth(req, _res, next) {
 // Gate paid actions until email is verified (flip on/off per route)
 export function requireVerifiedEmail(req, res, next) {
   if (!req.user?.email_verified) {
-    return res.status(403).json({ error: "EMAIL_NOT_VERIFIED" });
+    return res.status(403).json({ error: 'EMAIL_NOT_VERIFIED' });
   }
   return next();
 }
 
 // Ensure a claimed user field matches the authed user (hardens multi-tenant ops).
 // Also normalizes so downstream uses the server-trusted uid.
-export function assertUserScoped(field = "uid", location = "body") {
+export function assertUserScoped(field = 'uid', location = 'body') {
   return (req, res, next) => {
     const claimed = (req[location] || {})[field];
     if (!req.user?.uid) {
-      return res.status(401).json({ error: "UNAUTHENTICATED" });
+      return res.status(401).json({ error: 'UNAUTHENTICATED' });
     }
     if (claimed && claimed !== req.user.uid) {
-      return res.status(403).json({ error: "FORBIDDEN", message: "User mismatch" });
+      return res.status(403).json({ error: 'FORBIDDEN', message: 'User mismatch' });
     }
-    if (location === "body") req.body.uid = req.user.uid;
-    if (location === "params") req.params[field] = req.user.uid;
+    if (location === 'body') req.body.uid = req.user.uid;
+    if (location === 'params') req.params[field] = req.user.uid;
     return next();
   };
 }

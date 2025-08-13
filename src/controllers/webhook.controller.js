@@ -1,7 +1,7 @@
 // src/controllers/webhook.controller.js
-import admin from "firebase-admin";
-import { stripe } from "../config/stripe.js";
-import { ensureUserDoc, CREDIT_PRICE_MAP } from "../services/credit.service.js";
+import admin from 'firebase-admin';
+import { stripe } from '../config/stripe.js';
+import { ensureUserDoc, CREDIT_PRICE_MAP } from '../services/credit.service.js';
 
 const WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET;
 // Reject events older than this (seconds) to reduce replay risk
@@ -9,7 +9,7 @@ const MAX_EVENT_AGE_SEC = 5 * 60;
 
 // Creates a doc with event.id; if it already exists, we treat as processed (idempotency)
 async function markEventProcessing(event) {
-  const ref = admin.firestore().collection("stripe_webhook_events").doc(event.id);
+  const ref = admin.firestore().collection('stripe_webhook_events').doc(event.id);
   // .create() fails if doc exists
   await ref.create({
     type: event.type,
@@ -22,26 +22,28 @@ async function markEventProcessing(event) {
 
 export async function stripeWebhook(req, res) {
   if (!WEBHOOK_SECRET) {
-    console.error("❌ Missing STRIPE_WEBHOOK_SECRET; cannot verify Stripe signatures.");
-    return res.status(500).send("Webhook misconfigured");
+    console.error('❌ Missing STRIPE_WEBHOOK_SECRET; cannot verify Stripe signatures.');
+    return res.status(500).send('Webhook misconfigured');
   }
 
   // bodyParser.raw puts a Buffer in req.body; constructEvent requires that Buffer
-  const sig = req.headers["stripe-signature"];
-  if (!sig) return res.status(400).send("Missing stripe-signature header");
+  const sig = req.headers['stripe-signature'];
+  if (!sig) return res.status(400).send('Missing stripe-signature header');
 
   let event;
   try {
     event = stripe.webhooks.constructEvent(req.body, sig, WEBHOOK_SECRET);
   } catch (err) {
-    console.error("⚠️ Webhook signature verification failed:", err.message);
+    console.error('⚠️ Webhook signature verification failed:', err.message);
     return res.status(400).send(`Webhook Error: ${err.message}`);
   }
 
   // Basic replay guard (Stripe also signs with a timestamp; we add a soft time window)
   const nowSec = Math.floor(Date.now() / 1000);
-  if (typeof event.created === "number" && nowSec - event.created > MAX_EVENT_AGE_SEC) {
-    console.warn(`⏰ Dropping stale event ${event.id} (${event.type}); age ${(nowSec - event.created)}s`);
+  if (typeof event.created === 'number' && nowSec - event.created > MAX_EVENT_AGE_SEC) {
+    console.warn(
+      `⏰ Dropping stale event ${event.id} (${event.type}); age ${nowSec - event.created}s`
+    );
     return res.status(200).json({ received: true, stale: true });
   }
 
@@ -56,7 +58,7 @@ export async function stripeWebhook(req, res) {
 
   try {
     switch (event.type) {
-      case "checkout.session.completed": {
+      case 'checkout.session.completed': {
         const session = event.data.object;
 
         const email = session.metadata?.email || session.customer_details?.email || null;
@@ -64,7 +66,7 @@ export async function stripeWebhook(req, res) {
 
         // Expand line items to read Price IDs
         const fullSession = await stripe.checkout.sessions.retrieve(session.id, {
-          expand: ["line_items.data.price"],
+          expand: ['line_items.data.price'],
         });
 
         const items = fullSession?.line_items?.data || [];
@@ -73,9 +75,9 @@ export async function stripeWebhook(req, res) {
         for (const li of items) {
           const priceId = li.price?.id;
           const qty = li.quantity || 1;
-          const perUnit = priceId ? (CREDIT_PRICE_MAP[priceId] || 0) : 0;
+          const perUnit = priceId ? CREDIT_PRICE_MAP[priceId] || 0 : 0;
           if (!perUnit) {
-            console.warn("⚠️ Unknown price in checkout.session:", priceId);
+            console.warn('⚠️ Unknown price in checkout.session:', priceId);
           }
           totalCredits += perUnit * qty;
         }
@@ -85,13 +87,13 @@ export async function stripeWebhook(req, res) {
           await userRef.update({
             credits: admin.firestore.FieldValue.increment(totalCredits),
           });
-          await userRef.collection("transactions").add({
-            type: "purchase",
+          await userRef.collection('transactions').add({
+            type: 'purchase',
             credits: totalCredits,
             amount: session.amount_total ?? null,
-            currency: session.currency ?? "usd",
+            currency: session.currency ?? 'usd',
             stripeId: session.payment_intent || session.id,
-            status: "succeeded",
+            status: 'succeeded',
             livemode: !!event.livemode,
             createdAt: admin.firestore.FieldValue.serverTimestamp(),
           });
@@ -100,7 +102,7 @@ export async function stripeWebhook(req, res) {
         break;
       }
 
-      case "invoice.paid": {
+      case 'invoice.paid': {
         // Subscription renewal crediting
         const invoice = event.data.object;
 
@@ -108,7 +110,7 @@ export async function stripeWebhook(req, res) {
         let email = invoice.customer_email || null;
         if (!email) {
           const customer =
-            typeof invoice.customer === "string"
+            typeof invoice.customer === 'string'
               ? await stripe.customers.retrieve(invoice.customer)
               : invoice.customer;
           email = customer?.email || customer?.metadata?.email || null;
@@ -117,16 +119,16 @@ export async function stripeWebhook(req, res) {
 
         // Expand subscription to read Price IDs
         const sub = await stripe.subscriptions.retrieve(invoice.subscription, {
-          expand: ["items.data.price"],
+          expand: ['items.data.price'],
         });
 
         let totalCredits = 0;
         for (const it of sub.items.data) {
           const priceId = it.price?.id;
           const qty = it.quantity || 1;
-          const perUnit = priceId ? (CREDIT_PRICE_MAP[priceId] || 0) : 0;
+          const perUnit = priceId ? CREDIT_PRICE_MAP[priceId] || 0 : 0;
           if (!perUnit) {
-            console.warn("⚠️ Unknown price in invoice.paid:", priceId);
+            console.warn('⚠️ Unknown price in invoice.paid:', priceId);
           }
           totalCredits += perUnit * qty;
         }
@@ -136,13 +138,13 @@ export async function stripeWebhook(req, res) {
           await userRef.update({
             credits: admin.firestore.FieldValue.increment(totalCredits),
           });
-          await userRef.collection("transactions").add({
-            type: "purchase",
+          await userRef.collection('transactions').add({
+            type: 'purchase',
             credits: totalCredits,
             amount: invoice.amount_paid ?? null,
-            currency: invoice.currency ?? "usd",
+            currency: invoice.currency ?? 'usd',
             stripeId: invoice.id,
-            status: "succeeded",
+            status: 'succeeded',
             livemode: !!event.livemode,
             createdAt: admin.firestore.FieldValue.serverTimestamp(),
           });
@@ -159,8 +161,8 @@ export async function stripeWebhook(req, res) {
     // Always 2xx so Stripe stops retrying (idempotency covers duplicates)
     return res.json({ received: true });
   } catch (err) {
-    console.error("🔥 Webhook handler error:", err);
+    console.error('🔥 Webhook handler error:', err);
     // Still return 200 to prevent retries if your logic is idempotent; otherwise 500.
-    return res.status(500).send("Webhook handler error.");
+    return res.status(500).send('Webhook handler error.');
   }
 }

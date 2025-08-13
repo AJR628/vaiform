@@ -1,19 +1,21 @@
-name: CI (hello)
-
+name: CI
 on:
   push:
   pull_request:
 
 jobs:
-  hello:
+  node-ci:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Use Node.js 22
-        uses: actions/setup-node@v4
+
+      - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Install deps (best effort)
+          cache: 'npm'
+
+      - name: Install dependencies
         run: npm ci || npm i
-      - name: Smoke
-        run: node -e "console.log('✅ CI is wired up')"
+
+      - name: Prettier format check
+        run: npm run format:check

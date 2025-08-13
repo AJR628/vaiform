@@ -1,15 +1,15 @@
 // src/services/storage.service.js
-import { v4 as uuidv4 } from "uuid";
-import { bucket } from "../config/firebase.js";
+import { v4 as uuidv4 } from 'uuid';
+import { bucket } from '../config/firebase.js';
 
 // Lazy-load sharp so the app can still run if it isn't installed
 let _sharpPromise;
 async function getSharp() {
   if (!_sharpPromise) {
-    _sharpPromise = import("sharp")
+    _sharpPromise = import('sharp')
       .then((m) => m.default)
       .catch((err) => {
-        console.warn("⚠️ sharp unavailable, skipping image optimization:", err?.message || err);
+        console.warn('⚠️ sharp unavailable, skipping image optimization:', err?.message || err);
         return null; // allow app to keep running
       });
   }
@@ -21,8 +21,8 @@ export async function uploadToFirebaseStorage(imageUrl, email, index, opts = {})
   const {
     maxSide = 1536,
     quality = 85,
-    contentType = "image/webp", // "image/webp" | "image/jpeg" | "image/png"
-    filenamePrefix = "image",
+    contentType = 'image/webp', // "image/webp" | "image/jpeg" | "image/png"
+    filenamePrefix = 'image',
   } = opts;
 
   try {
@@ -39,13 +39,13 @@ export async function uploadToFirebaseStorage(imageUrl, email, index, opts = {})
       let pipeline = sharp(src).resize({
         width: maxSide,
         height: maxSide,
-        fit: "inside",
+        fit: 'inside',
         withoutEnlargement: true,
       });
 
-      if (contentType === "image/jpeg" || contentType === "image/jpg") {
+      if (contentType === 'image/jpeg' || contentType === 'image/jpg') {
         pipeline = pipeline.jpeg({ quality, mozjpeg: true });
-      } else if (contentType === "image/png") {
+      } else if (contentType === 'image/png') {
         pipeline = pipeline.png(); // PNG is lossless; quality ignored
       } else {
         // default to webp
@@ -55,13 +55,13 @@ export async function uploadToFirebaseStorage(imageUrl, email, index, opts = {})
       optimized = await pipeline.toBuffer();
     }
 
-    const safeEmail = String(email || "unknown").replace(/\W/g, "_");
+    const safeEmail = String(email || 'unknown').replace(/\W/g, '_');
     const ext =
-      contentType === "image/jpeg" || contentType === "image/jpg"
-        ? "jpg"
-        : contentType === "image/png"
-        ? "png"
-        : "webp";
+      contentType === 'image/jpeg' || contentType === 'image/jpg'
+        ? 'jpg'
+        : contentType === 'image/png'
+          ? 'png'
+          : 'webp';
     const filename = `${filenamePrefix}-${Date.now()}-${uuidv4()}.${ext}`;
     const storagePath = `userUploads/${safeEmail}/${filename}`;
     const file = bucket.file(storagePath);
@@ -75,7 +75,7 @@ export async function uploadToFirebaseStorage(imageUrl, email, index, opts = {})
     // Public URL (works if object is public or you have appropriate rules)
     return `https://storage.googleapis.com/${bucket.name}/${encodeURIComponent(storagePath)}`;
   } catch (err) {
-    console.error("❌ uploadToFirebaseStorage error:", err?.message || err);
+    console.error('❌ uploadToFirebaseStorage error:', err?.message || err);
     return null;
   }
 }
@@ -83,10 +83,10 @@ export async function uploadToFirebaseStorage(imageUrl, email, index, opts = {})
 // Normalize Replicate outputs → array of URLs
 export function extractUrlsFromReplicateOutput(output) {
   if (Array.isArray(output)) return output.filter(Boolean);
-  if (typeof output === "string") return [output];
-  if (output && typeof output === "object") {
-    if (typeof output.url === "function") return [output.url()];
-    if (typeof output.url === "string") return [output.url];
+  if (typeof output === 'string') return [output];
+  if (output && typeof output === 'object') {
+    if (typeof output.url === 'function') return [output.url()];
+    if (typeof output.url === 'string') return [output.url];
     if (Array.isArray(output.images)) return output.images.filter(Boolean);
   }
   return [];
