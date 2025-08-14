@@ -18,8 +18,6 @@ export async function enhancePrompt(prompt, strength = 0.5) {
   const s = clamp01(strength);
 
   // Map strength to creativity + detail
-  // lower strength => keep close to original
-  // higher strength => add more specificity and style guidance
   const temperature = 0.2 + 0.6 * s; // 0.2..0.8
   const maxTokens = 120 + Math.round(180 * s); // 120..300
 
@@ -43,7 +41,7 @@ Guidelines:
   `.trim();
 
   try {
-    // Chat Completions API (compatible with openai v4 client)
+    // Chat Completions API
     const resp = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
       temperature,
@@ -55,11 +53,8 @@ Guidelines:
     });
 
     const text = resp?.choices?.[0]?.message?.content?.trim() || `${prompt} [enhanced:${s}]`;
-
-    // Safety: collapse newlines to a single line
     return text.replace(/\s*\n+\s*/g, ' ');
   } catch (err) {
-    // Don't hard-crash the request—fallback to simple enhancement
     console.error('Enhance service error:', err?.message || err);
     return `${prompt} [enhanced:${s}]`;
   }
