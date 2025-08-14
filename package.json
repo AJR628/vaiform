@@ -20,8 +20,9 @@
     "start": "node server.js",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "lint": "eslint 'src/**/*.{js,jsx}'",
-    "lint:fix": "eslint 'src/**/*.{js,jsx}' --fix"
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "test": "echo \"(no tests yet)\" && exit 0"
   },
   "devDependencies": {
     "@eslint/js": "^9.33.0",
