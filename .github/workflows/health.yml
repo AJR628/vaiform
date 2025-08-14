@@ -1,0 +1,39 @@
+name: Health Check
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  health:
+    runs-on: ubuntu-latest
+    env:
+      FIREBASE_PROJECT_ID: vaiform
+      FIREBASE_STORAGE_BUCKET: vaiform
+      OPENAI_API_KEY: dummy
+      STRIPE_SECRET_KEY: dummy
+      REPLICATE_API_TOKEN: dummy
+      NODE_ENV: test
+      PORT: 3000
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci || npm i
+
+      - name: Start server in background
+        run: |
+          npm start &
+          echo "Waiting for /health endpoint..."
+          npx --yes wait-on http://localhost:3000/health
+
+      - name: Curl /health
+        run: curl -sS -f http://localhost:3000/health
