@@ -5,17 +5,23 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+concurrency:
+  group: health-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   health:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     env:
+      NODE_ENV: test
+      PORT: 3000
       FIREBASE_PROJECT_ID: vaiform
       FIREBASE_STORAGE_BUCKET: vaiform
       OPENAI_API_KEY: dummy
       STRIPE_SECRET_KEY: dummy
       REPLICATE_API_TOKEN: dummy
-      NODE_ENV: test
-      PORT: 3000
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -29,11 +35,26 @@ jobs:
       - name: Install dependencies
         run: npm ci || npm i
 
-      - name: Start server in background
+      - name: Start server and wait for /health
         run: |
-          npm start &
-          echo "Waiting for /health endpoint..."
-          npx --yes wait-on http://localhost:3000/health
+          set -e
+          node server.js > server.log 2>&1 &
+          echo "Waiting for /health (max 60s)..."
+          npx --yes wait-on -t 60000 http://localhost:3000/health || (
+            echo "Server failed to expose /health in time";
+            echo "----- SERVER LOG -----";
+            cat server.log;
+            exit 1
+          )
+          echo "Service is up. Recent logs:"
+          tail -n +1 server.log
 
       - name: Curl /health
         run: curl -sS -f http://localhost:3000/health
+
+      - name: Upload server.log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: server-log
+          path: server.log
