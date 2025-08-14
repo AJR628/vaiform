@@ -6,16 +6,16 @@ import healthRouter from './health.routes.js';
 import webhookRouter from './webhook.routes.js';
 import enhanceRouter from './enhance.routes.js';
 
-// Root router for "/" (keep this lightweight)
+// Root router for "/" (lightweight; serves health + any root info)
 const index = Router();
 index.use('/', healthRouter);
 
-// Export all routers so app.js can mount them explicitly
+// Export routers; app.js mounts them explicitly with paths
 export default {
-  index, // mount at "/"
-  generate: generateRouter, // mount at "/"
-  enhance: enhanceRouter, // mount at "/"
-  credits: creditsRouter, // mount at "/credits"
-  health: healthRouter, // optional: also mount at "/health" if desired
-  webhook: webhookRouter, // mount with raw body at "/webhook" in app.js
+  index,                 // mounts at "/"
+  generate: generateRouter,  // mounts at "/generate"
+  enhance: enhanceRouter,    // mounts at "/enhance"
+  credits: creditsRouter,    // mounts at "/credits"
+  health: healthRouter,      // optional: could also mount at "/health"
+  webhook: webhookRouter,    // mounted at "/webhook" with raw body in app.js
 };

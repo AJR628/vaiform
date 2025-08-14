@@ -5,19 +5,19 @@ import bodyParser from 'body-parser';
 import dotenv from 'dotenv';
 
 import routes from './routes/index.js';
-import './config/firebase.js'; // ensures Firebase Admin initialized
+import './config/firebase.js'; // ensure Firebase Admin is initialized
 
 // 🔧 Gate A helpers
 import envCheck from './middleware/envCheck.js';
 import reqId from './middleware/reqId.js';
-import errorHandler from './middleware/error.middleware.js'; // <- merged file
+import errorHandler from './middleware/error.middleware.js';
 
 dotenv.config();
-envCheck(); // fail fast if critical env is missing
+envCheck(); // presence-only checks; CI bypasses via NODE_ENV=test
 
 const app = express();
 
-// 🪪 request IDs early
+// 🪪 assign a request ID early
 app.use(reqId);
 
 /** ---- CORS (allow Authorization for Firebase ID tokens) ---- */
@@ -42,8 +42,8 @@ app.options('*', cors(corsOptions));
 function mount(name, path, handler) {
   if (typeof handler !== 'function') {
     console.error(
-      `❌ Mount failed: "${name}" at path "${path}" is not a middleware function/Router. Got: ${typeof handler}. ` +
-        `Check your exports in ./routes/index.js for "${name}".`
+      `❌ Mount failed: "${name}" at "${path}" is not a middleware function/Router (got: ${typeof handler}). ` +
+        `Check ./routes/index.js export for "${name}".`
     );
     return;
   }
@@ -64,15 +64,17 @@ if (routes?.webhook) {
 /** ---- JSON parser for the rest ---- */
 app.use(express.json({ limit: '10mb' }));
 
-/** ---- Simple health ---- */
-app.get('/health', (_req, res) => res.json({ ok: true, message: 'Vaiform backend is running 🚀' }));
+/** ---- Simple health (public, fast) ---- */
+app.get('/health', (_req, res) =>
+  res.json({ ok: true, message: 'Vaiform backend is running 🚀' })
+);
 
 /** ---- Mount app routers (scoped paths to avoid collisions) ---- */
-mount('index', '/', routes?.index); // GET /
-mount('credits', '/credits', routes?.credits); // GET /credits
-mount('enhance', '/enhance', routes?.enhance); // POST /enhance
-mount('generate', '/generate', routes?.generate); // POST /generate
-// 🚧 Future features stay unmounted or mounted under their own paths later
+mount('index', '/', routes?.index);           // GET /
+mount('credits', '/credits', routes?.credits); // /credits
+mount('enhance', '/enhance', routes?.enhance); // /enhance
+mount('generate', '/generate', routes?.generate); // /generate
+// 🚧 Future features: mount later under their own paths
 
 /** ---- Centralized error handler (last) ---- */
 app.use(errorHandler);
