@@ -1,10 +1,18 @@
+// src/controllers/health.controller.js
 import admin from 'firebase-admin';
 import { db, bucket } from '../config/firebase.js';
+// If your env file exports an OpenAI client, keep this import.
+// Otherwise you can conditionally skip OpenAI checks in CI.
 import { openai } from '../config/env.js';
 
-export const root = (req, res) => res.json({ ok: true, message: 'Vaiform backend is running 🚀' });
+export const root = (_req, res) =>
+  res.json({ ok: true, message: 'Vaiform backend is running 🚀' });
 
-export const healthz = async (req, res) => {
+// A richer diagnostic endpoint.
+// In CI (NODE_ENV=test), keep it quick and avoid external calls.
+export const healthz = async (_req, res) => {
+  const isCI = process.env.NODE_ENV === 'test';
+
   const checks = {
     env: {
       replicateKey: !!process.env.REPLICATE_API_TOKEN,
@@ -12,35 +20,39 @@ export const healthz = async (req, res) => {
       openaiKey: !!process.env.OPENAI_API_KEY,
       firebaseServiceAccountLoaded: !!admin.apps.length,
     },
-    firestore: null,
-    storage: null,
-    openai: null,
+    firestore: isCI ? 'skipped (CI)' : null,
+    storage: isCI ? 'skipped (CI)' : null,
+    openai: isCI ? 'skipped (CI)' : null,
     replicate: process.env.REPLICATE_API_TOKEN ? 'configured' : 'no_key',
   };
 
-  try {
-    await db.collection('healthcheck').doc('ping').get();
-    checks.firestore = 'ok';
-  } catch (e) {
-    checks.firestore = `error: ${e.message}`;
-  }
-
-  try {
-    await bucket.getFiles({ maxResults: 1 });
-    checks.storage = 'ok';
-  } catch (e) {
-    checks.storage = `error: ${e.message}`;
-  }
-
-  try {
-    if (process.env.OPENAI_API_KEY) {
-      await openai.models.list();
-      checks.openai = 'ok';
-    } else {
-      checks.openai = 'no_key';
+  if (!isCI) {
+    try {
+      // light touch read
+      await db.collection('healthcheck').doc('ping').get();
+      checks.firestore = 'ok';
+    } catch (e) {
+      checks.firestore = `error: ${e.message}`;
     }
-  } catch (e) {
-    checks.openai = `error: ${e.message}`;
+
+    try {
+      // list at most 1 file to confirm bucket wiring
+      await bucket.getFiles({ maxResults: 1 });
+      checks.storage = 'ok';
+    } catch (e) {
+      checks.storage = `error: ${e.message}`;
+    }
+
+    try {
+      if (process.env.OPENAI_API_KEY && openai?.models?.list) {
+        await openai.models.list();
+        checks.openai = 'ok';
+      } else {
+        checks.openai = process.env.OPENAI_API_KEY ? 'client_missing' : 'no_key';
+      }
+    } catch (e) {
+      checks.openai = `error: ${e.message}`;
+    }
   }
 
   const failures = Object.values(checks).filter(
@@ -52,7 +64,7 @@ export const healthz = async (req, res) => {
     .json({ status: failures ? 'degraded' : 'ok', now: new Date().toISOString(), checks });
 };
 
-export const version = (req, res) =>
+export const version = (_req, res) =>
   res.json({
     status: 'ok',
     timestamp: new Date().toISOString(),
@@ -62,9 +74,14 @@ export const version = (req, res) =>
     stripeKey: !!process.env.STRIPE_SECRET_KEY,
     openaiKey: !!process.env.OPENAI_API_KEY,
     firebaseConfigured: !!admin.apps.length,
+    commit: process.env.COMMIT_SHA || process.env.GITHUB_SHA || 'dev',
   });
 
-export const testFirestore = async (req, res) => {
+// Avoid writes in CI. Use only for manual/local diagnostics.
+export const testFirestore = async (_req, res) => {
+  if (process.env.NODE_ENV === 'test') {
+    return res.json({ success: true, skipped: true, reason: 'CI/test mode' });
+  }
   try {
     const testRef = db.collection('users').doc('test@example.com');
     await testRef.set({ hello: 'world' });
@@ -77,7 +94,7 @@ export const testFirestore = async (req, res) => {
 };
 
 export const register = async (req, res) => {
-  const { email } = req.body;
+  const { email } = req.body || {};
   if (!email) return res.status(400).json({ error: 'Missing email.' });
 
   try {

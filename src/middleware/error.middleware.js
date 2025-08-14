@@ -1,9 +1,12 @@
 // src/middleware/error.middleware.js
 export default function errorHandler(err, req, res, _next) {
-  // Detect common cases
-  const isZod = err?.name === 'ZodError' || err?.code === 'ZOD_ERROR' || Array.isArray(err?.issues);
+  // Detect Zod-style validation errors
+  const isZod =
+    err?.name === 'ZodError' ||
+    err?.code === 'ZOD_ERROR' ||
+    Array.isArray(err?.issues);
 
-  // Choose status code (override-able via err.status)
+  // Map to status (overridable via err.status)
   const status =
     err?.status ??
     (isZod
@@ -14,20 +17,26 @@ export default function errorHandler(err, req, res, _next) {
           ? 401
           : err?.name === 'FORBIDDEN'
             ? 403
-            : // Stripe signature errors often come through with this type
-              err?.type === 'StripeSignatureVerificationError'
+            : err?.type === 'StripeSignatureVerificationError'
               ? 400
               : 500);
 
-  // Shape response
+  // Prefer our reqId middleware value; fall back to incoming header
+  const requestId =
+    req?.id ||
+    req?.reqId ||
+    req?.headers?.['x-request-id'] ||
+    req?.headers?.['X-Request-Id'];
+
   const payload = {
     success: false,
     error: err?.name || 'ERROR',
-    message: err?.message || (status === 500 ? 'Unexpected server error' : 'Request failed'),
-    reqId: req?.reqId,
+    message:
+      err?.message || (status === 500 ? 'Unexpected server error' : 'Request failed'),
+    requestId,
   };
 
-  // Include Zod issue details (helpful for the frontend)
+  // Include Zod issues for client UX
   if (isZod && err?.issues) {
     payload.issues = err.issues.map((i) => ({
       path: Array.isArray(i.path) ? i.path.join('.') : String(i.path ?? ''),
@@ -35,18 +44,18 @@ export default function errorHandler(err, req, res, _next) {
     }));
   }
 
-  // Structured log (minimal PII)
+  // Structured log with minimal PII
   const log = {
     level: status >= 500 ? 'error' : 'warn',
     status,
     name: err?.name,
     message: err?.message,
-    reqId: req?.reqId,
+    requestId,
     route: `${req?.method} ${req?.originalUrl}`,
   };
   console.error('❌', JSON.stringify(log));
 
-  // Only expose stack in non-production
+  // Only expose stack outside production
   if (process.env.NODE_ENV !== 'production' && err?.stack) {
     payload.stack = err.stack;
   }
