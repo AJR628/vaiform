@@ -15,10 +15,10 @@ const router = Router();
  * Your CI workflow curls /health (from app.js) for heartbeat.
  * These are extra diagnostics you can use manually.
  */
-router.get('/', root);                // GET /
-router.get('/healthz', healthz);      // GET /healthz (alt)
-router.get('/version', version);      // GET /version
+router.get('/', root); // GET /
+router.get('/healthz', healthz); // GET /healthz (alt)
+router.get('/version', version); // GET /version
 router.get('/test-firestore', testFirestore); // GET /test-firestore
-router.post('/register', register);   // POST /register (simple echo or diag)
+router.post('/register', register); // POST /register (simple echo or diag)
 
 export default router;

@@ -5,8 +5,7 @@ import { db, bucket } from '../config/firebase.js';
 // Otherwise you can conditionally skip OpenAI checks in CI.
 import { openai } from '../config/env.js';
 
-export const root = (_req, res) =>
-  res.json({ ok: true, message: 'Vaiform backend is running 🚀' });
+export const root = (_req, res) => res.json({ ok: true, message: 'Vaiform backend is running 🚀' });
 
 // A richer diagnostic endpoint.
 // In CI (NODE_ENV=test), keep it quick and avoid external calls.

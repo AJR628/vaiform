@@ -65,12 +65,10 @@ if (routes?.webhook) {
 app.use(express.json({ limit: '10mb' }));
 
 /** ---- Simple health (public, fast) ---- */
-app.get('/health', (_req, res) =>
-  res.json({ ok: true, message: 'Vaiform backend is running 🚀' })
-);
+app.get('/health', (_req, res) => res.json({ ok: true, message: 'Vaiform backend is running 🚀' }));
 
 /** ---- Mount app routers (scoped paths to avoid collisions) ---- */
-mount('index', '/', routes?.index);           // GET /
+mount('index', '/', routes?.index); // GET /
 mount('credits', '/credits', routes?.credits); // /credits
 mount('enhance', '/enhance', routes?.enhance); // /enhance
 mount('generate', '/generate', routes?.generate); // /generate
