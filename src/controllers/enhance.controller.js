@@ -1,47 +1,56 @@
 // src/controllers/enhance.controller.js
-import admin from 'firebase-admin';
-import { enhancePrompt } from '../services/enhance.service.js';
-import { ensureUserDoc } from '../services/credit.service.js';
-import { ENHANCE_COST } from '../config/pricing.js';
+import admin from "../config/firebase.js"; // ✅ use the initialized Admin instance
+import { enhancePrompt } from "../services/enhance.service.js";
+import { ensureUserDoc } from "../services/credit.service.js";
+import { ENHANCE_COST } from "../config/pricing.js";
 
 /**
- * POST /enhance-image
- * Body: { prompt: string, strength?: number (0..1) }
- * Deducts ENHANCE_COST credits, returns { enhancedPrompt }
+ * POST /enhance
+ * Body: { prompt: string, strength?: number in [0,1] }
+ * Requires: Authorization: Bearer <ID_TOKEN>, X-Idempotency-Key
+ * Deducts ENHANCE_COST credits, returns { ok:true, enhancedPrompt }
+ *
+ * Note: Input is validated by EnhanceSchema in the route (validate middleware),
+ * so this controller assumes valid types/ranges.
  */
-export async function enhanceImage(req, res) {
-  const { prompt, strength = 0.5 } = req.body;
-
-  // ---- Validation ----
-  if (!prompt || typeof prompt !== 'string') {
-    return res.status(400).json({ error: 'Invalid or missing prompt' });
-  }
-  if (typeof strength !== 'number' || strength < 0 || strength > 1) {
-    return res.status(400).json({ error: 'Invalid strength value' });
-  }
-
+export async function enhanceController(req, res) {
   try {
+    const { prompt, strength = 0.6 } = req.body || {};
+    const { uid, email } = req.user || {};
+
+    // ---- Ensure user doc & check credits first (avoid work if insufficient) ----
+    const { ref: userRef, data: userData } = await ensureUserDoc(email);
+    const currentCredits = userData.credits ?? 0;
+    if (currentCredits < ENHANCE_COST) {
+      return res.status(400).json({
+        ok: false,
+        code: "INSUFFICIENT_CREDITS",
+        message: `You need at least ${ENHANCE_COST} credits.`,
+      });
+    }
+
     // ---- Enhance the prompt ----
     const enhancedPrompt = await enhancePrompt(prompt, strength);
 
-    // ---- Ensure user exists in DB ----
-    const { ref: userRef, data: userData } = await ensureUserDoc(req.user.email);
-
-    // ---- Credit check ----
-    const currentCredits = userData.credits ?? 0;
-    if (currentCredits < ENHANCE_COST) {
-      return res.status(400).json({ error: 'Insufficient credits' });
-    }
-
-    // ---- Deduct credits ----
+    // ---- Deduct credits atomically ----
     await userRef.update({
       credits: admin.firestore.FieldValue.increment(-ENHANCE_COST),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      lastEnhanceAt: admin.firestore.FieldValue.serverTimestamp(),
     });
 
-    // ---- Respond ----
-    return res.json({ enhancedPrompt });
+    // ---- Respond (FireStore idempotency will cache this non-5xx) ----
+    return res.status(200).json({
+      ok: true,
+      enhancedPrompt,
+      cost: ENHANCE_COST,
+    });
   } catch (err) {
-    console.error('❌ EnhanceImage error:', err);
-    return res.status(500).json({ error: 'Failed to enhance image' });
+    console.error("❌ [enhance] failed:", err?.code || err?.name, err?.message || err);
+    return res.status(500).json({
+      ok: false,
+      code: "ENHANCE_FAILED",
+      message: err?.message || "Enhance failed",
+    });
   }
 }

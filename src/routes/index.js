@@ -1,21 +1,23 @@
-// src/routes/index.js
-import { Router } from 'express';
-import generateRouter from './generate.routes.js';
-import creditsRouter from './credits.routes.js';
-import healthRouter from './health.routes.js';
-import webhookRouter from './webhook.routes.js';
-import enhanceRouter from './enhance.routes.js';
+import { Router } from "express";
+import generateRouter from "./generate.routes.js";
+import creditsRouter from "./credits.routes.js";
+import healthRouter from "./health.routes.js";
+import webhookRouter from "./webhook.routes.js";
+import enhanceRouter from "./enhance.routes.js";
+import checkoutRouter from "./checkout.routes.js";
+import diagRouter from "./diag.routes.js"; // ✅ add this
 
-// Root router for "/" (lightweight; serves health + any root info)
+// Lightweight root
 const index = Router();
-index.use('/', healthRouter);
+index.get("/", (_req, res) => res.json({ ok: true, message: "Vaiform API root" }));
 
-// Export routers; app.js mounts them explicitly with paths
 export default {
-  index, // mounts at "/"
-  generate: generateRouter, // mounts at "/generate"
-  enhance: enhanceRouter, // mounts at "/enhance"
-  credits: creditsRouter, // mounts at "/credits"
-  health: healthRouter, // optional: could also mount at "/health"
-  webhook: webhookRouter, // mounted at "/webhook" with raw body in app.js
+  index,                    // "/"
+  health: healthRouter,     // "/health"
+  credits: creditsRouter,   // "/credits"
+  enhance: enhanceRouter,   // "/" and "/enhance"
+  generate: generateRouter, // "/generate"
+  webhook: webhookRouter,   // "/webhook"
+  checkout: checkoutRouter, // "/checkout"
+  diag: diagRouter,         // ✅ "/diag"
 };

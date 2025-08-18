@@ -1,34 +1,63 @@
-import { Router } from 'express';
-import { enhance, generate, imageToImage, upscale } from '../controllers/generate.controller.js';
+import { Router } from "express";
+import requireAuth from "../middleware/auth.js";
+import { validate } from "../middleware/validate.middleware.js";
+
+// 🔒 Firestore-backed idempotency (prod-safe)
+import idempotency from "../middleware/idempotency.firestore.js";
+
 import {
-  requireAuth,
-  requireVerifiedEmail,
-  assertUserScoped,
-} from '../middleware/auth.middleware.js';
-import { validate } from '../middleware/validate.middleware.js';
-import {
-  EnhanceSchema,
   GenerateSchema,
   ImageToImageSchema,
   UpscaleSchema,
-} from '../schemas/generate.schemas.js';
+} from "../schemas/generate.schema.js";
+
+import {
+  generate,
+  imageToImage,
+  upscale,
+} from "../controllers/generate.controller.js";
 
 const router = Router();
 
-// Auth wall for all paid endpoints (toggle verified email per your policy)
-router.use(requireAuth, requireVerifiedEmail);
-router.use(assertUserScoped('uid', 'body'));
+/**
+ * Mounted at /generate in app.js:
+ *   app.use("/generate", generateRoutes)
+ *
+ * Endpoints:
+ *   POST /generate                -> text-to-image
+ *   POST /generate/image-to-image -> image-to-image
+ *   POST /generate/upscale        -> upscaler
+ *
+ * Required headers for POSTs:
+ *   - Authorization: Bearer <ID_TOKEN>
+ *   - X-Idempotency-Key: <unique-per-attempt>
+ */
 
-// Text → better prompt (costs 1 credit)
-router.post('/enhance', validate(EnhanceSchema), enhance);
+/** POST /generate  (txt2img) */
+router.post(
+  "/",
+  requireAuth,
+  validate(GenerateSchema),      // ✅ validate first (no idempotency write on 400s)
+  idempotency({ ttlMinutes: 60 }),
+  generate
+);
 
-// Text → image
-router.post('/generate', validate(GenerateSchema), generate);
+/** POST /generate/image-to-image  (img2img) */
+router.post(
+  "/image-to-image",
+  requireAuth,
+  validate(ImageToImageSchema),  // ✅ validate first
+  idempotency({ ttlMinutes: 60 }),
+  imageToImage
+);
 
-// Image → image (style transform)
-router.post('/image-to-image', validate(ImageToImageSchema), imageToImage);
-
-// Upscale
-router.post('/upscale', validate(UpscaleSchema), upscale);
+/** POST /generate/upscale  */
+router.post(
+  "/upscale",
+  requireAuth,
+  validate(UpscaleSchema),       // ✅ validate first
+  idempotency({ ttlMinutes: 60 }),
+  upscale
+);
 
 export default router;

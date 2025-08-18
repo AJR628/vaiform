@@ -1,24 +1,38 @@
-// src/routes/health.routes.js
-import { Router } from 'express';
-import {
-  root,
-  healthz,
-  version,
-  testFirestore,
-  register,
-} from '../controllers/health.controller.js';
+import { Router } from "express";
+import admin from "../config/firebase.js";
 
 const router = Router();
 
-/**
- * Keep all health endpoints PUBLIC and lightweight.
- * Your CI workflow curls /health (from app.js) for heartbeat.
- * These are extra diagnostics you can use manually.
- */
-router.get('/', root); // GET /
-router.get('/healthz', healthz); // GET /healthz (alt)
-router.get('/version', version); // GET /version
-router.get('/test-firestore', testFirestore); // GET /test-firestore
-router.post('/register', register); // POST /register (simple echo or diag)
+/** Primary health endpoint: verifies Storage bucket exists */
+router.get("/", async (_req, res) => {
+  try {
+    const bucket = admin.storage().bucket();
+    const [exists] = await bucket.exists();
+    return res.json({
+      ok: true,
+      message: "Vaiform backend is running 🚀",
+      storageBucket: bucket.name,
+      bucketExists: exists,
+    });
+  } catch (err) {
+    return res.status(500).json({
+      ok: false,
+      error: "HEALTH_CHECK_FAILED",
+      message: err?.message || String(err),
+    });
+  }
+});
+
+/** Minimal liveness (k8s-style) */
+router.get("/healthz", (_req, res) => res.status(200).send("ok"));
+
+/** Optional version info (best-effort) */
+router.get("/version", (_req, res) => {
+  const version =
+    process.env.npm_package_version ||
+    process.env.VAIFORM_VERSION ||
+    "unknown";
+  res.json({ version });
+});
 
 export default router;

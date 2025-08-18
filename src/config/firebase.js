@@ -1,20 +1,39 @@
 // src/config/firebase.js
-import admin from 'firebase-admin';
+import admin from "firebase-admin";
 
-// Initialize Admin SDK once per process without try/catch noise
+const {
+  FIREBASE_PROJECT_ID,
+  FIREBASE_CLIENT_EMAIL,
+  FIREBASE_PRIVATE_KEY,
+  FIREBASE_STORAGE_BUCKET,
+} = process.env;
+
+// Handle \n in PRIVATE_KEY secrets
+const privateKey = FIREBASE_PRIVATE_KEY?.replace(/\\n/g, "\n");
+
 if (!admin.apps.length) {
   admin.initializeApp({
-    // If running on GCP with a service account, applicationDefault() is fine.
-    // If using a JSON service account, ensure GOOGLE_APPLICATION_CREDENTIALS is set,
-    // or load from env and pass credential here.
-    // credential: admin.credential.applicationDefault(),
-    storageBucket: process.env.FIREBASE_STORAGE_BUCKET || 'vaiform',
-    projectId: process.env.FIREBASE_PROJECT_ID || 'vaiform',
+    credential: admin.credential.cert({
+      projectId: FIREBASE_PROJECT_ID,
+      clientEmail: FIREBASE_CLIENT_EMAIL,
+      privateKey,
+    }),
+    // MUST be the bare bucket name (no gs:// prefix)
+    storageBucket: FIREBASE_STORAGE_BUCKET,
   });
 }
 
-// Handy exports (optional, but nice for imports elsewhere)
-export const db = admin.firestore();
-export const bucket = admin.storage().bucket();
+// Singletons
+const db = admin.firestore();
+const bucket = admin.storage().bucket();
 
+// Helpful boot logs
+try {
+  console.log("🔥 Firestore project:", FIREBASE_PROJECT_ID);
+  console.log("🔥 Storage bucket (resolved):", bucket.name);
+} catch (e) {
+  console.error("❌ Firebase init/log error:", e?.message || e);
+}
+
+export { db, bucket };
 export default admin;
