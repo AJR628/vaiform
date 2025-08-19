@@ -10,7 +10,7 @@ export async function getCredits(req, res) {
   try {
     const { uid, email } = req.user || {};
     if (!email) {
-      return res.status(401).json({ error: "UNAUTHENTICATED", message: "Missing user email" });
+      return res.status(401).json({ success: false, error: "UNAUTHENTICATED", detail: "Missing user email" });
     }
 
     const { ref, data } = await ensureUserDoc(email, uid);
@@ -24,7 +24,7 @@ export async function getCredits(req, res) {
     return res.json({ email, credits });
   } catch (err) {
     console.error("❌ getCredits error:", err);
-    return res.status(500).json({ error: "INTERNAL", message: "Failed to fetch credits" });
+    return res.status(500).json({ success: false, error: "INTERNAL", detail: "Failed to fetch credits" });
   }
 }
 
@@ -34,7 +34,7 @@ export async function getCredits(req, res) {
  */
 export async function balance(req, res) {
   const email = req.query.email;
-  if (!email) return res.status(400).json({ error: "Missing email." });
+  if (!email) return res.status(400).json({ success: false, error: "Missing email." });
   try {
     const { data } = await ensureUserDoc(email);
     return res.json({ success: true, credits: data?.credits ?? 0 });
@@ -52,7 +52,7 @@ export async function grant(req, res) {
   const { email, credits } = req.body || {};
   const n = Number(credits);
   if (!email || !Number.isFinite(n)) {
-    return res.status(400).json({ error: "Missing email or credits (number)." });
+    return res.status(400).json({ success: false, error: "Missing email or credits (number)." });
   }
 
   try {

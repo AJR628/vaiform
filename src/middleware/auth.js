@@ -13,8 +13,9 @@ export default async function requireAuth(req, res, next) {
     const raw = header || queryToken;
     if (!raw) {
       return res.status(401).json({
+        success: false,
         error: "UNAUTHENTICATED",
-        message: "Missing Authorization: Bearer <token>",
+        detail: "Missing Authorization: Bearer <token>",
       });
     }
 
@@ -24,8 +25,9 @@ export default async function requireAuth(req, res, next) {
     const decoded = await admin.auth().verifyIdToken(token);
     if (!decoded?.uid) {
       return res.status(401).json({
-        error: "UNAUTHENTICATED",
-        message: "Invalid token",
+        success: false,
+        error: "INVALID_TOKEN",
+        detail: "Invalid token",
       });
     }
 
@@ -39,8 +41,9 @@ export default async function requireAuth(req, res, next) {
   } catch (err) {
     console.error("❌ Auth verify failed:", err?.code || err?.name, err?.message || err);
     return res.status(401).json({
-      error: "UNAUTHENTICATED",
-      message: "Invalid or expired token",
+      success: false,
+      error: "INVALID_TOKEN",
+      detail: "Invalid or expired token",
     });
   }
 }

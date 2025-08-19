@@ -14,7 +14,7 @@ router.get("/", (_req, res) => {
   }));
 
   res.json({
-    ok: true,
+    success: true,
     env: {
       replicateToken: !!process.env.REPLICATE_API_TOKEN,
       diag: process.env.DIAG === "1",

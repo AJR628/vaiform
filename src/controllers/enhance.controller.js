@@ -23,9 +23,9 @@ export async function enhanceController(req, res) {
     const currentCredits = userData.credits ?? 0;
     if (currentCredits < ENHANCE_COST) {
       return res.status(400).json({
-        ok: false,
-        code: "INSUFFICIENT_CREDITS",
-        message: `You need at least ${ENHANCE_COST} credits.`,
+        success: false,
+        error: "INSUFFICIENT_CREDITS",
+        detail: `You need at least ${ENHANCE_COST} credits.`,
       });
     }
 
@@ -48,9 +48,9 @@ export async function enhanceController(req, res) {
   } catch (err) {
     console.error("❌ [enhance] failed:", err?.code || err?.name, err?.message || err);
     return res.status(500).json({
-      ok: false,
-      code: "ENHANCE_FAILED",
-      message: err?.message || "Enhance failed",
+      success: false,
+      error: "ENHANCE_FAILED",
+      detail: err?.message || "Enhance failed",
     });
   }
 }

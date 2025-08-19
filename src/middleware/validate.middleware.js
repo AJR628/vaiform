@@ -8,8 +8,9 @@ export function validate(schema, location = 'body') {
     } catch (err) {
       if (err instanceof ZodError) {
         return res.status(400).json({
-          error: 'INVALID_REQUEST',
-          issues: err.errors.map((e) => ({
+          success: false,
+          error: 'INVALID_INPUT',
+          detail: err.errors.map((e) => ({
             path: e.path.join('.'),
             message: e.message,
             code: e.code,

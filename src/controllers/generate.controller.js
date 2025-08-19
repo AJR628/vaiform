@@ -183,8 +183,8 @@ export async function generate(req, res) {
       await refundCredits(uid, cost);
       return res.status(500).json({
         success: false,
-        code: 'GENERATION_FAILED',
-        message: e?.message || 'Image generation failed (timeout/provider). Credits refunded.',
+        error: 'GENERATION_FAILED',
+        detail: e?.message || 'Image generation failed (timeout/provider). Credits refunded.',
       });
     }
 
@@ -364,8 +364,8 @@ export async function imageToImage(req, res) {
       await refundCredits(uid, cost);
       return res.status(500).json({
         success: false,
-        code: 'GENERATION_FAILED',
-        message: e?.message || 'Image-to-image failed (timeout/provider). Credits refunded.',
+        error: 'GENERATION_FAILED',
+        detail: e?.message || 'Image-to-image failed (timeout/provider). Credits refunded.',
       });
     }
 
@@ -422,14 +422,15 @@ export async function upscale(req, res) {
     if (!uid) return res.status(401).json({ success: false, error: 'UNAUTHENTICATED' });
 
     if (!idKey) {
-      return res.status(400).json({ error: 'MISSING_IDEMPOTENCY_KEY', message: 'Provide X-Idempotency-Key header.' });
+      return res.status(400).json({ success: false, error: 'MISSING_IDEMPOTENCY_KEY', detail: 'Provide X-Idempotency-Key header.' });
     }
 
     const { imageUrl } = req.body || {};
     if (typeof imageUrl !== 'string' || !/^https?:\/\//i.test(imageUrl)) {
       return res.status(400).json({
+        success: false,
         error: 'INVALID_REQUEST',
-        issues: [{ path: 'imageUrl', message: 'Must be a valid URL starting with http(s)', code: 'invalid_string' }],
+        detail: { issues: [{ path: 'imageUrl', message: 'Must be a valid URL starting with http(s)', code: 'invalid_string' }] },
       });
     }
 

@@ -26,7 +26,7 @@ export async function createCheckoutSession(req, res) {
   try {
     const { priceId, quantity = 1, credits = 0 } = req.body || {};
     if (!priceId || !CREDIT_PRICE_MAP[priceId]) {
-      return res.status(400).json({ error: "Unknown or disallowed priceId" });
+      return res.status(400).json({ success: false, error: "Unknown or disallowed priceId" });
     }
 
     const qty = clampInt(quantity, { min: 1, max: 10 });
@@ -62,7 +62,7 @@ export async function createCheckoutSession(req, res) {
     return res.json({ url: session.url });
   } catch (err) {
     console.error("createCheckoutSession error:", err);
-    return res.status(500).json({ error: "Checkout failed" });
+    return res.status(500).json({ success: false, error: "Checkout failed" });
   }
 }
 
@@ -75,7 +75,7 @@ export async function createSubscriptionSession(req, res) {
   try {
     const { priceId, credits = 0 } = req.body || {};
     if (!priceId || !CREDIT_PRICE_MAP[priceId]) {
-      return res.status(400).json({ error: "Unknown or disallowed priceId" });
+      return res.status(400).json({ success: false, error: "Unknown or disallowed priceId" });
     }
 
     const creditHint = clampInt(credits, { min: 0, max: 1e9 });
@@ -119,7 +119,7 @@ export async function createSubscriptionSession(req, res) {
     return res.json({ url: session.url });
   } catch (err) {
     console.error("createSubscriptionSession error:", err);
-    return res.status(500).json({ error: "Subscription checkout failed" });
+    return res.status(500).json({ success: false, error: "Subscription checkout failed" });
   }
 }
 
@@ -159,6 +159,6 @@ export async function createBillingPortalSession(req, res) {
     return res.json({ url: portal.url });
   } catch (err) {
     console.error("createBillingPortalSession error:", err);
-    return res.status(500).json({ error: "Billing portal failed" });
+    return res.status(500).json({ success: false, error: "Billing portal failed" });
   }
 }

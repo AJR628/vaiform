@@ -17,8 +17,9 @@ export async function requireAuth(req, res, next) {
     const token = getBearer(req);
     if (!token) {
       return res.status(401).json({
+        success: false,
         error: 'UNAUTHENTICATED',
-        message: 'Missing Authorization: Bearer <token>',
+        detail: 'Missing Authorization: Bearer <token>',
       });
     }
     const d = await admin.auth().verifyIdToken(token);
@@ -30,8 +31,9 @@ export async function requireAuth(req, res, next) {
     return next();
   } catch {
     return res.status(401).json({
-      error: 'UNAUTHENTICATED',
-      message: 'Invalid or expired token',
+      success: false,
+      error: 'INVALID_TOKEN',
+      detail: 'Invalid or expired token',
     });
   }
 }
@@ -57,7 +59,7 @@ export async function optionalAuth(req, _res, next) {
 // Gate paid actions until email is verified (flip on/off per route)
 export function requireVerifiedEmail(req, res, next) {
   if (!req.user?.email_verified) {
-    return res.status(403).json({ error: 'EMAIL_NOT_VERIFIED' });
+    return res.status(403).json({ success: false, error: 'EMAIL_NOT_VERIFIED' });
   }
   return next();
 }
@@ -68,10 +70,10 @@ export function assertUserScoped(field = 'uid', location = 'body') {
   return (req, res, next) => {
     const claimed = (req[location] || {})[field];
     if (!req.user?.uid) {
-      return res.status(401).json({ error: 'UNAUTHENTICATED' });
+      return res.status(401).json({ success: false, error: 'UNAUTHENTICATED' });
     }
     if (claimed && claimed !== req.user.uid) {
-      return res.status(403).json({ error: 'FORBIDDEN', message: 'User mismatch' });
+      return res.status(403).json({ success: false, error: 'FORBIDDEN', detail: 'User mismatch' });
     }
     if (location === 'body') req.body.uid = req.user.uid;
     if (location === 'params') req.params[field] = req.user.uid;

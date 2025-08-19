@@ -16,8 +16,9 @@ export default function idempotency({ ttlMs = 10 * 60 * 1000 } = {}) {
 
     if (!hdr || typeof hdr !== 'string') {
       return res.status(400).json({
+        success: false,
         error: 'MISSING_IDEMPOTENCY_KEY',
-        message: 'Provide X-Idempotency-Key header.',
+        detail: 'Provide X-Idempotency-Key header.',
       });
     }
 
@@ -28,8 +29,9 @@ export default function idempotency({ ttlMs = 10 * 60 * 1000 } = {}) {
     if (existing) {
       if (existing.state === 'pending') {
         return res.status(409).json({
+          success: false,
           error: 'IDEMPOTENT_IN_PROGRESS',
-          message: 'A request with this idempotency key is already processing.',
+          detail: 'A request with this idempotency key is already processing.',
         });
       }
       if (existing.state === 'done') {
@@ -67,7 +69,7 @@ export default function idempotency({ ttlMs = 10 * 60 * 1000 } = {}) {
       const status = res.statusCode || 200;
       if (status < 500) {
         const timeout = setTimeout(() => store.delete(key), ttlMs);
-        store.set(key, { state: 'done', status, body: { ok: true }, timeout });
+        store.set(key, { state: 'done', status, body: { success: true }, timeout });
       } else {
         store.delete(key);
       }

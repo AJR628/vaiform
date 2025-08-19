@@ -5,7 +5,7 @@ import { db, bucket } from '../config/firebase.js';
 // Otherwise you can conditionally skip OpenAI checks in CI.
 import { openai } from '../config/env.js';
 
-export const root = (_req, res) => res.json({ ok: true, message: 'Vaiform backend is running 🚀' });
+export const root = (_req, res) => res.json({ success: true, message: 'Vaiform backend is running 🚀' });
 
 // A richer diagnostic endpoint.
 // In CI (NODE_ENV=test), keep it quick and avoid external calls.
@@ -94,7 +94,7 @@ export const testFirestore = async (_req, res) => {
 
 export const register = async (req, res) => {
   const { email } = req.body || {};
-  if (!email) return res.status(400).json({ error: 'Missing email.' });
+  if (!email) return res.status(400).json({ success: false, error: 'Missing email.' });
 
   try {
     const userRef = db.collection('users').doc(email);

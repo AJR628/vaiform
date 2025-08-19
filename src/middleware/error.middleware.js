@@ -25,7 +25,7 @@ export default function errorHandler(err, req, res, _next) {
   const payload = {
     success: false,
     error: err?.name || 'ERROR',
-    message: err?.message || (status === 500 ? 'Unexpected server error' : 'Request failed'),
+    detail: err?.message || (status === 500 ? 'Unexpected server error' : 'Request failed'),
     requestId,
   };
 

@@ -101,11 +101,11 @@ async function resolveUidHint({ email = null, session = null, invoice = null }) 
 export async function stripeWebhook(req, res) {
   if (!WEBHOOK_SECRET) {
     console.error("❌ Missing STRIPE_WEBHOOK_SECRET; cannot verify Stripe signatures.");
-    return res.status(500).send("Webhook misconfigured");
+    return res.status(500).json({ success: false, error: 'Webhook misconfigured' });
   }
 
   const sig = req.headers["stripe-signature"];
-  if (!sig) return res.status(400).send("Missing stripe-signature header");
+  if (!sig) return res.status(400).json({ success: false, error: 'Missing stripe-signature header' });
 
   let event;
   try {
@@ -113,14 +113,14 @@ export async function stripeWebhook(req, res) {
     event = stripe.webhooks.constructEvent(req.body, sig, WEBHOOK_SECRET);
   } catch (e) {
     console.error("⚠️ Webhook signature verification failed:", e?.message || e);
-    return res.status(400).send(`Webhook Error: ${e.message}`);
+    return res.status(400).json({ success: false, error: 'WEBHOOK_ERROR', detail: e.message });
   }
 
   // replay guard
   const nowSec = Math.floor(Date.now() / 1000);
   if (typeof event.created === "number" && nowSec - event.created > MAX_EVENT_AGE_SEC) {
     console.warn(`⏰ Dropping stale event ${event.id} (${event.type}); age ${nowSec - event.created}s`);
-    return res.status(200).json({ received: true, stale: true });
+    return res.status(200).json({ success: true, received: true, stale: true });
   }
 
   // idempotency
@@ -129,7 +129,7 @@ export async function stripeWebhook(req, res) {
     eventRef = await markEventProcessing(event);
   } catch {
     console.log(`🔁 Duplicate delivery for event ${event.id}; skipping.`);
-    return res.status(200).json({ received: true, duplicate: true });
+    return res.status(200).json({ success: true, received: true, duplicate: true });
   }
 
   try {
@@ -287,6 +287,6 @@ export async function stripeWebhook(req, res) {
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       });
     }
-    return res.status(500).send("Webhook handler error.");
+    return res.status(500).json({ success: false, error: 'WEBHOOK_HANDLER_ERROR' });
   }
 }

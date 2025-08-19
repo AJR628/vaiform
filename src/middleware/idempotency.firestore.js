@@ -4,7 +4,7 @@ export default function idempotencyFirestore({ ttlMinutes = 60 } = {}) {
   return async function middleware(req, res, next) {
     const key = req.get('X-Idempotency-Key');
     const uid = req.user?.uid || 'anon';
-    if (!key) return res.status(400).json({ error: 'MISSING_IDEMPOTENCY_KEY', message: 'Provide X-Idempotency-Key header.' });
+    if (!key) return res.status(400).json({ success: false, error: 'MISSING_IDEMPOTENCY_KEY', detail: 'Provide X-Idempotency-Key header.' });
 
     const docRef = db.collection('idempotency').doc(`${uid}:${key}`);
 
@@ -26,8 +26,8 @@ export default function idempotencyFirestore({ ttlMinutes = 60 } = {}) {
         }
       });
     } catch (e) {
-      if (e._idemp === 'PENDING') return res.status(409).json({ error: 'IDEMPOTENT_IN_PROGRESS', message: 'Request in progress.' });
-      if (e._idemp) return res.status(e._idemp.status || 200).json(e._idemp.body || { ok: true });
+      if (e._idemp === 'PENDING') return res.status(409).json({ success: false, error: 'IDEMPOTENT_IN_PROGRESS', detail: 'Request in progress.' });
+      if (e._idemp) return res.status(e._idemp.status || 200).json(e._idemp.body || { success: true });
       // else real error
       return next(e);
     }

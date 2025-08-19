@@ -9,16 +9,16 @@ router.get("/", async (_req, res) => {
     const bucket = admin.storage().bucket();
     const [exists] = await bucket.exists();
     return res.json({
-      ok: true,
+      success: true,
       message: "Vaiform backend is running 🚀",
       storageBucket: bucket.name,
       bucketExists: exists,
     });
   } catch (err) {
     return res.status(500).json({
-      ok: false,
+      success: false,
       error: "HEALTH_CHECK_FAILED",
-      message: err?.message || String(err),
+      detail: err?.message || String(err),
     });
   }
 });

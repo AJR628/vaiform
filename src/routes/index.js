@@ -9,7 +9,7 @@ import diagRouter from "./diag.routes.js"; // ✅ add this
 
 // Lightweight root
 const index = Router();
-index.get("/", (_req, res) => res.json({ ok: true, message: "Vaiform API root" }));
+index.get("/", (_req, res) => res.json({ success: true, message: "Vaiform API root" }));
 
 export default {
   index,                    // "/"
