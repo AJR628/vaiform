@@ -8,7 +8,7 @@ import { ENHANCE_COST } from "../config/pricing.js";
  * POST /enhance
  * Body: { prompt: string, strength?: number in [0,1] }
  * Requires: Authorization: Bearer <ID_TOKEN>, X-Idempotency-Key
- * Deducts ENHANCE_COST credits, returns { ok:true, enhancedPrompt }
+ * Deducts ENHANCE_COST credits, returns { success:true, enhancedPrompt }
  *
  * Note: Input is validated by EnhanceSchema in the route (validate middleware),
  * so this controller assumes valid types/ranges.
@@ -41,10 +41,12 @@ export async function enhanceController(req, res) {
 
     // ---- Respond (FireStore idempotency will cache this non-5xx) ----
     return res.status(200).json({
-      ok: true,
-      enhancedPrompt,
-      cost: ENHANCE_COST,
-    });
+  success: true,
+  data: {
+    enhancedPrompt,
+    cost: ENHANCE_COST,
+  },
+});
   } catch (err) {
     console.error("❌ [enhance] failed:", err?.code || err?.name, err?.message || err);
     return res.status(500).json({
