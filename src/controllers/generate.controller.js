@@ -426,13 +426,6 @@ export async function upscale(req, res) {
     }
 
     const { imageUrl } = req.body || {};
-    if (typeof imageUrl !== 'string' || !/^https?:\/\//i.test(imageUrl)) {
-      return res.status(400).json({
-        success: false,
-        error: 'INVALID_REQUEST',
-        detail: { issues: [{ path: 'imageUrl', message: 'Must be a valid URL starting with http(s)', code: 'invalid_string' }] },
-      });
-    }
 
     await ensureUserDocByUid(uid, email);
 
