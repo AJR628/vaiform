@@ -1,5 +1,7 @@
 import { Router } from "express";
 import requireAuth from "../middleware/auth.js";
+import { validate } from "../middleware/validate.middleware.js";
+import { balanceQuerySchema, grantBodySchema } from "../schemas/credits.schema.js";
 import { getCredits, balance, grant } from "../controllers/credits.controller.js";
 
 const router = Router();
@@ -15,7 +17,7 @@ router.get("/", requireAuth, getCredits);
  * GET  /credits/balance?email=you@example.com
  * POST /credits/grant { email, credits }
  */
-router.get("/balance", balance);
-router.post("/grant", grant);
+router.get("/balance", validate(balanceQuerySchema, 'query'), balance);
+router.post("/grant", validate(grantBodySchema), grant);
 
 export default router;

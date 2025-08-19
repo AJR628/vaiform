@@ -1,6 +1,8 @@
 // src/routes/checkout.routes.js
 import { Router } from "express";
 import { requireAuth } from "../middleware/requireAuth.js";
+import { validate } from "../middleware/validate.middleware.js";
+import { checkoutSessionSchema, subscriptionSessionSchema } from "../schemas/checkout.schema.js";
 import {
   createCheckoutSession,
   createSubscriptionSession,
@@ -10,10 +12,10 @@ import {
 const router = Router();
 
 // One-time (single charge)
-router.post("/session", requireAuth, createCheckoutSession);
+router.post("/session", requireAuth, validate(checkoutSessionSchema), createCheckoutSession);
 
 // Monthly (recurring)
-router.post("/subscription", requireAuth, createSubscriptionSession);
+router.post("/subscription", requireAuth, validate(subscriptionSessionSchema), createSubscriptionSession);
 
 // Billing Portal (manage subscription/payment methods)
 router.post("/portal", requireAuth, createBillingPortalSession);

@@ -1,5 +1,8 @@
 import { Router } from "express";
 import admin from "../config/firebase.js";
+import { validate } from "../middleware/validate.middleware.js";
+import { registerSchema } from "../schemas/health.schema.js";
+import { register } from "../controllers/health.controller.js";
 
 const router = Router();
 
@@ -34,5 +37,8 @@ router.get("/version", (_req, res) => {
     "unknown";
   res.json({ version });
 });
+
+/** Register endpoint */
+router.post("/register", validate(registerSchema), register);
 
 export default router;
