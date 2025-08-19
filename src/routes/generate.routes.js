@@ -6,12 +6,14 @@ import { validate } from "../middleware/validate.middleware.js";
 import idempotency from "../middleware/idempotency.firestore.js";
 
 import {
+  EnhanceSchema,
   GenerateSchema,
   ImageToImageSchema,
   UpscaleSchema,
 } from "../schemas/generate.schema.js";
 
 import {
+  enhance,
   generate,
   imageToImage,
   upscale,
@@ -27,11 +29,20 @@ const router = Router();
  *   POST /generate                -> text-to-image
  *   POST /generate/image-to-image -> image-to-image
  *   POST /generate/upscale        -> upscaler
+ *   POST /generate/enhance       -> prompt enhancement
  *
  * Required headers for POSTs:
  *   - Authorization: Bearer <ID_TOKEN>
  *   - X-Idempotency-Key: <unique-per-attempt>
  */
+
+/** POST /generate/enhance  (prompt enhancement) */
+router.post(
+  "/enhance",
+  requireAuth,
+  validate(EnhanceSchema),
+  enhance
+);
 
 /** POST /generate  (txt2img) */
 router.post(
