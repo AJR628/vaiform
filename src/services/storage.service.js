@@ -1,92 +1,143 @@
 // src/services/storage.service.js
-import { v4 as uuidv4 } from 'uuid';
-import { bucket } from '../config/firebase.js';
+import admin from "firebase-admin";
+import crypto from "node:crypto";
 
-// Lazy-load sharp so the app can still run if it isn't installed
+/* ---------- optional: lazy-load sharp for recompress ---------- */
 let _sharpPromise;
 async function getSharp() {
   if (!_sharpPromise) {
-    _sharpPromise = import('sharp')
+    _sharpPromise = import("sharp")
       .then((m) => m.default)
       .catch((err) => {
-        console.warn('⚠️ sharp unavailable, skipping image optimization:', err?.message || err);
-        return null; // allow app to keep running
+        console.warn("⚠️ sharp unavailable, skipping recompress:", err?.message || err);
+        return null;
       });
   }
   return _sharpPromise;
 }
 
-// Recompress/resize before saving to Firebase (default WebP; configurable)
-export async function uploadToFirebaseStorage(imageUrl, email, index, opts = {}) {
-  const {
-    maxSide = 1536,
-    quality = 85,
-    contentType = 'image/webp', // "image/webp" | "image/jpeg" | "image/png"
-    filenamePrefix = 'image',
-  } = opts;
-
-  try {
-    // Use built-in fetch (Node 18+)
-    const response = await fetch(imageUrl);
-    if (!response.ok) throw new Error(`Failed to fetch image ${index}: ${response.status}`);
-    const src = Buffer.from(await response.arrayBuffer());
-
-    // Try to optimize with sharp; if not available, save original buffer
-    const sharp = await getSharp();
-    let optimized = src;
-
-    if (sharp) {
-      let pipeline = sharp(src).resize({
-        width: maxSide,
-        height: maxSide,
-        fit: 'inside',
-        withoutEnlargement: true,
-      });
-
-      if (contentType === 'image/jpeg' || contentType === 'image/jpg') {
-        pipeline = pipeline.jpeg({ quality, mozjpeg: true });
-      } else if (contentType === 'image/png') {
-        pipeline = pipeline.png(); // PNG is lossless; quality ignored
-      } else {
-        // default to webp
-        pipeline = pipeline.webp({ quality });
-      }
-
-      optimized = await pipeline.toBuffer();
-    }
-
-    const safeEmail = String(email || 'unknown').replace(/\W/g, '_');
-    const ext =
-      contentType === 'image/jpeg' || contentType === 'image/jpg'
-        ? 'jpg'
-        : contentType === 'image/png'
-          ? 'png'
-          : 'webp';
-    const filename = `${filenamePrefix}-${Date.now()}-${uuidv4()}.${ext}`;
-    const storagePath = `userUploads/${safeEmail}/${filename}`;
-    const file = bucket.file(storagePath);
-
-    // Save; if your bucket requires it, you may need file.makePublic()
-    await file.save(optimized, {
-      metadata: { contentType },
-      public: true, // harmless if your bucket ignores it
-    });
-
-    // Public URL (works if object is public or you have appropriate rules)
-    return `https://storage.googleapis.com/${bucket.name}/${encodeURIComponent(storagePath)}`;
-  } catch (err) {
-    console.error('❌ uploadToFirebaseStorage error:', err?.message || err);
-    return null;
-  }
+/* ---------- helpers ---------- */
+function extFromContentType(ct) {
+  const c = (ct || "").toLowerCase();
+  if (c.includes("image/webp")) return { ext: "webp", ct: "image/webp" };
+  if (c.includes("image/png"))  return { ext: "png",  ct: "image/png" };
+  if (c.includes("image/jpeg")) return { ext: "jpg",  ct: "image/jpeg" };
+  return { ext: "bin", ct: c || "application/octet-stream" };
 }
 
-// Normalize Replicate outputs → array of URLs
+function publicTokenUrl(bucketName, objectPath, token) {
+  return `https://firebasestorage.googleapis.com/v0/b/${bucketName}/o/${encodeURIComponent(objectPath)}?alt=media&token=${token}`;
+}
+
+/* ---------- primary Gate C API ---------- */
+/**
+ * Fetch a remote URL and persist under artifacts/{uid}/{jobId}/image_{index}.{ext}
+ * If { recompress:true } and sharp is available, we write WebP.
+ */
+export async function saveImageFromUrl(
+  uid,
+  jobId,
+  srcUrl,
+  { index = 0, recompress = false, maxSide = 1536, webpQuality = 85 } = {}
+) {
+  if (!uid) throw new Error("SAVE_IMAGE_MISSING_UID");
+  if (!jobId) throw new Error("SAVE_IMAGE_MISSING_JOB");
+  if (!srcUrl) throw new Error("SAVE_IMAGE_MISSING_SRC");
+
+  const bucket = admin.storage().bucket();
+
+  // 15s timeout on fetch
+  const ac = new AbortController();
+  const to = setTimeout(() => ac.abort(), 15000);
+  let res;
+  try {
+    res = await fetch(srcUrl, { signal: ac.signal });
+  } finally {
+    clearTimeout(to);
+  }
+  if (!res.ok) throw new Error(`FETCH_FAIL_${res.status}`);
+
+  const srcBuf = Buffer.from(await res.arrayBuffer());
+  let outBuf = srcBuf;
+  let { ext, ct } = extFromContentType(res.headers.get("content-type"));
+
+  if (recompress) {
+    const sharp = await getSharp();
+    if (sharp) {
+      outBuf = await sharp(srcBuf)
+        .resize({ width: maxSide, height: maxSide, fit: "inside", withoutEnlargement: true })
+        .webp({ quality: webpQuality })
+        .toBuffer();
+      ext = "webp";
+      ct  = "image/webp";
+    }
+  }
+
+  const objectPath = `artifacts/${uid}/${jobId}/image_${index}.${ext}`;
+  const file = bucket.file(objectPath);
+  const token = crypto.randomUUID();
+
+  await file.save(outBuf, {
+    contentType: ct,
+    metadata: {
+      cacheControl: "public,max-age=31536000,immutable",
+      metadata: { firebaseStorageDownloadTokens: token },
+    },
+  });
+
+  return { objectPath, publicUrl: publicTokenUrl(bucket.name, objectPath, token), contentType: ct };
+}
+
+/**
+ * Save a raw buffer as artifacts/{uid}/{jobId}/image_{index}.webp (or provided type)
+ */
+export async function saveImageBuffer(uid, jobId, buffer, { index = 0, contentType = "image/webp" } = {}) {
+  if (!uid) throw new Error("SAVE_IMAGE_MISSING_UID");
+  if (!jobId) throw new Error("SAVE_IMAGE_MISSING_JOB");
+  if (!buffer) throw new Error("SAVE_IMAGE_MISSING_BUFFER");
+
+  const bucket = admin.storage().bucket();
+  const { ext, ct } = extFromContentType(contentType);
+  const objectPath = `artifacts/${uid}/${jobId}/image_${index}.${ext}`;
+  const file = bucket.file(objectPath);
+  const token = crypto.randomUUID();
+
+  await file.save(buffer, {
+    contentType: ct,
+    metadata: {
+      cacheControl: "public,max-age=31536000,immutable",
+      metadata: { firebaseStorageDownloadTokens: token },
+    },
+  });
+
+  return { objectPath, publicUrl: publicTokenUrl(bucket.name, objectPath, token), contentType: ct };
+}
+
+/* ---------- legacy helper kept for compat (DEPRECATED) ---------- */
+/**
+ * DEPRECATED: original email-keyed upload helper.
+ * Kept to avoid breaking imports; now delegates to saveImageFromUrl when possible.
+ */
+export async function uploadToFirebaseStorage(imageUrl, email, index, opts = {}) {
+  // Prefer the new path when uid/jobId are provided in opts:
+  if (opts?.uid && opts?.jobId) {
+    return (await saveImageFromUrl(opts.uid, opts.jobId, imageUrl, { index, recompress: opts.recompress }))
+      ?.publicUrl ?? null;
+  }
+  console.warn("⚠️ uploadToFirebaseStorage is deprecated; provide {uid, jobId} in opts to use Gate C storage.");
+  // Fallback: still write to artifacts with synthesized jobId
+  const fakeJobId = `legacy-${Date.now()}`;
+  return (await saveImageFromUrl(opts?.uid || "unknown", fakeJobId, imageUrl, { index, recompress: opts.recompress }))
+    ?.publicUrl ?? null;
+}
+
+/* ---------- small utility you already had ---------- */
 export function extractUrlsFromReplicateOutput(output) {
   if (Array.isArray(output)) return output.filter(Boolean);
-  if (typeof output === 'string') return [output];
-  if (output && typeof output === 'object') {
-    if (typeof output.url === 'function') return [output.url()];
-    if (typeof output.url === 'string') return [output.url];
+  if (typeof output === "string") return [output];
+  if (output && typeof output === "object") {
+    if (typeof output.url === "function") return [output.url()];
+    if (typeof output.url === "string") return [output.url];
     if (Array.isArray(output.images)) return output.images.filter(Boolean);
   }
   return [];
