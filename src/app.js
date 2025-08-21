@@ -33,27 +33,22 @@ const extraOrigins = Array.from(
 // Helpful boot log
 console.info(`[cfg] FRONTEND_URL → ${FRONTEND}`);
 
-/** ---- CORS (allow Authorization for Firebase ID tokens) ---- */
-const corsOptions = {
-  origin: [
-    "http://localhost:8888",
-    "http://localhost:3000",
-    "https://vaiform.netlify.app",
-    /https:\/\/.*-vaiform\.netlify\.app$/, // Netlify previews
-    "https://vaiform.com",
-    "https://www.vaiform.com",
-    "https://vaiform.web.app",
-    ...extraOrigins,
-    // Replit dev URL (keep):
-    "https://17e0d1d1-e327-483d-b1ea-c41bea08fb59-00-1ef93t84nlhq6.janeway.replit.dev",
-  ],
-  methods: ["GET", "POST", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization", "X-Idempotency-Key", "X-Request-Id"],
-  credentials: false,
-};
-app.use(cors(corsOptions));
-app.options("*", cors(corsOptions));
-console.info(`[cfg] CORS origins (${corsOptions.origin.length}) ready.`);
+// ----- CORS (Netlify + optional preview + local) -----
+const ALLOWED_ORIGINS = [
+  "https://vaiform.com",
+  "https://vaiform-user-name.netlify.app", // replace with your actual Netlify preview URL if used
+  "http://localhost:3000"
+];
+
+app.use(cors({
+  origin(origin, cb) {
+    if (!origin) return cb(null, true); // allow curl/healthchecks
+    cb(null, ALLOWED_ORIGINS.includes(origin));
+  },
+  credentials: true
+}));
+
+app.use(express.json());
 
 /** Helper to mount routes safely and log useful errors */
 function mount(name, path, handler) {

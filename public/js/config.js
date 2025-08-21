@@ -14,7 +14,8 @@ export const firebaseConfig = {
 };
 
 // Backend constants
-export const BACKEND_URL = "https://17e0d1d1-e327-483d-b1ea-c41bea08fb59-00-1ef93t84nlhq6.janeway.replit.dev"; // no trailing slash
+export const BACKEND_URL = "https://vaiform-user-name.repl.co"; // no trailing slash
+export const FRONTEND_URL = "https://vaiform.com";
 export const UPSCALE_COST = 10;
 
 // ====== INIT ======
