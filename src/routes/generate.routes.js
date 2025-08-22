@@ -1,5 +1,5 @@
 import { Router } from "express";
-import requireAuth from "../middleware/requireAuth.js";
+import { requireAuth } from "../middleware/requireAuth.js";
 import idempotency from "../middleware/idempotency.firestore.js";
 
 import { validate } from "../middleware/validate.middleware.js";
