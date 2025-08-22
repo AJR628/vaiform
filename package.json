@@ -24,7 +24,8 @@
     "lint:fix": "eslint . --fix",
     "test": "echo \"(no tests yet)\" && exit 0",
     "prepare": "husky install",
-    "check:responses": "node scripts/check-responses.js"
+    "check:responses": "node scripts/check-responses.js",
+    "smoke": "node scripts/smoke.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.33.0",
