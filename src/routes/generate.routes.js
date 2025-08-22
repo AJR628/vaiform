@@ -1,74 +1,55 @@
 import { Router } from "express";
-import requireAuth from "../middleware/auth.js";
-import { validate } from "../middleware/validate.middleware.js";
-
-// 🔒 Firestore-backed idempotency (prod-safe)
+import requireAuth from "../middleware/requireAuth.js";
 import idempotency from "../middleware/idempotency.firestore.js";
 
+import { validate } from "../middleware/validate.middleware.js";
 import {
-  EnhanceSchema,
   GenerateSchema,
-  ImageToImageSchema,
+  Img2ImgSchema,
   UpscaleSchema,
 } from "../schemas/generate.schema.js";
 
 import {
-  enhance,
   generate,
   imageToImage,
   upscale,
 } from "../controllers/generate.controller.js";
 
-const router = Router();
+const r = Router();
 
 /**
- * Mounted at /generate in app.js:
- *   app.use("/generate", generateRoutes)
- *
- * Endpoints:
- *   POST /generate                -> text-to-image
- *   POST /generate/image-to-image -> image-to-image
- *   POST /generate/upscale        -> upscaler
- *   POST /generate/enhance       -> prompt enhancement
- *
- * Required headers for POSTs:
- *   - Authorization: Bearer <ID_TOKEN>
- *   - X-Idempotency-Key: <unique-per-attempt>
+ * ORDER MATTERS:
+ * 1) validate (fail fast; no idempotency record)
+ * 2) requireAuth (so idempotency can use req.user.uid)
+ * 3) idempotency (Firestore-backed)
+ * 4) controller
  */
 
-/** POST /generate/enhance  (prompt enhancement) */
-router.post(
-  "/enhance",
-  requireAuth,
-  validate(EnhanceSchema),
-  enhance
-);
-
-/** POST /generate  (txt2img) */
-router.post(
+// text-to-image
+r.post(
   "/",
+  validate(GenerateSchema),
   requireAuth,
-  validate(GenerateSchema),      // ✅ validate first (no idempotency write on 400s)
   idempotency({ ttlMinutes: 60 }),
   generate
 );
 
-/** POST /generate/image-to-image  (img2img) */
-router.post(
-  "/image-to-image",
+// image-to-image
+r.post(
+  "/img2img",
+  validate(Img2ImgSchema),
   requireAuth,
-  validate(ImageToImageSchema),  // ✅ validate first
   idempotency({ ttlMinutes: 60 }),
   imageToImage
 );
 
-/** POST /generate/upscale  */
-router.post(
+// upscale
+r.post(
   "/upscale",
+  validate(UpscaleSchema),
   requireAuth,
-  validate(UpscaleSchema),       // ✅ validate first
   idempotency({ ttlMinutes: 60 }),
   upscale
 );
 
-export default router;
+export default r;

@@ -59,7 +59,7 @@ export async function enhance(req, res) {
 
     const enhanced = result.choices?.[0]?.message?.content?.trim?.() ?? '';
     if (!enhanced) throw new Error('Empty enhancement from OpenAI');
-    res.json({ success: true, enhanced });
+    res.json({ success: true, data: { enhanced } });
   } catch (err) {
     console.error('❌ Enhance error:', err?.message || err);
     res.status(500).json({ success: false, error: 'Enhancement failed.' });
@@ -78,8 +78,14 @@ export async function enhance(req, res) {
 export async function generate(req, res) {
   try {
     const uid = req.user?.uid;
+    if (!uid) {
+      return res.status(401).json({
+        success: false,
+        error: "UNAUTHENTICATED",
+        message: "Login required.",
+      });
+    }
     const email = req.user?.email || null;
-    if (!uid) return res.status(401).json({ success: false, error: 'UNAUTHENTICATED' });
 
     let {
       prompt,
@@ -215,7 +221,9 @@ export async function generate(req, res) {
       });
     }
 
-    await db.collection('users').doc(uid).collection('generations').doc().set({
+    const jobId = db.collection('users').doc(uid).collection('generations').doc().id;
+    
+    await db.collection('users').doc(uid).collection('generations').doc(jobId).set({
       prompt,
       urls: outputUrls,
       style,
@@ -226,7 +234,10 @@ export async function generate(req, res) {
       count: outputUrls.length,
     });
 
-    return res.json({ success: true, urls: outputUrls });
+    return res.json({
+      success: true,
+      data: { images: outputUrls, jobId, cost },
+    });
   } catch (err) {
     console.error('🔥 /generate error:', err);
     return res.status(500).json({ success: false, error: 'Something went wrong during image generation.' });
@@ -243,8 +254,14 @@ export async function generate(req, res) {
 export async function imageToImage(req, res) {
   try {
     const uid = req.user?.uid;
+    if (!uid) {
+      return res.status(401).json({
+        success: false,
+        error: "UNAUTHENTICATED",
+        message: "Login required.",
+      });
+    }
     const email = req.user?.email || null;
-    if (!uid) return res.status(401).json({ success: false, error: 'UNAUTHENTICATED' });
 
     let {
       prompt,
@@ -389,7 +406,9 @@ export async function imageToImage(req, res) {
       return res.status(502).json({ success: false, error: 'Image-to-image generation failed. Credits refunded.' });
     }
 
-    await db.collection('users').doc(uid).collection('generations').doc().set({
+    const jobId = db.collection('users').doc(uid).collection('generations').doc().id;
+    
+    await db.collection('users').doc(uid).collection('generations').doc(jobId).set({
       prompt,
       style,
       modelId,
@@ -400,7 +419,10 @@ export async function imageToImage(req, res) {
       count: outputUrls.length,
     });
 
-    return res.json({ success: true, urls: outputUrls });
+    return res.json({
+      success: true,
+      data: { images: outputUrls, jobId, cost },
+    });
   } catch (err) {
     console.error('❌ /image-to-image error:', err);
     return res.status(500).json({ success: false, error: 'Image-to-image failed.' });
@@ -414,16 +436,17 @@ export async function imageToImage(req, res) {
  * =========================== */
 export async function upscale(req, res) {
   const reqId = (req.headers['x-request-id'] || '').toString();
-  const idKey = (req.headers['x-idempotency-key'] || '').toString();
 
   try {
     const uid = req.user?.uid;
-    const email = req.user?.email || null;
-    if (!uid) return res.status(401).json({ success: false, error: 'UNAUTHENTICATED' });
-
-    if (!idKey) {
-      return res.status(400).json({ success: false, error: 'MISSING_IDEMPOTENCY_KEY', detail: 'Provide X-Idempotency-Key header.' });
+    if (!uid) {
+      return res.status(401).json({
+        success: false,
+        error: "UNAUTHENTICATED",
+        message: "Login required.",
+      });
     }
+    const email = req.user?.email || null;
 
     const { imageUrl } = req.body || {};
 
@@ -448,8 +471,7 @@ export async function upscale(req, res) {
     if (imgSnap.exists && imgSnap.data()?.upscaledUrl) {
       return res.json({
         success: true,
-        upscaledUrl: imgSnap.data().upscaledUrl,
-        alreadyUpscaled: true,
+        data: { upscaledUrl: imgSnap.data().upscaledUrl, alreadyUpscaled: true },
       });
     }
 
@@ -466,7 +488,7 @@ export async function upscale(req, res) {
       predictionUrl = created?.predictionUrl;
       if (!predictionUrl) throw new Error('No predictionUrl returned from realesrgan.invoke');
     } catch (e) {
-      console.error('[upscale] invoke failed', { reqId, idKey, msg: e?.message || e });
+      console.error('[upscale] invoke failed', { reqId, msg: e?.message || e });
       await refundCredits(uid, UPSCALE_COST);
       return res.status(502).json({ success: false, error: 'Upscale create failed.', detail: e?.message });
     }
@@ -479,7 +501,7 @@ export async function upscale(req, res) {
         { timeoutMs: 25000, retries: 2 }
       );
     } catch (e) {
-      console.error('[upscale] pollUntilDone failed', { reqId, idKey, predictionUrl, msg: e?.message || e });
+      console.error('[upscale] pollUntilDone failed', { reqId, predictionUrl, msg: e?.message || e });
       await refundCredits(uid, UPSCALE_COST);
       return res.status(502).json({ success: false, error: 'Upscale timed out or failed while polling.' });
     }
@@ -520,7 +542,7 @@ export async function upscale(req, res) {
     if (!urls.length) urls = fallbackExtract(finalOutput);
 
     if (!urls.length) {
-      console.error('[upscale] no URLs extracted', { reqId, idKey, finalShape: typeof finalOutput });
+      console.error('[upscale] no URLs extracted', { reqId, finalShape: typeof finalOutput });
       await refundCredits(uid, UPSCALE_COST);
       return res.status(502).json({
         success: false,
@@ -538,7 +560,7 @@ export async function upscale(req, res) {
         filenamePrefix: 'upscaled',
       });
     } catch (e) {
-      console.error('[upscale] upload failed', { reqId, idKey, msg: e?.message || e });
+      console.error('[upscale] upload failed', { reqId, msg: e?.message || e });
     }
 
     if (!uploaded) {
@@ -556,7 +578,10 @@ export async function upscale(req, res) {
       { merge: true }
     );
 
-    return res.json({ success: true, upscaledUrl: uploaded, alreadyUpscaled: false });
+    return res.json({
+      success: true,
+      data: { upscaledUrl: uploaded, alreadyUpscaled: false },
+    });
   } catch (err) {
     console.error('🔥 /upscale error:', err);
     return res.status(500).json({ success: false, error: 'Upscale failed.' });
