@@ -68,7 +68,7 @@ app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
 /** ---- Stripe webhook (raw body FIRST) ---- */
 if (routes?.webhook) {
-  app.use("/webhook", bodyParser.raw({ type: "application/json" }), (req, res, next) =>
+  app.post("/webhook", bodyParser.raw({ type: "application/json" }), (req, res, next) =>
     routes.webhook(req, res, next)
   );
   console.log("✅ Mounted webhook at /webhook (Stripe raw body parser active)");
