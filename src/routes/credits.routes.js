@@ -1,5 +1,5 @@
 import { Router } from "express";
-import requireAuth from "../middleware/auth.js";
+import requireAuth from "../middleware/requireAuth.js";
 import { validate } from "../middleware/validate.middleware.js";
 import { balanceQuerySchema, grantBodySchema } from "../schemas/credits.schema.js";
 import { getCredits, balance, grant } from "../controllers/credits.controller.js";
