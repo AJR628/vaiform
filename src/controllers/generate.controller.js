@@ -6,6 +6,7 @@ import {
   ensureUserDocByUid,
   debitCreditsTx,
   refundCredits,
+  ensureUserDoc,
 } from '../services/credit.service.js';
 import * as storage from '../services/storage.service.js';
 import * as jobs from '../services/job.service.js';
@@ -118,9 +119,13 @@ export async function generate(req, res) {
     const maxImages = entry?.maxImages ?? 4;
     const n = Math.max(1, Math.min(maxImages, Math.floor(requested)));
 
-    // 🔒 Ensure user doc & atomically debit credits
-    await ensureUserDocByUid(uid, email);
-    const cost = computeCost(n);
+    const { count = 1 } = req.body;
+    const cost = Math.max(1, Math.floor(count)) * 5; // use your existing pricing formula
+
+    // Ensure UID doc exists and migrate if needed
+    await ensureUserDoc(uid, email);
+
+    // Debit credits atomically
     try {
       await debitCreditsTx(uid, cost);
     } catch (e) {

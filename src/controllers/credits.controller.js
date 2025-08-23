@@ -1,30 +1,23 @@
 import admin from "firebase-admin";
 import { ensureUserDoc } from "../services/credit.service.js";
 
-/**
- * GET /credits
- * Authenticated: requires Firebase ID token via requireAuth
- * Returns { email, credits }
- */
 export async function getCredits(req, res) {
   try {
     const { uid, email } = req.user || {};
-    if (!email) {
-      return res.status(401).json({ success: false, error: "UNAUTHENTICATED", detail: "Missing user email" });
-    }
+    const { ref, data } = await ensureUserDoc(uid || email, email);
 
-    const { ref, data } = await ensureUserDoc(email, uid);
-    let docData = data;
-    if (!docData) {
-      const snap = await ref.get();
-      docData = snap.exists ? snap.data() : {};
-    }
-
-    const credits = Number.isFinite(Number(docData?.credits)) ? Number(docData.credits) : 0;
-    return res.json({ email, credits });
+    return res.json({
+      success: true,
+      uid: data?.uid || uid,
+      email: data?.email || email,
+      credits: data?.credits ?? 0,
+    });
   } catch (err) {
-    console.error("❌ getCredits error:", err);
-    return res.status(500).json({ success: false, error: "INTERNAL", detail: "Failed to fetch credits" });
+    return res.status(500).json({
+      success: false,
+      code: "CREDITS_ERROR",
+      message: err.message,
+    });
   }
 }
 
