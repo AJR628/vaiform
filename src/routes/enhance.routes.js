@@ -12,8 +12,6 @@ const enhance =
   Object.values(EnhanceController).find((v) => typeof v === "function");
 
 if (!enhance) {
-  // Helpful debug if this ever happens again:
-  // eslint-disable-next-line no-console
   console.error("EnhanceController exports:", Object.keys(EnhanceController));
   throw new Error(
     "enhance.controller.js must export a handler (named or default)."
