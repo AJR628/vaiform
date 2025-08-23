@@ -212,10 +212,10 @@ export async function generate(req, res) {
     const outputUrls = [];
     for (let i = 0; i < srcUrls.length; i++) {
       try {
-        const uploaded = await storage.uploadToFirebaseStorage(srcUrls[i], email || uid, i);
-        if (uploaded) outputUrls.push(uploaded);
+        const result = await storage.saveImageFromUrl(uid, jobId, srcUrls[i], { index: i });
+        if (result?.publicUrl) outputUrls.push(result.publicUrl);
       } catch (e) {
-        dlog('uploadToFirebaseStorage failed', { i, sourceUrl: srcUrls[i], msg: e?.message || e });
+        dlog('saveImageFromUrl failed', { i, sourceUrl: srcUrls[i], msg: e?.message || e });
       }
       await new Promise((r) => setTimeout(r, 300)); // gentle pacing
     }
@@ -401,10 +401,10 @@ export async function imageToImage(req, res) {
     const outputUrls = [];
     for (let i = 0; i < srcUrls.length; i++) {
       try {
-        const uploaded = await storage.uploadToFirebaseStorage(srcUrls[i], email || uid, i);
-        if (uploaded) outputUrls.push(uploaded);
+        const result = await storage.saveImageFromUrl(uid, jobId, srcUrls[i], { index: i });
+        if (result?.publicUrl) outputUrls.push(result.publicUrl);
       } catch (e) {
-        console.warn('uploadToFirebaseStorage failed', { i, sourceUrl: srcUrls[i], msg: e?.message || e });
+        console.warn('saveImageFromUrl failed', { i, sourceUrl: srcUrls[i], msg: e?.message || e });
       }
       await new Promise(r => setTimeout(r, 300));
     }
@@ -459,6 +459,8 @@ export async function upscale(req, res) {
     const { imageUrl } = req.body || {};
 
     await ensureUserDocByUid(uid, email);
+
+    const jobId = db.collection('users').doc(uid).collection('generations').doc().id;
 
     const UPSCALE_COST = 10;
     try {
@@ -562,11 +564,13 @@ export async function upscale(req, res) {
     // 4) Upload first result to Firebase Storage
     let uploaded;
     try {
-      uploaded = await storage.uploadToFirebaseStorage(urls[0], email || uid, 0, {
+      const result = await storage.saveImageFromUrl(uid, jobId, urls[0], { 
+        index: 0,
+        recompress: true,
         maxSide: 3072,
-        quality: 90,
-        filenamePrefix: 'upscaled',
+        webpQuality: 90
       });
+      uploaded = result?.publicUrl;
     } catch (e) {
       console.error('[upscale] upload failed', { reqId, msg: e?.message || e });
     }
