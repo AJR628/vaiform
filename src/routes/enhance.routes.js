@@ -1,19 +1,9 @@
 import { Router } from "express";
-import { requireAuth } from "../middleware/requireAuth.js";
-import { enhance } from "../controllers/enhance.controller.js";
+import requireAuth from "../middleware/requireAuth.js";
+import * as EnhanceController from "../controllers/enhance.controller.js";
+const enhance = EnhanceController.enhance ?? EnhanceController.default;
 
 const r = Router();
-
-/**
- * POST /enhance
- * Auth required; NO idempotency.
- */
 r.post("/enhance", requireAuth, enhance);
-
-/**
- * (optional alias) POST /
- * Some older frontends may POST to "/"
- */
-r.post("/", requireAuth, enhance);
-
+r.post("/", requireAuth, enhance); // legacy alias
 export default r;

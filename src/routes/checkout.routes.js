@@ -1,6 +1,6 @@
 // src/routes/checkout.routes.js
 import { Router } from "express";
-import { requireAuth } from "../middleware/requireAuth.js";
+import requireAuth from "../middleware/requireAuth.js";
 import { validate } from "../middleware/validate.middleware.js";
 import { checkoutSessionSchema, subscriptionSessionSchema } from "../schemas/checkout.schema.js";
 import {
