@@ -77,6 +77,14 @@ export async function enhance(req, res) {
  *    - header x-diag-bad-model=1      (or ?diag=badmodel or BAD_MODEL=1)
  * =========================== */
 export async function generate(req, res) {
+  console.log("→ /generate hit");
+  console.log("CT:", req.headers["content-type"]);
+  try {
+    console.log("BODY:", JSON.stringify(req.body));
+  } catch {
+    console.log("BODY: <unstringifiable>");
+  }
+  
   try {
     const uid = req.user?.uid;
     if (!uid) {
