@@ -1,9 +1,9 @@
 import { Router } from "express";
 import requireAuth from "../middleware/requireAuth.js";
-import * as EnhanceController from "../controllers/enhance.controller.js";
-const enhance = EnhanceController.enhance ?? EnhanceController.default;
+import { enhanceController } from "../controllers/enhance.controller.js";
 
-const r = Router();
-r.post("/enhance", requireAuth, enhance);
-r.post("/", requireAuth, enhance); // legacy alias
-export default r;
+const router = Router();
+
+router.post("/enhance-image", requireAuth, enhanceController);
+
+export default router;
