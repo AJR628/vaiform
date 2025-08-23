@@ -88,18 +88,21 @@ export async function generate(req, res) {
     }
     const email = req.user?.email || null;
 
-    let {
-      prompt,
-      numImages,          // preferred
-      style = 'realistic',
-      guidance,
-      steps,
-      seed,
-      scheduler,
-      refiner,
-    } = req.body;
+    const body = req.body || {};
+    const prompt =
+      (typeof body.prompt === "string" && body.prompt) ||
+      (typeof body.input?.prompt === "string" && body.input.prompt) ||
+      (typeof body.data?.prompt === "string" && body.data.prompt) ||
+      "";
+    const numImages = body.numImages ?? body.input?.numImages ?? body.data?.numImages;
+    const style = (body.style ?? body.input?.style ?? body.data?.style) ?? "realistic";
+    const guidance = body.guidance ?? body.input?.guidance ?? body.data?.guidance;
+    const steps = body.steps ?? body.input?.steps ?? body.data?.steps;
+    const seed = body.seed ?? body.input?.seed ?? body.data?.seed;
+    const scheduler = body.scheduler ?? body.input?.scheduler ?? body.data?.scheduler;
+    const refiner = body.refiner ?? body.input?.refiner ?? body.data?.refiner;
 
-    const count = Number(req.body?.count || 1);
+    const count = Number(body.count ?? body.input?.count ?? body.data?.count ?? 1);
 
     if (!prompt) {
       return res.status(400).json({ success: false, error: 'Missing prompt.' });
