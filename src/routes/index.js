@@ -5,7 +5,8 @@ import healthRouter from "./health.routes.js";
 import webhookRouter from "./webhook.routes.js";
 import enhanceRouter from "./enhance.routes.js";
 import checkoutRouter from "./checkout.routes.js";
-import diagRouter from "./diag.routes.js"; // ✅ add this
+import diagRouter from "./diag.routes.js";
+import whoamiRouter from "./whoami.routes.js";
 
 // Lightweight root
 const index = Router();
@@ -15,9 +16,10 @@ export default {
   index,                    // "/"
   health: healthRouter,     // "/health"
   credits: creditsRouter,   // "/credits"
+  whoami: whoamiRouter,     // "/whoami"
   enhance: enhanceRouter,   // "/" and "/enhance"
   generate: generateRouter, // "/generate"
   webhook: webhookRouter,   // "/webhook"
   checkout: checkoutRouter, // "/checkout"
-  diag: diagRouter,         // ✅ "/diag"
+  diag: diagRouter,         // "/diag"
 };

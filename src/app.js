@@ -37,7 +37,8 @@ console.info(`[cfg] FRONTEND_URL → ${FRONTEND}`);
 const ALLOWED_ORIGINS = [
   "https://vaiform.com",
   "https://vaiform-user-name.netlify.app", // replace with your actual Netlify preview URL if used
-  "http://localhost:3000"
+  "http://localhost:3000",
+  "http://localhost:8888" // local development
 ];
 
 app.use(cors({
@@ -80,6 +81,7 @@ app.use(express.json({ limit: "10mb" }));
 mount("index", "/", routes?.index);                 
 mount("health", "/health", routes?.health);         
 mount("credits", "/credits", routes?.credits);      
+mount("whoami", "/whoami", routes?.whoami);         
 mount("generate", "/generate", routes?.generate);   
 
 mount("enhance", "/", routes?.enhance);                 

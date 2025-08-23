@@ -15,14 +15,20 @@ const STORAGE_BUCKET =
   process.env.FB_STORAGE_BUCKET?.trim() || "vaiform.appspot.com";
 
 if (!admin.apps.length) {
-  admin.initializeApp({
-    credential,
-    storageBucket: STORAGE_BUCKET,
-  });
-  // Helpful boot log
-  console.log(
-    `🔥 Firebase Admin initialized (bucket=${STORAGE_BUCKET})`
-  );
+  try {
+    admin.initializeApp({
+      credential,
+      storageBucket: STORAGE_BUCKET,
+      projectId: "vaiform"
+    });
+    // Helpful boot log
+    console.log(
+      `🔥 Firebase Admin initialized (bucket=${STORAGE_BUCKET}, projectId=vaiform)`
+    );
+  } catch (error) {
+    console.error("🔥 Firebase Admin initialization failed:", error.message);
+    // Continue without Firebase for development/testing
+  }
 }
 
 // Expose shared handles

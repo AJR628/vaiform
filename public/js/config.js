@@ -14,7 +14,7 @@ export const firebaseConfig = {
 };
 
 // Backend constants
-export const BACKEND_URL = "https://vaiform-user-name.repl.co"; // no trailing slash
+export const BACKEND_URL = "http://localhost:3000"; // no trailing slash - update for production
 export const FRONTEND_URL = "https://vaiform.com";
 export const UPSCALE_COST = 10;
 
