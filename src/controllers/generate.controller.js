@@ -94,18 +94,16 @@ export async function generate(req, res) {
       (typeof body.input?.prompt === "string" && body.input.prompt) ||
       (typeof body.data?.prompt === "string" && body.data.prompt) ||
       "";
+    const count = Number(body.count ?? body.input?.count ?? body.data?.count ?? 1);
     const numImages = body.numImages ?? body.input?.numImages ?? body.data?.numImages;
-    const style = (body.style ?? body.input?.style ?? body.data?.style) ?? "realistic";
+    const style = body.style ?? body.input?.style ?? body.data?.style ?? "realistic";
     const guidance = body.guidance ?? body.input?.guidance ?? body.data?.guidance;
     const steps = body.steps ?? body.input?.steps ?? body.data?.steps;
     const seed = body.seed ?? body.input?.seed ?? body.data?.seed;
     const scheduler = body.scheduler ?? body.input?.scheduler ?? body.data?.scheduler;
     const refiner = body.refiner ?? body.input?.refiner ?? body.data?.refiner;
-
-    const count = Number(body.count ?? body.input?.count ?? body.data?.count ?? 1);
-
-    if (!prompt) {
-      return res.status(400).json({ success: false, error: 'Missing prompt.' });
+    if (!prompt.trim()) {
+      return res.status(400).json({ success: false, error: "Missing prompt." });
     }
 
     // Basic moderation
