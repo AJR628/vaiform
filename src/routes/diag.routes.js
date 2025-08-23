@@ -3,6 +3,13 @@ import { MODEL_REGISTRY, STYLE_PRESETS } from "../config/models.js";
 
 const router = Router();
 
+router.post("/echo", (req, res) => {
+  res.json({
+    ct: req.headers["content-type"] || null,
+    body: req.body ?? null,
+  });
+});
+
 router.get("/", (_req, res) => {
   const styles = Object.keys(STYLE_PRESETS || {});
   const models = Object.entries(MODEL_REGISTRY || {}).map(([id, m]) => ({

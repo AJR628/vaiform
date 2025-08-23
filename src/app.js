@@ -49,8 +49,6 @@ app.use(cors({
   credentials: true
 }));
 
-app.use(express.json());
-
 /** Helper to mount routes safely and log useful errors */
 function mount(name, path, handler) {
   if (typeof handler !== "function") {
@@ -64,6 +62,10 @@ function mount(name, path, handler) {
   console.log(`✅ Mounted "${name}" at ${path}`);
 }
 
+// Make sure express.json() is mounted before any routes
+app.use(express.json({ limit: "10mb" }));
+app.use(express.urlencoded({ extended: true, limit: "10mb" }));
+
 /** ---- Stripe webhook (raw body FIRST) ---- */
 if (routes?.webhook) {
   app.use("/webhook", bodyParser.raw({ type: "application/json" }), (req, res, next) =>
@@ -73,9 +75,6 @@ if (routes?.webhook) {
 } else {
   console.warn("⚠️ No 'webhook' export found in ./routes/index.js");
 }
-
-/** ---- JSON parser for the rest ---- */
-app.use(express.json({ limit: "10mb" }));
 
 // ---- Mount app routers (scoped paths) ----
 mount("index", "/", routes?.index);                 
