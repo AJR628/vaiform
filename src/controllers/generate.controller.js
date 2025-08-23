@@ -91,7 +91,6 @@ export async function generate(req, res) {
     let {
       prompt,
       numImages,          // preferred
-      count,              // legacy
       style = 'realistic',
       guidance,
       steps,
@@ -99,6 +98,8 @@ export async function generate(req, res) {
       scheduler,
       refiner,
     } = req.body;
+
+    const count = Number(req.body?.count || 1);
 
     if (!prompt) {
       return res.status(400).json({ success: false, error: 'Missing prompt.' });
@@ -119,7 +120,6 @@ export async function generate(req, res) {
     const maxImages = entry?.maxImages ?? 4;
     const n = Math.max(1, Math.min(maxImages, Math.floor(requested)));
 
-    const { count = 1 } = req.body;
     const cost = Math.max(1, Math.floor(count)) * 5; // use your existing pricing formula
 
     // Ensure UID doc exists and migrate if needed
