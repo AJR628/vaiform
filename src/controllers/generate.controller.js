@@ -1,8 +1,7 @@
 import admin from 'firebase-admin';
-import { db, bucket } from '../config/firebase.js';
+import { db } from '../config/firebase.js';
 import { openai } from '../config/env.js';
 import crypto from 'crypto';
-import sharp from "sharp";
 import {
   ensureUserDocByUid,
   debitCreditsTx,
@@ -305,66 +304,80 @@ export async function generate(req, res) {
       });
     }
 
-    // Detect a grid when user asked for >1 image but the model returned a single URL
-    async function splitGridToTiles(buffer, expectedCount = 4) {
-      const img = sharp(buffer);
-      const meta = await img.metadata();
-      const W = meta.width, H = meta.height;
-      if (!W || !H) throw new Error("grid-meta-missing");
+    // If caller asked for multiple images but we have fewer URLs,
+    // run additional single-image predictions until we reach `count`.
+    if (count > 1 && urls.length < count) {
+      console.log("[gen] need more images", { have: urls.length, want: count });
 
-      // Heuristic: if expectedCount===4 → assume 2x2; if ===2 → assume 1x2 (landscape strip)
-      let cols = 2, rows = 2;
-      if (expectedCount === 2) { cols = 2; rows = 1; }
+      async function generateOneUrl() {
+        // Use the same adapter pattern as the main generation
+        const singleInput = {
+          prompt,
+          num_outputs: 1,
+          num_images: 1,
+          guidance: toNum(guidance),
+          steps: toInt(steps),
+          seed: toInt(seed),
+          scheduler,
+          refiner,
+          ...params, // registry defaults/presets
+        };
 
-      const tileW = Math.floor(W / cols);
-      const tileH = Math.floor(H / rows);
-      const tiles = [];
-      for (let r = 0; r < rows; r++) {
-        for (let c = 0; c < cols; c++) {
-          const left = c * tileW;
-          const top = r * tileH;
-          tiles.push(await img.extract({ left, top, width: tileW, height: tileH }).png().toBuffer());
+        let singlePrediction = null;
+        if (modelAdapter?.runTextToImage) {
+          singlePrediction = await withTimeoutAndRetry(
+            () => modelAdapter.runTextToImage(singleInput),
+            { timeoutMs: forceTimeout ? 100 : 25000, retries: 2 }
+          );
+        } else {
+          let providerRef = entry.providerRef || {};
+          if (forceBadModel) providerRef = { version: 'bogus-non-existent-version' };
+
+          singlePrediction = await withTimeoutAndRetry(
+            () => providerAdapter.runTextToImage({ ...providerRef, input: singleInput }),
+            { timeoutMs: forceTimeout ? 100 : 25000, retries: 2 }
+          );
         }
+
+        // Normalize like your main path (artifacts → output → raw.output)
+        if (Array.isArray(singlePrediction?.artifacts) && singlePrediction.artifacts[0]?.url) {
+          return singlePrediction.artifacts[0].url;
+        }
+        if (typeof singlePrediction?.output === "string") return singlePrediction.output;
+        if (Array.isArray(singlePrediction?.output)) {
+          const u = singlePrediction.output.map(x => typeof x === "string" ? x : (x?.url || x?.image || x?.src)).find(Boolean);
+          if (u) return u;
+        }
+        if (singlePrediction?.raw?.output) {
+          const r = singlePrediction.raw.output;
+          if (typeof r === "string") return r;
+          if (Array.isArray(r)) {
+            const u = r.map(x => typeof x === "string" ? x : (x?.url || x?.image || x?.src)).find(Boolean);
+            if (u) return u;
+          }
+          if (typeof r === "object" && (r.url || r.image || r.src)) return r.url || r.image || r.src;
+        }
+        throw new Error("no-url-from-additional-prediction");
       }
-      return tiles.slice(0, expectedCount);
+
+      while (urls.length < count) {
+        const extraUrl = await generateOneUrl();
+        urls.push(extraUrl);
+      }
     }
 
-    async function downloadToBuffer(url) {
-      const r = await fetch(url);
-      if (!r.ok) throw new Error(`download-failed ${r.status}`);
-      return Buffer.from(await r.arrayBuffer());
-    }
+    console.log("[gen] urls", urls);
 
-    // Save a Buffer to Storage (similar to your saveImageFromUrl but buffer-based)
-    async function saveImageBuffer(uid, jobId, buffer, index = 0) {
-      const path = `artifacts/${uid}/${jobId}/image_${index}.png`;
-      const file = bucket.file(path); // use your existing initialized 'bucket'
-      await file.save(buffer, { contentType: "image/png", resumable: false, public: false, metadata: { cacheControl: "public,max-age=31536000" } });
-      const [metadata] = await file.getMetadata();
-      const token = metadata?.metadata?.firebaseStorageDownloadTokens;
-      const publicUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(path)}?alt=media${token ? `&token=${token}` : ""}`;
-      return publicUrl;
-    }
+    // Upload each image to Firebase Storage
+    const srcUrls = urls;
 
-    // Build final image buffers:
-    let finalBuffers = [];
-    if (count > 1 && urls.length === 1) {
-      console.log("[gen] grid detected → splitting into tiles");
-      const buf = await downloadToBuffer(urls[0]);
-      finalBuffers = await splitGridToTiles(buf, count);
-    } else {
-      // normal path—download each URL
-      finalBuffers = await Promise.all(urls.map(downloadToBuffer));
-    }
-
-    // Upload buffers to Storage
     const outputUrls = [];
-    for (let i = 0; i < finalBuffers.length; i++) {
+    for (let i = 0; i < srcUrls.length; i++) {
       try {
-        const publicUrl = await saveImageBuffer(uid, jobId, finalBuffers[i], i);
-        outputUrls.push(publicUrl);
+        const result = await storage.saveImageFromUrl(uid, jobId, srcUrls[i], { index: i });
+        if (result?.publicUrl) outputUrls.push(result.publicUrl);
       } catch (e) {
-        dlog('saveImageBuffer failed', { i, msg: e?.message || e });
+        dlog('saveImageFromUrl failed', { i, sourceUrl: srcUrls[i], msg: e?.message || e });
       }
       await new Promise((r) => setTimeout(r, 300)); // gentle pacing
     }
