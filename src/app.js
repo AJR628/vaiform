@@ -77,12 +77,11 @@ if (DBG) {
 // ---------- Stripe webhook: raw body ONLY here ----------
 app.post("/webhook", express.raw({ type: "application/json" }), webhookRoutes);
 
-// ---------- Slash normalizer: GET-only and skip API ----------
+// ---------- GET-only trailing-slash normalizer (exclude API paths) ----------
 app.use((req, res, next) => {
-  // Never rewrite non-GET (preserve POST body!)
   if (req.method !== "GET") return next();
   const p = req.path || "";
-  // Skip API-ish routes and webhook entirely
+  // Skip API & webhook paths
   if (
     p.startsWith("/generate") ||
     p.startsWith("/credits") ||
@@ -92,32 +91,30 @@ app.use((req, res, next) => {
     p.startsWith("/webhook") ||
     p.startsWith("/api/")
   ) return next();
-  // Optional: remove trailing slash for content routes only
+  // Optional: strip trailing slash for content routes only
   if (p.length > 1 && p.endsWith("/")) {
-    const q = req.url.slice(p.length); // keep query
+    const q = req.url.slice(p.length);
     return res.redirect(301, p.slice(0, -1) + q);
   }
   return next();
 });
 
-// Guard: return 405 for non-POST on generate endpoints (prevents static fallback)
-app.all(["/generate", "/generate/"], (req, res, next) => {
-  if (req.method !== "POST") {
-    return res.status(405).json({ success: false, code: "METHOD_NOT_ALLOWED", message: "Use POST for /generate" });
-  }
-  next();
-});
-
-// ---------- API ROUTES (BEFORE static!) ----------
+// ---------- API ROUTES BEFORE STATIC ----------
 app.use("/", healthRoutes);
 app.use("/", whoamiRoutes);
 app.use("/", creditsRoutes);
-if (process.env.NODE_ENV !== "production") {
-  app.use("/", diagRoutes);
-}
+app.use("/", diagRoutes);
 app.use("/", generateRoutes);
-// Optional /api alias to avoid any future collisions with static
+// Optional alias to future-proof collisions
 app.use("/api", generateRoutes);
+
+// Explicit guards so GET/HEAD can't be hijacked by static or slash middleware
+app.get(["/generate", "/generate/"], (req, res) => {
+  return res.status(405).json({ success: false, code: "METHOD_NOT_ALLOWED", message: "Use POST for /generate" });
+});
+app.head(["/generate", "/generate/"], (req, res) => {
+  res.status(405).end();
+});
 
 // Mount other routes that were previously handled by the mount function
 if (routes?.index) {
