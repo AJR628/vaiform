@@ -11,6 +11,14 @@ import envCheck from "./middleware/envCheck.js";
 import reqId from "./middleware/reqId.js";
 import errorHandler from "./middleware/error.middleware.js";
 
+// Direct route imports for explicit mounting
+import healthRoutes from "./routes/health.routes.js";
+import whoamiRoutes from "./routes/whoami.routes.js";
+import creditsRoutes from "./routes/credits.routes.js";
+import diagRoutes from "./routes/diag.routes.js";
+import generateRoutes from "./routes/generate.routes.js";
+import webhookRoutes from "./routes/webhook.routes.js";
+
 dotenv.config();
 envCheck(); // presence-only checks; CI bypasses via NODE_ENV=test
 
@@ -51,34 +59,11 @@ app.use(cors({
   credentials: true
 }));
 
-/** Helper to mount routes safely and log useful errors */
-function mount(name, path, handler) {
-  if (typeof handler !== "function") {
-    console.error(
-      `❌ Mount failed: "${name}" at "${path}" is not a middleware function/Router (got: ${typeof handler}). ` +
-        `Check ./routes/index.js export for "${name}".`
-    );
-    return;
-  }
-  app.use(path, handler);
-  console.log(`✅ Mounted "${name}" at ${path}`);
-}
-
-// 🔎 Diag before parser
-if (DBG) {
-  app.use((req, _res, next) => {
-    if (req.path.startsWith("/diag") || req.path.startsWith("/generate")) {
-      console.log("[pre-json] CT=", req.headers["content-type"]);
-    }
-    next();
-  });
-}
-
-// ✅ Parsers FIRST
+// ---------- Parsers FIRST ----------
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
-// 🔎 Diag after parser
+// 🔎 Diag after parser (keep existing debug middleware)
 if (DBG) {
   app.use((req, _res, next) => {
     if (req.path.startsWith("/diag") || req.path.startsWith("/generate")) {
@@ -89,32 +74,68 @@ if (DBG) {
   });
 }
 
-/** ---- Stripe webhook (raw body FIRST) ---- */
-if (routes?.webhook) {
-  app.post("/webhook", express.raw({ type: "application/json" }), (req, res, next) =>
-    routes.webhook(req, res, next)
-  );
-  console.log("✅ Mounted webhook at /webhook (Stripe raw body parser active)");
-} else {
-  console.warn("⚠️ No 'webhook' export found in ./routes/index.js");
-}
+// ---------- Stripe webhook: raw body ONLY here ----------
+app.post("/webhook", express.raw({ type: "application/json" }), webhookRoutes);
 
-// ---- Mount app routers (scoped paths) ----
-mount("index", "/", routes?.index);                 
-mount("health", "/health", routes?.health);         
-mount("credits", "/credits", routes?.credits);      
-mount("whoami", "/whoami", routes?.whoami);         
-mount("generate", "/generate", routes?.generate);   
+// ---------- Slash normalizer: GET-only and skip API ----------
+app.use((req, res, next) => {
+  // Never rewrite non-GET (preserve POST body!)
+  if (req.method !== "GET") return next();
+  const p = req.path || "";
+  // Skip API-ish routes and webhook entirely
+  if (
+    p.startsWith("/generate") ||
+    p.startsWith("/credits") ||
+    p.startsWith("/whoami") ||
+    p.startsWith("/diag") ||
+    p.startsWith("/health") ||
+    p.startsWith("/webhook") ||
+    p.startsWith("/api/")
+  ) return next();
+  // Optional: remove trailing slash for content routes only
+  if (p.length > 1 && p.endsWith("/")) {
+    const q = req.url.slice(p.length); // keep query
+    return res.redirect(301, p.slice(0, -1) + q);
+  }
+  return next();
+});
 
-mount("enhance", "/", routes?.enhance);                 
-mount("enhance (alias)", "/enhance", routes?.enhance);  
+// Guard: return 405 for non-POST on generate endpoints (prevents static fallback)
+app.all(["/generate", "/generate/"], (req, res, next) => {
+  if (req.method !== "POST") {
+    return res.status(405).json({ success: false, code: "METHOD_NOT_ALLOWED", message: "Use POST for /generate" });
+  }
+  next();
+});
 
-mount("checkout", "/checkout", routes?.checkout);   
-
-// ✅ NEW: diagnostics
+// ---------- API ROUTES (BEFORE static!) ----------
+app.use("/", healthRoutes);
+app.use("/", whoamiRoutes);
+app.use("/", creditsRoutes);
 if (process.env.NODE_ENV !== "production") {
-  mount("diag", "/diag", routes?.diag);
+  app.use("/", diagRoutes);
 }
+app.use("/", generateRoutes);
+// Optional /api alias to avoid any future collisions with static
+app.use("/api", generateRoutes);
+
+// Mount other routes that were previously handled by the mount function
+if (routes?.index) {
+  app.use("/", routes.index);
+  console.log("✅ Mounted index at /");
+}
+if (routes?.enhance) {
+  app.use("/", routes.enhance);
+  app.use("/enhance", routes.enhance);
+  console.log("✅ Mounted enhance at / and /enhance");
+}
+if (routes?.checkout) {
+  app.use("/checkout", routes.checkout);
+  console.log("✅ Mounted checkout at /checkout");
+}
+
+// ---------- STATIC LAST, w/ redirect disabled ----------
+app.use(express.static("public", { redirect: false }));
 
 /** ---- Centralized error handler (last) ---- */
 app.use(errorHandler);
