@@ -4,8 +4,8 @@ import { signInWithPopup, onAuthStateChanged, signOut } from "https://www.gstati
 import { doc, getDoc, setDoc, updateDoc, serverTimestamp, increment } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 /* ========================= BASE URL ========================= */
-// Normalize backend URL (no trailing slash)
-const BASE_URL = (window.BACKEND_URL || BACKEND_URL || "").replace(/\/+$/, "");
+// Always hit the API alias to avoid proxy redirects
+const API_ROOT = (window.BACKEND_URL || BACKEND_URL || "").replace(/\/+$/, '') + '/api';
 
 /* ========================= DEV HELPERS ========================= */
 // Wait until Firebase auth knows our user (once)
@@ -113,7 +113,7 @@ async function getIdToken(forceRefresh = false) {
  */
 async function apiFetch(path, { method = "GET", headers = {}, body } = {}) {
   const token = await getIdToken();
-  const url = `${BASE_URL}${path}`;
+  const url = `${API_ROOT}${path}`;
   const isPost = (method || "GET").toUpperCase() === "POST";
   const needsIdemp = isPost && /^\/(generate|enhance)(\/|$)/.test(path);
   const idemp = needsIdemp ? `gen-${Date.now()}-${crypto.getRandomValues(new Uint32Array(1))[0]}` : undefined;

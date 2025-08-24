@@ -77,44 +77,39 @@ if (DBG) {
 // ---------- Stripe webhook: raw body ONLY here ----------
 app.post("/webhook", express.raw({ type: "application/json" }), webhookRoutes);
 
-// ---------- GET-only trailing-slash normalizer (exclude API paths) ----------
+// GET-only trailing-slash normalizer (skip API paths)
 app.use((req, res, next) => {
   if (req.method !== "GET") return next();
   const p = req.path || "";
-  // Skip API & webhook paths
   if (
     p.startsWith("/generate") ||
-    p.startsWith("/credits") ||
-    p.startsWith("/whoami") ||
-    p.startsWith("/diag") ||
-    p.startsWith("/health") ||
-    p.startsWith("/webhook") ||
+    p.startsWith("/credits")  ||
+    p.startsWith("/whoami")   ||
+    p.startsWith("/diag")     ||
+    p.startsWith("/health")   ||
+    p.startsWith("/webhook")  ||
     p.startsWith("/api/")
   ) return next();
-  // Optional: strip trailing slash for content routes only
   if (p.length > 1 && p.endsWith("/")) {
     const q = req.url.slice(p.length);
     return res.redirect(301, p.slice(0, -1) + q);
   }
-  return next();
+  next();
 });
 
 // ---------- API ROUTES BEFORE STATIC ----------
 app.use("/", healthRoutes);
 app.use("/", whoamiRoutes);
 app.use("/", creditsRoutes);
-app.use("/", diagRoutes);
+if (process.env.NODE_ENV !== "production") app.use("/diag", diagRoutes);
 app.use("/", generateRoutes);
-// Optional alias to future-proof collisions
-app.use("/api", generateRoutes);
+app.use("/api", generateRoutes); // alias for frontend to avoid proxy quirks
 
-// Explicit guards so GET/HEAD can't be hijacked by static or slash middleware
-app.get(["/generate", "/generate/"], (req, res) => {
-  return res.status(405).json({ success: false, code: "METHOD_NOT_ALLOWED", message: "Use POST for /generate" });
-});
-app.head(["/generate", "/generate/"], (req, res) => {
-  res.status(405).end();
-});
+// Guard: prevent GET/HEAD on /generate from being hijacked by static/proxy
+app.get(["/generate", "/generate/"], (req, res) =>
+  res.status(405).json({ success:false, code:"METHOD_NOT_ALLOWED", message:"Use POST for /generate" })
+);
+app.head(["/generate", "/generate/"], (req, res) => res.status(405).end());
 
 // Mount other routes that were previously handled by the mount function
 if (routes?.index) {
@@ -131,8 +126,20 @@ if (routes?.checkout) {
   console.log("✅ Mounted checkout at /checkout");
 }
 
-// ---------- STATIC LAST, w/ redirect disabled ----------
+// ---------- STATIC LAST (disable directory redirects like /dir -> /dir/) ----------
 app.use(express.static("public", { redirect: false }));
+
+// Optional: route table log to verify mounts when VAIFORM_DEBUG=1
+if (DBG) {
+  const list = [];
+  app._router.stack.forEach((m) => {
+    if (m.route && m.route.path) {
+      const methods = Object.keys(m.route.methods).join(",").toUpperCase();
+      list.push(`${methods.padEnd(6)} ${m.route.path}`);
+    }
+  });
+  console.log("🛣️  Routes:\n" + list.sort().join("\n"));
+}
 
 /** ---- Centralized error handler (last) ---- */
 app.use(errorHandler);
