@@ -4,7 +4,7 @@ import * as EnhanceController from "../controllers/enhance.controller.js";
 
 // Try named -> default -> a function with "enhance" in its name -> first function export
 const enhance =
-  EnhanceController.enhance ??
+  EnhanceController.enhanceController ??
   EnhanceController.default ??
   Object.entries(EnhanceController).find(
     ([k, v]) => typeof v === "function" && /enhance/i.test(k)
