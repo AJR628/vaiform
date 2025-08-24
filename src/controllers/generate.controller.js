@@ -1,6 +1,7 @@
 import admin from 'firebase-admin';
 import { db } from '../config/firebase.js';
 import { openai } from '../config/env.js';
+import crypto from 'crypto';
 import {
   computeCost,
   ensureUserDocByUid,
@@ -85,6 +86,28 @@ export async function generate(req, res) {
     console.log("BODY: <unstringifiable>");
   }
   
+  // --- DIAG START ---
+  const startedAt = Date.now();
+
+  // Token presence (no secrets leaked)
+  const tokenPrefix = (process.env.REPLICATE_API_TOKEN || "").slice(0, 6);
+  console.log("[gen] token?", tokenPrefix ? `${tokenPrefix}…` : "(missing)");
+
+  // Ensure jobId is defined BEFORE any saveImageFromUrl uses it
+  // (If you already define jobId later, MOVE it up here and remove the later duplicate)
+  const jobId = (crypto.randomUUID && crypto.randomUUID()) || crypto.randomBytes(16).toString("hex");
+
+  // Unpack inputs safely
+  const body = req.body || {};
+  const prompt = typeof body.prompt === "string" ? body.prompt.trim() : "";
+  const count = Number.isFinite(body.count) ? Math.max(1, Math.min(4, body.count)) : 1;
+  const mode = body.mode || "txt2img";
+  const options = body.options || {};
+  const style = body.style || null;
+
+  console.log("[gen] inputs", { hasPrompt: !!prompt, count, mode, style });
+  // --- DIAG END ---
+  
   try {
     const uid = req.user?.uid;
     if (!uid) {
@@ -161,6 +184,7 @@ export async function generate(req, res) {
     const input = {
       prompt,
       num_outputs: n,
+      num_images: count, // many models use num_images (keeping n as well if you had it)
       guidance: toNum(guidance),
       steps: toInt(steps),
       seed: toInt(seed),
@@ -180,7 +204,22 @@ export async function generate(req, res) {
       req.query?.diag === 'badmodel' ||
       process.env.BAD_MODEL === '1';
 
+    // --- POLL + RAW LOG START ---
+    async function waitForPrediction(replicateClient, idOrUrl, timeoutMs = 120000) {
+      const t0 = Date.now();
+      while (true) {
+        const pred = await replicateClient.predictions.get(idOrUrl);
+        if (pred?.status === "succeeded") return pred;
+        if (pred?.status === "failed" || pred?.status === "canceled") {
+          throw new Error(`prediction-${pred?.status}: ${pred?.error || ""}`);
+        }
+        if (Date.now() - t0 > timeoutMs) throw new Error("prediction-timeout");
+        await new Promise(r => setTimeout(r, 1500));
+      }
+    }
+
     let artifacts = [];
+    let prediction = null;
     try {
       if (modelAdapter?.runTextToImage) {
         const result = await withTimeoutAndRetry(
@@ -188,6 +227,7 @@ export async function generate(req, res) {
           { timeoutMs: forceTimeout ? 100 : 25000, retries: 2 }
         );
         artifacts = result?.artifacts || [];
+        prediction = result;
       } else {
         let providerRef = entry.providerRef || {}; // e.g. { model, version }
         if (forceBadModel) providerRef = { version: 'bogus-non-existent-version' };
@@ -197,6 +237,14 @@ export async function generate(req, res) {
           { timeoutMs: forceTimeout ? 100 : 25000, retries: 2 }
         );
         artifacts = result?.artifacts || [];
+        prediction = result;
+      }
+
+      // 🔎 LOG THE ENTIRE RAW PREDICTION (exactly this)
+      try {
+        console.log("[gen] raw prediction", JSON.stringify(prediction, null, 2));
+      } catch {
+        console.log("[gen] raw prediction <unstringifiable>");
       }
     } catch (e) {
       console.error('adapter error (txt2img):', e?.message || e);
@@ -208,12 +256,34 @@ export async function generate(req, res) {
       });
     }
 
-    // Upload each image to Firebase Storage
-    const srcUrls = (artifacts || [])
-      .filter(a => a?.type === 'image' && typeof a.url === 'string')
-      .map(a => a.url);
+    // --- NORMALIZE OUTPUT START ---
+    let urls = [];
+    const out = prediction?.output;
 
-    dlog('adapter:artifacts', { count: srcUrls.length });
+    if (typeof out === "string") {
+      urls = [out];
+    } else if (Array.isArray(out)) {
+      urls = out
+        .map(x => (typeof x === "string" ? x : (x?.url || x?.image || x?.src)))
+        .filter(Boolean);
+    } else if (out && typeof out === "object") {
+      // Some models return an object with a single url/src/image field.
+      urls = [out.url || out.image || out.src].filter(Boolean);
+    }
+
+    console.log("[gen] urls", urls);
+
+    if (!urls.length) {
+      // Keep your existing refund path; just return the same error shape
+      await refundCredits(uid, cost);
+      return res.status(502).json({
+        success: false,
+        error: "Image generation failed (no output URLs). Credits refunded.",
+      });
+    }
+
+    // Upload each image to Firebase Storage
+    const srcUrls = urls;
 
     const outputUrls = [];
     for (let i = 0; i < srcUrls.length; i++) {
@@ -226,17 +296,8 @@ export async function generate(req, res) {
       await new Promise((r) => setTimeout(r, 300)); // gentle pacing
     }
 
-    if (outputUrls.length === 0) {
-      await refundCredits(uid, cost);
-      return res.status(502).json({
-        success: false,
-        error: 'Image generation failed (no output URLs). Credits refunded.',
-        hint: DIAG ? 'Check adapter payload and provider response.' : undefined,
-      });
-    }
 
-    const jobId = db.collection('users').doc(uid).collection('generations').doc().id;
-    
+
     await db.collection('users').doc(uid).collection('generations').doc(jobId).set({
       prompt,
       urls: outputUrls,
