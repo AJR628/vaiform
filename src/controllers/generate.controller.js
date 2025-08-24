@@ -1,14 +1,15 @@
 import admin from 'firebase-admin';
-import { db } from '../config/firebase.js';
+import { db, bucket } from '../config/firebase.js';
 import { openai } from '../config/env.js';
 import crypto from 'crypto';
+import sharp from "sharp";
 import {
-  computeCost,
   ensureUserDocByUid,
   debitCreditsTx,
   refundCredits,
   ensureUserDoc,
 } from '../services/credit.service.js';
+import { costForCount } from '../config/pricing.js';
 import * as storage from '../services/storage.service.js';
 import * as jobs from '../services/job.service.js';
 
@@ -152,7 +153,7 @@ export async function generate(req, res) {
     const maxImages = entry?.maxImages ?? 4;
     const n = Math.max(1, Math.min(maxImages, Math.floor(requested)));
 
-    const cost = Math.max(1, Math.floor(count)) * 5; // use your existing pricing formula
+    const cost = costForCount(count);
 
     // Ensure UID doc exists and migrate if needed
     await ensureUserDoc(uid, email);
@@ -304,16 +305,66 @@ export async function generate(req, res) {
       });
     }
 
-    // Upload each image to Firebase Storage
-    const srcUrls = urls;
+    // Detect a grid when user asked for >1 image but the model returned a single URL
+    async function splitGridToTiles(buffer, expectedCount = 4) {
+      const img = sharp(buffer);
+      const meta = await img.metadata();
+      const W = meta.width, H = meta.height;
+      if (!W || !H) throw new Error("grid-meta-missing");
 
+      // Heuristic: if expectedCount===4 → assume 2x2; if ===2 → assume 1x2 (landscape strip)
+      let cols = 2, rows = 2;
+      if (expectedCount === 2) { cols = 2; rows = 1; }
+
+      const tileW = Math.floor(W / cols);
+      const tileH = Math.floor(H / rows);
+      const tiles = [];
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          const left = c * tileW;
+          const top = r * tileH;
+          tiles.push(await img.extract({ left, top, width: tileW, height: tileH }).png().toBuffer());
+        }
+      }
+      return tiles.slice(0, expectedCount);
+    }
+
+    async function downloadToBuffer(url) {
+      const r = await fetch(url);
+      if (!r.ok) throw new Error(`download-failed ${r.status}`);
+      return Buffer.from(await r.arrayBuffer());
+    }
+
+    // Save a Buffer to Storage (similar to your saveImageFromUrl but buffer-based)
+    async function saveImageBuffer(uid, jobId, buffer, index = 0) {
+      const path = `artifacts/${uid}/${jobId}/image_${index}.png`;
+      const file = bucket.file(path); // use your existing initialized 'bucket'
+      await file.save(buffer, { contentType: "image/png", resumable: false, public: false, metadata: { cacheControl: "public,max-age=31536000" } });
+      const [metadata] = await file.getMetadata();
+      const token = metadata?.metadata?.firebaseStorageDownloadTokens;
+      const publicUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(path)}?alt=media${token ? `&token=${token}` : ""}`;
+      return publicUrl;
+    }
+
+    // Build final image buffers:
+    let finalBuffers = [];
+    if (count > 1 && urls.length === 1) {
+      console.log("[gen] grid detected → splitting into tiles");
+      const buf = await downloadToBuffer(urls[0]);
+      finalBuffers = await splitGridToTiles(buf, count);
+    } else {
+      // normal path—download each URL
+      finalBuffers = await Promise.all(urls.map(downloadToBuffer));
+    }
+
+    // Upload buffers to Storage
     const outputUrls = [];
-    for (let i = 0; i < srcUrls.length; i++) {
+    for (let i = 0; i < finalBuffers.length; i++) {
       try {
-        const result = await storage.saveImageFromUrl(uid, jobId, srcUrls[i], { index: i });
-        if (result?.publicUrl) outputUrls.push(result.publicUrl);
+        const publicUrl = await saveImageBuffer(uid, jobId, finalBuffers[i], i);
+        outputUrls.push(publicUrl);
       } catch (e) {
-        dlog('saveImageFromUrl failed', { i, sourceUrl: srcUrls[i], msg: e?.message || e });
+        dlog('saveImageBuffer failed', { i, msg: e?.message || e });
       }
       await new Promise((r) => setTimeout(r, 300)); // gentle pacing
     }
@@ -413,7 +464,7 @@ export async function imageToImage(req, res) {
     const n = Math.max(1, Math.min(maxImages, Math.floor(requested)));
 
     await ensureUserDocByUid(uid, email);
-    const cost = computeCost(n);
+    const cost = costForCount(n);
     try {
       await debitCreditsTx(uid, cost);
     } catch (e) {
