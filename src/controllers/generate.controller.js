@@ -256,25 +256,47 @@ export async function generate(req, res) {
       });
     }
 
-    // --- NORMALIZE OUTPUT START ---
+    // --- NORMALIZE OUTPUT (updated) ---
     let urls = [];
-    const out = prediction?.output;
 
-    if (typeof out === "string") {
-      urls = [out];
-    } else if (Array.isArray(out)) {
-      urls = out
-        .map(x => (typeof x === "string" ? x : (x?.url || x?.image || x?.src)))
+    // 1) Preferred: artifacts[].url (new Replicate SDK shape)
+    if (Array.isArray(prediction?.artifacts)) {
+      urls = prediction.artifacts
+        .map(a => (a && typeof a.url === "string" ? a.url : null))
         .filter(Boolean);
-    } else if (out && typeof out === "object") {
-      // Some models return an object with a single url/src/image field.
-      urls = [out.url || out.image || out.src].filter(Boolean);
+    }
+
+    // 2) Legacy/alt: prediction.output (string | string[] | object[])
+    if (!urls.length) {
+      const out = prediction?.output;
+      if (typeof out === "string") {
+        urls = [out];
+      } else if (Array.isArray(out)) {
+        urls = out
+          .map(x => (typeof x === "string" ? x : (x?.url || x?.image || x?.src)))
+          .filter(Boolean);
+      } else if (out && typeof out === "object") {
+        urls = [out.url || out.image || out.src].filter(Boolean);
+      }
+    }
+
+    // 3) Fallback: raw.output (string | string[] | object[])
+    if (!urls.length && prediction?.raw) {
+      const r = prediction.raw;
+      if (typeof r.output === "string") {
+        urls = [r.output];
+      } else if (Array.isArray(r.output)) {
+        urls = r.output
+          .map(x => (typeof x === "string" ? x : (x?.url || x?.image || x?.src)))
+          .filter(Boolean);
+      } else if (r.output && typeof r.output === "object") {
+        urls = [r.output.url || r.output.image || r.output.src].filter(Boolean);
+      }
     }
 
     console.log("[gen] urls", urls);
 
     if (!urls.length) {
-      // Keep your existing refund path; just return the same error shape
       await refundCredits(uid, cost);
       return res.status(502).json({
         success: false,
