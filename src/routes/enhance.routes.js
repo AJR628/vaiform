@@ -1,3 +1,4 @@
+// src/routes/enhance.routes.js
 import { Router } from "express";
 import requireAuth from "../middleware/requireAuth.js";
 import * as EnhanceController from "../controllers/enhance.controller.js";
