@@ -14,6 +14,8 @@ import errorHandler from "./middleware/error.middleware.js";
 dotenv.config();
 envCheck(); // presence-only checks; CI bypasses via NODE_ENV=test
 
+const DBG = process.env.VAIFORM_DEBUG === "1";
+
 const app = express();
 
 // 🪪 assign a request ID early
@@ -63,25 +65,29 @@ function mount(name, path, handler) {
 }
 
 // 🔎 Diag before parser
-app.use((req, _res, next) => {
-  if (req.path.startsWith("/diag") || req.path.startsWith("/generate")) {
-    console.log("[pre-json] CT=", req.headers["content-type"]);
-  }
-  next();
-});
+if (DBG) {
+  app.use((req, _res, next) => {
+    if (req.path.startsWith("/diag") || req.path.startsWith("/generate")) {
+      console.log("[pre-json] CT=", req.headers["content-type"]);
+    }
+    next();
+  });
+}
 
 // ✅ Parsers FIRST
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
 // 🔎 Diag after parser
-app.use((req, _res, next) => {
-  if (req.path.startsWith("/diag") || req.path.startsWith("/generate")) {
-    const ctor = req.body && req.body.constructor ? req.body.constructor.name : typeof req.body;
-    console.log("[post-json] body ctor/type =", ctor, "| body =", req.body);
-  }
-  next();
-});
+if (DBG) {
+  app.use((req, _res, next) => {
+    if (req.path.startsWith("/diag") || req.path.startsWith("/generate")) {
+      const ctor = req.body && req.body.constructor ? req.body.constructor.name : typeof req.body;
+      console.log("[post-json] body ctor/type =", ctor, "| body =", req.body);
+    }
+    next();
+  });
+}
 
 /** ---- Stripe webhook (raw body FIRST) ---- */
 if (routes?.webhook) {
@@ -106,7 +112,9 @@ mount("enhance (alias)", "/enhance", routes?.enhance);
 mount("checkout", "/checkout", routes?.checkout);   
 
 // ✅ NEW: diagnostics
-mount("diag", "/diag", routes?.diag);
+if (process.env.NODE_ENV !== "production") {
+  mount("diag", "/diag", routes?.diag);
+}
 
 /** ---- Centralized error handler (last) ---- */
 app.use(errorHandler);

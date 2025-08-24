@@ -20,6 +20,7 @@ import { resolveStyle } from '../config/models.js';
 import { ADAPTERS, MODELS } from '../adapters/index.js';
 
 const DIAG = process.env.DIAG === '1';
+const DBG = process.env.VAIFORM_DEBUG === "1";
 
 // Helper: safe diag log
 function dlog(...args) {
@@ -78,20 +79,19 @@ export async function enhance(req, res) {
  *    - header x-diag-bad-model=1      (or ?diag=badmodel or BAD_MODEL=1)
  * =========================== */
 export async function generate(req, res) {
-  console.log("→ /generate hit");
-  console.log("CT:", req.headers["content-type"]);
-  try {
-    console.log("BODY:", JSON.stringify(req.body));
-  } catch {
-    console.log("BODY: <unstringifiable>");
+  if (DBG) {
+    console.log("→ /generate hit");
+    console.log("CT:", req.headers["content-type"]);
+    try { console.log("BODY:", JSON.stringify(req.body)); } catch { console.log("BODY: <unstringifiable>"); }
   }
   
   // --- DIAG START ---
   const startedAt = Date.now();
 
   // Token presence (no secrets leaked)
-  const tokenPrefix = (process.env.REPLICATE_API_TOKEN || "").slice(0, 6);
-  console.log("[gen] token?", tokenPrefix ? `${tokenPrefix}…` : "(missing)");
+  if (DBG) {
+    console.log("[gen] token?", (process.env.REPLICATE_API_TOKEN || "").slice(0, 6) + "…");
+  }
 
   // Ensure jobId is defined BEFORE any saveImageFromUrl uses it
   // (If you already define jobId later, MOVE it up here and remove the later duplicate)
@@ -105,7 +105,9 @@ export async function generate(req, res) {
   const options = body.options || {};
   const style = body.style || null;
 
-  console.log("[gen] inputs", { hasPrompt: !!prompt, count, mode, style });
+  if (DBG) {
+    console.log("[gen] inputs", { hasPrompt: !!prompt, count, mode, style });
+  }
   // --- DIAG END ---
   
   try {
@@ -241,10 +243,11 @@ export async function generate(req, res) {
       }
 
       // 🔎 LOG THE ENTIRE RAW PREDICTION (exactly this)
-      try {
-        console.log("[gen] raw prediction", JSON.stringify(prediction, null, 2));
-      } catch {
-        console.log("[gen] raw prediction <unstringifiable>");
+      if (DBG) {
+        try {
+          const s = JSON.stringify(prediction, null, 2);
+          console.log("[gen] raw prediction", s.length > 4000 ? s.slice(0, 4000) + " …(truncated)" : s);
+        } catch { console.log("[gen] raw prediction <unstringifiable>"); }
       }
     } catch (e) {
       console.error('adapter error (txt2img):', e?.message || e);
@@ -395,6 +398,8 @@ export async function generate(req, res) {
       count: outputUrls.length,
     });
 
+    console.log("[gen] done", { jobId, count, ms: Date.now() - startedAt });
+
     return res.json({
       success: true,
       data: { images: outputUrls, jobId, cost },
@@ -413,6 +418,7 @@ export async function generate(req, res) {
  * - Same timeout/retry diagnostics as /generate
  * =========================== */
 export async function imageToImage(req, res) {
+  const startedAt = Date.now();
   try {
     const uid = req.user?.uid;
     if (!uid) {
@@ -579,6 +585,8 @@ export async function imageToImage(req, res) {
       cost,
       count: outputUrls.length,
     });
+
+    console.log("[gen] done", { jobId, count, ms: Date.now() - startedAt });
 
     return res.json({
       success: true,
