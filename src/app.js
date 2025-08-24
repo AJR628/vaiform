@@ -62,13 +62,30 @@ function mount(name, path, handler) {
   console.log(`✅ Mounted "${name}" at ${path}`);
 }
 
-// Make sure express.json() is mounted before any routes
+// 🔎 Diag before parser
+app.use((req, _res, next) => {
+  if (req.path.startsWith("/diag") || req.path.startsWith("/generate")) {
+    console.log("[pre-json] CT=", req.headers["content-type"]);
+  }
+  next();
+});
+
+// ✅ Parsers FIRST
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
+// 🔎 Diag after parser
+app.use((req, _res, next) => {
+  if (req.path.startsWith("/diag") || req.path.startsWith("/generate")) {
+    const ctor = req.body && req.body.constructor ? req.body.constructor.name : typeof req.body;
+    console.log("[post-json] body ctor/type =", ctor, "| body =", req.body);
+  }
+  next();
+});
+
 /** ---- Stripe webhook (raw body FIRST) ---- */
 if (routes?.webhook) {
-  app.post("/webhook", bodyParser.raw({ type: "application/json" }), (req, res, next) =>
+  app.post("/webhook", express.raw({ type: "application/json" }), (req, res, next) =>
     routes.webhook(req, res, next)
   );
   console.log("✅ Mounted webhook at /webhook (Stripe raw body parser active)");
