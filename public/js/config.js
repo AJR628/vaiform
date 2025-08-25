@@ -13,10 +13,10 @@ export const firebaseConfig = {
   appId: "1:798543382244:web:a826ce7ed8bebbe0b9cef1",
 };
 
-// Re-export the single source of truth and keep compat symbols.
-export { BACKEND, API_ROOT } from "../config.js";
-export const BACKEND_URL = API_ROOT;  // compat: many pages expect this
-export const BASE_URL    = API_ROOT;  // compat: many pages expect this
+// Pull canonical BACKEND and compute our own base, so we don't rely on API_ROOT here.
+import { BACKEND } from "../config.js";
+export const BACKEND_URL = BACKEND.replace(/\/$/, "") + "/api";
+export const BASE_URL    = BACKEND_URL;
 if (typeof window !== "undefined") {
   window.BACKEND_URL = BACKEND_URL;
   window.BASE_URL    = BASE_URL;
