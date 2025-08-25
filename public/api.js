@@ -51,30 +51,51 @@ async function waitForToken(timeoutMs = 4000) {
   const start = Date.now();
   // If it appears quickly, return early
   const first = await immediateToken();
-  if (first) {
-    dlog("waitForToken: immediate token available");
-    return first;
-  }
+  if (first) return first;
   // Attach listener if available
   let unsub = null, resolved = false;
   const maybeAuth = (typeof window !== "undefined") && (window.auth || window.firebase?.auth?.());
   const viaEvent = await new Promise((resolve) => {
     try {
+
       if (maybeAuth?.onAuthStateChanged) {
+
         unsub = maybeAuth.onAuthStateChanged(async (u) => {
-          if (resolved) return;
-          if (u?.getIdToken) {
-            resolved = true;
-            const t = await u.getIdToken();
-            if (unsub) try { unsub(); } catch {}
-            dlog("waitForToken: token via onAuthStateChanged:", !!t);
-            resolve(t);
+
+          // Prefer token-ready signal; fall back to auth state
+
+          if (maybeAuth?.onIdTokenChanged) {
+
+            unsub = maybeAuth.onIdTokenChanged(async (u) => {
+
+              if (resolved) return;
+
+              if (u?.getIdToken) {
+
+                resolved = true;
+
+                const t = await u.getIdToken();
+
+                if (unsub) try { unsub(); } catch {}
+
+                resolve(t);
+
+              }
+
+            });
+
+          } else if (maybeAuth?.onAuthStateChanged) {
+
+            unsub = maybeAuth.onAuthStateChanged(async (u) => {
+              if (resolved) return;
+              if (u?.getIdToken) {
+                resolved = true;
+                const t = await u.getIdToken();
+                if (unsub) try { unsub(); } catch {}
+                resolve(t);
+              }
+            });
           }
-        });
-      } else {
-        dlog("waitForToken: no onAuthStateChanged on auth object");
-      }
-    } catch { /* ignore */ }
     // Poll as a fallback while waiting
     const iv = setInterval(async () => {
       const t = await immediateToken();
@@ -121,7 +142,18 @@ export async function apiFetch(path, opts = {}) {
   if (!headers["Authorization"]) {
     const tok = await resolveIdToken(!!needsAuth);
     if (tok) headers["Authorization"] = `Bearer ${tok}`;
-    dlog("apiFetch:", path, "| needsAuth:", !!needsAuth, "| header set:", !!tok);
+  }
+
+  // Never fire protected calls without a token
+
+  if (needsAuth && !headers["Authorization"]) {
+
+    const e = new Error("AUTH_NOT_READY");
+
+    e.code = "AUTH_NOT_READY";
+
+    throw e;
+
   }
   if (!headers["Content-Type"] && opts.body) headers["Content-Type"] = "application/json";
 
