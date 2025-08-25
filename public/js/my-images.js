@@ -7,9 +7,7 @@ import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/f
 import {
   collection, query, orderBy, getDocs
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-
-// === Normalize backend URL (no trailing slash) ===
-const BASE_URL = (window.BACKEND_URL || BACKEND_URL || "").replace(/\/+$/, "");
+import { apiFetch } from "../api.js";
 
 /* ========== DOM ========== */
 const gallery             = document.getElementById("gallery");
@@ -51,18 +49,6 @@ async function getIdToken() {
   if (!u) throw new Error("Please log in first.");
   return u.getIdToken();
 }
-async function apiFetch(path, { method = "GET", headers = {}, body } = {}) {
-  const token = await getIdToken();
-  const res = await fetch(`${BASE_URL}${path}`, {
-    method,
-    headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}`, ...headers },
-    body: body ? JSON.stringify(body) : undefined
-  });
-  let data = null;
-  try { data = await res.json(); } catch {}
-  if (!res.ok) throw new Error((data && (data.error || data.message)) || `HTTP ${res.status}`);
-  return data || {};
-}
 
 function updateCreditUI(n) {
   creditDisplay?.classList.remove("hidden");
@@ -72,22 +58,13 @@ function updateCreditUI(n) {
 async function refreshCredits(force = true, retries = 1) {
   if (!auth.currentUser) { updateCreditUI(0); return; }
   try {
-    const t = await auth.currentUser.getIdToken(force);
-    const res = await fetch(`${BASE_URL}/credits`, {
-      headers: { Authorization: `Bearer ${t}` }
-    });
-    const data = await res.json().catch(() => ({}));
-    if (res.ok) {
-      const credits = Number(data?.credits ?? data?.data?.credits ?? 0);
-      if (!Number.isNaN(credits)) { updateCreditUI(credits); return; }
-    }
-    if (retries > 0) return refreshCredits(false, retries - 1);
-    showToast("Couldn't load credits. Try again in a moment.");
-    console.warn("Credits fetch failed:", data);
+    const data = await apiFetch("/credits");
+    const credits = Number(data?.credits ?? 0);
+    updateCreditUI(Number.isNaN(credits) ? 0 : credits);
   } catch (err) {
     if (retries > 0) return refreshCredits(false, retries - 1);
-    showToast("Network error loading credits.");
-    console.error("refreshCredits error:", err);
+    showToast("Couldn't load credits. Try again in a moment.");
+    console.warn("Credits fetch failed:", err);
   }
 }
 

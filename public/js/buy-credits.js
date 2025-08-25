@@ -1,8 +1,7 @@
 // /js/buy-credits.js
 import { auth, BACKEND_URL, provider } from "./config.js";
 import { onAuthStateChanged, signInWithPopup } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-
-const BASE_URL = (window.BACKEND_URL || BACKEND_URL || "").replace(/\/+$/, "");
+import { apiFetch } from "../api.js";
 const toastEl = document.getElementById("toast");
 const modeOnetime = document.getElementById("mode-onetime");
 const modeMonthly = document.getElementById("mode-monthly");
@@ -36,30 +35,24 @@ async function ensureAuth() {
 async function startOneTime({ priceId, credits = 0, quantity = 1 }) {
   const user = await ensureAuth();
   if (!user) return toast("Please sign in to buy credits.");
-  const token = await user.getIdToken(true);
 
-  const res = await fetch(`${BASE_URL}/checkout/session`, {
+  const data = await apiFetch("/checkout/session", {
     method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ priceId, quantity, credits }) // credits optional (for analytics/metadata)
+    body: { priceId, quantity, credits } // credits optional (for analytics/metadata)
   });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok || !data?.url) return toast(data?.error || "Checkout failed");
+  if (!data?.url) return toast(data?.error || "Checkout failed");
   window.location = data.url;
 }
 
 async function startSubscription({ priceId, credits = 0 }) {
   const user = await ensureAuth();
   if (!user) return toast("Please sign in to subscribe.");
-  const token = await user.getIdToken(true);
 
-  const res = await fetch(`${BASE_URL}/checkout/subscription`, {
+  const data = await apiFetch("/checkout/subscription", {
     method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ priceId, credits }) // credits optional (for analytics/metadata)
+    body: { priceId, credits } // credits optional (for analytics/metadata)
   });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok || !data?.url) return toast(data?.error || "Subscription checkout failed");
+  if (!data?.url) return toast(data?.error || "Subscription checkout failed");
   window.location = data.url;
 }
 
@@ -125,14 +118,11 @@ manageBtn?.addEventListener("click", async () => {
   try {
     const user = await ensureAuth();
     if (!user) { toast("Please sign in to manage billing."); return; }
-    const token = await user.getIdToken(true);
 
-    const res = await fetch(`${BASE_URL}/checkout/portal`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    const data = await apiFetch("/checkout/portal", {
+      method: "POST"
     });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok || !data?.url) return toast(data?.error || "Could not open billing portal");
+    if (!data?.url) return toast(data?.error || "Could not open billing portal");
     window.location = data.url;
   } catch (e) {
     console.error(e);

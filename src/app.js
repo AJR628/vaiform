@@ -103,7 +103,12 @@ app.use("/", whoamiRoutes);
 app.use("/", creditsRoutes);
 if (process.env.NODE_ENV !== "production") app.use("/diag", diagRoutes);
 app.use("/", generateRoutes);
-app.use("/api", generateRoutes); // alias for frontend to avoid proxy quirks
+// /api alias for ALL API endpoints so the frontend can use one stable base
+app.use("/api", healthRoutes);
+app.use("/api", whoamiRoutes);
+app.use("/api", creditsRoutes);
+if (process.env.NODE_ENV !== "production") app.use("/api", diagRoutes);
+app.use("/api", generateRoutes);
 
 // Guard: prevent GET/HEAD on /generate from being hijacked by static/proxy
 app.get(["/generate", "/generate/"], (req, res) =>
@@ -119,11 +124,13 @@ if (routes?.index) {
 if (routes?.enhance) {
   app.use("/", routes.enhance);
   app.use("/enhance", routes.enhance);
-  console.log("✅ Mounted enhance at / and /enhance");
+  app.use("/api", routes.enhance);
+  console.log("✅ Mounted enhance at /, /enhance, and /api");
 }
 if (routes?.checkout) {
   app.use("/checkout", routes.checkout);
-  console.log("✅ Mounted checkout at /checkout");
+  app.use("/api", routes.checkout);
+  console.log("✅ Mounted checkout at /checkout and /api");
 }
 
 // ---------- STATIC LAST (disable directory redirects like /dir -> /dir/) ----------
