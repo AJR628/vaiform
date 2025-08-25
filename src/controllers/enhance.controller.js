@@ -36,7 +36,7 @@ export async function enhanceController(req, res) {
       },
     });
   } catch (err) {
-    console.error("❌ [enhance] failed:", err?.code || err?.name, err?.message || err);
+    console.error('❌ [enhance] failed:', err?.code || err?.name, err?.message || err);
     return res.status(500).json({
       success: false,
       error: "ENHANCE_FAILED",
