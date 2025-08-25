@@ -1,3 +1,6 @@
+// Version stamp for debugging:
+console.info("[api.js] v3", { path: import.meta.url });
+
 import { API_ROOT } from "./config.js";
 
 // Optional: pages can set a token provider explicitly
@@ -9,7 +12,8 @@ export function setTokenProvider(fn) {
 async function resolveIdToken() {
   try {
     if (tokenProvider) return await tokenProvider();
-    if (typeof getIdToken === "function") return await getIdToken(); // legacy global, if present
+    // Probe safely for legacy/global helpers:
+    if (typeof getIdToken === "function") return await getIdToken();
     if (typeof window !== "undefined") {
       const auth = window.auth || window.firebase?.auth?.();
       const user = auth?.currentUser;
