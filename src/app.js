@@ -18,6 +18,7 @@ import creditsRoutes from "./routes/credits.routes.js";
 import diagRoutes from "./routes/diag.routes.js";
 import generateRoutes from "./routes/generate.routes.js";
 import webhookRoutes from "./routes/webhook.routes.js";
+import { getCreditsHandler } from "./handlers/credits.get.js";
 
 dotenv.config();
 envCheck(); // presence-only checks; CI bypasses via NODE_ENV=test
@@ -100,13 +101,16 @@ app.use((req, res, next) => {
 // ---------- API ROUTES BEFORE STATIC ----------
 app.use("/", healthRoutes);
 app.use("/", whoamiRoutes);
+// Keep existing creditsRoutes mount if present, but also provide a direct handler to avoid 404s.
 app.use("/", creditsRoutes);
+app.get("/credits", getCreditsHandler);
 if (process.env.NODE_ENV !== "production") app.use("/diag", diagRoutes);
 app.use("/", generateRoutes);
 // /api alias for ALL API endpoints (ensure all four are mounted)
 app.use("/api", healthRoutes);
 app.use("/api", whoamiRoutes);
 app.use("/api", creditsRoutes);
+app.get("/api/credits", getCreditsHandler);
 app.use("/api", generateRoutes);
 
 // Guard: prevent GET/HEAD on /generate from being hijacked by static/proxy
