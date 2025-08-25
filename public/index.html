@@ -306,5 +306,13 @@
   <!-- Auth bridge: expose auth & wire token provider before app code -->
   <script type="module" src="/auth-bridge.js"></script>
   <script type="module" src="/frontend.js"></script>
+  <!-- Debug helper: add ?kill-sw=1 to URL to unregister stale service workers -->
+  <script>
+    if (location.search.includes('kill-sw=1')) {
+      var s = document.createElement('script');
+      s.src = '/kill-sw.js';
+      document.head.appendChild(s);
+    }
+  </script>
 </body>
 </html>
