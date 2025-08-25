@@ -19,6 +19,7 @@ import diagRoutes from "./routes/diag.routes.js";
 import generateRoutes from "./routes/generate.routes.js";
 import webhookRoutes from "./routes/webhook.routes.js";
 import { getCreditsHandler } from "./handlers/credits.get.js";
+import diagHeadersRoutes from "./routes/diag.headers.routes.js";
 
 dotenv.config();
 envCheck(); // presence-only checks; CI bypasses via NODE_ENV=test
@@ -112,6 +113,10 @@ app.use("/api", whoamiRoutes);
 app.use("/api", creditsRoutes);
 app.get("/api/credits", getCreditsHandler);
 app.use("/api", generateRoutes);
+// Mount diag headers only when VAIFORM_DEBUG=1
+if (process.env.VAIFORM_DEBUG === "1") {
+  app.use("/api", diagHeadersRoutes);
+}
 
 // Guard: prevent GET/HEAD on /generate from being hijacked by static/proxy
 app.get(["/generate", "/generate/"], (req, res) =>
