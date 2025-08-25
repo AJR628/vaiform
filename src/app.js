@@ -103,11 +103,10 @@ app.use("/", whoamiRoutes);
 app.use("/", creditsRoutes);
 if (process.env.NODE_ENV !== "production") app.use("/diag", diagRoutes);
 app.use("/", generateRoutes);
-// /api alias for ALL API endpoints so the frontend can use one stable base
+// /api alias for ALL API endpoints (ensure all four are mounted)
 app.use("/api", healthRoutes);
 app.use("/api", whoamiRoutes);
 app.use("/api", creditsRoutes);
-if (process.env.NODE_ENV !== "production") app.use("/api", diagRoutes);
 app.use("/api", generateRoutes);
 
 // Guard: prevent GET/HEAD on /generate from being hijacked by static/proxy
@@ -136,8 +135,8 @@ if (routes?.checkout) {
 // ---------- STATIC LAST (disable directory redirects like /dir -> /dir/) ----------
 app.use(express.static("public", { redirect: false }));
 
-// Optional: route table log to verify mounts when VAIFORM_DEBUG=1
-if (DBG) {
+// Optional route table when VAIFORM_DEBUG=1
+if (process.env.VAIFORM_DEBUG === "1" && app?._router?.stack) {
   const list = [];
   app._router.stack.forEach((m) => {
     if (m.route && m.route.path) {

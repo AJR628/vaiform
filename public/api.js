@@ -2,6 +2,7 @@
 console.info("[api.js] v3", { path: import.meta.url });
 
 import { API_ROOT } from "./config.js";
+import { BACKEND } from "./config.js";
 
 // Optional: pages can set a token provider explicitly
 let tokenProvider = null;
@@ -31,7 +32,17 @@ export async function apiFetch(path, opts = {}) {
   }
   if (!headers["Content-Type"] && opts.body) headers["Content-Type"] = "application/json";
 
-  const res = await fetch(`${API_ROOT}${path}`, { ...opts, headers, credentials: "omit" });
+  const urlApi = `${API_ROOT}${path}`;
+  let res = await fetch(urlApi, { ...opts, headers, credentials: "omit" });
+
+  // Graceful fallback: if /api/* isn't mounted for simple GETs, try root once.
+  const isGet = !opts.method || opts.method.toUpperCase() === "GET";
+  const eligible = isGet && (path === "/credits" || path === "/whoami" || path === "/health");
+  if (eligible && res.status === 404) {
+    const urlRoot = BACKEND.replace(/\/$/, "") + path;
+    res = await fetch(urlRoot, { ...opts, headers, credentials: "omit" });
+  }
+
   if (!res.ok) {
     let detail = "";
     try { detail = await res.text(); } catch {}
