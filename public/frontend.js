@@ -2,7 +2,7 @@
 import { auth, db, provider, BACKEND_URL, UPSCALE_COST } from "./js/config.js";
 import { signInWithPopup, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { doc, getDoc, setDoc, updateDoc, serverTimestamp, increment } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import { apiFetch } from "./api.js";
+import { apiFetch, setTokenProvider } from "./api.js";
 
 /* ========================= DEV HELPERS ========================= */
 // Wait until Firebase auth knows our user (once)
@@ -473,4 +473,12 @@ window.getId = async (forceRefresh = true) => {
 (() => {
   applyStyleDefaults(styleSelect?.value || "realistic");
   updateModeIndicator();
+  
+  // After Firebase auth init is available on the page:
+  try {
+    setTokenProvider(async () => {
+      const u = (window.auth?.currentUser) || (window.firebase?.auth?.().currentUser);
+      return u?.getIdToken ? u.getIdToken() : null;
+    });
+  } catch {}
 })();

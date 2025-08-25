@@ -1,52 +1,38 @@
 import { API_ROOT } from "./config.js";
 
-// Small fetch helper used by the app
-export async function apiFetch(path, { method = "GET", headers = {}, body } = {}) {
-  const token = await getIdToken();
-  const url = `${API_ROOT}${path}`;
-  const isPost = (method || "GET").toUpperCase() === "POST";
-  const needsIdemp = isPost && /^\/(generate|enhance)(\/|$)/.test(path);
-  const idemp = needsIdemp ? `gen-${Date.now()}-${crypto.getRandomValues(new Uint32Array(1))[0]}` : undefined;
+// Optional: pages can set a token provider explicitly
+let tokenProvider = null;
+export function setTokenProvider(fn) {
+  tokenProvider = typeof fn === "function" ? fn : null;
+}
 
-  const res = await fetch(url, {
-    method,
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${token}`,
-      ...(needsIdemp ? { "X-Idempotency-Key": idemp } : {}),
-      ...headers,
-    },
-    body: body ? JSON.stringify(body) : undefined,
-    credentials: "omit",
-  });
-
-  const text = await res.text();
-  let json = null;
-  try { json = JSON.parse(text); } catch {}
-
-  if (!res.ok) {
-    const msg = (json && (json.message || json.error || json.code)) || `HTTP ${res.status}`;
-    throw new Error(msg);
-  }
-
-  if (json && typeof json.success === "boolean") {
-    if (!json.success) {
-      throw new Error(json.message || json.code || "Request failed");
+async function resolveIdToken() {
+  try {
+    if (tokenProvider) return await tokenProvider();
+    if (typeof getIdToken === "function") return await getIdToken(); // legacy global, if present
+    if (typeof window !== "undefined") {
+      const auth = window.auth || window.firebase?.auth?.();
+      const user = auth?.currentUser;
+      if (user?.getIdToken) return await user.getIdToken();
     }
-    // Prefer unified shape
-    if (json.data && typeof json.data === "object") return json.data;
+  } catch { /* ignore */ }
+  return null;
+}
 
-    // Back-compat: accept legacy top-level keys
-    const legacy = {};
-    ["images","enhancedPrompt","upscaledUrl","cost","jobId","credits"].forEach(k => {
-      if (k in json) legacy[k] = json[k];
-    });
-    if (Object.keys(legacy).length) return legacy;
-
-    // Treat empty payload as "queued" success
-    return {};
+export async function apiFetch(path, opts = {}) {
+  const headers = { ...(opts.headers || {}) };
+  if (!headers["Authorization"]) {
+    const tok = await resolveIdToken();
+    if (tok) headers["Authorization"] = `Bearer ${tok}`;
   }
+  if (!headers["Content-Type"] && opts.body) headers["Content-Type"] = "application/json";
 
-  // If no {success} wrapper, return parsed json (legacy)
-  return json;
+  const res = await fetch(`${API_ROOT}${path}`, { ...opts, headers, credentials: "omit" });
+  if (!res.ok) {
+    let detail = "";
+    try { detail = await res.text(); } catch {}
+    throw new Error(`HTTP ${res.status}${detail ? `: ${detail}` : ""}`);
+  }
+  const ct = res.headers.get("content-type") || "";
+  return ct.includes("application/json") ? res.json() : res.text();
 }

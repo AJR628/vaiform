@@ -13,8 +13,15 @@ export const firebaseConfig = {
   appId: "1:798543382244:web:a826ce7ed8bebbe0b9cef1",
 };
 
-// Backend constants
-export const BACKEND_URL = "http://localhost:3000"; // no trailing slash - update for production
+// Re-export the single source of truth and keep compat symbols.
+export { BACKEND, API_ROOT } from "../config.js";
+export const BACKEND_URL = API_ROOT;  // compat: many pages expect this
+export const BASE_URL    = API_ROOT;  // compat: many pages expect this
+if (typeof window !== "undefined") {
+  window.BACKEND_URL = BACKEND_URL;
+  window.BASE_URL    = BASE_URL;
+}
+
 export const FRONTEND_URL = "https://vaiform.com";
 export const UPSCALE_COST = 10;
 

@@ -7,7 +7,7 @@ import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/f
 import {
   collection, query, orderBy, getDocs
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import { apiFetch } from "../api.js";
+import { apiFetch, setTokenProvider } from "../api.js";
 
 /* ========== DOM ========== */
 const gallery             = document.getElementById("gallery");
@@ -274,3 +274,11 @@ onAuthStateChanged(auth, async (user) => {
     showToast("Failed to load gallery.");
   }
 });
+
+// Token provider for this page too (safe if called twice)
+try {
+  setTokenProvider(async () => {
+    const u = (window.auth?.currentUser) || (window.firebase?.auth?.().currentUser);
+    return u?.getIdToken ? u.getIdToken() : null;
+  });
+} catch {}
