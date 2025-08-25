@@ -303,6 +303,8 @@
 
   <!-- App script (load last so all DOM is present) -->
   <script type="module" src="/js/config.js"></script>
+  <!-- Auth bridge: expose auth & wire token provider before app code -->
+  <script type="module" src="/auth-bridge.js"></script>
   <script type="module" src="/frontend.js"></script>
 </body>
 </html>
