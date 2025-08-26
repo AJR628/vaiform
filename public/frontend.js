@@ -208,6 +208,8 @@ onAuthStateChanged(auth, async (user) => {
   if (emailHidden) emailHidden.value = currentUserEmail;
 
   try {
+    // Give api.mjs a brief moment to obtain the token via the bridge
+    if (window.__vaiform_diag__?.tokenWait) { await window.__vaiform_diag__.tokenWait(4000); }
     await refreshCredits(true); // hits /credits
   } catch (e) {
     console.error("Failed to refresh credits:", e);
