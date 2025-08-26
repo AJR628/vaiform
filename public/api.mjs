@@ -1,8 +1,10 @@
 // Version stamp for debugging (module)
 console.info("[api.mjs] v4", { path: import.meta.url });
 
-// Use the same path your pages use
-import { API_ROOT, BACKEND } from "./js/config.js";
+// Use exports that actually exist in js/config.js, and derive API_ROOT
+import { BACKEND_URL } from "./js/config.js";
+import { BACKEND } from "./config.js"; // root-level config.js
+const API_ROOT = BACKEND_URL;
 
 // Allow pages to provide a token-getter (Firebase)
 let tokenProvider = null;
