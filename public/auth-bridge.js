@@ -1,5 +1,5 @@
 // Bridge Firebase auth → api.js token provider (works with compat or when window.auth is present)
-import { setTokenProvider } from "./api.js";
+import { setTokenProvider } from "./api.mjs";
 
 function getAuthObj() {
   try {

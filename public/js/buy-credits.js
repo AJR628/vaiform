@@ -1,7 +1,7 @@
 // /js/buy-credits.js
 import { auth, BACKEND_URL, provider } from "./config.js";
 import { onAuthStateChanged, signInWithPopup } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { apiFetch } from "../api.js";
+import { apiFetch } from "../api.mjs";
 const toastEl = document.getElementById("toast");
 const modeOnetime = document.getElementById("mode-onetime");
 const modeMonthly = document.getElementById("mode-monthly");

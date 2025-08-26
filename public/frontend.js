@@ -2,7 +2,7 @@
 import { auth, db, provider, BACKEND_URL, UPSCALE_COST } from "./js/config.js";
 import { signInWithPopup, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { doc, getDoc, setDoc, updateDoc, serverTimestamp, increment } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import { apiFetch, setTokenProvider } from "./api.js";
+import { apiFetch, setTokenProvider } from "./api.mjs";
 
 /* ========================= DEV HELPERS ========================= */
 // Wait until Firebase auth knows our user (once)

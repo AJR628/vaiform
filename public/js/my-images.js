@@ -7,7 +7,7 @@ import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/f
 import {
   collection, query, orderBy, getDocs
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import { apiFetch, setTokenProvider } from "../api.js";
+import { apiFetch, setTokenProvider } from "../api.mjs";
 
 /* ========== DOM ========== */
 const gallery             = document.getElementById("gallery");
