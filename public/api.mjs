@@ -1,5 +1,7 @@
-// Version stamp for debugging (module)
-console.info("[api.mjs] v4", { path: import.meta.url });
+// Version stamp (print only if debug flag is set on window)
+try { if (typeof window !== "undefined" && (window.__VAIFORM_DEBUG__ === "1" || window.VAIFORM_DEBUG === "1")) {
+  console.info("[api.mjs] v4", { path: import.meta.url });
+}} catch {}
 
 // Use exports that actually exist in js/config.js, and derive API_ROOT
 import { BACKEND_URL } from "./js/config.js";
