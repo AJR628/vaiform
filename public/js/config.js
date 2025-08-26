@@ -21,6 +21,9 @@ if (typeof window !== "undefined") {
   window.BACKEND_URL = BACKEND_URL;
   window.BASE_URL    = BASE_URL;
 }
+// === Compatibility exports for modules expecting these ===
+export const API_ROOT = BACKEND_URL;
+export { BACKEND };
 
 export const FRONTEND_URL = "https://vaiform.com";
 export const UPSCALE_COST = 10;
