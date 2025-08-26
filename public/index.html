@@ -18,6 +18,12 @@
   <script>
     tailwind.config = { darkMode: 'class' };
   </script>
+  <style>
+    /* Ensure login button shows by default until JS loads */
+    #login-button { display: inline-block !important; }
+    #logout-button { display: none !important; }
+    #credit-display { display: none !important; }
+  </style>
 </head>
 <body class="bg-gray-50 text-gray-800 dark:bg-gray-900 dark:text-gray-100 font-sans min-h-screen flex flex-col transition-colors duration-300">
 
@@ -302,10 +308,10 @@
   </script>
 
   <!-- App script (load last so all DOM is present) -->
-  <script type="module" src="/js/config.js"></script>
+  <script type="module" src="./js/config.js"></script>
   <!-- Auth bridge: expose auth & wire token provider before app code -->
-  <script type="module" src="/auth-bridge.js"></script>
-  <script type="module" src="/frontend.js"></script>
+  <script type="module" src="./auth-bridge.js"></script>
+  <script type="module" src="./frontend.js"></script>
   <!-- Debug helper: add ?kill-sw=1 to URL to unregister stale service workers -->
   <script>
     if (location.search.includes('kill-sw=1')) {

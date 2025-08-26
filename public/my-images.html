@@ -91,10 +91,10 @@
   </script>
 
   <!-- App scripts (order matters: frontend helpers first, then page logic) -->
-  <script type="module" src="/js/config.js"></script>
+  <script type="module" src="./js/config.js"></script>
   <!-- Auth bridge: expose auth & wire token provider before page code -->
-  <script type="module" src="/auth-bridge.js"></script>
-  <script type="module" src="/js/my-images.js"></script>
+  <script type="module" src="./auth-bridge.js"></script>
+  <script type="module" src="./js/my-images.js"></script>
   <!-- Debug helper: add ?kill-sw=1 to URL to unregister stale service workers -->
   <script>
     if (location.search.includes('kill-sw=1')) {
