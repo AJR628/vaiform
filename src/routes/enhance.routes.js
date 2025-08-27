@@ -1,5 +1,7 @@
 import { Router } from "express";
 import requireAuth from "../middleware/requireAuth.js";
+import { validate } from "../middleware/validate.middleware.js";
+import { EnhanceSchema } from "../schemas/enhance.schema.js";
 import * as EnhanceController from "../controllers/enhance.controller.js";
 
 // Try named -> default -> a function with "enhance" in its name -> first function export
@@ -23,9 +25,9 @@ if (!enhance) {
 const r = Router();
 
 // Auth required; NO idempotency
-r.post("/enhance", requireAuth, enhance);
+r.post("/enhance", requireAuth, validate(EnhanceSchema), enhance);
 
 // Optional legacy alias
-r.post("/", requireAuth, enhance);
+r.post("/", requireAuth, validate(EnhanceSchema), enhance);
 
 export default r;

@@ -1,15 +1,28 @@
 import { ZodError } from 'zod';
 export function validate(schema, location = 'body') {
   return (req, res, next) => {
-    const parsed = schema.safeParse(req[location] ?? {});
-    if (!parsed.success) {
+    try {
+      const parsed = schema.parse(req[location] ?? {});
+      req.valid = parsed;
+      return next();
+    } catch (err) {
+      if (err instanceof ZodError) {
+        return res.status(400).json({
+          success: false,
+          code: "BAD_REQUEST",
+          message: "Validation failed",
+          details: err.issues.map(i => ({
+            path: i.path.join("."),
+            message: i.message,
+            code: i.code,
+          })),
+        });
+      }
       return res.status(400).json({
         success: false,
-        error: 'INVALID_INPUT',
-        detail: parsed.error.flatten(),
+        code: "BAD_REQUEST",
+        message: String(err?.message || err),
       });
     }
-    req[location] = parsed.data;
-    next();
   };
 }

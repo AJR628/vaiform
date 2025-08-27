@@ -2,8 +2,8 @@
 import { z } from "zod";
 
 export const GenerateSchema = z.object({
-  prompt: z.string().min(1),
-  count: z.number().int().min(1).max(4),
+  prompt: z.string().min(3, "prompt must be at least 3 characters"),
+  count: z.union([z.literal(1), z.literal(2), z.literal(4)]),
   style: z.string().optional(),
   upscale: z.boolean().optional(),
   // allow future advanced params without failing:
