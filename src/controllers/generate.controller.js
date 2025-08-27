@@ -226,7 +226,7 @@ export async function generate(req, res) {
       if (modelAdapter?.runTextToImage) {
         const result = await withTimeoutAndRetry(
           () => modelAdapter.runTextToImage(input),
-          { timeoutMs: forceTimeout ? 100 : 25000, retries: 2 }
+          { timeoutMs: forceTimeout ? 100 : 180000, retries: 2 }
         );
         artifacts = result?.artifacts || [];
         prediction = result;
@@ -236,7 +236,7 @@ export async function generate(req, res) {
 
         const result = await withTimeoutAndRetry(
           () => providerAdapter.runTextToImage({ ...providerRef, input }),
-          { timeoutMs: forceTimeout ? 100 : 25000, retries: 2 }
+          { timeoutMs: forceTimeout ? 100 : 180000, retries: 2 }
         );
         artifacts = result?.artifacts || [];
         prediction = result;
@@ -330,7 +330,7 @@ export async function generate(req, res) {
         if (modelAdapter?.runTextToImage) {
           singlePrediction = await withTimeoutAndRetry(
             () => modelAdapter.runTextToImage(singleInput),
-            { timeoutMs: forceTimeout ? 100 : 25000, retries: 2 }
+            { timeoutMs: forceTimeout ? 100 : 180000, retries: 2 }
           );
         } else {
           let providerRef = entry.providerRef || {};
@@ -338,7 +338,7 @@ export async function generate(req, res) {
 
           singlePrediction = await withTimeoutAndRetry(
             () => providerAdapter.runTextToImage({ ...providerRef, input: singleInput }),
-            { timeoutMs: forceTimeout ? 100 : 25000, retries: 2 }
+            { timeoutMs: forceTimeout ? 100 : 180000, retries: 2 }
           );
         }
 
@@ -530,7 +530,7 @@ export async function imageToImage(req, res) {
       if (modelAdapter?.runImageToImage) {
         const result = await withTimeoutAndRetry(
           () => modelAdapter.runImageToImage(input),
-          { timeoutMs: forceTimeout ? 100 : 25000, retries: 2 }
+          { timeoutMs: forceTimeout ? 100 : 180000, retries: 2 }
         );
         artifacts = result?.artifacts || [];
       } else {
@@ -539,7 +539,7 @@ export async function imageToImage(req, res) {
 
         const result = await withTimeoutAndRetry(
           () => providerAdapter.runImageToImage({ ...providerRef, input }),
-          { timeoutMs: forceTimeout ? 100 : 25000, retries: 2 }
+          { timeoutMs: forceTimeout ? 100 : 180000, retries: 2 }
         );
         artifacts = result?.artifacts || [];
       }
@@ -654,7 +654,7 @@ export async function upscale(req, res) {
     try {
       const created = await withTimeoutAndRetry(
         () => realesrgan.invoke({ refs: [imageUrl] }),
-        { timeoutMs: 25000, retries: 2 }
+        { timeoutMs: 60000, retries: 2 }
       );
       predictionUrl = created?.predictionUrl;
       if (!predictionUrl) throw new Error('No predictionUrl returned from realesrgan.invoke');
@@ -669,7 +669,7 @@ export async function upscale(req, res) {
     try {
       finalOutput = await withTimeoutAndRetry(
         () => jobs.pollUntilDone(predictionUrl),
-        { timeoutMs: 25000, retries: 2 }
+        { timeoutMs: 120000, retries: 2 }
       );
     } catch (e) {
       console.error('[upscale] pollUntilDone failed', { reqId, predictionUrl, msg: e?.message || e });

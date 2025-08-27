@@ -46,9 +46,9 @@ export async function saveImageFromUrl(
 
   const bucket = admin.storage().bucket();
 
-  // 15s timeout on fetch
+  // 5min timeout on fetch (pixar style can take 2-3 minutes)
   const ac = new AbortController();
-  const to = setTimeout(() => ac.abort(), 15000);
+  const to = setTimeout(() => ac.abort(), 300000);
   let res;
   try {
     res = await fetch(srcUrl, { signal: ac.signal });
