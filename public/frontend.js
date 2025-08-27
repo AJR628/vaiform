@@ -361,6 +361,10 @@ generateForm?.addEventListener("submit", async (e) => {
   e.preventDefault();
   if (!auth.currentUser) return showToast("Please log in first.");
 
+  // ✅ Minimal schema-aligned payload for /generate
+  // Root keys allowed by backend schema: style|provider, prompt, count, options
+  // When using "pixar", image must be provided as options.image_url or options.image_base64
+  
   const style = styleSelect?.value;
   const pixarish = isPixarish(style);
   const wantsImageMode = pixarish || !!uploadedImageBase64 || !!imageModeToggle?.checked;
@@ -371,7 +375,6 @@ generateForm?.addEventListener("submit", async (e) => {
   }
 
   const numImages = parseInt(numImagesSelect?.value || "1", 10);
-  const upscale = !!upscaleToggle?.checked;
 
   const needed = computeGenCost(numImages);
   if (currentCredits < needed) {
@@ -382,36 +385,32 @@ generateForm?.addEventListener("submit", async (e) => {
     return showToast("Please upload an image for Pixar mode.");
   }
 
-  const endpoint = "/generate";
+  // Build a clean payload with only allowed root keys
   const payload = {
-    // backend reads user from token; sending email is unnecessary
-    prompt,                               // may be empty for img2img
-    count: Number(numImages),             // ✅ use "count" for backend schema
-    upscale: Boolean(upscale),
     style,
-    guidance: Number(guidanceInput?.value ?? 0),
-    steps: Number(stepsInput?.value || 0),
-    scheduler: (schedulerInput?.value || ""),
-    refiner: (refinerInput?.value || "none"),
+    prompt,
+    count: Number(numImages),
+    options: {}
   };
 
-  // Only include seed if it's a valid number
-  const seedRaw = seedInput?.value?.trim();
-  if (seedRaw) {
-    const seedNum = Number(seedRaw);
-    if (Number.isFinite(seedNum)) payload.seed = Math.floor(seedNum);
+  // If the effective kind is "pixar", move the uploaded image into options.image_base64
+  if (pixarish) {
+    if (!uploadedImageBase64) {
+      showToast("Pixar needs an image — please upload one.");
+      return;
+    }
+    payload.options.image_base64 = uploadedImageBase64; // backend accepts image_base64
   }
 
-  // If image mode, include imageData (same endpoint; backend will route internally)
-  if (wantsImageMode) {
-    payload.imageData = uploadedImageBase64; // Data URL string
-  }
+  // IMPORTANT: Do NOT include any extra root keys the backend schema doesn't know:
+  // - No: upscale, guidance, steps, scheduler, refiner, imageData at the root
+  // If you still collect these in the UI, simply omit them from the payload for now.
 
   generateButton.disabled = true;
   showLoading();
 
   try {
-    const resp = await apiFetch(endpoint, { method: "POST", body: payload });
+    const resp = await apiFetch("/generate", { method: "POST", body: payload });
     const images = resp?.images;
     const cost = resp?.cost ?? 0;
     const jobId = resp?.jobId ?? null;
