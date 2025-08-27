@@ -1,5 +1,5 @@
 // src/controllers/enhance.controller.js
-import admin from "../config/firebase.js"; // ✅ use the initialized Admin instance
+import admin from "../config/firebase.js";
 import { enhancePrompt } from "../services/enhance.service.js";
 import { ensureUserDoc, debitCreditsTx } from "../services/credit.service.js";
 import { ENHANCE_COST } from "../config/pricing.js";
