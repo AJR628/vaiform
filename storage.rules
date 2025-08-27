@@ -1,29 +1,15 @@
 rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-
-    // Per-user space
-    match /users/{uid} {
-
-      // Profile doc — client read-only (server writes)
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Users can only access their own artifacts
+    match /artifacts/{uid}/{jobId}/{fileName} {
       allow read: if request.auth != null && request.auth.uid == uid;
-      allow write: if false;
-
-      // Generation records — client read-only, server writes
-      match /generations/{docId} {
-        allow read: if request.auth != null && request.auth.uid == uid;
-        allow write: if false;
-      }
-
-      // Credit/billing ledger — client read-only, server writes
-      match /transactions/{docId} {
-        allow read: if request.auth != null && request.auth.uid == uid;
-        allow write: if false;
-      }
+      allow write: if false; // Server-only uploads via Admin SDK
     }
-
-    // Deny anything else
-    match /{document=**} {
+    
+    // Deny access to all other paths
+    match /{allPaths=**} {
       allow read, write: if false;
     }
   }
+}
