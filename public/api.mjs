@@ -129,6 +129,12 @@ export async function apiFetch(path, opts = {}) {
     throw e;
   }
 
+  // Auto-add idempotency key for generate requests
+  const isGeneratePost = path.startsWith("/generate") && (!opts.method || opts.method.toUpperCase() === "POST");
+  if (isGeneratePost && !headers["X-Idempotency-Key"]) {
+    headers["X-Idempotency-Key"] = `frontend-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  }
+
   if (!headers["Content-Type"] && opts.body) headers["Content-Type"] = "application/json";
 
   // Stringify JSON bodies
