@@ -1,10 +1,7 @@
 import { z } from "zod";
 
 export const EnhanceSchema = z.object({
-  prompt: z
-    .string()
-    .min(3, "prompt must be at least 3 characters")
-    .max(2000, "prompt too long"),
+  prompt: z.string().trim().min(3, "prompt is required"),
   strength: z
     .number()
     .min(0, "strength must be >= 0")
