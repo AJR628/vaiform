@@ -18,6 +18,8 @@ import { withTimeoutAndRetry } from '../utils/withTimeoutAndRetry.js';
 // Model registry + adapters
 import { resolveStyle } from '../config/models.js';
 import { ADAPTERS, MODELS } from '../adapters/index.js';
+import { getAdapter } from '../services/model-registry.service.js';
+import { replicate } from '../config/replicate.js';
 
 const DIAG = process.env.DIAG === '1';
 const DBG = process.env.VAIFORM_DEBUG === "1";
@@ -103,10 +105,12 @@ export async function generate(req, res) {
   const count = Number.isFinite(body.count) ? Math.max(1, Math.min(4, body.count)) : 1;
   const mode = body.mode || "txt2img";
   const options = body.options || {};
-  const style = body.style || null;
+  // Map provider to style for backward compatibility
+  const provider = body.provider || "realistic";
+  const style = body.style || provider; // fallback to provider if style not provided
 
   if (DBG) {
-    console.log("[gen] inputs", { hasPrompt: !!prompt, count, mode, style });
+    console.log("[gen] inputs", { hasPrompt: !!prompt, count, mode, style, provider });
   }
   // --- DIAG END ---
   
@@ -135,6 +139,30 @@ export async function generate(req, res) {
     const seed = body.seed ?? body.input?.seed ?? body.data?.seed;
     const scheduler = body.scheduler ?? body.input?.scheduler ?? body.data?.scheduler;
     const refiner = body.refiner ?? body.input?.refiner ?? body.data?.refiner;
+    
+    // Handle new schema structure with provider and options
+    const provider = body.provider || "realistic";
+    const options = body.options || {};
+    
+    // Extract image data from options for pixar provider
+    let imageInput = null;
+    if (provider === "pixar" && options) {
+      if (typeof options.image_base64 === 'string' && options.image_base64.startsWith('data:image/')) {
+        imageInput = options.image_base64;
+      } else if (typeof options.image_url === 'string' && /^https?:\/\//i.test(options.image_url)) {
+        try {
+          const resp = await fetch(options.image_url);
+          if (!resp.ok) throw new Error(`fetch failed (${resp.status})`);
+          const buf = Buffer.from(await resp.arrayBuffer());
+          const b64 = buf.toString('base64');
+          imageInput = `data:image/png;base64,${b64}`;
+        } catch (e) {
+          console.warn('imageUrl fetch → base64 failed:', e?.message || e);
+        }
+      } else if (options.image) {
+        imageInput = options.image;
+      }
+    }
     if (!prompt.trim()) {
       return res.status(400).json({ success: false, error: "Missing prompt." });
     }
@@ -223,7 +251,28 @@ export async function generate(req, res) {
     let artifacts = [];
     let prediction = null;
     try {
-      if (modelAdapter?.runTextToImage) {
+      // Handle pixar img2img case
+      if (provider === "pixar" && imageInput) {
+        // Use the pixar adapter directly for img2img
+        const pixarAdapter = getAdapter('pixar');
+        const result = await withTimeoutAndRetry(
+          () => pixarAdapter.invoke({ 
+            prompt, 
+            refs: [imageInput], 
+            params: { guidance, steps, seed, scheduler, refiner, ...params } 
+          }),
+          { timeoutMs: forceTimeout ? 100 : 180000, retries: 2 }
+        );
+        
+        // Handle pixar adapter response format
+        if (result.predictionUrl) {
+          const pred = await waitForPrediction(replicate, result.predictionUrl);
+          prediction = pred;
+        } else {
+          prediction = result;
+        }
+        artifacts = prediction?.output ? [prediction.output] : [];
+      } else if (modelAdapter?.runTextToImage) {
         const result = await withTimeoutAndRetry(
           () => modelAdapter.runTextToImage(input),
           { timeoutMs: forceTimeout ? 100 : 180000, retries: 2 }

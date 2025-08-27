@@ -17,16 +17,24 @@ export default {
   mode: 'img2img',
   async invoke({ prompt, refs = [], params = {} }) {
     const imageBase64 = refs[0];
-    if (!imageBase64) throw new Error('imageBase64 is required for Pixar img2img');
+    
+    // Require an image (schema should already enforce; this is a defensive guard)
+    if (!imageBase64) {
+      const err = new Error("Pixar requires an input image.");
+      err.code = "BAD_REQUEST";
+      throw err;
+    }
 
+    // Build payload: include 'image' ONLY if present (never null)
     const input = {
-      image: toDataUrlMaybe(imageBase64),
       prompt: prompt || 'Convert the image into a 3D animated style.',
       guidance_scale: Number(params.guidance ?? 3.0),
       num_inference_steps: Number(params.steps ?? 28),
       seed: params.seed != null && `${params.seed}`.trim() !== '' ? Number(params.seed) : -1,
       output_format: 'webp',
       output_quality: 85,
+      // only include image field if we have a usable value
+      ...(imageBase64 ? { image: toDataUrlMaybe(imageBase64) } : {}),
     };
 
     // Create a prediction to poll

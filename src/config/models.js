@@ -57,6 +57,7 @@ export const MODEL_REGISTRY = {
 // Styles your UI can send
 export const STYLE_PRESETS = {
   realistic:  { model: "ideogram-v3-turbo" }, // txt→img default
+  cartoon:    { model: "sdxl" },              // txt→img (SDXL) - mapped from provider
   sdxl:       { model: "sdxl" },              // txt→img (SDXL)
   pixar:      { model: "hidream-pixar" },     // img→img default
   "pixar-3d": { model: "hidream-pixar" },     // alias for safety
