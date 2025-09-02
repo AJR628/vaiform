@@ -6,6 +6,7 @@ import * as EnhanceController from "../controllers/enhance.controller.js";
 
 // Try named -> default -> a function with "enhance" in its name -> first function export
 const enhance =
+  EnhanceController.enhanceController ??
   EnhanceController.enhance ??
   EnhanceController.default ??
   Object.entries(EnhanceController).find(
@@ -25,9 +26,6 @@ if (!enhance) {
 const r = Router();
 
 // Auth required; NO idempotency
-r.post("/enhance", requireAuth, validate(EnhanceSchema), enhance);
-
-// Optional legacy alias
-r.post("/", requireAuth, validate(EnhanceSchema), enhance);
+r.post("/enhance-image", requireAuth, validate(EnhanceSchema), enhance);
 
 export default r;
