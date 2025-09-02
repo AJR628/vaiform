@@ -216,26 +216,57 @@ export async function generate(req, res) {
 
       // 4) background work (don't await)
       setImmediate(async () => {
+        // Enter processing immediately so UI never shows failed while provider is running
+        await genRef.set({
+          status: "processing",
+          startedAt: admin.firestore.FieldValue.serverTimestamp(),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        }, { merge: true });
+
         try {
           // reuse your existing generation path (providers, retries, uploads, etc.)
-          // This will be the existing logic below, but we need to extract it into a function
           const result = await runGenerationInBackground({ uid, style, prompt, count, imageInput, guidance, steps, seed, scheduler, refiner, params, cost, jobId });
+          const started = !!result?.started;
+          const images = Array.isArray(result?.images) ? result.images : [];
+
+          if (!images.length) {
+            // No artifacts yet → keep processing and allow later finalization
+            await genRef.set({
+              status: "processing",
+              error: "finalizing",
+              updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            }, { merge: true });
+            return;
+          }
+
           // persist success
           await genRef.set({
             status: "complete",
-            images: result.images,
+            images,
             completedAt: admin.firestore.FieldValue.serverTimestamp(),
             cost: result.cost,
+            error: null,
           }, { merge: true });
         } catch (e) {
           console.error("async generate failed", e);
-          // refund
-          try { await refundCredits(uid, cost); } catch (rf) { console.error("refund failed", rf); }
-          // persist failure
+          // If we never actually started the remote run, mark failed and refund.
+          // Heuristic: if error contains 'prediction' we likely started; otherwise assume not started.
+          const msg = String(e?.message || e || "");
+          const likelyStarted = /prediction|replicate|poll/i.test(msg);
+          if (!likelyStarted) {
+            try { await refundCredits(uid, cost); } catch (rf) { console.error("refund failed", rf); }
+            await genRef.set({
+              status: "failed",
+              error: msg,
+              updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            }, { merge: true });
+            return;
+          }
+          // Remote run likely in flight — keep processing; let a later pass finalize
           await genRef.set({
-            status: "failed",
-            error: String(e?.message || e),
-            completedAt: admin.firestore.FieldValue.serverTimestamp(),
+            status: "processing",
+            error: msg,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
           }, { merge: true });
         }
       });
@@ -1023,10 +1054,10 @@ async function runGenerationInBackground({ uid, style, prompt, count, imageInput
     }
 
     if (!outputUrls.length) {
-      throw new Error('No images were successfully generated and uploaded');
+      return { started: true, images: [], cost };
     }
 
-    return { images: outputUrls, cost };
+    return { started: true, images: outputUrls, cost };
   } catch (error) {
     console.error('[async-gen] background generation failed:', error);
     throw error;

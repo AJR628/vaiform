@@ -308,9 +308,55 @@ try {
   async function check(jobId){
     try {
       const res = await apiFetch(`/job/${encodeURIComponent(jobId)}`);
-      if (!res?.data) return null;
-      return res.data;
-    } catch { return null; }
+      if (!res?.data) return { code: 'NOT_FOUND' };
+      return { code: 'OK', data: res.data };
+    } catch (e) {
+      return { code: 'ERROR', error: String(e?.message || e) };
+    }
+  }
+
+  async function poll(jobId){
+    const card = document.querySelector(`[data-pending-id="${jobId}"]`);
+    if (!card) return;
+    card._t0 = card._t0 || Date.now();
+
+    const r = await check(jobId);
+    if (r.code === 'OK') {
+      const { status, images, artifacts, error } = r.data || {};
+      const list = Array.isArray(images) ? images : (Array.isArray(artifacts) ? artifacts : []);
+      const statusEl = card.querySelector('.meta');
+      if (statusEl) {
+        statusEl.querySelector?.('.status')?.remove?.();
+        const s = document.createElement('div');
+        s.className = 'status';
+        s.textContent = status || 'processing';
+        statusEl.appendChild(s);
+      }
+
+      if ((status === 'complete' || status === 'completed') && list.length > 0) {
+        // Done: remove placeholder and let gallery refresh show it
+        card.remove();
+        sessionStorage.removeItem(`pending:${jobId}`);
+        return;
+      }
+
+      // Keep waiting politely
+      setTimeout(() => poll(jobId), 2500);
+      return;
+    }
+
+    if (r.code === 'NOT_FOUND') {
+      // Early 404 → queued/propagating
+      if (Date.now() - (card._t0 || 0) < 10000) {
+        setTimeout(() => poll(jobId), 3000);
+        return;
+      }
+      setTimeout(() => poll(jobId), 5000);
+      return;
+    }
+
+    // Generic network/auth error: back off and retry
+    setTimeout(() => poll(jobId), 4000);
   }
 
   async function tick(){
@@ -320,19 +366,7 @@ try {
       const { jobId } = JSON.parse(sessionStorage.getItem(k) || "{}");
       if (!jobId) { sessionStorage.removeItem(k); continue; }
       renderPlaceholder(jobId);
-      const st = await check(jobId);
-      if (!st) continue;
-      if (st.status === "complete") {
-        // remove placeholder; your normal image loader will show the finished tile
-        const el = document.querySelector(`[data-pending-id="${jobId}"]`);
-        el?.remove();
-        sessionStorage.removeItem(k);
-      } else if (st.status === "failed") {
-        const el = document.querySelector(`[data-pending-id="${jobId}"]`);
-        if (el) el.querySelector(".meta").innerHTML = `<strong>Generation failed</strong><div class="sub">Please try again.</div>`;
-        // you can keep it visible or remove and toast—your choice
-        sessionStorage.removeItem(k);
-      }
+      poll(jobId);
     }
   }
 
