@@ -960,7 +960,21 @@ async function runGenerationInBackground({ uid, style, prompt, count, imageInput
       if (result.predictionUrl) {
         // Poll Replicate until the prediction completes
         const pred = await waitForPredictionLocal(replicate, result.predictionUrl);
-        artifacts = pred.output || [];
+        // Normalize output to URLs (string | string[] | object[])
+        let urls = [];
+        try {
+          urls = storage.extractUrlsFromReplicateOutput(pred) || [];
+        } catch {}
+        if (!urls.length) {
+          const out = pred?.output;
+          if (typeof out === "string") urls = [out];
+          else if (Array.isArray(out)) {
+            urls = out.map(x => (typeof x === "string" ? x : (x?.url || x?.image || x?.src))).filter(Boolean);
+          } else if (out && typeof out === "object") {
+            urls = [out.url || out.image || out.src].filter(Boolean);
+          }
+        }
+        artifacts = urls;
       }
     } else {
       // Handle text-to-image case
@@ -971,7 +985,21 @@ async function runGenerationInBackground({ uid, style, prompt, count, imageInput
       
       if (result.predictionUrl) {
         const pred = await waitForPredictionLocal(replicate, result.predictionUrl);
-        artifacts = pred.output || [];
+        // Normalize output to URLs
+        let urls = [];
+        try {
+          urls = storage.extractUrlsFromReplicateOutput(pred) || [];
+        } catch {}
+        if (!urls.length) {
+          const out = pred?.output;
+          if (typeof out === "string") urls = [out];
+          else if (Array.isArray(out)) {
+            urls = out.map(x => (typeof x === "string" ? x : (x?.url || x?.image || x?.src))).filter(Boolean);
+          } else if (out && typeof out === "object") {
+            urls = [out.url || out.image || out.src].filter(Boolean);
+          }
+        }
+        artifacts = urls;
       }
     }
 
@@ -979,7 +1007,8 @@ async function runGenerationInBackground({ uid, style, prompt, count, imageInput
     const outputUrls = [];
     for (let i = 0; i < artifacts.length; i++) {
       try {
-        const result = await storage.saveImageFromUrl(uid, jobId, artifacts[i], { 
+        const srcUrl = artifacts[i];
+        const result = await storage.saveImageFromUrl(uid, jobId, srcUrl, { 
           index: i,
           recompress: true,
           maxSide: 3072,
