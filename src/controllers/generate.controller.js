@@ -249,7 +249,7 @@ export async function generate(req, res) {
       process.env.BAD_MODEL === '1';
 
     // --- POLL + RAW LOG START ---
-    async function waitForPrediction(replicateClient, idOrUrl, timeoutMs = 120000) {
+    async function waitForPrediction(replicateClient, idOrUrl, timeoutMs = 600000) {
       const t0 = Date.now();
       while (true) {
         const pred = await replicateClient.predictions.get(idOrUrl);
@@ -277,7 +277,7 @@ export async function generate(req, res) {
             refs: [imageInput], 
             params: { guidance, steps, seed, scheduler, refiner, ...params } 
           }),
-          { timeoutMs: forceTimeout ? 100 : 180000, retries: 2 }
+          { timeoutMs: forceTimeout ? 100 : 600000, retries: 2 }
         );
         
         if (DBG) console.log("[gen] pixar adapter result:", { hasPredictionUrl: !!result?.predictionUrl, resultKeys: result ? Object.keys(result) : [] });
@@ -304,7 +304,7 @@ export async function generate(req, res) {
       } else if (modelAdapter?.runTextToImage) {
         const result = await withTimeoutAndRetry(
           () => modelAdapter.runTextToImage(input),
-          { timeoutMs: forceTimeout ? 100 : 180000, retries: 2 }
+          { timeoutMs: forceTimeout ? 100 : 600000, retries: 2 }
         );
         artifacts = result?.artifacts || [];
         prediction = result;
@@ -314,7 +314,7 @@ export async function generate(req, res) {
 
         const result = await withTimeoutAndRetry(
           () => providerAdapter.runTextToImage({ ...providerRef, input }),
-          { timeoutMs: forceTimeout ? 100 : 180000, retries: 2 }
+          { timeoutMs: forceTimeout ? 100 : 600000, retries: 2 }
         );
         artifacts = result?.artifacts || [];
         prediction = result;
@@ -408,7 +408,7 @@ export async function generate(req, res) {
         if (modelAdapter?.runTextToImage) {
           singlePrediction = await withTimeoutAndRetry(
             () => modelAdapter.runTextToImage(singleInput),
-            { timeoutMs: forceTimeout ? 100 : 180000, retries: 2 }
+            { timeoutMs: forceTimeout ? 100 : 600000, retries: 2 }
           );
         } else {
           let providerRef = entry.providerRef || {};
@@ -416,7 +416,7 @@ export async function generate(req, res) {
 
           singlePrediction = await withTimeoutAndRetry(
             () => providerAdapter.runTextToImage({ ...providerRef, input: singleInput }),
-            { timeoutMs: forceTimeout ? 100 : 180000, retries: 2 }
+            { timeoutMs: forceTimeout ? 100 : 600000, retries: 2 }
           );
         }
 
@@ -608,7 +608,7 @@ export async function imageToImage(req, res) {
       if (modelAdapter?.runImageToImage) {
         const result = await withTimeoutAndRetry(
           () => modelAdapter.runImageToImage(input),
-          { timeoutMs: forceTimeout ? 100 : 180000, retries: 2 }
+          { timeoutMs: forceTimeout ? 100 : 600000, retries: 2 }
         );
         artifacts = result?.artifacts || [];
       } else {
@@ -617,7 +617,7 @@ export async function imageToImage(req, res) {
 
         const result = await withTimeoutAndRetry(
           () => providerAdapter.runImageToImage({ ...providerRef, input }),
-          { timeoutMs: forceTimeout ? 100 : 180000, retries: 2 }
+          { timeoutMs: forceTimeout ? 100 : 600000, retries: 2 }
         );
         artifacts = result?.artifacts || [];
       }
@@ -732,7 +732,7 @@ export async function upscale(req, res) {
     try {
       const created = await withTimeoutAndRetry(
         () => realesrgan.invoke({ refs: [imageUrl] }),
-        { timeoutMs: 60000, retries: 2 }
+        { timeoutMs: 300000, retries: 2 }
       );
       predictionUrl = created?.predictionUrl;
       if (!predictionUrl) throw new Error('No predictionUrl returned from realesrgan.invoke');
@@ -747,7 +747,7 @@ export async function upscale(req, res) {
     try {
       finalOutput = await withTimeoutAndRetry(
         () => jobs.pollUntilDone(predictionUrl),
-        { timeoutMs: 120000, retries: 2 }
+        { timeoutMs: 600000, retries: 2 }
       );
     } catch (e) {
       console.error('[upscale] pollUntilDone failed', { reqId, predictionUrl, msg: e?.message || e });

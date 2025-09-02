@@ -19,6 +19,13 @@ function start() {
   server = app.listen(PORT, HOST, () => {
     console.log(`🚀 Vaiform backend running on http://${HOST}:${PORT}`);
   });
+  
+  // Set server timeouts to handle long-running image generation requests
+  server.timeout = 600000; // 10 minutes
+  server.keepAliveTimeout = 65000; // 65 seconds
+  server.headersTimeout = 66000; // 66 seconds
+  
+  console.log(`⏱️  Server timeouts configured: timeout=${server.timeout}ms, keepAlive=${server.keepAliveTimeout}ms, headers=${server.headersTimeout}ms`);
 }
 function shutdown(signal) {
   console.log(`\n${signal} received. Shutting down gracefully…`);
