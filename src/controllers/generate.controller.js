@@ -2,6 +2,7 @@ import admin from 'firebase-admin';
 import { db } from '../config/firebase.js';
 import { openai } from '../config/env.js';
 import crypto from 'crypto';
+import { v4 as uuidv4 } from 'uuid';
 import {
   ensureUserDocByUid,
   debitCreditsTx,
@@ -185,6 +186,57 @@ export async function generate(req, res) {
     const mod = await openai.moderations.create({ input: prompt });
     if (mod.results?.[0]?.flagged) {
       return res.status(400).json({ success: false, error: 'Inappropriate prompt detected.' });
+    }
+
+    // Check for async mode (Pixar style with X-Async header)
+    const isAsync = (req.get("x-async") === "1") || (req.query?.async === "1");
+    const idemKey = req.get("x-idempotency-key")?.trim();
+    const jobId = idemKey || uuidv4();
+
+    if (isAsync) {
+      // 1) create pending doc (safe to overwrite fields for same jobId/idempotency)
+      const genRef = admin.firestore().doc(`users/${uid}/generations/${jobId}`);
+      await genRef.set({
+        status: "pending",
+        prompt,
+        style,
+        count,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      }, { merge: true });
+
+      // 2) charge upfront; refund later on failure (reuse your debitCreditsTx)
+      const cost = costForCount(count); // use your existing pricing helper
+      await debitCreditsTx(uid, cost);               // existing atomic debit
+
+      // 3) return immediately
+      res.status(202).json({ success: true, data: { jobId, status: "pending" }});
+
+      // 4) background work (don't await)
+      setImmediate(async () => {
+        try {
+          // reuse your existing generation path (providers, retries, uploads, etc.)
+          // This will be the existing logic below, but we need to extract it into a function
+          const result = await runGenerationInBackground({ uid, style, prompt, count, imageInput, guidance, steps, seed, scheduler, refiner, params, cost, jobId });
+          // persist success
+          await genRef.set({
+            status: "complete",
+            images: result.images,
+            completedAt: admin.firestore.FieldValue.serverTimestamp(),
+            cost: result.cost,
+          }, { merge: true });
+        } catch (e) {
+          console.error("async generate failed", e);
+          // refund
+          try { await refundCredits(uid, cost); } catch (rf) { console.error("refund failed", rf); }
+          // persist failure
+          await genRef.set({
+            status: "failed",
+            error: String(e?.message || e),
+            completedAt: admin.firestore.FieldValue.serverTimestamp(),
+          }, { merge: true });
+        }
+      });
+      return;
     }
 
     // Registry chooses model + defaults
@@ -836,6 +888,134 @@ export async function upscale(req, res) {
   } catch (err) {
     console.error('🔥 /upscale error:', err);
     return res.status(500).json({ success: false, error: 'Upscale failed.' });
+  }
+}
+
+/* ===========================
+ * Background generation function for async mode
+ * =========================== */
+async function runGenerationInBackground({ uid, style, prompt, count, imageInput, guidance, steps, seed, scheduler, refiner, params, cost, jobId }) {
+  try {
+    // Registry chooses model + defaults
+    const { modelId, entry, params: modelParams } = resolveStyle(style);
+
+    // How many images? Bound by model max and 1..4 safety
+    let requested = Number(count ?? 1);
+    if (!Number.isFinite(requested)) requested = 1;
+    const maxImages = entry?.maxImages ?? 4;
+    const n = Math.max(1, Math.min(maxImages, Math.floor(requested)));
+
+    // Prefer per-model adapter; else provider adapter
+    const modelAdapter = MODELS[modelId];
+    const providerAdapter = ADAPTERS[entry.provider];
+    if (!providerAdapter) {
+      throw new Error(`No adapter for provider: ${entry.provider}`);
+    }
+
+    // Normalize numeric inputs
+    const input = {
+      prompt,
+      num_outputs: n,
+      num_images: count,
+      guidance: toNum(guidance),
+      steps: toInt(steps),
+      seed: toInt(seed),
+      scheduler,
+      refiner,
+      ...modelParams, // registry defaults/presets
+    };
+
+    let artifacts = [];
+    let prediction = null;
+
+    // Handle pixar img2img case
+    if (style === "pixar" && imageInput) {
+      const pixarAdapter = getAdapter('pixar');
+      const result = await withTimeoutAndRetry(
+        () => pixarAdapter.invoke({ 
+          prompt, 
+          refs: [imageInput], 
+          params: { guidance, steps, seed, scheduler, refiner, ...modelParams } 
+        }),
+        { timeoutMs: 600000, retries: 2 }
+      );
+      
+      if (result.predictionUrl) {
+        // Poll Replicate until the prediction completes
+        const pred = await waitForPrediction(replicate, result.predictionUrl);
+        artifacts = pred.output || [];
+      }
+    } else {
+      // Handle text-to-image case
+      const result = await withTimeoutAndRetry(
+        () => providerAdapter.invoke({ prompt, count: n, options: input }),
+        { timeoutMs: 600000, retries: 2 }
+      );
+      
+      if (result.predictionUrl) {
+        const pred = await waitForPrediction(replicate, result.predictionUrl);
+        artifacts = pred.output || [];
+      }
+    }
+
+    // Extract URLs and upload to storage
+    const outputUrls = [];
+    for (let i = 0; i < artifacts.length; i++) {
+      try {
+        const result = await storage.saveImageFromUrl(uid, jobId, artifacts[i], { 
+          index: i,
+          recompress: true,
+          maxSide: 3072,
+          webpQuality: 90
+        });
+        if (result?.publicUrl) {
+          outputUrls.push(result.publicUrl);
+        }
+      } catch (e) {
+        console.error(`[async-gen] upload failed for artifact ${i}:`, e?.message || e);
+      }
+    }
+
+    if (!outputUrls.length) {
+      throw new Error('No images were successfully generated and uploaded');
+    }
+
+    return { images: outputUrls, cost };
+  } catch (error) {
+    console.error('[async-gen] background generation failed:', error);
+    throw error;
+  }
+}
+
+/* ===========================
+ * GET /job/:jobId - Get job status
+ * =========================== */
+export async function jobStatus(req, res) {
+  try {
+    const uid = req.user?.uid;
+    if (!uid) {
+      return res.status(401).json({
+        success: false,
+        error: "UNAUTHENTICATED",
+        message: "Login required.",
+      });
+    }
+
+    const { jobId } = req.params;
+    if (!jobId) {
+      return res.status(400).json({ success: false, error: "Missing jobId" });
+    }
+
+    const snap = await admin.firestore().doc(`users/${uid}/generations/${jobId}`).get();
+    if (!snap.exists) {
+      return res.status(404).json({ success: false, error: "NOT_FOUND" });
+    }
+    
+    const data = snap.data();
+    return res.json({ success: true, data });
+  } catch (e) {
+    console.error("jobStatus error", e);
+    return res.status(500).json({ success: false, error: "INTERNAL" });
   }
 }
 

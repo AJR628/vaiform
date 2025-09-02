@@ -282,3 +282,69 @@ try {
     return u?.getIdToken ? u.getIdToken() : null;
   });
 } catch {}
+
+/* ========== PENDING TILES (Async Pixar) ========== */
+(function pendingTiles(){
+  const grid = document.querySelector("#gallery") || document.querySelector(".gallery") || document.body;
+
+  function renderPlaceholder(jobId) {
+    const existing = document.querySelector(`[data-pending-id="${jobId}"]`);
+    if (existing) return existing;
+    const card = document.createElement("div");
+    card.className = "card generating";
+    card.dataset.pendingId = jobId;
+    card.innerHTML = `
+      <div class="skeleton"></div>
+      <div class="meta">
+        <strong>Your 3D image is being created!</strong>
+        <div class="sub">Job: ${jobId}</div>
+        <div class="spinner"></div>
+      </div>
+    `;
+    grid.prepend(card);
+    return card;
+  }
+
+  async function check(jobId){
+    try {
+      const res = await fetch(`/job/${encodeURIComponent(jobId)}`, { credentials:"include" });
+      if (!res.ok) return null;
+      const data = await res.json();
+      return data?.data || null;
+    } catch { return null; }
+  }
+
+  async function tick(){
+    const keys = Object.keys(sessionStorage).filter(k => k.startsWith("pending:"));
+    if (keys.length === 0) return;
+    for (const k of keys) {
+      const { jobId } = JSON.parse(sessionStorage.getItem(k) || "{}");
+      if (!jobId) { sessionStorage.removeItem(k); continue; }
+      renderPlaceholder(jobId);
+      const st = await check(jobId);
+      if (!st) continue;
+      if (st.status === "complete") {
+        // remove placeholder; your normal image loader will show the finished tile
+        const el = document.querySelector(`[data-pending-id="${jobId}"]`);
+        el?.remove();
+        sessionStorage.removeItem(k);
+      } else if (st.status === "failed") {
+        const el = document.querySelector(`[data-pending-id="${jobId}"]`);
+        if (el) el.querySelector(".meta").innerHTML = `<strong>Generation failed</strong><div class="sub">Job: ${jobId}</div>`;
+        // you can keep it visible or remove and toast—your choice
+        sessionStorage.removeItem(k);
+      }
+    }
+  }
+
+  // poll every 5s; stop after ~10 minutes to be safe
+  let runs = 0;
+  const iv = setInterval(async () => {
+    runs++;
+    await tick();
+    if (runs > 120) clearInterval(iv);
+  }, 5000);
+
+  // render immediately once
+  tick();
+})();

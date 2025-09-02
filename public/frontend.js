@@ -442,7 +442,27 @@ generateForm?.addEventListener("submit", async (e) => {
   showLoading();
 
   try {
-    const resp = await apiFetch("/generate", { method: "POST", body: payload });
+    // Add async header for Pixar style
+    const headers = { "Content-Type": "application/json" };
+    if ((styleSelect.value || "").toLowerCase() === "pixar") {
+      headers["X-Async"] = "1";
+    }
+
+    const resp = await apiFetch("/generate", { method: "POST", headers, body: payload });
+    
+    // Handle 202 async response
+    if (resp?.status === 202 || resp?.data?.status === "pending") {
+      const jobId = resp?.data?.jobId;
+      if (jobId) {
+        // stash pending id so My Images can show a placeholder immediately
+        const key = `pending:${jobId}`;
+        sessionStorage.setItem(key, JSON.stringify({ jobId, style: (styleSelect.value||"").toLowerCase(), createdAt: Date.now() }));
+      }
+      // redirect to My Images
+      window.location.assign("/my-images.html");
+      return;
+    }
+
     const images = resp?.images;
     const cost = resp?.cost ?? 0;
     const jobId = resp?.jobId ?? null;
@@ -450,7 +470,7 @@ generateForm?.addEventListener("submit", async (e) => {
     // If not, treat it as queued and just redirect to the gallery page.
 
     // Optionally: store returned data for the gallery page
-    sessionStorage.setItem("vaiform_toast", "✅ Images are generating — they’ll appear here shortly.");
+    sessionStorage.setItem("vaiform_toast", "✅ Images are generating — they'll appear here shortly.");
     window.location.href = "/my-images.html?from=generate";
     return;
   } catch (err) {
