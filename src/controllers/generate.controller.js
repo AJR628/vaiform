@@ -899,6 +899,20 @@ export async function upscale(req, res) {
  * =========================== */
 async function runGenerationInBackground({ uid, style, prompt, count, imageInput, guidance, steps, seed, scheduler, refiner, params, cost, jobId }) {
   try {
+    // Local poller to avoid scope issues
+    async function waitForPredictionLocal(replicateClient, idOrUrl, timeoutMs = 600000) {
+      const t0 = Date.now();
+      while (true) {
+        const pred = await replicateClient.predictions.get(idOrUrl);
+        if (pred?.status === "succeeded") return pred;
+        if (pred?.status === "failed" || pred?.status === "canceled") {
+          throw new Error(`prediction-${pred?.status}: ${pred?.error || ""}`);
+        }
+        if (Date.now() - t0 > timeoutMs) throw new Error("prediction-timeout");
+        await new Promise(r => setTimeout(r, 1500));
+      }
+    }
+
     // Registry chooses model + defaults
     const { modelId, entry, params: modelParams } = resolveStyle(style);
 
@@ -945,7 +959,7 @@ async function runGenerationInBackground({ uid, style, prompt, count, imageInput
       
       if (result.predictionUrl) {
         // Poll Replicate until the prediction completes
-        const pred = await waitForPrediction(replicate, result.predictionUrl);
+        const pred = await waitForPredictionLocal(replicate, result.predictionUrl);
         artifacts = pred.output || [];
       }
     } else {
@@ -956,7 +970,7 @@ async function runGenerationInBackground({ uid, style, prompt, count, imageInput
       );
       
       if (result.predictionUrl) {
-        const pred = await waitForPrediction(replicate, result.predictionUrl);
+        const pred = await waitForPredictionLocal(replicate, result.predictionUrl);
         artifacts = pred.output || [];
       }
     }

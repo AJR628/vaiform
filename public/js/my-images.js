@@ -297,7 +297,7 @@ try {
       <div class="skeleton"></div>
       <div class="meta">
         <strong>Your 3D image is being created!</strong>
-        <div class="sub">Job: ${jobId}</div>
+        <div class="sub">This can take a couple of minutes.</div>
         <div class="spinner"></div>
       </div>
     `;
@@ -329,7 +329,7 @@ try {
         sessionStorage.removeItem(k);
       } else if (st.status === "failed") {
         const el = document.querySelector(`[data-pending-id="${jobId}"]`);
-        if (el) el.querySelector(".meta").innerHTML = `<strong>Generation failed</strong><div class="sub">Job: ${jobId}</div>`;
+        if (el) el.querySelector(".meta").innerHTML = `<strong>Generation failed</strong><div class="sub">Please try again.</div>`;
         // you can keep it visible or remove and toast—your choice
         sessionStorage.removeItem(k);
       }
