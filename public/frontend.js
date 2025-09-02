@@ -235,8 +235,27 @@ enhanceBtn?.addEventListener("click", async () => {
       body: { prompt: original, strength: 0.6 }
     });
 
-    if (response.data?.enhanced) {
-      promptInput.value = response.data.enhanced;
+    console.log("Enhance response:", response); // Debug log
+
+    // Handle different possible response structures
+    let enhancedPrompt = null;
+    // prefer the current shape; keep minimal legacy fallbacks
+    if (response?.data?.enhancedPrompt) {
+      enhancedPrompt = response.data.enhancedPrompt;
+    } else if (response?.enhancedPrompt) {
+      enhancedPrompt = response.enhancedPrompt;
+    } else if (response?.data?.prompt) {
+      enhancedPrompt = response.data.prompt; // legacy fallback if ever used
+    } else if (response?.enhanced) {
+      enhancedPrompt = response.enhanced; // legacy fallback
+    }
+
+    if (enhancedPrompt) {
+      promptInput.value = enhancedPrompt;
+      console.log("Updated prompt to:", enhancedPrompt);
+    } else {
+      console.log("No enhanced prompt found in response. Response structure:", response);
+      showToast("Enhancement succeeded but couldn't update prompt. Check console for details.");
     }
 
     await refreshCredits(false);
