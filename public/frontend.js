@@ -502,6 +502,79 @@ window.getId = async (forceRefresh = true) => {
   }
 };
 
+(function attachPixarHintUX(){
+  // --- Pixar auto-hint UX: inject on select, remove on change ---
+  const HINT = "Convert the image into a 3D animated style.";
+  const styleSel =
+    document.querySelector('#style-select') ||
+    document.querySelector('#style') ||
+    document.querySelector('[name="style"]');
+  const promptEl =
+    document.querySelector('#prompt') ||
+    document.querySelector('#prompt-input') ||
+    document.querySelector('[name="prompt"]');
+  const fileEl =
+    document.querySelector('#image-file') ||
+    document.querySelector('#ref-image') ||
+    document.querySelector('#img2img-file') ||
+    document.querySelector('[name="image"]');
+
+  if (!styleSel || !promptEl) return; // quietly bail if elements missing
+
+  const hasHint = () => promptEl.dataset.hasPixarHint === "1";
+  const containsHint = () => promptEl.value.includes(HINT);
+
+  function injectHintIfNeeded() {
+    if (containsHint()) {
+      // We didn't inject it this session, but it's already there—mark so we can cleanly remove if needed.
+      if (!hasHint()) promptEl.dataset.hasPixarHint = "1";
+      return;
+    }
+    if (!promptEl.value.trim()) {
+      promptEl.value = HINT;
+      promptEl.dataset.hasPixarHint = "1";
+    } else {
+      // Append once, non-destructive
+      promptEl.value = `${promptEl.value.trim()} ${HINT}`.trim();
+      promptEl.dataset.hasPixarHint = "1";
+    }
+  }
+
+  function removeHintIfInjected() {
+    if (!hasHint()) return;
+    const next = promptEl.value.replace(HINT, "").replace(/\s{2,}/g, " ").trim();
+    promptEl.value = next;
+    delete promptEl.dataset.hasPixarHint;
+  }
+
+  function isPixar(v) {
+    return String(v || "").toLowerCase() === "pixar";
+  }
+
+  function handleStyleChange() {
+    const v = styleSel.value;
+    if (isPixar(v)) {
+      injectHintIfNeeded();
+    } else {
+      removeHintIfInjected();
+    }
+  }
+
+  function handleFileChange() {
+    // If user uploads after choosing Pixar and the field is still empty, ensure hint exists
+    if (isPixar(styleSel.value) && !promptEl.value.trim()) {
+      injectHintIfNeeded();
+    }
+  }
+
+  // Attach listeners
+  styleSel.addEventListener("change", handleStyleChange);
+  fileEl?.addEventListener("change", handleFileChange);
+
+  // Run once on load to match current UI state
+  handleStyleChange();
+})();
+
 /* ========================= INIT ========================= */
 (() => {
   applyStyleDefaults(styleSelect?.value || "realistic");
