@@ -145,10 +145,18 @@ export async function generate(req, res) {
     const options = body.options || {};
     
     // Extract image data from options for pixar provider
+    // Check both provider and style for pixar (frontend sends style)
     let imageInput = null;
-    if (provider === "pixar" && options) {
+    const isPixarRequest = (provider === "pixar" || style === "pixar");
+    
+    if (DBG) {
+      console.log("[gen] pixar check:", { provider, style, isPixarRequest, hasOptions: !!options, optionsKeys: options ? Object.keys(options) : [] });
+    }
+    
+    if (isPixarRequest && options) {
       if (typeof options.image_base64 === 'string' && options.image_base64.startsWith('data:image/')) {
         imageInput = options.image_base64;
+        if (DBG) console.log("[gen] using image_base64, length:", imageInput.length);
       } else if (typeof options.image_url === 'string' && /^https?:\/\//i.test(options.image_url)) {
         try {
           const resp = await fetch(options.image_url);
@@ -156,12 +164,18 @@ export async function generate(req, res) {
           const buf = Buffer.from(await resp.arrayBuffer());
           const b64 = buf.toString('base64');
           imageInput = `data:image/png;base64,${b64}`;
+          if (DBG) console.log("[gen] fetched image_url, converted to base64, length:", imageInput.length);
         } catch (e) {
           console.warn('imageUrl fetch → base64 failed:', e?.message || e);
         }
       } else if (options.image) {
         imageInput = options.image;
+        if (DBG) console.log("[gen] using options.image, length:", imageInput?.length || 0);
       }
+    }
+    
+    if (DBG) {
+      console.log("[gen] final imageInput:", { hasImage: !!imageInput, imageLength: imageInput?.length || 0, isPixar: isPixarRequest });
     }
     if (!prompt.trim()) {
       return res.status(400).json({ success: false, error: "Missing prompt." });
@@ -252,7 +266,9 @@ export async function generate(req, res) {
     let prediction = null;
     try {
       // Handle pixar img2img case
-      if (provider === "pixar" && imageInput) {
+      if (isPixarRequest && imageInput) {
+        if (DBG) console.log("[gen] calling pixar adapter with image length:", imageInput.length);
+        
         // Use the pixar adapter directly for img2img
         const pixarAdapter = getAdapter('pixar');
         const result = await withTimeoutAndRetry(
@@ -264,14 +280,27 @@ export async function generate(req, res) {
           { timeoutMs: forceTimeout ? 100 : 180000, retries: 2 }
         );
         
-        // Handle pixar adapter response format
+        if (DBG) console.log("[gen] pixar adapter result:", { hasPredictionUrl: !!result?.predictionUrl, resultKeys: result ? Object.keys(result) : [] });
+        
+        // Handle pixar adapter response format - it returns { predictionUrl }
         if (result.predictionUrl) {
+          if (DBG) console.log("[gen] polling Replicate prediction:", result.predictionUrl);
+          // Poll Replicate until the prediction completes
           const pred = await waitForPrediction(replicate, result.predictionUrl);
           prediction = pred;
+          // Extract artifacts from the completed prediction
+          if (pred?.output) {
+            artifacts = Array.isArray(pred.output) ? pred.output : [pred.output];
+          } else {
+            artifacts = [];
+          }
+          if (DBG) console.log("[gen] prediction completed, artifacts:", artifacts.length);
         } else {
+          // Fallback if no predictionUrl
           prediction = result;
+          artifacts = [];
+          if (DBG) console.log("[gen] no predictionUrl, using result directly");
         }
-        artifacts = prediction?.output ? [prediction.output] : [];
       } else if (modelAdapter?.runTextToImage) {
         const result = await withTimeoutAndRetry(
           () => modelAdapter.runTextToImage(input),

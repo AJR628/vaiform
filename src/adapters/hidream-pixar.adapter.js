@@ -18,6 +18,15 @@ export default {
   async invoke({ prompt, refs = [], params = {} }) {
     const imageBase64 = refs[0];
     
+    // Debug logging
+    console.log("[pixar-adapter] invoke called with:", { 
+      hasPrompt: !!prompt, 
+      refsLength: refs.length, 
+      hasImage: !!imageBase64,
+      imageType: typeof imageBase64,
+      imageStartsWith: imageBase64?.substring(0, 50) || 'none'
+    });
+    
     // Require an image (schema should already enforce; this is a defensive guard)
     if (!imageBase64) {
       const err = new Error("Pixar requires an input image.");
@@ -36,6 +45,13 @@ export default {
       // only include image field if we have a usable value
       ...(imageBase64 ? { image: toDataUrlMaybe(imageBase64) } : {}),
     };
+    
+    console.log("[pixar-adapter] sending to Replicate:", { 
+      hasImage: !!input.image, 
+      imageType: typeof input.image,
+      imageStartsWith: input.image?.substring(0, 50) || 'none',
+      inputKeys: Object.keys(input)
+    });
 
     // Create a prediction to poll
     const prediction = await replicate.predictions.create({
