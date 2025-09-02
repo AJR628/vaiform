@@ -307,10 +307,9 @@ try {
 
   async function check(jobId){
     try {
-      const res = await fetch(`/job/${encodeURIComponent(jobId)}`, { credentials:"include" });
-      if (!res.ok) return null;
-      const data = await res.json();
-      return data?.data || null;
+      const res = await apiFetch(`/job/${encodeURIComponent(jobId)}`);
+      if (!res?.data) return null;
+      return res.data;
     } catch { return null; }
   }
 

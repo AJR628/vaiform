@@ -194,6 +194,9 @@ export async function generate(req, res) {
     const jobId = idemKey || uuidv4();
 
     if (isAsync) {
+      // Registry chooses model + defaults (moved up to avoid TDZ)
+      const { modelId, entry, params } = resolveStyle(style);
+      
       // 1) create pending doc (safe to overwrite fields for same jobId/idempotency)
       const genRef = admin.firestore().doc(`users/${uid}/generations/${jobId}`);
       await genRef.set({
