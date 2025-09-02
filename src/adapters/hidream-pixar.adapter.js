@@ -59,7 +59,7 @@ export default {
       input,
     });
 
-    // IMPORTANT: return a URL, not just the id
-    return { predictionUrl: prediction.urls.get, directOutput: null };
+    // IMPORTANT: return just the ID, not the full URL
+    return { predictionUrl: prediction.id, directOutput: null };
   },
 };
