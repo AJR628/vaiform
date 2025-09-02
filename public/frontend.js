@@ -230,13 +230,13 @@ enhanceBtn?.addEventListener("click", async () => {
     enhanceBtn.disabled = true;
     enhanceSpinner?.classList.remove("hidden");
 
-    const { enhancedPrompt, cost } = await apiFetch("/enhance", {
+    const response = await apiFetch("/enhance", {
       method: "POST",
       body: { prompt: original, strength: 0.6 }
     });
 
-    if (enhancedPrompt) {
-      promptInput.value = enhancedPrompt;
+    if (response.data?.enhanced) {
+      promptInput.value = response.data.enhanced;
     }
 
     await refreshCredits(false);
