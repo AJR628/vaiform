@@ -34,14 +34,27 @@ export default {
       throw err;
     }
 
+    // Consolidate defaults to match the sample config you shared
+    const DEFAULTS = {
+      // already in your payload per logs:
+      guidance_scale: 3.5,
+      image_guidance_scale: 2,
+      num_inference_steps: 28, // aka "steps"
+      scheduler: "K_EULER",
+      refiner: "none",
+      output_quality: 80,
+      speed_mode: "Extra Juiced 🚀 (even more speed)",
+      // pin the rest explicitly:
+      output_format: "webp",
+      seed: -1,
+      refine_strength: 0.3,
+      clip_cfg_norm: true,
+    };
+
     // Build payload: include 'image' ONLY if present (never null)
     const input = {
       prompt: prompt || 'Convert the image into a 3D animated style.',
-      guidance_scale: Number(params.guidance ?? 3.0),
-      num_inference_steps: Number(params.steps ?? 28),
-      seed: params.seed != null && `${params.seed}`.trim() !== '' ? Number(params.seed) : -1,
-      output_format: 'webp',
-      output_quality: 85,
+      ...DEFAULTS,
       // only include image field if we have a usable value
       ...(imageBase64 ? { image: toDataUrlMaybe(imageBase64) } : {}),
     };
@@ -50,7 +63,9 @@ export default {
       hasImage: !!input.image, 
       imageType: typeof input.image,
       imageStartsWith: input.image?.substring(0, 50) || 'none',
-      inputKeys: Object.keys(input)
+      inputKeys: Object.keys(input),
+      // Debug: show sanitized payload keys (without image data)
+      sanitizedKeys: Object.keys(input).filter(key => key !== 'image')
     });
 
     // Create a prediction to poll

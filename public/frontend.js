@@ -344,6 +344,19 @@ function applyStyleDefaults(style) {
       removeImageBtn?.classList.add("hidden");
     }
 
+    // Auto-prompt: when selecting Pixar and an image is attached,
+    // ensure there is a sensible default prompt users can edit/replace
+    if (uploadedImageBase64 && promptInput) {
+      const directive = "Convert the image into a 3D animated style.";
+      const current = (promptInput.value || "").trim();
+      if (current.length < 3) {
+        promptInput.value = directive;
+      } else if (!current.toLowerCase().includes("3d animated")) {
+        // keep user text, gently append the directive once
+        promptInput.value = `${current} ${directive}`;
+      }
+    }
+
     guidanceInput && (guidanceInput.value = 3.0);
     stepsInput && (stepsInput.value = 28);
     schedulerInput && (schedulerInput.value = "K_EULER");
