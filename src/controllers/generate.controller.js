@@ -243,6 +243,7 @@ export async function generate(req, res) {
           await genRef.set({
             status: "complete",
             images,
+            urls: images, // keep legacy field for gallery rendering
             completedAt: admin.firestore.FieldValue.serverTimestamp(),
             cost: result.cost,
             error: null,

@@ -337,6 +337,7 @@ try {
         // Done: remove placeholder and let gallery refresh show it
         card.remove();
         sessionStorage.removeItem(`pending:${jobId}`);
+        try { await renderGallery(currentUserUid); } catch {}
         return;
       }
 
