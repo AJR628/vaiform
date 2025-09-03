@@ -15,6 +15,9 @@ const toastEl             = document.getElementById("toast");
 const downloadSelectedBtn = document.getElementById("download-selected");
 const modal               = document.getElementById("image-modal");
 const modalImg            = document.getElementById("modal-img");
+const modalClose          = document.getElementById("modal-close");
+const modalPrev           = document.getElementById("modal-prev");
+const modalNext           = document.getElementById("modal-next");
 
 // header controls (present on this page)
 const loginBtn  = document.getElementById("login-button");
@@ -35,6 +38,71 @@ creditDisplay?.addEventListener("click", () => refreshCredits(true));
 let currentUserEmail = null;
 let currentUserUid   = null;
 let selectedImages   = [];
+let galleryFlat      = []; // flat list of { url, upscaled }
+let currentIndex     = -1;
+
+function openModalAt(index) {
+  if (!Array.isArray(galleryFlat) || index < 0 || index >= galleryFlat.length) return;
+  currentIndex = index;
+  const item = galleryFlat[currentIndex];
+  modalImg.src = item.upscaled || item.url;
+  modal.classList.remove("hidden");
+}
+
+function closeModal() {
+  modal.classList.add("hidden");
+  currentIndex = -1;
+}
+
+function showPrev() {
+  if (currentIndex <= 0) return;
+  openModalAt(currentIndex - 1);
+}
+
+function showNext() {
+  if (currentIndex < 0 || currentIndex >= galleryFlat.length - 1) return;
+  openModalAt(currentIndex + 1);
+}
+
+modalClose?.addEventListener("click", (e) => { e.stopPropagation(); closeModal(); });
+modalPrev?.addEventListener("click", (e) => { e.stopPropagation(); showPrev(); });
+modalNext?.addEventListener("click", (e) => { e.stopPropagation(); showNext(); });
+
+// Keep backdrop click to close
+modal?.addEventListener("click", () => closeModal());
+// Prevent click on image from closing (so users can double-tap zoom naturally later if desired)
+modalImg?.addEventListener("click", (e) => e.stopPropagation());
+
+document.addEventListener("keydown", (e) => {
+  if (modal.classList.contains("hidden")) return;
+  if (e.key === "Escape") return closeModal();
+  if (e.key === "ArrowLeft") return showPrev();
+  if (e.key === "ArrowRight") return showNext();
+});
+
+// Basic touch/swipe support
+(function enableSwipe(){
+  let startX = 0, startY = 0, tracking = false;
+  const threshold = 40; // pixels
+  modal?.addEventListener("touchstart", (e) => {
+    const t = e.touches?.[0];
+    if (!t) return;
+    tracking = true;
+    startX = t.clientX; startY = t.clientY;
+  }, { passive: true });
+  modal?.addEventListener("touchmove", () => {}, { passive: true });
+  modal?.addEventListener("touchend", (e) => {
+    if (!tracking) return;
+    tracking = false;
+    const t = e.changedTouches?.[0];
+    if (!t) return;
+    const dx = t.clientX - startX;
+    const dy = t.clientY - startY;
+    if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > threshold) {
+      if (dx > 0) showPrev(); else showNext();
+    }
+  });
+})();
 
 /* ========== HELPERS ========== */
 function showToast(msg, ms = 2200) {
@@ -70,6 +138,8 @@ async function refreshCredits(force = true, retries = 1) {
 
 /* ========== RENDER ========== */
 function makeTile({ url, upscaledUrl, genId, index }) {
+  const flatIndex = galleryFlat.length;
+  galleryFlat.push({ url, upscaled: upscaledUrl || null });
   const wrap = document.createElement("div");
   wrap.className = "relative group rounded overflow-hidden shadow hover:shadow-lg transition";
 
@@ -78,11 +148,7 @@ function makeTile({ url, upscaledUrl, genId, index }) {
   img.alt = "AI image";
   img.loading = "lazy";
   img.className = "w-full h-auto object-cover cursor-pointer";
-  img.addEventListener("click", () => {
-    if (!modal || !modalImg) return;
-    modalImg.src = upscaledUrl || url;
-    modal.classList.remove("hidden");
-  });
+  img.addEventListener("click", () => openModalAt(flatIndex));
 
   const checkbox = document.createElement("input");
   checkbox.type = "checkbox";
@@ -246,8 +312,7 @@ downloadSelectedBtn?.addEventListener("click", () => {
 });
 
 /* ========== MODAL ========== */
-modal?.addEventListener("click", () => modal.classList.add("hidden"));
-document.addEventListener("keydown", (e) => { if (e.key === "Escape") modal?.classList.add("hidden"); });
+
 
 /* ========== AUTH + Header state ========== */
 onAuthStateChanged(auth, async (user) => {

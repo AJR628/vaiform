@@ -105,8 +105,18 @@
 
   <!-- Image Modal -->
   <!-- add `flex` so justify/items-center actually center content -->
-  <div id="image-modal" class="fixed inset-0 bg-black bg-opacity-90 hidden flex justify-center items-center z-50">
-    <img id="modal-img" class="max-w-4xl max-h-[90vh] rounded shadow-lg" />
+  <div id="image-modal" class="fixed inset-0 bg-black/90 hidden z-50 flex items-center justify-center select-none">
+    <!-- Close button -->
+    <button id="modal-close" class="absolute top-3 right-3 text-white/90 hover:text-white text-2xl leading-none px-3 py-1" aria-label="Close">✕</button>
+
+    <!-- Prev -->
+    <button id="modal-prev" class="absolute left-2 md:left-4 text-white/80 hover:text-white text-4xl px-3 py-2" aria-label="Previous">‹</button>
+
+    <!-- Image -->
+    <img id="modal-img" class="max-w-[95vw] max-h-[90vh] w-auto h-auto object-contain rounded shadow-lg" />
+
+    <!-- Next -->
+    <button id="modal-next" class="absolute right-2 md:right-4 text-white/80 hover:text-white text-4xl px-3 py-2" aria-label="Next">›</button>
   </div>
 
   <!-- Dark Mode Script -->
