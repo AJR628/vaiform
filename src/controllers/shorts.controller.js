@@ -6,6 +6,8 @@ const CreateShortSchema = z.object({
   text: z.string().min(2).max(280),
   template: z.enum(["calm", "bold", "cosmic", "minimal"]).default("calm").optional(),
   durationSec: z.number().int().min(6).max(10).default(8).optional(),
+  voiceover: z.boolean().default(false).optional(),
+  wantAttribution: z.boolean().default(true).optional(),
 });
 
 export async function createShort(req, res) {
@@ -14,14 +16,14 @@ export async function createShort(req, res) {
     if (!parsed.success) {
       return res.status(400).json({ success: false, error: "INVALID_INPUT", detail: parsed.error.flatten() });
     }
-    const { mode = "quote", text, template = "calm", durationSec = 8 } = parsed.data;
+    const { mode = "quote", text, template = "calm", durationSec = 8, voiceover = false, wantAttribution = true } = parsed.data;
 
     const ownerUid = req.user?.uid;
     if (!ownerUid) {
       return res.status(401).json({ success: false, error: "UNAUTHENTICATED", message: "Login required" });
     }
 
-    const result = await createShortService({ ownerUid, mode, text, template, durationSec });
+    const result = await createShortService({ ownerUid, mode, text, template, durationSec, voiceover, wantAttribution });
     return res.json({ success: true, data: result });
   } catch (e) {
     const msg = e?.message || "Short creation failed";

@@ -119,7 +119,7 @@ export function resolveFont() {
  * @param {number} [p.durationSec=8]
  * @param {"calm"|"bold"|"cosmic"|"minimal"} [p.template="minimal"]
  */
-export async function renderSolidQuoteVideo({ outPath, text, durationSec = 8, template = "minimal" }) {
+export async function renderSolidQuoteVideo({ outPath, text, durationSec = 8, template = "minimal", authorLine }) {
   if (!outPath) throw new Error("outPath is required");
   if (!text || !String(text).trim()) throw new Error("text is required");
 
@@ -140,8 +140,14 @@ export async function renderSolidQuoteVideo({ outPath, text, durationSec = 8, te
   const safeText = escapeDrawtext(String(text).trim());
   const fontPath = resolveFont();
   const fontOpt = fontPath ? `:fontfile=${escapeFilterPath(fontPath)}` : "";
-  // Draw centered text with soft shadow and semi-transparent box (no zoompan)
-  const filter = `drawtext=text=${safeText}${fontOpt}:fontcolor=white:fontsize=64:line_spacing=8:shadowcolor=black@0.6:shadowx=2:shadowy=2:box=1:boxcolor=black@0.35:boxborderw=24:x=(w-text_w)/2:y=(h-text_h)/2`;
+
+  const mainLine = `drawtext=text=${safeText}${fontOpt}:fontcolor=white:fontsize=64:line_spacing=8:shadowcolor=black@0.6:shadowx=2:shadowy=2:box=1:boxcolor=black@0.35:boxborderw=24:x=(w-text_w)/2:y=(h-text_h)/2`;
+  let filter = mainLine;
+  if (authorLine && String(authorLine).trim()) {
+    const safeAuthor = escapeDrawtext(String(authorLine).trim());
+    const author = `drawtext=text=${safeAuthor}${fontOpt}:fontcolor=white@0.85:fontsize=36:shadowcolor=black@0.5:shadowx=1:shadowy=1:box=0:x=(w-text_w)/2:y=h/2+120`;
+    filter = `${mainLine},${author}`;
+  }
 
   const args = [
     "-f", "lavfi",
