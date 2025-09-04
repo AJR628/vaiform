@@ -7,6 +7,7 @@ import enhanceRouter from "./enhance.routes.js";
 import checkoutRouter from "./checkout.routes.js";
 import diagRouter from "./diag.routes.js";
 import whoamiRouter from "./whoami.routes.js";
+import shortsRouter from "./shorts.routes.js";
 
 // Lightweight root
 const index = Router();
@@ -22,4 +23,5 @@ export default {
   webhook: webhookRouter,   // "/webhook"
   checkout: checkoutRouter, // "/checkout"
   diag: diagRouter,         // "/diag"
+  shorts: shortsRouter,     // "/shorts"
 };
