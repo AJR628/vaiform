@@ -25,6 +25,7 @@ const CreateShortSchema = z
     voiceover: z.boolean().default(false).optional(),
     wantAttribution: z.boolean().default(true).optional(),
     background: BackgroundSchema.default({ kind: "solid" }).optional(),
+    debugAudioPath: z.string().optional(),
   })
   .superRefine((val, ctx) => {
     const bg = val?.background;
@@ -112,14 +113,14 @@ export async function createShort(req, res) {
     if (!parsed.success) {
       return res.status(400).json({ success: false, error: "INVALID_INPUT", detail: parsed.error.flatten() });
     }
-    const { mode = "quote", text, template = "calm", durationSec = 8, voiceover = false, wantAttribution = true, background = { kind: "solid" } } = parsed.data;
+    const { mode = "quote", text, template = "calm", durationSec = 8, voiceover = false, wantAttribution = true, background = { kind: "solid" }, debugAudioPath } = parsed.data;
 
     const ownerUid = req.user?.uid;
     if (!ownerUid) {
       return res.status(401).json({ success: false, error: "UNAUTHENTICATED", message: "Login required" });
     }
 
-    const result = await createShortService({ ownerUid, mode, text, template, durationSec, voiceover, wantAttribution, background });
+    const result = await createShortService({ ownerUid, mode, text, template, durationSec, voiceover, wantAttribution, background, debugAudioPath });
     return res.json({ success: true, data: result });
   } catch (e) {
     const msg = e?.message || "Short creation failed";

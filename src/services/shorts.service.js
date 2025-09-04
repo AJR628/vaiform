@@ -20,7 +20,7 @@ export function finalizeQuoteText(mode, text) {
   return t;
 }
 
-export async function createShortService({ ownerUid, mode, text, template, durationSec, voiceover = false, wantAttribution = true, background = { kind: "solid" } }) {
+export async function createShortService({ ownerUid, mode, text, template, durationSec, voiceover = false, wantAttribution = true, background = { kind: "solid" }, debugAudioPath }) {
   if (!ownerUid) throw new Error("MISSING_UID");
 
   const jobId = `shorts-${Date.now().toString(36)}-${Math.random().toString(36).slice(2,7)}`;
@@ -31,17 +31,27 @@ export async function createShortService({ ownerUid, mode, text, template, durat
   // Resolve quote using engine (curated or aphorism)
   const usedQuote = await getQuote({ mode, text, template });
 
-  // Optional voiceover (soft-fail)
+  // Optional voiceover (soft-fail) with debug override
   let audioOk = false;
+  let v = { audioPath: null };
   if (voiceover) {
     try {
-      const v = await synthVoice({ text: usedQuote.text });
+      v = await synthVoice({ text: usedQuote.text });
       if (v?.audioPath) {
-        try { fs.copyFileSync(v.audioPath, audioPath); audioOk = true; } catch {}
+        try { fs.copyFileSync(v.audioPath, audioPath); audioOk = true; console.log("[shorts] TTS audio ready:", v.audioPath); } catch (e) { console.warn("[shorts] copy TTS audio failed:", e?.message || e); }
       }
     } catch (e) {
       // soft-fail
       audioOk = false;
+    }
+    if (debugAudioPath && fs.existsSync(debugAudioPath)) {
+      try {
+        fs.copyFileSync(debugAudioPath, audioPath);
+        audioOk = true;
+        console.log("[shorts] debugAudioPath used:", debugAudioPath);
+      } catch (e) {
+        console.warn("[shorts] debugAudioPath copy failed:", e?.message || e);
+      }
     }
   }
 
