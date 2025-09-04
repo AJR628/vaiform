@@ -1,4 +1,4 @@
-import curated from "../data/quotes.curated.json" assert { type: "json" };
+import curated from "../data/quotes.curated.json" with { type: "json" };
 
 const PROFANITY = ["damn","shit","fuck"]; // tiny blocklist
 
