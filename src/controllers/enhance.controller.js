@@ -1,46 +1,17 @@
-// src/controllers/enhance.controller.js
-import admin from "../config/firebase.js"; // ✅ use the initialized Admin instance
 import { enhancePrompt } from "../services/enhance.service.js";
-import { ensureUserDoc, debitCreditsTx } from "../services/credit.service.js";
-import { ENHANCE_COST } from "../config/pricing.js";
+import { debitCreditsTx } from "../services/credit.service.js";
 
-/**
- * POST /enhance
- * Body: { prompt: string, strength?: number in [0,1] }
- * Requires: Authorization: Bearer <ID_TOKEN>, X-Idempotency-Key
- * Deducts ENHANCE_COST credits, returns { success:true, enhancedPrompt }
- *
- * Note: Input is validated by EnhanceSchema in the route (validate middleware),
- * so this controller assumes valid types/ranges.
- */
-export async function enhanceController(req, res) {
+export async function enhanceImageController(req, res) {
   try {
-    const { prompt, strength = 0.6 } = req.body || {};
-    const { uid, email } = req.user || {};
-
-    // Ensure user doc exists and migrate if needed
-    await ensureUserDoc(uid, email);
-
-    // Deduct 1 credit from UID doc
-    await debitCreditsTx(uid, 1);
-
-    // ---- Enhance the prompt ----
+    const { prompt, strength = 0.5 } = req.body;
+    if (typeof prompt !== 'string' || (strength !== undefined && (typeof strength !== 'number' || strength < 0 || strength > 1))) {
+      return res.status(400).json({ success: false, error: "Invalid input" });
+    }
+    await debitCreditsTx(req.user?.uid, 1);
     const enhancedPrompt = await enhancePrompt(prompt, strength);
-
-    // ---- Respond (FireStore idempotency will cache this non-5xx) ----
-    return res.status(200).json({
-      success: true,
-      data: {
-        enhancedPrompt,
-        cost: ENHANCE_COST,
-      },
-    });
+    return res.json({ success: true, enhancedPrompt });
   } catch (err) {
-    console.error("❌ [enhance] failed:", err?.code || err?.name, err?.message || err);
-    return res.status(500).json({
-      success: false,
-      error: "ENHANCE_FAILED",
-      detail: err?.message || "Enhance failed",
-    });
+    console.error("Enhance image error:", err);
+    return res.status(500).json({ success: false, error: "Enhancement failed" });
   }
 }

@@ -1,4 +1,3 @@
-// src/config/pricing.js
 export const ENHANCE_COST = 1;
 
 export function costForCount(count) {
