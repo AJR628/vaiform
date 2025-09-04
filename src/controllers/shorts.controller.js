@@ -2,8 +2,9 @@ import { z } from "zod";
 import { createShortService } from "../services/shorts.service.js";
 
 const BackgroundSchema = z.object({
-  kind: z.enum(["solid", "imageUrl"]).default("solid"),
-  imageUrl: z.string().url().optional(), // required when kind=imageUrl
+  kind: z.enum(["solid", "imageUrl", "stock"]).default("solid"),
+  imageUrl: z.string().url().optional(), // imageUrl lane only
+  query: z.string().min(1).max(80).optional(), // stock lane only
   kenBurns: z.enum(["in", "out"]).optional(),
 });
 
@@ -43,6 +44,21 @@ const CreateShortSchema = z
             path: ["background", "imageUrl"],
           });
         }
+      }
+    }
+    if (bg?.kind === "stock") {
+      if (!bg.query || typeof bg.query !== "string" || bg.query.trim().length < 1) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Required when kind=stock",
+          path: ["background", "query"],
+        });
+      } else if (bg.query.length > 80) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Must be at most 80 characters",
+          path: ["background", "query"],
+        });
       }
     }
   });

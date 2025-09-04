@@ -7,6 +7,8 @@ import { fetchImageToTmp } from "../utils/image.fetch.js";
 import { uploadPublic } from "../utils/storage.js";
 import { getQuote } from "./quote.engine.js";
 import { synthVoice } from "./tts.service.js";
+import { resolveStockImage } from "./stock.image.provider.js";
+import { extractCoverJpeg } from "../utils/ffmpeg.cover.js";
 
 export function finalizeQuoteText(mode, text) {
   const t = (text || "").trim();
@@ -63,6 +65,23 @@ export async function createShortService({ ownerUid, mode, text, template, durat
         console.warn("Image background failed, falling back to solid:", e?.message || e);
         await renderSolidQuoteVideo({ outPath, text: usedQuote.text, durationSec, template, authorLine });
       }
+    } else if (background?.kind === "stock" && background?.query) {
+      try {
+        const stockUrl = await resolveStockImage({ query: background.query });
+        const img = await fetchImageToTmp(stockUrl);
+        imageTmpPath = img.path;
+        await renderImageQuoteVideo({
+          outPath,
+          imagePath: imageTmpPath,
+          durationSec,
+          text: usedQuote.text,
+          authorLine,
+          kenBurns: background.kenBurns,
+        });
+      } catch (e) {
+        console.warn("Stock background failed, falling back to solid:", e?.message || e);
+        await renderSolidQuoteVideo({ outPath, text: usedQuote.text, durationSec, template, authorLine });
+      }
     } else {
       await renderSolidQuoteVideo({ outPath, text: usedQuote.text, durationSec, template, authorLine });
     }
@@ -91,8 +110,23 @@ export async function createShortService({ ownerUid, mode, text, template, durat
     }
   }
 
-  const destPath = `artifacts/${ownerUid}/${jobId}/short.mp4`;
+  const destBase = `artifacts/${ownerUid}/${jobId}`;
+  const destPath = `${destBase}/short.mp4`;
   const { publicUrl } = await uploadPublic(muxedPath, destPath, "video/mp4");
+
+  // Extract and upload cover thumbnail (best-effort)
+  const coverLocal = path.join(tmpRoot, "cover.jpg");
+  let coverUrl = null;
+  try {
+    await extractCoverJpeg({ inPath: muxedPath, outPath: coverLocal, second: 0.5, width: 720 });
+    if (fs.existsSync(coverLocal)) {
+      const coverDest = `${destBase}/cover.jpg`;
+      const { publicUrl: cUrl } = await uploadPublic(coverLocal, coverDest, "image/jpeg");
+      coverUrl = cUrl;
+    }
+  } catch (e) {
+    // ignore cover failures
+  }
 
   try { if (imageTmpPath) fs.unlinkSync(imageTmpPath); } catch {}
   try { fs.rmSync(tmpRoot, { recursive: true, force: true }); } catch {}
@@ -100,7 +134,7 @@ export async function createShortService({ ownerUid, mode, text, template, durat
   return {
     jobId,
     videoUrl: publicUrl,
-    coverImageUrl: null,
+    coverImageUrl: coverUrl,
     durationSec,
     usedTemplate: template,
     usedQuote,
