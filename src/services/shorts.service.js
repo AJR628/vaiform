@@ -9,6 +9,7 @@ import { getQuote } from "./quote.engine.js";
 import { synthVoice } from "./tts.service.js";
 import { resolveStockImage } from "./stock.image.provider.js";
 import { extractCoverJpeg } from "../utils/ffmpeg.cover.js";
+import { generateAIImage } from "./ai.image.provider.js";
 
 export function finalizeQuoteText(mode, text) {
   const t = (text || "").trim();
@@ -62,7 +63,7 @@ export async function createShortService({ ownerUid, mode, text, template, durat
           kenBurns: background.kenBurns,
         });
       } catch (e) {
-        console.warn("Image background failed, falling back to solid:", e?.message || e);
+        console.warn("[background] imageUrl fallback:", e?.message || e);
         await renderSolidQuoteVideo({ outPath, text: usedQuote.text, durationSec, template, authorLine });
       }
     } else if (background?.kind === "stock" && background?.query) {
@@ -79,7 +80,58 @@ export async function createShortService({ ownerUid, mode, text, template, durat
           kenBurns: background.kenBurns,
         });
       } catch (e) {
-        console.warn("Stock background failed, falling back to solid:", e?.message || e);
+        console.warn("[background] stock fallback:", e?.message || e);
+        await renderSolidQuoteVideo({ outPath, text: usedQuote.text, durationSec, template, authorLine });
+      }
+    } else if (background?.kind === "upload" && background?.uploadUrl) {
+      try {
+        const img = await fetchImageToTmp(background.uploadUrl);
+        imageTmpPath = img.path;
+        await renderImageQuoteVideo({
+          outPath,
+          imagePath: imageTmpPath,
+          durationSec,
+          text: usedQuote.text,
+          authorLine,
+          kenBurns: background.kenBurns,
+        });
+      } catch (e) {
+        console.warn("[background] upload fallback:", e?.message || e);
+        await renderSolidQuoteVideo({ outPath, text: usedQuote.text, durationSec, template, authorLine });
+      }
+    } else if (background?.kind === "ai" && background?.prompt) {
+      try {
+        const ai = await generateAIImage({ prompt: background.prompt, style: background.style });
+        if (ai?.path) {
+          await renderImageQuoteVideo({
+            outPath,
+            imagePath: ai.path,
+            durationSec,
+            text: usedQuote.text,
+            authorLine,
+            kenBurns: background.kenBurns,
+          });
+        } else {
+          // fallback to stock using prompt as query
+          try {
+            const stockUrl = await resolveStockImage({ query: background.prompt });
+            const img = await fetchImageToTmp(stockUrl);
+            imageTmpPath = img.path;
+            await renderImageQuoteVideo({
+              outPath,
+              imagePath: imageTmpPath,
+              durationSec,
+              text: usedQuote.text,
+              authorLine,
+              kenBurns: background.kenBurns,
+            });
+          } catch (e2) {
+            console.warn("[background] ai->stock fallback:", e2?.message || e2);
+            await renderSolidQuoteVideo({ outPath, text: usedQuote.text, durationSec, template, authorLine });
+          }
+        }
+      } catch (e) {
+        console.warn("[background] ai fallback:", e?.message || e);
         await renderSolidQuoteVideo({ outPath, text: usedQuote.text, durationSec, template, authorLine });
       }
     } else {

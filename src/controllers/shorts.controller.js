@@ -2,9 +2,17 @@ import { z } from "zod";
 import { createShortService } from "../services/shorts.service.js";
 
 const BackgroundSchema = z.object({
-  kind: z.enum(["solid", "imageUrl", "stock"]).default("solid"),
-  imageUrl: z.string().url().optional(), // imageUrl lane only
-  query: z.string().min(1).max(80).optional(), // stock lane only
+  kind: z.enum(["solid", "imageUrl", "stock", "upload", "ai"]).default("solid"),
+  // imageUrl lane
+  imageUrl: z.string().url().optional(),
+  // stock lane
+  query: z.string().min(1).max(80).optional(),
+  // upload lane
+  uploadUrl: z.string().url().optional(),
+  // ai lane
+  prompt: z.string().min(4).max(160).optional(),
+  style: z.enum(["photo", "illustration", "abstract"]).optional(),
+  // common
   kenBurns: z.enum(["in", "out"]).optional(),
 });
 
@@ -58,6 +66,41 @@ const CreateShortSchema = z
           code: z.ZodIssueCode.custom,
           message: "Must be at most 80 characters",
           path: ["background", "query"],
+        });
+      }
+    }
+    if (bg?.kind === "upload") {
+      if (!bg.uploadUrl) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Required when kind=upload",
+          path: ["background", "uploadUrl"],
+        });
+      } else {
+        try {
+          const u = new URL(bg.uploadUrl);
+          if (u.protocol !== "https:") {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              message: "Only https URLs are allowed",
+              path: ["background", "uploadUrl"],
+            });
+          }
+        } catch {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "Invalid URL",
+            path: ["background", "uploadUrl"],
+          });
+        }
+      }
+    }
+    if (bg?.kind === "ai") {
+      if (!bg.prompt || typeof bg.prompt !== "string" || bg.prompt.trim().length < 4) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Required when kind=ai",
+          path: ["background", "prompt"],
         });
       }
     }

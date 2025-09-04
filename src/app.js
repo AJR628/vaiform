@@ -162,6 +162,10 @@ if (routes?.shorts) {
   app.use("/api/shorts", routes.shorts);
   console.log("✅ Mounted shorts at /shorts and /api/shorts");
 }
+if (routes?.uploads) {
+  app.use("/api", routes.uploads);
+  console.log("✅ Mounted uploads at /api/uploads");
+}
 
 // ---------- STATIC LAST (disable directory redirects like /dir -> /dir/) ----------
 app.use(express.static("public", { redirect: false }));
