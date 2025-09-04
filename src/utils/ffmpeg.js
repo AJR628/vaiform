@@ -58,6 +58,15 @@ export function runFFmpeg(args, opts = {}) {
     });
   });
 }
+export function progressOverlayExpr({ widthVar = "w", heightVar = "h", durationSec = 8 }) {
+  const BAR_W = `min(${widthVar}-160\\,900)`;
+  const FILL_W = `${BAR_W}*min(1\\,t/${Math.max(1, durationSec)})`;
+  const X_BAR = `(${widthVar}-${BAR_W})/2`;
+  const Y_BAR = `${heightVar}-200`;
+  const track = `drawbox=x=${X_BAR}:y=${Y_BAR}:w=${BAR_W}:h=12:color=white@0.18:t=fill`;
+  const fill  = `drawbox=x=${X_BAR}:y=${Y_BAR}:w=${FILL_W}:h=12:color=white@0.85:t=fill:enable='between(t,0,${durationSec})'`;
+  return `${track},${fill}`;
+}
 
 /**
  * Escape characters that are special in drawtext text values.
@@ -119,7 +128,7 @@ export function resolveFont() {
  * @param {number} [p.durationSec=8]
  * @param {"calm"|"bold"|"cosmic"|"minimal"} [p.template="minimal"]
  */
-export async function renderSolidQuoteVideo({ outPath, text, durationSec = 8, template = "minimal", authorLine, assPath }) {
+export async function renderSolidQuoteVideo({ outPath, text, durationSec = 8, template = "minimal", authorLine, assPath, progressBar = false }) {
   if (!outPath) throw new Error("outPath is required");
   if (!text || !String(text).trim()) throw new Error("text is required");
 
@@ -163,6 +172,10 @@ export async function renderSolidQuoteVideo({ outPath, text, durationSec = 8, te
       const author = `drawtext=text=${safeAuthor}${fontOpt}:fontcolor=white@0.85:fontsize=36:shadowcolor=black@0.5:shadowx=1:shadowy=1:box=0:x=(w-text_w)/2:y=h/2+120`;
       filter = `${mainLine},${author}`;
     }
+  }
+  if (progressBar) {
+    const ov = progressOverlayExpr({ durationSec });
+    filter = `${filter},${ov}`;
   }
 
   const args = [
@@ -209,6 +222,7 @@ export async function renderImageQuoteVideo({
   authorMargin = 64,
   kenBurns = "in",
   assPath,
+  progressBar = false,
 }) {
   if (!outPath) throw new Error("outPath is required");
   if (!imagePath) throw new Error("imagePath is required");
@@ -248,6 +262,9 @@ export async function renderImageQuoteVideo({
       const author = `drawtext=text=${safeAuthor}${fontOpt}:fontcolor=${fontcolor}:fontsize=${authorFontsize}:shadowcolor=${shadowColor}:shadowx=${shadowX}:shadowy=${shadowY}:box=0:x=(w-text_w)/2:y=(h/2)+220`;
       layers.push(author);
     }
+  }
+  if (progressBar) {
+    layers.push(progressOverlayExpr({ durationSec }));
   }
 
   const vf = layers.join(",");

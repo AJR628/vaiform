@@ -59,19 +59,27 @@ export async function createShortService({ ownerUid, mode, text, template, durat
 
   // Karaoke ASS (optional)
   const wantKaraoke = captionMode === "karaoke";
+  let karaokeModeEffective = "none";
   let assPath = null;
   if (wantKaraoke) {
     try {
-      const { getDurationMsFromMedia } = await import("../utils/media.duration.js");
-      const { buildKaraokeASS } = await import("../utils/karaoke.ass.js");
-      let karaokeDurationMs = null;
-      if (audioOk) {
-        karaokeDurationMs = await getDurationMsFromMedia(audioPath);
+      const { hasSubtitlesFilter } = await import("../utils/ffmpeg.capabilities.js");
+      const canKaraoke = await hasSubtitlesFilter();
+      karaokeModeEffective = canKaraoke ? "ass" : "progress";
+      console.log("[karaoke] effective:", karaokeModeEffective);
+      if (karaokeModeEffective === "ass") {
+        const { getDurationMsFromMedia } = await import("../utils/media.duration.js");
+        const { buildKaraokeASS } = await import("../utils/karaoke.ass.js");
+        let karaokeDurationMs = null;
+        if (audioOk) {
+          karaokeDurationMs = await getDurationMsFromMedia(audioPath);
+        }
+        if (!karaokeDurationMs) karaokeDurationMs = durationSec * 1000;
+        assPath = await buildKaraokeASS({ text: usedQuote.text, durationMs: karaokeDurationMs });
       }
-      if (!karaokeDurationMs) karaokeDurationMs = durationSec * 1000;
-      assPath = await buildKaraokeASS({ text: usedQuote.text, durationMs: karaokeDurationMs });
     } catch (e) {
-      console.warn("[karaoke] build failed:", e?.message || e);
+      console.warn("[karaoke] probe/build failed:", e?.message || e);
+      karaokeModeEffective = "none";
       assPath = null;
     }
   }
@@ -91,10 +99,11 @@ export async function createShortService({ ownerUid, mode, text, template, durat
           authorLine,
           kenBurns: background.kenBurns,
           assPath,
+          progressBar: karaokeModeEffective === "progress",
         });
       } catch (e) {
         console.warn("[background] imageUrl fallback:", e?.message || e);
-        await renderSolidQuoteVideo({ outPath, text: usedQuote.text, durationSec, template, authorLine, assPath });
+        await renderSolidQuoteVideo({ outPath, text: usedQuote.text, durationSec, template, authorLine, assPath, progressBar: karaokeModeEffective === "progress" });
       }
     } else if (background?.kind === "stock" && background?.query) {
       try {
@@ -109,10 +118,11 @@ export async function createShortService({ ownerUid, mode, text, template, durat
           authorLine,
           kenBurns: background.kenBurns,
           assPath,
+          progressBar: karaokeModeEffective === "progress",
         });
       } catch (e) {
         console.warn("[background] stock fallback:", e?.message || e);
-        await renderSolidQuoteVideo({ outPath, text: usedQuote.text, durationSec, template, authorLine, assPath });
+        await renderSolidQuoteVideo({ outPath, text: usedQuote.text, durationSec, template, authorLine, assPath, progressBar: karaokeModeEffective === "progress" });
       }
     } else if (background?.kind === "upload" && background?.uploadUrl) {
       try {
@@ -143,6 +153,7 @@ export async function createShortService({ ownerUid, mode, text, template, durat
             authorLine,
             kenBurns: background.kenBurns,
             assPath,
+            progressBar: karaokeModeEffective === "progress",
           });
         } else {
           // fallback to stock using prompt as query
@@ -158,15 +169,16 @@ export async function createShortService({ ownerUid, mode, text, template, durat
               authorLine,
               kenBurns: background.kenBurns,
               assPath,
+              progressBar: karaokeModeEffective === "progress",
             });
           } catch (e2) {
             console.warn("[background] ai->stock fallback:", e2?.message || e2);
-            await renderSolidQuoteVideo({ outPath, text: usedQuote.text, durationSec, template, authorLine, assPath });
+            await renderSolidQuoteVideo({ outPath, text: usedQuote.text, durationSec, template, authorLine, assPath, progressBar: karaokeModeEffective === "progress" });
           }
         }
       } catch (e) {
         console.warn("[background] ai fallback:", e?.message || e);
-        await renderSolidQuoteVideo({ outPath, text: usedQuote.text, durationSec, template, authorLine, assPath });
+        await renderSolidQuoteVideo({ outPath, text: usedQuote.text, durationSec, template, authorLine, assPath, progressBar: karaokeModeEffective === "progress" });
       }
     } else {
       await renderSolidQuoteVideo({ outPath, text: usedQuote.text, durationSec, template, authorLine });
