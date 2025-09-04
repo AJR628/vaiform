@@ -100,6 +100,22 @@ app.use((req, res, next) => {
 });
 
 // ---------- API ROUTES BEFORE STATIC ----------
+// Healthcheck (GET + HEAD) and simple diag echo
+app.get("/health", (req, res) => {
+  res
+    .set("Cache-Control", "no-store")
+    .json({ ok: true, service: "vaiform-backend", time: Date.now() });
+});
+app.head("/health", (req, res) => {
+  res.set("Cache-Control", "no-store").end();
+});
+app.post("/diag/echo", (req, res) => {
+  res
+    .set("Cache-Control", "no-store")
+    .json({ ok: true, method: req.method, headers: req.headers, body: req.body, time: Date.now() });
+});
+console.log("[routes] /health and /diag/echo mounted");
+
 app.use("/", healthRoutes);
 app.use("/", whoamiRoutes);
 // Keep existing creditsRoutes mount if present, but also provide a direct handler to avoid 404s.
