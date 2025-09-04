@@ -1,27 +1,26 @@
 import { Router } from "express";
-import generateRouter from "./generate.routes.js";
-import creditsRouter from "./credits.routes.js";
-import healthRouter from "./health.routes.js";
-import webhookRouter from "./webhook.routes.js";
-import enhanceRouter from "./enhance.routes.js";
-import checkoutRouter from "./checkout.routes.js";
-import diagRouter from "./diag.routes.js";
-import whoamiRouter from "./whoami.routes.js";
-import shortsRouter from "./shorts.routes.js";
+import CheckoutRouter from "./checkout.routes.js";
+import CreditsRouter from "./credits.routes.js";
+import Diag.headersRouter from "./diag.headers.routes.js";
+import DiagRouter from "./diag.routes.js";
+import EnhanceRouter from "./enhance.routes.js";
+import GenerateRouter from "./generate.routes.js";
+import HealthRouter from "./health.routes.js";
+import ShortsRouter from "./shorts.routes.js";
+import WebhookRouter from "./webhook.routes.js";
+import WhoamiRouter from "./whoami.routes.js";
 
-// Lightweight root
-const index = Router();
-index.get("/", (_req, res) => res.json({ success: true, message: "Vaiform API root" }));
+const router = Router();
 
-export default {
-  index,                    // "/"
-  health: healthRouter,     // "/health"
-  credits: creditsRouter,   // "/credits"
-  whoami: whoamiRouter,     // "/whoami"
-  enhance: enhanceRouter,   // "/" and "/enhance"
-  generate: generateRouter, // "/generate"
-  webhook: webhookRouter,   // "/webhook"
-  checkout: checkoutRouter, // "/checkout"
-  diag: diagRouter,         // "/diag"
-  shorts: shortsRouter,     // "/shorts"
-};
+router.use("/checkout", CheckoutRouter);
+router.use("/credits", CreditsRouter);
+router.use("/diag.headers", Diag.headersRouter);
+router.use("/diag", DiagRouter);
+router.use("/enhance", EnhanceRouter);
+router.use("/generate", GenerateRouter);
+router.use("/health", HealthRouter);
+router.use("/shorts", ShortsRouter);
+router.use("/webhook", WebhookRouter);
+router.use("/whoami", WhoamiRouter);
+
+export default router;
