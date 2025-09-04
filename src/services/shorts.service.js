@@ -142,19 +142,22 @@ export async function createShortService({ ownerUid, mode, text, template, durat
     throw err;
   }
 
-  // If audio present, mux it (soft-fail if mux fails)
+  // If audio present, mux it (soft-fail if mux fails) with explicit stream mapping
   let muxedPath = outPath;
   if (audioOk) {
     const muxOut = path.join(tmpRoot, "short_mx.mp4");
     try {
-      await runFFmpeg([
+      const args = [
         "-i", outPath,
         "-i", audioPath,
+        "-map", "0:v:0",
+        "-map", "1:a:0",
         "-c:v", "copy",
         "-c:a", "aac",
         "-shortest",
         muxOut,
-      ]);
+      ];
+      await runFFmpeg(args);
       muxedPath = muxOut;
     } catch (e) {
       // proceed silently without audio
@@ -164,6 +167,7 @@ export async function createShortService({ ownerUid, mode, text, template, durat
 
   const destBase = `artifacts/${ownerUid}/${jobId}`;
   const destPath = `${destBase}/short.mp4`;
+  console.log("[shorts] uploading", audioOk ? "muxed (with audio)" : "silent", "video");
   const { publicUrl } = await uploadPublic(muxedPath, destPath, "video/mp4");
 
   // Extract and upload cover thumbnail (best-effort)
