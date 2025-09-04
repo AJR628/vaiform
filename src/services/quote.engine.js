@@ -1,4 +1,41 @@
-import curated from "../data/quotes.curated.json" with { type: "json" };
+import { readFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+let curated = [];
+try {
+  const jsonPath = join(__dirname, "../data/quotes.curated.json");
+  const raw = await readFile(jsonPath, "utf8");
+  curated = JSON.parse(raw);
+  if (!Array.isArray(curated)) throw new Error("curated JSON is not an array");
+} catch (err) {
+  console.warn("[quote.engine] curated JSON missing/invalid; using fallback:", err?.code || err?.message);
+  curated = [
+    {
+      id: "stoic-001",
+      text: "The impediment to action advances action. What stands in the way becomes the way.",
+      author: "Marcus Aurelius",
+      tags: ["stoic","resilience","courage"],
+      templateBias: ["calm","minimal"],
+      verified: true,
+      publicDomain: true,
+      length: 103
+    },
+    {
+      id: "stoic-002",
+      text: "We suffer more often in imagination than in reality.",
+      author: "Seneca",
+      tags: ["stoic","calm","perspective"],
+      templateBias: ["minimal","calm"],
+      verified: true,
+      publicDomain: true,
+      length: 54
+    }
+  ];
+}
 
 const PROFANITY = ["damn","shit","fuck"]; // tiny blocklist
 

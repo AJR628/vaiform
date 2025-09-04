@@ -157,6 +157,7 @@ export async function renderSolidQuoteVideo({ outPath, text, durationSec = 8, te
     "-c:v", "libx264",
     "-pix_fmt", "yuv420p",
     "-movflags", "+faststart",
+    "-an",
     "-t", String(durationSec),
     outPath,
   ];
