@@ -32,4 +32,13 @@ router.get("/", (_req, res) => {
   });
 });
 
+router.get("/tts", (_req, res) => {
+  const provider = (process.env.TTS_PROVIDER || "openai").toLowerCase();
+  const configured = (provider === "openai" && !!process.env.OPENAI_API_KEY) ||
+                     (provider === "elevenlabs" && !!process.env.ELEVENLABS_API_KEY && !!process.env.ELEVEN_VOICE_ID);
+  const model = provider === "openai" ? (process.env.OPENAI_TTS_MODEL || "gpt-4o-mini-tts") : (process.env.ELEVEN_TTS_MODEL || "eleven_flash_v2_5");
+  const voiceOrVoiceId = provider === "openai" ? (process.env.OPENAI_TTS_VOICE || "alloy") : (process.env.ELEVEN_VOICE_ID || null);
+  res.json({ ok: true, provider, configured, model, voiceOrVoiceId });
+});
+
 export default router;
