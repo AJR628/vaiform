@@ -126,7 +126,6 @@ export async function renderSolidQuoteVideo({ outPath, text, durationSec = 8, te
   const width = 1080;
   const height = 1920;
   const fps = 24;
-  const frames = Math.max(1, Math.round(fps * durationSec));
 
   // Palette based on template
   const bgMap = {
@@ -141,14 +140,8 @@ export async function renderSolidQuoteVideo({ outPath, text, durationSec = 8, te
   const safeText = escapeDrawtext(String(text).trim());
   const fontPath = resolveFont();
   const fontOpt = fontPath ? `:fontfile=${escapeFilterPath(fontPath)}` : "";
-
-  // Zoom from 1.0 to ~1.06 across the duration
-  const zoomExpr = `min(1.06,1+0.06*(on/${frames}))`;
-  const filter = [
-    `zoompan=z=${zoomExpr}:d=1:x=(iw-iw/zoom)/2:y=(ih-ih/zoom)/2:s=${width}x${height}`,
-    // Draw centered text with soft shadow and semi-transparent box
-    `drawtext=text=${safeText}${fontOpt}:fontcolor=white:fontsize=64:line_spacing=8:shadowcolor=black@0.6:shadowx=2:shadowy=2:box=1:boxcolor=black@0.35:boxborderw=24:x=(w-text_w)/2:y=(h-text_h)/2`
-  ].join(",");
+  // Draw centered text with soft shadow and semi-transparent box (no zoompan)
+  const filter = `drawtext=text=${safeText}${fontOpt}:fontcolor=white:fontsize=64:line_spacing=8:shadowcolor=black@0.6:shadowx=2:shadowy=2:box=1:boxcolor=black@0.35:boxborderw=24:x=(w-text_w)/2:y=(h-text_h)/2`;
 
   const args = [
     "-f", "lavfi",
@@ -170,11 +163,16 @@ export async function renderSolidQuoteVideo({ outPath, text, durationSec = 8, te
   }
 }
 
+export async function kenBurnsFromImage({ imagePath, outPath, durationSec = 8 }) {
+  throw new Error("KEN_BURNS_NOT_IMPLEMENTED");
+}
+
 export default {
   runFFmpeg,
   escapeDrawtext,
   resolveFont,
   renderSolidQuoteVideo,
+  kenBurnsFromImage,
 };
 
 
