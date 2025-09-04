@@ -170,8 +170,76 @@ export async function renderSolidQuoteVideo({ outPath, text, durationSec = 8, te
   }
 }
 
-export async function kenBurnsFromImage({ imagePath, outPath, durationSec = 8 }) {
-  throw new Error("KEN_BURNS_NOT_IMPLEMENTED");
+export async function renderImageQuoteVideo({
+  outPath,
+  imagePath,
+  width = 1080,
+  height = 1920,
+  durationSec = 8,
+  fps = 24,
+  text,
+  fontfile,
+  fontcolor = "white",
+  fontsize = 72,
+  lineSpacing = 12,
+  shadowColor = "black",
+  shadowX = 2,
+  shadowY = 2,
+  box = 1,
+  boxcolor = "black@0.35",
+  boxborderw = 24,
+  authorLine,
+  authorFontsize = 36,
+  authorMargin = 64,
+  kenBurns = "in",
+}) {
+  if (!outPath) throw new Error("outPath is required");
+  if (!imagePath) throw new Error("imagePath is required");
+  if (!text || !String(text).trim()) throw new Error("text is required");
+
+  const safeText = escapeDrawtext(String(text).trim());
+  const fontPath = fontfile || resolveFont();
+  const fontOpt = fontPath ? `:fontfile=${escapeFilterPath(fontPath)}` : "";
+
+  const cover = `scale='if(gt(a,${width}/${height}),-2,${width})':'if(gt(a,${width}/${height}),${height},-2)',crop=${width}:${height}`;
+
+  const zStart = kenBurns === "out" ? 1.08 : 1.0;
+  const zEnd = kenBurns === "out" ? 1.0 : 1.08;
+  const frames = Math.max(Math.floor(durationSec * fps), 1);
+  const zStep = (zEnd - zStart) / Math.max(frames - 1, 1);
+  const kb = `zoompan=z='${zStart}+${zStep}*on':d=${frames}:fps=${fps}:x='0':y='0':s=${width}x${height}`;
+
+  const mainLine = `drawtext=text=${safeText}${fontOpt}:fontcolor=${fontcolor}:fontsize=${fontsize}:line_spacing=${lineSpacing}:shadowcolor=${shadowColor}:shadowx=${shadowX}:shadowy=${shadowY}:box=${box}:boxcolor=${boxcolor}:boxborderw=${boxborderw}:x=(w-text_w)/2:y=(h-text_h)/2`;
+
+  const layers = [
+    cover,
+    kenBurns ? kb : null,
+    "format=yuv420p",
+    mainLine,
+  ].filter(Boolean);
+
+  if (authorLine && String(authorLine).trim()) {
+    const safeAuthor = escapeDrawtext(String(authorLine).trim());
+    const author = `drawtext=text=${safeAuthor}${fontOpt}:fontcolor=${fontcolor}:fontsize=${authorFontsize}:shadowcolor=${shadowColor}:shadowx=${shadowX}:shadowy=${shadowY}:box=0:x=(w-text_w)/2:y=(h/2)+220`;
+    layers.push(author);
+  }
+
+  const vf = layers.join(",");
+
+  const args = [
+    "-loop", "1",
+    "-t", String(durationSec),
+    "-i", imagePath,
+    "-vf", vf,
+    "-r", String(fps),
+    "-c:v", "libx264",
+    "-pix_fmt", "yuv420p",
+    "-movflags", "+faststart",
+    "-an",
+    outPath,
+  ];
+
+  await runFFmpeg(args);
 }
 
 export default {
@@ -179,7 +247,7 @@ export default {
   escapeDrawtext,
   resolveFont,
   renderSolidQuoteVideo,
-  kenBurnsFromImage,
+  renderImageQuoteVideo,
 };
 
 

@@ -2,7 +2,8 @@ import fs from "fs";
 import os from "os";
 import path from "path";
 
-import { renderSolidQuoteVideo, runFFmpeg } from "../utils/ffmpeg.js";
+import { renderSolidQuoteVideo, renderImageQuoteVideo, runFFmpeg } from "../utils/ffmpeg.js";
+import { fetchImageToTmp } from "../utils/image.fetch.js";
 import { uploadPublic } from "../utils/storage.js";
 import { getQuote } from "./quote.engine.js";
 import { synthVoice } from "./tts.service.js";
@@ -16,7 +17,7 @@ export function finalizeQuoteText(mode, text) {
   return t;
 }
 
-export async function createShortService({ ownerUid, mode, text, template, durationSec, voiceover = false, wantAttribution = true }) {
+export async function createShortService({ ownerUid, mode, text, template, durationSec, voiceover = false, wantAttribution = true, background = { kind: "solid" } }) {
   if (!ownerUid) throw new Error("MISSING_UID");
 
   const jobId = `shorts-${Date.now().toString(36)}-${Math.random().toString(36).slice(2,7)}`;
@@ -41,9 +42,30 @@ export async function createShortService({ ownerUid, mode, text, template, durat
     }
   }
 
+  const authorLine = wantAttribution && usedQuote.attributed && usedQuote.author ? `— ${usedQuote.author}` : null;
+
+  // Background selection with soft-fallback
+  let imageTmpPath = null;
   try {
-    const authorLine = wantAttribution && usedQuote.attributed && usedQuote.author ? `— ${usedQuote.author}` : null;
-    await renderSolidQuoteVideo({ outPath, text: usedQuote.text, durationSec, template, authorLine });
+    if (background?.kind === "imageUrl" && background?.imageUrl) {
+      try {
+        const img = await fetchImageToTmp(background.imageUrl);
+        imageTmpPath = img.path;
+        await renderImageQuoteVideo({
+          outPath,
+          imagePath: imageTmpPath,
+          durationSec,
+          text: usedQuote.text,
+          authorLine,
+          kenBurns: background.kenBurns,
+        });
+      } catch (e) {
+        console.warn("Image background failed, falling back to solid:", e?.message || e);
+        await renderSolidQuoteVideo({ outPath, text: usedQuote.text, durationSec, template, authorLine });
+      }
+    } else {
+      await renderSolidQuoteVideo({ outPath, text: usedQuote.text, durationSec, template, authorLine });
+    }
   } catch (err) {
     // Surface helpful ffmpeg missing errors to caller
     throw err;
@@ -72,6 +94,7 @@ export async function createShortService({ ownerUid, mode, text, template, durat
   const destPath = `artifacts/${ownerUid}/${jobId}/short.mp4`;
   const { publicUrl } = await uploadPublic(muxedPath, destPath, "video/mp4");
 
+  try { if (imageTmpPath) fs.unlinkSync(imageTmpPath); } catch {}
   try { fs.rmSync(tmpRoot, { recursive: true, force: true }); } catch {}
 
   return {
