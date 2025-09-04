@@ -1,4 +1,5 @@
 import { spawn } from "child_process";
+import ffmpegPath from "ffmpeg-static";
 import fs from "fs";
 import os from "os";
 import path from "path";
@@ -14,18 +15,25 @@ export function runFFmpeg(args, opts = {}) {
     let stderr = "";
     let proc;
     try {
-      proc = spawn("ffmpeg", finalArgs, {
+      if (!ffmpegPath) {
+        const e = new Error("FFMPEG_NOT_AVAILABLE: ffmpeg-static path not resolved");
+        e.code = "FFMPEG_NOT_AVAILABLE";
+        throw e;
+      }
+      proc = spawn(ffmpegPath, finalArgs, {
         cwd: opts.cwd || process.cwd(),
         stdio: ["ignore", "pipe", "pipe"],
         shell: false,
       });
     } catch (err) {
       const notFound = err?.code === "ENOENT";
-      const message = notFound
-        ? "ffmpeg binary not found. Please install ffmpeg and ensure it is in PATH."
-        : (err?.message || "Failed to spawn ffmpeg");
+      const message = err?.code === "FFMPEG_NOT_AVAILABLE"
+        ? "FFMPEG_NOT_AVAILABLE: ffmpeg-static path not resolved"
+        : notFound
+          ? "ffmpeg binary not found. Please install ffmpeg and ensure it is in PATH."
+          : (err?.message || "Failed to spawn ffmpeg");
       const e = new Error(message);
-      e.code = notFound ? "FFMPEG_NOT_FOUND" : (err?.code || "SPAWN_ERROR");
+      e.code = err?.code || (notFound ? "FFMPEG_NOT_FOUND" : "SPAWN_ERROR");
       return reject(e);
     }
 
