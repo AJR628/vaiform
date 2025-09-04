@@ -1,10 +1,11 @@
 import { z } from "zod";
+import { createShortService } from "../services/shorts.service.js";
 
 const CreateShortSchema = z.object({
   mode: z.enum(["quote", "feeling"]).default("quote").optional(),
-  text: z.string().min(1).max(500),
-  template: z.enum(["minimal", "bold", "pastel"]).default("minimal").optional(),
-  durationSec: z.number().int().min(3).max(20).default(8).optional(),
+  text: z.string().min(2).max(280),
+  template: z.enum(["calm", "bold", "cosmic", "minimal"]).default("calm").optional(),
+  durationSec: z.number().int().min(6).max(10).default(8).optional(),
 });
 
 export async function createShort(req, res) {
@@ -13,14 +14,20 @@ export async function createShort(req, res) {
     if (!parsed.success) {
       return res.status(400).json({ success: false, error: "INVALID_INPUT", detail: parsed.error.flatten() });
     }
-    const { mode = "quote", text, template = "minimal", durationSec = 8 } = parsed.data;
+    const { mode = "quote", text, template = "calm", durationSec = 8 } = parsed.data;
 
-    // Stub service call (ffmpeg work to be implemented later)
-    // const { videoUrl, jobId, usedQuote } = await createShortService({ uid: req.user.uid, mode, text, template, durationSec });
+    const ownerUid = req.user?.uid;
+    if (!ownerUid) {
+      return res.status(401).json({ success: false, error: "UNAUTHENTICATED", message: "Login required" });
+    }
 
-    return res.json({ success: true, message: "shorts controller reached", data: { mode, text, template, durationSec } });
+    const result = await createShortService({ ownerUid, mode, text, template, durationSec });
+    return res.json({ success: true, data: result });
   } catch (e) {
-    console.error("/shorts/create error", e);
-    return res.status(500).json({ success: false, error: "INTERNAL" });
+    const msg = e?.message || "Short creation failed";
+    // Provide a helpful hint when ffmpeg is missing
+    const hint = e?.code === "FFMPEG_NOT_FOUND" ? "ffmpeg is not installed or not in PATH. Install ffmpeg and retry." : undefined;
+    console.error("/shorts/create error", msg, e?.stderr || "");
+    return res.status(500).json({ success: false, error: "SHORTS_CREATE_FAILED", message: hint || msg });
   }
 }
