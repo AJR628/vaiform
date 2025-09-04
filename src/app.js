@@ -140,6 +140,12 @@ if (routes?.checkout) {
   app.use("/api", routes.checkout);
   console.log("✅ Mounted checkout at /checkout and /api");
 }
+if (routes?.shorts) {
+  // Mount Shorts API for quote-to-shorts MVP
+  app.use("/shorts", routes.shorts);
+  app.use("/api/shorts", routes.shorts);
+  console.log("✅ Mounted shorts at /shorts and /api/shorts");
+}
 
 // ---------- STATIC LAST (disable directory redirects like /dir -> /dir/) ----------
 app.use(express.static("public", { redirect: false }));
