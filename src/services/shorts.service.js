@@ -20,7 +20,7 @@ export function finalizeQuoteText(mode, text) {
   return t;
 }
 
-export async function createShortService({ ownerUid, mode, text, template, durationSec, voiceover = false, wantAttribution = true, background = { kind: "solid" }, debugAudioPath }) {
+export async function createShortService({ ownerUid, mode, text, template, durationSec, voiceover = false, wantAttribution = true, background = { kind: "solid" }, debugAudioPath, captionMode = "static" }) {
   if (!ownerUid) throw new Error("MISSING_UID");
 
   const jobId = `shorts-${Date.now().toString(36)}-${Math.random().toString(36).slice(2,7)}`;
@@ -57,6 +57,25 @@ export async function createShortService({ ownerUid, mode, text, template, durat
 
   const authorLine = wantAttribution && usedQuote.attributed && usedQuote.author ? `— ${usedQuote.author}` : null;
 
+  // Karaoke ASS (optional)
+  const wantKaraoke = captionMode === "karaoke";
+  let assPath = null;
+  if (wantKaraoke) {
+    try {
+      const { getDurationMsFromMedia } = await import("../utils/media.duration.js");
+      const { buildKaraokeASS } = await import("../utils/karaoke.ass.js");
+      let karaokeDurationMs = null;
+      if (audioOk) {
+        karaokeDurationMs = await getDurationMsFromMedia(audioPath);
+      }
+      if (!karaokeDurationMs) karaokeDurationMs = durationSec * 1000;
+      assPath = await buildKaraokeASS({ text: usedQuote.text, durationMs: karaokeDurationMs });
+    } catch (e) {
+      console.warn("[karaoke] build failed:", e?.message || e);
+      assPath = null;
+    }
+  }
+
   // Background selection with soft-fallback
   let imageTmpPath = null;
   try {
@@ -71,10 +90,11 @@ export async function createShortService({ ownerUid, mode, text, template, durat
           text: usedQuote.text,
           authorLine,
           kenBurns: background.kenBurns,
+          assPath,
         });
       } catch (e) {
         console.warn("[background] imageUrl fallback:", e?.message || e);
-        await renderSolidQuoteVideo({ outPath, text: usedQuote.text, durationSec, template, authorLine });
+        await renderSolidQuoteVideo({ outPath, text: usedQuote.text, durationSec, template, authorLine, assPath });
       }
     } else if (background?.kind === "stock" && background?.query) {
       try {
@@ -88,10 +108,11 @@ export async function createShortService({ ownerUid, mode, text, template, durat
           text: usedQuote.text,
           authorLine,
           kenBurns: background.kenBurns,
+          assPath,
         });
       } catch (e) {
         console.warn("[background] stock fallback:", e?.message || e);
-        await renderSolidQuoteVideo({ outPath, text: usedQuote.text, durationSec, template, authorLine });
+        await renderSolidQuoteVideo({ outPath, text: usedQuote.text, durationSec, template, authorLine, assPath });
       }
     } else if (background?.kind === "upload" && background?.uploadUrl) {
       try {
@@ -104,10 +125,11 @@ export async function createShortService({ ownerUid, mode, text, template, durat
           text: usedQuote.text,
           authorLine,
           kenBurns: background.kenBurns,
+          assPath,
         });
       } catch (e) {
         console.warn("[background] upload fallback:", e?.message || e);
-        await renderSolidQuoteVideo({ outPath, text: usedQuote.text, durationSec, template, authorLine });
+        await renderSolidQuoteVideo({ outPath, text: usedQuote.text, durationSec, template, authorLine, assPath });
       }
     } else if (background?.kind === "ai" && background?.prompt) {
       try {
@@ -120,6 +142,7 @@ export async function createShortService({ ownerUid, mode, text, template, durat
             text: usedQuote.text,
             authorLine,
             kenBurns: background.kenBurns,
+            assPath,
           });
         } else {
           // fallback to stock using prompt as query
@@ -134,15 +157,16 @@ export async function createShortService({ ownerUid, mode, text, template, durat
               text: usedQuote.text,
               authorLine,
               kenBurns: background.kenBurns,
+              assPath,
             });
           } catch (e2) {
             console.warn("[background] ai->stock fallback:", e2?.message || e2);
-            await renderSolidQuoteVideo({ outPath, text: usedQuote.text, durationSec, template, authorLine });
+            await renderSolidQuoteVideo({ outPath, text: usedQuote.text, durationSec, template, authorLine, assPath });
           }
         }
       } catch (e) {
         console.warn("[background] ai fallback:", e?.message || e);
-        await renderSolidQuoteVideo({ outPath, text: usedQuote.text, durationSec, template, authorLine });
+        await renderSolidQuoteVideo({ outPath, text: usedQuote.text, durationSec, template, authorLine, assPath });
       }
     } else {
       await renderSolidQuoteVideo({ outPath, text: usedQuote.text, durationSec, template, authorLine });
