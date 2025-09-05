@@ -4,18 +4,28 @@ import admin from "../config/firebase.js";
 import { buildPublicUrl, getDownloadToken } from "../utils/storage.js";
 
 const BackgroundSchema = z.object({
-  kind: z.enum(["solid", "imageUrl", "stock", "upload", "ai", "stockVideo"]).default("solid"),
+  kind: z.enum(["solid", "imageUrl", "stock", "upload", "ai", "stockVideo", "imageMontage"]).default("solid"),
   // imageUrl lane
   imageUrl: z.string().url().optional(),
   // stock lane
-  query: z.string().min(1).max(80).optional(),
+  query: z.string().min(1).max(120).optional(),
   // upload lane
   uploadUrl: z.string().url().optional(),
   // ai lane
   prompt: z.string().min(4).max(160).optional(),
   style: z.enum(["photo", "illustration", "abstract"]).optional(),
   // common
-  kenBurns: z.enum(["in", "out"]).optional(),
+  kenBurns: z.enum(["in", "out", "pan_up", "pan_down", "pan_left", "pan_right"]).optional(),
+  // video audio mix options
+  keepVideoAudio: z.boolean().optional(),
+  bgAudioVolume: z.number().min(0).max(1).optional(),
+  duckDuringTTS: z.boolean().optional(),
+  duck: z.object({
+    threshold: z.number().max(0).min(-60).optional(),
+    ratio: z.number().min(1).max(20).optional(),
+    attack: z.number().min(1).max(200).optional(),
+    release: z.number().min(10).max(2000).optional(),
+  }).optional(),
 });
 
 const CreateShortSchema = z

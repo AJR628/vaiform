@@ -1,5 +1,6 @@
 import ffmpegPath from "ffmpeg-static";
 import { spawn } from "node:child_process";
+import { buildAudioMixArgs } from "./audio.mix.js";
 
 const esc = s => String(s).replace(/\\/g,'\\\\').replace(/:/g,'\\:').replace(/'/g,"\\\\'");
 
@@ -18,6 +19,12 @@ export async function renderVideoQuoteOverlay({
   box = 1, boxcolor = "black@0.35", boxborderw = 24,
   authorLine, authorFontsize = 36,
   watermark = true, watermarkText = "Vaiform", watermarkFontSize = 30, watermarkPadding = 42,
+  // audio
+  ttsPath,
+  keepVideoAudio = false,
+  bgAudioVolume = 1.0,
+  duckDuringTTS = false,
+  duck = { threshold: -18, ratio: 8, attack: 40, release: 250 },
 }) {
   const main = esc(text || "");
   const author = authorLine ? esc(authorLine) : null;
@@ -61,14 +68,29 @@ export async function renderVideoQuoteOverlay({
   }
 
   const vf = layers.join(",");
+  // Assume bg audio present; ffmpeg will no-op if not
+  const audio = buildAudioMixArgs({
+    haveBgAudio: true,
+    bgAudioStream: "0:a",
+    ttsPath,
+    keepVideoAudio,
+    bgAudioVolume,
+    duckDuringTTS,
+    duck,
+  });
+  const filterParts = [`${vf}[vout]`, audio.filterComplex].filter(Boolean).join(";");
   const args = [
-    "-i", videoPath,
-    "-vf", vf,
-    "-r", String(fps),
+    "-ss", "0",
     "-t", String(durationSec),
+    "-i", videoPath,
+    ...audio.extraInputs,
+    "-filter_complex", filterParts,
+    "-map", "[vout]",
+    ...(audio.mapAudio.length ? audio.mapAudio : ["-an"]),
     "-c:v", "libx264",
     "-pix_fmt", "yuv420p",
-    "-an",
+    ...(audio.codecAudio || []),
+    "-shortest",
     outPath,
   ];
   await runFfmpeg(args);

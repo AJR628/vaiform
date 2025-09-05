@@ -202,6 +202,16 @@ export async function createShortService({ ownerUid, mode, text, template, durat
         const item = r?.ok && r.items && r.items[0];
         if (!item) throw new Error("NO_STOCK_VIDEO");
         const vid = await fetchVideoToTmp(item.url);
+        const haveTTS = audioOk;
+        const keepVideoAudio = (background.keepVideoAudio !== undefined) ? !!background.keepVideoAudio : !haveTTS;
+        const bgAudioVolume = (typeof background.bgAudioVolume === "number") ? background.bgAudioVolume : (haveTTS ? 0.25 : 1.0);
+        const duckDuringTTS = (background.duckDuringTTS !== undefined) ? !!background.duckDuringTTS : haveTTS;
+        const duck = {
+          threshold: background.duck?.threshold ?? -18,
+          ratio: background.duck?.ratio ?? 8,
+          attack: background.duck?.attack ?? 40,
+          release: background.duck?.release ?? 250,
+        };
         await renderVideoQuoteOverlay({
           videoPath: vid.path,
           outPath,
@@ -209,6 +219,11 @@ export async function createShortService({ ownerUid, mode, text, template, durat
           text: usedQuote.text,
           authorLine,
           watermark: watermarkFinal,
+          ttsPath: audioOk ? audioPath : undefined,
+          keepVideoAudio,
+          bgAudioVolume,
+          duckDuringTTS,
+          duck,
         });
         // annotate meta via closure var? We'll include via meta build below
         // For parity with others, nothing else here; mux will run later
