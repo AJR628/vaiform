@@ -2,6 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import requireAuth from "../middleware/requireAuth.js";
 import { startStudio, getStudio, generateQuoteCandidates, generateImageCandidates, chooseCandidate, finalizeStudio, listStudios, deleteStudio } from "../services/studio.service.js";
+import { resolveStockVideo } from "../services/stock.video.provider.js";
 
 const r = Router();
 r.use(requireAuth);
@@ -30,6 +31,12 @@ const ImageSchema = z.object({
   kenBurns: z.enum(["in", "out"]).optional(),
 });
 
+const VideoSchema = z.object({
+  studioId: z.string().min(3),
+  kind: z.enum(["stockVideo"]).default("stockVideo"),
+  query: z.string().min(1),
+});
+
 const ChooseSchema = z.object({
   studioId: z.string().min(3),
   track: z.enum(["quote", "image"]),
@@ -52,6 +59,20 @@ r.post("/start", async (req, res) => {
     return res.json({ success: true, data: s });
   } catch (e) {
     return res.status(500).json({ success: false, error: "STUDIO_START_FAILED" });
+  }
+});
+
+r.post("/video", async (req, res) => {
+  const parsed = VideoSchema.safeParse(req.body || {});
+  if (!parsed.success) return res.status(400).json({ success: false, error: "INVALID_INPUT", detail: parsed.error.flatten() });
+  const { studioId, kind, query } = parsed.data;
+  try {
+    const r = await resolveStockVideo({ query, targetDur: 8 });
+    const candidates = (r.ok ? r.items : []).slice(0, 3);
+    // we don't persist video track in session structure yet; reuse image-like response shape under video
+    return res.json({ success: true, data: { video: { candidates } } });
+  } catch (e) {
+    return res.status(500).json({ success: false, error: "STUDIO_VIDEO_FAILED" });
   }
 });
 

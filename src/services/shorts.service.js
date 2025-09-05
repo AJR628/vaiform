@@ -8,8 +8,11 @@ import { uploadPublic } from "../utils/storage.js";
 import { getQuote } from "./quote.engine.js";
 import { synthVoice } from "./tts.service.js";
 import { resolveStockImage } from "./stock.image.provider.js";
+import { resolveStockVideo } from "./stock.video.provider.js";
 import { extractCoverJpeg } from "../utils/ffmpeg.cover.js";
 import { generateAIImage } from "./ai.image.provider.js";
+import { fetchVideoToTmp } from "../utils/video.fetch.js";
+import { renderVideoQuoteOverlay } from "../utils/ffmpeg.video.js";
 
 export function finalizeQuoteText(mode, text) {
   const t = (text || "").trim();
@@ -191,6 +194,26 @@ export async function createShortService({ ownerUid, mode, text, template, durat
         }
       } catch (e) {
         console.warn("[background] ai fallback:", e?.message || e);
+        await renderSolidQuoteVideo({ outPath, text: usedQuote.text, durationSec, template, authorLine, assPath, progressBar: karaokeModeEffective === "progress", watermark: watermarkFinal });
+      }
+    } else if (background?.kind === "stockVideo" && background?.query) {
+      try {
+        const r = await resolveStockVideo({ query: background.query, targetDur: durationSec });
+        const item = r?.ok && r.items && r.items[0];
+        if (!item) throw new Error("NO_STOCK_VIDEO");
+        const vid = await fetchVideoToTmp(item.url);
+        await renderVideoQuoteOverlay({
+          videoPath: vid.path,
+          outPath,
+          durationSec,
+          text: usedQuote.text,
+          authorLine,
+          watermark: watermarkFinal,
+        });
+        // annotate meta via closure var? We'll include via meta build below
+        // For parity with others, nothing else here; mux will run later
+      } catch (e) {
+        console.warn("[background] stockVideo fallback:", e?.message || e);
         await renderSolidQuoteVideo({ outPath, text: usedQuote.text, durationSec, template, authorLine, assPath, progressBar: karaokeModeEffective === "progress", watermark: watermarkFinal });
       }
     } else {

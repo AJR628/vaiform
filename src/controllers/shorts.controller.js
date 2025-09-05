@@ -4,7 +4,7 @@ import admin from "../config/firebase.js";
 import { buildPublicUrl, getDownloadToken } from "../utils/storage.js";
 
 const BackgroundSchema = z.object({
-  kind: z.enum(["solid", "imageUrl", "stock", "upload", "ai"]).default("solid"),
+  kind: z.enum(["solid", "imageUrl", "stock", "upload", "ai", "stockVideo"]).default("solid"),
   // imageUrl lane
   imageUrl: z.string().url().optional(),
   // stock lane

@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { pexelsSearchPhotos } from "./pexels.photos.provider.js";
 
 const CURATED = {
   calm: "https://upload.wikimedia.org/wikipedia/commons/3/3f/Fronalpstock_big.jpg",
@@ -16,10 +17,18 @@ const FALLBACKS = [
   "https://upload.wikimedia.org/wikipedia/commons/7/73/Lake_mapourika_NZ.jpeg",
 ];
 
-export async function resolveStockImage({ query }) {
+export async function resolveStockImage({ query, perPage = 12 }) {
   const key = (query || "").toLowerCase().trim();
-  if (CURATED[key]) return CURATED[key];
 
+  // Try Pexels
+  try {
+    const res = await pexelsSearchPhotos({ query: key || "calm", perPage });
+    if (res.ok && res.items.length) return res.items[0].fileUrl;
+  } catch (e) {
+    console.warn("[stockImage] pexels error:", e?.message || e);
+  }
+
+  if (CURATED[key]) return CURATED[key];
   const hash = createHash("sha1").update(key).digest();
   const idx = hash[0] % FALLBACKS.length;
   return FALLBACKS[idx];
