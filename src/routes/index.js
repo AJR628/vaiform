@@ -9,6 +9,7 @@ import diagRouter from "./diag.routes.js";
 import whoamiRouter from "./whoami.routes.js";
 import shortsRouter from "./shorts.routes.js";
 import uploadsRouter from "./uploads.routes.js";
+import studioRouter from "./studio.routes.js";
 
 // Lightweight root
 const index = Router();
@@ -26,4 +27,5 @@ export default {
   diag: diagRouter,         // "/diag"
   shorts: shortsRouter,     // "/shorts"
   uploads: uploadsRouter,   // "/uploads"
+  studio: studioRouter,     // "/studio"
 };

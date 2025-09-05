@@ -166,6 +166,10 @@ if (routes?.uploads) {
   app.use("/api", routes.uploads);
   console.log("✅ Mounted uploads at /api/uploads");
 }
+if (routes?.studio) {
+  app.use("/api/studio", routes.studio);
+  console.log("✅ Mounted studio at /api/studio");
+}
 
 // ---------- STATIC LAST (disable directory redirects like /dir -> /dir/) ----------
 app.use(express.static("public", { redirect: false }));
