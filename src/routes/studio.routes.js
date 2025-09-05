@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import requireAuth from "../middleware/requireAuth.js";
-import { startStudio, getStudio, generateQuoteCandidates, generateImageCandidates, chooseCandidate, finalizeStudio, listStudios, deleteStudio } from "../services/studio.service.js";
+import { startStudio, getStudio, generateQuoteCandidates, generateImageCandidates, chooseCandidate, finalizeStudio, listStudios, deleteStudio, generateVideoCandidates } from "../services/studio.service.js";
 import { resolveStockVideo } from "../services/stock.video.provider.js";
 
 const r = Router();
@@ -67,10 +67,8 @@ r.post("/video", async (req, res) => {
   if (!parsed.success) return res.status(400).json({ success: false, error: "INVALID_INPUT", detail: parsed.error.flatten() });
   const { studioId, kind, query } = parsed.data;
   try {
-    const r = await resolveStockVideo({ query, targetDur: 8 });
-    const candidates = (r.ok ? r.items : []).slice(0, 3);
-    // we don't persist video track in session structure yet; reuse image-like response shape under video
-    return res.json({ success: true, data: { video: { candidates } } });
+    const v = await generateVideoCandidates({ uid: req.user.uid, studioId, kind, query, targetDur: 8 });
+    return res.json({ success: true, data: { video: v } });
   } catch (e) {
     return res.status(500).json({ success: false, error: "STUDIO_VIDEO_FAILED" });
   }

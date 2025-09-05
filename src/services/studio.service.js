@@ -9,6 +9,7 @@ function ensureSessionDefaults(s) {
   if (!s.constraints) s.constraints = { maxRefines: 5 };
   if (!s.quote) s.quote = { mode: "quote", input: "", candidates: [], chosenId: null, iterationsLeft: s.constraints.maxRefines };
   if (!s.image) s.image = { kind: "stock", query: null, uploadUrl: null, prompt: null, kenBurns: null, candidates: [], chosenId: null, iterationsLeft: s.constraints.maxRefines };
+  if (!s.video) s.video = { kind: "stockVideo", query: null, candidates: [], chosenId: null, iterationsLeft: s.constraints.maxRefines };
   if (!s.render) s.render = { template: "minimal", durationSec: 8, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
   const ttlHours = Number(process.env.STUDIO_TTL_HOURS || 48);
   if (!s.render.createdAt) s.render.createdAt = new Date().toISOString();
@@ -119,6 +120,28 @@ export async function generateImageCandidates({ uid, studioId, kind, query, uplo
   return s.image;
 }
 
+export async function generateVideoCandidates({ uid, studioId, kind = "stockVideo", query, count = 3, targetDur = 8 }) {
+  const s = await getStudio({ uid, studioId });
+  if (!s) throw new Error("STUDIO_NOT_FOUND");
+  s.video.kind = kind;
+  s.video.query = query || null;
+
+  const candidates = [];
+  try {
+    const { resolveStockVideo } = await import("./stock.video.provider.js");
+    const r = await resolveStockVideo({ query: query || "calm", targetDur, perPage: 10 });
+    for (const it of (r.ok ? r.items : []).slice(0, 3)) {
+      candidates.push({ id: it.id, kind: "stockVideo", url: it.url, thumbUrl: it.thumbUrl || null, credit: it.credit || null });
+    }
+  } catch {}
+
+  s.video.candidates = candidates;
+  if (s.video.iterationsLeft > 0) s.video.iterationsLeft -= 1;
+  s.render.updatedAt = new Date().toISOString();
+  await saveJSON({ uid, studioId, data: s });
+  return s.video;
+}
+
 export async function chooseCandidate({ uid, studioId, track, candidateId }) {
   const s = await getStudio({ uid, studioId });
   if (!s) throw new Error("STUDIO_NOT_FOUND");
@@ -128,6 +151,7 @@ export async function chooseCandidate({ uid, studioId, track, candidateId }) {
     if (chosen) s.quote.chosen = chosen;
   }
   if (track === "image") s.image.chosenId = candidateId;
+  if (track === "video") s.video.chosenId = candidateId;
   s.render.updatedAt = new Date().toISOString();
   await saveJSON({ uid, studioId, data: s });
   return { ok: true };
@@ -137,13 +161,21 @@ export async function finalizeStudio({ uid, studioId, voiceover = false, wantAtt
   const s = await getStudio({ uid, studioId });
   if (!s) throw new Error("STUDIO_NOT_FOUND");
   const q = (s.quote.candidates || []).find((c) => c.id === s.quote.chosenId) || null;
+  const vid = (s.video?.candidates || []).find((c) => c.id === s.video?.chosenId) || null;
   const img = (s.image.candidates || []).find((c) => c.id === s.image.chosenId) || null;
   if (!q) throw new Error("QUOTE_NOT_CHOSEN");
-  if (!img) throw new Error("IMAGE_NOT_CHOSEN");
+  if (!vid && !img) throw new Error("NEED_IMAGE_OR_VIDEO");
 
-  const background = img.kind === "upload"
-    ? { kind: "upload", uploadUrl: img.url, kenBurns: img.kenBurns || undefined }
-    : { kind: "imageUrl", imageUrl: img.url, kenBurns: img.kenBurns || undefined };
+  let background;
+  if (vid) {
+    background = { kind: "stockVideo", query: s.video?.query || undefined, sourceUrl: vid.url };
+  } else if (img) {
+    background = img.kind === "upload"
+      ? { kind: "upload", uploadUrl: img.url, kenBurns: img.kenBurns || undefined }
+      : (img.kind === "imageUrl"
+          ? { kind: "imageUrl", imageUrl: img.url, kenBurns: img.kenBurns || undefined }
+          : { kind: "stock", query: s.image?.query || "", kenBurns: s.image?.kenBurns || undefined });
+  }
 
   const chosenQuote = s.quote?.chosen || q;
   let usedQuote = null;
