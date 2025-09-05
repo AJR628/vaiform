@@ -1,5 +1,7 @@
 import { z } from "zod";
 import { createShortService } from "../services/shorts.service.js";
+import admin from "../config/firebase.js";
+import { buildPublicUrl, getDownloadToken } from "../utils/storage.js";
 
 const BackgroundSchema = z.object({
   kind: z.enum(["solid", "imageUrl", "stock", "upload", "ai"]).default("solid"),
@@ -142,51 +144,70 @@ export async function getShortById(req, res) {
     const jobId = String(req.params?.jobId || "").trim();
     if (!jobId) return res.status(400).json({ success: false, error: "INVALID_INPUT", message: "jobId required" });
 
-    // Build artifact URLs; HEAD probe for existence
-    const destBase = `artifacts/${ownerUid}/${jobId}`;
-    const { buildPublicUrl, headUrl } = await import("../utils/storage.js");
-    // utils/storage.js doesn't export buildPublicUrl; synthesize from uploadPublic pattern
-    const admin = (await import("../config/firebase.js")).default;
+    const debug = req.query?.debug === "1";
+
+    const destBase = `artifacts/${ownerUid}/${jobId}/`;
     const bucket = admin.storage().bucket();
-    const mkUrl = (p) => `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(p)}?alt=media`;
-    const videoUrl = mkUrl(`${destBase}/short.mp4`);
-    const coverImageUrl = mkUrl(`${destBase}/cover.jpg`);
-    const metaUrl = mkUrl(`${destBase}/meta.json`);
+    const bucketName = bucket.name;
+    const fVideo = bucket.file(`${destBase}short.mp4`);
+    const fCover = bucket.file(`${destBase}cover.jpg`);
+    const fMeta  = bucket.file(`${destBase}meta.json`);
 
-    // Probe video existence via HEAD
-    const headRes = await fetch(videoUrl, { method: "HEAD" });
-    if (!headRes.ok) {
-      return res.status(404).json({ success: false, error: "NOT_FOUND" });
-    }
+    const diag = { bucket: bucketName, uid: ownerUid, jobId, base: destBase, steps: [] };
 
-    // Try meta
+    // Try meta.json first (internal download)
     let meta = null;
     try {
-      const mr = await fetch(metaUrl);
-      if (mr.ok) meta = await mr.json();
-    } catch {}
+      const [buf] = await fMeta.download();
+      meta = JSON.parse(buf.toString("utf8"));
+      diag.steps.push("meta_download_ok");
+    } catch (e) {
+      diag.steps.push(`meta_missing:${e?.code||e?.message||e}`);
+    }
 
-    const out = meta ? {
-      jobId: meta.jobId || jobId,
-      videoUrl,
-      coverImageUrl,
-      usedTemplate: meta.usedTemplate ?? null,
-      durationSec: meta.durationSec ?? null,
-      usedQuote: meta.usedQuote ?? null,
-      credits: meta.credits ?? null,
-      createdAt: meta.createdAt ?? null,
-    } : {
+    if (meta?.urls?.video) {
+      const payload = {
+        jobId,
+        videoUrl: meta.urls.video,
+        coverImageUrl: meta.urls.cover || null,
+        durationSec: meta.durationSec ?? null,
+        usedTemplate: meta.usedTemplate ?? null,
+        usedQuote: meta.usedQuote ?? null,
+        credits: meta.credits ?? null,
+        createdAt: meta.createdAt ?? null,
+      };
+      if (debug) return res.json({ ok: true, source: "meta.urls", diag, data: payload });
+      return res.json({ success: true, data: payload });
+    }
+
+    // Fallback: use admin metadata tokens
+    const [existsVideo] = await fVideo.exists();
+    if (!existsVideo) {
+      if (debug) return res.json({ ok: false, code: "NO_VIDEO_OBJECT", diag });
+      return res.status(404).json({ success: false, error: "NOT_FOUND" });
+    }
+    const tokenVideo = await getDownloadToken(fVideo);
+    const videoUrl = buildPublicUrl({ bucket: bucketName, path: `${destBase}short.mp4`, token: tokenVideo });
+
+    const [existsCover] = await fCover.exists();
+    let coverImageUrl = null;
+    if (existsCover) {
+      const tokenCover = await getDownloadToken(fCover);
+      coverImageUrl = buildPublicUrl({ bucket: bucketName, path: `${destBase}cover.jpg`, token: tokenCover });
+    }
+
+    const payload = {
       jobId,
       videoUrl,
       coverImageUrl,
-      usedTemplate: null,
-      durationSec: null,
-      usedQuote: null,
-      credits: null,
-      createdAt: null,
+      durationSec: meta?.durationSec ?? null,
+      usedTemplate: meta?.usedTemplate ?? null,
+      usedQuote: meta?.usedQuote ?? null,
+      credits: meta?.credits ?? null,
+      createdAt: meta?.createdAt ?? null,
     };
-
-    return res.json({ success: true, data: out });
+    if (debug) return res.json({ ok: true, source: "metadata.tokens", diag, data: payload });
+    return res.json({ success: true, data: payload });
   } catch (e) {
     console.error("/shorts/:jobId error", e?.message || e);
     return res.status(500).json({ success: false, error: "GET_SHORT_FAILED" });

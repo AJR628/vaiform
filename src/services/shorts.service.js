@@ -254,6 +254,7 @@ export async function createShortService({ ownerUid, mode, text, template, durat
       usedQuote,
       credits,
       files: { video: "short.mp4", cover: "cover.jpg" },
+      urls: { video: publicUrl, cover: coverUrl },
     };
     const metaLocal = path.join(tmpRoot, "meta.json");
     fs.writeFileSync(metaLocal, JSON.stringify(meta, null, 2));

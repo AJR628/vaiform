@@ -26,6 +26,21 @@ export async function uploadPublic(localPath, destPath, contentType = "video/mp4
   return { publicUrl, gsPath };
 }
 
-export default { uploadPublic };
+// Build a public download URL for a given object path and optional token
+export function buildPublicUrl({ bucket, path, token }) {
+  const encodedPath = encodeURIComponent(path);
+  const q = token ? `?alt=media&token=${encodeURIComponent(token)}` : `?alt=media`;
+  return `https://firebasestorage.googleapis.com/v0/b/${bucket}/o/${encodedPath}${q}`;
+}
+
+// Read Firebase download token from object metadata via Admin SDK
+export async function getDownloadToken(file) {
+  const [md] = await file.getMetadata();
+  const raw = md.metadata?.firebaseStorageDownloadTokens || md.metadata?.downloadTokens || "";
+  const token = String(raw).split(",").map(s => s.trim()).filter(Boolean)[0] || null;
+  return token;
+}
+
+export default { uploadPublic, buildPublicUrl, getDownloadToken };
 
 
