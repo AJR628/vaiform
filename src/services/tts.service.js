@@ -1,4 +1,4 @@
-import { writeFile, mkdir, access } from "node:fs/promises";
+import { writeFile, mkdir, access, mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
@@ -7,6 +7,42 @@ const TTS_PROVIDER = (process.env.TTS_PROVIDER || "openai").toLowerCase();
 const OPENAI_MODEL = process.env.OPENAI_TTS_MODEL || "gpt-4o-mini-tts";
 const OPENAI_VOICE = process.env.OPENAI_TTS_VOICE || "alloy";
 const OPENAI_ORG   = process.env.OPENAI_ORG_ID || null;
+
+// New in-memory cache + limiter and diag state
+const ttsMem = new Map(); // key -> { buf, ts }
+const TTL_MS = 15 * 60 * 1000; // 15 min
+let quotaBlockedUntil = 0;
+let ttsLock = Promise.resolve();
+let lastTtsState = { status: null, code: null, when: null, cache: { hit: false, key: null } };
+export function getLastTtsState() { return lastTtsState; }
+
+function cacheKey({ provider, model, voice, text }) {
+  return `${provider}|${model}|${voice}|${String(text || "").trim()}`;
+}
+async function withTtsSlot(fn) {
+  const prev = ttsLock;
+  let release;
+  ttsLock = new Promise((res) => (release = res));
+  try {
+    await prev;
+    return await fn();
+  } finally {
+    release();
+  }
+}
+function pickHeaders(h) {
+  try {
+    const get = (k) => h.get(k);
+    return {
+      "retry-after": get("retry-after"),
+      "x-request-id": get("x-request-id"),
+      "x-ratelimit-limit": get("x-ratelimit-limit"),
+      "x-ratelimit-remaining": get("x-ratelimit-remaining"),
+    };
+  } catch {
+    return {};
+  }
+}
 
 // Tunables
 const MAX_TRIES   = Number(process.env.TTS_MAX_TRIES || 3);
@@ -83,51 +119,118 @@ export async function synthVoice({ text }){
     const t = String(text || "").trim();
     if (t.length < 2) return { audioPath: null, durationMs: null };
 
-    const provider = TTS_PROVIDER;
-    const useOpenAI = provider === "openai" && !!process.env.OPENAI_API_KEY;
-    const useEleven = provider === "elevenlabs" && !!process.env.ELEVENLABS_API_KEY && !!process.env.ELEVEN_VOICE_ID;
-
-    if (!useOpenAI && !useEleven){
+    const provider = (process.env.TTS_PROVIDER || "openai").toLowerCase();
+    const isOpenAI = provider === "openai" && !!process.env.OPENAI_API_KEY;
+    const isEleven = provider === "elevenlabs" && !!process.env.ELEVENLABS_API_KEY && !!process.env.ELEVEN_VOICE_ID;
+    if (!isOpenAI && !isEleven) {
       console.warn("[tts] provider not configured; silent fallback");
       return { audioPath: null, durationMs: null };
     }
 
-    if (Date.now() - last429At < COOLDOWN_MS){
-      console.warn("[tts] cooldown active (recent 429); silent fallback");
+    if (Date.now() < quotaBlockedUntil) {
+      console.warn("[tts] quota cooldown active; skipping provider");
       return { audioPath: null, durationMs: null };
     }
 
-    const model = useOpenAI ? OPENAI_MODEL : (process.env.ELEVEN_TTS_MODEL || "eleven_flash_v2_5");
-    const voice = useOpenAI ? OPENAI_VOICE : (process.env.ELEVEN_VOICE_ID);
-    const k = keyFor({ provider, model, voice, text: t });
+    const model = isOpenAI ? OPENAI_MODEL : (process.env.ELEVEN_TTS_MODEL || "eleven_flash_v2_5");
+    const voice = isOpenAI ? OPENAI_VOICE : (process.env.ELEVEN_VOICE_ID);
+    const key = cacheKey({ provider, model, voice, text: t });
 
-    const memHit = fromMem(k);
-    if (memHit) return { audioPath: memHit, durationMs: null };
-    const diskHit = await fromDisk(k);
-    if (diskHit) { mem.set(k, { path: diskHit, at: Date.now() }); return { audioPath: diskHit, durationMs: null }; }
+    // In-memory cache
+    const hit = ttsMem.get(key);
+    if (hit && (Date.now() - hit.ts) < TTL_MS) {
+      lastTtsState = { status: 200, code: "cache_hit", when: new Date().toISOString(), cache: { hit: true, key } };
+      const dir = await mkdtemp(join(tmpdir(), "vaiform-tts-"));
+      const audioPath = join(dir, "cached.mp3");
+      await writeFile(audioPath, hit.buf);
+      return { audioPath, durationMs: null };
+    }
 
-    if (inflight.has(k)) return inflight.get(k);
+    // Single-slot limiter and one polite retry
+    return await withTtsSlot(async () => {
+      try {
+        const { buf } = await fetchWithRetry(async () => {
+          if (isOpenAI) return await doOpenAI({ text: t, model, voice });
+          if (isEleven) return await doEleven({ text: t });
+          return { res: new Response(null, { status: 503 }), buf: Buffer.alloc(0), headers: new Headers() };
+        }, key);
 
-    const p = (async () => {
-      await rateLimit();
-      if (useOpenAI) return await synthOpenAI({ text: t, k });
-      if (useEleven) return await synthEleven({ text: t, k });
-      return { audioPath: null, durationMs: null };
-    })();
+        ttsMem.set(key, { buf, ts: Date.now() });
 
-    inflight.set(k, p);
-    const out = await p.catch(err => {
-      console.warn("[tts] soft-fail:", err?.message || err);
-      return { audioPath: null, durationMs: null };
+        const dir = await mkdtemp(join(tmpdir(), "vaiform-tts-"));
+        const audioPath = join(dir, "quote.mp3");
+        await writeFile(audioPath, buf);
+        return { audioPath, durationMs: null };
+      } catch (err) {
+        console.warn("[tts] soft-fail:", err?.message || err);
+        return { audioPath: null, durationMs: null };
+      }
     });
-    inflight.delete(k);
-
-    if (out?.audioPath) mem.set(k, { path: out.audioPath, at: Date.now() });
-    return out;
-  } catch (err){
+  } catch (err) {
     console.warn("[tts] soft-fail:", err?.message || err);
     return { audioPath: null, durationMs: null };
   }
+}
+
+async function fetchWithRetry(doFetch, key) {
+  let attempt = 0;
+  while (attempt < 2) {
+    attempt++;
+    const { res, buf, headers } = await doFetch();
+    const status = res?.status ?? 0;
+    let code = null;
+    try {
+      if (status >= 400 && buf) {
+        const body = JSON.parse(Buffer.from(buf).toString("utf8"));
+        code = body?.error?.code || null;
+      }
+    } catch {}
+    lastTtsState = { status, code, when: new Date().toISOString(), cache: { hit: false, key }, headers: pickHeaders(headers || new Headers()) };
+
+    if (res && res.ok) return { buf };
+
+    if (code === "insufficient_quota") {
+      quotaBlockedUntil = Date.now() + 10 * 60 * 1000; // 10 min
+      break;
+    }
+    if (status === 429) {
+      const ra = (headers && headers.get) ? headers.get("retry-after") : null;
+      const ms = ra ? Math.min((parseInt(ra, 10) || 1) * 1000, 2500) : (800 + Math.floor(Math.random() * 600));
+      await new Promise((r) => setTimeout(r, ms));
+      continue;
+    }
+    break;
+  }
+  throw new Error("TTS_FAILED");
+}
+
+async function doOpenAI({ text, model, voice }) {
+  const res = await fetch("https://api.openai.com/v1/audio/speech", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+      "Content-Type": "application/json",
+      ...(OPENAI_ORG ? { "OpenAI-Organization": OPENAI_ORG } : {}),
+    },
+    body: JSON.stringify({ model, voice, input: text, format: "mp3" }),
+  });
+  const ab = await res.arrayBuffer();
+  return { res, buf: Buffer.from(ab), headers: res.headers };
+}
+
+async function doEleven({ text }) {
+  const url = `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(process.env.ELEVEN_VOICE_ID)}?output_format=mp3_44100_128`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "xi-api-key": process.env.ELEVENLABS_API_KEY,
+      "Content-Type": "application/json",
+      Accept: "audio/mpeg",
+    },
+    body: JSON.stringify({ model_id: process.env.ELEVEN_TTS_MODEL || "eleven_flash_v2_5", text }),
+  });
+  const ab = await res.arrayBuffer();
+  return { res, buf: Buffer.from(ab), headers: res.headers };
 }
 
 async function synthOpenAI({ text, k }){

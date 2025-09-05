@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { MODEL_REGISTRY, STYLE_PRESETS } from "../config/models.js";
+import { getLastTtsState } from "../services/tts.service.js";
 
 const router = Router();
 
@@ -39,6 +40,12 @@ router.get("/tts", (_req, res) => {
   const model = provider === "openai" ? (process.env.OPENAI_TTS_MODEL || "gpt-4o-mini-tts") : (process.env.ELEVEN_TTS_MODEL || "eleven_flash_v2_5");
   const voiceOrVoiceId = provider === "openai" ? (process.env.OPENAI_TTS_VOICE || "alloy") : (process.env.ELEVEN_VOICE_ID || null);
   res.json({ ok: true, provider, configured, model, voiceOrVoiceId });
+});
+
+router.get("/tts_state", (_req, res) => {
+  const provider = (process.env.TTS_PROVIDER || "openai");
+  const configured = Boolean(process.env.OPENAI_API_KEY) || Boolean(process.env.ELEVENLABS_API_KEY);
+  res.json({ ok: true, provider, configured, last: getLastTtsState() });
 });
 
 export default router;
