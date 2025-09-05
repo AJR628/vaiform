@@ -20,7 +20,7 @@ export function finalizeQuoteText(mode, text) {
   return t;
 }
 
-export async function createShortService({ ownerUid, mode, text, template, durationSec, voiceover = false, wantAttribution = true, background = { kind: "solid" }, debugAudioPath, captionMode = "static", watermark }) {
+export async function createShortService({ ownerUid, mode, text, template, durationSec, voiceover = false, wantAttribution = true, background = { kind: "solid" }, debugAudioPath, captionMode = "static", watermark, overrideQuote }) {
   if (!ownerUid) throw new Error("MISSING_UID");
 
   const jobId = `shorts-${Date.now().toString(36)}-${Math.random().toString(36).slice(2,7)}`;
@@ -28,8 +28,8 @@ export async function createShortService({ ownerUid, mode, text, template, durat
   const outPath = path.join(tmpRoot, "short.mp4");
   const audioPath = path.join(tmpRoot, "quote.mp3");
 
-  // Resolve quote using engine (curated or aphorism)
-  const usedQuote = await getQuote({ mode, text, template });
+  // Resolve quote using engine (curated or aphorism) unless provided
+  const usedQuote = overrideQuote || await getQuote({ mode, text, template });
 
   const credits = {
     attributed: usedQuote.attributed === true,

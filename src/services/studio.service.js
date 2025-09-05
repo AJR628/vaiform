@@ -106,7 +106,11 @@ export async function generateImageCandidates({ uid, studioId, kind, query, uplo
 export async function chooseCandidate({ uid, studioId, track, candidateId }) {
   const s = await getStudio({ uid, studioId });
   if (!s) throw new Error("STUDIO_NOT_FOUND");
-  if (track === "quote") s.quote.chosenId = candidateId;
+  if (track === "quote") {
+    s.quote.chosenId = candidateId;
+    const chosen = (s.quote.candidates || []).find((c) => c.id === candidateId) || null;
+    if (chosen) s.quote.chosen = chosen;
+  }
   if (track === "image") s.image.chosenId = candidateId;
   s.render.updatedAt = new Date().toISOString();
   await saveJSON({ uid, studioId, data: s });
@@ -125,16 +129,29 @@ export async function finalizeStudio({ uid, studioId, voiceover = false, wantAtt
     ? { kind: "upload", uploadUrl: img.url, kenBurns: img.kenBurns || undefined }
     : { kind: "imageUrl", imageUrl: img.url, kenBurns: img.kenBurns || undefined };
 
+  const chosenQuote = s.quote?.chosen || q;
+  let usedQuote = null;
+  if (chosenQuote) {
+    usedQuote = {
+      text: chosenQuote.text,
+      author: chosenQuote.author ?? null,
+      attributed: !!chosenQuote.attributed,
+      isParaphrase: !!chosenQuote.isParaphrase,
+    };
+  }
+  const modeForCredits = s.quote?.mode || "quote";
+
   const result = await createShortService({
     ownerUid: uid,
-    mode: "quote",
-    text: q.text,
+    mode: modeForCredits,
+    text: usedQuote ? usedQuote.text : q.text,
     template: s.render.template,
     durationSec: s.render.durationSec,
     voiceover,
     wantAttribution,
     background,
     captionMode,
+    overrideQuote: usedQuote || undefined,
   });
 
   s.status = "finalized";
