@@ -20,7 +20,7 @@ export function finalizeQuoteText(mode, text) {
   return t;
 }
 
-export async function createShortService({ ownerUid, mode, text, template, durationSec, voiceover = false, wantAttribution = true, background = { kind: "solid" }, debugAudioPath, captionMode = "static" }) {
+export async function createShortService({ ownerUid, mode, text, template, durationSec, voiceover = false, wantAttribution = true, background = { kind: "solid" }, debugAudioPath, captionMode = "static", watermark }) {
   if (!ownerUid) throw new Error("MISSING_UID");
 
   const jobId = `shorts-${Date.now().toString(36)}-${Math.random().toString(36).slice(2,7)}`;
@@ -30,6 +30,12 @@ export async function createShortService({ ownerUid, mode, text, template, durat
 
   // Resolve quote using engine (curated or aphorism)
   const usedQuote = await getQuote({ mode, text, template });
+
+  const credits = {
+    attributed: usedQuote.attributed === true,
+    author: usedQuote.author || null,
+    source: usedQuote.attributed ? "curated" : (mode === "quote" ? "user" : "generated"),
+  };
 
   // Optional voiceover (soft-fail) with debug override
   let audioOk = false;
@@ -56,6 +62,9 @@ export async function createShortService({ ownerUid, mode, text, template, durat
   }
 
   const authorLine = wantAttribution && usedQuote.attributed && usedQuote.author ? `— ${usedQuote.author}` : null;
+  const watermarkFinal = (typeof watermark === "boolean")
+    ? watermark
+    : ((process.env.WATERMARK_ENABLED ?? "true") !== "false");
 
   // Karaoke ASS (optional)
   const wantKaraoke = captionMode === "karaoke";
@@ -100,10 +109,11 @@ export async function createShortService({ ownerUid, mode, text, template, durat
           kenBurns: background.kenBurns,
           assPath,
           progressBar: karaokeModeEffective === "progress",
+          watermark: watermarkFinal,
         });
       } catch (e) {
         console.warn("[background] imageUrl fallback:", e?.message || e);
-        await renderSolidQuoteVideo({ outPath, text: usedQuote.text, durationSec, template, authorLine, assPath, progressBar: karaokeModeEffective === "progress" });
+        await renderSolidQuoteVideo({ outPath, text: usedQuote.text, durationSec, template, authorLine, assPath, progressBar: karaokeModeEffective === "progress", watermark: watermarkFinal });
       }
     } else if (background?.kind === "stock" && background?.query) {
       try {
@@ -119,10 +129,11 @@ export async function createShortService({ ownerUid, mode, text, template, durat
           kenBurns: background.kenBurns,
           assPath,
           progressBar: karaokeModeEffective === "progress",
+          watermark: watermarkFinal,
         });
       } catch (e) {
         console.warn("[background] stock fallback:", e?.message || e);
-        await renderSolidQuoteVideo({ outPath, text: usedQuote.text, durationSec, template, authorLine, assPath, progressBar: karaokeModeEffective === "progress" });
+        await renderSolidQuoteVideo({ outPath, text: usedQuote.text, durationSec, template, authorLine, assPath, progressBar: karaokeModeEffective === "progress", watermark: watermarkFinal });
       }
     } else if (background?.kind === "upload" && background?.uploadUrl) {
       try {
@@ -154,6 +165,7 @@ export async function createShortService({ ownerUid, mode, text, template, durat
             kenBurns: background.kenBurns,
             assPath,
             progressBar: karaokeModeEffective === "progress",
+            watermark: watermarkFinal,
           });
         } else {
           // fallback to stock using prompt as query
@@ -170,15 +182,16 @@ export async function createShortService({ ownerUid, mode, text, template, durat
               kenBurns: background.kenBurns,
               assPath,
               progressBar: karaokeModeEffective === "progress",
+              watermark: watermarkFinal,
             });
           } catch (e2) {
             console.warn("[background] ai->stock fallback:", e2?.message || e2);
-            await renderSolidQuoteVideo({ outPath, text: usedQuote.text, durationSec, template, authorLine, assPath, progressBar: karaokeModeEffective === "progress" });
+            await renderSolidQuoteVideo({ outPath, text: usedQuote.text, durationSec, template, authorLine, assPath, progressBar: karaokeModeEffective === "progress", watermark: watermarkFinal });
           }
         }
       } catch (e) {
         console.warn("[background] ai fallback:", e?.message || e);
-        await renderSolidQuoteVideo({ outPath, text: usedQuote.text, durationSec, template, authorLine, assPath, progressBar: karaokeModeEffective === "progress" });
+        await renderSolidQuoteVideo({ outPath, text: usedQuote.text, durationSec, template, authorLine, assPath, progressBar: karaokeModeEffective === "progress", watermark: watermarkFinal });
       }
     } else {
       await renderSolidQuoteVideo({ outPath, text: usedQuote.text, durationSec, template, authorLine });
@@ -230,6 +243,25 @@ export async function createShortService({ ownerUid, mode, text, template, durat
     // ignore cover failures
   }
 
+  // Upload meta.json (best-effort)
+  try {
+    const meta = {
+      jobId,
+      uid: ownerUid,
+      createdAt: new Date().toISOString(),
+      durationSec,
+      usedTemplate: template,
+      usedQuote,
+      credits,
+      files: { video: "short.mp4", cover: "cover.jpg" },
+    };
+    const metaLocal = path.join(tmpRoot, "meta.json");
+    fs.writeFileSync(metaLocal, JSON.stringify(meta, null, 2));
+    await uploadPublic(metaLocal, `${destBase}/meta.json`, "application/json");
+  } catch (e) {
+    console.warn("[shorts] meta upload failed:", e?.message || e);
+  }
+
   try { if (imageTmpPath) fs.unlinkSync(imageTmpPath); } catch {}
   try { fs.rmSync(tmpRoot, { recursive: true, force: true }); } catch {}
 
@@ -240,6 +272,7 @@ export async function createShortService({ ownerUid, mode, text, template, durat
     durationSec,
     usedTemplate: template,
     usedQuote,
+    credits,
   };
 }
 

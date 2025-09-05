@@ -128,7 +128,7 @@ export function resolveFont() {
  * @param {number} [p.durationSec=8]
  * @param {"calm"|"bold"|"cosmic"|"minimal"} [p.template="minimal"]
  */
-export async function renderSolidQuoteVideo({ outPath, text, durationSec = 8, template = "minimal", authorLine, assPath, progressBar = false }) {
+export async function renderSolidQuoteVideo({ outPath, text, durationSec = 8, template = "minimal", authorLine, assPath, progressBar = false, watermark = (process.env.WATERMARK_ENABLED ?? "true") !== "false", watermarkText = process.env.WATERMARK_TEXT || "Vaiform", watermarkFontSize = Number(process.env.WATERMARK_FONT_SIZE || 30), watermarkPadding = Number(process.env.WATERMARK_PADDING || 42) }) {
   if (!outPath) throw new Error("outPath is required");
   if (!text || !String(text).trim()) throw new Error("text is required");
 
@@ -177,6 +177,11 @@ export async function renderSolidQuoteVideo({ outPath, text, durationSec = 8, te
     const ov = progressOverlayExpr({ durationSec });
     filter = `${filter},${ov}`;
   }
+  if (watermark) {
+    const escTxt = escapeDrawtext(String(watermarkText));
+    const wm = `drawtext=text=${escTxt}${fontOpt}:fontcolor=white:fontsize=${watermarkFontSize}:shadowcolor=black:shadowx=2:shadowy=2:box=1:boxcolor=black@0.25:boxborderw=12:x=w-tw-${watermarkPadding}:y=h-th-${watermarkPadding}`;
+    filter = `${filter},${wm}`;
+  }
 
   const args = [
     "-f", "lavfi",
@@ -223,6 +228,10 @@ export async function renderImageQuoteVideo({
   kenBurns = "in",
   assPath,
   progressBar = false,
+  watermark = (process.env.WATERMARK_ENABLED ?? "true") !== "false",
+  watermarkText = process.env.WATERMARK_TEXT || "Vaiform",
+  watermarkFontSize = Number(process.env.WATERMARK_FONT_SIZE || 30),
+  watermarkPadding = Number(process.env.WATERMARK_PADDING || 42),
 }) {
   if (!outPath) throw new Error("outPath is required");
   if (!imagePath) throw new Error("imagePath is required");
@@ -265,6 +274,11 @@ export async function renderImageQuoteVideo({
   }
   if (progressBar) {
     layers.push(progressOverlayExpr({ durationSec }));
+  }
+  if (watermark) {
+    const escTxt = escapeDrawtext(String(watermarkText));
+    const wm = `drawtext=text=${escTxt}${fontOpt}:fontcolor=${fontcolor}:fontsize=${watermarkFontSize}:shadowcolor=${shadowColor}:shadowx=2:shadowy=2:box=1:boxcolor=black@0.25:boxborderw=12:x=w-tw-${watermarkPadding}:y=h-th-${watermarkPadding}`;
+    layers.push(wm);
   }
 
   const vf = layers.join(",");
