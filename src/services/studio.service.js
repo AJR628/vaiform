@@ -171,7 +171,7 @@ export async function finalizeStudio({ uid, studioId, voiceover = false, wantAtt
   });
 
   s.status = "finalized";
-  s.finalize = { jobId: result.jobId };
+  s.finalize = { jobId: result.jobId, videoUrl: result.videoUrl, coverImageUrl: result.coverImageUrl };
   s.render.updatedAt = new Date().toISOString();
   await saveJSON({ uid, studioId, data: s });
 
