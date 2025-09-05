@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { loadJSON, saveJSON } from "../utils/json.store.js";
+import admin from "../config/firebase.js";
 import { getQuote } from "./quote.engine.js";
 import { resolveStockImage } from "./stock.image.provider.js";
 import { createShortService } from "./shorts.service.js";
@@ -9,11 +10,19 @@ function ensureSessionDefaults(s) {
   if (!s.quote) s.quote = { mode: "quote", input: "", candidates: [], chosenId: null, iterationsLeft: s.constraints.maxRefines };
   if (!s.image) s.image = { kind: "stock", query: null, uploadUrl: null, prompt: null, kenBurns: null, candidates: [], chosenId: null, iterationsLeft: s.constraints.maxRefines };
   if (!s.render) s.render = { template: "minimal", durationSec: 8, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+  const ttlHours = Number(process.env.STUDIO_TTL_HOURS || 48);
+  if (!s.render.createdAt) s.render.createdAt = new Date().toISOString();
+  if (!s.expiresAt) {
+    const created = Date.parse(s.render.createdAt || new Date().toISOString());
+    s.expiresAt = new Date(created + ttlHours * 3600 * 1000).toISOString();
+  }
   return s;
 }
 
-export async function startStudio({ uid, template, durationSec, maxRefines = 5 }) {
+export async function startStudio({ uid, template, durationSec, maxRefines = 5, debugExpire = false }) {
   const id = `std-${crypto.randomUUID()}`;
+  const nowIso = new Date().toISOString();
+  const ttlMs = (Number(process.env.STUDIO_TTL_HOURS || 48)) * 3600 * 1000;
   const session = ensureSessionDefaults({
     id,
     uid,
@@ -21,15 +30,22 @@ export async function startStudio({ uid, template, durationSec, maxRefines = 5 }
     constraints: { maxRefines },
     quote: { mode: "quote", input: "", candidates: [], chosenId: null, iterationsLeft: maxRefines },
     image: { kind: "stock", query: null, uploadUrl: null, prompt: null, kenBurns: null, candidates: [], chosenId: null, iterationsLeft: maxRefines },
-    render: { template, durationSec, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+    render: { template, durationSec, createdAt: nowIso, updatedAt: nowIso },
   });
+  // override TTL for debug if requested
+  if (debugExpire) session.expiresAt = new Date(Date.now() + 10 * 1000).toISOString();
+  else session.expiresAt = new Date(Date.now() + ttlMs).toISOString();
   await saveJSON({ uid, studioId: id, data: session });
   return session;
 }
 
 export async function getStudio({ uid, studioId }) {
   const s = await loadJSON({ uid, studioId });
-  return s ? ensureSessionDefaults(s) : null;
+  if (!s) return null;
+  const session = ensureSessionDefaults(s);
+  if (session.deletedAt) return null;
+  if (session.expiresAt && Date.now() > Date.parse(session.expiresAt)) return null;
+  return session;
 }
 
 export async function generateQuoteCandidates({ uid, studioId, mode, text, template, count = 3 }) {
@@ -160,6 +176,68 @@ export async function finalizeStudio({ uid, studioId, voiceover = false, wantAtt
   await saveJSON({ uid, studioId, data: s });
 
   return { jobId: result.jobId, videoUrl: result.videoUrl, coverImageUrl: result.coverImageUrl };
+}
+
+// ---- Management APIs ----
+export async function listStudios({ uid }) {
+  const bucket = admin.storage().bucket();
+  const [files] = await bucket.getFiles({ prefix: `drafts/${uid}/`, autoPaginate: true });
+  const sessions = [];
+  for (const f of files) {
+    if (!f.name.endsWith("/session.json")) continue;
+    const studioId = f.name.split("/")[2];
+    try {
+      const [buf] = await f.download();
+      const s = ensureSessionDefaults(JSON.parse(buf.toString("utf8")));
+      const expired = s.expiresAt && Date.now() > Date.parse(s.expiresAt);
+      if (s.deletedAt || expired) {
+        // purge expired/deleted
+        try { if (expired) await f.delete(); } catch {}
+        continue;
+      }
+      sessions.push({
+        id: s.id || studioId,
+        createdAt: s.render?.createdAt || null,
+        updatedAt: s.render?.updatedAt || null,
+        expiresAt: s.expiresAt || null,
+        iterationsLeft: Math.min(s.quote?.iterationsLeft ?? 0, s.image?.iterationsLeft ?? 0),
+        chosen: {
+          quote: Boolean(s.quote?.chosenId),
+          image: Boolean(s.image?.chosenId),
+        },
+      });
+    } catch {}
+  }
+  sessions.sort((a, b) => Date.parse(b.updatedAt || 0) - Date.parse(a.updatedAt || 0));
+  return sessions;
+}
+
+export async function deleteStudio({ uid, studioId }) {
+  const bucket = admin.storage().bucket();
+  const f = bucket.file(`drafts/${uid}/${studioId}/session.json`);
+  try { await f.delete(); } catch {}
+  return { ok: true };
+}
+
+export function initStudioSweeper() {
+  const intervalMin = Number(process.env.STUDIO_SWEEP_MINUTES || 30);
+  const bucket = admin.storage().bucket();
+  setInterval(async () => {
+    try {
+      const [files] = await bucket.getFiles({ prefix: `drafts/`, autoPaginate: true });
+      for (const f of files) {
+        if (!f.name.endsWith("/session.json")) continue;
+        try {
+          const [buf] = await f.download();
+          const s = JSON.parse(buf.toString("utf8"));
+          const expiresAt = s?.expiresAt ? Date.parse(s.expiresAt) : null;
+          if ((s?.deletedAt) || (expiresAt && Date.now() > expiresAt)) {
+            try { await f.delete(); } catch {}
+          }
+        } catch {}
+      }
+    } catch {}
+  }, Math.max(1, intervalMin) * 60 * 1000).unref?.();
 }
 
 export default { startStudio, getStudio, generateQuoteCandidates, generateImageCandidates, chooseCandidate, finalizeStudio };
