@@ -25,6 +25,9 @@ export async function renderVideoQuoteOverlay({
   bgAudioVolume = 1.0,
   duckDuringTTS = false,
   duck = { threshold: -18, ratio: 8, attack: 40, release: 250 },
+  // visual polish
+  videoStartSec = 0,
+  videoVignette = false,
 }) {
   const main = esc(text || "");
   const author = authorLine ? esc(authorLine) : null;
@@ -33,6 +36,7 @@ export async function renderVideoQuoteOverlay({
   const cover = `scale='if(gt(a,${width}/${height}),-2,${width})':'if(gt(a,${width}/${height}),${height},-2)',crop=${width}:${height}`;
   const layers = [
     cover,
+    (videoVignette ? 'vignette' : null),
     "format=yuv420p",
     `drawtext=${[
       fontfile ? `fontfile='${fontfile}'` : null,
@@ -77,12 +81,14 @@ export async function renderVideoQuoteOverlay({
     bgAudioVolume,
     duckDuringTTS,
     duck,
+    applyFade: true,
+    durationSec,
   });
   const filterParts = [`${vf}[vout]`, audio.filterComplex].filter(Boolean).join(";");
   const args = [
-    "-ss", "0",
-    "-t", String(durationSec),
     "-i", videoPath,
+    ...(videoStartSec > 0 ? ["-ss", String(videoStartSec)] : []),
+    "-t", String(durationSec),
     ...audio.extraInputs,
     "-filter_complex", filterParts,
     "-map", "[vout]",

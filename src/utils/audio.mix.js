@@ -6,6 +6,8 @@ export function buildAudioMixArgs({
   bgAudioVolume = 1.0,
   duckDuringTTS = false,
   duck = { threshold: -18, ratio: 8, attack: 40, release: 250 },
+  applyFade = false,
+  durationSec,
 }) {
   const extraInputs = [];
   const parts = [];
@@ -16,9 +18,17 @@ export function buildAudioMixArgs({
   const duckLabel = "ducked";
 
   const haveTts = Boolean(ttsPath);
+  const fadeDur = (applyFade && typeof durationSec === 'number')
+    ? Math.max(0.3, Math.min(0.7, durationSec * 0.07))
+    : null;
+
   if (!haveTts) {
     if (keepVideoAudio && haveBgAudio) {
-      parts.push(`[${bgAudioStream}]volume=${Number(bgAudioVolume).toFixed(3)}[outa]`);
+      if (fadeDur) {
+        parts.push(`[${bgAudioStream}]volume=${Number(bgAudioVolume).toFixed(3)},afade=in:st=0:d=${fadeDur.toFixed(2)},afade=out:st=${Math.max(0, (durationSec - fadeDur)).toFixed(2)}:d=${fadeDur.toFixed(2)}[outa]`);
+      } else {
+        parts.push(`[${bgAudioStream}]volume=${Number(bgAudioVolume).toFixed(3)}[outa]`);
+      }
       mapAudio = ["-map", "[outa]"];
       codecAudio = ["-c:a", "aac"];
     } else {
@@ -35,9 +45,17 @@ export function buildAudioMixArgs({
     parts.push(`[${bgAudioStream}]volume=${Number(bgAudioVolume).toFixed(3)}[${volLabel}]`);
     if (duckDuringTTS) {
       parts.push(`[${volLabel}][1:a]sidechaincompress=threshold=${duck.threshold ?? -18}:ratio=${duck.ratio ?? 8}:attack=${duck.attack ?? 40}:release=${duck.release ?? 250}[${duckLabel}]`);
-      parts.push(`[${duckLabel}][1:a]amix=inputs=2:normalize=0[outa]`);
+      if (fadeDur) {
+        parts.push(`[${duckLabel}][1:a]amix=inputs=2:normalize=0,afade=in:st=0:d=${fadeDur.toFixed(2)},afade=out:st=${Math.max(0, (durationSec - fadeDur)).toFixed(2)}:d=${fadeDur.toFixed(2)}[outa]`);
+      } else {
+        parts.push(`[${duckLabel}][1:a]amix=inputs=2:normalize=0[outa]`);
+      }
     } else {
-      parts.push(`[${volLabel}][1:a]amix=inputs=2:normalize=0[outa]`);
+      if (fadeDur) {
+        parts.push(`[${volLabel}][1:a]amix=inputs=2:normalize=0,afade=in:st=0:d=${fadeDur.toFixed(2)},afade=out:st=${Math.max(0, (durationSec - fadeDur)).toFixed(2)}:d=${fadeDur.toFixed(2)}[outa]`);
+      } else {
+        parts.push(`[${volLabel}][1:a]amix=inputs=2:normalize=0[outa]`);
+      }
     }
   } else {
     parts.push(`[1:a]anull[outa]`);

@@ -224,6 +224,8 @@ export async function createShortService({ ownerUid, mode, text, template, durat
           bgAudioVolume,
           duckDuringTTS,
           duck,
+          videoStartSec: Number(background.videoStartSec || 0),
+          videoVignette: background.videoVignette === true,
         });
         // annotate meta via closure var? We'll include via meta build below
         // For parity with others, nothing else here; mux will run later
@@ -271,7 +273,7 @@ export async function createShortService({ ownerUid, mode, text, template, durat
   const coverLocal = path.join(tmpRoot, "cover.jpg");
   let coverUrl = null;
   try {
-    await extractCoverJpeg({ inPath: muxedPath, outPath: coverLocal, second: 0.5, width: 720 });
+    const ok = await extractCoverJpeg({ inPath: muxedPath, outPath: coverLocal, durationSec, width: 720 });
     if (fs.existsSync(coverLocal)) {
       const coverDest = `${destBase}/cover.jpg`;
       const { publicUrl: cUrl } = await uploadPublic(coverLocal, coverDest, "image/jpeg");
