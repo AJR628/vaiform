@@ -1,4 +1,12 @@
 [build]
+  publish = "studio-web/dist"
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    Cache-Control = "no-store"
+
+[build]
   publish = "public"
 
 [[headers]]
