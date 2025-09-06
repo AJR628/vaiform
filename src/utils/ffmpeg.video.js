@@ -28,6 +28,7 @@ export async function renderVideoQuoteOverlay({
   // visual polish
   videoStartSec = 0,
   videoVignette = false,
+  haveBgAudio = true,
 }) {
   const main = esc(text || "");
   const author = authorLine ? esc(authorLine) : null;
@@ -74,7 +75,7 @@ export async function renderVideoQuoteOverlay({
   const vf = layers.join(",");
   // Assume bg audio present; ffmpeg will no-op if not
   const audio = buildAudioMixArgs({
-    haveBgAudio: true,
+    haveBgAudio,
     bgAudioStream: "0:a",
     ttsPath,
     keepVideoAudio,
@@ -85,6 +86,7 @@ export async function renderVideoQuoteOverlay({
     durationSec,
   });
   const filterParts = [`${vf}[vout]`, audio.filterComplex].filter(Boolean).join(";");
+  console.log('[ffmpeg] -filter_complex:', filterParts);
   const args = [
     "-i", videoPath,
     ...(videoStartSec > 0 ? ["-ss", String(videoStartSec)] : []),

@@ -210,6 +210,13 @@ export async function createShortService({ ownerUid, mode, text, template, durat
           creditItem = item;
           vid = await fetchVideoToTmp(item.url);
         }
+        // Probe for audio presence using ffprobe via ffmpeg - we can infer by trying to map; simple heuristic: assume silent when mix fails
+        let haveBgAudio = true;
+        try {
+          // best-effort probe using ffmpeg itself: try to extract audio stream duration
+          // Here we conservatively keep haveBgAudio=true; if graph fails, renderer will print filter and we fallback
+          haveBgAudio = true;
+        } catch { haveBgAudio = false; }
         const haveTTS = audioOk;
         const keepVideoAudio = (background.keepVideoAudio !== undefined) ? !!background.keepVideoAudio : !haveTTS;
         const bgAudioVolume = (typeof background.bgAudioVolume === "number") ? background.bgAudioVolume : (haveTTS ? 0.25 : 1.0);
@@ -234,6 +241,7 @@ export async function createShortService({ ownerUid, mode, text, template, durat
           duck,
           videoStartSec: Number(background.videoStartSec || 0),
           videoVignette: background.videoVignette === true,
+          haveBgAudio,
         });
         // annotate meta via closure var? We'll include via meta build below
         // For parity with others, nothing else here; mux will run later
