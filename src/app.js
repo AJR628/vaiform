@@ -161,9 +161,8 @@ if (routes?.checkout) {
 }
 if (routes?.shorts) {
   // Mount Shorts API for quote-to-shorts MVP
-  app.use("/shorts", routes.shorts);
   app.use("/api/shorts", routes.shorts);
-  console.log("✅ Mounted shorts at /shorts and /api/shorts");
+  console.log("✅ Mounted shorts at /api/shorts");
 }
 if (routes?.uploads) {
   app.use("/api", routes.uploads);
