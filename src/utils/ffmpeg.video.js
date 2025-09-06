@@ -125,7 +125,11 @@ export async function renderVideoQuoteOverlay({
       aParts.push(`[0:a]atrim=0:${outSec},asetpts=PTS-STARTPTS,volume=${Number(bgAudioVolume).toFixed(3)}[aout]`);
     }
   }
-  const aChain = aParts.filter(Boolean).join(';');
+  let aChain = aParts.filter(Boolean).join(';');
+  if (!aChain) {
+    // ensure we always produce an audio output label
+    aChain = `anullsrc=r=48000:cl=stereo,atrim=0:${outSec}[aout]`;
+  }
 
   let filterParts = [vNodes, aChain].filter(Boolean).join(';');
   filterParts = sanitizeFilter(filterParts);
@@ -137,10 +141,10 @@ export async function renderVideoQuoteOverlay({
     ...(ttsPath ? ['-i', ttsPath] : []),
     '-filter_complex', filterParts,
     '-map', '[vout]',
-    ...(aChain ? ['-map', '[aout]'] : ['-an']),
+    '-map', '[aout]',
     '-t', String(outSec),
     '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '18',
-    ...(aChain ? ['-c:a', 'aac', '-b:a', '192k'] : []),
+    '-c:a', 'aac', '-b:a', '192k',
     '-movflags', '+faststart',
     outPath,
   ];
