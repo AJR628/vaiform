@@ -2,6 +2,9 @@ import express from "express";
 import cors from "cors";
 import bodyParser from "body-parser";
 import dotenv from "dotenv";
+import path from "path";
+import { fileURLToPath } from "url";
+import fs from "fs";
 
 import routes from "./routes/index.js";
 import "./config/firebase.js"; // ensure Firebase Admin is initialized
@@ -172,6 +175,24 @@ if (routes?.studio) {
 }
 
 // ---------- STATIC LAST (disable directory redirects like /dir -> /dir/) ----------
+// --- SPA static hosting (after API routes) ---
+try {
+  const distDir = path.resolve(process.cwd(), "web", "dist");
+  if (fs.existsSync(distDir)) {
+    app.use(express.static(distDir, { index: false }));
+    app.get(/^\/(?!api\/).*/, (req, res) => {
+      res.sendFile(path.join(distDir, "index.html"));
+    });
+    console.log(`[web] Serving SPA from ${distDir}`);
+  } else {
+    console.warn(
+      `[web] WARNING: ${distDir} not found. Build the web app with: "cd web && npm install && npm run build"`
+    );
+  }
+} catch (e) {
+  console.warn("[web] SPA hosting setup failed:", e?.message || e);
+}
+
 app.use(express.static("public", { redirect: false }));
 
 // Optional route table when VAIFORM_DEBUG=1
