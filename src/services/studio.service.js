@@ -4,6 +4,49 @@ import admin from "../config/firebase.js";
 import { getQuote } from "./quote.engine.js";
 import { resolveStockImage } from "./stock.image.provider.js";
 import { createShortService } from "./shorts.service.js";
+import { llmQuotesByFeeling } from "./llmQuotes.service.js";
+import { curatedByFeeling } from "./quotes.curated.js";
+import { searchStockVideosPortrait, searchStockImagesPortrait } from "./pexels.service.js";
+
+function norm(s) {
+  return (s || "").replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+function hydrateSets(session) {
+  const s = session;
+  if (!s.seen) s.seen = { quoteTexts: new Set(), videoIds: new Set(), imageIds: new Set() };
+  const qt = s.seen.quoteTexts;
+  const vi = s.seen.videoIds;
+  const ii = s.seen.imageIds;
+  if (!(qt instanceof Set)) s.seen.quoteTexts = new Set(Array.isArray(qt) ? qt : []);
+  if (!(vi instanceof Set)) s.seen.videoIds = new Set(Array.isArray(vi) ? vi : []);
+  if (!(ii instanceof Set)) s.seen.imageIds = new Set(Array.isArray(ii) ? ii : []);
+
+  if (!s.pexels) s.pexels = { lastVideoQuery: null, videoPage: 1, lastImageQuery: null, imagePage: 1 };
+  if (typeof s.pexels.videoPage !== "number") s.pexels.videoPage = 1;
+  if (typeof s.pexels.imagePage !== "number") s.pexels.imagePage = 1;
+  if (!("lastVideoQuery" in s.pexels)) s.pexels.lastVideoQuery = null;
+  if (!("lastImageQuery" in s.pexels)) s.pexels.lastImageQuery = null;
+  return s;
+}
+
+function dehydrateSets(session) {
+  const s = session;
+  const out = { ...s };
+  const seen = s.seen || { quoteTexts: new Set(), videoIds: new Set(), imageIds: new Set() };
+  out.seen = {
+    quoteTexts: Array.from(seen.quoteTexts || []),
+    videoIds: Array.from(seen.videoIds || []),
+    imageIds: Array.from(seen.imageIds || []),
+  };
+  out.pexels = s.pexels || { lastVideoQuery: null, videoPage: 1, lastImageQuery: null, imagePage: 1 };
+  return out;
+}
+
+async function saveSession({ uid, studioId, data }) {
+  const dehydrated = dehydrateSets(data);
+  await saveJSON({ uid, studioId, data: dehydrated });
+}
 
 function ensureSessionDefaults(s) {
   if (!s.constraints) s.constraints = { maxRefines: 5 };
@@ -11,6 +54,8 @@ function ensureSessionDefaults(s) {
   if (!s.image) s.image = { kind: "stock", query: null, uploadUrl: null, prompt: null, kenBurns: null, candidates: [], chosenId: null, iterationsLeft: s.constraints.maxRefines };
   if (!s.video) s.video = { kind: "stockVideo", query: null, candidates: [], chosenId: null, iterationsLeft: s.constraints.maxRefines };
   if (!s.render) s.render = { template: "minimal", durationSec: 8, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+  hydrateSets(s);
+  if (!s.pexels) s.pexels = { lastVideoQuery: null, videoPage: 1, lastImageQuery: null, imagePage: 1 };
   const ttlHours = Number(process.env.STUDIO_TTL_HOURS || 48);
   if (!s.render.createdAt) s.render.createdAt = new Date().toISOString();
   if (!s.expiresAt) {
@@ -36,7 +81,7 @@ export async function startStudio({ uid, template, durationSec, maxRefines = 5, 
   // override TTL for debug if requested
   if (debugExpire) session.expiresAt = new Date(Date.now() + 10 * 1000).toISOString();
   else session.expiresAt = new Date(Date.now() + ttlMs).toISOString();
-  await saveJSON({ uid, studioId: id, data: session });
+  await saveSession({ uid, studioId: id, data: session });
   return session;
 }
 
@@ -55,24 +100,42 @@ export async function generateQuoteCandidates({ uid, studioId, mode, text, templ
   s.quote.mode = mode;
   s.quote.input = text;
   const n = Math.max(1, Math.min(5, count));
-  const set = new Map();
-  for (let i = 0; i < n; i++) {
+  hydrateSets(s);
+
+  if (mode === "quote") {
+    // Exact quote, optional author after dash
+    const authorMatch = (text || "").match(/\s+[-–—]\s*(.+)$/);
+    const author = authorMatch ? authorMatch[1].trim() : null;
+    const main = authorMatch ? String(text || "").replace(authorMatch[0], "").trim() : String(text || "").trim();
+    const cand = { id: `q-${crypto.randomUUID()}`, text: main, author: author || null, attributed: !!author, isParaphrase: false };
+    s.seen.quoteTexts.add(norm(cand.text));
+    s.quote.candidates = [cand];
+  } else {
+    // Feeling → LLM first, curated fallback, dedupe by text within session
+    let fresh = [];
     try {
-      const q = await getQuote({ mode, text, template: s.render.template });
-      const key = (q.text || "").trim();
-      if (!set.has(key)) set.set(key, q);
+      fresh = await llmQuotesByFeeling({ feeling: text, count: n });
     } catch {}
+
+    const seen = s.seen.quoteTexts;
+    const uniq = (fresh || []).filter((q) => q.text && !seen.has(norm(q.text)));
+    if (uniq.length < n) {
+      const need = n - uniq.length;
+      const fallback = curatedByFeeling(text, need, seen);
+      uniq.push(...fallback);
+    }
+    uniq.forEach((q) => seen.add(norm(q.text)));
+    s.quote.candidates = uniq.map((q) => ({
+      id: q.id || `q-${crypto.randomUUID()}`,
+      text: q.text,
+      author: q.author || null,
+      attributed: q.attributed === true,
+      isParaphrase: !!q.isParaphrase,
+    }));
   }
-  s.quote.candidates = Array.from(set.values()).slice(0, n).map((q) => ({
-    id: `q-${crypto.randomUUID()}`,
-    text: q.text,
-    author: q.author || null,
-    attributed: q.attributed === true,
-    isParaphrase: q.isParaphrase || false,
-  }));
   if (s.quote.iterationsLeft > 0) s.quote.iterationsLeft -= 1;
   s.render.updatedAt = new Date().toISOString();
-  await saveJSON({ uid, studioId, data: s });
+  await saveSession({ uid, studioId, data: s });
   return s.quote;
 }
 
@@ -91,32 +154,53 @@ export async function generateImageCandidates({ uid, studioId, kind, query, uplo
   s.image.prompt = prompt || null;
   s.image.kenBurns = kenBurns || null;
 
-  const candidates = [];
-  try {
-    if (kind === "stock") {
-      const base = (query || "").toLowerCase().trim();
-      const words = [base, ...(SYNONYMS[base] || [])];
-      for (const w of words.slice(0, Math.max(1, Math.min(3, count)))) {
-        try {
-          const url = await resolveStockImage({ query: w });
-          candidates.push({ id: `img-${crypto.randomUUID()}`, kind: "stock", url, kenBurns: kenBurns || null });
-        } catch {}
-      }
-    } else if (kind === "imageUrl" && query) {
-      candidates.push({ id: `img-${crypto.randomUUID()}`, kind: "imageUrl", url: query, kenBurns: kenBurns || null });
-    } else if (kind === "upload" && uploadUrl) {
-      candidates.push({ id: `img-${crypto.randomUUID()}`, kind: "upload", url: uploadUrl, kenBurns: kenBurns || null });
-    } else if (kind === "ai" && (prompt || query)) {
-      const q = prompt || query;
-      const url = await resolveStockImage({ query: q });
-      candidates.push({ id: `img-${crypto.randomUUID()}`, kind: "ai", url, kenBurns: kenBurns || null });
-    }
-  } catch {}
+  // Stock images with paging + session dedupe
+  if (kind === "stock") {
+    hydrateSets(s);
+    if (!s.pexels) s.pexels = { lastImageQuery: null, imagePage: 1 };
 
-  s.image.candidates = candidates.slice(0, Math.max(1, Math.min(3, count)));
+    if (s.pexels.lastImageQuery !== (query || "")) {
+      s.pexels.lastImageQuery = query || "";
+      s.pexels.imagePage = 1;
+      s.seen.imageIds = new Set();
+    }
+
+    const seen = s.seen.imageIds;
+    let page = s.pexels.imagePage;
+    const out = [];
+    for (let hops = 0; hops < 3 && out.length < 24 && page; hops++) {
+      try {
+        const { list, nextPage } = await searchStockImagesPortrait({ query: query || "", page, perPage: 30 });
+        const fresh = (list || []).filter((i) => !seen.has(i.id));
+        fresh.forEach((i) => seen.add(i.id));
+        out.push(...fresh);
+        page = nextPage;
+      } catch {
+        break;
+      }
+    }
+    if (page) s.pexels.imagePage = page;
+
+    s.image.candidates = out.map((i) => ({ id: i.id, kind: "stock", url: i.url, kenBurns: kenBurns || null }));
+  } else {
+    // Other kinds: keep existing behavior
+    const candidates = [];
+    try {
+      if (kind === "imageUrl" && query) {
+        candidates.push({ id: `img-${crypto.randomUUID()}`, kind: "imageUrl", url: query, kenBurns: kenBurns || null });
+      } else if (kind === "upload" && uploadUrl) {
+        candidates.push({ id: `img-${crypto.randomUUID()}`, kind: "upload", url: uploadUrl, kenBurns: kenBurns || null });
+      } else if (kind === "ai" && (prompt || query)) {
+        const q = prompt || query;
+        const url = await resolveStockImage({ query: q });
+        candidates.push({ id: `img-${crypto.randomUUID()}`, kind: "ai", url, kenBurns: kenBurns || null });
+      }
+    } catch {}
+    s.image.candidates = candidates.slice(0, Math.max(1, Math.min(3, count)));
+  }
   if (s.image.iterationsLeft > 0) s.image.iterationsLeft -= 1;
   s.render.updatedAt = new Date().toISOString();
-  await saveJSON({ uid, studioId, data: s });
+  await saveSession({ uid, studioId, data: s });
   return s.image;
 }
 
@@ -125,20 +209,34 @@ export async function generateVideoCandidates({ uid, studioId, kind = "stockVide
   if (!s) throw new Error("STUDIO_NOT_FOUND");
   s.video.kind = kind;
   s.video.query = query || null;
+  hydrateSets(s);
+  s.pexels = s.pexels || { lastVideoQuery: null, videoPage: 1 };
+  if (s.pexels.lastVideoQuery !== (query || "")) {
+    s.pexels.lastVideoQuery = query || "";
+    s.pexels.videoPage = 1;
+    s.seen.videoIds = new Set();
+  }
 
-  const candidates = [];
-  try {
-    const { resolveStockVideo } = await import("./stock.video.provider.js");
-    const r = await resolveStockVideo({ query: query || "calm", targetDur, perPage: 10 });
-    for (const it of (r.ok ? r.items : []).slice(0, 3)) {
-      candidates.push({ id: it.id, kind: "stockVideo", url: it.url, thumbUrl: it.thumbUrl || null, credit: it.credit || null });
+  const seen = s.seen.videoIds;
+  let page = s.pexels.videoPage;
+  const out = [];
+  for (let hops = 0; hops < 3 && out.length < 12 && page; hops++) {
+    try {
+      const { list, nextPage } = await searchStockVideosPortrait({ query: query || "", page, perPage: 15 });
+      const fresh = (list || []).filter((v) => !seen.has(v.id));
+      fresh.forEach((v) => seen.add(v.id));
+      out.push(...fresh);
+      page = nextPage;
+    } catch {
+      break;
     }
-  } catch {}
+  }
+  if (page) s.pexels.videoPage = page;
 
-  s.video.candidates = candidates;
+  s.video.candidates = out.map((v) => ({ id: v.id, kind: "stockVideo", url: v.url, duration: v.duration }));
   if (s.video.iterationsLeft > 0) s.video.iterationsLeft -= 1;
   s.render.updatedAt = new Date().toISOString();
-  await saveJSON({ uid, studioId, data: s });
+  await saveSession({ uid, studioId, data: s });
   return s.video;
 }
 
@@ -153,7 +251,7 @@ export async function chooseCandidate({ uid, studioId, track, candidateId }) {
   if (track === "image") s.image.chosenId = candidateId;
   if (track === "video") s.video.chosenId = candidateId;
   s.render.updatedAt = new Date().toISOString();
-  await saveJSON({ uid, studioId, data: s });
+  await saveSession({ uid, studioId, data: s });
   return { ok: true };
 }
 
@@ -205,7 +303,7 @@ export async function finalizeStudio({ uid, studioId, voiceover = false, wantAtt
   s.status = "finalized";
   s.finalize = { jobId: result.jobId, videoUrl: result.videoUrl, coverImageUrl: result.coverImageUrl };
   s.render.updatedAt = new Date().toISOString();
-  await saveJSON({ uid, studioId, data: s });
+  await saveSession({ uid, studioId, data: s });
 
   return { jobId: result.jobId, videoUrl: result.videoUrl, coverImageUrl: result.coverImageUrl };
 }
