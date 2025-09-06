@@ -196,12 +196,20 @@ export async function createShortService({ ownerUid, mode, text, template, durat
         console.warn("[background] ai fallback:", e?.message || e);
         await renderSolidQuoteVideo({ outPath, text: usedQuote.text, durationSec, template, authorLine, assPath, progressBar: karaokeModeEffective === "progress", watermark: watermarkFinal });
       }
-    } else if (background?.kind === "stockVideo" && background?.query) {
+    } else if (background?.kind === "stockVideo" && (background?.query || background?.clipUrl || background?.sourceUrl)) {
       try {
-        const r = await resolveStockVideo({ query: background.query, targetDur: durationSec });
-        const item = r?.ok && r.items && r.items[0];
-        if (!item) throw new Error("NO_STOCK_VIDEO");
-        const vid = await fetchVideoToTmp(item.url);
+        const explicitClip = background.clipUrl || background.sourceUrl || null;
+        let vid;
+        let creditItem = null;
+        if (explicitClip) {
+          vid = await fetchVideoToTmp(explicitClip);
+        } else {
+          const r = await resolveStockVideo({ query: background.query, targetDur: durationSec });
+          const item = r?.ok && r.items && r.items[0];
+          if (!item) throw new Error("NO_STOCK_VIDEO");
+          creditItem = item;
+          vid = await fetchVideoToTmp(item.url);
+        }
         const haveTTS = audioOk;
         const keepVideoAudio = (background.keepVideoAudio !== undefined) ? !!background.keepVideoAudio : !haveTTS;
         const bgAudioVolume = (typeof background.bgAudioVolume === "number") ? background.bgAudioVolume : (haveTTS ? 0.25 : 1.0);
