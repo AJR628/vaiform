@@ -125,49 +125,42 @@ export async function renderVideoQuoteOverlay({
 
   let aChain = '';
   if (ttsPath && keepVideoAudio && haveBgAudio) {
-    // Build both BG and TTS then mix
-    const ttsTrim = Math.max(0.1, outSec - tailSec);
-    const bgChain = joinF([
-      `[0:a]volume=${vol}`,
+    // Build TTS normalized to stereo at 48k, and BG track, then mix
+    const tts1 = joinF([
+      `${ain}adelay=${leadInMs}|${leadInMs}`,
       'asetpts=PTS-STARTPTS',
+      'aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=mono',
+      'aresample=48000',
+      'pan=stereo|c0=c0|c1=c0',
+      out('tts1'),
+    ]);
+    const bg = joinF([
+      `[0:a]volume=${vol}`,
+      'aresample=48000',
       out('bg'),
     ]);
-    const ttsChain = joinF([
-      `${ain}adelay=${leadInMs}|${leadInMs}`,
-      `atrim=0:${ttsTrim}`,
-      'asetpts=PTS-STARTPTS',
-      'aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=mono',
-      'aresample=48000',
-      'pan=stereo|c0=c0|c1=c0',
-      (tailMs > 0 ? `apad=pad_dur=${(tailMs/1000).toFixed(3)}` : null),
-      'anull',
-      out('tts'),
-    ]);
     const mix = duckDuringTTS
-      ? `[bg][tts]sidechaincompress=threshold=${duck.threshold ?? -18}:ratio=${duck.ratio ?? 8}:attack=${duck.attack ?? 40}:release=${duck.release ?? 250}[ducked];[ducked][tts]amix=inputs=2:dropout_transition=180,volume=1.0[aout]`
-      : `[bg][tts]amix=inputs=2:dropout_transition=180,volume=1.0[aout]`;
-    aChain = [bgChain, ttsChain, mix].filter(Boolean).join(';');
+      ? `[bg][tts1]sidechaincompress=threshold=${duck.threshold ?? -18}:ratio=${duck.ratio ?? 8}:attack=${duck.attack ?? 40}:release=${duck.release ?? 250}[ducked];[ducked][tts1]amix=inputs=2:duration=longest:dropout_transition=0,aresample=48000[aout]`
+      : `[bg][tts1]amix=inputs=2:duration=longest:dropout_transition=0,aresample=48000[aout]`;
+    aChain = [tts1, bg, mix].filter(Boolean).join(';');
   } else if (ttsPath) {
-    // TTS only
-    const ttsParts = [
+    // TTS only with explicit tail via anullsrc + concat
+    const tts1 = joinF([
       `${ain}adelay=${leadInMs}|${leadInMs}`,
-      // Optional duration trim when durationSec provided
-      (outSec ? `atrim=0:${outSec}` : null),
       'asetpts=PTS-STARTPTS',
       'aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=mono',
-      (tailMs > 0 ? `apad=pad_dur=${(tailMs/1000).toFixed(3)}` : null),
       'aresample=48000',
       'pan=stereo|c0=c0|c1=c0',
-      'anull',
-      alabel,
-    ];
-    aChain = joinF(ttsParts);
+      out('tts1'),
+    ]);
+    const sil = `anullsrc=r=48000:cl=stereo:d=${tailSec}[sil]`;
+    const concat = `[tts1][sil]concat=n=2:v=0:a=1[aout]`;
+    aChain = [tts1, sil, concat].join(';');
   } else if (keepVideoAudio && haveBgAudio) {
     // BG only
     const bgOnly = [
       `[0:a]volume=${vol}`,
-      'asetpts=PTS-STARTPTS',
-      'anull',
+      'aresample=48000',
       alabel,
     ];
     aChain = joinF(bgOnly);
@@ -188,6 +181,7 @@ export async function renderVideoQuoteOverlay({
     '-map', '[vout]',
     '-map', '[aout]',
     '-t', String(outSec),
+    '-shortest',
     '-c:v', 'libx264', '-crf', '23', '-preset', 'veryfast',
     '-c:a', 'aac', '-b:a', '96k',
     '-movflags', '+faststart',
