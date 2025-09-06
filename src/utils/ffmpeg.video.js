@@ -43,8 +43,8 @@ export async function renderVideoQuoteOverlay({
   bgAudioVolume = 1.0,
   duckDuringTTS = false,
   duck = { threshold: -18, ratio: 8, attack: 40, release: 250 },
-  ttsDelayMs = 1000,
-  tailPadSec = 0.8,
+  ttsDelayMs,
+  tailPadSec,
   // visual polish
   videoStartSec = 0,
   videoVignette = false,
@@ -113,8 +113,11 @@ export async function renderVideoQuoteOverlay({
 
   // ---- Audio chain ----
   const outSec = Math.max(0.1, Number(durationSec) || 8);
-  const leadInMs = Number(ttsDelayMs) || 0;
-  const tailSec = Number(tailPadSec) || 0;
+  const envDelay = Number(process.env.TTS_DELAY_MS ?? 1000);
+  const envTailMs = Number(process.env.TTS_TAIL_MS ?? 800);
+  const leadInMs = Number(ttsDelayMs ?? envDelay) || 0;
+  const tailMs = Number.isFinite(Number(tailPadSec)) ? Number(tailPadSec) * 1000 : envTailMs;
+  const tailSec = Number.isFinite(Number(tailPadSec)) ? Number(tailPadSec) : (envTailMs / 1000);
 
   const ain = '[1:a]';
   const alabel = out('aout');
@@ -136,6 +139,7 @@ export async function renderVideoQuoteOverlay({
       'aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=mono',
       'aresample=48000',
       'pan=stereo|c0=c0|c1=c0',
+      (tailMs > 0 ? `apad=pad_dur=${(tailMs/1000).toFixed(3)}` : null),
       'anull',
       out('tts'),
     ]);
@@ -151,6 +155,7 @@ export async function renderVideoQuoteOverlay({
       (outSec ? `atrim=0:${outSec}` : null),
       'asetpts=PTS-STARTPTS',
       'aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=mono',
+      (tailMs > 0 ? `apad=pad_dur=${(tailMs/1000).toFixed(3)}` : null),
       'aresample=48000',
       'pan=stereo|c0=c0|c1=c0',
       'anull',
