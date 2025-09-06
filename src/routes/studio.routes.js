@@ -39,7 +39,7 @@ const VideoSchema = z.object({
 
 const ChooseSchema = z.object({
   studioId: z.string().min(3),
-  track: z.enum(["quote", "image"]),
+  track: z.enum(["quote", "image", "video"]),
   candidateId: z.string().min(3),
 });
 
@@ -103,6 +103,7 @@ r.post("/choose", async (req, res) => {
   if (!parsed.success) return res.status(400).json({ success: false, error: "INVALID_INPUT", detail: parsed.error.flatten() });
   const { studioId, track, candidateId } = parsed.data;
   try {
+    console.log("studio.choose", { studioId, track, candidateId });
     const out = await chooseCandidate({ uid: req.user.uid, studioId, track, candidateId });
     return res.json({ success: true, data: out });
   } catch (e) {
@@ -118,6 +119,9 @@ r.post("/finalize", async (req, res) => {
     const out = await finalizeStudio({ uid: req.user.uid, studioId, voiceover, wantAttribution, captionMode });
     return res.json({ success: true, data: out });
   } catch (e) {
+    if (e?.message === "NEED_IMAGE_OR_VIDEO") {
+      return res.status(400).json({ success: false, error: "IMAGE_OR_VIDEO_REQUIRED" });
+    }
     return res.status(500).json({ success: false, error: "STUDIO_FINALIZE_FAILED", message: e?.message || "Finalize failed" });
   }
 });
