@@ -4,6 +4,23 @@ import { buildAudioMixArgs } from "./audio.mix.js";
 
 const esc = s => String(s).replace(/\\/g,'\\\\').replace(/:/g,'\\:').replace(/'/g,"\\\\'");
 
+function escText(s) {
+  return String(s ?? '')
+    .replace(/\\/g, '\\\\')
+    .replace(/:/g, '\\:')
+    .replace(/'/g, "\\'");
+}
+
+function sanitizeFilter(s) {
+  return String(s)
+    .replace(/,{2,}/g, ',')
+    .replace(/;{2,}/g, ';')
+    .replace(/^,|,$/g, '')
+    .replace(/^;|;$/g, '');
+}
+
+// Note: audio presence is detected upstream; no external probe here to avoid extra deps
+
 function runFfmpeg(args) {
   return new Promise((resolve, reject) => {
     const p = spawn(ffmpegPath, ["-y", ...args], { stdio: ["ignore", "inherit", "inherit"] });
@@ -85,7 +102,8 @@ export async function renderVideoQuoteOverlay({
     applyFade: true,
     durationSec,
   });
-  const filterParts = [`${vf}[vout]`, audio.filterComplex].filter(Boolean).join(";");
+  let filterParts = [`${vf}[vout]`, audio.filterComplex].filter(Boolean).join(";");
+  filterParts = sanitizeFilter(filterParts);
   console.log('[ffmpeg] -filter_complex:', filterParts);
   const args = [
     "-i", videoPath,
