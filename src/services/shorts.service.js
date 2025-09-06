@@ -228,15 +228,16 @@ export async function createShortService({ ownerUid, mode, text, template, durat
           }
         }
         const haveTTS = audioOk;
-        const keepVideoAudio = (background.keepVideoAudio !== undefined) ? !!background.keepVideoAudio : !haveTTS;
-        const bgAudioVolume = (typeof background.bgAudioVolume === "number") ? background.bgAudioVolume : (haveTTS ? 0.25 : 1.0);
-        const duckDuringTTS = (background.duckDuringTTS !== undefined) ? !!background.duckDuringTTS : haveTTS;
-        const duck = {
+        const keepVideoAudio = (background.keepVideoAudio !== undefined) ? !!background.keepVideoAudio : false;
+        const bgAudioVolumeRaw = (typeof background.bgAudioVolume === "number") ? background.bgAudioVolume : (haveTTS ? 0.25 : 1.0);
+        const bgAudioVolume = Math.max(0, Math.min(1, bgAudioVolumeRaw));
+        const duckDuringTTS = keepVideoAudio && ((background.duckDuringTTS !== undefined) ? !!background.duckDuringTTS : false);
+        const duck = duckDuringTTS ? {
           threshold: background.duck?.threshold ?? -18,
           ratio: background.duck?.ratio ?? 8,
           attack: background.duck?.attack ?? 40,
           release: background.duck?.release ?? 250,
-        };
+        } : undefined;
         await renderVideoQuoteOverlay({
           videoPath: vid.path,
           outPath,

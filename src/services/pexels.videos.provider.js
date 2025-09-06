@@ -26,11 +26,11 @@ function pickBestFile(video, { targetDur = 8 }) {
 
 const mem = new Map();
 
-export async function pexelsSearchVideos({ query, perPage = 10, targetDur = 8 }) {
+export async function pexelsSearchVideos({ query, perPage = 10, targetDur = 8, page = 1 }) {
   const key = process.env.PEXELS_API_KEY;
   if (!key) return { ok: false, reason: "NOT_CONFIGURED", items: [] };
 
-  const cacheKey = `videos|${query}|${perPage}|${targetDur}`;
+  const cacheKey = `videos|${query}|${perPage}|${targetDur}|${page}`;
   const now = Date.now();
   const entry = mem.get(cacheKey);
   if (entry && now - entry.at < entry.ttl) return { ok: true, reason: "CACHE", items: entry.items };
@@ -40,6 +40,7 @@ export async function pexelsSearchVideos({ query, perPage = 10, targetDur = 8 })
   url.searchParams.set("per_page", String(perPage));
   url.searchParams.set("orientation", "portrait");
   url.searchParams.set("size", "large");
+  url.searchParams.set("page", String(Math.max(1, page)));
 
   const res = await fetch(url, { headers: { "Authorization": key, "Accept": "application/json" } });
   if (!res.ok) {
