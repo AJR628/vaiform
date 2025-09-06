@@ -258,7 +258,10 @@ export async function createShortService({ ownerUid, mode, text, template, durat
         // For parity with others, nothing else here; mux will run later
       } catch (e) {
         console.warn("[background] stockVideo render error:", e?.message || e);
-        throw e;
+        const err = new Error("RENDER_FAILED");
+        err.detail = e?.message || String(e);
+        err.filter = e?.filter;
+        throw err;
       }
     } else {
       await renderSolidQuoteVideo({ outPath, text: usedQuote.text, durationSec, template, authorLine });

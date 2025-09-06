@@ -8,16 +8,24 @@ async function pexelsGet(path, qs) {
   return r.json();
 }
 
-export async function searchStockVideosPortrait({ query, page, perPage = 15 }) {
+export async function searchStockVideosPortrait({ query, page, perPage = 24 }) {
   const data = await pexelsGet('/videos/search', {
     query, orientation: 'portrait', page, per_page: perPage
   });
-  const list = (data?.videos || []).map(v => ({
-    id: `pexels-video-${v.id}`,
-    kind: 'stockVideo',
-    url: (v?.video_files || []).sort((a,b)=> (a.width||0)-(b.width||0)).pop()?.link || '',
-    duration: Math.round(v?.duration || 0)
-  })).filter(v => v.url);
+  const list = (data?.videos || [])
+    .filter(v => {
+      const w = Number(v?.width || 0);
+      const h = Number(v?.height || 0);
+      const dur = Number(v?.duration || 0);
+      return (w > 0 && h > 0 && h > w) && (dur >= 6 && dur <= 15);
+    })
+    .map(v => ({
+      id: `pexels-video-${v.id}`,
+      kind: 'stockVideo',
+      url: (v?.video_files || []).sort((a,b)=> (a.width||0)-(b.width||0)).pop()?.link || '',
+      duration: Math.round(v?.duration || 0)
+    }))
+    .filter(v => v.url);
   const nextPage = data?.page && data?.per_page && data?.total_results
     ? (data.page * data.per_page < data.total_results ? data.page + 1 : null)
     : null;

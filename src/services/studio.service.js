@@ -222,7 +222,7 @@ export async function generateVideoCandidates({ uid, studioId, kind = "stockVide
   const out = [];
   for (let hops = 0; hops < 3 && out.length < 12 && page; hops++) {
     try {
-      const { list, nextPage } = await searchStockVideosPortrait({ query: query || "", page, perPage: 15 });
+      const { list, nextPage } = await searchStockVideosPortrait({ query: query || "", page, perPage: 24 });
       const fresh = (list || []).filter((v) => !seen.has(v.id));
       fresh.forEach((v) => seen.add(v.id));
       out.push(...fresh);

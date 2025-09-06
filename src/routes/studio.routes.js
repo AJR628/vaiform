@@ -122,6 +122,9 @@ r.post("/finalize", async (req, res) => {
     if (e?.message === "NEED_IMAGE_OR_VIDEO") {
       return res.status(400).json({ success: false, error: "IMAGE_OR_VIDEO_REQUIRED" });
     }
+    if (e?.message === 'RENDER_FAILED') {
+      return res.status(400).json({ success: false, error: 'RENDER_FAILED', detail: e?.detail || e?.cause?.message || 'ffmpeg failed', filter: e?.filter });
+    }
     return res.status(500).json({ success: false, error: "STUDIO_FINALIZE_FAILED", message: e?.message || "Finalize failed" });
   }
 });
