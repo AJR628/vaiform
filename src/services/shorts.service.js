@@ -210,13 +210,23 @@ export async function createShortService({ ownerUid, mode, text, template, durat
           creditItem = item;
           vid = await fetchVideoToTmp(item.url);
         }
-        // Probe for audio presence using ffprobe via ffmpeg - we can infer by trying to map; simple heuristic: assume silent when mix fails
+        // Probe for audio presence using ffmpeg by attempting to map first audio stream
         let haveBgAudio = true;
         try {
-          // best-effort probe using ffmpeg itself: try to extract audio stream duration
-          // Here we conservatively keep haveBgAudio=true; if graph fails, renderer will print filter and we fallback
+          await runFFmpeg([
+            "-i", vid.path,
+            "-map", "0:a:0",
+            "-t", "0.1",
+            "-f", "null",
+            "-",
+          ]);
           haveBgAudio = true;
-        } catch { haveBgAudio = false; }
+        } catch (probeErr) {
+          const msg = (probeErr?.stderr || probeErr?.message || "").toString();
+          if (/Stream specifier matches no streams|Stream map '.+0:a:0'.+`/i.test(msg) || /Audio:/.test(msg) === false) {
+            haveBgAudio = false;
+          }
+        }
         const haveTTS = audioOk;
         const keepVideoAudio = (background.keepVideoAudio !== undefined) ? !!background.keepVideoAudio : !haveTTS;
         const bgAudioVolume = (typeof background.bgAudioVolume === "number") ? background.bgAudioVolume : (haveTTS ? 0.25 : 1.0);

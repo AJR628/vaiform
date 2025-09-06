@@ -25,11 +25,11 @@ export function buildAudioMixArgs({
   if (!haveTts) {
     if (keepVideoAudio && haveBgAudio) {
       if (fadeDur) {
-        parts.push(`[${bgAudioStream}]volume=${Number(bgAudioVolume).toFixed(3)},afade=in:st=0:d=${fadeDur.toFixed(2)},afade=out:st=${Math.max(0, (durationSec - fadeDur)).toFixed(2)}:d=${fadeDur.toFixed(2)}[outa]`);
+        parts.push(`[${bgAudioStream}]volume=${Number(bgAudioVolume).toFixed(3)},afade=in:st=0:d=${fadeDur.toFixed(2)},afade=out:st=${Math.max(0, (durationSec - fadeDur)).toFixed(2)}:d=${fadeDur.toFixed(2)}[aout]`);
       } else {
-        parts.push(`[${bgAudioStream}]volume=${Number(bgAudioVolume).toFixed(3)}[outa]`);
+        parts.push(`[${bgAudioStream}]volume=${Number(bgAudioVolume).toFixed(3)}[aout]`);
       }
-      mapAudio = ["-map", "[outa]"];
+      mapAudio = ["-map", "[aout]"];
       codecAudio = ["-c:a", "aac"];
     } else {
       // silent; caller should add -an
@@ -46,21 +46,21 @@ export function buildAudioMixArgs({
     if (duckDuringTTS) {
       parts.push(`[${volLabel}][1:a]sidechaincompress=threshold=${duck.threshold ?? -18}:ratio=${duck.ratio ?? 8}:attack=${duck.attack ?? 40}:release=${duck.release ?? 250}[${duckLabel}]`);
       if (fadeDur) {
-        parts.push(`[${duckLabel}][1:a]amix=inputs=2:normalize=0,afade=in:st=0:d=${fadeDur.toFixed(2)},afade=out:st=${Math.max(0, (durationSec - fadeDur)).toFixed(2)}:d=${fadeDur.toFixed(2)}[outa]`);
+        parts.push(`[${duckLabel}][1:a]amix=inputs=2:normalize=0,afade=in:st=0:d=${fadeDur.toFixed(2)},afade=out:st=${Math.max(0, (durationSec - fadeDur)).toFixed(2)}:d=${fadeDur.toFixed(2)}[aout]`);
       } else {
-        parts.push(`[${duckLabel}][1:a]amix=inputs=2:normalize=0[outa]`);
+        parts.push(`[${duckLabel}][1:a]amix=inputs=2:normalize=0[aout]`);
       }
     } else {
       if (fadeDur) {
-        parts.push(`[${volLabel}][1:a]amix=inputs=2:normalize=0,afade=in:st=0:d=${fadeDur.toFixed(2)},afade=out:st=${Math.max(0, (durationSec - fadeDur)).toFixed(2)}:d=${fadeDur.toFixed(2)}[outa]`);
+        parts.push(`[${volLabel}][1:a]amix=inputs=2:normalize=0,afade=in:st=0:d=${fadeDur.toFixed(2)},afade=out:st=${Math.max(0, (durationSec - fadeDur)).toFixed(2)}:d=${fadeDur.toFixed(2)}[aout]`);
       } else {
-        parts.push(`[${volLabel}][1:a]amix=inputs=2:normalize=0[outa]`);
+        parts.push(`[${volLabel}][1:a]amix=inputs=2:normalize=0[aout]`);
       }
     }
   } else {
-    parts.push(`[1:a]anull[outa]`);
+    parts.push(`[1:a]anull[aout]`);
   }
-  mapAudio = ["-map", "[outa]"];
+  mapAudio = ["-map", "[aout]"];
   codecAudio = ["-c:a", "aac"];
   return { extraInputs, filterComplex: parts.join(";"), mapAudio, codecAudio };
 }
