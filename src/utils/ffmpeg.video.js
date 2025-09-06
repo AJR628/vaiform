@@ -39,6 +39,8 @@ export async function renderVideoQuoteOverlay({
   bgAudioVolume = 1.0,
   duckDuringTTS = false,
   duck = { threshold: -18, ratio: 8, attack: 40, release: 250 },
+  ttsDelayMs = 1000,
+  tailPadSec = 0.8,
   // visual polish
   videoStartSec = 0,
   videoVignette = false,
@@ -102,33 +104,33 @@ export async function renderVideoQuoteOverlay({
     '[vout]'
   ].filter(Boolean).join(',');
 
-  // Audio chain with 1s lead-in and 1s tail
+  // ---- Audio chain ----
   const outSec = Math.max(0.1, Number(durationSec) || 8);
-  const leadInMs = 1000;
-  const tailSec = 1.0;
+  const leadInMs = Number(ttsDelayMs) || 0;
+  const tailSec = Number(tailPadSec) || 0;
   const aParts = [];
   if (ttsPath) {
-    aParts.push(`[1:a]adelay=${leadInMs}|${leadInMs},atrim=0:${Math.max(0.1, outSec - tailSec)},asetpts=PTS-STARTPTS,aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=mono,aresample=48000,pan=stereo|c0=c0|c1=c0[tts]`);
-    if (keepVideoAudio && haveBgAudio) {
-      aParts.push(`[0:a]atrim=0:${outSec},asetpts=PTS-STARTPTS,volume=${Number(bgAudioVolume).toFixed(3)}[bg]`);
-      if (duckDuringTTS) {
-        aParts.push(`[bg][tts]sidechaincompress=threshold=${duck.threshold ?? -18}:ratio=${duck.ratio ?? 8}:attack=${duck.attack ?? 40}:release=${duck.release ?? 250}[ducked]`);
-        aParts.push(`[ducked][tts]amix=inputs=2:duration=longest:dropout_transition=0[aout]`);
-      } else {
-        aParts.push(`[bg][tts]amix=inputs=2:duration=longest:dropout_transition=0[aout]`);
-      }
-    } else {
-      aParts.push('[tts]anull[aout]');
-    }
-  } else {
-    if (keepVideoAudio && haveBgAudio) {
-      aParts.push(`[0:a]atrim=0:${outSec},asetpts=PTS-STARTPTS,volume=${Number(bgAudioVolume).toFixed(3)}[aout]`);
-    }
+    const ttsTrim = Math.max(0.1, outSec - tailSec);
+    aParts.push(`[1:a]adelay=${leadInMs}|${leadInMs},atrim=0:${ttsTrim},asetpts=PTS-STARTPTS,aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=mono,aresample=48000,pan=stereo|c0=c0|c1=c0[tts]`);
   }
-  let aChain = aParts.filter(Boolean).join(';');
-  if (!aChain) {
-    // ensure we always produce an audio output label
+  if (keepVideoAudio && haveBgAudio) {
+    const vol = Number.isFinite(Number(bgAudioVolume)) ? Number(bgAudioVolume) : 0.1;
+    aParts.push(`[0:a]volume=${vol},asetpts=PTS-STARTPTS[bg]`);
+  }
+
+  let aChain;
+  if (aParts.length === 0) {
+    // never allow empty audio filter → tiny silent source (match full length to avoid premature cutoff)
     aChain = `anullsrc=r=48000:cl=stereo,atrim=0:${outSec}[aout]`;
+  } else if (aParts.length === 1) {
+    // rename sole source to [aout]
+    aChain = `${aParts[0]}`.replace(/\[(tts|bg)\]$/, '[aout]');
+  } else {
+    if (duckDuringTTS) {
+      aChain = `${aParts.join(';')};[bg][tts]sidechaincompress=threshold=${duck.threshold ?? -18}:ratio=${duck.ratio ?? 8}:attack=${duck.attack ?? 40}:release=${duck.release ?? 250}[ducked];[ducked][tts]amix=inputs=2:dropout_transition=180,volume=1.0[aout]`;
+    } else {
+      aChain = `${aParts.join(';')};[bg][tts]amix=inputs=2:dropout_transition=180,volume=1.0[aout]`;
+    }
   }
 
   let filterParts = [vNodes, aChain].filter(Boolean).join(';');

@@ -257,8 +257,8 @@ export async function createShortService({ ownerUid, mode, text, template, durat
         // annotate meta via closure var? We'll include via meta build below
         // For parity with others, nothing else here; mux will run later
       } catch (e) {
-        console.warn("[background] stockVideo fallback:", e?.message || e);
-        await renderSolidQuoteVideo({ outPath, text: usedQuote.text, durationSec, template, authorLine, assPath, progressBar: karaokeModeEffective === "progress", watermark: watermarkFinal });
+        console.warn("[background] stockVideo render error:", e?.message || e);
+        throw e;
       }
     } else {
       await renderSolidQuoteVideo({ outPath, text: usedQuote.text, durationSec, template, authorLine });
