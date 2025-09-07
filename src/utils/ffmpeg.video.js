@@ -21,6 +21,9 @@ function sanitizeFilter(s) {
 // safe builders
 const joinF = (parts) => parts.filter(Boolean).join(',');
 const out = (label) => label ? `[${label}]` : '';
+function j(parts, sep=';') {
+  return parts.filter(p => typeof p === 'string' && p.trim().length > 0).join(sep);
+}
 
 function runFfmpeg(args) {
   return new Promise((resolve, reject) => {
@@ -124,50 +127,51 @@ export async function renderVideoQuoteOverlay({
   const vol = Number.isFinite(Number(bgAudioVolume)) ? Number(bgAudioVolume) : 0.1;
 
   let aChain = '';
-  if (ttsPath && keepVideoAudio && haveBgAudio) {
-    // Build TTS normalized to stereo at 48k, and BG track, then mix
-    const tts1 = joinF([
-      `${ain}adelay=${leadInMs}|${leadInMs}`,
-      'asetpts=PTS-STARTPTS',
-      'aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=mono',
-      'aresample=48000',
-      'pan=stereo|c0=c0|c1=c0',
-      out('tts1'),
-    ]);
-    const bg = joinF([
-      `[0:a]volume=${vol}`,
-      'aresample=48000',
-      out('bg'),
-    ]);
-    const mix = duckDuringTTS
-      ? `[bg][tts1]sidechaincompress=threshold=${duck.threshold ?? -18}:ratio=${duck.ratio ?? 8}:attack=${duck.attack ?? 40}:release=${duck.release ?? 250}[ducked];[ducked][tts1]amix=inputs=2:duration=longest:dropout_transition=0,aresample=48000[aout]`
-      : `[bg][tts1]amix=inputs=2:duration=longest:dropout_transition=0,aresample=48000[aout]`;
-    aChain = [tts1, bg, mix].filter(Boolean).join(';');
-  } else if (ttsPath) {
-    // TTS only with explicit tail via anullsrc + concat
-    const tts1 = joinF([
-      `${ain}adelay=${leadInMs}|${leadInMs}`,
-      'asetpts=PTS-STARTPTS',
-      'aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=mono',
-      'aresample=48000',
-      'pan=stereo|c0=c0|c1=c0',
-      out('tts1'),
-    ]);
-    const sil = `anullsrc=r=48000:cl=stereo:d=${tailSec}[sil]`;
-    const concat = `[tts1][sil]concat=n=2:v=0:a=1[aout]`;
-    aChain = [tts1, sil, concat].join(';');
-  } else if (keepVideoAudio && haveBgAudio) {
-    // BG only
-    const bgOnly = [
-      `[0:a]volume=${vol}`,
-      'aresample=48000',
-      alabel,
-    ];
-    aChain = joinF(bgOnly);
-  } else {
-    // No audio inputs — generate tiny silent source for full duration
-    aChain = `anullsrc=r=48000:cl=stereo,atrim=0:${outSec}[aout]`;
-  }
+  const tts1 = ttsPath ? j([
+    `${ain}adelay=${leadInMs}|${leadInMs}`,
+    'aresample=48000',
+    'aformat=sample_fmts=fltp:channel_layouts=stereo',
+    'pan=stereo|c0=c0|c1=c0',
+    'anlmdn=s=0.0005:p=0.0002',
+    'loudnorm=I=-16:TP=-1.5:LRA=11:print_format=summary',
+    'asetpts=PTS-STARTPTS',
+    'anull',
+    '[tts1]'
+  ]) : '';
+  const bg = (haveBgAudio && keepVideoAudio)
+    ? j([
+        `[0:a]volume=${Number(bgAudioVolume ?? 0.35).toFixed(2)}`,
+        'aresample=48000',
+        '[bg]'
+      ])
+    : '';
+  const ttsOnly = (!keepVideoAudio && ttsPath)
+    ? j([
+        tts1,
+        `anullsrc=r=48000:cl=stereo:d=${tailSec}[sil]`,
+        '[tts1][sil]concat=n=2:v=0:a=1[aout]'
+      ])
+    : '';
+  const mix = (haveBgAudio && keepVideoAudio && ttsPath)
+    ? (duckDuringTTS
+        ? j([
+            tts1,
+            bg,
+            `[bg][tts1]sidechaincompress=threshold=${duck.threshold ?? -18}:ratio=${duck.ratio ?? 8}:attack=${duck.attack ?? 40}:release=${duck.release ?? 250}[ducked]`,
+            `[ducked][tts1]amix=inputs=2:duration=longest:dropout_transition=0,aresample=48000[aout]`
+          ])
+        : j([
+            tts1,
+            bg,
+            '[tts1][bg]amix=inputs=2:duration=longest:dropout_transition=0,aresample=48000[aout]'
+          ]))
+    : '';
+  const bgOnly = (!haveBgAudio && keepVideoAudio)
+    ? j([
+        '[0:a]aresample=48000[aout]'
+      ])
+    : '';
+  aChain = j([ mix || '', bgOnly || '', (!keepVideoAudio ? ttsOnly : '') ]);
 
   let filterParts = [vChain, aChain].filter(Boolean).join(';');
   filterParts = sanitizeFilter(filterParts);
