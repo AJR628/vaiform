@@ -10,17 +10,26 @@ function escText(s) {
     .replace(/'/g, "\\'")
     .replace(/\n/g, "\\n");
 }
-function sanitizeFilter(s) {
-  return String(s)
-    .replace(/[ \t]+/g, ' ')
-    .replace(/;{2,}/g, ';')
-    .replace(/(^|;)\s+/g, '$1')
-    .replace(/\s+($|;)/g, '$1')
-    .trim();
+export function sanitizeFilter(graph) {
+  const cleaned = String(graph)
+    .split(';')
+    .map(s => s.trim())
+    .filter(Boolean)
+    .map(s => s.replace(/\s+/g, ' '))
+    .map(s => s.replace(/,{2,}/g, ','))
+    .filter(Boolean)
+    .join(';');
+  return cleaned;
 }
 
 // safe builders
-const joinF = (parts) => parts.filter(Boolean).join(';');
+export function joinF(parts) {
+  return parts
+    .flatMap(p => Array.isArray(p) ? p : [p])
+    .map(p => (p ?? '').trim())
+    .filter(Boolean)
+    .join(',');
+}
 const seg = (...parts) => parts.filter(Boolean).join(',');
 const out = (label) => label ? `[${label}]` : '';
 function j(parts, sep=';') {
@@ -111,7 +120,7 @@ export async function renderVideoQuoteOverlay({
     `fontsize=${watermarkFontSize}`, 'fontcolor=white',
     'shadowcolor=black','shadowx=2','shadowy=2','box=1','boxcolor=black@0.25','boxborderw=12','borderw=0'
   ].filter(Boolean).join(':')}` : '';
-  const vchain = joinF([ vNodes, drawMain, drawAuthor, drawWatermark, out('vout') ]);
+  const vchain = [ vNodes, drawMain, drawAuthor, drawWatermark, out('vout') ].filter(Boolean).join(',');
 
   // ---- Audio chain builders ----
   const outSec = Math.max(0.1, Number(durationSec) || 8);
@@ -123,36 +132,34 @@ export async function renderVideoQuoteOverlay({
   const tailSec = Math.max(0, Number.isFinite(Number(tailPadSec)) ? Number(tailPadSec) : (envTailMs/1000));
   const bgVol = Math.min(1, Math.max(0, Number.isFinite(Number(bgAudioVolume)) ? Number(bgAudioVolume) : 0.35));
 
-  const mkBg = (ms, vol) => joinF([
+  const mkBg = (ms, vol) => [
     seg('0:a', `adelay=${ms}|${ms}`),
     `volume=${vol.toFixed(2)}`,
     'aresample=48000',
     'aformat=sample_fmts=fltp:channel_layouts=stereo',
     out('bg')
-  ]);
-  const mkTts = (ms) => joinF([
+  ].filter(Boolean).join(',');
+  const mkTts = (ms) => [
     seg('1:a', `adelay=${ms}|${ms}`),
     'aresample=48000',
     'pan=stereo|c0=c0|c1=c0',
     'aformat=sample_fmts=fltp:channel_layouts=stereo',
     'asetpts=PTS-STARTPTS',
     out('tts1')
-  ]);
+  ].filter(Boolean).join(',');
   const mkSil = (sec) => `anullsrc=r=48000:cl=stereo:d=${Math.max(0.1, Number(sec)||0.8)}[sil]`;
 
   let aChain = '';
   if (ttsPath && keepVideoAudio && haveBgAudio) {
     const bg = mkBg(leadInMs, bgVol);
     const tts = mkTts(leadInMs);
-    const mix = duckDuringTTS
-      ? `[bg][tts1]sidechaincompress=threshold=${duck.threshold ?? -18}:ratio=${duck.ratio ?? 8}:attack=${duck.attack ?? 40}:release=${duck.release ?? 250}[ducked];[ducked][tts1]amix=inputs=2:duration=longest:dropout_transition=0[aout]`
-      : `[bg][tts1]amix=inputs=2:duration=longest:dropout_transition=0[aout]`;
-    aChain = joinF([bg, tts, mix]);
+    const mix = `[bg][tts1]amix=inputs=2:duration=longest:dropout_transition=0[aout]`;
+    aChain = [bg, tts, mix].join(';');
   } else if (ttsPath) {
     const tts = mkTts(leadInMs);
     const sil = mkSil(tailSec);
     const cat = '[tts1][sil]concat=n=2:v=0:a=1[aout]';
-    aChain = joinF([tts, sil, cat]);
+    aChain = [tts, sil, cat].join(';');
   } else if (keepVideoAudio && haveBgAudio) {
     const bg = mkBg(leadInMs, bgVol).replace(out('bg'), out('aout'));
     aChain = bg;
@@ -186,7 +193,7 @@ export async function renderVideoQuoteOverlay({
     '-t', String(outSec),
     outPath,
   ];
-  console.log('[ffmpeg] args about to spawn:', args.join(' '));
+  console.log('[ffmpeg] args:', JSON.stringify(args, null, 2));
   try {
     await runFfmpeg(args);
   } catch (e) {
