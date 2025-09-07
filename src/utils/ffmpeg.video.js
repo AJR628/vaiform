@@ -124,15 +124,13 @@ export async function renderVideoQuoteOverlay({
 
   const ain = '[1:a]';
   const alabel = out('aout');
-  const vol = Number.isFinite(Number(bgAudioVolume)) ? Number(bgAudioVolume) : 0.1;
-
-  let aChain = '';
-  const vol = Number.isFinite(Number(bgAudioVolume)) ? Number(bgAudioVolume) : 0.1;
+  // Clamp bg volume once; use consistently
+  const bgVol = Math.min(1, Math.max(0, Number.isFinite(Number(bgAudioVolume)) ? Number(bgAudioVolume) : 0.35));
   let aChain = '';
   if (ttsPath && keepVideoAudio && haveBgAudio) {
     const bg = joinF([
       '[0:a]',
-      `volume=${vol.toFixed(2)}`,
+      `volume=${bgVol.toFixed(2)}`,
       'aresample=48000',
       'aformat=sample_fmts=fltp:channel_layouts=stereo'
     ]) + out('bg');
@@ -162,7 +160,7 @@ export async function renderVideoQuoteOverlay({
     const bgOnly = joinF([
       '[0:a]',
       `adelay=${leadInMs}|${leadInMs}`,
-      `volume=${vol.toFixed(2)}`,
+      `volume=${bgVol.toFixed(2)}`,
       'aresample=48000',
       'aformat=sample_fmts=fltp:channel_layouts=stereo'
     ]) + out('aout');
