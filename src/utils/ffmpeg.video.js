@@ -30,7 +30,16 @@ export function joinF(parts) {
     .filter(Boolean)
     .join(',');
 }
-const seg = (...parts) => parts.filter(Boolean).join(',');
+function seg(...parts) {
+  const fix = (p) => {
+    if (typeof p !== 'string') return p;
+    const t = p.trim();
+    if (/^\d+:(v|a)$/.test(t)) return `[${t}]`;
+    if (/^\[.+\]$/.test(t)) return t;
+    return t;
+  };
+  return parts.filter(Boolean).map(fix).join(',');
+}
 const out = (label) => label ? `[${label}]` : '';
 function j(parts, sep=';') {
   return parts.filter(p => typeof p === 'string' && p.trim().length > 0).join(sep);
