@@ -48,6 +48,7 @@ export async function renderVideoQuoteOverlay({
   duck = { threshold: -18, ratio: 8, attack: 40, release: 250 },
   ttsDelayMs,
   tailPadSec,
+  voiceoverDelaySec,
   // visual polish
   videoStartSec = 0,
   videoVignette = false,
@@ -118,60 +119,57 @@ export async function renderVideoQuoteOverlay({
   const outSec = Math.max(0.1, Number(durationSec) || 8);
   const envDelay = Number(process.env.TTS_DELAY_MS ?? 1000);
   const envTailMs = Number(process.env.TTS_TAIL_MS ?? 800);
-  const leadInMs = Number(ttsDelayMs ?? envDelay) || 0;
-  const tailMs = Number.isFinite(Number(tailPadSec)) ? Number(tailPadSec) * 1000 : envTailMs;
-  const tailSec = Number.isFinite(Number(tailPadSec)) ? Number(tailPadSec) : (envTailMs / 1000);
+  const leadInMs = Math.round(((voiceoverDelaySec ?? (Number.isFinite(Number(ttsDelayMs)) ? Number(ttsDelayMs) / 1000 : envDelay / 1000)) || 1.0) * 1000);
+  const tailSec = Math.max(0, (Number.isFinite(Number(tailPadSec)) ? Number(tailPadSec) : (envTailMs / 1000)) ?? 0.8);
 
   const ain = '[1:a]';
   const alabel = out('aout');
   const vol = Number.isFinite(Number(bgAudioVolume)) ? Number(bgAudioVolume) : 0.1;
 
   let aChain = '';
-  const tts1 = ttsPath ? j([
-    `${ain}adelay=${leadInMs}|${leadInMs}`,
-    'aresample=48000',
-    'aformat=sample_fmts=fltp:channel_layouts=stereo',
-    'pan=stereo|c0=c0|c1=c0',
-    'anlmdn=s=0.0005:p=0.0002',
-    'loudnorm=I=-16:TP=-1.5:LRA=11:print_format=summary',
-    'asetpts=PTS-STARTPTS',
-    'anull',
-    '[tts1]'
-  ]) : '';
-  const bg = (haveBgAudio && keepVideoAudio)
-    ? j([
-        `[0:a]volume=${Number(bgAudioVolume ?? 0.35).toFixed(2)}`,
-        'aresample=48000',
-        '[bg]'
-      ])
-    : '';
-  const ttsOnly = (!keepVideoAudio && ttsPath)
-    ? j([
-        tts1,
-        `anullsrc=r=48000:cl=stereo:d=${tailSec}[sil]`,
-        '[tts1][sil]concat=n=2:v=0:a=1[aout]'
-      ])
-    : '';
-  const mix = (haveBgAudio && keepVideoAudio && ttsPath)
-    ? (duckDuringTTS
-        ? j([
-            tts1,
-            bg,
-            `[bg][tts1]sidechaincompress=threshold=${duck.threshold ?? -18}:ratio=${duck.ratio ?? 8}:attack=${duck.attack ?? 40}:release=${duck.release ?? 250}[ducked]`,
-            `[ducked][tts1]amix=inputs=2:duration=longest:dropout_transition=0,aresample=48000[aout]`
-          ])
-        : j([
-            tts1,
-            bg,
-            '[tts1][bg]amix=inputs=2:duration=longest:dropout_transition=0,aresample=48000[aout]'
-          ]))
-    : '';
-  const bgOnly = (!haveBgAudio && keepVideoAudio)
-    ? j([
-        '[0:a]aresample=48000[aout]'
-      ])
-    : '';
-  aChain = j([ mix || '', bgOnly || '', (!keepVideoAudio ? ttsOnly : '') ]);
+  const vol = Number.isFinite(Number(bgAudioVolume)) ? Number(bgAudioVolume) : 0.1;
+  let aChain = '';
+  if (ttsPath && keepVideoAudio && haveBgAudio) {
+    const bg = joinF([
+      '[0:a]',
+      `volume=${vol.toFixed(2)}`,
+      'aresample=48000',
+      'aformat=sample_fmts=fltp:channel_layouts=stereo'
+    ]) + out('bg');
+
+    const tts = joinF([
+      '[1:a]',
+      `adelay=${leadInMs}|${leadInMs}`,
+      'aresample=48000',
+      'pan=stereo|c0=c0|c1=c0',
+      'asetpts=PTS-STARTPTS'
+    ]) + out('tts');
+
+    const mix = '[bg][tts]amix=inputs=2:duration=longest:dropout_transition=0[aout]';
+    aChain = j([bg, tts, mix]);
+  } else if (ttsPath) {
+    const tts1 = joinF([
+      '[1:a]',
+      `adelay=${leadInMs}|${leadInMs}`,
+      'aresample=48000',
+      'pan=stereo|c0=c0|c1=c0',
+      'asetpts=PTS-STARTPTS'
+    ]) + out('tts1');
+    const sil = `anullsrc=r=48000:cl=stereo:d=${tailSec}[sil]`;
+    const concat = '[tts1][sil]concat=n=2:v=0:a=1[aout]';
+    aChain = j([tts1, sil, concat]);
+  } else if (keepVideoAudio && haveBgAudio) {
+    const bgOnly = joinF([
+      '[0:a]',
+      `adelay=${leadInMs}|${leadInMs}`,
+      `volume=${vol.toFixed(2)}`,
+      'aresample=48000',
+      'aformat=sample_fmts=fltp:channel_layouts=stereo'
+    ]) + out('aout');
+    aChain = bgOnly;
+  } else {
+    aChain = `anullsrc=r=48000:cl=stereo:d=${Math.max(outSec ?? 0, 0.1)}[aout]`;
+  }
 
   let filterParts = [vChain, aChain].filter(Boolean).join(';');
   filterParts = sanitizeFilter(filterParts);
