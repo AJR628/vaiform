@@ -3,6 +3,7 @@ import { spawn } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
 import fs from "node:fs";
+import fsp from "node:fs/promises";
 import { renderImageQuoteVideo } from "./ffmpeg.js";
 
 // text/path helpers
@@ -245,16 +246,44 @@ export async function renderVideoQuoteOverlay({
   }
 }
 
-export async function exportPoster({ inPath, outPath, ssSec = 1, width = 1080, height = 1920 }){
+export async function exportPoster({ videoPath, outPngPath, width = 1080, height = 1920, atSec = 0.2 }){
+  // Ensure directory exists
+  await fsp.mkdir(path.dirname(outPngPath), { recursive: true });
+
+  const vf = [
+    `scale=${width}:-2:force_original_aspect_ratio=decrease`,
+    `pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2`
+  ].join(',');
+
   const args = [
     '-y',
-    '-ss', String(ssSec),
-    '-i', inPath,
+    '-ss', String(atSec),
+    '-i', videoPath,
     '-frames:v', '1',
-    '-vf', `scale='min(iw*${height}/ih\,${width})':'min(ih*${width}/iw\,${height})':force_original_aspect_ratio=decrease,pad=${width}:${height}:ceil((${width}-iw)/2):ceil((${height}-ih)/2)`,
-    '-f', 'image2', outPath,
+    '-vf', vf,
+    '-f', 'image2',
+    '-update', '1',
+    outPngPath,
   ];
-  await runFfmpeg(args);
+
+  await new Promise((resolve, reject) => {
+    let stderr = '';
+    const p = spawn(ffmpegPath, args, { stdio: ['ignore', 'ignore', 'pipe'] });
+    p.stderr.on('data', (d) => { stderr += d.toString(); });
+    p.on('exit', (code) => {
+      if (code === 0) {
+        console.log('[poster] wrote', outPngPath);
+        resolve();
+      } else {
+        console.error('[poster] command failed:', ffmpegPath, args.join(' '));
+        if (stderr) console.error('[poster] stderr:', stderr);
+        const err = new Error('POSTER_RENDER_FAILED');
+        err.stderr = stderr;
+        err.args = args;
+        reject(err);
+      }
+    });
+  });
 }
 
 export async function exportAudioMp3({ videoPath, ttsPath, outPath, durationSec = 8, voiceoverDelaySec, ttsDelayMs, keepVideoAudio = false, haveBgAudio = true, bgAudioVolume = 0.35, tailPadSec }){
@@ -351,7 +380,7 @@ export async function renderAllFormats(renderSpec) {
   // Poster from vertical variant
   const posterPath = `${base}_poster_9x16.png`;
   try {
-    await exportPoster({ inPath: outputs['9x16'], outPath: posterPath, ssSec: 1, width: 1080, height: 1920 });
+    await exportPoster({ videoPath: outputs['9x16'], outPngPath: posterPath, atSec: 0.2, width: 1080, height: 1920 });
     outputs.poster = posterPath;
   } catch (e) {
     console.warn('[ffmpeg] poster export failed:', e?.message || e);

@@ -27,7 +27,8 @@
     "test": "echo \"(no tests yet)\" && exit 0",
     "prepare": "husky install",
     "check:responses": "node scripts/check-responses.js",
-    "smoke": "node scripts/smoke.mjs"
+    "smoke": "node scripts/smoke.mjs",
+    "test:poster": "node scripts/test-poster.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.33.0",
