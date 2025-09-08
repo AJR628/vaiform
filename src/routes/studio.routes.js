@@ -2,6 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import requireAuth from "../middleware/requireAuth.js";
 import { startStudio, getStudio, generateQuoteCandidates, generateImageCandidates, chooseCandidate, finalizeStudio, listStudios, deleteStudio, generateVideoCandidates, finalizeStudioMulti, createRemix, listRemixes, generateSocialImage, generateCaption } from "../services/studio.service.js";
+import { bus, sendEvent } from "../utils/events.js";
 import { resolveStockVideo } from "../services/stock.video.provider.js";
 
 const r = Router();
@@ -126,13 +127,25 @@ r.post("/finalize", async (req, res) => {
       const out = await finalizeStudio({ uid: req.user.uid, studioId, voiceover, wantAttribution, captionMode });
       return res.json({ success: true, data: out });
     }
-    // New path: multi-format
-    res.setHeader('Content-Type', 'application/x-ndjson');
-    res.setHeader('Cache-Control', 'no-store');
-    const write = (evt, data) => res.write(JSON.stringify({ event: evt, ...data }) + "\n");
-    const out = await finalizeStudioMulti({ uid: req.user.uid, studioId, renderSpec: renderSpec || {}, formats: formats || ["9x16","1x1","16x9"], wantImage, wantAudio, voiceover, wantAttribution, onProgress: (e) => write('progress', e) });
-    write('done', out);
-    return res.end();
+    // New path: multi-format → run and emit events via bus, return JSON fallback
+    const out = await finalizeStudioMulti({
+      uid: req.user.uid,
+      studioId,
+      renderSpec: renderSpec || {},
+      formats: formats || ["9x16","1x1","16x9"],
+      wantImage,
+      wantAudio,
+      voiceover,
+      wantAttribution,
+      onProgress: (e) => sendEvent(studioId, e.event || 'progress', e),
+    });
+    // Choose preferred URL (vertical if present)
+    const urls = out?.urls || {};
+    const publicUrl = urls[`${out.renderId}_9x16.mp4`] || urls[`${out.renderId}_1x1.mp4`] || urls[`${out.renderId}_16x9.mp4`] || Object.values(urls)[0];
+    sendEvent(studioId, 'video_ready', { url: publicUrl, durationSec: renderSpec?.output?.durationSec || undefined });
+    sendEvent(studioId, 'done', { url: publicUrl });
+    console.log('[studio][finalize] emitted: video_ready, done');
+    return res.json({ success: true, url: publicUrl, durationSec: renderSpec?.output?.durationSec || undefined, urls });
   } catch (e) {
     if (e?.message === "NEED_IMAGE_OR_VIDEO") {
       return res.status(400).json({ success: false, error: "IMAGE_OR_VIDEO_REQUIRED" });
@@ -140,8 +153,25 @@ r.post("/finalize", async (req, res) => {
     if (e?.message === 'RENDER_FAILED' || e?.message === 'FILTER_SANITIZE_FAILED') {
       return res.status(400).json({ success: false, error: 'RENDER_FAILED', detail: e?.detail || e?.cause?.message || 'ffmpeg failed', filter: e?.filter });
     }
+    try { sendEvent(req.body?.studioId, 'error', { message: e?.message || 'FINALIZE_FAILED' }); } catch {}
     return res.status(500).json({ success: false, error: "STUDIO_FINALIZE_FAILED", message: e?.message || "Finalize failed" });
   }
+});
+
+// Server-Sent Events for Studio progress
+r.get('/events/:studioId', async (req, res) => {
+  const studioId = String(req.params?.studioId || '').trim();
+  if (!studioId) return res.status(400).end();
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('Connection', 'keep-alive');
+  const handler = (payload) => {
+    try {
+      res.write(`data: ${JSON.stringify(payload)}\n\n`);
+    } catch {}
+  };
+  bus.on(studioId, handler);
+  req.on('close', () => bus.off(studioId, handler));
 });
 
 // --- Remix endpoints ---

@@ -244,6 +244,7 @@ export async function renderVideoQuoteOverlay({
     err.cause = e;
     throw err;
   }
+  return { outPath, durationSec: outSec };
 }
 
 export async function exportPoster({ videoPath, outPngPath, width = 1080, height = 1920, atSec = 0.2 }){

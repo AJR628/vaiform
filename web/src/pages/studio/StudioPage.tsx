@@ -162,9 +162,27 @@ function RenderStep({ studioId, captionMode, watermark, onDone }:{ studioId:stri
   const [wantAttribution, setWantAttribution] = useState(true)
   const [result, setResult] = useState<any>(null)
   const [showRemix, setShowRemix] = useState(false)
+  const [videoUrl, setVideoUrl] = useState<string|undefined>(undefined)
+  const [loading, setLoading] = useState(false)
+  useEffect(()=>{
+    if (!studioId) return
+    const es = new EventSource(`/api/studio/events/${encodeURIComponent(studioId)}`)
+    es.onmessage = (e)=>{
+      try{
+        const payload = JSON.parse(e.data)
+        console.log('[studio][sse]', payload)
+        if (payload.event === 'video_ready' && payload.url){ setVideoUrl(payload.url); setLoading(false) }
+        if (payload.event === 'done'){}
+        if (payload.event === 'error'){ setLoading(false); alert(payload.message || 'Render failed') }
+      }catch{}
+    }
+    return ()=>{ es.close() }
+  }, [studioId])
   async function finalize(){
+    setLoading(true)
     const r = await api.studioFinalize({ studioId, voiceover, wantAttribution, captionMode, watermark })
-    if (r.ok) setResult(r.data)
+    if (r.ok){ setResult(r.data); if ((r.data as any)?.url) setVideoUrl((r.data as any).url) }
+    setLoading(false)
   }
   return (
     <div className="space-y-2">
@@ -176,10 +194,11 @@ function RenderStep({ studioId, captionMode, watermark, onDone }:{ studioId:stri
           <button onClick={()=>setShowRemix(true)} className="px-3 py-1.5 rounded bg-purple-600 hover:bg-purple-500">Remix</button>
         )}
       </div>
-      {result && (
+      {loading && (<div className="text-xs text-neutral-400">Rendering…</div>)}
+      {(videoUrl || result?.videoUrl) && (
         <div className="border border-neutral-800 rounded p-3 space-y-2">
-          <video src={result.videoUrl} className="w-full max-w-md rounded" controls playsInline />
-          {result.coverImageUrl && (<a className="text-blue-400 text-sm" href={result.coverImageUrl} target="_blank">Open cover.jpg</a>)}
+          <video src={videoUrl || result.videoUrl} className="w-full max-w-md rounded" controls playsInline />
+          {result?.coverImageUrl && (<a className="text-blue-400 text-sm" href={result.coverImageUrl} target="_blank">Open cover.jpg</a>)}
         </div>
       )}
       {showRemix && (
