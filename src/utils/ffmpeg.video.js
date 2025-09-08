@@ -5,6 +5,7 @@ import path from "node:path";
 import fs from "node:fs";
 import fsp from "node:fs/promises";
 import { renderImageQuoteVideo } from "./ffmpeg.js";
+import { getDurationMsFromMedia } from "./media.duration.js";
 
 // text/path helpers
 const esc = s => String(s).replace(/\\/g,'\\\\').replace(/:/g,'\\:').replace(/'/g,"\\'");
@@ -123,6 +124,16 @@ function fitQuoteToBox({ text, boxWidthPx, baseFontSize = 72 }) {
   }
   if (line) lines.push(line);
   const lineSpacing = Math.round(fz * 0.25);
+  // Guard: ensure no line exceeds ~85% of width at current fontsize
+  try {
+    const safePx = 0.85 * Math.max(1, Number(boxWidthPx) || 1080);
+    const pxPerChar = 0.55 * fz;
+    const maxCharsLen = Math.max(0, ...lines.map(l => l.length));
+    if ((maxCharsLen * pxPerChar) > safePx) {
+      const adj = Math.floor(fz * safePx / Math.max(1, maxCharsLen * pxPerChar));
+      fz = Math.max(16, adj);
+    }
+  } catch {}
   return { text: lines.join('\n'), fontsize: fz, lineSpacing };
 }
 
@@ -213,6 +224,10 @@ export async function renderVideoQuoteOverlay({
   const fit = fitQuoteToBox({ text, boxWidthPx: W - sm*2, baseFontSize: fontsize || 72 });
   const quoteTxt = escText(fit.text);
   const effLineSpacing = Math.max(2, Number.isFinite(lineSpacing) ? lineSpacing : fit.lineSpacing);
+  try {
+    const raw = String(text ?? '').trim();
+    console.log('[fit]', JSON.stringify({ raw, fitted: fit.text, fontsize: fit.fontsize, lineSpacing: effLineSpacing }, null, 2));
+  } catch {}
 
   const drawMain = `drawtext=${[
     fontfile ? `fontfile='${fontfile}'` : null,
@@ -260,11 +275,25 @@ export async function renderVideoQuoteOverlay({
       `shadowcolor=black:shadowx=2:shadowy=2`
     ].filter(Boolean).join(':')}`;
   }
+  try { console.log('[ffmpeg] drawMain', drawMain); } catch {}
+  try { if (drawAuthor) console.log('[ffmpeg] drawAuthor', drawAuthor); } catch {}
+  try { if (drawWatermark) console.log('[ffmpeg] drawWatermark', drawWatermark); } catch {}
+  try { if (drawCaption) console.log('[ffmpeg] drawCaption', drawCaption); } catch {}
 
   const vchain = buildVideoChain({ width: W, height: H, videoVignette, drawLayers: [drawMain, drawAuthor, drawWatermark, drawCaption].filter(Boolean) });
 
   // ---- Audio chain builders ----
-  const outSec = Math.max(0.1, Number(durationSec) || 8);
+  // Compute mix length safety
+  let outSec = Number(durationSec);
+  if (!Number.isFinite(outSec) || outSec <= 0) {
+    let videoMs = null;
+    let ttsMs = null;
+    try { if (videoPath) videoMs = await getDurationMsFromMedia(videoPath); } catch {}
+    try { if (ttsPath) ttsMs = await getDurationMsFromMedia(ttsPath); } catch {}
+    const maxMs = Math.max(videoMs || 0, ttsMs || 0);
+    outSec = (maxMs > 0) ? (maxMs/1000 + 0.3) : 8;
+  }
+  try { console.log('[mix] outSec', outSec, { keepVideoAudio, hasTTS: !!ttsPath }); } catch {}
   const envDelay = Number(process.env.TTS_DELAY_MS ?? 1000);
   const envTailMs = Number(process.env.TTS_TAIL_MS ?? 800);
   const leadInMs = Math.round(
@@ -280,6 +309,11 @@ export async function renderVideoQuoteOverlay({
   const finalFilter = (process.env.BYPASS_SANITIZE === '1') ? rawFilter : sanitizeFilter(rawFilter);
   console.log('[ffmpeg] RAW   -filter_complex:', rawFilter);
   console.log('[ffmpeg] FINAL -filter_complex:', finalFilter);
+  try {
+    const scaleDesc = `scale='min(iw*${H}/ih,${W})':'min(ih*${W}/iw,${H})'`; // conceptual
+    const padDesc = `pad=${W}x${H}`;
+    console.log('[ffmpeg] geometry', { scale: scaleDesc, pad: padDesc });
+  } catch {}
   if (finalFilter.includes('],') || finalFilter.includes(',[')) {
     console.warn('[ffmpeg][warn] commas around labels detected');
   }
@@ -298,7 +332,6 @@ export async function renderVideoQuoteOverlay({
     ...(ttsPath ? ['-i', ttsPath] : []),
     '-filter_complex', finalFilter,
     '-map', '[vout]', '-map', '[aout]',
-    '-shortest',
     '-c:v', 'libx264', '-crf', '23', '-preset', 'veryfast',
     '-c:a', 'aac', '-b:a', '96k',
     '-movflags', '+faststart',
@@ -306,6 +339,9 @@ export async function renderVideoQuoteOverlay({
     '-t', String(outSec),
     outPath,
   ];
+  if (keepVideoAudio && !ttsPath) {
+    args.splice( args.indexOf('-c:v'), 0, '-shortest');
+  }
   try {
     await runFfmpeg(args);
   } catch (e) {

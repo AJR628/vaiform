@@ -116,7 +116,8 @@ async function withRetry(fetchFn, { tries = MAX_TRIES, baseDelay = BASE_DELAY } 
 // Always resolves; never throws
 export async function synthVoice({ text }){
   try {
-    const t = String(text || "").trim();
+    const t = String(text || "").replace(/\s+/g, ' ').trim();
+    try { console.log('[tts] input len/chars', t.length, 'words', t.split(/\s+/).length, 'sample', t.slice(0,200)); } catch {}
     if (t.length < 2) return { audioPath: null, durationMs: null };
 
     const provider = (process.env.TTS_PROVIDER || "openai").toLowerCase();
@@ -160,6 +161,14 @@ export async function synthVoice({ text }){
         const dir = await mkdtemp(join(tmpdir(), "vaiform-tts-"));
         const audioPath = join(dir, "quote.mp3");
         await writeFile(audioPath, buf);
+        // probe size + duration
+        try {
+          const { stat } = await import('node:fs/promises');
+          const st = await stat(audioPath);
+          const { getDurationMsFromMedia } = await import('../utils/media.duration.js');
+          const ms = await getDurationMsFromMedia(audioPath);
+          console.log('[tts] mp3 size(bytes)', st?.size || 0, 'duration(s)', ms ? (ms/1000).toFixed(2) : null);
+        } catch {}
         return { audioPath, durationMs: null };
       } catch (err) {
         console.warn("[tts] soft-fail:", err?.message || err);

@@ -181,7 +181,20 @@ function RenderStep({ studioId, captionMode, watermark, onDone }:{ studioId:stri
   async function finalize(){
     setLoading(true)
     const r = await api.studioFinalize({ studioId, voiceover, wantAttribution, captionMode, watermark })
-    if (r.ok){ setResult(r.data); if ((r.data as any)?.url) setVideoUrl((r.data as any).url) }
+    console.log('[ui] finalize response', r)
+    if (r.ok){
+      setResult(r.data)
+      const urls = (r.data as any)?.urls || {}
+      const primary = (r.data as any)?.url || urls['9x16'] || urls['1x1'] || urls['16x9'] || undefined
+      console.log('[ui] preview src', primary)
+      if (primary) {
+        setVideoUrl(primary)
+        try {
+          const el = document.querySelector('#previewVideo') as HTMLVideoElement | null
+          if (el) { el.src = primary; el.load() }
+        } catch {}
+      }
+    }
     setLoading(false)
   }
   return (
@@ -197,7 +210,7 @@ function RenderStep({ studioId, captionMode, watermark, onDone }:{ studioId:stri
       {loading && (<div className="text-xs text-neutral-400">Rendering…</div>)}
       {(videoUrl || result?.videoUrl) && (
         <div className="border border-neutral-800 rounded p-3 space-y-2">
-          <video src={videoUrl || result.videoUrl} className="w-full max-w-md rounded" controls playsInline />
+          <video id="previewVideo" src={videoUrl || result.videoUrl} className="w-full max-w-md rounded" controls playsInline />
           {result?.coverImageUrl && (<a className="text-blue-400 text-sm" href={result.coverImageUrl} target="_blank">Open cover.jpg</a>)}
         </div>
       )}
