@@ -42,6 +42,56 @@ const inL  = (l) => (l ? `[${l}]` : '');
 const outL = (l) => (l ? ` [${l}]` : ''); // NOTE: leading space, not comma
 const makeChain = (inputLabel, filters, outputLabel) => `${inL(inputLabel)}${joinFilters(filters)}${outL(outputLabel)}`;
 
+// --- Caption layout helper -----------------------------------------------
+// Wrap captions into 1–2 lines that fit inside safe margins, then return
+// { text, fontsize, yExpr }. Works with DejaVuSans; charWidth ~ 0.58 * fz.
+function wrapCaption(raw, w, h, opts = {}) {
+  const {
+    maxLines = 2,
+    fontMax = 64,         // starting size; we’ll step down if needed
+    fontMin = 28,         // hard floor
+    marginX = 0.08,       // 8% left/right safe area
+    marginBottom = 0.12,  // 12% bottom safe area
+    charW = 0.58,         // DejaVuSans avg glyph width factor
+    lineSpacingFactor = 0.25,
+  } = opts;
+
+  const text = String(raw || '').trim().replace(/\s+/g, ' ');
+  const usablePx = Math.max(1, Math.round(w * (1 - 2 * marginX)));
+
+  for (let fz = fontMax; fz >= fontMin; fz -= 2) {
+    const maxChars = Math.max(6, Math.floor(usablePx / (fz * charW)));
+    const words = text.split(' ');
+    const lines = [];
+    let cur = '';
+
+    for (const ww of words) {
+      const next = cur ? cur + ' ' + ww : ww;
+      if (next.length <= maxChars) cur = next;
+      else { if (cur) lines.push(cur); cur = ww; }
+    }
+    if (cur) lines.push(cur);
+
+    if (lines.length <= maxLines) {
+      return {
+        text: lines.join('\n'),
+        fontsize: fz,
+        lineSpacing: Math.round(fz * lineSpacingFactor),
+        // bottom-anchored, inside safe area, accounting for text height
+        yExpr: `h-${Math.round(h * marginBottom)}-text_h`
+      };
+    }
+  }
+
+  // Fallback: no good fit, use smallest size.
+  return {
+    text,
+    fontsize: fontMin,
+    lineSpacing: Math.round(fontMin * 0.25),
+    yExpr: `h-${Math.round(h * marginBottom)}-text_h`
+  };
+}
+
 function runFfmpeg(args) {
   return new Promise((resolve, reject) => {
     // Log full args JSON for diagnostics
@@ -134,6 +184,7 @@ export async function renderVideoQuoteOverlay({
   width = 1080, height = 1920, durationSec = 8, fps = 24,
   // content
   text, authorLine,
+  captionText,
   // style bundle
   fontfile, fontcolor = 'white', fontsize = 72, lineSpacing = 12, shadowColor = 'black', shadowX = 2, shadowY = 2,
   box = 1, boxcolor = 'black@0.35', boxborderw = 24,
@@ -191,7 +242,26 @@ export async function renderVideoQuoteOverlay({
     'shadowcolor=black','shadowx=2','shadowy=2','box=1','boxcolor=black@0.25','boxborderw=12','borderw=0'
   ].filter(Boolean).join(':')}` : '';
 
-  const vchain = buildVideoChain({ width: W, height: H, videoVignette, drawLayers: [drawMain, drawAuthor, drawWatermark].filter(Boolean) });
+  // Optional caption (bottom, safe area, wrapped)
+  let drawCaption = '';
+  if (captionText && String(captionText).trim()) {
+    const CANVAS_W = W;
+    const CANVAS_H = H;
+    const cap = wrapCaption(captionText, CANVAS_W, CANVAS_H, { maxLines: 2, fontMax: 64, fontMin: 28 });
+    drawCaption = `drawtext=${[
+      fontfile ? `fontfile='${fontfile}'` : null,
+      `text='${escText(cap.text)}'`,
+      `x=(w-text_w)/2`,
+      `y=${cap.yExpr}`,
+      `fontsize=${cap.fontsize}`,
+      `fontcolor=white`,
+      `line_spacing=${cap.lineSpacing}`,
+      `box=1:boxcolor=black@0.40:boxborderw=18`,
+      `shadowcolor=black:shadowx=2:shadowy=2`
+    ].filter(Boolean).join(':')}`;
+  }
+
+  const vchain = buildVideoChain({ width: W, height: H, videoVignette, drawLayers: [drawMain, drawAuthor, drawWatermark, drawCaption].filter(Boolean) });
 
   // ---- Audio chain builders ----
   const outSec = Math.max(0.1, Number(durationSec) || 8);
