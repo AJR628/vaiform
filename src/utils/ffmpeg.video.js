@@ -17,17 +17,18 @@ function escText(s) {
     .replace(/\n/g, "\\n");
 }
 export function sanitizeFilter(graph) {
-  const g = String(graph);
-  // Split by ; into chains, then within each chain split by , and drop empties.
-  const chains = g.split(';').map(ch =>
-    ch
-      .split(',')
-      .map(p => p.trim())
-      .filter(Boolean)              // remove empty filter nodes
-      .join(',')
-  ).filter(ch => ch.trim().length > 0);
-  // Normalize spaces around separators, but NEVER touch [] labels.
-  return chains.join(';').replace(/;\s+/g, ';').replace(/,\s+/g, ',');
+  const s = String(graph);
+  // Protect quoted substrings so we don't touch spaces/newlines inside drawtext text='...'
+  const stash = [];
+  const protectedS = s.replace(/'[^']*'/g, (m) => { stash.push(m); return `__Q${stash.length - 1}__`; });
+  const cleaned = protectedS
+    .split(';')
+    .map(seg => seg.trim())
+    .filter(Boolean)
+    .map(seg => seg.replace(/\s{2,}/g, ' '))
+    .join(';')
+    .replace(/;{2,}/g, ';');
+  return cleaned.replace(/__Q(\d+)__/g, (_, i) => stash[Number(i)]);
 }
 
 // safe builders
@@ -222,16 +223,23 @@ export async function renderVideoQuoteOverlay({
     : Math.round(Math.min(W,H) * 0.06);
 
   const fit = fitQuoteToBox({ text, boxWidthPx: W - sm*2, baseFontSize: fontsize || 72 });
-  const quoteTxt = escText(fit.text);
   const effLineSpacing = Math.max(2, Number.isFinite(lineSpacing) ? lineSpacing : fit.lineSpacing);
   try {
     const raw = String(text ?? '').trim();
     console.log('[fit]', JSON.stringify({ raw, fitted: fit.text, fontsize: fit.fontsize, lineSpacing: effLineSpacing }, null, 2));
   } catch {}
 
+  // Write quote/author text to temp textfiles for robust multiline handling
+  const tmpBase = fs.mkdtempSync(path.join(os.tmpdir(), 'vaiform-txt-'));
+  const quoteTxtPath = path.join(tmpBase, 'quote.txt');
+  const authorTxtPath = path.join(tmpBase, 'author.txt');
+  try {
+    fs.writeFileSync(quoteTxtPath, String(fit.text), { encoding: 'utf8' });
+    console.log('[drawtext][quotefile]', quoteTxtPath, 'bytes=', fs.statSync(quoteTxtPath).size);
+  } catch {}
+
   const drawMain = `drawtext=${[
-    fontfile ? `fontfile='${fontfile}'` : null,
-    `text='${quoteTxt}'`,
+    `textfile='${quoteTxtPath.replace(/\\/g,'/').replace(/^([A-Za-z]):\//, "$1\\:/")}'`,
     `x=(w-text_w)/2`,
     `y=(h-text_h)/2`,
     `fontsize=${fit.fontsize}`,
@@ -240,15 +248,17 @@ export async function renderVideoQuoteOverlay({
     `box=${box}`,`boxcolor=${boxcolor}`,`boxborderw=${boxborderw}`,
     `line_spacing=${effLineSpacing}`,'borderw=0'
   ].filter(Boolean).join(':')}`;
-  const drawAuthor = (authorLine && String(authorLine).trim()) ? `drawtext=${[
-    fontfile ? `fontfile='${fontfile}'` : null,
-    `text='${escText(String(authorLine).trim())}'`,
-    'x=(w-text_w)/2', `y=(h+th)/2+${Math.round(sm*0.8)}`,
-    `fontsize=${Math.max(28, Math.round(fit.fontsize * 0.5))}`,
-    `fontcolor=${fontcolor}`,
-    `shadowcolor=${shadowColor}`,`shadowx=${shadowX}`,`shadowy=${shadowY}`,
-    'box=0','borderw=0'
-  ].filter(Boolean).join(':')}` : '';
+  const drawAuthor = (authorLine && String(authorLine).trim()) ? (() => {
+    try { fs.writeFileSync(authorTxtPath, String(authorLine).trim(), { encoding: 'utf8' }); console.log('[drawtext][authorfile]', authorTxtPath, 'bytes=', fs.statSync(authorTxtPath).size); } catch {}
+    return `drawtext=${[
+      `textfile='${authorTxtPath.replace(/\\/g,'/').replace(/^([A-Za-z]):\//, "$1\\:/")}'`,
+      'x=(w-text_w)/2', `y=(h+text_h)/2+${Math.round(sm*0.8)}`,
+      `fontsize=${Math.max(28, Math.round(fit.fontsize * 0.5))}`,
+      `fontcolor=${fontcolor}`,
+      `shadowcolor=${shadowColor}`,`shadowx=${shadowX}`,`shadowy=${shadowY}`,
+      'box=0','borderw=0'
+    ].filter(Boolean).join(':')}`;
+  })() : '';
   const drawWatermark = watermark ? `drawtext=${[
     fontfile ? `fontfile='${fontfile}'` : null,
     `text='${escText(watermarkText || 'Vaiform')}'`,

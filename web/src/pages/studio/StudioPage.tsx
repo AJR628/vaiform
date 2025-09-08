@@ -170,7 +170,9 @@ function RenderStep({ studioId, captionMode, watermark, onDone }:{ studioId:stri
     es.onmessage = (e)=>{
       try{
         const payload = JSON.parse(e.data)
-        console.log('[studio][sse]', payload)
+        console.log('[ui][sse]', 'message', e.data)
+        // common handler for socket payload
+        handlePreviewPayload(payload)
         if (payload.event === 'video_ready' && payload.url){ setVideoUrl(payload.url); setLoading(false) }
         if (payload.event === 'done'){}
         if (payload.event === 'error'){ setLoading(false); alert(payload.message || 'Render failed') }
@@ -178,23 +180,48 @@ function RenderStep({ studioId, captionMode, watermark, onDone }:{ studioId:stri
     }
     return ()=>{ es.close() }
   }, [studioId])
+
+  function pickUrl(obj:any, endsWith:string){
+    try { return Object.values(obj).find((u:any) => typeof u === 'string' && u.endsWith(endsWith)) as string|undefined } catch { return undefined }
+  }
+  function chooseMp4(result:any){
+    const urls = result?.urls || {}
+    const direct = (typeof result?.url === 'string' && result.url.endsWith('.mp4')) ? result.url : undefined
+    const explicitKey = Object.keys(urls).find(k => /_9x16\.mp4$/i.test(k))
+    const nine = direct || (explicitKey ? urls[explicitKey] : pickUrl(urls, '_9x16.mp4'))
+    if (nine) return { src: nine, poster: (urls[result?.renderId + '_poster_9x16.png'] || pickUrl(urls, '_poster_9x16.png')) }
+    // fallbacks
+    const one = pickUrl(urls, '_1x1.mp4') || Object.values(urls).find((u:any)=>String(u).endsWith('_1x1.mp4'))
+    const wide = pickUrl(urls, '_16x9.mp4') || Object.values(urls).find((u:any)=>String(u).endsWith('_16x9.mp4'))
+    const src = (one as string) || (wide as string) || direct
+    const poster = urls[result?.renderId + '_poster_9x16.png'] || pickUrl(urls, '_poster_9x16.png')
+    return { src, poster }
+  }
+  function handlePreviewPayload(result:any){
+    if (!result) return
+    const { src, poster } = chooseMp4(result)
+    if (!src) return
+    const el = document.querySelector('#preview') as HTMLVideoElement | null
+    if (el){
+      el.controls = true
+      el.playsInline = true
+      el.preload = 'metadata'
+      ;(el as any).crossOrigin = 'anonymous'
+      el.src = src
+      if (poster) el.poster = poster
+      el.load()
+      el.muted = true
+      try { el.play().catch(()=>{}) } catch {}
+      el.addEventListener('loadeddata', ()=>{ el.classList.add('is-ready') }, { once:true })
+      el.addEventListener('error', ()=>{ console.error('[preview][error]', { src: el.currentSrc, code: (el.error && el.error.code) || null }) }, { once:true })
+      console.log('[preview] src:', src, 'poster:', poster || '(none)')
+    }
+  }
   async function finalize(){
     setLoading(true)
     const r = await api.studioFinalize({ studioId, voiceover, wantAttribution, captionMode, watermark })
     console.log('[ui] finalize response', r)
-    if (r.ok){
-      setResult(r.data)
-      const urls = (r.data as any)?.urls || {}
-      const primary = (r.data as any)?.url || urls['9x16'] || urls['1x1'] || urls['16x9'] || undefined
-      console.log('[ui] preview src', primary)
-      if (primary) {
-        setVideoUrl(primary)
-        try {
-          const el = document.querySelector('#previewVideo') as HTMLVideoElement | null
-          if (el) { el.src = primary; el.load() }
-        } catch {}
-      }
-    }
+    if (r.ok){ setResult(r.data); handlePreviewPayload(r.data) }
     setLoading(false)
   }
   return (
@@ -210,7 +237,7 @@ function RenderStep({ studioId, captionMode, watermark, onDone }:{ studioId:stri
       {loading && (<div className="text-xs text-neutral-400">Rendering…</div>)}
       {(videoUrl || result?.videoUrl) && (
         <div className="border border-neutral-800 rounded p-3 space-y-2">
-          <video id="previewVideo" src={videoUrl || result.videoUrl} className="w-full max-w-md rounded" controls playsInline />
+          <video id="preview" className="w-full max-w-md rounded" />
           {result?.coverImageUrl && (<a className="text-blue-400 text-sm" href={result.coverImageUrl} target="_blank">Open cover.jpg</a>)}
         </div>
       )}
