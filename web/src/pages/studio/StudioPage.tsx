@@ -161,6 +161,7 @@ function RenderStep({ studioId, captionMode, watermark, onDone }:{ studioId:stri
   const [voiceover, setVoiceover] = useState(true)
   const [wantAttribution, setWantAttribution] = useState(true)
   const [result, setResult] = useState<any>(null)
+  const [showRemix, setShowRemix] = useState(false)
   async function finalize(){
     const r = await api.studioFinalize({ studioId, voiceover, wantAttribution, captionMode, watermark })
     if (r.ok) setResult(r.data)
@@ -171,6 +172,9 @@ function RenderStep({ studioId, captionMode, watermark, onDone }:{ studioId:stri
         <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={voiceover} onChange={e=>setVoiceover(e.target.checked)} />Voiceover</label>
         <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={wantAttribution} onChange={e=>setWantAttribution(e.target.checked)} />Attribution</label>
         <button onClick={finalize} className="px-3 py-1.5 rounded bg-green-600 hover:bg-green-500">Render</button>
+        {result && (
+          <button onClick={()=>setShowRemix(true)} className="px-3 py-1.5 rounded bg-purple-600 hover:bg-purple-500">Remix</button>
+        )}
       </div>
       {result && (
         <div className="border border-neutral-800 rounded p-3 space-y-2">
@@ -178,6 +182,138 @@ function RenderStep({ studioId, captionMode, watermark, onDone }:{ studioId:stri
           {result.coverImageUrl && (<a className="text-blue-400 text-sm" href={result.coverImageUrl} target="_blank">Open cover.jpg</a>)}
         </div>
       )}
+      {showRemix && (
+        <RemixPanel studioId={studioId} onClose={()=>setShowRemix(false)} />
+      )}
+    </div>
+  )
+}
+
+function RemixPanel({ studioId, onClose }:{ studioId:string; onClose:()=>void }){
+  const [tab, setTab] = useState<'background'|'audio'|'style'|'timing'>('background')
+  // background search
+  const [bgKind, setBgKind] = useState<'stockVideo'|'stock'>('stockVideo')
+  const [query, setQuery] = useState('calm')
+  const [cands, setCands] = useState<any[]>([])
+  const [loading, setLoading] = useState(false)
+  // audio
+  const [keepAudio, setKeepAudio] = useState(true)
+  const [bgVol, setBgVol] = useState(0.35)
+  const [voiceDelay, setVoiceDelay] = useState(0)
+  // style presets
+  const [style, setStyle] = useState<'Minimal'|'Bold'|'Cinematic'>('Minimal')
+  const styleMap:any = {
+    Minimal: { fontcolor:'white', box:1, boxcolor:'black@0.30', boxborderw:24 },
+    Bold: { fontcolor:'white', shadowColor:'black', shadowX:3, shadowY:3, box:1, boxcolor:'black@0.45', boxborderw:28 },
+    Cinematic: { fontcolor:'white', shadowColor:'black', shadowX:2, shadowY:2, box:1, boxcolor:'black@0.35', boxborderw:24, watermark:true },
+  }
+  // local remixes list
+  const [remixes, setRemixes] = useState<any[]>([])
+
+  async function search(){
+    setLoading(true)
+    try{
+      if (bgKind==='stockVideo') {
+        const r = await api.studioVideo({ studioId, kind:'stockVideo', query })
+        if (r.ok) setCands((r.data as any).video.candidates)
+      } else {
+        const r = await api.studioImage({ studioId, kind:'stock', query })
+        if (r.ok) setCands((r.data as any).image.candidates)
+      }
+    } finally { setLoading(false) }
+  }
+  async function more(){
+    // call same search to advance paging on server; session keeps next page
+    await search()
+  }
+  async function choose(id:string){
+    const track = bgKind==='stockVideo' ? 'video' : 'image'
+    await api.studioChoose({ studioId, track: track as any, candidateId: id })
+  }
+  async function apply(){
+    const renderSpec:any = {
+      output: { durationSec: 8, safeMargin: 0.06 },
+      style: styleMap[style],
+      audio: { keepVideoAudio: keepAudio, bgAudioVolume: bgVol, voiceoverDelaySec: voiceDelay },
+    }
+    const r = await api.studioFinalize({ studioId, renderSpec, formats: ['9x16','1x1','16x9'], wantImage: true, wantAudio: true })
+    if (r.ok) setRemixes(prev => [{ id: (r.data as any).renderId, urls: (r.data as any).urls }, ...prev])
+  }
+  return (
+    <div className="fixed inset-0 bg-black/50 flex">
+      <div className="ml-auto w-full max-w-md h-full bg-neutral-950 border-l border-neutral-800 p-4 space-y-3 overflow-y-auto">
+        <div className="flex items-center justify-between">
+          <div className="font-semibold">Remix</div>
+          <button onClick={onClose} className="text-sm text-neutral-400">Close</button>
+        </div>
+        <div className="flex gap-2 text-xs">
+          <button onClick={()=>setTab('background')} className={`px-2 py-1 rounded ${tab==='background'?'bg-neutral-800':'bg-neutral-900'}`}>Background</button>
+          <button onClick={()=>setTab('audio')} className={`px-2 py-1 rounded ${tab==='audio'?'bg-neutral-800':'bg-neutral-900'}`}>Audio</button>
+          <button onClick={()=>setTab('style')} className={`px-2 py-1 rounded ${tab==='style'?'bg-neutral-800':'bg-neutral-900'}`}>Style</button>
+          <button onClick={()=>setTab('timing')} className={`px-2 py-1 rounded ${tab==='timing'?'bg-neutral-800':'bg-neutral-900'}`}>Timing</button>
+        </div>
+        {tab==='background' && (
+          <div className="space-y-2">
+            <div className="flex gap-2 items-center">
+              <select value={bgKind} onChange={e=>setBgKind(e.target.value as any)} className="bg-neutral-900 border border-neutral-800 rounded px-2 py-1">
+                <option value="stockVideo">More results (video)</option>
+                <option value="stock">More results (image)</option>
+              </select>
+              <input value={query} onChange={e=>setQuery(e.target.value)} className="flex-1 bg-neutral-900 border border-neutral-800 rounded px-2 py-1" />
+              <button disabled={loading} onClick={search} className="px-2 py-1 bg-neutral-800 rounded">Search</button>
+              <button disabled={loading} onClick={more} className="px-2 py-1 bg-neutral-800 rounded">More</button>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              {cands.map(c => (
+                <div key={c.id} className="border border-neutral-800 rounded overflow-hidden">
+                  {bgKind==='stockVideo' ? (
+                    <video src={c.url} className="w-full h-32 object-cover" muted playsInline />
+                  ) : (
+                    <img src={c.url} className="w-full h-32 object-cover" />
+                  )}
+                  <button onClick={()=>choose(c.id)} className="w-full text-xs px-2 py-1 bg-blue-600 hover:bg-blue-500">Use</button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        {tab==='audio' && (
+          <div className="space-y-2">
+            <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={keepAudio} onChange={e=>setKeepAudio(e.target.checked)} />Keep original audio</label>
+            <div className="text-xs">BG volume: {bgVol.toFixed(2)}</div>
+            <input type="range" min={0} max={1} step={0.05} value={bgVol} onChange={e=>setBgVol(parseFloat(e.target.value))} />
+          </div>
+        )}
+        {tab==='style' && (
+          <div className="space-x-2">
+            {(['Minimal','Bold','Cinematic'] as const).map(s => (
+              <button key={s} onClick={()=>setStyle(s)} className={`px-2 py-1 rounded ${style===s?'bg-blue-600':'bg-neutral-800'}`}>{s}</button>
+            ))}
+          </div>
+        )}
+        {tab==='timing' && (
+          <div className="space-y-2">
+            <div className="text-xs">Voiceover delay: {voiceDelay.toFixed(2)}s</div>
+            <input type="range" min={0} max={1} step={0.05} value={voiceDelay} onChange={e=>setVoiceDelay(parseFloat(e.target.value))} />
+          </div>
+        )}
+        <div className="pt-2 flex justify-between items-center">
+          <div className="text-xs text-neutral-400">Remixes: {remixes.length}</div>
+          <button onClick={apply} className="px-3 py-1.5 rounded bg-green-600 hover:bg-green-500">Apply</button>
+        </div>
+        {!!remixes.length && (
+          <div className="space-y-2">
+            {remixes.map(r => (
+              <div key={r.id} className="border border-neutral-800 rounded p-2 text-xs">
+                <div className="font-medium">{r.id}</div>
+                <div className="overflow-x-auto">
+                  <pre className="whitespace-pre-wrap break-all">{JSON.stringify(r.urls, null, 2)}</pre>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   )
 }

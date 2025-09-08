@@ -50,6 +50,11 @@ async function req<T>(path: string, init?: RequestInit): Promise<{ok:true,data:T
 }
 
 export const api = {
+  studioRemix: (p:{ parentRenderId:string; renderSpec:any; formats?:Array<"9x16"|"1x1"|"16x9">; wantImage?:boolean; wantAudio?:boolean }) =>
+    req<any>("/api/studio/remix", { method:"POST", body: JSON.stringify(p) }),
+
+  listRemixes: (renderId:string) =>
+    req<any>(`/api/studio/${encodeURIComponent(renderId)}/remixes`),
   startStudio: (p:{template:"calm"|"bold"|"cosmic"|"minimal"; durationSec:number; maxRefines:number}) =>
     req<{id:string}>("/api/studio/start", { method:"POST", body: JSON.stringify(p) }),
 
@@ -66,10 +71,12 @@ export const api = {
     req<{ok:true}>("/api/studio/choose", { method:"POST", body: JSON.stringify(p) }),
 
   studioFinalize: (p:{
-    studioId:string; voiceover:boolean; wantAttribution:boolean; captionMode:CaptionMode;
-    watermark?:boolean; keepVideoAudio?:boolean; bgAudioVolume?:number;
-    duckDuringTTS?:boolean; duck?:{threshold:number; ratio:number; attack:number; release:number};
-  }) => req<{jobId:string; videoUrl:string; coverImageUrl:string|null}>("/api/studio/finalize", { method:"POST", body: JSON.stringify(p) }),
+    studioId:string; voiceover?:boolean; wantAttribution?:boolean; captionMode?:CaptionMode;
+    renderSpec?: any;
+    formats?: Array<"9x16"|"1x1"|"16x9">;
+    wantImage?: boolean;
+    wantAudio?: boolean;
+  }) => req<any>("/api/studio/finalize", { method:"POST", body: JSON.stringify(p) }),
 
   getShort: (jobId:string) =>
     req<any>(`/api/shorts/${encodeURIComponent(jobId)}`),

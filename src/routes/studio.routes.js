@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import requireAuth from "../middleware/requireAuth.js";
-import { startStudio, getStudio, generateQuoteCandidates, generateImageCandidates, chooseCandidate, finalizeStudio, listStudios, deleteStudio, generateVideoCandidates } from "../services/studio.service.js";
+import { startStudio, getStudio, generateQuoteCandidates, generateImageCandidates, chooseCandidate, finalizeStudio, listStudios, deleteStudio, generateVideoCandidates, finalizeStudioMulti, createRemix, listRemixes, generateSocialImage, generateCaption } from "../services/studio.service.js";
 import { resolveStockVideo } from "../services/stock.video.provider.js";
 
 const r = Router();
@@ -48,6 +48,11 @@ const FinalizeSchema = z.object({
   voiceover: z.boolean().optional(),
   wantAttribution: z.boolean().optional(),
   captionMode: z.enum(["progress", "karaoke"]).optional(),
+  // New multi-format payload
+  renderSpec: z.any().optional(),
+  formats: z.array(z.enum(["9x16","1x1","16x9"]).default("9x16")).optional(),
+  wantImage: z.boolean().optional(),
+  wantAudio: z.boolean().optional(),
 });
 
 r.post("/start", async (req, res) => {
@@ -114,18 +119,91 @@ r.post("/choose", async (req, res) => {
 r.post("/finalize", async (req, res) => {
   const parsed = FinalizeSchema.safeParse(req.body || {});
   if (!parsed.success) return res.status(400).json({ success: false, error: "INVALID_INPUT", detail: parsed.error.flatten() });
-  const { studioId, voiceover = false, wantAttribution = true, captionMode = "progress" } = parsed.data;
+  const { studioId, voiceover = false, wantAttribution = true, captionMode = "progress", renderSpec, formats, wantImage = true, wantAudio = true } = parsed.data;
   try {
-    const out = await finalizeStudio({ uid: req.user.uid, studioId, voiceover, wantAttribution, captionMode });
-    return res.json({ success: true, data: out });
+    if (!renderSpec && !formats && !wantImage && !wantAudio) {
+      // Back-compat: old finalize single format path
+      const out = await finalizeStudio({ uid: req.user.uid, studioId, voiceover, wantAttribution, captionMode });
+      return res.json({ success: true, data: out });
+    }
+    // New path: multi-format
+    res.setHeader('Content-Type', 'application/x-ndjson');
+    res.setHeader('Cache-Control', 'no-store');
+    const write = (evt, data) => res.write(JSON.stringify({ event: evt, ...data }) + "\n");
+    const out = await finalizeStudioMulti({ uid: req.user.uid, studioId, renderSpec: renderSpec || {}, formats: formats || ["9x16","1x1","16x9"], wantImage, wantAudio, voiceover, wantAttribution, onProgress: (e) => write('progress', e) });
+    write('done', out);
+    return res.end();
   } catch (e) {
     if (e?.message === "NEED_IMAGE_OR_VIDEO") {
       return res.status(400).json({ success: false, error: "IMAGE_OR_VIDEO_REQUIRED" });
     }
-    if (e?.message === 'RENDER_FAILED') {
+    if (e?.message === 'RENDER_FAILED' || e?.message === 'FILTER_SANITIZE_FAILED') {
       return res.status(400).json({ success: false, error: 'RENDER_FAILED', detail: e?.detail || e?.cause?.message || 'ffmpeg failed', filter: e?.filter });
     }
     return res.status(500).json({ success: false, error: "STUDIO_FINALIZE_FAILED", message: e?.message || "Finalize failed" });
+  }
+});
+
+// --- Remix endpoints ---
+const RemixSchema = z.object({
+  parentRenderId: z.string().min(6),
+  renderSpec: z.any(),
+  formats: z.array(z.enum(["9x16","1x1","16x9"]).default("9x16")).optional(),
+  wantImage: z.boolean().optional(),
+  wantAudio: z.boolean().optional(),
+});
+
+r.post("/remix", async (req, res) => {
+  const parsed = RemixSchema.safeParse(req.body || {});
+  if (!parsed.success) return res.status(400).json({ success: false, error: "INVALID_INPUT", detail: parsed.error.flatten() });
+  const { parentRenderId, renderSpec, formats, wantImage = true, wantAudio = true } = parsed.data;
+  try {
+    const out = await createRemix({ uid: req.user.uid, parentRenderId, renderSpec, formats, wantImage, wantAudio });
+    return res.json({ success:true, data: out });
+  } catch (e) {
+    if (e?.code === 'REMIX_QUOTA_EXCEEDED') {
+      return res.status(429).json({ success:false, error:'REMIX_QUOTA_EXCEEDED' });
+    }
+    return res.status(500).json({ success:false, error:'REMIX_FAILED' });
+  }
+});
+
+r.get('/:renderId/remixes', async (req, res) => {
+  const renderId = String(req.params?.renderId || '').trim();
+  if (!renderId) return res.status(400).json({ success:false, error:'INVALID_INPUT' });
+  try {
+    const list = await listRemixes({ uid: req.user.uid, renderId });
+    return res.json({ success:true, data: list });
+  } catch (e) {
+    return res.status(500).json({ success:false, error:'REMIX_LIST_FAILED' });
+  }
+});
+
+// ---- Social image + caption ----
+const SocialImageSchema = z.object({ studioId: z.string().min(3), renderSpec: z.any().optional() });
+r.post('/social-image', async (req, res) => {
+  const parsed = SocialImageSchema.safeParse(req.body || {});
+  if (!parsed.success) return res.status(400).json({ success:false, error:'INVALID_INPUT', detail: parsed.error.flatten() });
+  const { studioId, renderSpec } = parsed.data;
+  try {
+    const out = await generateSocialImage({ uid: req.user.uid, studioId, renderSpec });
+    return res.json({ success:true, data: out });
+  } catch (e) {
+    if (e?.message === 'NEED_IMAGE_OR_VIDEO') return res.status(400).json({ success:false, error:'IMAGE_OR_VIDEO_REQUIRED' });
+    return res.status(500).json({ success:false, error:'SOCIAL_IMAGE_FAILED' });
+  }
+});
+
+const CaptionSchema = z.object({ quoteId: z.string().optional(), styleId: z.string().optional(), text: z.string().min(4), tone: z.string().optional() });
+r.post('/caption', async (req, res) => {
+  const parsed = CaptionSchema.safeParse(req.body || {});
+  if (!parsed.success) return res.status(400).json({ success:false, error:'INVALID_INPUT', detail: parsed.error.flatten() });
+  const { quoteId, styleId, text, tone } = parsed.data;
+  try {
+    const out = await generateCaption({ uid: req.user.uid, quoteId, styleId, text, tone });
+    return res.json({ success:true, data: out });
+  } catch (e) {
+    return res.status(500).json({ success:false, error:'CAPTION_FAILED' });
   }
 });
 
