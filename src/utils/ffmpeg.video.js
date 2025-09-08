@@ -32,20 +32,10 @@ export function joinF(parts) {
     .filter(Boolean)
     .join(',');
 }
-function seg(...parts) {
-  const fix = (p) => {
-    if (typeof p !== 'string') return p;
-    const t = p.trim();
-    if (/^\d+:(v|a)$/.test(t)) return `[${t}]`;
-    if (/^\[.+\]$/.test(t)) return t;
-    return t;
-  };
-  return parts.filter(Boolean).map(fix).join(',');
-}
-const out = (label) => label ? `[${label}]` : '';
-function j(parts, sep=';') {
-  return parts.filter(p => typeof p === 'string' && p.trim().length > 0).join(sep);
-}
+const joinFilters = (arr) => (arr || []).filter(Boolean).join(',');
+const inL  = (l) => (l ? `[${l}]` : '');
+const outL = (l) => (l ? ` [${l}]` : ''); // NOTE: leading space, not comma
+const makeChain = (inputLabel, filters, outputLabel) => `${inL(inputLabel)}${joinFilters(filters)}${outL(outputLabel)}`;
 
 function runFfmpeg(args) {
   return new Promise((resolve, reject) => {
@@ -98,14 +88,7 @@ export async function renderVideoQuoteOverlay({
   const quoteTxt = escText(fitted.text);
   const fitLineSpacing = Math.round(fitted.fontsize * 0.25);
 
-  // Build video chain (attach labels with spaces, not commas)
-  const vFiltersCore = [
-    'scale=1080:1920:force_original_aspect_ratio=decrease',
-    'pad=1080:1920:(ow-iw)/2:(oh-ih)/2',
-    (videoVignette ? 'vignette=PI/4:0.5' : null),
-    'format=yuv420p'
-  ].filter(Boolean);
-  const vNodes = chain('0:v', [joinF(vFiltersCore), drawMain, drawAuthor, drawWatermark].filter(Boolean), 'vout');
+  // Build drawtext layers
   const drawMain = `drawtext=${[
     fontfile ? `fontfile='${fontfile}'` : null,
     `text='${quoteTxt}'`,
@@ -131,7 +114,15 @@ export async function renderVideoQuoteOverlay({
     `fontsize=${watermarkFontSize}`, 'fontcolor=white',
     'shadowcolor=black','shadowx=2','shadowy=2','box=1','boxcolor=black@0.25','boxborderw=12','borderw=0'
   ].filter(Boolean).join(':')}` : '';
-  const vchain = vNodes;
+
+  // Build video chain with labels spaced
+  const vFiltersCore = [
+    'scale=1080:1920:force_original_aspect_ratio=decrease',
+    'pad=1080:1920:(ow-iw)/2:(oh-ih)/2',
+    (videoVignette ? 'vignette=PI/4:0.5' : null),
+    'format=yuv420p'
+  ].filter(Boolean);
+  const vchain = makeChain('0:v', [joinF(vFiltersCore), drawMain, drawAuthor, drawWatermark].filter(Boolean), 'vout');
 
   // ---- Audio chain builders ----
   const outSec = Math.max(0.1, Number(durationSec) || 8);
@@ -143,34 +134,16 @@ export async function renderVideoQuoteOverlay({
   const tailSec = Math.max(0, Number.isFinite(Number(tailPadSec)) ? Number(tailPadSec) : (envTailMs/1000));
   const bgVol = Math.min(1, Math.max(0, Number.isFinite(Number(bgAudioVolume)) ? Number(bgAudioVolume) : 0.35));
 
-  const mkBg = (delayMs, vol) => joinF([
-    '[0:a]',
-    'aresample=48000',
-    'aformat=sample_fmts=fltp:channel_layouts=stereo',
-    `adelay=${delayMs}|${delayMs}`,
-    `volume=${(vol ?? 0.35).toFixed(2)}`,
-    out('bg')
-  ]);
-  const mkTts = (delayMs) => joinF([
-    '[1:a]',
-    'aresample=48000',
-    'aformat=sample_fmts=fltp:channel_layouts=stereo',
-    'pan=stereo|c0=c0|c1=c0',
-    `adelay=${delayMs}|${delayMs}`,
-    'asetpts=PTS-STARTPTS',
-    out('tts1')
-  ]);
-  const mkSil = (sec) => `anullsrc=r=48000:cl=stereo:d=${Math.max(0.1, Number(sec)||0.8)} [sil]`;
-
+  // Branch assembly
   let aChain = '';
   if (ttsPath && keepVideoAudio && haveBgAudio) {
-    const bg = chain('0:a', [
+    const bg = makeChain('0:a', [
       `adelay=${leadInMs}|${leadInMs}`,
       `volume=${bgVol.toFixed(2)}`,
       'aresample=48000',
       'aformat=sample_fmts=fltp:channel_layouts=stereo'
     ], 'bg');
-    const tts1 = chain('1:a', [
+    const tts1 = makeChain('1:a', [
       `adelay=${leadInMs}|${leadInMs}`,
       'aresample=48000',
       'pan=stereo|c0=c0|c1=c0',
@@ -180,34 +153,30 @@ export async function renderVideoQuoteOverlay({
     const mix = `[bg][tts1]amix=inputs=2:duration=longest:dropout_transition=0 [aout]`;
     aChain = [bg, tts1, mix].join(';');
   } else if (ttsPath) {
-    const tts1 = chain('1:a', [
+    const tts1 = makeChain('1:a', [
       `adelay=${leadInMs}|${leadInMs}`,
       'aresample=48000',
       'pan=stereo|c0=c0|c1=c0',
       'aformat=sample_fmts=fltp:channel_layouts=stereo',
       'asetpts=PTS-STARTPTS'
     ], 'tts1');
-    const sil = chain(null, [`anullsrc=r=48000:cl=stereo:d=${tailSec}`], 'sil');
+    const sil = makeChain(null, [`anullsrc=r=48000:cl=stereo:d=${tailSec}`], 'sil');
     const concat = `[tts1][sil]concat=n=2:v=0:a=1 [aout]`;
     aChain = [tts1, sil, concat].join(';');
   } else if (keepVideoAudio && haveBgAudio) {
-    aChain = chain('0:a', [
+    aChain = makeChain('0:a', [
       `adelay=${leadInMs}|${leadInMs}`,
       `volume=${bgVol.toFixed(2)}`,
       'aresample=48000',
       'aformat=sample_fmts=fltp:channel_layouts=stereo'
     ], 'aout');
   } else {
-    aChain = chain(null, [`anullsrc=r=48000:cl=stereo:d=${Math.max(0.8, outSec || 0.8)}`], 'aout');
+    aChain = makeChain(null, [`anullsrc=r=48000:cl=stereo:d=${Math.max(0.8, outSec || 0.8)}`], 'aout');
   }
 
   // Assemble and log RAW vs FINAL filter_complex
   const rawFilter = [vchain, aChain].filter(Boolean).join(';');
-  const finalFilter = sanitizeFilter(rawFilter);
-  // Hard fail early if we’d feed an empty node to FFmpeg.
-  if (/(^|[,;])\s*(?=[,;])|[,;]\s*$/.test(finalFilter)) {
-    throw new Error('SANITY_CHECK: empty filter segment detected');
-  }
+  const finalFilter = (process.env.BYPASS_SANITIZE === '1') ? rawFilter : sanitizeFilter(rawFilter);
   console.log('[ffmpeg] RAW   -filter_complex:', rawFilter);
   console.log('[ffmpeg] FINAL -filter_complex:', finalFilter);
   if (finalFilter.includes('],') || finalFilter.includes(',[')) {
@@ -227,7 +196,6 @@ export async function renderVideoQuoteOverlay({
     '-t', String(outSec),
     outPath,
   ];
-  console.log('[ffmpeg] args:', JSON.stringify(args, null, 2));
   try {
     await runFfmpeg(args);
   } catch (e) {
