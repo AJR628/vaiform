@@ -11,20 +11,22 @@ function escText(s) {
     .replace(/\n/g, "\\n");
 }
 export function sanitizeFilter(graph) {
-  const cleaned = String(graph)
-    .split(';')
-    .map(s => s.trim())
-    .filter(Boolean)
-    .map(s => s.replace(/\s+/g, ' '))
-    .map(s => s.replace(/,{2,}/g, ','))
-    .filter(Boolean)
-    .join(';');
-  return cleaned;
+  const g = String(graph);
+  // Split by ; into chains, then within each chain split by , and drop empties.
+  const chains = g.split(';').map(ch =>
+    ch
+      .split(',')
+      .map(p => p.trim())
+      .filter(Boolean)              // remove empty filter nodes
+      .join(',')
+  ).filter(ch => ch.trim().length > 0);
+  // Normalize spaces around separators, but NEVER touch [] labels.
+  return chains.join(';').replace(/;\s+/g, ';').replace(/,\s+/g, ',');
 }
 
 // safe builders
 export function joinF(parts) {
-  return parts
+  return (parts || [])
     .flatMap(p => Array.isArray(p) ? p : [p])
     .map(p => (p ?? '').trim())
     .filter(Boolean)
@@ -141,21 +143,23 @@ export async function renderVideoQuoteOverlay({
   const tailSec = Math.max(0, Number.isFinite(Number(tailPadSec)) ? Number(tailPadSec) : (envTailMs/1000));
   const bgVol = Math.min(1, Math.max(0, Number.isFinite(Number(bgAudioVolume)) ? Number(bgAudioVolume) : 0.35));
 
-  const mkBg = (ms, vol) => [
-    seg('0:a', `adelay=${ms}|${ms}`),
-    `volume=${vol.toFixed(2)}`,
+  const mkBg = (delayMs, vol) => joinF([
+    '[0:a]',
     'aresample=48000',
     'aformat=sample_fmts=fltp:channel_layouts=stereo',
+    `adelay=${delayMs}|${delayMs}`,
+    `volume=${(vol ?? 0.35).toFixed(2)}`,
     out('bg')
-  ].filter(Boolean).join(',');
-  const mkTts = (ms) => [
-    seg('1:a', `adelay=${ms}|${ms}`),
+  ]);
+  const mkTts = (delayMs) => joinF([
+    '[1:a]',
     'aresample=48000',
-    'pan=stereo|c0=c0|c1=c0',
     'aformat=sample_fmts=fltp:channel_layouts=stereo',
+    'pan=stereo|c0=c0|c1=c0',
+    `adelay=${delayMs}|${delayMs}`,
     'asetpts=PTS-STARTPTS',
     out('tts1')
-  ].filter(Boolean).join(',');
+  ]);
   const mkSil = (sec) => `anullsrc=r=48000:cl=stereo:d=${Math.max(0.1, Number(sec)||0.8)}[sil]`;
 
   let aChain = '';
@@ -178,13 +182,10 @@ export async function renderVideoQuoteOverlay({
 
   // Assemble and log RAW vs FINAL filter_complex
   const rawFilter = [vchain, aChain].filter(Boolean).join(';');
-  const BYPASS_SANITIZE = process.env.BYPASS_SANITIZE === '1';
-  const finalFilter = BYPASS_SANITIZE ? rawFilter : sanitizeFilter(rawFilter);
-  if (rawFilter.split(';').some(seg => !seg.trim())) {
-    console.warn('[ffmpeg][warn] EMPTY FILTER SEGMENTS in rawFilter');
-  }
-  if (finalFilter.includes(';;')) {
-    console.warn('[ffmpeg][warn] DOUBLE-SEMICOLON in final -filter_complex');
+  const finalFilter = sanitizeFilter(rawFilter);
+  // Hard fail early if we’d feed an empty node to FFmpeg.
+  if (/(^|[,;])\s*(?=[,;])|[,;]\s*$/.test(finalFilter)) {
+    throw new Error('SANITY_CHECK: empty filter segment detected');
   }
   console.log('[ffmpeg] RAW   -filter_complex:', rawFilter);
   console.log('[ffmpeg] FINAL -filter_complex:', finalFilter);
