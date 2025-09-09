@@ -185,6 +185,9 @@ r.post("/finalize", ensureStudio(true), async (req, res) => {
     if (e?.message === "NEED_IMAGE_OR_VIDEO") {
       return res.status(400).json({ success: false, error: "IMAGE_OR_VIDEO_REQUIRED" });
     }
+    if (e?.message === 'VIDEO_SIZE') {
+      return res.status(400).json({ success: false, error: 'VIDEO_TOO_LARGE', hint: 'Try a shorter clip or a different source. Max bytes configurable via VIDEO_MAX_BYTES.' });
+    }
     if (e?.message === 'RENDER_FAILED' || e?.message === 'FILTER_SANITIZE_FAILED') {
       return res.status(400).json({ success: false, error: 'RENDER_FAILED', detail: e?.detail || e?.cause?.message || 'ffmpeg failed', filter: e?.filter });
     }

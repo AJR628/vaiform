@@ -206,13 +206,18 @@ function RenderStep({ studioId, captionMode, watermark, onDone }:{ studioId:stri
       el.setAttribute('controls','')
       el.setAttribute('playsinline','')
       el.setAttribute('preload','metadata')
-      el.setAttribute('crossorigin','anonymous')
-      el.src = src
       if (poster) el.poster = poster
+      // Rebuild sources to help browser pick correct type
+      try { while (el.firstChild) el.removeChild(el.firstChild) } catch {}
+      const source = document.createElement('source')
+      source.src = src
+      source.type = 'video/mp4'
+      el.appendChild(source)
+      ;(el as any).srcObject = null
+      try { el.removeAttribute('crossorigin') } catch {}
       el.load()
       el.muted = true
       try { void el.play().catch(()=>{}) } catch {}
-      el.oncanplay = () => { /* force redraw */ el.currentTime = Math.max(0, el.currentTime); }
       el.addEventListener('loadeddata', ()=>{ el.classList.add('is-ready') }, { once:true })
       el.addEventListener('error', ()=>{ console.error('[preview][error]', { src: el.currentSrc, code: (el.error && el.error.code) || null }) }, { once:true })
       console.log('[preview] src:', src, 'poster:', poster || '(none)')

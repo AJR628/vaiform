@@ -3,12 +3,20 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 
-const MAX_BYTES = 80 * 1024 * 1024; // 80 MB
+const MAX_BYTES = Number(process.env.VIDEO_MAX_BYTES || 80 * 1024 * 1024); // bytes, default 80MB
 const ALLOWED_TYPES = new Set(["video/mp4", "video/webm", "video/quicktime"]);
 
 export async function fetchVideoToTmp(url) {
   const u = new URL(url);
   if (u.protocol !== "https:") throw new Error("VIDEO_URL_PROTOCOL");
+  // Try a HEAD first to check size without downloading
+  try {
+    const head = await fetch(url, { method: 'HEAD', redirect: 'follow' });
+    if (head.ok) {
+      const lenHead = Number(head.headers.get('content-length') || 0);
+      if (lenHead && lenHead > MAX_BYTES) throw new Error('VIDEO_SIZE');
+    }
+  } catch {}
   const res = await fetch(url, { redirect: "follow" });
   if (!res.ok) throw new Error(`VIDEO_FETCH_${res.status}`);
   const type = res.headers.get("content-type")?.split(";")[0] || "";
