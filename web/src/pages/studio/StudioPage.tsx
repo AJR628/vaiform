@@ -203,15 +203,16 @@ function RenderStep({ studioId, captionMode, watermark, onDone }:{ studioId:stri
     if (!src) return
     const el = document.querySelector('#preview') as HTMLVideoElement | null
     if (el){
-      el.controls = true
-      el.playsInline = true
-      el.preload = 'metadata'
-      ;(el as any).crossOrigin = 'anonymous'
+      el.setAttribute('controls','')
+      el.setAttribute('playsinline','')
+      el.setAttribute('preload','metadata')
+      el.setAttribute('crossorigin','anonymous')
       el.src = src
       if (poster) el.poster = poster
       el.load()
       el.muted = true
-      try { el.play().catch(()=>{}) } catch {}
+      try { void el.play().catch(()=>{}) } catch {}
+      el.oncanplay = () => { /* force redraw */ el.currentTime = Math.max(0, el.currentTime); }
       el.addEventListener('loadeddata', ()=>{ el.classList.add('is-ready') }, { once:true })
       el.addEventListener('error', ()=>{ console.error('[preview][error]', { src: el.currentSrc, code: (el.error && el.error.code) || null }) }, { once:true })
       console.log('[preview] src:', src, 'poster:', poster || '(none)')
@@ -235,12 +236,20 @@ function RenderStep({ studioId, captionMode, watermark, onDone }:{ studioId:stri
         )}
       </div>
       {loading && (<div className="text-xs text-neutral-400">Rendering…</div>)}
-      {(videoUrl || result?.videoUrl) && (
-        <div className="border border-neutral-800 rounded p-3 space-y-2">
-          <video id="preview" className="w-full max-w-md rounded" />
-          {result?.coverImageUrl && (<a className="text-blue-400 text-sm" href={result.coverImageUrl} target="_blank">Open cover.jpg</a>)}
-        </div>
-      )}
+      <div className="border border-neutral-800 rounded p-3 space-y-2">
+        <video
+          id="preview"
+          className="w-full max-w-md rounded"
+          controls
+          playsInline
+          preload="metadata"
+          crossOrigin="anonymous"
+          style={{ backgroundColor: '#000' as any }}
+        />
+        {result?.coverImageUrl && (
+          <a className="text-blue-400 text-sm" href={result.coverImageUrl} target="_blank">Open cover.jpg</a>
+        )}
+      </div>
       {showRemix && (
         <RemixPanel studioId={studioId} onClose={()=>setShowRemix(false)} />
       )}
