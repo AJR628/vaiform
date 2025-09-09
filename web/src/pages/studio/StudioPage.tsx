@@ -201,7 +201,7 @@ function RenderStep({ studioId, captionMode, watermark, onDone }:{ studioId:stri
     if (!result) return
     const { src, poster } = chooseMp4(result)
     if (!src) return
-    const el = document.querySelector('#preview') as HTMLVideoElement | null
+    const el = (document.querySelector('#preview') || document.querySelector('video')) as HTMLVideoElement | null
     if (el){
       el.setAttribute('controls','')
       el.setAttribute('playsinline','')
