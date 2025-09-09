@@ -213,12 +213,13 @@ function RenderStep({ studioId, captionMode, watermark, onDone }:{ studioId:stri
       source.src = src
       source.type = 'video/mp4'
       el.appendChild(source)
+      el.setAttribute('src', src)
       ;(el as any).srcObject = null
       try { el.removeAttribute('crossorigin') } catch {}
       el.load()
       el.muted = true
       try { void el.play().catch(()=>{}) } catch {}
-      el.addEventListener('loadeddata', ()=>{ el.classList.add('is-ready') }, { once:true })
+      el.addEventListener('loadeddata', ()=>{ console.log('[preview][ready]', { currentSrc: el.currentSrc, readyState: el.readyState, networkState: el.networkState }); el.classList.add('is-ready') }, { once:true })
       el.addEventListener('error', ()=>{ console.error('[preview][error]', { src: el.currentSrc, code: (el.error && el.error.code) || null }) }, { once:true })
       console.log('[preview] src:', src, 'poster:', poster || '(none)')
     }
