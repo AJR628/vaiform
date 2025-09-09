@@ -102,9 +102,31 @@ export async function getStudio({ uid, studioId }) {
   return session;
 }
 
+// Ensure a studio session exists in persistent storage for a given id
+export async function ensureStudioSession({ uid, studioId, template = "minimal", durationSec = 8 }) {
+  const existing = await getStudio({ uid, studioId });
+  if (existing) return existing;
+  const nowIso = new Date().toISOString();
+  const ttlMs = (Number(process.env.STUDIO_TTL_HOURS || 48)) * 3600 * 1000;
+  const session = ensureSessionDefaults({
+    id: studioId,
+    uid,
+    status: "draft",
+    constraints: { maxRefines: 5 },
+    quote: { mode: "quote", input: "", candidates: [], chosenId: null, iterationsLeft: 5 },
+    image: { kind: "stock", query: null, uploadUrl: null, prompt: null, kenBurns: null, candidates: [], chosenId: null, iterationsLeft: 5 },
+    render: { template, durationSec, createdAt: nowIso, updatedAt: nowIso },
+    expiresAt: new Date(Date.now() + ttlMs).toISOString(),
+  });
+  await saveSession({ uid, studioId, data: session });
+  return session;
+}
+
 export async function generateQuoteCandidates({ uid, studioId, mode, text, template, count = 3 }) {
-  const s = await getStudio({ uid, studioId });
-  if (!s) throw new Error("STUDIO_NOT_FOUND");
+  let s = await getStudio({ uid, studioId });
+  if (!s) {
+    s = await ensureStudioSession({ uid, studioId, template: template || "minimal", durationSec: 8 });
+  }
   s.quote.mode = mode;
   s.quote.input = text;
   const n = Math.max(1, Math.min(5, count));
