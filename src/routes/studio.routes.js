@@ -132,11 +132,19 @@ r.post("/quote", async (req, res) => {
     const uid = req.user?.uid || 'anon';
 
     try {
+      // Ensure studio exists (auto-create if missing) and set status
+      const { getStudio: SGet, createStudio: SCreate, setStatus: SSetStatus, STORE_INSTANCE_ID } = await import('../studio/store.js');
+      console.log('[quote][storeInst]', STORE_INSTANCE_ID);
+      let s = SGet(studioId);
+      if (!s) s = SCreate({ id: studioId, status: 'choosing' });
+      else SSetStatus(studioId, 'choosing');
+
       const q = await generateQuoteCandidates({ uid, studioId, mode, text, template: undefined, count });
+      SSetStatus(studioId, 'ready');
       const ms = Date.now() - t0;
       const okLog = { studioId, ms, provider: process.env.QUOTES_PROVIDER || 'curated/local', model: null, charsOut: (q?.candidates?.[0]?.text || '').length, promptHash: crypto.createHash('sha1').update(String(text||'')).digest('hex').slice(0,8) };
       console.log('[quote][ok]', JSON.stringify(okLog));
-      return res.json({ success: true, data: { quote: q } });
+      return res.json({ success: true, studioId, data: { quote: q } });
     } catch (e) {
       const ms = Date.now() - t0;
       const errObj = { studioId, ms, provider: process.env.QUOTES_PROVIDER || 'curated/local', model: null, code: e?.code || 'GEN_FAILED', message: e?.message || String(e), stackTop: (e?.stack||'').split('\n')[0] };
