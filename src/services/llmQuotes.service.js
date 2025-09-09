@@ -60,4 +60,71 @@ export async function llmQuotesByFeeling({ feeling, count }) {
   return out;
 }
 
+/**
+ * Generate a single short quote from arbitrary user text, enforcing a character limit and optional tone tag.
+ * Returns { id, text, author, attributed, toneTag? }
+ */
+export async function llmSingleQuoteFromText({ text, tone, maxChars = 120 }) {
+  const url = `${OPENAI_BASE}/chat/completions`;
+  const body = {
+    model: OPENAI_MODEL,
+    temperature: 0.8,
+    messages: [
+      {
+        role: 'system',
+        content: [
+          'You are a social short-form quote writer. Output concise, punchy, attribution-safe lines.',
+          `Hard limit ${maxChars} characters. Prefer 8–18 words.`,
+          'If you quote a known author, include author and set attributed=true. Otherwise, attributed=false and author=null.',
+          'Return ONLY strict JSON: {"text":"...","author":null|"Name","attributed":true|false,"toneTag":"motivational|witty|poetic|bold|calm|default"}',
+        ].join(' ')
+      },
+      {
+        role: 'user',
+        content: `Source text: ${String(text || '').slice(0, 1200)}\nTone hint: ${tone || 'default'}\nConstraints: <=${maxChars} chars, single line, plain ASCII, no emojis.`
+      }
+    ]
+  };
+
+  const r = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(body)
+  });
+
+  if (!r.ok) throw new Error(`LLM_HTTP_${r.status}`);
+  const data = await r.json();
+  const content = data?.choices?.[0]?.message?.content || '';
+
+  let obj = null;
+  try {
+    const jsonTextMatch = content.match(/\{[\s\S]*\}/);
+    obj = JSON.parse(jsonTextMatch ? jsonTextMatch[0] : content);
+  } catch {}
+
+  const textOut = String(obj?.text || '').replace(/\s+/g, ' ').trim();
+  if (textOut) {
+    return {
+      id: `q-${randomUUID()}`,
+      text: textOut.slice(0, maxChars),
+      author: obj?.author ? String(obj.author).trim() : null,
+      attributed: !!obj?.attributed,
+      toneTag: obj?.toneTag ? String(obj.toneTag).toLowerCase() : (tone || 'default')
+    };
+  }
+
+  // Fallback: lightly trim input
+  const trimmed = String(text || '').replace(/\s+/g, ' ').trim().slice(0, maxChars);
+  return {
+    id: `q-${randomUUID()}`,
+    text: trimmed || 'Begin again. Small courage, repeated, becomes strength.',
+    author: null,
+    attributed: false,
+    toneTag: tone || 'default'
+  };
+}
+
 

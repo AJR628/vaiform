@@ -172,6 +172,11 @@ if (routes?.studio) {
   app.use("/api/studio", routes.studio);
   console.log("✅ Mounted studio at /api/studio");
 }
+if (routes?.quotes) {
+  app.use("/api", routes.quotes);
+  app.use("/", routes.quotes);
+  console.log("✅ Mounted quotes at / and /api");
+}
 
 // ---------- STATIC LAST (disable directory redirects like /dir -> /dir/) ----------
 // --- SPA static hosting (after API routes) ---

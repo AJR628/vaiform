@@ -10,6 +10,7 @@ import whoamiRouter from "./whoami.routes.js";
 import shortsRouter from "./shorts.routes.js";
 import uploadsRouter from "./uploads.routes.js";
 import studioRouter from "./studio.routes.js";
+import quotesRouter from "./quotes.routes.js";
 
 // Lightweight root
 const index = Router();
@@ -28,4 +29,5 @@ export default {
   shorts: shortsRouter,     // "/shorts"
   uploads: uploadsRouter,   // "/uploads"
   studio: studioRouter,     // "/studio"
+  quotes: quotesRouter,     // "/generate-quote"
 };
