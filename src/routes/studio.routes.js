@@ -2,6 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import requireAuth from "../middleware/requireAuth.js";
 import { startStudio, getStudio, generateQuoteCandidates, generateImageCandidates, chooseCandidate, finalizeStudio, listStudios, deleteStudio, generateVideoCandidates, finalizeStudioMulti, createRemix, listRemixes, generateSocialImage, generateCaption } from "../services/studio.service.js";
+import crypto from "node:crypto";
 import { bus, sendEvent } from "../utils/events.js";
 import { resolveStockVideo } from "../services/stock.video.provider.js";
 
@@ -81,15 +82,41 @@ r.post("/video", async (req, res) => {
 });
 
 r.post("/quote", async (req, res) => {
-  const parsed = QuoteSchema.safeParse(req.body || {});
-  if (!parsed.success) return res.status(400).json({ success: false, error: "INVALID_INPUT", detail: parsed.error.flatten() });
-  const { studioId, mode, text, count = 3 } = parsed.data;
+  const t0 = Date.now();
   try {
-    const q = await generateQuoteCandidates({ uid: req.user.uid, studioId, mode, text, template: undefined, count });
-    return res.json({ success: true, data: { quote: q } });
+    const parsed = QuoteSchema.safeParse(req.body || {});
+    if (!parsed.success) {
+      return res.json({ success: false, error: 'BAD_REQUEST', detail: 'missing or invalid fields' });
+    }
+    const { studioId, mode, text, count = 3 } = parsed.data;
+    const uid = req.user?.uid || 'anon';
+
+    try {
+      const q = await generateQuoteCandidates({ uid, studioId, mode, text, template: undefined, count });
+      const ms = Date.now() - t0;
+      const okLog = { studioId, ms, provider: process.env.QUOTES_PROVIDER || 'curated/local', model: null, charsOut: (q?.candidates?.[0]?.text || '').length, promptHash: crypto.createHash('sha1').update(String(text||'')).digest('hex').slice(0,8) };
+      console.log('[quote][ok]', JSON.stringify(okLog));
+      return res.json({ success: true, data: { quote: q } });
+    } catch (e) {
+      const ms = Date.now() - t0;
+      const errObj = { studioId, ms, provider: process.env.QUOTES_PROVIDER || 'curated/local', model: null, code: e?.code || 'GEN_FAILED', message: e?.message || String(e), stackTop: (e?.stack||'').split('\n')[0] };
+      console.error('[quote][err]', JSON.stringify(errObj));
+      return res.json({ success: false, error: 'STUDIO_QUOTE_FAILED', detail: e?.message || 'quote failed', cause: e?.code || 'GEN_FAILED' });
+    }
   } catch (e) {
-    return res.status(500).json({ success: false, error: "STUDIO_QUOTE_FAILED" });
+    const ms = Date.now() - t0;
+    const errObj = { studioId: req.body?.studioId || null, ms, provider: process.env.QUOTES_PROVIDER || 'curated/local', model: null, code: 'ROUTE_FAIL', message: e?.message || String(e), stackTop: (e?.stack||'').split('\n')[0] };
+    console.error('[quote][err]', JSON.stringify(errObj));
+    return res.json({ success: false, error: 'STUDIO_QUOTE_FAILED', detail: e?.message || 'route failed', cause: 'ROUTE_FAIL' });
   }
+});
+
+// Debug: quick ping for provider state
+r.get('/dev/quote/ping', async (_req, res) => {
+  const provider = process.env.QUOTES_PROVIDER || 'openai';
+  const hasOpenAI = !!process.env.OPENAI_API_KEY;
+  console.log('[dev][quote] provider', provider, 'OPENAI_API_KEY', hasOpenAI ? 'set' : 'missing');
+  return res.json({ ok: true, provider, hasKey: hasOpenAI });
 });
 
 r.post("/image", async (req, res) => {
