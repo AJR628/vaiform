@@ -5,7 +5,7 @@ import { startStudio, getStudio, generateQuoteCandidates, generateImageCandidate
 import crypto from "node:crypto";
 import { bus, sendEvent } from "../utils/events.js";
 import { resolveStockVideo } from "../services/stock.video.provider.js";
-import { getStudio as storeGet, createStudio as storeCreate, listRecent as storeList } from "../studio/store.js";
+import { getStudio as storeGet, createStudio as storeCreate, listRecent as storeList, getOrCreate as storeGetOrCreate } from "../studio/store.js";
 
 const r = Router();
 r.use(requireAuth);
@@ -37,7 +37,7 @@ r.use(async (req, res, next) => {
     if (!s) {
       console.log('[studio][get][miss]', JSON.stringify({ id: studioId }));
       if (isQuoteOrChoose) {
-        const created = await storeCreate({ id: studioId, status: 'choosing' });
+        const created = storeGetOrCreate(studioId);
         req.body.studioId = created.id;
         return next();
       }
@@ -133,14 +133,12 @@ r.post("/quote", async (req, res) => {
 
     try {
       // Ensure studio exists (auto-create if missing) and set status
-      const { getStudio: SGet, createStudio: SCreate, setStatus: SSetStatus, STORE_INSTANCE_ID } = await import('../studio/store.js');
-      console.log('[quote][storeInst]', STORE_INSTANCE_ID);
-      let s = SGet(studioId);
-      if (!s) s = SCreate({ id: studioId, status: 'choosing' });
-      else SSetStatus(studioId, 'choosing');
+      const { getOrCreate: SGetOrCreate, touch: STouch } = await import('../studio/store.js');
+      let s = SGetOrCreate(studioId);
+      STouch(studioId, { status: 'choosing' });
 
       const q = await generateQuoteCandidates({ uid, studioId, mode, text, template: undefined, count });
-      SSetStatus(studioId, 'ready');
+      STouch(studioId, { status: 'ready', last: { quoteAt: Date.now() } });
       const ms = Date.now() - t0;
       const okLog = { studioId, ms, provider: process.env.QUOTES_PROVIDER || 'curated/local', model: null, charsOut: (q?.candidates?.[0]?.text || '').length, promptHash: crypto.createHash('sha1').update(String(text||'')).digest('hex').slice(0,8) };
       console.log('[quote][ok]', JSON.stringify(okLog));

@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { MODEL_REGISTRY, STYLE_PRESETS } from "../config/models.js";
 import { getLastTtsState } from "../services/tts.service.js";
-import { STORE_INSTANCE_ID, listStudios as storeList } from "../studio/store.js";
+import { listRecent as storeList } from "../studio/store.js";
 
 const router = Router();
 
@@ -37,9 +37,9 @@ router.get("/", (_req, res) => {
 router.get('/store', async (_req, res) => {
   try {
     const sample = storeList ? storeList(5) : [];
-    return res.json({ ok:true, instance: STORE_INSTANCE_ID, size: sample.length, sample });
+    return res.json({ ok:true, size: sample.length, sample });
   } catch {
-    return res.json({ ok:false, instance: STORE_INSTANCE_ID, size: 0, sample: [] });
+    return res.json({ ok:false, size: 0, sample: [] });
   }
 });
 
