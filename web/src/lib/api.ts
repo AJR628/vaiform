@@ -34,6 +34,12 @@ async function req<T>(path: string, init?: RequestInit): Promise<{ok:true,data:T
   const token = getToken();
   const headers: Record<string,string> = { "Content-Type": "application/json" };
   if (token) headers["Authorization"] = `Bearer ${token}`;
+  // Attach studio header if present in body
+  try {
+    const bodyObj = init?.body ? JSON.parse(String(init.body)) : null;
+    const sid = bodyObj?.studioId || new URLSearchParams(location.search).get('studioId');
+    if (sid) headers['x-studio-id'] = String(sid);
+  } catch {}
   try {
     const r = await fetch(baseUrl() + path.replace(/^\//,""), { ...init, headers: { ...headers, ...(init?.headers||{}) }});
     const text = await r.text();

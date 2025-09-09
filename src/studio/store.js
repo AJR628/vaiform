@@ -1,6 +1,6 @@
 const _mem = new Map();
 
-export function createStudio(id) {
+export function createStudio(id, seed) {
   const now = Date.now();
   const doc = { id: String(id), createdAt: now, updatedAt: now, last: {} };
   _mem.set(doc.id, doc);
@@ -12,7 +12,7 @@ export function getStudio(id) {
 }
 
 // used by UI list; return most recent first
-export function listRecent(limit = 10) {
+export function listRecent(limit = 50) {
   return Array.from(_mem.values())
     .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))
     .slice(0, limit);
