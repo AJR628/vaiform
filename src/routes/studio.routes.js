@@ -5,49 +5,14 @@ import { startStudio, getStudio, generateQuoteCandidates, generateImageCandidate
 import crypto from "node:crypto";
 import { bus, sendEvent } from "../utils/events.js";
 import { resolveStockVideo } from "../services/stock.video.provider.js";
-import { getStudio as storeGet, createStudio as storeCreate, listRecent as storeList, getOrCreate as storeGetOrCreate } from "../studio/store.js";
+import { getOrCreate, touch, listRecent as storeList, getStudio as storeGet } from "../studio/store.js";
+import { ensureStudio } from "../studio/ensure.js";
 
 const r = Router();
 r.use(requireAuth);
 
 // Resilience: auto-create studio for quote/choose when missing; don't auto-create for finalize
-r.use(async (req, res, next) => {
-  try {
-    if (req.method !== 'POST') return next();
-    const p = req.path || '';
-    const b = req.body || {};
-    const studioId = typeof b.studioId === 'string' ? b.studioId.trim() : '';
-    const isQuoteOrChoose = p.includes('/quote') || p.includes('/choose');
-    const isFinalize = p.includes('/finalize');
-
-    if (!studioId) {
-      if (isQuoteOrChoose) {
-        const created = await storeCreate({ status: 'choosing' });
-        req.body.studioId = created.id;
-        console.log('[studio][resume]', JSON.stringify({ id: created.id, ok: true, note: 'auto-created' }));
-        return next();
-      }
-      if (isFinalize) {
-        return res.json({ success:false, error:'BAD_REQUEST', detail:'studioId required' });
-      }
-      return next();
-    }
-
-    const s = await storeGet(studioId);
-    if (!s) {
-      console.log('[studio][get][miss]', JSON.stringify({ id: studioId }));
-      if (isQuoteOrChoose) {
-        const created = storeGetOrCreate(studioId);
-        req.body.studioId = created.id;
-        return next();
-      }
-      return res.json({ success:false, error:'STUDIO_NOT_FOUND' });
-    }
-    return next();
-  } catch {
-    return next();
-  }
-});
+// Apply ensureStudio middleware for critical POST endpoints
 
 const StartSchema = z.object({
   template: z.enum(["calm", "bold", "cosmic", "minimal"]),
@@ -109,7 +74,7 @@ r.post("/start", async (req, res) => {
   }
 });
 
-r.post("/video", async (req, res) => {
+r.post("/video", ensureStudio, async (req, res) => {
   const parsed = VideoSchema.safeParse(req.body || {});
   if (!parsed.success) return res.status(400).json({ success: false, error: "INVALID_INPUT", detail: parsed.error.flatten() });
   const { studioId, kind, query } = parsed.data;
@@ -121,7 +86,7 @@ r.post("/video", async (req, res) => {
   }
 });
 
-r.post("/quote", async (req, res) => {
+r.post("/quote", ensureStudio, async (req, res) => {
   const t0 = Date.now();
   try {
     const parsed = QuoteSchema.safeParse(req.body || {});
@@ -133,12 +98,10 @@ r.post("/quote", async (req, res) => {
 
     try {
       // Ensure studio exists (auto-create if missing) and set status
-      const { getOrCreate: SGetOrCreate, touch: STouch } = await import('../studio/store.js');
-      let s = SGetOrCreate(studioId);
-      STouch(studioId, { status: 'choosing' });
+      touch(studioId, { status: 'choosing' });
 
       const q = await generateQuoteCandidates({ uid, studioId, mode, text, template: undefined, count });
-      STouch(studioId, { status: 'ready', last: { quoteAt: Date.now() } });
+      touch(studioId, { status: 'ready', last: { quoteAt: Date.now() } });
       const ms = Date.now() - t0;
       const okLog = { studioId, ms, provider: process.env.QUOTES_PROVIDER || 'curated/local', model: null, charsOut: (q?.candidates?.[0]?.text || '').length, promptHash: crypto.createHash('sha1').update(String(text||'')).digest('hex').slice(0,8) };
       console.log('[quote][ok]', JSON.stringify(okLog));
@@ -165,7 +128,7 @@ r.get('/dev/quote/ping', async (_req, res) => {
   return res.json({ ok: true, provider, hasKey: hasOpenAI });
 });
 
-r.post("/image", async (req, res) => {
+r.post("/image", ensureStudio, async (req, res) => {
   const parsed = ImageSchema.safeParse(req.body || {});
   if (!parsed.success) return res.status(400).json({ success: false, error: "INVALID_INPUT", detail: parsed.error.flatten() });
   const { studioId, kind, query, imageUrl, uploadUrl, prompt, kenBurns } = parsed.data;
@@ -177,7 +140,7 @@ r.post("/image", async (req, res) => {
   }
 });
 
-r.post("/choose", async (req, res) => {
+r.post("/choose", ensureStudio, async (req, res) => {
   const parsed = ChooseSchema.safeParse(req.body || {});
   if (!parsed.success) return res.status(400).json({ success: false, error: "INVALID_INPUT", detail: parsed.error.flatten() });
   const { studioId, track, candidateId } = parsed.data;
@@ -190,7 +153,7 @@ r.post("/choose", async (req, res) => {
   }
 });
 
-r.post("/finalize", async (req, res) => {
+r.post("/finalize", ensureStudio, async (req, res) => {
   const parsed = FinalizeSchema.safeParse(req.body || {});
   if (!parsed.success) return res.status(400).json({ success: false, error: "INVALID_INPUT", detail: parsed.error.flatten() });
   const { studioId, voiceover = false, wantAttribution = true, captionMode = "progress", renderSpec, formats, wantImage = true, wantAudio = true } = parsed.data;

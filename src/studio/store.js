@@ -2,13 +2,13 @@ const _mem = new Map();
 
 export function createStudio(id) {
   const now = Date.now();
-  const doc = { id, createdAt: now, updatedAt: now, last: {} };
-  _mem.set(id, doc);
+  const doc = { id: String(id), createdAt: now, updatedAt: now, last: {} };
+  _mem.set(doc.id, doc);
   return doc;
 }
 
 export function getStudio(id) {
-  return _mem.get(id) || null;
+  return _mem.get(String(id)) || null;
 }
 
 // used by UI list; return most recent first
@@ -29,7 +29,7 @@ export function touch(id, data = {}) {
   const s = getOrCreate(id);
   Object.assign(s, data);
   s.updatedAt = Date.now();
-  _mem.set(id, s);
+  _mem.set(s.id, s);
   return s;
 }
 
