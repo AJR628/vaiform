@@ -5,9 +5,49 @@ import { startStudio, getStudio, generateQuoteCandidates, generateImageCandidate
 import crypto from "node:crypto";
 import { bus, sendEvent } from "../utils/events.js";
 import { resolveStockVideo } from "../services/stock.video.provider.js";
+import { getStudio as storeGet, createStudio as storeCreate, listRecent as storeList } from "../studio/store.js";
 
 const r = Router();
 r.use(requireAuth);
+
+// Resilience: auto-create studio for quote/choose when missing; don't auto-create for finalize
+r.use(async (req, res, next) => {
+  try {
+    if (req.method !== 'POST') return next();
+    const p = req.path || '';
+    const b = req.body || {};
+    const studioId = typeof b.studioId === 'string' ? b.studioId.trim() : '';
+    const isQuoteOrChoose = p.includes('/quote') || p.includes('/choose');
+    const isFinalize = p.includes('/finalize');
+
+    if (!studioId) {
+      if (isQuoteOrChoose) {
+        const created = await storeCreate({ status: 'choosing' });
+        req.body.studioId = created.id;
+        console.log('[studio][resume]', JSON.stringify({ id: created.id, ok: true, note: 'auto-created' }));
+        return next();
+      }
+      if (isFinalize) {
+        return res.json({ success:false, error:'BAD_REQUEST', detail:'studioId required' });
+      }
+      return next();
+    }
+
+    const s = await storeGet(studioId);
+    if (!s) {
+      console.log('[studio][get][miss]', JSON.stringify({ id: studioId }));
+      if (isQuoteOrChoose) {
+        const created = await storeCreate({ id: studioId, status: 'choosing' });
+        req.body.studioId = created.id;
+        return next();
+      }
+      return res.json({ success:false, error:'STUDIO_NOT_FOUND' });
+    }
+    return next();
+  } catch {
+    return next();
+  }
+});
 
 const StartSchema = z.object({
   template: z.enum(["calm", "bold", "cosmic", "minimal"]),
@@ -283,6 +323,16 @@ r.get("/", async (req, res) => {
     return res.json({ success: true, data: list });
   } catch (e) {
     return res.status(500).json({ success: false, error: "STUDIO_LIST_FAILED" });
+  }
+});
+
+// Dev: list recent studios from store
+r.get('/dev/studios', async (_req, res) => {
+  try {
+    const rows = await storeList(25);
+    return res.json({ ok:true, data: rows.map(s => ({ id: s.id, status: s.status, updatedAt: s.updatedAt })) });
+  } catch {
+    return res.json({ ok:false, data: [] });
   }
 });
 
