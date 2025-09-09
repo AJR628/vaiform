@@ -5,13 +5,12 @@ import { startStudio, getStudio, generateQuoteCandidates, generateImageCandidate
 import crypto from "node:crypto";
 import { bus, sendEvent } from "../utils/events.js";
 import { resolveStockVideo } from "../services/stock.video.provider.js";
-import { createStudio, listRecent, getStudio } from "../studio/store.js";
+import { dump as storeDump, get as storeGet } from "../studio/store.js";
 import { ensureStudio } from "../studio/ensure.js";
 
 const r = Router();
 r.use(requireAuth);
 
-// Resilience: auto-create studio for quote/choose when missing; don't auto-create for finalize
 // Apply ensureStudio middleware for critical POST endpoints
 
 const StartSchema = z.object({
@@ -295,14 +294,15 @@ r.get("/", async (req, res) => {
   }
 });
 
-// Dev: list recent studios from store
-r.get('/dev/studios', async (_req, res) => {
-  try {
-    const rows = await storeList(25);
-    return res.json({ ok:true, data: rows.map(s => ({ id: s.id, status: s.status, updatedAt: s.updatedAt })) });
-  } catch {
-    return res.json({ ok:false, data: [] });
-  }
+// Diagnostics
+r.get('/_dump', (req, res) => {
+  return res.json({ success:true, data: storeDump() });
+});
+r.get('/_get/:studioId', (req, res) => {
+  const id = String(req.params?.studioId || '').trim();
+  const s = storeGet(id);
+  if (!s) return res.json({ success:false });
+  return res.json({ success:true, data: s });
 });
 
 const ResumeSchema = z.object({ studioId: z.string().min(3) });
