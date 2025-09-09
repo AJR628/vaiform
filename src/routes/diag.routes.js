@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { MODEL_REGISTRY, STYLE_PRESETS } from "../config/models.js";
 import { getLastTtsState } from "../services/tts.service.js";
-import { listRecent as storeList } from "../studio/store.js";
+import { dump as storeDump } from "../studio/store.js";
 
 const router = Router();
 
@@ -36,8 +36,9 @@ router.get("/", (_req, res) => {
 
 router.get('/store', async (_req, res) => {
   try {
-    const sample = storeList ? storeList(5) : [];
-    return res.json({ ok:true, size: sample.length, sample });
+    const all = storeDump ? storeDump() : {};
+    const sample = Object.values(all).slice(-5).reverse();
+    return res.json({ ok:true, size: Object.keys(all).length, sample });
   } catch {
     return res.json({ ok:false, size: 0, sample: [] });
   }
