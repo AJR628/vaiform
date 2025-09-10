@@ -187,6 +187,11 @@ if (routes?.limits) {
   app.use("/limits", routes.limits);
   console.log("✅ Mounted limits at /limits and /api/limits");
 }
+if (routes?.voice) {
+  app.use("/api/voice", routes.voice);
+  app.use("/voice", routes.voice);
+  console.log("✅ Mounted voice at /voice and /api/voice");
+}
 if (routes?.creative) {
   app.use("/creative", routes.creative);
   console.log("✅ Mounted creative at /creative");
