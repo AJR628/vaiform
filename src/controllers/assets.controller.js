@@ -1,5 +1,6 @@
 import { AssetsOptionsSchema, AiImagesSchema } from "../schemas/quotes.schema.js";
-import { pexelsSearchPhotos, pexelsSearchVideos } from "../services/pexels.videos.provider.js";
+import { pexelsSearchVideos } from "../services/pexels.videos.provider.js";
+import { pexelsSearchPhotos } from "../services/pexels.photos.provider.js";
 import { generateAIImage } from "../services/ai.image.provider.js";
 
 export async function getAssetsOptions(req, res) {
