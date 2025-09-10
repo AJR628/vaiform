@@ -274,8 +274,8 @@ export async function renderVideoQuoteOverlay({
     const CANVAS_H = H;
     const cap = wrapCaption(captionText, CANVAS_W, CANVAS_H, { maxLines: 2, fontMax: 64, fontMin: 28 });
     drawCaption = `drawtext=${[
-      fontfile ? `fontfile='${fontfile}'` : null,
       `text='${escText(cap.text)}'`,
+      fontfile ? `fontfile='${fontfile}'` : null,
       `x=(w-text_w)/2`,
       `y=${cap.yExpr}`,
       `fontsize=${cap.fontsize}`,
@@ -289,6 +289,14 @@ export async function renderVideoQuoteOverlay({
   try { if (drawAuthor) console.log('[ffmpeg] drawAuthor', drawAuthor); } catch {}
   try { if (drawWatermark) console.log('[ffmpeg] drawWatermark', drawWatermark); } catch {}
   try { if (drawCaption) console.log('[ffmpeg] drawCaption', drawCaption); } catch {}
+
+  // Debug: Log all draw layers before building the video chain
+  console.log('[ffmpeg] DEBUG - drawMain:', drawMain);
+  console.log('[ffmpeg] DEBUG - drawAuthor:', drawAuthor);
+  console.log('[ffmpeg] DEBUG - drawWatermark:', drawWatermark);
+  console.log('[ffmpeg] DEBUG - drawCaption:', drawCaption);
+  console.log('[ffmpeg] DEBUG - text param:', text);
+  console.log('[ffmpeg] DEBUG - captionText param:', captionText);
 
   const vchain = buildVideoChain({ width: W, height: H, videoVignette, drawLayers: [drawMain, drawAuthor, drawWatermark, drawCaption].filter(Boolean) });
 
