@@ -5,29 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Creative Studio - Vaiform</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Firebase SDK -->
-    <script type="module">
-        import { auth, db, provider } from "./js/config.js";
-        import { signInWithPopup, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-        import { apiFetch } from "./api.mjs";
-        
-        // Make auth available globally
-        window.auth = auth;
-        window.signInWithPopup = signInWithPopup;
-        window.signOut = signOut;
-        window.onAuthStateChanged = onAuthStateChanged;
-        window.apiFetch = apiFetch;
-        
-        // Set up token provider for apiFetch
-        import { setTokenProvider } from "./api.mjs";
-        setTokenProvider(async () => {
-            const user = auth.currentUser;
-            if (user) {
-                return await user.getIdToken();
-            }
-            return null;
-        });
-    </script>
+    <!-- Firebase SDK - Load the same way as main site -->
+    <script type="module" src="./frontend.js"></script>
     <style>
         .loading { opacity: 0.6; pointer-events: none; }
         .error { color: #ef4444; }
@@ -254,7 +233,7 @@
             }
             
             try {
-                const data = await apiFetch('/limits/usage');
+                const data = await window.apiFetch('/limits/usage');
                 if (data.ok) {
                     currentLimits = data.data;
                     updatePlanUI();
@@ -308,7 +287,7 @@
             hideError('quote-error');
             
             try {
-                const data = await apiFetch('/quotes/generate-quote', {
+                const data = await window.apiFetch('/quotes/generate-quote', {
                     method: 'POST',
                     body: {
                         text,
@@ -353,7 +332,7 @@
             
             try {
                 const perPage = currentLimits?.isPro ? 16 : 2;
-                const data = await apiFetch('/assets/options', {
+                const data = await window.apiFetch('/assets/options', {
                     method: 'POST',
                     body: {
                         type: currentAssetType,
@@ -468,7 +447,7 @@
             hideError('quote-error');
             
             try {
-                const data = await apiFetch('/quotes/remix', {
+                const data = await window.apiFetch('/quotes/remix', {
                     method: 'POST',
                     body: {
                         originalText: currentQuote.text,
@@ -534,7 +513,7 @@
             };
         });
 
-        // Authentication management
+        // Authentication management - use existing auth from frontend.js
         function updateAuthUI() {
             const planBadge = document.getElementById('plan-badge');
             const usageInfo = document.getElementById('usage-info');
@@ -550,38 +529,7 @@
             }
         }
 
-        // Login function
-        async function login() {
-            try {
-                const result = await signInWithPopup(auth, provider);
-                currentUser = result.user;
-                isAuthenticated = true;
-                updateAuthUI();
-            } catch (error) {
-                console.error('Login failed:', error);
-                showError('plan-badge', 'Login Failed');
-            }
-        }
-
-        // Logout function
-        async function logout() {
-            try {
-                await signOut(auth);
-                currentUser = null;
-                isAuthenticated = false;
-                currentLimits = null;
-                currentQuote = null;
-                selectedAsset = null;
-                updateAuthUI();
-                // Clear UI
-                document.getElementById('quote-result').classList.add('hidden');
-                document.getElementById('asset-grid').innerHTML = '';
-            } catch (error) {
-                console.error('Logout failed:', error);
-            }
-        }
-
-        // Add login/logout buttons to header
+        // Use existing login/logout from main site
         function addAuthButtons() {
             const header = document.querySelector('header .flex.items-center.gap-6');
             const authDiv = document.createElement('div');
@@ -592,8 +540,17 @@
             `;
             header.appendChild(authDiv);
             
-            document.getElementById('login-btn').onclick = login;
-            document.getElementById('logout-btn').onclick = logout;
+            // Use existing login/logout functions from frontend.js
+            document.getElementById('login-btn').onclick = () => {
+                if (window.loginBtn) {
+                    window.loginBtn.click();
+                }
+            };
+            document.getElementById('logout-btn').onclick = () => {
+                if (window.logoutBtn) {
+                    window.logoutBtn.click();
+                }
+            };
         }
 
         // Update auth buttons visibility
@@ -610,26 +567,36 @@
             }
         }
 
-        // Initialize authentication
+        // Initialize authentication - wait for frontend.js to load
         function initAuth() {
-            addAuthButtons();
-            
-            // Listen for auth state changes
-            onAuthStateChanged(auth, (user) => {
-                if (user) {
-                    currentUser = user;
-                    isAuthenticated = true;
+            // Wait for frontend.js to initialize
+            const checkAuth = () => {
+                if (window.auth && window.onAuthStateChanged) {
+                    addAuthButtons();
+                    
+                    // Listen for auth state changes using existing auth
+                    window.onAuthStateChanged(window.auth, (user) => {
+                        if (user) {
+                            currentUser = user;
+                            isAuthenticated = true;
+                        } else {
+                            currentUser = null;
+                            isAuthenticated = false;
+                        }
+                        updateAuthUI();
+                        updateAuthButtons();
+                    });
                 } else {
-                    currentUser = null;
-                    isAuthenticated = false;
+                    // Retry in 100ms if auth not ready yet
+                    setTimeout(checkAuth, 100);
                 }
-                updateAuthUI();
-                updateAuthButtons();
-            });
+            };
+            
+            checkAuth();
         }
 
-        // Initialize
-        initAuth();
+        // Initialize when page loads
+        document.addEventListener('DOMContentLoaded', initAuth);
     </script>
 </body>
 </html>
