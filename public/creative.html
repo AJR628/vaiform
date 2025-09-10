@@ -5,6 +5,29 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Creative Studio - Vaiform</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Firebase SDK -->
+    <script type="module">
+        import { auth, db, provider } from "./js/config.js";
+        import { signInWithPopup, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+        import { apiFetch } from "./api.mjs";
+        
+        // Make auth available globally
+        window.auth = auth;
+        window.signInWithPopup = signInWithPopup;
+        window.signOut = signOut;
+        window.onAuthStateChanged = onAuthStateChanged;
+        window.apiFetch = apiFetch;
+        
+        // Set up token provider for apiFetch
+        import { setTokenProvider } from "./api.mjs";
+        setTokenProvider(async () => {
+            const user = auth.currentUser;
+            if (user) {
+                return await user.getIdToken();
+            }
+            return null;
+        });
+    </script>
     <style>
         .loading { opacity: 0.6; pointer-events: none; }
         .error { color: #ef4444; }
@@ -202,9 +225,8 @@
         let currentAssetType = 'images';
         let currentAssetPage = 1;
         let hasMoreAssets = false;
-
-        // API base URL - use your domain
-        const API_BASE = window.location.origin;
+        let isAuthenticated = false;
+        let currentUser = null;
 
         // Helper functions
         function showError(elementId, message) {
@@ -225,20 +247,14 @@
 
         // Load usage limits
         async function loadLimits() {
+            if (!isAuthenticated) {
+                showError('plan-badge', 'Auth Required');
+                showError('usage-info', 'Please log in');
+                return;
+            }
+            
             try {
-                const response = await fetch(`${API_BASE}/api/limits/usage`, {
-                    headers: {
-                        'Authorization': 'Bearer test-token'
-                    }
-                });
-                
-                if (response.status === 401) {
-                    showError('plan-badge', 'Auth Required');
-                    showError('usage-info', 'Please log in');
-                    return;
-                }
-                
-                const data = await response.json();
+                const data = await apiFetch('/limits/usage');
                 if (data.ok) {
                     currentLimits = data.data;
                     updatePlanUI();
@@ -248,7 +264,7 @@
                 }
             } catch (error) {
                 showError('plan-badge', 'Error');
-                showError('usage-info', 'Network error');
+                showError('usage-info', error.message || 'Network error');
             }
         }
 
@@ -278,6 +294,11 @@
 
         // Quote generation
         async function generateQuote() {
+            if (!isAuthenticated) {
+                showError('quote-error', 'Please log in to generate quotes');
+                return;
+            }
+            
             const text = document.getElementById('quote-text').value;
             const tone = document.getElementById('quote-tone').value;
             
@@ -287,20 +308,15 @@
             hideError('quote-error');
             
             try {
-                const response = await fetch(`${API_BASE}/api/quotes/generate-quote`, {
+                const data = await apiFetch('/quotes/generate-quote', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': 'Bearer test-token'
-                    },
-                    body: JSON.stringify({
+                    body: {
                         text,
                         tone: tone === 'default' ? undefined : tone,
                         maxChars: 120
-                    })
+                    }
                 });
                 
-                const data = await response.json();
                 if (data.ok) {
                     currentQuote = data.data.quote;
                     displayQuote(currentQuote);
@@ -308,7 +324,7 @@
                     showError('quote-error', data.reason || 'Failed to generate quote');
                 }
             } catch (error) {
-                showError('quote-error', 'Network error');
+                showError('quote-error', error.message || 'Network error');
             } finally {
                 setLoading('generate-quote-btn', false);
             }
@@ -327,27 +343,26 @@
         // Asset loading
         async function loadAssets(page = 1) {
             if (currentAssetType === 'ai') return;
+            if (!isAuthenticated) {
+                showError('asset-error', 'Please log in to load assets');
+                return;
+            }
             
             setLoading('search-assets-btn', true);
             hideError('asset-error');
             
             try {
                 const perPage = currentLimits?.isPro ? 16 : 2;
-                const response = await fetch(`${API_BASE}/api/assets/options`, {
+                const data = await apiFetch('/assets/options', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': 'Bearer test-token'
-                    },
-                    body: JSON.stringify({
+                    body: {
                         type: currentAssetType,
                         query: document.getElementById('asset-query').value,
                         page,
                         perPage
-                    })
+                    }
                 });
                 
-                const data = await response.json();
                 if (data.ok) {
                     if (page === 1) {
                         displayAssets(data.data.items);
@@ -361,7 +376,7 @@
                     showError('asset-error', data.reason || 'Failed to load assets');
                 }
             } catch (error) {
-                showError('asset-error', 'Network error');
+                showError('asset-error', error.message || 'Network error');
             } finally {
                 setLoading('search-assets-btn', false);
             }
@@ -441,6 +456,41 @@
             }
         }
 
+        // Remix quote function
+        async function remixQuote(mode) {
+            if (!currentQuote) return;
+            if (!isAuthenticated) {
+                showError('quote-error', 'Please log in to remix quotes');
+                return;
+            }
+            
+            setLoading('generate-quote-btn', true);
+            hideError('quote-error');
+            
+            try {
+                const data = await apiFetch('/quotes/remix', {
+                    method: 'POST',
+                    body: {
+                        originalText: currentQuote.text,
+                        mode,
+                        targetTone: mode === 'tone_shift' ? document.getElementById('quote-tone').value : undefined,
+                        maxChars: 120
+                    }
+                });
+                
+                if (data.ok) {
+                    currentQuote = data.data.quote;
+                    displayQuote(currentQuote);
+                } else {
+                    showError('quote-error', data.reason || 'Failed to remix quote');
+                }
+            } catch (error) {
+                showError('quote-error', error.message || 'Network error');
+            } finally {
+                setLoading('generate-quote-btn', false);
+            }
+        }
+
         // Event listeners
         document.getElementById('generate-quote-btn').onclick = generateQuote;
         document.getElementById('search-assets-btn').onclick = () => loadAssets(1);
@@ -448,6 +498,11 @@
         document.getElementById('render-btn').onclick = () => {
             alert('Render functionality will be wired to existing render endpoint');
         };
+
+        // Remix button event listeners
+        document.getElementById('regenerate-btn').onclick = () => remixQuote('regenerate');
+        document.getElementById('rephrase-btn').onclick = () => remixQuote('rephrase');
+        document.getElementById('tone-shift-btn').onclick = () => remixQuote('tone_shift');
 
         // Tab switching
         document.querySelectorAll('[data-type]').forEach(tab => {
@@ -479,8 +534,102 @@
             };
         });
 
+        // Authentication management
+        function updateAuthUI() {
+            const planBadge = document.getElementById('plan-badge');
+            const usageInfo = document.getElementById('usage-info');
+            
+            if (isAuthenticated && currentUser) {
+                planBadge.textContent = 'Loading...';
+                usageInfo.textContent = 'Loading usage...';
+                loadLimits();
+            } else {
+                planBadge.textContent = 'Auth Required';
+                planBadge.className = 'px-3 py-1 rounded-full text-sm font-medium bg-red-600 text-white';
+                usageInfo.textContent = 'Please log in';
+            }
+        }
+
+        // Login function
+        async function login() {
+            try {
+                const result = await signInWithPopup(auth, provider);
+                currentUser = result.user;
+                isAuthenticated = true;
+                updateAuthUI();
+            } catch (error) {
+                console.error('Login failed:', error);
+                showError('plan-badge', 'Login Failed');
+            }
+        }
+
+        // Logout function
+        async function logout() {
+            try {
+                await signOut(auth);
+                currentUser = null;
+                isAuthenticated = false;
+                currentLimits = null;
+                currentQuote = null;
+                selectedAsset = null;
+                updateAuthUI();
+                // Clear UI
+                document.getElementById('quote-result').classList.add('hidden');
+                document.getElementById('asset-grid').innerHTML = '';
+            } catch (error) {
+                console.error('Logout failed:', error);
+            }
+        }
+
+        // Add login/logout buttons to header
+        function addAuthButtons() {
+            const header = document.querySelector('header .flex.items-center.gap-6');
+            const authDiv = document.createElement('div');
+            authDiv.className = 'flex items-center gap-4';
+            authDiv.innerHTML = `
+                <button id="login-btn" class="px-3 py-1 bg-blue-600 hover:bg-blue-500 rounded text-sm hidden">Login</button>
+                <button id="logout-btn" class="px-3 py-1 bg-gray-600 hover:bg-gray-500 rounded text-sm hidden">Logout</button>
+            `;
+            header.appendChild(authDiv);
+            
+            document.getElementById('login-btn').onclick = login;
+            document.getElementById('logout-btn').onclick = logout;
+        }
+
+        // Update auth buttons visibility
+        function updateAuthButtons() {
+            const loginBtn = document.getElementById('login-btn');
+            const logoutBtn = document.getElementById('logout-btn');
+            
+            if (isAuthenticated) {
+                loginBtn.classList.add('hidden');
+                logoutBtn.classList.remove('hidden');
+            } else {
+                loginBtn.classList.remove('hidden');
+                logoutBtn.classList.add('hidden');
+            }
+        }
+
+        // Initialize authentication
+        function initAuth() {
+            addAuthButtons();
+            
+            // Listen for auth state changes
+            onAuthStateChanged(auth, (user) => {
+                if (user) {
+                    currentUser = user;
+                    isAuthenticated = true;
+                } else {
+                    currentUser = null;
+                    isAuthenticated = false;
+                }
+                updateAuthUI();
+                updateAuthButtons();
+            });
+        }
+
         // Initialize
-        loadLimits();
+        initAuth();
     </script>
 </body>
 </html>
