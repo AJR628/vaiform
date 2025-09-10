@@ -31,20 +31,21 @@
                     <a href="/buy-credits.html" class="hover:text-indigo-400">Buy Credits</a>
                 </nav>
             </div>
-        </div>
-    </header>
-
-    <div class="max-w-6xl mx-auto p-6 space-y-8">
-        <!-- Header with Plan Badge -->
-        <div class="flex items-center justify-between">
-            <h1 class="text-3xl font-bold">Creative Studio</h1>
             <div class="flex items-center gap-4">
                 <div id="credit-display" class="text-sm text-gray-300 logged-in hidden">
                     Credits: <span id="credit-count">--</span>
                 </div>
                 <button id="login-button" class="px-3 py-1 bg-blue-600 hover:bg-blue-500 rounded text-sm logged-out hidden">Login</button>
                 <button id="logout-button" class="px-3 py-1 bg-gray-600 hover:bg-gray-500 rounded text-sm logged-in hidden">Logout</button>
+                <button id="theme-toggle" class="text-yellow-400 hover:text-yellow-300 text-xl">🌙</button>
             </div>
+        </div>
+    </header>
+
+    <div class="max-w-6xl mx-auto p-6 space-y-8">
+        <!-- Header -->
+        <div class="flex items-center justify-between">
+            <h1 class="text-3xl font-bold">Creative Studio</h1>
         </div>
 
         <!-- Quote Generation Section -->
@@ -141,10 +142,22 @@
                         placeholder="Describe the image you want..."
                         class="flex-1 bg-gray-800 border border-gray-700 rounded px-3 py-2"
                     />
-                    <select id="ai-style" class="bg-gray-800 border border-gray-700 rounded px-3 py-2">
-                        <option value="realistic">Realistic</option>
-                        <option value="creative">Creative</option>
-                    </select>
+                    <div class="flex flex-col items-center gap-2">
+                        <label class="text-sm text-gray-300">Style</label>
+                        <div class="flex items-center gap-2">
+                            <span class="text-xs text-gray-400">Realistic</span>
+                            <input
+                                type="range"
+                                id="ai-style-slider"
+                                min="0"
+                                max="1"
+                                step="0.1"
+                                value="0.5"
+                                class="w-20"
+                            />
+                            <span class="text-xs text-gray-400">Creative</span>
+                        </div>
+                    </div>
                     <button
                         id="generate-ai-btn"
                         class="px-4 py-2 bg-purple-600 hover:bg-purple-500 disabled:bg-gray-600 rounded"
@@ -232,7 +245,9 @@
                 return; 
             }
             try {
-                const data = await window.apiFetch("/credits", { method: "GET" });
+                // Use the apiFetch from the imported module
+                const { apiFetch } = await import('./api.mjs');
+                const data = await apiFetch("/credits", { method: "GET" });
                 const credits = Number(data?.credits ?? 0);
                 updateCreditUI(Number.isNaN(credits) ? 0 : credits);
             } catch (err) {
@@ -265,7 +280,8 @@
             hideError('quote-error');
             
             try {
-                const data = await window.apiFetch('/quotes/generate-quote', {
+                const { apiFetch } = await import('./api.mjs');
+                const data = await apiFetch('/quotes/generate-quote', {
                     method: 'POST',
                     body: {
                         text,
@@ -309,8 +325,9 @@
             hideError('asset-error');
             
             try {
-                const perPage = currentLimits?.isPro ? 16 : 2;
-                const data = await window.apiFetch('/assets/options', {
+                const { apiFetch } = await import('./api.mjs');
+                const perPage = 16; // Default to 16 for now
+                const data = await apiFetch('/assets/options', {
                     method: 'POST',
                     body: {
                         type: currentAssetType,
@@ -363,15 +380,26 @@
             }`;
             div.onclick = () => selectAsset(asset);
             
-            const media = currentAssetType === 'images' 
-                ? `<img src="${asset.thumbUrl || asset.fileUrl}" alt="${asset.query}" class="w-full h-32 object-cover" />`
-                : `<video src="${asset.fileUrl}" class="w-full h-32 object-cover" muted playsinline></video>`;
+            let media;
+            if (asset.provider === 'ai' || asset.type === 'ai-generated') {
+                media = `<img src="${asset.thumbUrl || asset.fileUrl}" alt="${asset.query}" class="w-full h-32 object-cover" />`;
+            } else if (currentAssetType === 'images') {
+                media = `<img src="${asset.thumbUrl || asset.fileUrl}" alt="${asset.query}" class="w-full h-32 object-cover" />`;
+            } else {
+                media = `<video src="${asset.fileUrl}" class="w-full h-32 object-cover" muted playsinline></video>`;
+            }
+            
+            const attribution = asset.provider === 'ai' 
+                ? '<div class="text-purple-400 truncate">AI Generated</div>'
+                : asset.photographer 
+                    ? `<div class="text-gray-400 truncate">by ${asset.photographer}</div>`
+                    : '';
             
             div.innerHTML = `
                 ${media}
                 <div class="p-2 text-xs">
                     <div class="truncate">${asset.query}</div>
-                    ${asset.photographer ? `<div class="text-gray-400 truncate">by ${asset.photographer}</div>` : ''}
+                    ${attribution}
                 </div>
             `;
             
@@ -425,7 +453,8 @@
             hideError('quote-error');
             
             try {
-                const data = await window.apiFetch('/quotes/remix', {
+                const { apiFetch } = await import('./api.mjs');
+                const data = await apiFetch('/quotes/remix', {
                     method: 'POST',
                     body: {
                         originalText: currentQuote.text,
@@ -448,10 +477,77 @@
             }
         }
 
+        // AI Image generation
+        async function generateAiImage() {
+            if (!window.auth?.currentUser) {
+                showError('ai-error', 'Please log in to generate AI images');
+                return;
+            }
+            
+            const prompt = document.getElementById('ai-prompt').value;
+            const styleSlider = document.getElementById('ai-style-slider').value;
+            
+            if (!prompt.trim()) {
+                showError('ai-error', 'Please enter a prompt');
+                return;
+            }
+            
+            setLoading('generate-ai-btn', true);
+            hideError('ai-error');
+            
+            try {
+                const { apiFetch } = await import('./api.mjs');
+                
+                // Map slider value to style: 0-0.5 = realistic, 0.5-1 = cartoon
+                const style = parseFloat(styleSlider) <= 0.5 ? 'realistic' : 'cartoon';
+                
+                const data = await apiFetch('/generate', {
+                    method: 'POST',
+                    body: {
+                        prompt,
+                        style,
+                        count: 1,
+                        options: {}
+                    }
+                });
+                
+                if (data.ok || data.images) {
+                    // Handle successful generation
+                    const images = data.images || data.data?.images || [];
+                    if (images.length > 0) {
+                        // Create a mock asset object for the generated image
+                        const aiAsset = {
+                            id: `ai-${Date.now()}`,
+                            fileUrl: images[0],
+                            thumbUrl: images[0],
+                            query: prompt,
+                            provider: 'ai',
+                            type: 'ai-generated'
+                        };
+                        
+                        // Add to asset grid
+                        const grid = document.getElementById('asset-grid');
+                        const assetElement = createAssetElement(aiAsset);
+                        grid.insertBefore(assetElement, grid.firstChild);
+                        
+                        // Auto-select the generated image
+                        selectAsset(aiAsset);
+                    }
+                } else {
+                    showError('ai-error', data.reason || 'Failed to generate AI image');
+                }
+            } catch (error) {
+                showError('ai-error', error.message || 'Network error');
+            } finally {
+                setLoading('generate-ai-btn', false);
+            }
+        }
+
         // Event listeners
         document.getElementById('generate-quote-btn').onclick = generateQuote;
         document.getElementById('search-assets-btn').onclick = () => loadAssets(1);
         document.getElementById('load-more-btn').onclick = () => loadAssets(currentAssetPage + 1);
+        document.getElementById('generate-ai-btn').onclick = generateAiImage;
         document.getElementById('render-btn').onclick = () => {
             alert('Render functionality will be wired to existing render endpoint');
         };
@@ -491,8 +587,33 @@
             };
         });
 
+        // Theme toggle functionality
+        function initTheme() {
+            const themeToggle = document.getElementById('theme-toggle');
+            if (!themeToggle) return;
+
+            // Set initial theme
+            if (localStorage.getItem("theme") === "dark") {
+                document.documentElement.classList.add("dark");
+                themeToggle.textContent = "🌙";
+            } else {
+                document.documentElement.classList.remove("dark");
+                themeToggle.textContent = "☀️";
+            }
+
+            // Theme toggle event listener
+            themeToggle.addEventListener("click", () => {
+                const isDark = document.documentElement.classList.toggle("dark");
+                localStorage.setItem("theme", isDark ? "dark" : "light");
+                themeToggle.textContent = isDark ? "🌙" : "☀️";
+            });
+        }
+
         // Initialize authentication using existing system
         document.addEventListener('DOMContentLoaded', () => {
+            // Initialize theme first
+            initTheme();
+            
             // Wait for auth system to be ready
             const checkAuth = () => {
                 if (window.auth && window.onAuthStateChanged) {
