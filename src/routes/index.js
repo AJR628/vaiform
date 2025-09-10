@@ -11,6 +11,8 @@ import shortsRouter from "./shorts.routes.js";
 import uploadsRouter from "./uploads.routes.js";
 import studioRouter from "./studio.routes.js";
 import quotesRouter from "./quotes.routes.js";
+import assetsRouter from "./assets.routes.js";
+import limitsRouter from "./limits.routes.js";
 
 // Lightweight root
 const index = Router();
@@ -30,4 +32,6 @@ export default {
   uploads: uploadsRouter,   // "/uploads"
   studio: studioRouter,     // "/studio"
   quotes: quotesRouter,     // "/generate-quote"
+  assets: assetsRouter,     // "/assets"
+  limits: limitsRouter,     // "/limits"
 };

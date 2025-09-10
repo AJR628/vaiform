@@ -173,9 +173,19 @@ if (routes?.studio) {
   console.log("✅ Mounted studio at /api/studio");
 }
 if (routes?.quotes) {
-  app.use("/api", routes.quotes);
-  app.use("/", routes.quotes);
-  console.log("✅ Mounted quotes at / and /api");
+  app.use("/api/quotes", routes.quotes);
+  app.use("/quotes", routes.quotes);
+  console.log("✅ Mounted quotes at /quotes and /api/quotes");
+}
+if (routes?.assets) {
+  app.use("/api/assets", routes.assets);
+  app.use("/assets", routes.assets);
+  console.log("✅ Mounted assets at /assets and /api/assets");
+}
+if (routes?.limits) {
+  app.use("/api/limits", routes.limits);
+  app.use("/limits", routes.limits);
+  console.log("✅ Mounted limits at /limits and /api/limits");
 }
 
 // ---------- STATIC LAST (disable directory redirects like /dir -> /dir/) ----------
