@@ -979,7 +979,7 @@
                     }
                 });
 
-                if (data.ok) {
+                if (data.success) {
                     audioEl.src = data.data.audio;
                     audioEl.classList.remove('hidden');
                     statusEl.textContent = 'Preview ready - click play to listen';
@@ -1061,7 +1061,7 @@
                     body: payload
                 });
 
-                if (data.ok) {
+                if (data.success) {
                     // Success! Show the result
                     const result = data.data;
                     alert(`Short created successfully! Job ID: ${result.jobId}`);
