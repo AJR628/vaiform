@@ -56,6 +56,23 @@ async function req<T>(path: string, init?: RequestInit): Promise<{ok:true,data:T
 }
 
 export const api = {
+  // New Creative Page endpoints
+  getUsageLimits: () =>
+    req<{plan:string; isPro:boolean; usage:any; limits:any; resetDate:string}>("/api/limits/usage"),
+
+  generateQuote: (p:{text:string; tone?:string; maxChars?:number}) =>
+    req<{quote:{id:string; text:string; author?:string; attributed?:boolean; toneTag?:string}}>("/api/quotes/generate-quote", { method:"POST", body: JSON.stringify(p) }),
+
+  remixQuote: (p:{originalText:string; mode:"regenerate"|"rephrase"|"tone_shift"; targetTone?:string; maxChars?:number}) =>
+    req<{quote:{id:string; text:string; author?:string; attributed?:boolean; toneTag?:string}}>("/api/quotes/remix", { method:"POST", body: JSON.stringify(p) }),
+
+  getAssetsOptions: (p:{type:"images"|"videos"; query?:string; page?:number; perPage?:number}) =>
+    req<{items:Array<{id:string; provider:string; query:string; fileUrl:string; width?:number; height?:number; duration?:number; photographer?:string; sourceUrl?:string; thumbUrl?:string}>; nextPage:boolean}>("/api/assets/options", { method:"POST", body: JSON.stringify(p) }),
+
+  generateAiImages: (p:{prompt:string; style:"realistic"|"creative"; count?:number}) =>
+    req<{images:Array<{id:string; url:string; prompt:string; style:string}>}>("/api/assets/ai-images", { method:"POST", body: JSON.stringify(p) }),
+
+  // Existing Studio endpoints
   studioRemix: (p:{ parentRenderId:string; renderSpec:any; formats?:Array<"9x16"|"1x1"|"16x9">; wantImage?:boolean; wantAudio?:boolean }) =>
     req<any>("/api/studio/remix", { method:"POST", body: JSON.stringify(p) }),
 
