@@ -12,6 +12,23 @@
     </style>
 </head>
 <body class="bg-gray-950 text-white min-h-screen">
+    <!-- Navigation Header -->
+    <header class="bg-gray-900 border-b border-gray-800">
+        <div class="max-w-6xl mx-auto px-4 py-4 flex justify-between items-center">
+            <div class="flex items-center gap-6">
+                <h1 class="text-2xl font-bold text-indigo-400">
+                    <a href="/">Vaiform</a>
+                </h1>
+                <nav class="space-x-4 text-sm font-medium text-gray-300">
+                    <a href="/" class="hover:text-indigo-400">Home</a>
+                    <a href="/creative.html" class="text-indigo-400">Creative Studio</a>
+                    <a href="/my-images.html" class="hover:text-indigo-400">My Images</a>
+                    <a href="/buy-credits.html" class="hover:text-indigo-400">Buy Credits</a>
+                </nav>
+            </div>
+        </div>
+    </header>
+
     <div class="max-w-6xl mx-auto p-6 space-y-8">
         <!-- Header with Plan Badge -->
         <div class="flex items-center justify-between">
@@ -186,8 +203,8 @@
         let currentAssetPage = 1;
         let hasMoreAssets = false;
 
-        // API base URL
-        const API_BASE = 'https://17e0d1d1-e327-483d-b1ea-c41bea08fb59-00-1ef93t84nlhq6.janeway.replit.dev';
+        // API base URL - use your domain
+        const API_BASE = window.location.origin;
 
         // Helper functions
         function showError(elementId, message) {
