@@ -319,21 +319,21 @@
                 <div>
                     <label class="block text-sm font-medium text-gray-300 mb-2">Voice</label>
                     <select id="voiceover-voice" class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2">
-                        <option value="warm-male">Warm Male</option>
-                        <option value="calm-female">Calm Female</option>
-                        <option value="energetic">Energetic</option>
-                        <option value="robotic">Robotic</option>
+                        <option value="">Loading voices...</option>
                     </select>
                 </div>
-                <div class="flex items-end">
+                <div class="flex items-end gap-2">
                     <button
                         id="preview-voice-btn"
-                        class="px-4 py-2 bg-purple-600 hover:bg-purple-500 rounded"
+                        class="px-4 py-2 bg-purple-600 hover:bg-purple-500 rounded disabled:bg-gray-600"
+                        disabled
                     >
                         Preview Voice
                     </button>
+                    <audio id="voice-preview-audio" class="hidden" controls></audio>
                 </div>
             </div>
+            <div id="voice-preview-status" class="text-sm text-gray-400 hidden"></div>
         </div>
 
         <!-- Render Section -->
@@ -378,6 +378,8 @@
         let remixAssets = [];
         let assetCache = new Map(); // Cache for pagination
         let uploadedAssets = [];
+        let availableVoices = [];
+        let currentVoiceId = null;
 
         // Helper functions
         function showError(elementId, message) {
@@ -753,8 +755,10 @@
                     `Caption: ${font} ${weight}, ${size}px, ${opacity}% opacity, ${placement}${background ? ', with background' : ''}`;
                 
                 // Update voiceover preview
-                const voice = document.getElementById('voiceover-voice').value;
-                document.getElementById('preview-voiceover').textContent = `Voice: ${voice.replace('-', ' ')}`;
+                const voiceId = document.getElementById('voiceover-voice').value;
+                const selectedVoice = availableVoices.find(v => v.id === voiceId);
+                const voiceName = selectedVoice ? selectedVoice.name : 'Not selected';
+                document.getElementById('preview-voiceover').textContent = `Voice: ${voiceName}`;
                 
                 preview.classList.remove('hidden');
                 renderBtn.classList.remove('hidden');
@@ -891,6 +895,177 @@
             return fontMap[font] || 'system-ui, sans-serif';
         }
 
+        // Voice loading and preview functions
+        async function loadVoices() {
+            if (!window.auth?.currentUser) {
+                showError('voice-preview-status', 'Please log in to load voices');
+                return;
+            }
+
+            try {
+                const { apiFetch } = await import('./api.mjs');
+                const data = await apiFetch('/voice/voices', {
+                    method: 'GET'
+                });
+
+                if (data.ok) {
+                    availableVoices = data.data.voices;
+                    populateVoiceSelect();
+                } else {
+                    showError('voice-preview-status', data.error || 'Failed to load voices');
+                }
+            } catch (error) {
+                showError('voice-preview-status', error.message || 'Network error');
+            }
+        }
+
+        function populateVoiceSelect() {
+            const select = document.getElementById('voiceover-voice');
+            select.innerHTML = '';
+            
+            if (availableVoices.length === 0) {
+                select.innerHTML = '<option value="">No voices available</option>';
+                return;
+            }
+
+            availableVoices.forEach(voice => {
+                const option = document.createElement('option');
+                option.value = voice.id;
+                option.textContent = `${voice.name} - ${voice.description}`;
+                select.appendChild(option);
+            });
+
+            // Enable preview button
+            document.getElementById('preview-voice-btn').disabled = false;
+        }
+
+        async function previewVoice() {
+            const voiceId = document.getElementById('voiceover-voice').value;
+            if (!voiceId) {
+                showError('voice-preview-status', 'Please select a voice');
+                return;
+            }
+
+            const statusEl = document.getElementById('voice-preview-status');
+            const previewBtn = document.getElementById('preview-voice-btn');
+            const audioEl = document.getElementById('voice-preview-audio');
+
+            statusEl.classList.remove('hidden');
+            statusEl.textContent = 'Generating preview...';
+            previewBtn.disabled = true;
+
+            try {
+                const { apiFetch } = await import('./api.mjs');
+                const data = await apiFetch('/voice/preview', {
+                    method: 'POST',
+                    body: {
+                        voiceId,
+                        text: 'Hello, this is a preview of my voice. How does it sound?'
+                    }
+                });
+
+                if (data.ok) {
+                    audioEl.src = data.data.audio;
+                    audioEl.classList.remove('hidden');
+                    statusEl.textContent = 'Preview ready - click play to listen';
+                    
+                    // Auto-play the preview
+                    audioEl.play().catch(e => {
+                        console.log('Auto-play prevented:', e);
+                        statusEl.textContent = 'Preview ready - click play to listen';
+                    });
+                } else {
+                    showError('voice-preview-status', data.error || 'Failed to generate preview');
+                }
+            } catch (error) {
+                showError('voice-preview-status', error.message || 'Network error');
+            } finally {
+                previewBtn.disabled = false;
+            }
+        }
+
+        // Render short function
+        async function renderShort() {
+            if (!currentQuote || !selectedAsset) {
+                alert('Please select a quote and an asset first');
+                return;
+            }
+
+            if (!window.auth?.currentUser) {
+                alert('Please log in to render shorts');
+                return;
+            }
+
+            const renderBtn = document.getElementById('render-btn');
+            const originalText = renderBtn.textContent;
+            
+            renderBtn.disabled = true;
+            renderBtn.textContent = 'Rendering...';
+
+            try {
+                const { apiFetch } = await import('./api.mjs');
+                
+                // Prepare the render payload
+                const background = {
+                    kind: selectedAsset.provider === 'ai' ? 'ai' : 
+                          selectedAsset.provider === 'uploaded' ? 'upload' : 'stock',
+                    query: selectedAsset.query,
+                    imageUrl: selectedAsset.provider === 'uploaded' ? selectedAsset.fileUrl : undefined,
+                    prompt: selectedAsset.provider === 'ai' ? selectedAsset.query : undefined
+                };
+
+                // Get caption style settings
+                const captionStyle = {
+                    font: document.getElementById('caption-font').value,
+                    weight: document.getElementById('caption-weight').value,
+                    size: parseInt(document.getElementById('caption-size').value),
+                    opacity: parseInt(document.getElementById('caption-opacity').value),
+                    placement: document.getElementById('caption-placement').value,
+                    background: document.getElementById('caption-background').checked,
+                    bgOpacity: parseInt(document.getElementById('caption-bg-opacity').value)
+                };
+
+                const payload = {
+                    mode: 'quote',
+                    text: currentQuote.text,
+                    template: 'calm', // Default template
+                    durationSec: 8,
+                    voiceover: !!currentVoiceId,
+                    wantAttribution: true,
+                    background,
+                    captionMode: 'static',
+                    watermark: true,
+                    // Add caption style settings
+                    captionStyle,
+                    // Add voice ID if selected
+                    voiceId: currentVoiceId
+                };
+
+                const data = await apiFetch('/shorts/create', {
+                    method: 'POST',
+                    body: payload
+                });
+
+                if (data.ok) {
+                    // Success! Show the result
+                    const result = data.data;
+                    alert(`Short created successfully! Job ID: ${result.jobId}`);
+                    
+                    // You could redirect to a results page or show the video here
+                    // For now, we'll just show success
+                    console.log('Render result:', result);
+                } else {
+                    alert(`Render failed: ${data.error || 'Unknown error'}`);
+                }
+            } catch (error) {
+                console.error('Render error:', error);
+                alert(`Render failed: ${error.message || 'Network error'}`);
+            } finally {
+                renderBtn.disabled = false;
+                renderBtn.textContent = originalText;
+            }
+        }
+
         // Remix quote function
         async function remixQuote(mode) {
             if (!currentQuote) return;
@@ -1010,9 +1185,7 @@
             remixAssets = [];
             updateRemixArea();
         };
-        document.getElementById('render-btn').onclick = () => {
-            alert('Render functionality will be wired to existing render endpoint');
-        };
+        document.getElementById('render-btn').onclick = renderShort;
         
         // Caption style event listeners
         document.getElementById('caption-font').onchange = () => {
@@ -1036,10 +1209,11 @@
         document.getElementById('caption-bg-opacity').oninput = updateCaptionStyleValues;
         
         // Voiceover event listeners
-        document.getElementById('voiceover-voice').onchange = updateRenderPreview;
-        document.getElementById('preview-voice-btn').onclick = () => {
-            alert('Voice preview functionality will be implemented');
+        document.getElementById('voiceover-voice').onchange = () => {
+            updateRenderPreview();
+            currentVoiceId = document.getElementById('voiceover-voice').value;
         };
+        document.getElementById('preview-voice-btn').onclick = previewVoice;
 
         // Remix button event listeners
         document.getElementById('regenerate-btn').onclick = () => remixQuote('regenerate');
@@ -1129,6 +1303,7 @@
                                 await window.__vaiform_diag__.tokenWait(4000); 
                             }
                             await refreshCredits(true);
+                            loadVoices();
                         } catch (e) {
                             console.error("Failed to refresh credits:", e);
                         }

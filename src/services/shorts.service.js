@@ -23,7 +23,7 @@ export function finalizeQuoteText(mode, text) {
   return t;
 }
 
-export async function createShortService({ ownerUid, mode, text, template, durationSec, voiceover = false, wantAttribution = true, background = { kind: "solid" }, debugAudioPath, captionMode = "static", watermark, overrideQuote }) {
+export async function createShortService({ ownerUid, mode, text, template, durationSec, voiceover = false, wantAttribution = true, background = { kind: "solid" }, debugAudioPath, captionMode = "static", watermark, overrideQuote, captionStyle, voiceId }) {
   if (!ownerUid) throw new Error("MISSING_UID");
 
   const jobId = `shorts-${Date.now().toString(36)}-${Math.random().toString(36).slice(2,7)}`;
@@ -45,7 +45,12 @@ export async function createShortService({ ownerUid, mode, text, template, durat
   let v = { audioPath: null };
   if (voiceover) {
     try {
-      v = await synthVoice({ text: usedQuote.text });
+      // Use specific voice ID if provided, otherwise use default
+      const ttsOptions = { text: usedQuote.text };
+      if (voiceId) {
+        ttsOptions.voiceId = voiceId;
+      }
+      v = await synthVoice(ttsOptions);
       if (v?.audioPath) {
         try { fs.copyFileSync(v.audioPath, audioPath); audioOk = true; console.log("[shorts] TTS audio ready:", v.audioPath); } catch (e) { console.warn("[shorts] copy TTS audio failed:", e?.message || e); }
       }

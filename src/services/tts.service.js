@@ -114,7 +114,7 @@ async function withRetry(fetchFn, { tries = MAX_TRIES, baseDelay = BASE_DELAY } 
 }
 
 // Always resolves; never throws
-export async function synthVoice({ text }){
+export async function synthVoice({ text, voiceId }){
   try {
     const t = String(text || "").replace(/\s+/g, ' ').trim();
     try { console.log('[tts] input len/chars', t.length, 'words', t.split(/\s+/).length, 'sample', t.slice(0,200)); } catch {}
@@ -134,7 +134,7 @@ export async function synthVoice({ text }){
     }
 
     const model = isOpenAI ? OPENAI_MODEL : (process.env.ELEVEN_TTS_MODEL || "eleven_flash_v2_5");
-    const voice = isOpenAI ? OPENAI_VOICE : (process.env.ELEVEN_VOICE_ID);
+    const voice = isOpenAI ? OPENAI_VOICE : (voiceId || process.env.ELEVEN_VOICE_ID);
     const key = cacheKey({ provider, model, voice, text: t });
 
     // In-memory cache
@@ -152,7 +152,7 @@ export async function synthVoice({ text }){
       try {
         const { buf } = await fetchWithRetry(async () => {
           if (isOpenAI) return await doOpenAI({ text: t, model, voice });
-          if (isEleven) return await doEleven({ text: t });
+          if (isEleven) return await doEleven({ text: t, voiceId: voice });
           return { res: new Response(null, { status: 503 }), buf: Buffer.alloc(0), headers: new Headers() };
         }, key);
 
@@ -227,8 +227,9 @@ async function doOpenAI({ text, model, voice }) {
   return { res, buf: Buffer.from(ab), headers: res.headers };
 }
 
-async function doEleven({ text }) {
-  const url = `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(process.env.ELEVEN_VOICE_ID)}?output_format=mp3_44100_128`;
+async function doEleven({ text, voiceId }) {
+  const voice = voiceId || process.env.ELEVEN_VOICE_ID;
+  const url = `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voice)}?output_format=mp3_44100_128`;
   const res = await fetch(url, {
     method: "POST",
     headers: {

@@ -28,6 +28,16 @@ const BackgroundSchema = z.object({
   }).optional(),
 });
 
+const CaptionStyleSchema = z.object({
+  font: z.string().default("system").optional(),
+  weight: z.enum(["normal", "bold"]).default("normal").optional(),
+  size: z.number().int().min(28).max(72).default(48).optional(),
+  opacity: z.number().int().min(30).max(100).default(80).optional(),
+  placement: z.enum(["top", "middle", "bottom"]).default("middle").optional(),
+  background: z.boolean().default(false).optional(),
+  bgOpacity: z.number().int().min(0).max(100).default(50).optional(),
+});
+
 const CreateShortSchema = z
   .object({
     mode: z.enum(["quote", "feeling"]).default("quote").optional(),
@@ -40,6 +50,8 @@ const CreateShortSchema = z
     debugAudioPath: z.string().optional(),
     captionMode: z.enum(["static", "progress", "karaoke"]).default("static").optional(),
     watermark: z.boolean().optional(),
+    captionStyle: CaptionStyleSchema.optional(),
+    voiceId: z.string().optional(),
   })
   .superRefine((val, ctx) => {
     const bg = val?.background;
@@ -127,14 +139,14 @@ export async function createShort(req, res) {
     if (!parsed.success) {
       return res.status(400).json({ success: false, error: "INVALID_INPUT", detail: parsed.error.flatten() });
     }
-    const { mode = "quote", text, template = "calm", durationSec = 8, voiceover = false, wantAttribution = true, background = { kind: "solid" }, debugAudioPath, captionMode = "static", watermark } = parsed.data;
+    const { mode = "quote", text, template = "calm", durationSec = 8, voiceover = false, wantAttribution = true, background = { kind: "solid" }, debugAudioPath, captionMode = "static", watermark, captionStyle, voiceId } = parsed.data;
 
     const ownerUid = req.user?.uid;
     if (!ownerUid) {
       return res.status(401).json({ success: false, error: "UNAUTHENTICATED", message: "Login required" });
     }
 
-    const result = await createShortService({ ownerUid, mode, text, template, durationSec, voiceover, wantAttribution, background, debugAudioPath, captionMode, watermark });
+    const result = await createShortService({ ownerUid, mode, text, template, durationSec, voiceover, wantAttribution, background, debugAudioPath, captionMode, watermark, captionStyle, voiceId });
     return res.json({ success: true, data: result });
   } catch (e) {
     const msg = e?.message || "Short creation failed";
