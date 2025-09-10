@@ -115,6 +115,20 @@
                 </button>
             </div>
 
+            <!-- Remix Area -->
+            <div id="remix-area" class="bg-gray-800 rounded-lg p-4 mb-4 hidden">
+                <h3 class="text-sm font-medium text-gray-300 mb-3">Remix References (up to 2)</h3>
+                <div id="remix-assets" class="flex gap-4">
+                    <!-- Remix assets will be added here -->
+                </div>
+                <button
+                    id="clear-remix-btn"
+                    class="mt-3 px-3 py-1 bg-red-600 hover:bg-red-500 text-white text-xs rounded"
+                >
+                    Clear All
+                </button>
+            </div>
+
             <!-- Search Controls -->
             <div id="search-controls" class="flex gap-4 items-center">
                 <input
@@ -130,6 +144,19 @@
                 >
                     Search
                 </button>
+                <button
+                    id="upload-asset-btn"
+                    class="px-3 py-2 bg-gray-700 hover:bg-gray-600 rounded"
+                    title="Upload your own image or video"
+                >
+                    📁
+                </button>
+                <input
+                    type="file"
+                    id="asset-upload-input"
+                    accept="image/*,video/*"
+                    class="hidden"
+                />
             </div>
 
             <!-- AI Images Controls -->
@@ -170,18 +197,25 @@
 
             <div id="asset-error" class="error text-sm hidden"></div>
 
-            <!-- Asset Grid -->
-            <div id="asset-grid" class="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <!-- Asset Grid (2 rows × 4 columns = 8 results) -->
+            <div id="asset-grid" class="grid grid-cols-4 gap-4">
                 <!-- Assets will be populated here -->
             </div>
 
-            <!-- Load More Button -->
-            <div id="load-more-container" class="text-center hidden">
+            <!-- Pagination Controls -->
+            <div id="pagination-container" class="flex justify-between items-center mt-4 hidden">
                 <button
-                    id="load-more-btn"
-                    class="px-4 py-2 bg-gray-700 hover:bg-gray-600 disabled:bg-gray-600 rounded"
+                    id="prev-page-btn"
+                    class="px-4 py-2 bg-gray-700 hover:bg-gray-600 disabled:bg-gray-600 disabled:opacity-50 rounded flex items-center gap-2"
                 >
-                    More Results
+                    ← Previous
+                </button>
+                <span id="page-info" class="text-sm text-gray-400">Page 1</span>
+                <button
+                    id="next-page-btn"
+                    class="px-4 py-2 bg-gray-700 hover:bg-gray-600 disabled:bg-gray-600 disabled:opacity-50 rounded flex items-center gap-2"
+                >
+                    Next →
                 </button>
             </div>
 
@@ -192,14 +226,135 @@
             </div>
         </div>
 
+        <!-- Caption Style Section -->
+        <div class="bg-gray-900 rounded-lg p-6 space-y-4">
+            <h2 class="text-xl font-semibold">Caption Style</h2>
+            
+            <div class="grid grid-cols-2 gap-4">
+                <!-- Font Family -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-300 mb-2">Font</label>
+                    <select id="caption-font" class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2">
+                        <option value="system">System</option>
+                        <option value="bold">Bold</option>
+                        <option value="cinematic">Cinematic</option>
+                        <option value="minimal">Minimal</option>
+                    </select>
+                </div>
+                
+                <!-- Font Weight -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-300 mb-2">Weight</label>
+                    <select id="caption-weight" class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2">
+                        <option value="normal">Normal</option>
+                        <option value="bold">Bold</option>
+                    </select>
+                </div>
+                
+                <!-- Size -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-300 mb-2">Size: <span id="size-value">48px</span></label>
+                    <input
+                        type="range"
+                        id="caption-size"
+                        min="28"
+                        max="72"
+                        value="48"
+                        class="w-full"
+                    />
+                </div>
+                
+                <!-- Opacity -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-300 mb-2">Opacity: <span id="opacity-value">80%</span></label>
+                    <input
+                        type="range"
+                        id="caption-opacity"
+                        min="30"
+                        max="100"
+                        value="80"
+                        class="w-full"
+                    />
+                </div>
+                
+                <!-- Placement -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-300 mb-2">Placement</label>
+                    <select id="caption-placement" class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2">
+                        <option value="top">Top</option>
+                        <option value="middle">Middle</option>
+                        <option value="bottom">Bottom</option>
+                    </select>
+                </div>
+                
+                <!-- Background Box -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-300 mb-2">Background</label>
+                    <div class="flex items-center gap-4">
+                        <label class="flex items-center gap-2">
+                            <input type="checkbox" id="caption-background" class="rounded" />
+                            <span class="text-sm">Show box</span>
+                        </label>
+                        <div class="flex-1">
+                            <label class="block text-xs text-gray-400 mb-1">Box opacity: <span id="bg-opacity-value">50%</span></label>
+                            <input
+                                type="range"
+                                id="caption-bg-opacity"
+                                min="0"
+                                max="100"
+                                value="50"
+                                class="w-full"
+                            />
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Voiceover Section -->
+        <div class="bg-gray-900 rounded-lg p-6 space-y-4">
+            <h2 class="text-xl font-semibold">Voiceover</h2>
+            
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-300 mb-2">Voice</label>
+                    <select id="voiceover-voice" class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2">
+                        <option value="warm-male">Warm Male</option>
+                        <option value="calm-female">Calm Female</option>
+                        <option value="energetic">Energetic</option>
+                        <option value="robotic">Robotic</option>
+                    </select>
+                </div>
+                <div class="flex items-end">
+                    <button
+                        id="preview-voice-btn"
+                        class="px-4 py-2 bg-purple-600 hover:bg-purple-500 rounded"
+                    >
+                        Preview Voice
+                    </button>
+                </div>
+            </div>
+        </div>
+
         <!-- Render Section -->
         <div class="bg-gray-900 rounded-lg p-6 space-y-4">
             <h2 class="text-xl font-semibold">Create Short</h2>
+            
+            <!-- Live Preview Canvas -->
+            <div id="live-preview-container" class="hidden">
+                <div class="text-sm text-gray-400 mb-2">Live Preview:</div>
+                <div class="relative w-full max-w-md mx-auto bg-black rounded-lg overflow-hidden">
+                    <canvas id="live-preview-canvas" class="w-full h-auto"></canvas>
+                    <div class="absolute inset-0 pointer-events-none" id="caption-overlay"></div>
+                </div>
+            </div>
             
             <div id="render-preview" class="bg-gray-800 rounded p-4 hidden">
                 <div class="text-sm text-gray-400 mb-2">Preview:</div>
                 <div id="preview-quote" class="text-lg font-medium mb-2"></div>
                 <div id="preview-asset" class="text-sm text-gray-400"></div>
+                <div id="preview-caption-style" class="text-sm text-gray-400"></div>
+                <div id="preview-voiceover" class="text-sm text-gray-400"></div>
             </div>
             
             <button
@@ -220,6 +375,9 @@
         let currentAssetPage = 1;
         let hasMoreAssets = false;
         let currentCredits = 0;
+        let remixAssets = [];
+        let assetCache = new Map(); // Cache for pagination
+        let uploadedAssets = [];
 
         // Helper functions
         function showError(elementId, message) {
@@ -313,7 +471,7 @@
             updateRenderPreview();
         }
 
-        // Asset loading
+        // Asset loading with pagination and caching
         async function loadAssets(page = 1) {
             if (currentAssetType === 'ai') return;
             if (!window.auth?.currentUser) {
@@ -326,26 +484,42 @@
             
             try {
                 const { apiFetch } = await import('./api.mjs');
-                const perPage = 16; // Default to 16 for now
+                const perPage = 8; // 2 rows × 4 columns
+                const query = document.getElementById('asset-query').value;
+                const cacheKey = `${currentAssetType}-${query}-${page}`;
+                
+                // Check cache first
+                if (assetCache.has(cacheKey)) {
+                    const cachedData = assetCache.get(cacheKey);
+                    displayAssets(cachedData.items);
+                    hasMoreAssets = cachedData.nextPage;
+                    currentAssetPage = page;
+                    updatePagination();
+                    setLoading('search-assets-btn', false);
+                    return;
+                }
+                
                 const data = await apiFetch('/assets/options', {
                     method: 'POST',
                     body: {
                         type: currentAssetType,
-                        query: document.getElementById('asset-query').value,
+                        query,
                         page,
                         perPage
                     }
                 });
                 
                 if (data.ok) {
-                    if (page === 1) {
-                        displayAssets(data.data.items);
-                    } else {
-                        appendAssets(data.data.items);
-                    }
+                    // Cache the results
+                    assetCache.set(cacheKey, {
+                        items: data.data.items,
+                        nextPage: data.data.nextPage
+                    });
+                    
+                    displayAssets(data.data.items);
                     hasMoreAssets = data.data.nextPage;
                     currentAssetPage = page;
-                    updateLoadMoreButton();
+                    updatePagination();
                 } else {
                     showError('asset-error', data.reason || 'Failed to load assets');
                 }
@@ -375,10 +549,9 @@
 
         function createAssetElement(asset) {
             const div = document.createElement('div');
-            div.className = `border-2 rounded overflow-hidden cursor-pointer transition-colors ${
+            div.className = `relative border-2 rounded overflow-hidden transition-colors group ${
                 selectedAsset?.id === asset.id ? 'border-blue-500' : 'border-gray-700'
             }`;
-            div.onclick = () => selectAsset(asset);
             
             let media;
             if (asset.provider === 'ai' || asset.type === 'ai-generated') {
@@ -401,7 +574,38 @@
                     <div class="truncate">${asset.query}</div>
                     ${attribution}
                 </div>
+                <!-- Action Buttons Overlay -->
+                <div class="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-50 transition-all duration-200 flex items-end justify-center pb-2 opacity-0 group-hover:opacity-100">
+                    <div class="flex gap-2">
+                        <button 
+                            class="use-asset-btn px-3 py-1 bg-blue-600 hover:bg-blue-500 text-white text-xs rounded transition-colors"
+                            data-asset-id="${asset.id}"
+                        >
+                            Use
+                        </button>
+                        <button 
+                            class="remix-asset-btn px-3 py-1 bg-purple-600 hover:bg-purple-500 text-white text-xs rounded transition-colors"
+                            data-asset-id="${asset.id}"
+                        >
+                            Remix
+                        </button>
+                    </div>
+                </div>
             `;
+            
+            // Add event listeners for the buttons
+            const useBtn = div.querySelector('.use-asset-btn');
+            const remixBtn = div.querySelector('.remix-asset-btn');
+            
+            useBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                useAsset(asset);
+            });
+            
+            remixBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                addToRemix(asset);
+            });
             
             return div;
         }
@@ -413,15 +617,118 @@
             updateRenderPreview();
         }
 
-        function updateLoadMoreButton() {
-            const container = document.getElementById('load-more-container');
-            const button = document.getElementById('load-more-btn');
+        function updatePagination() {
+            const container = document.getElementById('pagination-container');
+            const prevBtn = document.getElementById('prev-page-btn');
+            const nextBtn = document.getElementById('next-page-btn');
+            const pageInfo = document.getElementById('page-info');
             
-            if (hasMoreAssets && currentAssetType !== 'ai') {
-                container.classList.remove('hidden');
-                button.disabled = false;
-            } else {
+            if (currentAssetType === 'ai') {
                 container.classList.add('hidden');
+                return;
+            }
+            
+            container.classList.remove('hidden');
+            prevBtn.disabled = currentAssetPage <= 1;
+            nextBtn.disabled = !hasMoreAssets;
+            pageInfo.textContent = `Page ${currentAssetPage}`;
+        }
+
+        // Use asset function
+        function useAsset(asset) {
+            selectedAsset = asset;
+            updateRenderPreview();
+            // Scroll to render section
+            document.getElementById('render-preview').scrollIntoView({ behavior: 'smooth' });
+        }
+
+        // Add to remix function
+        function addToRemix(asset) {
+            if (remixAssets.length >= 2) {
+                showError('asset-error', 'Maximum 2 remix references allowed');
+                return;
+            }
+            
+            if (remixAssets.find(a => a.id === asset.id)) {
+                showError('asset-error', 'Asset already in remix references');
+                return;
+            }
+            
+            remixAssets.push(asset);
+            updateRemixArea();
+        }
+
+        // Update remix area display
+        function updateRemixArea() {
+            const remixArea = document.getElementById('remix-area');
+            const remixAssetsContainer = document.getElementById('remix-assets');
+            
+            if (remixAssets.length === 0) {
+                remixArea.classList.add('hidden');
+                return;
+            }
+            
+            remixArea.classList.remove('hidden');
+            remixAssetsContainer.innerHTML = '';
+            
+            remixAssets.forEach((asset, index) => {
+                const assetDiv = document.createElement('div');
+                assetDiv.className = 'relative w-20 h-20 rounded overflow-hidden border border-gray-600';
+                
+                const media = asset.provider === 'ai' || asset.type === 'ai-generated'
+                    ? `<img src="${asset.thumbUrl || asset.fileUrl}" alt="${asset.query}" class="w-full h-full object-cover" />`
+                    : currentAssetType === 'images'
+                        ? `<img src="${asset.thumbUrl || asset.fileUrl}" alt="${asset.query}" class="w-full h-full object-cover" />`
+                        : `<video src="${asset.fileUrl}" class="w-full h-full object-cover" muted playsinline></video>`;
+                
+                assetDiv.innerHTML = `
+                    ${media}
+                    <button 
+                        class="absolute -top-2 -right-2 w-5 h-5 bg-red-600 hover:bg-red-500 text-white text-xs rounded-full flex items-center justify-center"
+                        onclick="removeFromRemix(${index})"
+                    >
+                        ×
+                    </button>
+                `;
+                
+                remixAssetsContainer.appendChild(assetDiv);
+            });
+        }
+
+        // Remove from remix
+        function removeFromRemix(index) {
+            remixAssets.splice(index, 1);
+            updateRemixArea();
+        }
+
+        // Handle file upload
+        function handleFileUpload(files) {
+            if (!files || !files[0]) return;
+            const file = files[0];
+            
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const uploadedAsset = {
+                    id: `uploaded-${Date.now()}`,
+                    fileUrl: e.target.result,
+                    thumbUrl: e.target.result,
+                    query: file.name,
+                    provider: 'uploaded',
+                    type: file.type.startsWith('video/') ? 'video' : 'image'
+                };
+                
+                uploadedAssets.push(uploadedAsset);
+                
+                // Add to current grid
+                const grid = document.getElementById('asset-grid');
+                const assetElement = createAssetElement(uploadedAsset);
+                grid.insertBefore(assetElement, grid.firstChild);
+            };
+            
+            if (file.type.startsWith('image/')) {
+                reader.readAsDataURL(file);
+            } else if (file.type.startsWith('video/')) {
+                reader.readAsDataURL(file);
             }
         }
 
@@ -432,13 +739,156 @@
             if (currentQuote && selectedAsset) {
                 document.getElementById('preview-quote').textContent = currentQuote.text;
                 document.getElementById('preview-asset').textContent = 
-                    `Background: ${selectedAsset.provider === 'ai' ? 'AI Image' : `${currentAssetType} - ${selectedAsset.query}`}`;
+                    `Background: ${selectedAsset.provider === 'ai' ? 'AI Image' : selectedAsset.provider === 'uploaded' ? 'Uploaded' : `${currentAssetType} - ${selectedAsset.query}`}`;
+                
+                // Update caption style preview
+                const font = document.getElementById('caption-font').value;
+                const weight = document.getElementById('caption-weight').value;
+                const size = document.getElementById('caption-size').value;
+                const opacity = document.getElementById('caption-opacity').value;
+                const placement = document.getElementById('caption-placement').value;
+                const background = document.getElementById('caption-background').checked;
+                
+                document.getElementById('preview-caption-style').textContent = 
+                    `Caption: ${font} ${weight}, ${size}px, ${opacity}% opacity, ${placement}${background ? ', with background' : ''}`;
+                
+                // Update voiceover preview
+                const voice = document.getElementById('voiceover-voice').value;
+                document.getElementById('preview-voiceover').textContent = `Voice: ${voice.replace('-', ' ')}`;
+                
                 preview.classList.remove('hidden');
                 renderBtn.classList.remove('hidden');
+                updateLivePreview();
             } else {
                 preview.classList.add('hidden');
                 renderBtn.classList.add('hidden');
+                document.getElementById('live-preview-container').classList.add('hidden');
             }
+        }
+
+        // Update caption style values
+        function updateCaptionStyleValues() {
+            document.getElementById('size-value').textContent = document.getElementById('caption-size').value + 'px';
+            document.getElementById('opacity-value').textContent = document.getElementById('caption-opacity').value + '%';
+            document.getElementById('bg-opacity-value').textContent = document.getElementById('caption-bg-opacity').value + '%';
+            updateRenderPreview();
+            updateLivePreview();
+        }
+
+        // Live preview functionality
+        function updateLivePreview() {
+            if (!currentQuote || !selectedAsset) return;
+            
+            const container = document.getElementById('live-preview-container');
+            const canvas = document.getElementById('live-preview-canvas');
+            const ctx = canvas.getContext('2d');
+            
+            container.classList.remove('hidden');
+            
+            // Load the asset image
+            const img = new Image();
+            img.crossOrigin = 'anonymous';
+            img.onload = () => {
+                // Set canvas size (maintain aspect ratio, max width 400px)
+                const maxWidth = 400;
+                const aspectRatio = img.height / img.width;
+                const canvasWidth = Math.min(maxWidth, img.width);
+                const canvasHeight = canvasWidth * aspectRatio;
+                
+                canvas.width = canvasWidth;
+                canvas.height = canvasHeight;
+                
+                // Draw the image
+                ctx.drawImage(img, 0, 0, canvasWidth, canvasHeight);
+                
+                // Draw caption overlay
+                drawCaptionOverlay(ctx, canvasWidth, canvasHeight);
+            };
+            
+            img.src = selectedAsset.thumbUrl || selectedAsset.fileUrl;
+        }
+
+        function drawCaptionOverlay(ctx, canvasWidth, canvasHeight) {
+            if (!currentQuote) return;
+            
+            const font = document.getElementById('caption-font').value;
+            const weight = document.getElementById('caption-weight').value;
+            const size = parseInt(document.getElementById('caption-size').value);
+            const opacity = parseInt(document.getElementById('caption-opacity').value) / 100;
+            const placement = document.getElementById('caption-placement').value;
+            const showBackground = document.getElementById('caption-background').checked;
+            const bgOpacity = parseInt(document.getElementById('caption-bg-opacity').value) / 100;
+            
+            // Set font
+            ctx.font = `${weight} ${size}px ${getFontFamily(font)}`;
+            ctx.fillStyle = `rgba(255, 255, 255, ${opacity})`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            
+            // Calculate text position
+            let y;
+            const padding = 20;
+            switch (placement) {
+                case 'top':
+                    y = padding + size / 2;
+                    break;
+                case 'middle':
+                    y = canvasHeight / 2;
+                    break;
+                case 'bottom':
+                    y = canvasHeight - padding - size / 2;
+                    break;
+            }
+            
+            // Wrap text if needed
+            const maxWidth = canvasWidth - 40;
+            const words = currentQuote.text.split(' ');
+            const lines = [];
+            let currentLine = '';
+            
+            for (const word of words) {
+                const testLine = currentLine + (currentLine ? ' ' : '') + word;
+                const metrics = ctx.measureText(testLine);
+                
+                if (metrics.width > maxWidth && currentLine) {
+                    lines.push(currentLine);
+                    currentLine = word;
+                } else {
+                    currentLine = testLine;
+                }
+            }
+            if (currentLine) lines.push(currentLine);
+            
+            // Draw background if enabled
+            if (showBackground) {
+                const lineHeight = size * 1.2;
+                const totalHeight = lines.length * lineHeight;
+                const bgY = y - totalHeight / 2;
+                const bgHeight = totalHeight + padding;
+                const bgWidth = canvasWidth - 20;
+                
+                ctx.fillStyle = `rgba(0, 0, 0, ${bgOpacity})`;
+                ctx.fillRect(10, bgY - padding / 2, bgWidth, bgHeight);
+            }
+            
+            // Draw text lines
+            ctx.fillStyle = `rgba(255, 255, 255, ${opacity})`;
+            const lineHeight = size * 1.2;
+            const startY = y - (lines.length - 1) * lineHeight / 2;
+            
+            lines.forEach((line, index) => {
+                ctx.fillText(line, canvasWidth / 2, startY + index * lineHeight);
+            });
+        }
+
+        function getFontFamily(font) {
+            const fontMap = {
+                'system': 'system-ui, -apple-system, sans-serif',
+                'bold': 'system-ui, -apple-system, sans-serif',
+                'cinematic': 'Georgia, serif',
+                'minimal': 'Helvetica, Arial, sans-serif'
+            };
+            return fontMap[font] || 'system-ui, sans-serif';
         }
 
         // Remix quote function
@@ -545,11 +995,50 @@
 
         // Event listeners
         document.getElementById('generate-quote-btn').onclick = generateQuote;
-        document.getElementById('search-assets-btn').onclick = () => loadAssets(1);
-        document.getElementById('load-more-btn').onclick = () => loadAssets(currentAssetPage + 1);
+        document.getElementById('search-assets-btn').onclick = () => {
+            assetCache.clear(); // Clear cache on new search
+            loadAssets(1);
+        };
+        document.getElementById('prev-page-btn').onclick = () => loadAssets(currentAssetPage - 1);
+        document.getElementById('next-page-btn').onclick = () => loadAssets(currentAssetPage + 1);
         document.getElementById('generate-ai-btn').onclick = generateAiImage;
+        document.getElementById('upload-asset-btn').onclick = () => {
+            document.getElementById('asset-upload-input').click();
+        };
+        document.getElementById('asset-upload-input').onchange = (e) => handleFileUpload(e.target.files);
+        document.getElementById('clear-remix-btn').onclick = () => {
+            remixAssets = [];
+            updateRemixArea();
+        };
         document.getElementById('render-btn').onclick = () => {
             alert('Render functionality will be wired to existing render endpoint');
+        };
+        
+        // Caption style event listeners
+        document.getElementById('caption-font').onchange = () => {
+            updateRenderPreview();
+            updateLivePreview();
+        };
+        document.getElementById('caption-weight').onchange = () => {
+            updateRenderPreview();
+            updateLivePreview();
+        };
+        document.getElementById('caption-size').oninput = updateCaptionStyleValues;
+        document.getElementById('caption-opacity').oninput = updateCaptionStyleValues;
+        document.getElementById('caption-placement').onchange = () => {
+            updateRenderPreview();
+            updateLivePreview();
+        };
+        document.getElementById('caption-background').onchange = () => {
+            updateRenderPreview();
+            updateLivePreview();
+        };
+        document.getElementById('caption-bg-opacity').oninput = updateCaptionStyleValues;
+        
+        // Voiceover event listeners
+        document.getElementById('voiceover-voice').onchange = updateRenderPreview;
+        document.getElementById('preview-voice-btn').onclick = () => {
+            alert('Voice preview functionality will be implemented');
         };
 
         // Remix button event listeners
@@ -579,6 +1068,10 @@
                     searchControls.classList.remove('hidden');
                     aiControls.classList.add('hidden');
                 }
+                
+                // Clear cache and reset pagination for new type
+                assetCache.clear();
+                currentAssetPage = 1;
                 
                 // Load assets for new type
                 if (currentAssetType !== 'ai') {
