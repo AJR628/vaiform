@@ -955,8 +955,10 @@
         }
 
         async function previewVoice() {
-            const voiceId = document.getElementById('voiceover-voice').value;
-            if (!voiceId) {
+            const voiceSelect = document.getElementById('voiceover-voice');
+            const voiceId = voiceSelect.value;
+            
+            if (!voiceId || voiceId === '') {
                 showError('voice-preview-status', 'Please select a voice');
                 return;
             }
@@ -970,6 +972,7 @@
             previewBtn.disabled = true;
 
             try {
+                console.log('Voice preview - voiceId:', voiceId);
                 const { apiFetch } = await import('./api.mjs');
                 const data = await apiFetch('/voice/preview', {
                     method: 'POST',
@@ -978,6 +981,8 @@
                         text: 'Hello, this is a preview of my voice. How does it sound?'
                     }
                 });
+                
+                console.log('Voice preview response:', data);
 
                 if (data.success) {
                     audioEl.src = data.data.audio;
@@ -1051,10 +1056,16 @@
                     captionMode: 'static',
                     watermark: true,
                     // Add caption style settings
-                    captionStyle,
-                    // Add voice ID if selected
-                    voiceId: currentVoiceId
+                    captionStyle
                 };
+
+                // Only add voiceId if a voice is actually selected
+                if (currentVoiceId) {
+                    payload.voiceId = currentVoiceId;
+                }
+
+                console.log('Render payload:', payload);
+                console.log('Current voice ID:', currentVoiceId);
 
                 const data = await apiFetch('/shorts/create', {
                     method: 'POST',
@@ -1225,8 +1236,9 @@
         
         // Voiceover event listeners
         document.getElementById('voiceover-voice').onchange = () => {
+            const voiceSelect = document.getElementById('voiceover-voice');
+            currentVoiceId = voiceSelect.value || null;
             updateRenderPreview();
-            currentVoiceId = document.getElementById('voiceover-voice').value;
         };
         document.getElementById('preview-voice-btn').onclick = previewVoice;
 
