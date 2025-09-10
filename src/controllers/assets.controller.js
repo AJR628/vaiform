@@ -23,12 +23,14 @@ export async function getAssetsOptions(req, res) {
       if (response.ok) {
         result.items = response.items.map(item => ({
           id: item.id,
-          url: item.fileUrl,
-          thumbnail: item.thumbUrl,
+          fileUrl: item.fileUrl,
+          thumbUrl: item.thumbUrl,
           width: item.width,
           height: item.height,
           photographer: item.photographer,
-          source: item.sourceUrl
+          sourceUrl: item.sourceUrl,
+          query: item.query,
+          provider: item.provider
         }));
         // Simple next page logic
         result.nextPage = response.items.length === actualPerPage ? page + 1 : null;
@@ -38,13 +40,15 @@ export async function getAssetsOptions(req, res) {
       if (response.ok) {
         result.items = response.items.map(item => ({
           id: item.id,
-          url: item.fileUrl,
-          thumbnail: item.thumbUrl,
+          fileUrl: item.fileUrl,
+          thumbUrl: item.thumbUrl,
           width: item.width,
           height: item.height,
           duration: item.duration,
           photographer: item.photographer,
-          source: item.sourceUrl
+          sourceUrl: item.sourceUrl,
+          query: item.query,
+          provider: item.provider
         }));
         result.nextPage = response.items.length === actualPerPage ? page + 1 : null;
       }
