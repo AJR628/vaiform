@@ -8,11 +8,15 @@ import { renderImageQuoteVideo } from "./ffmpeg.js";
 import { getDurationMsFromMedia } from "./media.duration.js";
 
 // text/path helpers
-const esc = s => String(s).replace(/\\/g,'\\\\').replace(/:/g,'\\:').replace(/'/g,"\\'");
+const esc = s => String(s).replace(/\\/g,'\\\\').replace(/:/g,'\\:').replace(/,/g,'\\,').replace(/;/g,'\\;').replace(/\[/g,'\\[').replace(/\]/g,'\\]').replace(/'/g,"\\'");
 function escText(s) {
   return String(s ?? '')
     .replace(/\\/g, '\\\\')
     .replace(/:/g, '\\:')
+    .replace(/,/g, '\\,')
+    .replace(/;/g, '\\;')
+    .replace(/\[/g, '\\[')
+    .replace(/\]/g, '\\]')
     .replace(/'/g, "\\'")
     .replace(/\n/g, "\\n");
 }
