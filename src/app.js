@@ -187,6 +187,10 @@ if (routes?.limits) {
   app.use("/limits", routes.limits);
   console.log("✅ Mounted limits at /limits and /api/limits");
 }
+if (routes?.creative) {
+  app.use("/creative", routes.creative);
+  console.log("✅ Mounted creative at /creative");
+}
 
 // ---------- STATIC LAST (disable directory redirects like /dir -> /dir/) ----------
 // --- SPA static hosting (after API routes) ---

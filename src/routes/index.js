@@ -13,6 +13,7 @@ import studioRouter from "./studio.routes.js";
 import quotesRouter from "./quotes.routes.js";
 import assetsRouter from "./assets.routes.js";
 import limitsRouter from "./limits.routes.js";
+import creativeRouter from "./creative.routes.js";
 
 // Lightweight root
 const index = Router();
@@ -34,4 +35,5 @@ export default {
   quotes: quotesRouter,     // "/generate-quote"
   assets: assetsRouter,     // "/assets"
   limits: limitsRouter,     // "/limits"
+  creative: creativeRouter, // "/creative"
 };

@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Creative Studio - Vaiform</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .loading { opacity: 0.6; pointer-events: none; }
+        .error { color: #ef4444; }
+        .success { color: #10b981; }
+    </style>
+</head>
+<body class="bg-gray-950 text-white min-h-screen">
+    <div class="max-w-6xl mx-auto p-6 space-y-8">
+        <!-- Header with Plan Badge -->
+        <div class="flex items-center justify-between">
+            <h1 class="text-3xl font-bold">Creative Studio</h1>
+            <div class="flex items-center gap-4">
+                <div id="plan-badge" class="px-3 py-1 rounded-full text-sm font-medium bg-gray-600 text-white">
+                    Loading...
+                </div>
+                <div id="usage-info" class="text-sm text-gray-400">
+                    Loading usage...
+                </div>
+            </div>
+        </div>
+
+        <!-- Quote Generation Section -->
+        <div class="bg-gray-900 rounded-lg p-6 space-y-4">
+            <h2 class="text-xl font-semibold">Generate Quote</h2>
+            
+            <div class="flex gap-4 items-center">
+                <input
+                    type="text"
+                    id="quote-text"
+                    value="Create a motivational quote about success"
+                    placeholder="Describe what kind of quote you want..."
+                    class="flex-1 bg-gray-800 border border-gray-700 rounded px-3 py-2"
+                />
+                <select id="quote-tone" class="bg-gray-800 border border-gray-700 rounded px-3 py-2">
+                    <option value="default">Default</option>
+                    <option value="motivational">Motivational</option>
+                    <option value="witty">Witty</option>
+                    <option value="poetic">Poetic</option>
+                    <option value="bold">Bold</option>
+                    <option value="calm">Calm</option>
+                </select>
+                <button
+                    id="generate-quote-btn"
+                    class="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-600 rounded"
+                >
+                    Generate Quote
+                </button>
+            </div>
+
+            <div id="quote-error" class="error text-sm hidden"></div>
+
+            <div id="quote-result" class="bg-gray-800 rounded p-4 space-y-3 hidden">
+                <div id="quote-text-display" class="text-lg font-medium"></div>
+                <div id="quote-author" class="text-sm text-gray-400 hidden"></div>
+                <div id="quote-tone-tag" class="text-xs text-blue-400 hidden"></div>
+                
+                <!-- Remix buttons (Pro only) -->
+                <div id="remix-buttons" class="flex gap-2 hidden">
+                    <button id="regenerate-btn" class="px-3 py-1 bg-purple-600 hover:bg-purple-500 disabled:bg-gray-600 rounded text-sm">
+                        Regenerate
+                    </button>
+                    <button id="rephrase-btn" class="px-3 py-1 bg-purple-600 hover:bg-purple-500 disabled:bg-gray-600 rounded text-sm">
+                        Rephrase
+                    </button>
+                    <button id="tone-shift-btn" class="px-3 py-1 bg-purple-600 hover:bg-purple-500 disabled:bg-gray-600 rounded text-sm">
+                        Change Tone
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Asset Selection Section -->
+        <div class="bg-gray-900 rounded-lg p-6 space-y-4">
+            <h2 class="text-xl font-semibold">Choose Background</h2>
+            
+            <!-- Asset Type Tabs -->
+            <div class="flex gap-2">
+                <button id="images-tab" class="px-4 py-2 rounded bg-blue-600" data-type="images">
+                    Images
+                </button>
+                <button id="videos-tab" class="px-4 py-2 rounded bg-gray-700" data-type="videos">
+                    Videos
+                </button>
+                <button id="ai-tab" class="px-4 py-2 rounded bg-gray-700 hidden" data-type="ai">
+                    AI Images
+                </button>
+            </div>
+
+            <!-- Search Controls -->
+            <div id="search-controls" class="flex gap-4 items-center">
+                <input
+                    type="text"
+                    id="asset-query"
+                    value="nature"
+                    placeholder="Search for images/videos..."
+                    class="flex-1 bg-gray-800 border border-gray-700 rounded px-3 py-2"
+                />
+                <button
+                    id="search-assets-btn"
+                    class="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-600 rounded"
+                >
+                    Search
+                </button>
+            </div>
+
+            <!-- AI Images Controls -->
+            <div id="ai-controls" class="space-y-4 hidden">
+                <div class="flex gap-4 items-center">
+                    <input
+                        type="text"
+                        id="ai-prompt"
+                        value="A serene mountain landscape at sunset"
+                        placeholder="Describe the image you want..."
+                        class="flex-1 bg-gray-800 border border-gray-700 rounded px-3 py-2"
+                    />
+                    <select id="ai-style" class="bg-gray-800 border border-gray-700 rounded px-3 py-2">
+                        <option value="realistic">Realistic</option>
+                        <option value="creative">Creative</option>
+                    </select>
+                    <button
+                        id="generate-ai-btn"
+                        class="px-4 py-2 bg-purple-600 hover:bg-purple-500 disabled:bg-gray-600 rounded"
+                    >
+                        Generate
+                    </button>
+                </div>
+                <div id="ai-error" class="error text-sm hidden"></div>
+            </div>
+
+            <div id="asset-error" class="error text-sm hidden"></div>
+
+            <!-- Asset Grid -->
+            <div id="asset-grid" class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <!-- Assets will be populated here -->
+            </div>
+
+            <!-- Load More Button -->
+            <div id="load-more-container" class="text-center hidden">
+                <button
+                    id="load-more-btn"
+                    class="px-4 py-2 bg-gray-700 hover:bg-gray-600 disabled:bg-gray-600 rounded"
+                >
+                    More Results
+                </button>
+            </div>
+
+            <!-- Free Plan Notice -->
+            <div id="free-notice" class="text-center text-sm text-gray-400 hidden">
+                Showing 2 curated assets. 
+                <span class="text-blue-400"> Upgrade to Pro</span> for full search and AI images.
+            </div>
+        </div>
+
+        <!-- Render Section -->
+        <div class="bg-gray-900 rounded-lg p-6 space-y-4">
+            <h2 class="text-xl font-semibold">Create Short</h2>
+            
+            <div id="render-preview" class="bg-gray-800 rounded p-4 hidden">
+                <div class="text-sm text-gray-400 mb-2">Preview:</div>
+                <div id="preview-quote" class="text-lg font-medium mb-2"></div>
+                <div id="preview-asset" class="text-sm text-gray-400"></div>
+            </div>
+            
+            <button
+                id="render-btn"
+                class="px-6 py-3 bg-green-600 hover:bg-green-500 rounded-lg font-medium hidden"
+            >
+                Render Short
+            </button>
+        </div>
+    </div>
+
+    <script>
+        // Global state
+        let currentLimits = null;
+        let currentQuote = null;
+        let selectedAsset = null;
+        let currentAssetType = 'images';
+        let currentAssetPage = 1;
+        let hasMoreAssets = false;
+
+        // API base URL
+        const API_BASE = 'https://17e0d1d1-e327-483d-b1ea-c41bea08fb59-00-1ef93t84nlhq6.janeway.replit.dev';
+
+        // Helper functions
+        function showError(elementId, message) {
+            const element = document.getElementById(elementId);
+            element.textContent = message;
+            element.classList.remove('hidden');
+        }
+
+        function hideError(elementId) {
+            document.getElementById(elementId).classList.add('hidden');
+        }
+
+        function setLoading(buttonId, loading) {
+            const button = document.getElementById(buttonId);
+            button.disabled = loading;
+            button.textContent = loading ? 'Loading...' : button.textContent.replace('Loading...', '');
+        }
+
+        // Load usage limits
+        async function loadLimits() {
+            try {
+                const response = await fetch(`${API_BASE}/api/limits/usage`, {
+                    headers: {
+                        'Authorization': 'Bearer test-token'
+                    }
+                });
+                
+                if (response.status === 401) {
+                    showError('plan-badge', 'Auth Required');
+                    showError('usage-info', 'Please log in');
+                    return;
+                }
+                
+                const data = await response.json();
+                if (data.ok) {
+                    currentLimits = data.data;
+                    updatePlanUI();
+                } else {
+                    showError('plan-badge', 'Error');
+                    showError('usage-info', data.reason || 'Failed to load');
+                }
+            } catch (error) {
+                showError('plan-badge', 'Error');
+                showError('usage-info', 'Network error');
+            }
+        }
+
+        function updatePlanUI() {
+            const planBadge = document.getElementById('plan-badge');
+            const usageInfo = document.getElementById('usage-info');
+            const aiTab = document.getElementById('ai-tab');
+            const remixButtons = document.getElementById('remix-buttons');
+            const freeNotice = document.getElementById('free-notice');
+
+            if (currentLimits.isPro) {
+                planBadge.textContent = 'PRO PLAN';
+                planBadge.className = 'px-3 py-1 rounded-full text-sm font-medium bg-purple-600 text-white';
+                aiTab.classList.remove('hidden');
+                remixButtons.classList.remove('hidden');
+                freeNotice.classList.add('hidden');
+            } else {
+                planBadge.textContent = 'FREE PLAN';
+                planBadge.className = 'px-3 py-1 rounded-full text-sm font-medium bg-gray-600 text-white';
+                aiTab.classList.add('hidden');
+                remixButtons.classList.add('hidden');
+                freeNotice.classList.remove('hidden');
+            }
+
+            usageInfo.textContent = `${currentLimits.usage.remainingGenerations} generations left`;
+        }
+
+        // Quote generation
+        async function generateQuote() {
+            const text = document.getElementById('quote-text').value;
+            const tone = document.getElementById('quote-tone').value;
+            
+            if (!text.trim()) return;
+            
+            setLoading('generate-quote-btn', true);
+            hideError('quote-error');
+            
+            try {
+                const response = await fetch(`${API_BASE}/api/quotes/generate-quote`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': 'Bearer test-token'
+                    },
+                    body: JSON.stringify({
+                        text,
+                        tone: tone === 'default' ? undefined : tone,
+                        maxChars: 120
+                    })
+                });
+                
+                const data = await response.json();
+                if (data.ok) {
+                    currentQuote = data.data.quote;
+                    displayQuote(currentQuote);
+                } else {
+                    showError('quote-error', data.reason || 'Failed to generate quote');
+                }
+            } catch (error) {
+                showError('quote-error', 'Network error');
+            } finally {
+                setLoading('generate-quote-btn', false);
+            }
+        }
+
+        function displayQuote(quote) {
+            document.getElementById('quote-text-display').textContent = quote.text;
+            document.getElementById('quote-author').textContent = quote.author ? `— ${quote.author}` : '';
+            document.getElementById('quote-author').classList.toggle('hidden', !quote.author);
+            document.getElementById('quote-tone-tag').textContent = quote.toneTag ? `Tone: ${quote.toneTag}` : '';
+            document.getElementById('quote-tone-tag').classList.toggle('hidden', !quote.toneTag);
+            document.getElementById('quote-result').classList.remove('hidden');
+            updateRenderPreview();
+        }
+
+        // Asset loading
+        async function loadAssets(page = 1) {
+            if (currentAssetType === 'ai') return;
+            
+            setLoading('search-assets-btn', true);
+            hideError('asset-error');
+            
+            try {
+                const perPage = currentLimits?.isPro ? 16 : 2;
+                const response = await fetch(`${API_BASE}/api/assets/options`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': 'Bearer test-token'
+                    },
+                    body: JSON.stringify({
+                        type: currentAssetType,
+                        query: document.getElementById('asset-query').value,
+                        page,
+                        perPage
+                    })
+                });
+                
+                const data = await response.json();
+                if (data.ok) {
+                    if (page === 1) {
+                        displayAssets(data.data.items);
+                    } else {
+                        appendAssets(data.data.items);
+                    }
+                    hasMoreAssets = data.data.nextPage;
+                    currentAssetPage = page;
+                    updateLoadMoreButton();
+                } else {
+                    showError('asset-error', data.reason || 'Failed to load assets');
+                }
+            } catch (error) {
+                showError('asset-error', 'Network error');
+            } finally {
+                setLoading('search-assets-btn', false);
+            }
+        }
+
+        function displayAssets(assets) {
+            const grid = document.getElementById('asset-grid');
+            grid.innerHTML = '';
+            assets.forEach(asset => {
+                const assetElement = createAssetElement(asset);
+                grid.appendChild(assetElement);
+            });
+        }
+
+        function appendAssets(assets) {
+            const grid = document.getElementById('asset-grid');
+            assets.forEach(asset => {
+                const assetElement = createAssetElement(asset);
+                grid.appendChild(assetElement);
+            });
+        }
+
+        function createAssetElement(asset) {
+            const div = document.createElement('div');
+            div.className = `border-2 rounded overflow-hidden cursor-pointer transition-colors ${
+                selectedAsset?.id === asset.id ? 'border-blue-500' : 'border-gray-700'
+            }`;
+            div.onclick = () => selectAsset(asset);
+            
+            const media = currentAssetType === 'images' 
+                ? `<img src="${asset.thumbUrl || asset.fileUrl}" alt="${asset.query}" class="w-full h-32 object-cover" />`
+                : `<video src="${asset.fileUrl}" class="w-full h-32 object-cover" muted playsinline></video>`;
+            
+            div.innerHTML = `
+                ${media}
+                <div class="p-2 text-xs">
+                    <div class="truncate">${asset.query}</div>
+                    ${asset.photographer ? `<div class="text-gray-400 truncate">by ${asset.photographer}</div>` : ''}
+                </div>
+            `;
+            
+            return div;
+        }
+
+        function selectAsset(asset) {
+            selectedAsset = asset;
+            // Re-render grid to update selection
+            loadAssets(1);
+            updateRenderPreview();
+        }
+
+        function updateLoadMoreButton() {
+            const container = document.getElementById('load-more-container');
+            const button = document.getElementById('load-more-btn');
+            
+            if (hasMoreAssets && currentAssetType !== 'ai') {
+                container.classList.remove('hidden');
+                button.disabled = false;
+            } else {
+                container.classList.add('hidden');
+            }
+        }
+
+        function updateRenderPreview() {
+            const preview = document.getElementById('render-preview');
+            const renderBtn = document.getElementById('render-btn');
+            
+            if (currentQuote && selectedAsset) {
+                document.getElementById('preview-quote').textContent = currentQuote.text;
+                document.getElementById('preview-asset').textContent = 
+                    `Background: ${selectedAsset.provider === 'ai' ? 'AI Image' : `${currentAssetType} - ${selectedAsset.query}`}`;
+                preview.classList.remove('hidden');
+                renderBtn.classList.remove('hidden');
+            } else {
+                preview.classList.add('hidden');
+                renderBtn.classList.add('hidden');
+            }
+        }
+
+        // Event listeners
+        document.getElementById('generate-quote-btn').onclick = generateQuote;
+        document.getElementById('search-assets-btn').onclick = () => loadAssets(1);
+        document.getElementById('load-more-btn').onclick = () => loadAssets(currentAssetPage + 1);
+        document.getElementById('render-btn').onclick = () => {
+            alert('Render functionality will be wired to existing render endpoint');
+        };
+
+        // Tab switching
+        document.querySelectorAll('[data-type]').forEach(tab => {
+            tab.onclick = () => {
+                currentAssetType = tab.dataset.type;
+                
+                // Update tab styles
+                document.querySelectorAll('[data-type]').forEach(t => {
+                    t.className = 'px-4 py-2 rounded bg-gray-700';
+                });
+                tab.className = 'px-4 py-2 rounded bg-blue-600';
+                
+                // Show/hide controls
+                const searchControls = document.getElementById('search-controls');
+                const aiControls = document.getElementById('ai-controls');
+                
+                if (currentAssetType === 'ai') {
+                    searchControls.classList.add('hidden');
+                    aiControls.classList.remove('hidden');
+                } else {
+                    searchControls.classList.remove('hidden');
+                    aiControls.classList.add('hidden');
+                }
+                
+                // Load assets for new type
+                if (currentAssetType !== 'ai') {
+                    loadAssets(1);
+                }
+            };
+        });
+
+        // Initialize
+        loadLimits();
+    </script>
+</body>
+</html>
