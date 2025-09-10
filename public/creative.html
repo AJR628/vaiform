@@ -318,9 +318,14 @@
             <div class="grid grid-cols-2 gap-4">
                 <div>
                     <label class="block text-sm font-medium text-gray-300 mb-2">Voice</label>
-                    <select id="voiceover-voice" class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2">
-                        <option value="">Loading voices...</option>
-                    </select>
+                    <div class="flex gap-2">
+                        <select id="voiceover-voice" class="flex-1 bg-gray-800 border border-gray-700 rounded px-3 py-2">
+                            <option value="">Loading voices...</option>
+                        </select>
+                        <button id="retry-voices-btn" onclick="loadVoices()" class="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm">
+                            🔄
+                        </button>
+                    </div>
                 </div>
                 <div class="flex items-end gap-2">
                     <button
@@ -896,35 +901,44 @@
         }
 
         // Voice loading and preview functions
-        async function loadVoices() {
-            if (!window.auth?.currentUser) {
-                showError('voice-preview-status', 'Please log in to load voices');
-                return;
-            }
-
+        window.loadVoices = async function loadVoices() {
             try {
+                // Wait for auth to be ready
+                if (!window.auth?.currentUser) {
+                    // Wait a bit for auth to initialize
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                    if (!window.auth?.currentUser) {
+                        showError('voice-preview-status', 'Please log in to load voices');
+                        return;
+                    }
+                }
+
                 const { apiFetch } = await import('./api.mjs');
                 const data = await apiFetch('/voice/voices', {
                     method: 'GET'
                 });
 
-                if (data.ok) {
+                if (data.success) {
                     availableVoices = data.data.voices;
                     populateVoiceSelect();
+                    hideError('voice-preview-status');
                 } else {
                     showError('voice-preview-status', data.error || 'Failed to load voices');
                 }
             } catch (error) {
+                console.error('Voice loading error:', error);
                 showError('voice-preview-status', error.message || 'Network error');
             }
         }
 
         function populateVoiceSelect() {
             const select = document.getElementById('voiceover-voice');
+            const retryBtn = document.getElementById('retry-voices-btn');
             select.innerHTML = '';
             
             if (availableVoices.length === 0) {
                 select.innerHTML = '<option value="">No voices available</option>';
+                retryBtn.title = 'Retry loading voices';
                 return;
             }
 
@@ -935,8 +949,9 @@
                 select.appendChild(option);
             });
 
-            // Enable preview button
+            // Enable preview button and hide retry button
             document.getElementById('preview-voice-btn').disabled = false;
+            retryBtn.style.display = 'none';
         }
 
         async function previewVoice() {
@@ -1303,7 +1318,11 @@
                                 await window.__vaiform_diag__.tokenWait(4000); 
                             }
                             await refreshCredits(true);
-                            loadVoices();
+                            
+                            // Load voices with a small delay to ensure auth is fully ready
+                            setTimeout(() => {
+                                loadVoices();
+                            }, 500);
                         } catch (e) {
                             console.error("Failed to refresh credits:", e);
                         }
