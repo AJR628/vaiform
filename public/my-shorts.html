@@ -5,10 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>My Shorts - Vaiform</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
-    <script src="/config.js"></script>
+    <!-- Use the same modular config used by Creative Studio -->
+    <script type="module" src="./js/config.js"></script>
     <style>
         /* page scaffolding */
         .page { 
@@ -199,15 +197,9 @@
     </main>
 
     <script type="module">
-        // Import Firebase and API utilities
-        import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
-        import { getAuth, onAuthStateChanged, signInWithPopup, GoogleAuthProvider, signOut } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
-        import { apiFetch } from './api.mjs';
-
-        // Initialize Firebase
-        const app = initializeApp(window.FIREBASE_CONFIG);
-        const auth = getAuth(app);
-        const provider = new GoogleAuthProvider();
+        // Import Firebase instance from our shared config and needed auth helpers
+        import { auth, provider } from './js/config.js';
+        import { onAuthStateChanged, signInWithPopup, signOut } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 
         // Auth state management
         onAuthStateChanged(auth, (user) => {
