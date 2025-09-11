@@ -1,6 +1,5 @@
 import { auth, provider } from './config.js';
 import { onAuthStateChanged, signInWithPopup, signOut } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
-import { BACKEND_URL } from '../config.js';
 
 // Auth state management
 onAuthStateChanged(auth, (user) => {
