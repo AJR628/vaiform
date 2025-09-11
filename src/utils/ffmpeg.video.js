@@ -282,8 +282,9 @@ export async function renderVideoQuoteOverlay({
     `fontsize=${fit.fontsize}`,
     `fontcolor=${fontcolor}`,
     `shadowcolor=${shadowColor}`,`shadowx=${shadowX}`,`shadowy=${shadowY}`,
-    `box=${box}`,`boxcolor=${boxcolor}`,`boxborderw=${boxborderw}`,
-    `line_spacing=${effLineSpacing}`,'borderw=0'
+    `borderw=2`,`bordercolor=black@0.85`,
+    `line_spacing=${effLineSpacing}`,
+    `box=0`
   ].filter(Boolean).join(':')}`;
   const drawAuthor = (authorLine && String(authorLine).trim()) ? (() => {
     try { fs.writeFileSync(authorTxtPath, String(authorLine).trim(), { encoding: 'utf8' }); console.log('[drawtext][authorfile]', authorTxtPath, 'bytes=', fs.statSync(authorTxtPath).size); } catch {}
@@ -301,7 +302,7 @@ export async function renderVideoQuoteOverlay({
     `text='${escText(watermarkText || 'Vaiform')}'`,
     `x=w-tw-${watermarkPadding}`, `y=h-th-${watermarkPadding}`,
     `fontsize=${watermarkFontSize}`, 'fontcolor=white',
-    'shadowcolor=black','shadowx=2','shadowy=2','box=1','boxcolor=black@0.25','boxborderw=12','borderw=0'
+    'shadowcolor=black','shadowx=2','shadowy=2','borderw=2','bordercolor=black@0.85','box=0'
   ].filter(Boolean).join(':')}` : '';
 
   // Optional caption (bottom, safe area, wrapped)
@@ -318,8 +319,9 @@ export async function renderVideoQuoteOverlay({
       `fontsize=${cap.fontsize}`,
       `fontcolor=white`,
       `line_spacing=${cap.lineSpacing}`,
-      `box=1:boxcolor=black@0.40:boxborderw=18`,
-      `shadowcolor=black:shadowx=2:shadowy=2`
+      `borderw=2:bordercolor=black@0.85`,
+      `shadowcolor=black:shadowx=2:shadowy=2`,
+      `box=0`
     ].filter(Boolean).join(':')}`;
   }
   try { console.log('[ffmpeg] drawMain', drawMain); } catch {}

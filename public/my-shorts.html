@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Shorts - Vaiform</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+    <script src="/config.js"></script>
+    <style>
+        /* page scaffolding */
+        .page { 
+            position: static; 
+            padding: 24px; 
+            max-width: 1200px; 
+            margin: 0 auto; 
+        }
+        .page-header { 
+            margin-bottom: 16px; 
+        }
+        .page-header h1 { 
+            font-size: 28px; 
+            font-weight: 600; 
+        }
+
+        /* grid */
+        .my-shorts-grid {
+            display: grid;
+            grid-template-columns: repeat( auto-fill, minmax(180px, 1fr) );
+            gap: 16px;
+        }
+
+        /* cards */
+        .short-card {
+            background: #0f172a; /* slate-900 vibe */
+            border-radius: 14px;
+            overflow: hidden;
+            box-shadow: 0 6px 18px rgba(0,0,0,.25);
+            display: flex;
+            flex-direction: column;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .short-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(0,0,0,.35);
+        }
+
+        .short-card .thumb {
+            width: 100%;
+            aspect-ratio: 9 / 16;           /* keep it vertical */
+            overflow: hidden;
+            position: relative;
+        }
+
+        .short-card .thumb img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;               /* cover the frame */
+            display: block;
+        }
+
+        .short-card .status {
+            position: absolute;
+            top: 8px; left: 8px;
+            font-size: 11px;
+            background: rgba(16,185,129,.9); /* emerald for ready */
+            color: white;
+            padding: 4px 8px;
+            border-radius: 999px;
+            font-weight: 500;
+        }
+        .short-card[data-status="processing"] .status { background: rgba(245,158,11,.9); } /* amber */
+        .short-card[data-status="failed"] .status { background: rgba(239,68,68,.9); }      /* red */
+
+        .short-card .meta {
+            padding: 10px 12px;
+            font-size: 13px;
+            color: #cbd5e1; /* slate-300 */
+        }
+
+        .short-card .meta .quote {
+            display: -webkit-box;
+            -webkit-line-clamp: 2;          /* clamp to 2 lines */
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+            line-height: 1.4;
+        }
+
+        .short-card .meta .row {
+            margin-top: 8px;
+            display: flex; 
+            align-items: center; 
+            justify-content: space-between;
+            opacity: .75;
+        }
+
+        /* pager */
+        .pager { 
+            display: flex; 
+            justify-content: center; 
+            margin: 18px 0 8px; 
+        }
+        .btn { 
+            background: #1f2937; 
+            color: #fff; 
+            border: 0; 
+            border-radius: 10px; 
+            padding: 10px 14px; 
+            cursor: pointer; 
+            transition: background-color 0.2s ease;
+        }
+        .btn:hover {
+            background: #374151;
+        }
+        .btn[disabled] { 
+            opacity: .5; 
+            cursor: not-allowed; 
+        }
+
+        /* loading states */
+        .loading {
+            text-align: center;
+            color: #9ca3af;
+            padding: 40px 20px;
+        }
+
+        .empty-state {
+            text-align: center;
+            color: #9ca3af;
+            padding: 60px 20px;
+        }
+
+        .empty-state h3 {
+            font-size: 18px;
+            margin-bottom: 8px;
+            color: #d1d5db;
+        }
+
+        /* responsive adjustments */
+        @media (max-width: 640px) {
+            .page {
+                padding: 16px;
+            }
+            .my-shorts-grid {
+                grid-template-columns: repeat( auto-fill, minmax(150px, 1fr) );
+                gap: 12px;
+            }
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-white min-h-screen">
+    <!-- Header -->
+    <header class="bg-gray-800 border-b border-gray-700">
+        <div class="max-w-6xl mx-auto px-4 py-4 flex justify-between items-center">
+            <div class="flex items-center gap-6">
+                <h1 class="text-2xl font-bold text-indigo-400">
+                    <a href="/">Vaiform</a>
+                </h1>
+                <nav class="space-x-4 text-sm font-medium text-gray-300">
+                    <a href="/" class="hover:text-indigo-400">Home</a>
+                    <a href="/creative.html" class="hover:text-indigo-400">Creative Studio</a>
+                    <a href="/my-images.html" class="hover:text-indigo-400">My Images</a>
+                    <a href="/my-shorts.html" class="text-indigo-400">My Shorts</a>
+                    <a href="/buy-credits.html" class="hover:text-indigo-400">Buy Credits</a>
+                </nav>
+            </div>
+            <div class="flex items-center gap-4">
+                <div id="credit-display" class="text-sm text-gray-300 logged-in hidden">
+                    Credits: <span id="credit-count">--</span>
+                </div>
+                <button id="login-btn" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-medium logged-out">
+                    Login
+                </button>
+                <button id="logout-btn" class="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-lg text-sm font-medium logged-in hidden">
+                    Logout
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- My Shorts page -->
+    <main id="my-shorts-page" class="page page--myshorts">
+        <div class="page-header">
+            <h1>My Shorts</h1>
+        </div>
+
+        <div id="myShortsGrid" class="my-shorts-grid">
+            <div class="loading">
+                Loading your shorts...
+            </div>
+        </div>
+
+        <div class="pager">
+            <button id="loadMoreBtn" class="btn" hidden>Load more</button>
+        </div>
+    </main>
+
+    <script type="module">
+        // Import Firebase and API utilities
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
+        import { getAuth, onAuthStateChanged, signInWithPopup, GoogleAuthProvider, signOut } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
+        import { apiFetch } from './api.mjs';
+
+        // Initialize Firebase
+        const app = initializeApp(window.FIREBASE_CONFIG);
+        const auth = getAuth(app);
+        const provider = new GoogleAuthProvider();
+
+        // Auth state management
+        onAuthStateChanged(auth, (user) => {
+            const loggedIn = !!user;
+            
+            // Update UI visibility
+            document.querySelectorAll(".logged-in")?.forEach(el => el.classList.toggle("hidden", !loggedIn));
+            document.querySelectorAll(".logged-out")?.forEach(el => el.classList.toggle("hidden", loggedIn));
+
+            if (loggedIn) {
+                // Load shorts when user is authenticated
+                loadShorts();
+            } else {
+                // Show login prompt
+                showEmptyState("Please log in to view your shorts", "login");
+            }
+        });
+
+        // Auth event listeners
+        document.getElementById('login-btn').addEventListener('click', async () => {
+            try {
+                await signInWithPopup(auth, provider);
+            } catch (error) {
+                console.error('Login failed:', error);
+            }
+        });
+
+        document.getElementById('logout-btn').addEventListener('click', async () => {
+            try {
+                await signOut(auth);
+            } catch (error) {
+                console.error('Logout failed:', error);
+            }
+        });
+
+        // My Shorts functionality
+        let nextCursor = null;
+        let loading = false;
+
+        async function fetchMine(cursor) {
+            const url = new URL('/api/shorts/mine', location.origin);
+            url.searchParams.set('limit', '24');
+            if (cursor) url.searchParams.set('cursor', cursor);
+
+            const response = await fetch(url, {
+                headers: {
+                    'Authorization': `Bearer ${await auth.currentUser?.getIdToken()}`
+                }
+            });
+
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            return await response.json();
+        }
+
+        function cardTemplate(s) {
+            const status = s.status || 'ready';
+            const cover = s.coverImageUrl || s.videoUrl || '';
+            const safeQuote = (s.quoteText || '').trim();
+
+            const statusText = {
+                'ready': 'Ready',
+                'processing': 'Processing', 
+                'failed': 'Failed'
+            }[status] || 'Unknown';
+
+            return `
+                <article class="short-card" data-status="${status}">
+                    <div class="thumb">
+                        ${cover ? `<img alt="Short thumbnail" src="${cover}">` : '<div class="w-full h-full bg-gray-700 flex items-center justify-center text-gray-400">No Preview</div>'}
+                        <span class="status">${statusText}</span>
+                    </div>
+                    <div class="meta">
+                        <div class="quote">${safeQuote || 'No quote text'}</div>
+                        <div class="row">
+                            <span>${(s.durationSec ?? 0)}s • ${s.usedTemplate || s.template || 'default'}</span>
+                            ${status === 'ready' ? `<a class="btn" href="${s.videoUrl}" target="_blank" rel="noopener">Open</a>` : ''}
+                        </div>
+                    </div>
+                </article>
+            `;
+        }
+
+        function showEmptyState(message, type = 'empty') {
+            const grid = document.getElementById('myShortsGrid');
+            const html = `
+                <div class="empty-state">
+                    <h3>${message}</h3>
+                    ${type === 'login' ? '<p>Sign in to start creating shorts!</p>' : '<p>Create your first short in the Creative Studio.</p>'}
+                </div>
+            `;
+            grid.innerHTML = html;
+        }
+
+        async function loadShorts(cursor) {
+            if (loading) return;
+            loading = true;
+
+            const grid = document.getElementById('myShortsGrid');
+            const loadMoreBtn = document.getElementById('loadMoreBtn');
+
+            try {
+                if (!cursor) {
+                    grid.innerHTML = '<div class="loading">Loading your shorts...</div>';
+                }
+
+                const { success, data } = await fetchMine(cursor);
+                
+                if (!success) {
+                    throw new Error(data?.message || 'Failed to load shorts');
+                }
+
+                const { items = [], nextCursor: ncur, note } = data;
+
+                if (items.length === 0 && !cursor) {
+                    showEmptyState("No shorts yet!");
+                    return;
+                }
+
+                const html = items.map(cardTemplate).join('');
+                
+                if (cursor) {
+                    grid.insertAdjacentHTML('beforeend', html);
+                } else {
+                    grid.innerHTML = html;
+                }
+
+                nextCursor = ncur;
+                loadMoreBtn.hidden = !nextCursor;
+
+                // Show fallback notice if using index fallback
+                if (note === 'INDEX_FALLBACK') {
+                    const fallbackNotice = document.createElement('div');
+                    fallbackNotice.className = 'text-center text-yellow-400 text-sm mt-4 p-2 bg-yellow-900 bg-opacity-20 rounded';
+                    fallbackNotice.innerHTML = 'Showing latest shorts. Enable full pagination after database index is created.';
+                    grid.appendChild(fallbackNotice);
+                }
+
+            } catch (error) {
+                console.error('Failed to load shorts:', error);
+                grid.innerHTML = `
+                    <div class="empty-state">
+                        <h3>Failed to load shorts</h3>
+                        <p>Please try again later.</p>
+                    </div>
+                `;
+            } finally {
+                loading = false;
+            }
+        }
+
+        // Load more button
+        document.getElementById('loadMoreBtn')?.addEventListener('click', () => {
+            loadShorts(nextCursor);
+        });
+    </script>
+</body>
+</html>
