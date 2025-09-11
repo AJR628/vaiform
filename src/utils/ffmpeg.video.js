@@ -105,8 +105,30 @@ function runFfmpeg(args) {
   return new Promise((resolve, reject) => {
     // Log full args JSON for diagnostics
     try { console.log('[ffmpeg] spawn args JSON:', JSON.stringify(["-y", ...args])); } catch {}
-    const p = spawn(ffmpegPath, ["-y", ...args], { stdio: ["ignore", "inherit", "inherit"] });
-    p.on("exit", code => code === 0 ? resolve() : reject(new Error("ffmpeg_exit_"+code)));
+    const p = spawn(ffmpegPath, ["-y", ...args], { stdio: ["ignore", "pipe", "pipe"] });
+    let stdout = '', stderr = '';
+    p.stdout.on('data', d => stdout += d);
+    p.stderr.on('data', d => stderr += d);
+    
+    // Add timeout to prevent hanging
+    const timeout = setTimeout(() => {
+      p.kill('SIGKILL');
+      reject(new Error('FFmpeg timeout after 60 seconds'));
+    }, 60000);
+    
+    p.on("exit", code => {
+      clearTimeout(timeout);
+      if (code === 0) {
+        resolve({ stdout, stderr });
+      } else {
+        reject(new Error(`ffmpeg exited with code ${code}: ${stderr}`));
+      }
+    });
+    
+    p.on('error', err => {
+      clearTimeout(timeout);
+      reject(new Error(`FFmpeg spawn error: ${err.message}`));
+    });
   });
 }
 
@@ -567,8 +589,8 @@ export async function exportSocialImage({
   const effLineSpacing = Math.max(2, Number.isFinite(lineSpacing) ? lineSpacing : fit.lineSpacing);
 
   const drawMain = `drawtext=${[
-    fontfile ? `fontfile='${fontfile}'` : null,
     `text='${quoteTxt}'`,
+    fontfile ? `fontfile='${fontfile}'` : null,
     `x=(w-text_w)/2`,
     `y=(h-text_h)/2`,
     `fontsize=${fit.fontsize}`,
