@@ -1,5 +1,6 @@
 import { auth, provider } from './config.js';
 import { onAuthStateChanged, signInWithPopup, signOut } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
+import { BACKEND_URL } from '../config.js';
 
 // Auth state management
 onAuthStateChanged(auth, (user) => {
@@ -7,9 +8,11 @@ onAuthStateChanged(auth, (user) => {
   document.querySelectorAll('.logged-in')?.forEach(el => el.classList.toggle('hidden', !loggedIn));
   document.querySelectorAll('.logged-out')?.forEach(el => el.classList.toggle('hidden', loggedIn));
   if (loggedIn) {
+    refreshCredits();
     loadShorts();
   } else {
     showEmptyState('Please log in to view your shorts', 'login');
+    setCreditCount('--');
   }
 });
 
@@ -93,3 +96,22 @@ export async function loadShorts(cursor) {
 document.getElementById('loadMoreBtn')?.addEventListener('click', () => loadShorts(nextCursor));
 
 document.addEventListener('DOMContentLoaded', () => loadShorts());
+
+function setCreditCount(val){
+  const el = document.getElementById('credit-count');
+  if (el) el.textContent = String(val);
+}
+
+async function refreshCredits(){
+  try {
+    if (!auth.currentUser) { setCreditCount('--'); return; }
+    const token = await auth.currentUser.getIdToken();
+    const res = await fetch('/api/limits', { headers: { 'Authorization': `Bearer ${token}` }, credentials: 'include' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const j = await res.json();
+    setCreditCount(j?.credits ?? '--');
+  } catch(e){
+    console.warn('credits fetch failed', e?.message || e);
+    setCreditCount('--');
+  }
+}

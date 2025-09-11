@@ -3,7 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 
-const MAX_BYTES = Number(process.env.VIDEO_MAX_BYTES || 80 * 1024 * 1024); // bytes, default 80MB
+// Allow larger remote sources (e.g., 4K portrait from Pexels). Default 200MB, overridable via env.
+const MAX_BYTES = Number(process.env.VIDEO_MAX_BYTES || 200 * 1024 * 1024);
 const ALLOWED_TYPES = new Set(["video/mp4", "video/webm", "video/quicktime"]);
 
 export async function fetchVideoToTmp(url) {
