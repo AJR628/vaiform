@@ -7,8 +7,10 @@ const BackgroundSchema = z.object({
   kind: z.enum(["solid", "imageUrl", "stock", "upload", "ai", "stockVideo", "imageMontage"]).default("solid"),
   // imageUrl lane
   imageUrl: z.string().url().optional(),
-  // stock lane
+  // stock lane - require URL when using stock
   query: z.string().min(1).max(120).optional(),
+  url: z.string().url().optional(), // Required for stock/upload/ai backgrounds
+  type: z.enum(["image", "video"]).optional(), // Required for stock/upload/ai backgrounds
   // upload lane
   uploadUrl: z.string().url().optional(),
   // ai lane
@@ -26,6 +28,15 @@ const BackgroundSchema = z.object({
     attack: z.number().min(1).max(200).optional(),
     release: z.number().min(10).max(2000).optional(),
   }).optional(),
+}).refine((data) => {
+  // Require url and type for non-solid backgrounds
+  if (data.kind !== "solid" && data.kind !== "imageUrl") {
+    return data.url && data.type;
+  }
+  return true;
+}, {
+  message: "Background URL and type are required for stock/upload/ai backgrounds",
+  path: ["background"]
 });
 
 const CaptionStyleSchema = z.object({

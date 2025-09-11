@@ -622,6 +622,7 @@
             // Re-render grid to update selection
             loadAssets(1);
             updateRenderPreview();
+            updateRenderButtonState();
         }
 
         function updatePagination() {
@@ -645,6 +646,7 @@
         function useAsset(asset) {
             selectedAsset = asset;
             updateRenderPreview();
+            updateRenderButtonState();
             // Scroll to render section
             document.getElementById('render-preview').scrollIntoView({ behavior: 'smooth' });
         }
@@ -773,6 +775,7 @@
                 renderBtn.classList.add('hidden');
                 document.getElementById('live-preview-container').classList.add('hidden');
             }
+            updateRenderButtonState();
         }
 
         // Update caption style values
@@ -782,6 +785,28 @@
             document.getElementById('bg-opacity-value').textContent = document.getElementById('caption-bg-opacity').value + '%';
             updateRenderPreview();
             updateLivePreview();
+        }
+
+        // Update render button state based on validation
+        function updateRenderButtonState() {
+            const renderBtn = document.getElementById('render-btn');
+            const hasValidAsset = selectedAsset && (selectedAsset.fileUrl || selectedAsset.url);
+            const hasQuote = currentQuote;
+            const isLoggedIn = window.auth?.currentUser;
+            
+            const canRender = hasValidAsset && hasQuote && isLoggedIn;
+            renderBtn.disabled = !canRender;
+            
+            if (!canRender) {
+                let reason = '';
+                if (!isLoggedIn) reason = 'Please log in';
+                else if (!hasQuote) reason = 'Please select a quote';
+                else if (!hasValidAsset) reason = 'Please select a valid asset';
+                
+                renderBtn.title = reason;
+            } else {
+                renderBtn.title = 'Ready to render';
+            }
         }
 
         // Live preview functionality
@@ -1025,11 +1050,14 @@
             try {
                 const { apiFetch } = await import('./api.mjs');
                 
-                // Prepare the render payload
+                // Prepare the render payload with proper background structure
                 const background = {
                     kind: selectedAsset.provider === 'ai' ? 'ai' : 
                           selectedAsset.provider === 'uploaded' ? 'upload' : 'stock',
+                    type: selectedAsset.type || (selectedAsset.provider === 'ai' ? 'image' : 'image'), // Default to image
+                    url: selectedAsset.fileUrl || selectedAsset.url, // Required URL
                     query: selectedAsset.query,
+                    // Legacy fields for backward compatibility
                     imageUrl: selectedAsset.provider === 'uploaded' ? selectedAsset.fileUrl : undefined,
                     prompt: selectedAsset.provider === 'ai' ? selectedAsset.query : undefined
                 };
@@ -1321,6 +1349,7 @@
 
                         if (!loggedIn) {
                             updateCreditUI(0);
+                            updateRenderButtonState();
                             return;
                         }
 
@@ -1330,6 +1359,9 @@
                                 await window.__vaiform_diag__.tokenWait(4000); 
                             }
                             await refreshCredits(true);
+                            
+                            // Update render button state after auth changes
+                            updateRenderButtonState();
                             
                             // Load voices with a small delay to ensure auth is fully ready
                             setTimeout(() => {

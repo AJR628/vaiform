@@ -3,6 +3,7 @@ import ffmpegPath from "ffmpeg-static";
 import fs from "fs";
 import os from "os";
 import path from "path";
+import { writeCaptionFile } from "./captionFile.js";
 
 /**
  * Spawn ffmpeg with -y and provided args. Resolves on exit code 0, rejects otherwise.
@@ -14,6 +15,11 @@ export function runFFmpeg(args, opts = {}) {
     let stdout = "";
     let stderr = "";
     let proc;
+    let timeoutId;
+    
+    // Set timeout (default 120 seconds, configurable via opts.timeout)
+    const timeoutMs = opts.timeout || 120000;
+    
     try {
       if (!ffmpegPath) {
         const e = new Error("FFMPEG_NOT_AVAILABLE: ffmpeg-static path not resolved");
@@ -37,9 +43,22 @@ export function runFFmpeg(args, opts = {}) {
       return reject(e);
     }
 
+    // Set up timeout
+    timeoutId = setTimeout(() => {
+      if (proc && !proc.killed) {
+        console.log(`[ffmpeg] Timeout after ${timeoutMs}ms, killing process`);
+        proc.kill('SIGKILL');
+        const err = new Error(`FFmpeg timeout after ${timeoutMs}ms`);
+        err.code = "FFMPEG_TIMEOUT";
+        err.stderr = stderr;
+        reject(err);
+      }
+    }, timeoutMs);
+
     proc.stdout.on("data", (d) => { stdout += d.toString(); });
     proc.stderr.on("data", (d) => { stderr += d.toString(); });
     proc.on("error", (err) => {
+      clearTimeout(timeoutId);
       const notFound = err?.code === "ENOENT";
       const message = notFound
         ? "ffmpeg binary not found. Please install ffmpeg and ensure it is in PATH."
@@ -50,6 +69,7 @@ export function runFFmpeg(args, opts = {}) {
       reject(e);
     });
     proc.on("close", (code) => {
+      clearTimeout(timeoutId);
       if (code === 0) return resolve({ code, stdout, stderr });
       const err = new Error(`ffmpeg exited with code ${code}${stderr ? ": " + stderr : ""}`);
       err.code = code;
@@ -165,7 +185,9 @@ export async function renderSolidQuoteVideo({ outPath, text, durationSec = 8, te
       filter = `${filter},${author}`;
     }
   } else {
-    const mainLine = `drawtext=text='${safeText}'${fontOpt}:fontcolor=white:fontsize=64:line_spacing=8:shadowcolor=black@0.6:shadowx=2:shadowy=2:box=1:boxcolor=black@0.35:boxborderw=24:x=(w-text_w)/2:y=(h-text_h)/2`;
+    // Use textfile= to avoid all escaping issues
+    const captionFile = writeCaptionFile(String(text).trim());
+    const mainLine = `drawtext=fontfile=${escapeFilterPath(fontPath || '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf')}:textfile=${escapeFilterPath(captionFile)}:reload=0:fontcolor=white:fontsize=64:line_spacing=8:shadowcolor=black@0.6:shadowx=2:shadowy=2:box=1:boxcolor=black@0.35:boxborderw=24:x=(w-text_w)/2:y=(h-text_h)/2`;
     filter = mainLine;
     if (authorLine && String(authorLine).trim()) {
       const safeAuthor = escapeDrawtext(String(authorLine).trim());
@@ -264,7 +286,9 @@ export async function renderImageQuoteVideo({
       layers.push(author);
     }
   } else {
-    const mainLine = `drawtext=text='${safeText}'${fontOpt}:fontcolor=${fontcolor}:fontsize=${fontsize}:line_spacing=${lineSpacing}:shadowcolor=${shadowColor}:shadowx=${shadowX}:shadowy=${shadowY}:box=${box}:boxcolor=${boxcolor}:boxborderw=${boxborderw}:x=(w-text_w)/2:y=(h-text_h)/2`;
+    // Use textfile= to avoid all escaping issues
+    const captionFile = writeCaptionFile(String(text).trim());
+    const mainLine = `drawtext=fontfile=${escapeFilterPath(fontPath || '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf')}:textfile=${escapeFilterPath(captionFile)}:reload=0:fontcolor=${fontcolor}:fontsize=${fontsize}:line_spacing=${lineSpacing}:shadowcolor=${shadowColor}:shadowx=${shadowX}:shadowy=${shadowY}:box=${box}:boxcolor=${boxcolor}:boxborderw=${boxborderw}:x=(w-text_w)/2:y=(h-text_h)/2`;
     layers.push(mainLine);
     if (authorLine && String(authorLine).trim()) {
       const safeAuthor = escapeDrawtext(String(authorLine).trim());
