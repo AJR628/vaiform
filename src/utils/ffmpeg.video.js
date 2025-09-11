@@ -178,9 +178,10 @@ function fitQuoteToBox({ text, boxWidthPx, baseFontSize = 72 }) {
 function buildVideoChain({ width, height, videoVignette, drawLayers }){
   const W = Math.max(4, Number(width)||1080);
   const H = Math.max(4, Number(height)||1920);
-  const scale = `scale='min(iw*${H}/ih\,${W})':'min(ih*${W}/iw\,${H})':force_original_aspect_ratio=decrease`;
-  const pad = `pad=${W}:${H}:ceil((${W}-iw)/2):ceil((${H}-ih)/2)`;
-  const core = [ scale, pad, (videoVignette ? 'vignette=PI/4:0.5' : null), 'format=yuv420p' ].filter(Boolean);
+  // Fill portrait frame without letterboxing: scale to cover then crop
+  const scale = `scale='if(gt(a,${W}/${H}),-2,${W})':'if(gt(a,${W}/${H}),${H},-2)'`;
+  const crop = `crop=${W}:${H}`;
+  const core = [ scale, crop, (videoVignette ? 'vignette=PI/4:0.5' : null), 'format=yuv420p' ].filter(Boolean);
   const vchain = makeChain('0:v', [ joinF(core), ...drawLayers ].filter(Boolean), 'vout');
   return vchain;
 }
@@ -367,9 +368,9 @@ export async function renderVideoQuoteOverlay({
   console.log('[ffmpeg] RAW   -filter_complex:', rawFilter);
   console.log('[ffmpeg] FINAL -filter_complex:', finalFilter);
   try {
-    const scaleDesc = `scale='min(iw*${H}/ih,${W})':'min(ih*${W}/iw,${H})'`; // conceptual
-    const padDesc = `pad=${W}x${H}`;
-    console.log('[ffmpeg] geometry', { scale: scaleDesc, pad: padDesc });
+    const scaleDesc = `scale='if(gt(a,${W}/${H}),-2,${W})':'if(gt(a,${W}/${H}),${H},-2)'`;
+    const cropDesc = `crop=${W}:${H}`;
+    console.log('[ffmpeg] geometry', { scale: scaleDesc, crop: cropDesc });
   } catch {}
   if (finalFilter.includes('],') || finalFilter.includes(',[')) {
     console.warn('[ffmpeg][warn] commas around labels detected');
@@ -383,14 +384,12 @@ export async function renderVideoQuoteOverlay({
     console.warn('[ffmpeg][warn] expected [vout] and [aout] labels present?');
   }
 
-  // Add seek optimization for videos (skip first second to avoid keyframe issues)
-  const inputFlags = ['-ss', '1']; // Fast start for videos
-  
+  // Accurate seek: place -ss after input to avoid black frames on sparse keyframes
   const args = [
     '-y',
-    ...inputFlags,
     '-i', videoPath,
     ...(ttsPath ? ['-i', ttsPath] : []),
+    '-ss', '0.5',
     '-filter_complex', finalFilter,
     '-map', '[vout]', '-map', '[aout]',
     '-c:v', 'libx264', '-crf', '23', '-preset', 'veryfast',
