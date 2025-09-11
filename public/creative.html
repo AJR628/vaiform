@@ -1051,11 +1051,28 @@
                 const { apiFetch } = await import('./api.mjs');
                 
                 // Prepare the render payload with proper background structure
+                const assetUrl = selectedAsset.fileUrl || selectedAsset.url;
+                
+                // Detect type from URL extension
+                const detectTypeFromUrl = (url) => {
+                    if (!url) return 'image'; // Default fallback
+                    const ext = url.toLowerCase().split('.').pop();
+                    if (['mp4', 'mov', 'avi', 'mkv', 'webm', 'm4v'].includes(ext)) {
+                        return 'video';
+                    }
+                    return 'image'; // Default for jpg, png, gif, etc.
+                };
+                
+                const detectedType = detectTypeFromUrl(assetUrl);
+                
+                console.log(`[render] Asset URL: ${assetUrl}`);
+                console.log(`[render] Detected type: ${detectedType}`);
+                
                 const background = {
                     kind: selectedAsset.provider === 'ai' ? 'ai' : 
                           selectedAsset.provider === 'uploaded' ? 'upload' : 'stock',
-                    type: selectedAsset.type || (selectedAsset.provider === 'ai' ? 'image' : 'image'), // Default to image
-                    url: selectedAsset.fileUrl || selectedAsset.url, // Required URL
+                    type: detectedType, // Use detected type from URL
+                    url: assetUrl, // Required URL
                     query: selectedAsset.query,
                     // Legacy fields for backward compatibility
                     imageUrl: selectedAsset.provider === 'uploaded' ? selectedAsset.fileUrl : undefined,

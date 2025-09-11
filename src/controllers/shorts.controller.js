@@ -2,6 +2,7 @@ import { z } from "zod";
 import { createShortService } from "../services/shorts.service.js";
 import admin from "../config/firebase.js";
 import { buildPublicUrl, getDownloadToken } from "../utils/storage.js";
+import { quickValidateAssetUrl } from "../utils/assetValidation.js";
 
 const BackgroundSchema = z.object({
   kind: z.enum(["solid", "imageUrl", "stock", "upload", "ai", "stockVideo", "imageMontage"]).default("solid"),
@@ -36,6 +37,24 @@ const BackgroundSchema = z.object({
   return true;
 }, {
   message: "Background URL and type are required for stock/upload/ai backgrounds",
+  path: ["background"]
+}).refine((data) => {
+  // Validate that type matches URL extension
+  if (data.url && data.type) {
+    const url = data.url.toLowerCase();
+    const isVideoUrl = ['mp4', 'mov', 'avi', 'mkv', 'webm', 'm4v'].some(ext => url.includes(`.${ext}`));
+    const isImageUrl = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'].some(ext => url.includes(`.${ext}`));
+    
+    if (data.type === 'video' && !isVideoUrl) {
+      return false;
+    }
+    if (data.type === 'image' && !isImageUrl) {
+      return false;
+    }
+  }
+  return true;
+}, {
+  message: "Background type must match URL extension (video URLs must have type 'video', image URLs must have type 'image')",
   path: ["background"]
 });
 
@@ -155,6 +174,23 @@ export async function createShort(req, res) {
     const ownerUid = req.user?.uid;
     if (!ownerUid) {
       return res.status(401).json({ success: false, error: "UNAUTHENTICATED", message: "Login required" });
+    }
+
+    // Validate asset URL accessibility for non-solid backgrounds
+    if (background.kind !== "solid" && background.url) {
+      console.log(`[shorts] Validating asset URL: ${background.url} (type: ${background.type})`);
+      const validation = await quickValidateAssetUrl(background.url, 10000); // 10 second timeout
+      
+      if (!validation.valid) {
+        console.error(`[shorts] Asset validation failed: ${validation.error}`);
+        return res.status(400).json({ 
+          success: false, 
+          error: "INVALID_ASSET", 
+          message: `Asset URL is not accessible: ${validation.error}` 
+        });
+      }
+      
+      console.log(`[shorts] Asset validation passed: ${background.url}`);
     }
 
     const result = await createShortService({ ownerUid, mode, text, template, durationSec, voiceover, wantAttribution, background, debugAudioPath, captionMode, watermark, captionStyle, voiceId });
