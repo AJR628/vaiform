@@ -101,10 +101,17 @@ function wrapCaption(raw, w, h, opts = {}) {
   };
 }
 
-function runFfmpeg(args) {
+function runFfmpeg(args, opts = {}) {
   return new Promise((resolve, reject) => {
     // Log full args JSON for diagnostics
     try { console.log('[ffmpeg] spawn args JSON:', JSON.stringify(["-y", ...args])); } catch {}
+    
+    // Determine timeout based on whether this is a video (longer timeout)
+    const isVideo = args.some(arg => typeof arg === 'string' && arg.includes('.mp4')) || 
+                   args.some(arg => typeof arg === 'string' && arg.includes('.mov')) ||
+                   args.some(arg => typeof arg === 'string' && arg.includes('.webm'));
+    const timeoutMs = opts.timeout || (isVideo ? 240000 : 120000); // 4min for videos, 2min for others
+    
     const p = spawn(ffmpegPath, ["-y", ...args], { stdio: ["ignore", "pipe", "pipe"] });
     let stdout = '', stderr = '';
     p.stdout.on('data', d => stdout += d);
@@ -112,9 +119,10 @@ function runFfmpeg(args) {
     
     // Add timeout to prevent hanging
     const timeout = setTimeout(() => {
+      console.log(`[ffmpeg] Timeout after ${timeoutMs}ms, killing process`);
       p.kill('SIGKILL');
-      reject(new Error('FFmpeg timeout after 60 seconds'));
-    }, 60000);
+      reject(new Error('FFMPEG_TIMEOUT'));
+    }, timeoutMs);
     
     p.on("exit", code => {
       clearTimeout(timeout);
@@ -373,8 +381,12 @@ export async function renderVideoQuoteOverlay({
     console.warn('[ffmpeg][warn] expected [vout] and [aout] labels present?');
   }
 
+  // Add seek optimization for videos (skip first second to avoid keyframe issues)
+  const inputFlags = ['-ss', '1']; // Fast start for videos
+  
   const args = [
     '-y',
+    ...inputFlags,
     '-i', videoPath,
     ...(ttsPath ? ['-i', ttsPath] : []),
     '-filter_complex', finalFilter,

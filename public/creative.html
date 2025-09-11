@@ -1161,6 +1161,29 @@
                     const result = data.data;
                     alert(`Short created successfully! Job ID: ${result.jobId}`);
                     
+                    // Add optimistic card to My Shorts if modal is open
+                    if (myShortsData && result.jobId) {
+                        const optimisticShort = {
+                            id: result.jobId,
+                            status: 'ready',
+                            videoUrl: result.videoUrl,
+                            coverImageUrl: result.coverImageUrl,
+                            durationSec: result.durationSec,
+                            quoteText: currentQuote?.text || 'Generated quote',
+                            createdAt: new Date(),
+                            usedQuote: result.usedQuote
+                        };
+                        
+                        // Add to beginning of array (newest first)
+                        myShortsData.unshift(optimisticShort);
+                        
+                        // Re-render the grid if it's visible
+                        const gridEl = document.getElementById('my-shorts-grid');
+                        if (gridEl && !gridEl.classList.contains('hidden')) {
+                            renderMyShortsGrid();
+                        }
+                    }
+                    
                     // You could redirect to a results page or show the video here
                     // For now, we'll just show success
                     console.log('Render result:', result);
@@ -1538,6 +1561,14 @@
                     loadMoreEl.classList.remove('hidden');
                 } else {
                     loadMoreEl.classList.add('hidden');
+                }
+
+                // Show fallback notice if using index fallback
+                if (data.data.note === 'INDEX_FALLBACK') {
+                    const fallbackNotice = document.createElement('div');
+                    fallbackNotice.className = 'text-center text-yellow-400 text-sm mt-4 p-2 bg-yellow-900 bg-opacity-20 rounded';
+                    fallbackNotice.innerHTML = 'Showing latest shorts. Enable full pagination after database index is created.';
+                    document.getElementById('my-shorts-content').appendChild(fallbackNotice);
                 }
 
             } catch (error) {

@@ -211,37 +211,82 @@ export async function getMyShorts(req, res) {
       return res.status(401).json({ success: false, error: "UNAUTHENTICATED", message: "Login required" });
     }
 
-    const { limit = 24, cursor } = req.query;
+    const limit = Math.min(Number(req.query.limit) || 24, 100);
+    const cursor = req.query.cursor;
     const db = admin.firestore();
     
-    let query = db.collection('shorts')
-      .where('ownerId', '==', ownerUid)
-      .orderBy('createdAt', 'desc')
-      .limit(Number(limit));
-    
-    if (cursor) {
-      query = query.startAfter(new Date(cursor));
+    // Try the optimal query first (with proper index)
+    try {
+      let query = db.collection('shorts')
+        .where('ownerId', '==', ownerUid)
+        .orderBy('createdAt', 'desc')
+        .limit(limit);
+      
+      if (cursor) {
+        query = query.startAfter(new Date(cursor));
+      }
+      
+      const snapshot = await query.get();
+      const items = snapshot.docs.map(doc => ({ 
+        id: doc.id, 
+        ...doc.data(),
+        createdAt: doc.data().createdAt?.toDate?.() || null,
+        completedAt: doc.data().completedAt?.toDate?.() || null,
+        failedAt: doc.data().failedAt?.toDate?.() || null
+      }));
+      
+      const nextCursor = items.length > 0 ? items[items.length - 1].createdAt : null;
+      
+      return res.json({ 
+        success: true, 
+        data: { 
+          items, 
+          nextCursor: nextCursor ? nextCursor.toISOString() : null,
+          hasMore: items.length === limit
+        } 
+      });
+    } catch (err) {
+      // Firestore code=9 FAILED_PRECONDITION → requires an index
+      const needsIndex = err?.code === 9 || /requires an index/i.test(String(err?.message || ''));
+      if (!needsIndex) {
+        // bubble real errors
+        throw err;
+      }
+      
+      console.warn("[shorts] Using index fallback for getMyShorts:", err.message);
+      
+      // Fallback path: no orderBy (no index required). We sort in memory.
+      const snapshot = await db.collection('shorts')
+        .where('ownerId', '==', ownerUid)
+        .get();
+      
+      const all = snapshot.docs.map(doc => ({ 
+        id: doc.id, 
+        ...doc.data(),
+        createdAt: doc.data().createdAt?.toDate?.() || null,
+        completedAt: doc.data().completedAt?.toDate?.() || null,
+        failedAt: doc.data().failedAt?.toDate?.() || null
+      }));
+      
+      // Sort by createdAt in memory
+      all.sort((a, b) => {
+        if (!a.createdAt || !b.createdAt) return 0;
+        return b.createdAt.getTime() - a.createdAt.getTime();
+      });
+      
+      const items = all.slice(0, limit);
+      const nextCursor = null; // disable pagination until index exists
+      
+      return res.json({ 
+        success: true, 
+        data: { 
+          items, 
+          nextCursor: null,
+          hasMore: false,
+          note: 'INDEX_FALLBACK'
+        } 
+      });
     }
-    
-    const snapshot = await query.get();
-    const items = snapshot.docs.map(doc => ({ 
-      id: doc.id, 
-      ...doc.data(),
-      createdAt: doc.data().createdAt?.toDate?.() || null,
-      completedAt: doc.data().completedAt?.toDate?.() || null,
-      failedAt: doc.data().failedAt?.toDate?.() || null
-    }));
-    
-    const nextCursor = items.length > 0 ? items[items.length - 1].createdAt : null;
-    
-    return res.json({ 
-      success: true, 
-      data: { 
-        items, 
-        nextCursor: nextCursor ? nextCursor.toISOString() : null,
-        hasMore: items.length === Number(limit)
-      } 
-    });
   } catch (error) {
     console.error("/shorts/mine error:", error);
     return res.status(500).json({ success: false, error: "FETCH_FAILED", message: error.message });
