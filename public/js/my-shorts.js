@@ -95,7 +95,16 @@ export async function loadShorts(cursor) {
 
 document.getElementById('loadMoreBtn')?.addEventListener('click', () => loadShorts(nextCursor));
 
-document.addEventListener('DOMContentLoaded', () => loadShorts());
+// Gate first load on auth being ready to avoid 401
+document.addEventListener('DOMContentLoaded', () => {
+  const unsub = onAuthStateChanged(auth, async (u) => {
+    if (u) {
+      await refreshCredits();
+      await loadShorts();
+      unsub && unsub();
+    }
+  });
+});
 
 function setCreditCount(val){
   const el = document.getElementById('credit-count');

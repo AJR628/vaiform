@@ -173,7 +173,7 @@ export async function createShortService({ ownerUid, mode, text, template, durat
             bgAudioVolume: background.bgAudioVolume || 0.35,
             voiceoverDelaySec: background.voiceoverDelaySec,
             tailPadSec: background.tailPadSec,
-            captionText: captionMode === "static" ? usedQuote.text : null,
+            captionText: captionMode === "subtitle" ? usedQuote.text : null,
             captionStyle,
             watermark: watermarkFinal,
             watermarkText: "Vaiform"
@@ -221,7 +221,7 @@ export async function createShortService({ ownerUid, mode, text, template, durat
             bgAudioVolume: background.bgAudioVolume || 0.35,
             voiceoverDelaySec: background.voiceoverDelaySec,
             tailPadSec: background.tailPadSec,
-            captionText: captionMode === "static" ? usedQuote.text : null,
+            captionText: captionMode === "subtitle" ? usedQuote.text : null,
             captionStyle,
             watermark: watermarkFinal,
             watermarkText: "Vaiform"
