@@ -161,15 +161,15 @@ export async function renderSolidQuoteVideo({ outPath, text, durationSec = 8, te
     filter = `subtitles='${esc(assPath)}'`;
     if (authorLine && String(authorLine).trim()) {
       const safeAuthor = escapeDrawtext(String(authorLine).trim());
-      const author = `drawtext=text=${safeAuthor}${fontOpt}:fontcolor=white@0.85:fontsize=36:shadowcolor=black@0.5:shadowx=1:shadowy=1:box=0:x=(w-text_w)/2:y=h/2+120`;
+      const author = `drawtext=text='${safeAuthor}'${fontOpt}:fontcolor=white@0.85:fontsize=36:shadowcolor=black@0.5:shadowx=1:shadowy=1:box=0:x=(w-text_w)/2:y=h/2+120`;
       filter = `${filter},${author}`;
     }
   } else {
-    const mainLine = `drawtext=text=${safeText}${fontOpt}:fontcolor=white:fontsize=64:line_spacing=8:shadowcolor=black@0.6:shadowx=2:shadowy=2:box=1:boxcolor=black@0.35:boxborderw=24:x=(w-text_w)/2:y=(h-text_h)/2`;
+    const mainLine = `drawtext=text='${safeText}'${fontOpt}:fontcolor=white:fontsize=64:line_spacing=8:shadowcolor=black@0.6:shadowx=2:shadowy=2:box=1:boxcolor=black@0.35:boxborderw=24:x=(w-text_w)/2:y=(h-text_h)/2`;
     filter = mainLine;
     if (authorLine && String(authorLine).trim()) {
       const safeAuthor = escapeDrawtext(String(authorLine).trim());
-      const author = `drawtext=text=${safeAuthor}${fontOpt}:fontcolor=white@0.85:fontsize=36:shadowcolor=black@0.5:shadowx=1:shadowy=1:box=0:x=(w-text_w)/2:y=h/2+120`;
+      const author = `drawtext=text='${safeAuthor}'${fontOpt}:fontcolor=white@0.85:fontsize=36:shadowcolor=black@0.5:shadowx=1:shadowy=1:box=0:x=(w-text_w)/2:y=h/2+120`;
       filter = `${mainLine},${author}`;
     }
   }
@@ -179,7 +179,7 @@ export async function renderSolidQuoteVideo({ outPath, text, durationSec = 8, te
   }
   if (watermark) {
     const escTxt = escapeDrawtext(String(watermarkText));
-    const wm = `drawtext=text=${escTxt}${fontOpt}:fontcolor=white:fontsize=${watermarkFontSize}:shadowcolor=black:shadowx=2:shadowy=2:box=1:boxcolor=black@0.25:boxborderw=12:x=w-tw-${watermarkPadding}:y=h-th-${watermarkPadding}`;
+    const wm = `drawtext=text='${escTxt}'${fontOpt}:fontcolor=white:fontsize=${watermarkFontSize}:shadowcolor=black:shadowx=2:shadowy=2:box=1:boxcolor=black@0.25:boxborderw=12:x=w-tw-${watermarkPadding}:y=h-th-${watermarkPadding}`;
     filter = `${filter},${wm}`;
   }
 
@@ -260,15 +260,15 @@ export async function renderImageQuoteVideo({
     layers.push(`subtitles='${esc(assPath)}'`);
     if (authorLine && String(authorLine).trim()) {
       const safeAuthor = escapeDrawtext(String(authorLine).trim());
-      const author = `drawtext=text=${safeAuthor}${fontOpt}:fontcolor=${fontcolor}:fontsize=${authorFontsize}:shadowcolor=${shadowColor}:shadowx=${shadowX}:shadowy=${shadowY}:box=0:x=(w-text_w)/2:y=(h/2)+220`;
+      const author = `drawtext=text='${safeAuthor}'${fontOpt}:fontcolor=${fontcolor}:fontsize=${authorFontsize}:shadowcolor=${shadowColor}:shadowx=${shadowX}:shadowy=${shadowY}:box=0:x=(w-text_w)/2:y=(h/2)+220`;
       layers.push(author);
     }
   } else {
-    const mainLine = `drawtext=text=${safeText}${fontOpt}:fontcolor=${fontcolor}:fontsize=${fontsize}:line_spacing=${lineSpacing}:shadowcolor=${shadowColor}:shadowx=${shadowX}:shadowy=${shadowY}:box=${box}:boxcolor=${boxcolor}:boxborderw=${boxborderw}:x=(w-text_w)/2:y=(h-text_h)/2`;
+    const mainLine = `drawtext=text='${safeText}'${fontOpt}:fontcolor=${fontcolor}:fontsize=${fontsize}:line_spacing=${lineSpacing}:shadowcolor=${shadowColor}:shadowx=${shadowX}:shadowy=${shadowY}:box=${box}:boxcolor=${boxcolor}:boxborderw=${boxborderw}:x=(w-text_w)/2:y=(h-text_h)/2`;
     layers.push(mainLine);
     if (authorLine && String(authorLine).trim()) {
       const safeAuthor = escapeDrawtext(String(authorLine).trim());
-      const author = `drawtext=text=${safeAuthor}${fontOpt}:fontcolor=${fontcolor}:fontsize=${authorFontsize}:shadowcolor=${shadowColor}:shadowx=${shadowX}:shadowy=${shadowY}:box=0:x=(w-text_w)/2:y=(h/2)+220`;
+      const author = `drawtext=text='${safeAuthor}'${fontOpt}:fontcolor=${fontcolor}:fontsize=${authorFontsize}:shadowcolor=${shadowColor}:shadowx=${shadowX}:shadowy=${shadowY}:box=0:x=(w-text_w)/2:y=(h/2)+220`;
       layers.push(author);
     }
   }
@@ -277,7 +277,7 @@ export async function renderImageQuoteVideo({
   }
   if (watermark) {
     const escTxt = escapeDrawtext(String(watermarkText));
-    const wm = `drawtext=text=${escTxt}${fontOpt}:fontcolor=${fontcolor}:fontsize=${watermarkFontSize}:shadowcolor=${shadowColor}:shadowx=2:shadowy=2:box=1:boxcolor=black@0.25:boxborderw=12:x=w-tw-${watermarkPadding}:y=h-th-${watermarkPadding}`;
+    const wm = `drawtext=text='${escTxt}'${fontOpt}:fontcolor=${fontcolor}:fontsize=${watermarkFontSize}:shadowcolor=${shadowColor}:shadowx=2:shadowy=2:box=1:boxcolor=black@0.25:boxborderw=12:x=w-tw-${watermarkPadding}:y=h-th-${watermarkPadding}`;
     layers.push(wm);
   }
 
