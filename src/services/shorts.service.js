@@ -13,6 +13,7 @@ import { extractCoverJpeg } from "../utils/ffmpeg.cover.js";
 import { generateAIImage } from "./ai.image.provider.js";
 import { fetchVideoToTmp } from "../utils/video.fetch.js";
 import { renderVideoQuoteOverlay } from "../utils/ffmpeg.video.js";
+import admin from "../config/firebase.js";
 
 export function finalizeQuoteText(mode, text) {
   const t = (text || "").trim();
@@ -30,6 +31,38 @@ export async function createShortService({ ownerUid, mode, text, template, durat
   const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), `${jobId}-`));
   const outPath = path.join(tmpRoot, "short.mp4");
   const audioPath = path.join(tmpRoot, "quote.mp3");
+
+  // Create Firestore document for tracking
+  const db = admin.firestore();
+  const shortsRef = db.collection('shorts').doc(jobId);
+  
+  try {
+    await shortsRef.set({
+      ownerId: ownerUid,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      status: 'processing',
+      template,
+      durationSec,
+      quoteText: text,
+      voiceId: voiceId || null,
+      background: {
+        kind: background.kind,
+        type: background.type,
+        query: background.query,
+        url: background.url
+      },
+      mode,
+      voiceover,
+      wantAttribution,
+      captionMode,
+      watermark: watermark !== false
+    });
+    console.log(`[shorts] Created Firestore doc: ${jobId}`);
+  } catch (error) {
+    console.warn(`[shorts] Failed to create Firestore doc: ${error.message}`);
+  }
+
+  try {
 
   // Resolve quote using engine (curated or aphorism) unless provided
   const usedQuote = overrideQuote || await getQuote({ mode, text, template });
@@ -124,41 +157,96 @@ export async function createShortService({ ownerUid, mode, text, template, durat
         await renderSolidQuoteVideo({ outPath, text: usedQuote.text, durationSec, template, authorLine, assPath, progressBar: karaokeModeEffective === "progress", watermark: watermarkFinal });
       }
     } else if (background?.kind === "stock" && background?.query) {
-      try {
-        const stockUrl = await resolveStockImage({ query: background.query });
-        const img = await fetchImageToTmp(stockUrl);
-        imageTmpPath = img.path;
-        await renderImageQuoteVideo({
-          outPath,
-          imagePath: imageTmpPath,
-          durationSec,
-          text: usedQuote.text,
-          authorLine,
-          kenBurns: background.kenBurns,
-          assPath,
-          progressBar: karaokeModeEffective === "progress",
-          watermark: watermarkFinal,
-        });
-      } catch (e) {
-        console.warn("[background] stock fallback:", e?.message || e);
-        await renderSolidQuoteVideo({ outPath, text: usedQuote.text, durationSec, template, authorLine, assPath, progressBar: karaokeModeEffective === "progress", watermark: watermarkFinal });
+      // Handle both image and video stock backgrounds
+      if (background.type === "video" && background.url) {
+        try {
+          console.log(`[background] Processing stock video: ${background.url}`);
+          const vid = await fetchVideoToTmp(background.url);
+          await renderVideoQuoteOverlay({
+            videoPath: vid.path,
+            outPath,
+            durationSec,
+            text: usedQuote.text,
+            authorLine,
+            ttsPath: audioOk ? v.audioPath : null,
+            keepVideoAudio: background.keepVideoAudio || false,
+            bgAudioVolume: background.bgAudioVolume || 0.35,
+            voiceoverDelaySec: background.voiceoverDelaySec,
+            tailPadSec: background.tailPadSec,
+            captionText: captionMode === "static" ? usedQuote.text : null,
+            captionStyle,
+            watermark: watermarkFinal,
+            watermarkText: "Vaiform"
+          });
+        } catch (e) {
+          console.warn("[background] stock video fallback:", e?.message || e);
+          await renderSolidQuoteVideo({ outPath, text: usedQuote.text, durationSec, template, authorLine, assPath, progressBar: karaokeModeEffective === "progress", watermark: watermarkFinal });
+        }
+      } else {
+        // Handle stock images (existing logic)
+        try {
+          const stockUrl = background.url || await resolveStockImage({ query: background.query });
+          const img = await fetchImageToTmp(stockUrl);
+          imageTmpPath = img.path;
+          await renderImageQuoteVideo({
+            outPath,
+            imagePath: imageTmpPath,
+            durationSec,
+            text: usedQuote.text,
+            authorLine,
+            kenBurns: background.kenBurns,
+            assPath,
+            progressBar: karaokeModeEffective === "progress",
+            watermark: watermarkFinal,
+          });
+        } catch (e) {
+          console.warn("[background] stock image fallback:", e?.message || e);
+          await renderSolidQuoteVideo({ outPath, text: usedQuote.text, durationSec, template, authorLine, assPath, progressBar: karaokeModeEffective === "progress", watermark: watermarkFinal });
+        }
       }
-    } else if (background?.kind === "upload" && background?.uploadUrl) {
-      try {
-        const img = await fetchImageToTmp(background.uploadUrl);
-        imageTmpPath = img.path;
-        await renderImageQuoteVideo({
-          outPath,
-          imagePath: imageTmpPath,
-          durationSec,
-          text: usedQuote.text,
-          authorLine,
-          kenBurns: background.kenBurns,
-          assPath,
-        });
-      } catch (e) {
-        console.warn("[background] upload fallback:", e?.message || e);
-        await renderSolidQuoteVideo({ outPath, text: usedQuote.text, durationSec, template, authorLine, assPath });
+    } else if (background?.kind === "upload" && (background?.uploadUrl || background?.url)) {
+      const uploadUrl = background.url || background.uploadUrl;
+      if (background.type === "video") {
+        try {
+          console.log(`[background] Processing upload video: ${uploadUrl}`);
+          const vid = await fetchVideoToTmp(uploadUrl);
+          await renderVideoQuoteOverlay({
+            videoPath: vid.path,
+            outPath,
+            durationSec,
+            text: usedQuote.text,
+            authorLine,
+            ttsPath: audioOk ? v.audioPath : null,
+            keepVideoAudio: background.keepVideoAudio || false,
+            bgAudioVolume: background.bgAudioVolume || 0.35,
+            voiceoverDelaySec: background.voiceoverDelaySec,
+            tailPadSec: background.tailPadSec,
+            captionText: captionMode === "static" ? usedQuote.text : null,
+            captionStyle,
+            watermark: watermarkFinal,
+            watermarkText: "Vaiform"
+          });
+        } catch (e) {
+          console.warn("[background] upload video fallback:", e?.message || e);
+          await renderSolidQuoteVideo({ outPath, text: usedQuote.text, durationSec, template, authorLine, assPath });
+        }
+      } else {
+        try {
+          const img = await fetchImageToTmp(uploadUrl);
+          imageTmpPath = img.path;
+          await renderImageQuoteVideo({
+            outPath,
+            imagePath: imageTmpPath,
+            durationSec,
+            text: usedQuote.text,
+            authorLine,
+            kenBurns: background.kenBurns,
+            assPath,
+          });
+        } catch (e) {
+          console.warn("[background] upload image fallback:", e?.message || e);
+          await renderSolidQuoteVideo({ outPath, text: usedQuote.text, durationSec, template, authorLine, assPath });
+        }
       }
     } else if (background?.kind === "ai" && background?.prompt) {
       try {
@@ -341,15 +429,53 @@ export async function createShortService({ ownerUid, mode, text, template, durat
   try { if (imageTmpPath) fs.unlinkSync(imageTmpPath); } catch {}
   try { fs.rmSync(tmpRoot, { recursive: true, force: true }); } catch {}
 
-  return {
-    jobId,
-    videoUrl: publicUrl,
-    coverImageUrl: coverUrl,
-    durationSec,
-    usedTemplate: template,
-    usedQuote,
-    credits,
-  };
+  // Update Firestore document with success
+  try {
+    await shortsRef.update({
+      status: 'ready',
+      videoUrl: publicUrl,
+      coverImageUrl: coverUrl,
+      completedAt: admin.firestore.FieldValue.serverTimestamp(),
+      usedQuote: {
+        text: usedQuote.text,
+        author: usedQuote.author,
+        attributed: usedQuote.attributed,
+        isParaphrase: usedQuote.isParaphrase
+      }
+    });
+    console.log(`[shorts] Updated Firestore doc to ready: ${jobId}`);
+  } catch (error) {
+    console.warn(`[shorts] Failed to update Firestore doc: ${error.message}`);
+  }
+
+    return {
+      jobId,
+      videoUrl: publicUrl,
+      coverImageUrl: coverUrl,
+      durationSec,
+      usedTemplate: template,
+      usedQuote,
+      credits,
+    };
+  } catch (error) {
+    // Update Firestore document with failure
+    try {
+      await shortsRef.update({
+        status: 'failed',
+        errorMessage: String(error.message || error).slice(0, 2000),
+        failedAt: admin.firestore.FieldValue.serverTimestamp()
+      });
+      console.log(`[shorts] Updated Firestore doc to failed: ${jobId}`);
+    } catch (firestoreError) {
+      console.warn(`[shorts] Failed to update Firestore doc on error: ${firestoreError.message}`);
+    }
+    
+    // Clean up temp files
+    try { if (imageTmpPath) fs.unlinkSync(imageTmpPath); } catch {}
+    try { fs.rmSync(tmpRoot, { recursive: true, force: true }); } catch {}
+    
+    throw error; // Re-throw the original error
+  }
 }
 
 export default { createShortService, finalizeQuoteText };

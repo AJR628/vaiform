@@ -204,6 +204,50 @@ export async function createShort(req, res) {
   }
 }
 
+export async function getMyShorts(req, res) {
+  try {
+    const ownerUid = req.user?.uid;
+    if (!ownerUid) {
+      return res.status(401).json({ success: false, error: "UNAUTHENTICATED", message: "Login required" });
+    }
+
+    const { limit = 24, cursor } = req.query;
+    const db = admin.firestore();
+    
+    let query = db.collection('shorts')
+      .where('ownerId', '==', ownerUid)
+      .orderBy('createdAt', 'desc')
+      .limit(Number(limit));
+    
+    if (cursor) {
+      query = query.startAfter(new Date(cursor));
+    }
+    
+    const snapshot = await query.get();
+    const items = snapshot.docs.map(doc => ({ 
+      id: doc.id, 
+      ...doc.data(),
+      createdAt: doc.data().createdAt?.toDate?.() || null,
+      completedAt: doc.data().completedAt?.toDate?.() || null,
+      failedAt: doc.data().failedAt?.toDate?.() || null
+    }));
+    
+    const nextCursor = items.length > 0 ? items[items.length - 1].createdAt : null;
+    
+    return res.json({ 
+      success: true, 
+      data: { 
+        items, 
+        nextCursor: nextCursor ? nextCursor.toISOString() : null,
+        hasMore: items.length === Number(limit)
+      } 
+    });
+  } catch (error) {
+    console.error("/shorts/mine error:", error);
+    return res.status(500).json({ success: false, error: "FETCH_FAILED", message: error.message });
+  }
+}
+
 export async function getShortById(req, res) {
   try {
     const ownerUid = req.user?.uid;
@@ -280,5 +324,53 @@ export async function getShortById(req, res) {
   } catch (e) {
     console.error("/shorts/:jobId error", e?.message || e);
     return res.status(500).json({ success: false, error: "GET_SHORT_FAILED" });
+  }
+}
+
+export async function deleteShort(req, res) {
+  try {
+    const ownerUid = req.user?.uid;
+    if (!ownerUid) {
+      return res.status(401).json({ success: false, error: "UNAUTHENTICATED", message: "Login required" });
+    }
+    
+    const jobId = String(req.params?.jobId || "").trim();
+    if (!jobId) {
+      return res.status(400).json({ success: false, error: "INVALID_INPUT", message: "jobId required" });
+    }
+
+    const db = admin.firestore();
+    const shortsRef = db.collection('shorts').doc(jobId);
+    
+    // Check if the short exists and belongs to the user
+    const doc = await shortsRef.get();
+    if (!doc.exists) {
+      return res.status(404).json({ success: false, error: "NOT_FOUND", message: "Short not found" });
+    }
+    
+    const shortData = doc.data();
+    if (shortData.ownerId !== ownerUid) {
+      return res.status(403).json({ success: false, error: "FORBIDDEN", message: "You can only delete your own shorts" });
+    }
+    
+    // Delete Firestore document
+    await shortsRef.delete();
+    
+    // Delete files from Firebase Storage
+    const bucket = admin.storage().bucket();
+    const destBase = `artifacts/${ownerUid}/${jobId}`;
+    
+    try {
+      const [files] = await bucket.getFiles({ prefix: destBase });
+      await Promise.all(files.map(file => file.delete()));
+      console.log(`[shorts] Deleted ${files.length} files for short: ${jobId}`);
+    } catch (storageError) {
+      console.warn(`[shorts] Failed to delete storage files for ${jobId}:`, storageError.message);
+    }
+    
+    return res.json({ success: true, message: "Short deleted successfully" });
+  } catch (error) {
+    console.error("/shorts/:jobId/delete error:", error);
+    return res.status(500).json({ success: false, error: "DELETE_FAILED", message: error.message });
   }
 }
