@@ -1056,11 +1056,30 @@
                 // Detect type from URL extension
                 const detectTypeFromUrl = (url) => {
                     if (!url) return 'image'; // Default fallback
-                    const ext = url.toLowerCase().split('.').pop();
-                    if (['mp4', 'mov', 'avi', 'mkv', 'webm', 'm4v'].includes(ext)) {
-                        return 'video';
+                    
+                    try {
+                        // Handle URLs with query parameters or fragments
+                        const cleanUrl = url.split('?')[0].split('#')[0];
+                        const ext = cleanUrl.toLowerCase().split('.').pop();
+                        
+                        console.log(`[typeDetection] URL: ${url}`);
+                        console.log(`[typeDetection] Clean URL: ${cleanUrl}`);
+                        console.log(`[typeDetection] Extension: ${ext}`);
+                        
+                        if (['mp4', 'mov', 'avi', 'mkv', 'webm', 'm4v', '3gp', 'flv'].includes(ext)) {
+                            return 'video';
+                        }
+                        if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg', 'tiff'].includes(ext)) {
+                            return 'image';
+                        }
+                        
+                        // Default fallback
+                        console.log(`[typeDetection] Unknown extension: ${ext}, defaulting to image`);
+                        return 'image';
+                    } catch (error) {
+                        console.error(`[typeDetection] Error parsing URL: ${error.message}`);
+                        return 'image'; // Safe fallback
                     }
-                    return 'image'; // Default for jpg, png, gif, etc.
                 };
                 
                 const detectedType = detectTypeFromUrl(assetUrl);
@@ -1110,7 +1129,26 @@
                 }
 
                 console.log('Render payload:', payload);
+                console.log('Background object:', background);
                 console.log('Current voice ID:', currentVoiceId);
+
+                // Final validation before sending
+                if (background.url && background.type) {
+                    const url = background.url.toLowerCase();
+                    const isVideoUrl = ['mp4', 'mov', 'avi', 'mkv', 'webm', 'm4v'].some(ext => url.includes(`.${ext}`));
+                    const isImageUrl = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'].some(ext => url.includes(`.${ext}`));
+                    
+                    if (background.type === 'video' && !isVideoUrl) {
+                        console.error('[validation] Type mismatch: type is video but URL is not a video');
+                        alert('Error: Selected asset type does not match URL. Please try selecting a different asset.');
+                        return;
+                    }
+                    if (background.type === 'image' && !isImageUrl) {
+                        console.error('[validation] Type mismatch: type is image but URL is not an image');
+                        alert('Error: Selected asset type does not match URL. Please try selecting a different asset.');
+                        return;
+                    }
+                }
 
                 const data = await apiFetch('/shorts/create', {
                     method: 'POST',
