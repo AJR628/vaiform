@@ -10,7 +10,7 @@ import { getDurationMsFromMedia } from "./media.duration.js";
 // text/path helpers
 const esc = s => String(s).replace(/\\/g,'\\\\').replace(/:/g,'\\:').replace(/,/g,'\\,').replace(/;/g,'\\;').replace(/\[/g,'\\[').replace(/\]/g,'\\]').replace(/'/g,"\\'");
 function escText(s) {
-  return String(s ?? '')
+  const result = String(s ?? '')
     .replace(/\\/g, '\\\\')
     .replace(/:/g, '\\:')
     .replace(/,/g, '\\,')
@@ -19,6 +19,9 @@ function escText(s) {
     .replace(/\]/g, '\\]')
     .replace(/'/g, "\\'")
     .replace(/\n/g, "\\n");
+  console.log('[ffmpeg] DEBUG - escText input:', s);
+  console.log('[ffmpeg] DEBUG - escText output:', result);
+  return result;
 }
 export function sanitizeFilter(graph) {
   const s = String(graph);
@@ -574,6 +577,10 @@ export async function exportSocialImage({
     `box=${box}`,`boxcolor=${boxcolor}`,`boxborderw=${boxborderw}`,
     `line_spacing=${effLineSpacing}`,'borderw=0'
   ].filter(Boolean).join(':')}`;
+  
+  // Debug: Log the filter construction
+  console.log('[ffmpeg] DEBUG - quoteTxt:', quoteTxt);
+  console.log('[ffmpeg] DEBUG - drawMain:', drawMain);
   const drawAuthor = (authorLine && String(authorLine).trim()) ? `drawtext=${[
     fontfile ? `fontfile='${fontfile}'` : null,
     `text='${escText(String(authorLine).trim())}'`,
