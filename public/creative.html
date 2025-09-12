@@ -503,6 +503,9 @@
             document.getElementById('quote-tone-tag').textContent = quote.toneTag ? `Tone: ${quote.toneTag}` : '';
             document.getElementById('quote-tone-tag').classList.toggle('hidden', !quote.toneTag);
             document.getElementById('quote-result').classList.remove('hidden');
+            // Always expose LLM iterate buttons when a quote is present
+            const remix = document.getElementById('remix-buttons');
+            if (remix) remix.classList.remove('hidden');
             updateRenderPreview();
         }
 
@@ -1540,6 +1543,30 @@
             };
             
             checkAuth();
+
+            // Initialize quote editor for manual entry from the start
+            try {
+                const seedInput = document.getElementById('quote-text');
+                const seed = (seedInput?.value || '').trim();
+                currentQuote = { text: seed };
+                displayQuote(currentQuote);
+                // Switch to edit mode by default so users can type immediately
+                const disp = document.getElementById('quote-text-display');
+                const ta = document.getElementById('quote-edit');
+                disp.classList.add('hidden');
+                ta.classList.remove('hidden');
+                document.getElementById('save-quote-btn').classList.remove('hidden');
+                document.getElementById('cancel-quote-btn').classList.remove('hidden');
+                document.getElementById('edit-quote-btn').classList.add('hidden');
+                // Reset regen state and info
+                window.__regenState = { key: seed, count: 0 };
+                const info = document.getElementById('regen-info');
+                if (info) info.textContent = 'Regens left: 10';
+                // Seed char counter
+                const n = Math.min(200, seed.length);
+                const cc = document.getElementById('quote-char-count');
+                if (cc) cc.textContent = `${n}/200`;
+            } catch {}
         });
     </script>
 
