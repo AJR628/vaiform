@@ -198,7 +198,7 @@ export async function createShort(req, res) {
       console.log(`[shorts] Asset validation passed: ${background.url}`);
     }
 
-    const result = await createShortService({ ownerUid, mode, text, template, durationSec, voiceover, wantAttribution, background, debugAudioPath, captionMode, watermark, captionStyle, voiceId });
+    const result = await createShortService({ ownerUid, mode, text, template, durationSec, voiceover, wantAttribution, background, debugAudioPath, captionMode, includeBottomCaption, watermark, captionStyle, voiceId });
     return res.json({ success: true, data: result });
   } catch (e) {
     const msg = e?.message || "Short creation failed";

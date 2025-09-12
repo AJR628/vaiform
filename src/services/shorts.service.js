@@ -24,7 +24,7 @@ export function finalizeQuoteText(mode, text) {
   return t;
 }
 
-export async function createShortService({ ownerUid, mode, text, template, durationSec, voiceover = false, wantAttribution = true, background = { kind: "solid" }, debugAudioPath, captionMode = "static", watermark, overrideQuote, captionStyle, voiceId }) {
+export async function createShortService({ ownerUid, mode, text, template, durationSec, voiceover = false, wantAttribution = true, background = { kind: "solid" }, debugAudioPath, captionMode = "static", includeBottomCaption = false, watermark, overrideQuote, captionStyle, voiceId }) {
   if (!ownerUid) throw new Error("MISSING_UID");
 
   const jobId = `shorts-${Date.now().toString(36)}-${Math.random().toString(36).slice(2,7)}`;
