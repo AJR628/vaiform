@@ -511,10 +511,17 @@
             document.getElementById('quote-text-display').textContent = quote.text;
             const editEl = document.getElementById('quote-edit');
             editEl.value = quote.text;
-            editEl.classList.add('hidden');
-            document.getElementById('save-quote-btn').classList.add('hidden');
-            document.getElementById('cancel-quote-btn').classList.add('hidden');
-            document.getElementById('edit-quote-btn').classList.remove('hidden');
+            // Always keep the inlaid editor visible
+            document.getElementById('quote-text-display').classList.add('hidden');
+            editEl.classList.remove('hidden');
+            document.getElementById('save-quote-btn').classList.remove('hidden');
+            document.getElementById('cancel-quote-btn').classList.remove('hidden');
+            document.getElementById('edit-quote-btn').classList.add('hidden');
+            // Update char counter from textarea content
+            try {
+              const cc = document.getElementById('quote-char-count');
+              if (cc) cc.textContent = `${Math.min(200, (editEl.value||'').length)}/200`;
+            } catch {}
             document.getElementById('quote-author').textContent = quote.author ? `— ${quote.author}` : '';
             document.getElementById('quote-author').classList.toggle('hidden', !quote.author);
             document.getElementById('quote-tone-tag').textContent = quote.toneTag ? `Tone: ${quote.toneTag}` : '';
@@ -1316,25 +1323,24 @@
                     }
                 });
                 
-                if (data.ok || data.images || data?.data?.images) {
+                if ((data?.success === true && Array.isArray(data?.data?.images)) || data.images || data?.data?.images) {
                     // Handle successful generation
-                    const images = data.images || data.data?.images || [];
-                    if (images.length > 0) {
-                        // Create a mock asset object for the generated image
+                    const imgs = data.images || data?.data?.images || [];
+                    const first = imgs[0];
+                    const url = typeof first === 'string' ? first : (first?.url || first);
+                    if (url) {
                         const aiAsset = {
                             id: `ai-${Date.now()}`,
-                            fileUrl: images[0].url || images[0],
-                            thumbUrl: images[0].url || images[0],
+                            fileUrl: url,
+                            thumbUrl: url,
                             query: prompt,
                             provider: 'ai',
                             type: 'ai-generated'
                         };
-                        
                         // Add to asset grid
                         const grid = document.getElementById('asset-grid');
                         const assetElement = createAssetElement(aiAsset);
                         grid.insertBefore(assetElement, grid.firstChild);
-
                         // Also show next to remix references if present
                         const aiBlock = document.getElementById('ai-result-block');
                         const aiPrev = document.getElementById('ai-result-preview');
@@ -1342,9 +1348,10 @@
                             aiPrev.innerHTML = `<img src="${aiAsset.thumbUrl}" class="w-full h-full object-cover" />`;
                             aiBlock.classList.remove('hidden');
                         }
-                        
                         // Auto-select the generated image
                         selectAsset(aiAsset);
+                    } else {
+                        showError('ai-error', 'No image URL returned');
                     }
                 } else {
                     // Some backends use { ok:false, reason } envelope
@@ -1458,12 +1465,12 @@
             window.__regenState = { key: newText, count: 0 };
             const info = document.getElementById('regen-info');
             if (info) info.textContent = 'Regens left: 10';
-            // toggle back to display
-            ta.classList.add('hidden');
-            document.getElementById('quote-text-display').classList.remove('hidden');
-            document.getElementById('save-quote-btn').classList.add('hidden');
-            document.getElementById('cancel-quote-btn').classList.add('hidden');
-            document.getElementById('edit-quote-btn').classList.remove('hidden');
+            // keep editor visible
+            document.getElementById('quote-text-display').classList.add('hidden');
+            ta.classList.remove('hidden');
+            document.getElementById('save-quote-btn').classList.remove('hidden');
+            document.getElementById('cancel-quote-btn').classList.remove('hidden');
+            document.getElementById('edit-quote-btn').classList.add('hidden');
             updateRenderPreview();
         };
 
