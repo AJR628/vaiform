@@ -143,6 +143,11 @@
                 <div id="remix-assets" class="flex gap-4">
                     <!-- Remix assets will be added here -->
                 </div>
+                <!-- AI result preview slot -->
+                <div id="ai-result-block" class="mt-3 hidden">
+                    <div class="text-xs text-gray-400 mb-1">AI Result</div>
+                    <div id="ai-result-preview" class="relative w-20 h-20 rounded overflow-hidden border border-gray-600"></div>
+                </div>
                 <button
                     id="clear-remix-btn"
                     class="mt-3 px-3 py-1 bg-red-600 hover:bg-red-500 text-white text-xs rounded"
@@ -480,6 +485,18 @@
                 if (data.ok) {
                     currentQuote = data.data.quote;
                     displayQuote(currentQuote);
+                    // Ensure we switch to view mode after LLM returns
+                    const disp = document.getElementById('quote-text-display');
+                    const ta = document.getElementById('quote-edit');
+                    ta.classList.add('hidden');
+                    disp.classList.remove('hidden');
+                    document.getElementById('save-quote-btn').classList.add('hidden');
+                    document.getElementById('cancel-quote-btn').classList.add('hidden');
+                    document.getElementById('edit-quote-btn').classList.remove('hidden');
+                    // Reset regen state for the new generated text
+                    window.__regenState = { key: (currentQuote?.text||'').trim(), count: 0 };
+                    const info = document.getElementById('regen-info');
+                    if (info) info.textContent = 'Regens left: 10';
                 } else {
                     showError('quote-error', data.reason || 'Failed to generate quote');
                 }
@@ -1299,15 +1316,15 @@
                     }
                 });
                 
-                if (data.ok || data.images) {
+                if (data.ok || data.images || data?.data?.images) {
                     // Handle successful generation
                     const images = data.images || data.data?.images || [];
                     if (images.length > 0) {
                         // Create a mock asset object for the generated image
                         const aiAsset = {
                             id: `ai-${Date.now()}`,
-                            fileUrl: images[0],
-                            thumbUrl: images[0],
+                            fileUrl: images[0].url || images[0],
+                            thumbUrl: images[0].url || images[0],
                             query: prompt,
                             provider: 'ai',
                             type: 'ai-generated'
@@ -1317,12 +1334,21 @@
                         const grid = document.getElementById('asset-grid');
                         const assetElement = createAssetElement(aiAsset);
                         grid.insertBefore(assetElement, grid.firstChild);
+
+                        // Also show next to remix references if present
+                        const aiBlock = document.getElementById('ai-result-block');
+                        const aiPrev = document.getElementById('ai-result-preview');
+                        if (aiBlock && aiPrev) {
+                            aiPrev.innerHTML = `<img src="${aiAsset.thumbUrl}" class="w-full h-full object-cover" />`;
+                            aiBlock.classList.remove('hidden');
+                        }
                         
                         // Auto-select the generated image
                         selectAsset(aiAsset);
                     }
                 } else {
-                    showError('ai-error', data.reason || 'Failed to generate AI image');
+                    // Some backends use { ok:false, reason } envelope
+                    showError('ai-error', (data && (data.reason || data.error)) || 'Failed to generate AI image');
                 }
             } catch (error) {
                 showError('ai-error', error.message || 'Network error');
@@ -1338,6 +1364,14 @@
             if (!input) return;
             currentQuote = { text: input };
             displayQuote(currentQuote);
+            // Ensure visible in view mode on use
+            const disp = document.getElementById('quote-text-display');
+            const ta = document.getElementById('quote-edit');
+            ta.classList.add('hidden');
+            disp.classList.remove('hidden');
+            document.getElementById('save-quote-btn').classList.add('hidden');
+            document.getElementById('cancel-quote-btn').classList.add('hidden');
+            document.getElementById('edit-quote-btn').classList.remove('hidden');
             // reset regen counter for new edited quote
             window.__regenState = { key: input, count: 0 };
             const info = document.getElementById('regen-info');
