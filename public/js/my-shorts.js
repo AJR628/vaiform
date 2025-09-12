@@ -25,6 +25,7 @@ document.getElementById('logout-btn')?.addEventListener('click', async () => {
 
 let nextCursor = null;
 let loading = false;
+const myShortsIndex = new Map();
 
 async function fetchMine(cursor) {
   const url = new URL('/api/shorts/mine', location.origin);
@@ -46,7 +47,7 @@ function cardTemplate(s) {
   return `
     <article class="short-card" data-status="${status}" data-id="${s.id || ''}">
       <div class="thumb">
-        ${cover ? `<img class="thumb-img" alt="Short thumbnail" src="${cover}" data-id="${s.id || ''}" data-video='${posters.videoUrl}' data-ts='${posters.ts}' onerror="tryNextPoster(this)">` : '<div class="w-full h-full bg-gray-700 flex items-center justify-center text-gray-400">No Preview</div>'}
+        <img class="thumb-img" alt="thumbnail" data-id="${s.id || ''}" data-video='${posters.videoUrl}' data-ts='${posters.ts}' ${cover ? `src="${cover}"` : ''} />
         <span class="status">${statusText}</span>
       </div>
       <div class="meta">
@@ -80,12 +81,13 @@ export async function loadShorts(cursor) {
     const { success, data } = await fetchMine(cursor);
     if (!success) throw new Error(data?.message || 'Failed to load shorts');
     const { items = [], nextCursor: ncur } = data;
+    items.forEach(s => { if (s.id) myShortsIndex.set(s.id, s); });
     const html = items.map(cardTemplate).join('');
     if (cursor) grid.insertAdjacentHTML('beforeend', html);
     else grid.innerHTML = html;
     nextCursor = ncur || null;
     loadMoreBtn.hidden = !nextCursor;
-    nudgePosters();
+    initPosters();
   } catch (e) {
     console.error('Failed to load shorts:', e);
     showEmptyState('Failed to load shorts');
@@ -189,4 +191,50 @@ function nudgePosters(){
       }
     });
   }, 800);
+}
+
+function initPosters(){
+  document.querySelectorAll('img.thumb-img').forEach(img => {
+    const id = img.dataset.id || '';
+    const item = id ? (myShortsIndex.get(id) || {}) : {};
+    loadPoster(img, item);
+  });
+}
+
+function loadPoster(img, item){
+  const metaUrl = item.videoUrl ? swapNameKeepQuery(item.videoUrl, 'meta.json') : '';
+  let triedMeta = false;
+  let triedVideoPoster = false;
+  let retried = false;
+
+  function setSrc(src){ if (src) img.src = src; }
+
+  async function tryMeta(){
+    if (triedMeta || !metaUrl) return tryVideoPoster();
+    triedMeta = true;
+    try {
+      const r = await fetch(metaUrl, { cache: 'no-store', credentials: 'include' });
+      if (!r.ok) return tryVideoPoster();
+      const m = await r.json();
+      if (m?.urls?.cover) return setSrc(withCache(m.urls.cover, Date.now()));
+      return tryVideoPoster();
+    } catch { return tryVideoPoster(); }
+  }
+
+  function tryVideoPoster(){
+    if (triedVideoPoster || !item.videoUrl) return;
+    triedVideoPoster = true;
+    setSrc(item.videoUrl + '#t=0.2');
+  }
+
+  img.onerror = () => {
+    if (!triedMeta || !triedVideoPoster) return tryMeta();
+    if (!retried && item.coverImageUrl){
+      retried = true;
+      setTimeout(() => setSrc(withCache(item.coverImageUrl, Date.now())), 900);
+    }
+  };
+
+  if (item.coverImageUrl) setSrc(withCache(item.coverImageUrl, Date.now()));
+  else tryMeta();
 }
