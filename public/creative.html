@@ -1267,7 +1267,8 @@
                 const data = await apiFetch('/quotes/remix', {
                     method: 'POST',
                     body: {
-                        originalText: currentQuote.text,
+                        // Prefer live textarea content so users don't need to hit Save first
+                        originalText: (document.getElementById('quote-edit')?.value || currentQuote.text || '').trim(),
                         mode,
                         targetTone: mode === 'tone_shift' ? document.getElementById('quote-tone').value : undefined,
                         maxChars: 120
@@ -1277,7 +1278,7 @@
                 if (data.ok) {
                     currentQuote = data.data.quote;
                     displayQuote(currentQuote);
-                    window.__regenState.count += 1;
+                    window.__regenState.count = Math.min(10, (window.__regenState.count || 0) + 1);
                     const left = Math.max(0, 10 - window.__regenState.count);
                     const info = document.getElementById('regen-info');
                     if (info) info.textContent = `Regens left: ${left}`;
@@ -1323,12 +1324,18 @@
                 // Map slider value to style: 0-0.5 = realistic, 0.5-1 = cartoon
                 const style = parseFloat(styleSlider) <= 0.5 ? 'realistic' : 'cartoon';
                 
+                // Map slider 0..1 → ideogram style_type: closer to Realistic at 0, Creative at 1
+                const creative = parseFloat(styleSlider);
+                const styleType = creative < 0.33 ? 'Photographic' : (creative > 0.66 ? 'Illustration' : 'None');
+
                 const data = await apiFetch('/generate', {
                     method: 'POST',
                     body: {
                         prompt,
-                        style,
+                        style, // retained for compatibility
                         count: 1,
+                        // ideogram params ride along; backend adapter maps them
+                        params: { style_type: styleType },
                         options: {}
                     }
                 });
