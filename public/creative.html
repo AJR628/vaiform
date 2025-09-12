@@ -1110,6 +1110,11 @@
                     bgOpacity: parseInt(document.getElementById('caption-bg-opacity').value)
                 };
 
+                // Normalize caption mode to satisfy server enum
+                const uiCaptionMode = 'none';
+                const normalizedCaptionMode = uiCaptionMode === 'none' ? 'static' : uiCaptionMode;
+                const includeBottomCaption = false;
+
                 const payload = {
                     mode: 'quote',
                     text: currentQuote.text,
@@ -1118,7 +1123,8 @@
                     voiceover: !!currentVoiceId,
                     wantAttribution: true,
                     background,
-                    captionMode: 'none',
+                    captionMode: normalizedCaptionMode,
+                    includeBottomCaption,
                     watermark: true,
                     // Add caption style settings
                     captionStyle

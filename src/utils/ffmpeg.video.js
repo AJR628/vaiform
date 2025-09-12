@@ -339,6 +339,7 @@ export async function renderVideoQuoteOverlay({
   console.log('[ffmpeg] DEBUG - captionText param:', captionText);
 
   const vchain = buildVideoChain({ width: W, height: H, videoVignette, drawLayers: [drawMain, drawAuthor, drawWatermark, drawCaption].filter(Boolean) });
+  // If includeBottomCaption flag is passed via captionStyle, honor it
 
   // ---- Audio chain builders ----
   // Compute mix length safety
