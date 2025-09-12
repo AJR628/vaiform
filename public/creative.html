@@ -61,6 +61,7 @@
                     placeholder="Describe what kind of quote you want..."
                     class="flex-1 bg-gray-800 border border-gray-700 rounded px-3 py-2"
                 />
+                <div class="text-xs text-gray-400 w-20 text-right" id="quote-char-count">0/200</div>
                 <select id="quote-tone" class="bg-gray-800 border border-gray-700 rounded px-3 py-2">
                     <option value="default">Default</option>
                     <option value="motivational">Motivational</option>
@@ -75,12 +76,32 @@
                 >
                     Generate Quote
                 </button>
+                <button
+                    id="use-text-btn"
+                    class="px-4 py-2 bg-gray-700 hover:bg-gray-600 disabled:bg-gray-600 rounded"
+                    title="Use the exact text above as your quote"
+                >
+                    Use This Text
+                </button>
             </div>
 
             <div id="quote-error" class="error text-sm hidden"></div>
 
             <div id="quote-result" class="bg-gray-800 rounded p-4 space-y-3 hidden">
-                <div id="quote-text-display" class="text-lg font-medium"></div>
+                <div class="flex items-start justify-between gap-3">
+                    <div class="flex-1">
+                        <div id="quote-text-display" class="text-lg font-medium"></div>
+                        <textarea id="quote-edit" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm hidden"></textarea>
+                    </div>
+                    <div class="flex flex-col gap-2 items-end">
+                        <div id="regen-info" class="text-xs text-gray-400">Regens left: 10</div>
+                        <div class="flex gap-2">
+                            <button id="edit-quote-btn" class="px-3 py-1 bg-neutral-700 hover:bg-neutral-600 rounded text-sm">Edit</button>
+                            <button id="save-quote-btn" class="px-3 py-1 bg-green-600 hover:bg-green-500 rounded text-sm hidden">Save</button>
+                            <button id="cancel-quote-btn" class="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded text-sm hidden">Cancel</button>
+                        </div>
+                    </div>
+                </div>
                 <div id="quote-author" class="text-sm text-gray-400 hidden"></div>
                 <div id="quote-tone-tag" class="text-xs text-blue-400 hidden"></div>
                 
@@ -471,6 +492,12 @@
 
         function displayQuote(quote) {
             document.getElementById('quote-text-display').textContent = quote.text;
+            const editEl = document.getElementById('quote-edit');
+            editEl.value = quote.text;
+            editEl.classList.add('hidden');
+            document.getElementById('save-quote-btn').classList.add('hidden');
+            document.getElementById('cancel-quote-btn').classList.add('hidden');
+            document.getElementById('edit-quote-btn').classList.remove('hidden');
             document.getElementById('quote-author').textContent = quote.author ? `— ${quote.author}` : '';
             document.getElementById('quote-author').classList.toggle('hidden', !quote.author);
             document.getElementById('quote-tone-tag').textContent = quote.toneTag ? `Tone: ${quote.toneTag}` : '';
@@ -1192,6 +1219,16 @@
                 showError('quote-error', 'Please log in to remix quotes');
                 return;
             }
+            // Regen throttle: allow up to 10 per displayed quote text
+            window.__regenState = window.__regenState || { count: 0, key: null };
+            const textKey = (currentQuote?.text || '').trim();
+            if (window.__regenState.key !== textKey) {
+                window.__regenState = { key: textKey, count: 0 };
+            }
+            if (window.__regenState.count >= 10) {
+                showError('quote-error', 'Limit reached: 10 regenerations for this quote. Edit the text or change prompt.');
+                return;
+            }
             
             setLoading('generate-quote-btn', true);
             hideError('quote-error');
@@ -1211,6 +1248,10 @@
                 if (data.ok) {
                     currentQuote = data.data.quote;
                     displayQuote(currentQuote);
+                    window.__regenState.count += 1;
+                    const left = Math.max(0, 10 - window.__regenState.count);
+                    const info = document.getElementById('regen-info');
+                    if (info) info.textContent = `Regens left: ${left}`;
                 } else {
                     showError('quote-error', data.reason || 'Failed to remix quote');
                 }
@@ -1289,6 +1330,16 @@
 
         // Event listeners
         document.getElementById('generate-quote-btn').onclick = generateQuote;
+        document.getElementById('use-text-btn').onclick = () => {
+            const input = document.getElementById('quote-text').value.trim();
+            if (!input) return;
+            currentQuote = { text: input };
+            displayQuote(currentQuote);
+            // reset regen counter for new edited quote
+            window.__regenState = { key: input, count: 0 };
+            const info = document.getElementById('regen-info');
+            if (info) info.textContent = 'Regens left: 10';
+        };
         document.getElementById('search-assets-btn').onclick = () => {
             assetCache.clear(); // Clear cache on new search
             loadAssets(1);
@@ -1339,6 +1390,52 @@
         document.getElementById('regenerate-btn').onclick = () => remixQuote('regenerate');
         document.getElementById('rephrase-btn').onclick = () => remixQuote('rephrase');
         document.getElementById('tone-shift-btn').onclick = () => remixQuote('tone_shift');
+
+        // Inline edit handlers
+        document.getElementById('edit-quote-btn').onclick = () => {
+            const disp = document.getElementById('quote-text-display');
+            const ta = document.getElementById('quote-edit');
+            ta.value = (currentQuote?.text || '').trim();
+            disp.classList.add('hidden');
+            ta.classList.remove('hidden');
+            document.getElementById('save-quote-btn').classList.remove('hidden');
+            document.getElementById('cancel-quote-btn').classList.remove('hidden');
+            document.getElementById('edit-quote-btn').classList.add('hidden');
+        };
+        document.getElementById('cancel-quote-btn').onclick = () => {
+            const disp = document.getElementById('quote-text-display');
+            const ta = document.getElementById('quote-edit');
+            ta.classList.add('hidden');
+            disp.classList.remove('hidden');
+            document.getElementById('save-quote-btn').classList.add('hidden');
+            document.getElementById('cancel-quote-btn').classList.add('hidden');
+            document.getElementById('edit-quote-btn').classList.remove('hidden');
+        };
+        document.getElementById('save-quote-btn').onclick = () => {
+            const ta = document.getElementById('quote-edit');
+            const newText = ta.value.trim().slice(0, 200);
+            if (!newText) return;
+            currentQuote = { ...(currentQuote||{}), text: newText };
+            document.getElementById('quote-text-display').textContent = newText;
+            // reset regen state when user edits
+            window.__regenState = { key: newText, count: 0 };
+            const info = document.getElementById('regen-info');
+            if (info) info.textContent = 'Regens left: 10';
+            // toggle back to display
+            ta.classList.add('hidden');
+            document.getElementById('quote-text-display').classList.remove('hidden');
+            document.getElementById('save-quote-btn').classList.add('hidden');
+            document.getElementById('cancel-quote-btn').classList.add('hidden');
+            document.getElementById('edit-quote-btn').classList.remove('hidden');
+            updateRenderPreview();
+        };
+
+        // Character counter for input
+        document.getElementById('quote-text').addEventListener('input', (e) => {
+            const v = e.target.value || '';
+            const n = Math.min(200, v.length);
+            document.getElementById('quote-char-count').textContent = `${n}/200`;
+        });
 
         // Tab switching
         document.querySelectorAll('[data-type]').forEach(tab => {
