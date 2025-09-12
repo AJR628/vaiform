@@ -198,7 +198,7 @@
 
             <div id="asset-error" class="error text-sm hidden"></div>
 
-            <!-- Asset Grid (2 rows × 4 columns = 8 results) -->
+            <!-- Asset Grid (3 rows × 4 columns ≈ 12 results) -->
             <div id="asset-grid" class="grid grid-cols-4 gap-4">
                 <!-- Assets will be populated here -->
             </div>
@@ -222,8 +222,8 @@
 
             <!-- Free Plan Notice -->
             <div id="free-notice" class="text-center text-sm text-gray-400 hidden">
-                Showing 2 curated assets. 
-                <span class="text-blue-400"> Upgrade to Pro</span> for full search and AI images.
+                Showing 12 curated assets. 
+                <span class="text-blue-400"> Upgrade to Pro</span> for larger pages and AI images.
             </div>
         </div>
 
@@ -492,7 +492,7 @@
             
             try {
                 const { apiFetch } = await import('./api.mjs');
-                const perPage = 8; // 2 rows × 4 columns
+                const perPage = 12; // fuller grid per request
                 const query = document.getElementById('asset-query').value;
                 const cacheKey = `${currentAssetType}-${query}-${page}`;
                 

@@ -13,7 +13,7 @@ export async function getAssetsOptions(req, res) {
     
     // Apply Free vs Pro limits
     const isPro = req.isPro || false;
-    const maxPerPage = isPro ? 16 : 2;
+    const maxPerPage = isPro ? 16 : 12; // allow fuller grid for free users too
     const actualPerPage = Math.min(perPage, maxPerPage);
 
     // Randomize starting page for variety when page===1
