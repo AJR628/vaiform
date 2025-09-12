@@ -78,7 +78,12 @@ const CreateShortSchema = z
     wantAttribution: z.boolean().default(true).optional(),
     background: BackgroundSchema.default({ kind: "solid" }).optional(),
     debugAudioPath: z.string().optional(),
-    captionMode: z.enum(["static", "progress", "karaoke"]).default("static").optional(),
+    // Accept legacy 'none' but normalize to 'static'
+    captionMode: z.union([z.enum(["static", "progress", "karaoke"]), z.literal("none")])
+      .transform(v => (v === "none" ? "static" : v))
+      .default("static")
+      .optional(),
+    includeBottomCaption: z.boolean().optional(),
     watermark: z.boolean().optional(),
     captionStyle: CaptionStyleSchema.optional(),
     voiceId: z.string().optional(),
@@ -169,7 +174,7 @@ export async function createShort(req, res) {
     if (!parsed.success) {
       return res.status(400).json({ success: false, error: "INVALID_INPUT", detail: parsed.error.flatten() });
     }
-    const { mode = "quote", text, template = "calm", durationSec = 8, voiceover = false, wantAttribution = true, background = { kind: "solid" }, debugAudioPath, captionMode = "static", watermark, captionStyle, voiceId } = parsed.data;
+    const { mode = "quote", text, template = "calm", durationSec = 8, voiceover = false, wantAttribution = true, background = { kind: "solid" }, debugAudioPath, captionMode = "static", includeBottomCaption = false, watermark, captionStyle, voiceId } = parsed.data;
 
     const ownerUid = req.user?.uid;
     if (!ownerUid) {
