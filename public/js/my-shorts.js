@@ -133,19 +133,20 @@ function withCache(url, ts){
   return `${url}${sep}v=${encodeURIComponent(ts || Date.now())}`;
 }
 
+function swapNameKeepQuery(fileUrl, newName){
+  try {
+    const u = new URL(fileUrl);
+    u.pathname = u.pathname.replace(/[^/]+$/, newName);
+    return u.toString();
+  } catch { return ''; }
+}
+
 function resolveCover(s){
   const ts = (s.completedAt || s.createdAt || new Date()).toString();
-  const fallbacks = [];
+  const fallbacks = ['__meta__'];
   let first = '';
-  if (s.coverImageUrl){
-    first = withCache(s.coverImageUrl, ts);
-  }
-  if (s.videoUrl){
-    const guessCover = withCache(s.videoUrl.replace(/short\.mp4(\?.*)?$/, 'cover.jpg$1'), ts);
-    if (!first) first = guessCover; else fallbacks.push(guessCover);
-    // sentinel to try meta.json lookup next
-    fallbacks.push('__meta__');
-  }
+  if (s.coverImageUrl) first = withCache(s.coverImageUrl, ts);
+  else if (s.videoUrl) first = withCache(swapNameKeepQuery(s.videoUrl, 'cover.jpg'), ts);
   return { src: first, fallbacks, videoUrl: s.videoUrl || '', ts };
 }
 
@@ -159,15 +160,16 @@ window.tryNextPoster = async function(img){
     if (next === '__meta__'){
       const v = img.dataset.video || '';
       if (!v) return;
-      const metaUrl = withCache(v.replace(/short\.mp4(\?.*)?$/, 'meta.json'), img.dataset.ts || Date.now());
+      const metaUrl = withCache(swapNameKeepQuery(v, 'meta.json'), img.dataset.ts || Date.now());
       const res = await fetch(metaUrl);
       if (res.ok){
         const j = await res.json();
         const cover = j?.urls?.cover ? withCache(j.urls.cover, img.dataset.ts || Date.now()) : '';
         if (cover) { img.src = cover; return; }
       }
-      // if meta fetch failed, try next in list automatically
-      window.tryNextPoster(img);
+      // no more fallbacks; mark placeholder
+      const card = img.closest('.short-card');
+      if (card) card.classList.add('no-thumb');
     } else {
       img.src = next;
     }
