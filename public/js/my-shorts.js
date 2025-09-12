@@ -39,13 +39,14 @@ async function fetchMine(cursor) {
 
 function cardTemplate(s) {
   const status = s.status || 'ready';
-  const cover = s.coverImageUrl || s.videoUrl || '';
+  const posters = resolveCover(s);
+  const cover = posters.src;
   const safeQuote = (s.quoteText || '').trim();
   const statusText = { ready: 'Ready', processing: 'Processing', failed: 'Failed' }[status] || 'Unknown';
   return `
     <article class="short-card" data-status="${status}">
       <div class="thumb">
-        ${cover ? `<img alt="Short thumbnail" src="${cover}">` : '<div class="w-full h-full bg-gray-700 flex items-center justify-center text-gray-400">No Preview</div>'}
+        ${cover ? `<img class="thumb-img" alt="Short thumbnail" src="${cover}" data-fallbacks='${JSON.stringify(posters.fallbacks)}' data-video='${posters.videoUrl}' data-ts='${posters.ts}' onerror="tryNextPoster(this)">` : '<div class="w-full h-full bg-gray-700 flex items-center justify-center text-gray-400">No Preview</div>'}
         <span class="status">${statusText}</span>
       </div>
       <div class="meta">
@@ -84,6 +85,7 @@ export async function loadShorts(cursor) {
     else grid.innerHTML = html;
     nextCursor = ncur || null;
     loadMoreBtn.hidden = !nextCursor;
+    nudgePosters();
   } catch (e) {
     console.error('Failed to load shorts:', e);
     showEmptyState('Failed to load shorts');
@@ -122,4 +124,62 @@ async function refreshCredits(){
     console.warn('credits fetch failed', e?.message || e);
     setCreditCount('--');
   }
+}
+
+// ---------- Poster fallbacks ----------
+function withCache(url, ts){
+  if (!url) return '';
+  const sep = url.includes('?') ? '&' : '?';
+  return `${url}${sep}v=${encodeURIComponent(ts || Date.now())}`;
+}
+
+function resolveCover(s){
+  const ts = (s.completedAt || s.createdAt || new Date()).toString();
+  const fallbacks = [];
+  let first = '';
+  if (s.coverImageUrl){
+    first = withCache(s.coverImageUrl, ts);
+  }
+  if (s.videoUrl){
+    const guessCover = withCache(s.videoUrl.replace(/short\.mp4(\?.*)?$/, 'cover.jpg$1'), ts);
+    if (!first) first = guessCover; else fallbacks.push(guessCover);
+    // sentinel to try meta.json lookup next
+    fallbacks.push('__meta__');
+  }
+  return { src: first, fallbacks, videoUrl: s.videoUrl || '', ts };
+}
+
+window.tryNextPoster = async function(img){
+  try {
+    let list = [];
+    try { list = JSON.parse(img.dataset.fallbacks || '[]'); } catch {}
+    if (!list || list.length === 0) return;
+    const next = list.shift();
+    img.dataset.fallbacks = JSON.stringify(list);
+    if (next === '__meta__'){
+      const v = img.dataset.video || '';
+      if (!v) return;
+      const metaUrl = withCache(v.replace(/short\.mp4(\?.*)?$/, 'meta.json'), img.dataset.ts || Date.now());
+      const res = await fetch(metaUrl);
+      if (res.ok){
+        const j = await res.json();
+        const cover = j?.urls?.cover ? withCache(j.urls.cover, img.dataset.ts || Date.now()) : '';
+        if (cover) { img.src = cover; return; }
+      }
+      // if meta fetch failed, try next in list automatically
+      window.tryNextPoster(img);
+    } else {
+      img.src = next;
+    }
+  } catch {}
+}
+
+function nudgePosters(){
+  setTimeout(() => {
+    document.querySelectorAll('img.thumb-img').forEach(img => {
+      if (!img.complete || img.naturalWidth === 0) {
+        tryNextPoster(img);
+      }
+    });
+  }, 1500);
 }
