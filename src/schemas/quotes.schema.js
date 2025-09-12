@@ -26,6 +26,12 @@ export const AiImagesSchema = z.object({
   count: z.number().int().min(1).max(2).default(2),
 }).strict();
 
-export default { GenerateQuoteSchema, RemixQuoteSchema, AssetsOptionsSchema, AiImagesSchema };
+export const SaveQuoteSchema = z.object({
+  text: z.string().trim().min(4).max(280),
+  author: z.string().trim().max(80).optional(),
+  toneTag: z.string().trim().max(40).optional(),
+}).strict();
+
+export default { GenerateQuoteSchema, RemixQuoteSchema, AssetsOptionsSchema, AiImagesSchema, SaveQuoteSchema };
 
 

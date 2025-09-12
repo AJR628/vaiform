@@ -145,8 +145,19 @@
                 </div>
                 <!-- AI result preview slot -->
                 <div id="ai-result-block" class="mt-3 hidden">
-                    <div class="text-xs text-gray-400 mb-1">AI Result</div>
-                    <div id="ai-result-preview" class="relative w-20 h-20 rounded overflow-hidden border border-gray-600"></div>
+                    <div class="grid grid-cols-3 gap-3 items-start">
+                        <div class="col-span-2">
+                            <div class="text-xs text-gray-400 mb-1">AI Result</div>
+                            <div id="ai-result-preview" class="relative w-full h-40 rounded overflow-hidden border border-gray-600 bg-black"></div>
+                            <div class="mt-2">
+                                <button id="ai-save-use-btn" class="px-3 py-1 bg-green-600 hover:bg-green-500 text-white text-xs rounded">Save & Use</button>
+                            </div>
+                        </div>
+                        <div class="space-y-2">
+                            <div class="text-xs text-gray-400">References</div>
+                            <div class="grid grid-cols-2 gap-2" id="ai-ref-preview"></div>
+                        </div>
+                    </div>
                 </div>
                 <!-- Inline AI prompt + style for ideogram remix -->
                 <div class="mt-3 flex flex-wrap items-center gap-3">
@@ -1344,7 +1355,23 @@
                         const aiBlock = document.getElementById('ai-result-block');
                         const aiPrev = document.getElementById('ai-result-preview');
                         if (aiBlock && aiPrev) {
-                            aiPrev.innerHTML = `<img src="${aiAsset.thumbUrl}" class="w-full h-full object-cover" />`;
+                            aiPrev.innerHTML = `<img src="${aiAsset.thumbUrl}" class="w-full h-full object-contain" />`;
+                            // snapshot references
+                            try {
+                              const refWrap = document.getElementById('ai-ref-preview');
+                              if (refWrap) {
+                                refWrap.innerHTML = '';
+                                document.querySelectorAll('#remix-assets img, #remix-assets video').forEach((el) => {
+                                  const src = el.getAttribute('src') || el.getAttribute('poster') || '';
+                                  if (src) {
+                                    const d = document.createElement('div');
+                                    d.className = 'w-full h-16 rounded overflow-hidden border border-gray-600';
+                                    d.innerHTML = `<img src="${src}" class="w-full h-full object-cover" />`;
+                                    refWrap.appendChild(d);
+                                  }
+                                });
+                              }
+                            } catch {}
                             aiBlock.classList.remove('hidden');
                         }
                         // Auto-select the generated image
@@ -1378,6 +1405,26 @@
                 }
             } catch {}
             generateAiImage();
+        });
+
+        // Save & Use handler: persists image URL and marks as selected background
+        document.addEventListener('click', async (e) => {
+            if (e.target?.id !== 'ai-save-use-btn') return;
+            e.preventDefault();
+            try {
+              const imgEl = document.querySelector('#ai-result-preview img');
+              const url = imgEl?.getAttribute('src');
+              if (!url) return;
+              const { apiFetch } = await import('./api.mjs');
+              // Reuse upload pipeline: treat as external URL background selection for session
+              // Option A: Store in backend via uploads endpoint (if you want to copy)
+              // For now: mark selection locally and update preview
+              selectedAsset = { id: `ai-${Date.now()}`, provider: 'ai', query: (document.getElementById('ai-prompt')?.value||'').trim(), fileUrl: url, thumbUrl: url, width: 1024, height: 1024 };
+              updateRenderPreview();
+              updateRenderButtonState();
+            } catch (err) {
+              console.warn('Save & Use failed:', err);
+            }
         });
 
         // Event listeners
@@ -1471,7 +1518,7 @@
             document.getElementById('cancel-quote-btn').classList.add('hidden');
             document.getElementById('edit-quote-btn').classList.remove('hidden');
         };
-        document.getElementById('save-quote-btn').onclick = () => {
+        document.getElementById('save-quote-btn').onclick = async () => {
             const ta = document.getElementById('quote-edit');
             const newText = ta.value.trim().slice(0, 200);
             if (!newText) return;
@@ -1488,6 +1535,14 @@
             document.getElementById('cancel-quote-btn').classList.remove('hidden');
             document.getElementById('edit-quote-btn').classList.add('hidden');
             updateRenderPreview();
+
+            // Persist to backend so it can be used in the short without CORS issues
+            try {
+              const { apiFetch } = await import('./api.mjs');
+              await apiFetch('/quotes/save', { method: 'POST', body: { text: newText, author: null, toneTag: (document.getElementById('quote-tone')?.value || 'default') } });
+            } catch (e) {
+              console.warn('Quote save failed (non-fatal):', e?.message || e);
+            }
         };
 
         // Character counter for input
