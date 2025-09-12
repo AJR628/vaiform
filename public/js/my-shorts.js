@@ -44,9 +44,9 @@ function cardTemplate(s) {
   const safeQuote = (s.quoteText || '').trim();
   const statusText = { ready: 'Ready', processing: 'Processing', failed: 'Failed' }[status] || 'Unknown';
   return `
-    <article class="short-card" data-status="${status}">
+    <article class="short-card" data-status="${status}" data-id="${s.id || ''}">
       <div class="thumb">
-        ${cover ? `<img class="thumb-img" alt="Short thumbnail" src="${cover}" data-fallbacks='${JSON.stringify(posters.fallbacks)}' data-video='${posters.videoUrl}' data-ts='${posters.ts}' onerror="tryNextPoster(this)">` : '<div class="w-full h-full bg-gray-700 flex items-center justify-center text-gray-400">No Preview</div>'}
+        ${cover ? `<img class="thumb-img" alt="Short thumbnail" src="${cover}" data-id="${s.id || ''}" data-video='${posters.videoUrl}' data-ts='${posters.ts}' onerror="tryNextPoster(this)">` : '<div class="w-full h-full bg-gray-700 flex items-center justify-center text-gray-400">No Preview</div>'}
         <span class="status">${statusText}</span>
       </div>
       <div class="meta">
@@ -150,6 +150,17 @@ function resolveCover(s){
   return { src: first, fallbacks, videoUrl: s.videoUrl || '', ts };
 }
 
+async function fetchShortDetail(id){
+  try {
+    if (!id || !auth.currentUser) return null;
+    const token = await auth.currentUser.getIdToken();
+    const res = await fetch(`/api/shorts/${id}`, { headers: { Authorization: `Bearer ${token}` }, credentials: 'include' });
+    if (!res.ok) return null;
+    const j = await res.json();
+    return j?.data || null;
+  } catch { return null; }
+}
+
 window.tryNextPoster = async function(img){
   try {
     let list = [];
@@ -158,18 +169,11 @@ window.tryNextPoster = async function(img){
     const next = list.shift();
     img.dataset.fallbacks = JSON.stringify(list);
     if (next === '__meta__'){
-      const v = img.dataset.video || '';
-      if (!v) return;
-      const metaUrl = withCache(swapNameKeepQuery(v, 'meta.json'), img.dataset.ts || Date.now());
-      const res = await fetch(metaUrl);
-      if (res.ok){
-        const j = await res.json();
-        const cover = j?.urls?.cover ? withCache(j.urls.cover, img.dataset.ts || Date.now()) : '';
-        if (cover) { img.src = cover; return; }
-      }
-      // no more fallbacks; mark placeholder
-      const card = img.closest('.short-card');
-      if (card) card.classList.add('no-thumb');
+      const id = img.dataset.id || '';
+      const detail = await fetchShortDetail(id);
+      const c = detail?.coverImageUrl ? withCache(detail.coverImageUrl, img.dataset.ts || Date.now()) : '';
+      if (c) { img.src = c; return; }
+      const card = img.closest('.short-card'); if (card) card.classList.add('no-thumb');
     } else {
       img.src = next;
     }
