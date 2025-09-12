@@ -114,7 +114,7 @@ async function refreshCredits(){
   try {
     if (!auth.currentUser) { setCreditCount('--'); return; }
     const token = await auth.currentUser.getIdToken();
-    const res = await fetch('/api/limits', { headers: { 'Authorization': `Bearer ${token}` }, credentials: 'include' });
+    const res = await fetch('/api/credits', { headers: { 'Authorization': `Bearer ${token}` }, credentials: 'include' });
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const j = await res.json();
     setCreditCount(j?.credits ?? '--');
