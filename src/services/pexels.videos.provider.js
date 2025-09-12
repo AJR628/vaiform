@@ -26,7 +26,7 @@ function pickBestFile(video, { targetDur = 8 }) {
 
 const mem = new Map();
 
-export async function pexelsSearchVideos({ query, perPage = 10, targetDur = 8, page = 1 }) {
+export async function pexelsSearchVideos({ query, perPage = 12, targetDur = 8, page = 1 }) {
   const key = process.env.PEXELS_API_KEY;
   if (!key) return { ok: false, reason: "NOT_CONFIGURED", items: [] };
 
@@ -68,7 +68,10 @@ export async function pexelsSearchVideos({ query, perPage = 10, targetDur = 8, p
     });
   }
   mem.set(cacheKey, { at: now, ttl: 12 * 60 * 60 * 1000, items });
-  return { ok: true, reason: "OK", items };
+  const nextPage = (data?.page && data?.per_page && data?.total_results)
+    ? (data.page * data.per_page < data.total_results ? data.page + 1 : null)
+    : null;
+  return { ok: true, reason: "OK", items, nextPage };
 }
 
 export default { pexelsSearchVideos };

@@ -68,6 +68,7 @@ export function CreativePage() {
   const [assetError, setAssetError] = useState<string | null>(null)
   const [assetPage, setAssetPage] = useState(1)
   const [hasMoreAssets, setHasMoreAssets] = useState(false)
+  const [nextPage, setNextPage] = useState<number|null>(null)
 
   // AI Images state
   const [aiPrompt, setAiPrompt] = useState('A serene mountain landscape at sunset')
@@ -149,7 +150,7 @@ export function CreativePage() {
     try {
       setAssetLoading(true)
       setAssetError(null)
-      const perPage = limits?.isPro ? 16 : 2
+      const perPage = 12 // request fuller grid; backend will cap for free plans
       const result = await api.getAssetsOptions({
         type: assetType,
         query: assetQuery,
@@ -162,7 +163,8 @@ export function CreativePage() {
         } else {
           setAssets(prev => [...prev, ...result.data.items])
         }
-        setHasMoreAssets(result.data.nextPage)
+        setHasMoreAssets(!!result.data.nextPage)
+        setNextPage(result.data.nextPage)
         setAssetPage(page)
       } else {
         setAssetError(result.error)
@@ -175,7 +177,8 @@ export function CreativePage() {
   }
 
   async function loadMoreAssets() {
-    await loadAssets(assetPage + 1)
+    const p = nextPage || (assetPage + 1)
+    await loadAssets(p)
   }
 
   async function generateAiImages() {
@@ -432,6 +435,7 @@ export function CreativePage() {
                 <img
                   src={asset.thumbUrl || asset.fileUrl}
                   alt={asset.query}
+                  loading="lazy"
                   className="w-full h-32 object-cover"
                 />
               ) : (

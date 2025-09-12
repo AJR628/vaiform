@@ -8,11 +8,11 @@ function pickSrc(photo) {
 
 const mem = new Map(); // key -> { at, ttl, items }
 
-export async function pexelsSearchPhotos({ query, perPage = 12 }) {
+export async function pexelsSearchPhotos({ query, perPage = 12, page = 1 }) {
   const key = process.env.PEXELS_API_KEY;
   if (!key) return { ok: false, reason: "NOT_CONFIGURED", items: [] };
 
-  const cacheKey = `photos|${query}|${perPage}`;
+  const cacheKey = `photos|${query}|${perPage}|${page}`;
   const now = Date.now();
   const entry = mem.get(cacheKey);
   if (entry && now - entry.at < entry.ttl) return { ok: true, reason: "CACHE", items: entry.items };
@@ -21,6 +21,7 @@ export async function pexelsSearchPhotos({ query, perPage = 12 }) {
   url.searchParams.set("query", query);
   url.searchParams.set("per_page", String(perPage));
   url.searchParams.set("orientation", "portrait");
+  url.searchParams.set("page", String(Math.max(1, page)));
 
   const res = await fetch(url, { headers: { "Authorization": key, "Accept": "application/json" } });
   if (!res.ok) {
@@ -47,7 +48,10 @@ export async function pexelsSearchPhotos({ query, perPage = 12 }) {
     });
   }
   mem.set(cacheKey, { at: now, ttl: 12 * 60 * 60 * 1000, items });
-  return { ok: true, reason: "OK", items };
+  const nextPage = (data?.page && data?.per_page && data?.total_results)
+    ? (data.page * data.per_page < data.total_results ? data.page + 1 : null)
+    : null;
+  return { ok: true, reason: "OK", items, nextPage };
 }
 
 export default { pexelsSearchPhotos };
