@@ -146,7 +146,7 @@ function resolveCover(s){
   const fallbacks = ['__meta__'];
   let first = '';
   if (s.coverImageUrl) first = withCache(s.coverImageUrl, ts);
-  else if (s.videoUrl) first = withCache(swapNameKeepQuery(s.videoUrl, 'cover.jpg'), ts);
+  // Do NOT guess cover.jpg with a token from short.mp4 (different token -> 403)
   return { src: first, fallbacks, videoUrl: s.videoUrl || '', ts };
 }
 
@@ -179,9 +179,10 @@ window.tryNextPoster = async function(img){
 function nudgePosters(){
   setTimeout(() => {
     document.querySelectorAll('img.thumb-img').forEach(img => {
-      if (!img.complete || img.naturalWidth === 0) {
+      const hasSrc = !!img.getAttribute('src');
+      if (!hasSrc || !img.complete || img.naturalWidth === 0) {
         tryNextPoster(img);
       }
     });
-  }, 1500);
+  }, 800);
 }
