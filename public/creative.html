@@ -1521,7 +1521,7 @@
         };
         document.getElementById('prev-page-btn').onclick = () => loadAssets(currentAssetPage - 1);
         document.getElementById('next-page-btn').onclick = () => loadAssets(currentAssetPage + 1);
-        document.getElementById('generate-ai-btn').onclick = generateAiImage;
+        try { document.getElementById('generate-ai-btn').onclick = generateAiImage; } catch {}
         document.getElementById('upload-asset-btn').onclick = () => {
             document.getElementById('asset-upload-input').click();
         };
@@ -1643,11 +1643,11 @@
                 const aiControls = document.getElementById('ai-controls');
                 
                 if (currentAssetType === 'ai') {
-                    searchControls.classList.add('hidden');
-                    aiControls.classList.remove('hidden');
+                    try { searchControls.classList.add('hidden'); } catch {}
+                    try { aiControls && aiControls.classList.remove('hidden'); } catch {}
                 } else {
-                    searchControls.classList.remove('hidden');
-                    aiControls.classList.add('hidden');
+                    try { searchControls.classList.remove('hidden'); } catch {}
+                    try { aiControls && aiControls.classList.add('hidden'); } catch {}
                 }
                 
                 // Clear cache and reset pagination for new type
