@@ -55,6 +55,12 @@ if (!admin.apps.length) {
   console.log(
     `🔥 Firebase Admin initialized (bucket=${storageBucket}, projectId=${projectId}, cred=${type})`
   );
+  try {
+    const name = admin.storage().bucket().name;
+    console.log('[boot] Firebase Storage bucket:', name);
+  } catch (e) {
+    console.warn('[boot] could not read storage bucket name', e?.message || e);
+  }
 }
 
 // Shared handles
