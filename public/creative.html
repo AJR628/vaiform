@@ -1433,7 +1433,7 @@
                 const aiBlock = document.getElementById('ai-result-block');
                 const aiPrev = document.getElementById('ai-result-preview');
                 if (aiBlock && aiPrev) {
-                  aiPrev.innerHTML = `<img src="${url}" class="w-full h-full object-cover block" />`;
+                  aiPrev.innerHTML = `<img crossOrigin="anonymous" src="${url}" class="w-full h-full object-cover block" />`;
                   // snapshot references
                   try {
                     const refWrap = document.getElementById('ai-ref-preview');
@@ -1474,6 +1474,20 @@
               selectedAsset = { id: `ai-${Date.now()}`, provider: 'ai', query: (document.getElementById('ai-prompt')?.value||'').trim(), fileUrl: savedUrl, thumbUrl: savedUrl, width: 1024, height: 1024 };
               updateRenderPreview();
               updateRenderButtonState();
+              // Also update dedicated preview nodes if present
+              try {
+                const previewImg = document.querySelector('#short-preview img, #preview-img');
+                if (previewImg) {
+                  try { previewImg.crossOrigin = 'anonymous'; } catch {}
+                  previewImg.src = savedUrl;
+                }
+                const previewBox = document.getElementById('short-preview');
+                if (previewBox) {
+                  previewBox.style.backgroundImage = `url("${savedUrl}")`;
+                  previewBox.setAttribute('data-bg', savedUrl);
+                }
+                window.VAIFORM = window.VAIFORM || {}; window.VAIFORM.currentBackgroundUrl = savedUrl;
+              } catch {}
               // Feedback
               try { showToast('✅ Saved to My Images and selected'); } catch {}
             } catch (err) {
