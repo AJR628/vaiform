@@ -8,7 +8,7 @@ import { generateQuote, remixQuote, saveQuote } from "../controllers/quotes.cont
 const r = Router();
 
 r.post("/generate-quote", requireAuth, validate(GenerateQuoteSchema), generateQuote);
-r.post("/remix", requireAuth, planGuard('pro'), validate(RemixQuoteSchema), remixQuote);
+r.post("/remix", requireAuth, validate(RemixQuoteSchema), remixQuote);
 r.post("/save", requireAuth, validate(SaveQuoteSchema), saveQuote);
 
 export default r;

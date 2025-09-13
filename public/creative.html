@@ -1470,11 +1470,11 @@
               // Store the image in storage and get a tokenized URL
               const reg = await apiFetch('/uploads/register', { method:'POST', body:{ imageUrl: url } });
               const savedUrl = reg?.data?.url || url;
-              // Mark selection locally and update preview
+              // Mark selection locally and update preview immediately
               selectedAsset = { id: `ai-${Date.now()}`, provider: 'ai', query: (document.getElementById('ai-prompt')?.value||'').trim(), fileUrl: savedUrl, thumbUrl: savedUrl, width: 1024, height: 1024 };
               updateRenderPreview();
               updateRenderButtonState();
-              // Small toast/notification
+              // Feedback
               try { showToast('✅ Saved to My Images and selected'); } catch {}
             } catch (err) {
               console.warn('Save & Use failed:', err);
@@ -1548,12 +1548,12 @@
         document.getElementById('preview-voice-btn').onclick = previewVoice;
 
         // Remix button event listeners
-        document.getElementById('regenerate-btn').onclick = () => remixQuote('regenerate');
-        document.getElementById('rephrase-btn').onclick = () => remixQuote('rephrase');
-        document.getElementById('tone-shift-btn').onclick = () => remixQuote('tone_shift');
+        try { document.getElementById('regenerate-btn').onclick = () => remixQuote('regenerate'); } catch {}
+        try { document.getElementById('rephrase-btn').onclick = () => remixQuote('rephrase'); } catch {}
+        try { document.getElementById('tone-shift-btn').onclick = () => remixQuote('tone_shift'); } catch {}
 
         // Inline edit handlers
-        document.getElementById('edit-quote-btn').onclick = () => {
+        try { document.getElementById('edit-quote-btn').onclick = () => {
             const disp = document.getElementById('quote-text-display');
             const ta = document.getElementById('quote-edit');
             ta.value = (currentQuote?.text || '').trim();
@@ -1562,8 +1562,8 @@
             document.getElementById('save-quote-btn').classList.remove('hidden');
             document.getElementById('cancel-quote-btn').classList.remove('hidden');
             document.getElementById('edit-quote-btn').classList.add('hidden');
-        };
-        document.getElementById('cancel-quote-btn').onclick = () => {
+        }; } catch {}
+        try { document.getElementById('cancel-quote-btn').onclick = () => {
             const disp = document.getElementById('quote-text-display');
             const ta = document.getElementById('quote-edit');
             ta.classList.add('hidden');
@@ -1571,7 +1571,7 @@
             document.getElementById('save-quote-btn').classList.add('hidden');
             document.getElementById('cancel-quote-btn').classList.add('hidden');
             document.getElementById('edit-quote-btn').classList.remove('hidden');
-        };
+        }; } catch {}
         document.getElementById('save-quote-btn').onclick = async () => {
             const ta = document.getElementById('quote-edit');
             const newText = ta.value.trim().slice(0, 200);
