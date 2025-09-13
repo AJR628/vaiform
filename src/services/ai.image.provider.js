@@ -1,11 +1,39 @@
-export async function generateAIImage({ prompt, style }) {
-  const hasKey = !!(process.env.OPENAI_API_KEY || process.env.STABILITY_API_KEY || process.env.REPLICATE_API_TOKEN);
+import { getAdapter } from './model-registry.service.js';
+import { saveImageFromUrl } from './storage.service.js';
+
+/**
+ * Generate an AI image using the model registry (ideogram by default).
+ * Returns { url } or, if uid/jobId provided, persists to storage and returns { url: publicUrl }.
+ */
+export async function generateAIImage({ prompt, style = 'realistic', params = {}, uid = null, jobId = null, index = 0 }) {
+  const hasKey = !!(process.env.REPLICATE_API_TOKEN);
   if (!hasKey) {
-    return { path: null, reason: "NOT_CONFIGURED" };
+    return { url: null, reason: "NOT_CONFIGURED" };
   }
-  // Future implementation: call provider to generate an image and return a local path
-  // For now, we intentionally do nothing in this diff.
-  return { path: null, reason: "NOT_IMPLEMENTED" };
+
+  const adapter = getAdapter(style === 'pixar' ? 'pixar' : style === 'cartoon' ? 'cartoon' : 'realistic');
+
+  // Map our slider to ideogram style types if using the ideogram adapter
+  const effectiveParams = { ...params };
+  if (style === 'creative' && !effectiveParams.style_type) {
+    effectiveParams.style_type = 'Illustration';
+  }
+
+  const { directOutput } = await adapter.invoke({ prompt, params: effectiveParams });
+  const url = Array.isArray(directOutput) ? directOutput[0] : (directOutput?.[0] || directOutput);
+  if (!url) return { url: null, reason: 'NO_OUTPUT' };
+
+  // Persist if a uid/jobId were provided
+  if (uid && jobId) {
+    try {
+      const saved = await saveImageFromUrl(uid, jobId, url, { index, recompress: false });
+      return { url: saved.publicUrl };
+    } catch (e) {
+      // Fall back to provider URL if save fails
+      return { url };
+    }
+  }
+  return { url };
 }
 
 export default { generateAIImage };

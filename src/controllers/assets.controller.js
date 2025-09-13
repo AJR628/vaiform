@@ -103,11 +103,7 @@ export async function generateAiImages(req, res) {
     const results = [];
     for (let i = 0; i < count; i++) {
       try {
-        const result = await generateAIImage({ 
-          prompt, 
-          style: config.model,
-          guidance: config.guidance 
-        });
+        const result = await generateAIImage({ prompt, style: config.model, params: { guidance: config.guidance }, uid: req.user?.uid || null, jobId: `frontend-${Date.now()}`, index: i });
         if (result?.url) {
           results.push({
             id: `ai-${Date.now()}-${i}`,

@@ -1402,16 +1402,58 @@
             const t = e.target;
             if (!t || t.id !== 'remix-generate-btn') return;
             e.preventDefault();
-            // Build a prompt from selected remix assets if present
-            try {
-                const refs = Array.from(document.querySelectorAll('#remix-assets img, #remix-assets video'));
-                const hint = refs.length ? `Remix of ${refs.length} references; match mood and composition.` : '';
-                const base = document.getElementById('ai-prompt');
-                if (base && hint && !String(base.value||'').includes('Remix of')) {
-                    base.value = `${base.value} ${hint}`.trim();
+            // Collect refs + prompt + style, then call generate endpoint
+            const base = document.getElementById('ai-prompt');
+            const prompt = (base?.value || '').trim();
+            const styleSlider = document.getElementById('ai-style-slider');
+            const sVal = parseFloat(styleSlider?.value || '0.5');
+            const style = sVal < 0.33 ? 'realistic' : (sVal > 0.66 ? 'creative' : 'realistic');
+
+            const refs = Array.from(document.querySelectorAll('#remix-assets img, #remix-assets video'))
+              .map((el)=> el.getAttribute('src') || el.getAttribute('poster'))
+              .filter(Boolean).slice(0,2);
+
+            // Fallback to simple text-to-image if no refs
+            if (refs.length < 2) {
+              generateAiImage();
+              return;
+            }
+
+            // Use existing assets API for AI image generation (single image)
+            // We reuse the /assets/ai-images for now with count:1
+            (async ()=>{
+              try {
+                const { apiFetch } = await import('./api.mjs');
+                const data = await apiFetch('/assets/ai-images', { method:'POST', body: { prompt: `${prompt} (inspired by two references; preserve mood and composition)`, style: style === 'creative' ? 'creative' : 'realistic', count: 1 } });
+                const url = data?.data?.images?.[0]?.url || data?.images?.[0] || null;
+                if (!url) { showError('ai-error', 'AI image generation failed'); return; }
+                // Display result
+                const aiBlock = document.getElementById('ai-result-block');
+                const aiPrev = document.getElementById('ai-result-preview');
+                if (aiBlock && aiPrev) {
+                  aiPrev.innerHTML = `<img src="${url}" class="w-full h-full object-contain" />`;
+                  // snapshot references
+                  try {
+                    const refWrap = document.getElementById('ai-ref-preview');
+                    if (refWrap) {
+                      refWrap.innerHTML = '';
+                      document.querySelectorAll('#remix-assets img, #remix-assets video').forEach((el) => {
+                        const src = el.getAttribute('src') || el.getAttribute('poster') || '';
+                        if (src) {
+                          const d = document.createElement('div');
+                          d.className = 'w-full h-16 rounded overflow-hidden border border-gray-600';
+                          d.innerHTML = `<img src="${src}" class="w-full h-full object-cover" />`;
+                          refWrap.appendChild(d);
+                        }
+                      });
+                    }
+                  } catch {}
+                  aiBlock.classList.remove('hidden');
                 }
-            } catch {}
-            generateAiImage();
+              } catch (err) {
+                showError('ai-error', err?.message || 'AI generation error');
+              }
+            })();
         });
 
         // Save & Use handler: persists image URL and marks as selected background
