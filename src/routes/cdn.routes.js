@@ -18,10 +18,14 @@ r.get("/", async (req, res) => {
       return res.status(up.status).end();
     }
     const cc = up.headers.get("cache-control") || "public, max-age=3600, immutable";
+    const ct = up.headers.get("content-type") || "application/octet-stream";
     res.set("Cache-Control", cc);
     // Allow your frontend domain
     res.set("Access-Control-Allow-Origin", process.env.FRONTEND_URL || "https://vaiform.com");
     res.set("Vary", "Origin");
+    res.set("Content-Type", ct);
+    const len = up.headers.get("content-length");
+    if (len) res.set("Content-Length", len);
     // Stream body
     up.body.pipe(res);
   } catch (e) {
