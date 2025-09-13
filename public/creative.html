@@ -1477,10 +1477,26 @@
               updateRenderButtonState();
               // Also update dedicated preview nodes if present
               try {
-                const previewImg = document.querySelector('#short-preview img, #preview-img');
+                // Ensure we have a preview <img id="preview-img"> inside live preview
+                let previewImg = document.getElementById('preview-img');
+                if (!previewImg) {
+                  const live = document.getElementById('live-preview-container');
+                  if (live) {
+                    live.classList.remove('hidden');
+                    const holder = live.querySelector('.relative') || live;
+                    // Clear holder if it only had a canvas (we'll still keep canvas for other flows)
+                    // but append img above it so swap is visible immediately
+                    previewImg = document.createElement('img');
+                    previewImg.id = 'preview-img';
+                    previewImg.style.width = '100%';
+                    previewImg.style.height = 'auto';
+                    previewImg.style.display = 'block';
+                    previewImg.style.objectFit = 'cover';
+                    holder.prepend(previewImg);
+                  }
+                }
                 if (previewImg) {
                   try { previewImg.crossOrigin = 'anonymous'; } catch {}
-                  // Use same-origin proxy while bucket CORS propagates
                   const proxied = `/cdn?u=${encodeURIComponent(savedUrl)}`;
                   previewImg.src = proxied;
                 }
