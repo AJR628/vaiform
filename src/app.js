@@ -23,6 +23,7 @@ import generateRoutes from "./routes/generate.routes.js";
 import webhookRoutes from "./routes/webhook.routes.js";
 import { getCreditsHandler } from "./handlers/credits.get.js";
 import diagHeadersRoutes from "./routes/diag.headers.routes.js";
+import cdnRoutes from "./routes/cdn.routes.js";
 
 dotenv.config();
 envCheck(); // presence-only checks; CI bypasses via NODE_ENV=test
@@ -164,6 +165,9 @@ if (routes?.shorts) {
   app.use("/api/shorts", routes.shorts);
   console.log("✅ Mounted shorts at /api/shorts");
 }
+// Same-origin CDN proxy (optional)
+app.use("/cdn", cdnRoutes);
+console.log("✅ Mounted cdn at /cdn");
 if (routes?.uploads) {
   app.use("/api", routes.uploads);
   console.log("✅ Mounted uploads at /api/uploads");

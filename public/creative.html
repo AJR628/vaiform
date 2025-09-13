@@ -1479,14 +1479,17 @@
                 const previewImg = document.querySelector('#short-preview img, #preview-img');
                 if (previewImg) {
                   try { previewImg.crossOrigin = 'anonymous'; } catch {}
-                  previewImg.src = savedUrl;
+                  // Use same-origin proxy while bucket CORS propagates
+                  const proxied = `/cdn?u=${encodeURIComponent(savedUrl)}`;
+                  previewImg.src = proxied;
                 }
                 const previewBox = document.getElementById('short-preview');
                 if (previewBox) {
-                  previewBox.style.backgroundImage = `url("${savedUrl}")`;
-                  previewBox.setAttribute('data-bg', savedUrl);
+                  const proxied = `/cdn?u=${encodeURIComponent(savedUrl)}`;
+                  previewBox.style.backgroundImage = `url("${proxied}")`;
+                  previewBox.setAttribute('data-bg', proxied);
                 }
-                window.VAIFORM = window.VAIFORM || {}; window.VAIFORM.currentBackgroundUrl = savedUrl;
+                window.VAIFORM = window.VAIFORM || {}; window.VAIFORM.currentBackgroundUrl = `/cdn?u=${encodeURIComponent(savedUrl)}`;
               } catch {}
               // Feedback
               try { showToast('✅ Saved to My Images and selected'); } catch {}
