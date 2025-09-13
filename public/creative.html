@@ -1433,7 +1433,8 @@
                 const aiBlock = document.getElementById('ai-result-block');
                 const aiPrev = document.getElementById('ai-result-preview');
                 if (aiBlock && aiPrev) {
-                  aiPrev.innerHTML = `<img crossOrigin="anonymous" src="${url}" class="w-full h-full object-cover block" />`;
+                  const proxied = `/cdn?u=${encodeURIComponent(url)}`;
+                  aiPrev.innerHTML = `<img crossOrigin="anonymous" src="${proxied}" class="w-full h-full object-cover block" />`;
                   // snapshot references
                   try {
                     const refWrap = document.getElementById('ai-ref-preview');
