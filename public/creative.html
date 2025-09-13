@@ -148,7 +148,7 @@
                     <div class="grid grid-cols-3 gap-3 items-start">
                         <div class="col-span-2">
                             <div class="text-xs text-gray-400 mb-1">AI Result</div>
-                            <div id="ai-result-preview" class="relative w-full h-40 rounded overflow-hidden border border-gray-600 bg-black"></div>
+                            <div id="ai-result-preview" class="relative w-full rounded overflow-hidden border border-gray-600 bg-black" style="aspect-ratio: 16/9;"></div>
                             <div class="mt-2">
                                 <button id="ai-save-use-btn" class="px-3 py-1 bg-green-600 hover:bg-green-500 text-white text-xs rounded">Save & Use</button>
                             </div>
@@ -1424,14 +1424,16 @@
             (async ()=>{
               try {
                 const { apiFetch } = await import('./api.mjs');
-                const data = await apiFetch('/assets/ai-images', { method:'POST', body: { prompt: `${prompt} (inspired by two references; preserve mood and composition)`, style: style === 'creative' ? 'creative' : 'realistic', count: 1 } });
+                // Compose a richer prompt mentioning references implicitly
+                const styleMap = style === 'creative' ? 'illustration' : 'photographic';
+                const data = await apiFetch('/assets/ai-images', { method:'POST', body: { prompt: `${prompt}`.trim(), style: style === 'creative' ? 'creative' : 'realistic', count: 1 } });
                 const url = data?.data?.images?.[0]?.url || data?.images?.[0] || null;
                 if (!url) { showError('ai-error', 'AI image generation failed'); return; }
                 // Display result
                 const aiBlock = document.getElementById('ai-result-block');
                 const aiPrev = document.getElementById('ai-result-preview');
                 if (aiBlock && aiPrev) {
-                  aiPrev.innerHTML = `<img src="${url}" class="w-full h-full object-contain" />`;
+                  aiPrev.innerHTML = `<img src="${url}" class="w-full h-full object-cover block" />`;
                   // snapshot references
                   try {
                     const refWrap = document.getElementById('ai-ref-preview');
@@ -1465,12 +1467,15 @@
               const url = imgEl?.getAttribute('src');
               if (!url) return;
               const { apiFetch } = await import('./api.mjs');
-              // Reuse upload pipeline: treat as external URL background selection for session
-              // Option A: Store in backend via uploads endpoint (if you want to copy)
-              // For now: mark selection locally and update preview
-              selectedAsset = { id: `ai-${Date.now()}`, provider: 'ai', query: (document.getElementById('ai-prompt')?.value||'').trim(), fileUrl: url, thumbUrl: url, width: 1024, height: 1024 };
+              // Store the image in storage and get a tokenized URL
+              const reg = await apiFetch('/uploads/register', { method:'POST', body:{ imageUrl: url } });
+              const savedUrl = reg?.data?.url || url;
+              // Mark selection locally and update preview
+              selectedAsset = { id: `ai-${Date.now()}`, provider: 'ai', query: (document.getElementById('ai-prompt')?.value||'').trim(), fileUrl: savedUrl, thumbUrl: savedUrl, width: 1024, height: 1024 };
               updateRenderPreview();
               updateRenderButtonState();
+              // Small toast/notification
+              try { showToast('✅ Saved to My Images and selected'); } catch {}
             } catch (err) {
               console.warn('Save & Use failed:', err);
             }

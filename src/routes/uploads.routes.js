@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import requireAuth from "../middleware/requireAuth.js";
 import { uploadPublic } from "../utils/storage.js";
+import { saveImageFromUrl } from "../services/storage.service.js";
 
 const ALLOWED_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 const EXT_BY_TYPE = {
@@ -55,5 +56,22 @@ r.post("/uploads/image", requireAuth, upload.single("file"), async (req, res) =>
 });
 
 export default r;
+
+// Register a remote image URL into storage and return a tokenized URL
+r.post("/uploads/register", requireAuth, async (req, res) => {
+  try {
+    const ownerUid = req.user?.uid;
+    if (!ownerUid) return res.status(401).json({ success: false, error: "UNAUTHENTICATED" });
+    const imageUrl = String(req.body?.imageUrl || '').trim();
+    if (!/^https?:\/\//i.test(imageUrl)) {
+      return res.status(400).json({ success:false, error:"INVALID_INPUT", message:"imageUrl required" });
+    }
+    const jobId = `register-${Date.now()}`;
+    const saved = await saveImageFromUrl(ownerUid, jobId, imageUrl, { index: 0, recompress: false });
+    return res.json({ success:true, data: { url: saved.publicUrl } });
+  } catch (e) {
+    return res.status(500).json({ success:false, error:"REGISTER_FAILED", message: e?.message || 'failed' });
+  }
+});
 
 
