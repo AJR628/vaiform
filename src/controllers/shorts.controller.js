@@ -218,7 +218,7 @@ export async function createShort(req, res) {
     if (!parsed.success) {
       return res.status(400).json({ success: false, error: "INVALID_INPUT", detail: parsed.error.flatten() });
     }
-    const { mode = "quote", text, template = "calm", durationSec = 8, voiceover = false, wantAttribution = true, background = { kind: "solid" }, debugAudioPath, captionMode = "static", includeBottomCaption = false, watermark, captionStyle, voiceId } = parsed.data;
+    const { mode = "quote", text = "", captionText = "", template = "calm", durationSec = 8, voiceover = false, wantAttribution = true, background = { kind: "solid" }, debugAudioPath, captionMode = "static", includeBottomCaption = false, watermark, captionStyle, voiceId } = parsed.data;
 
     const ownerUid = req.user?.uid;
     if (!ownerUid) {
@@ -242,7 +242,9 @@ export async function createShort(req, res) {
       console.log(`[shorts] Asset validation passed: ${background.url}`);
     }
 
-    const result = await createShortService({ ownerUid, mode, text, template, durationSec, voiceover, wantAttribution, background, debugAudioPath, captionMode, includeBottomCaption, watermark, captionStyle, voiceId });
+    const effectiveText = (captionText && captionText.trim().length >= 2) ? captionText.trim() : (text || '').trim();
+    const overrideQuote = effectiveText ? { text: effectiveText } : undefined;
+    const result = await createShortService({ ownerUid, mode, text, template, durationSec, voiceover, wantAttribution, background, debugAudioPath, captionMode, includeBottomCaption, watermark, captionStyle, voiceId, overrideQuote });
     return res.json({ success: true, data: result });
   } catch (e) {
     const msg = e?.message || "Short creation failed";

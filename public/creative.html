@@ -1256,7 +1256,9 @@
                     // Add caption style settings
                     captionStyle,
                     // Provide captionText for videos only
-                    captionText: finalCaptionText
+                    captionText: finalCaptionText,
+                    // Ensure TTS has content for both image/video flows
+                    ttsText: (finalCaptionText || finalText || '').trim()
                 };
 
                 // Only add voiceId if a voice is actually selected
