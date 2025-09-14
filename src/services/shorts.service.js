@@ -162,12 +162,12 @@ export async function createShortService({ ownerUid, mode, text, template, durat
         try {
           console.log(`[background] Processing stock video: ${background.url}`);
           const vid = await fetchVideoToTmp(background.url);
-          // For video backgrounds, do NOT burn the quote as a bottom caption unless explicitly requested.
+          // For video backgrounds, do NOT burn the main quote; allow optional bottom caption only.
           await renderVideoQuoteOverlay({
             videoPath: vid.path,
             outPath,
             durationSec,
-            text: usedQuote.text,
+            text: '',
             authorLine,
             ttsPath: audioOk ? v.audioPath : null,
             keepVideoAudio: background.keepVideoAudio || false,
@@ -212,12 +212,12 @@ export async function createShortService({ ownerUid, mode, text, template, durat
         try {
           console.log(`[background] Processing upload video: ${uploadUrl}`);
           const vid = await fetchVideoToTmp(uploadUrl);
-          // Do not burn the HTML overlay text into stock upload videos unless explicitly enabled
+          // Do not burn the main quote into upload videos unless explicitly enabled as bottom caption
           await renderVideoQuoteOverlay({
             videoPath: vid.path,
             outPath,
             durationSec,
-            text: usedQuote.text,
+            text: '',
             authorLine,
             ttsPath: audioOk ? v.audioPath : null,
             keepVideoAudio: background.keepVideoAudio || false,
@@ -338,7 +338,7 @@ export async function createShortService({ ownerUid, mode, text, template, durat
           videoPath: vid.path,
           outPath,
           durationSec,
-          text: usedQuote.text,
+          text: '',
           authorLine,
           watermark: watermarkFinal,
           ttsPath: audioOk ? audioPath : undefined,
@@ -349,6 +349,7 @@ export async function createShortService({ ownerUid, mode, text, template, durat
           videoStartSec: Number(background.videoStartSec || 0),
           videoVignette: background.videoVignette === true,
           haveBgAudio,
+          captionText: includeBottomCaption === true ? usedQuote.text : null,
         });
         // annotate meta via closure var? We'll include via meta build below
         // For parity with others, nothing else here; mux will run later
