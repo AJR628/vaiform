@@ -58,32 +58,10 @@ const BackgroundSchema = z.object({
   path: ["background"]
 });
 
-// Flexible caption style: accepts legacy ints and new float-based fields
+// Flexible caption style: accept any input shape and normalize
 const CaptionStyleSchema = z
-  .object({
-    font: z.string().optional(),
-    weight: z.enum(["normal", "bold"]).optional(),
-    // legacy name
-    size: z.number().int().min(28).max(96).optional(),
-    // new name
-    sizePx: z.number().int().min(30).max(96).optional(),
-    // allow either percent (30..100) or float (0..1)
-    opacity: z.union([
-      z.number().min(0).max(1),
-      z.number().int().min(30).max(100),
-    ]).optional(),
-    placement: z.enum(["top", "middle", "bottom"]).optional(),
-    // legacy box flags/values
-    background: z.boolean().optional(),
-    bgOpacity: z.union([
-      z.number().min(0).max(1),
-      z.number().int().min(0).max(100),
-    ]).optional(),
-    // new name
-    showBox: z.boolean().optional(),
-    boxOpacity: z.number().min(0).max(1).optional(),
-  })
-  .transform((s) => {
+  .any()
+  .transform((s = {}) => {
     const sizeRaw = Number.isFinite(s.sizePx) ? s.sizePx : (Number.isFinite(s.size) ? s.size : 48);
     const sizePx = Math.max(30, Math.min(96, Math.round(Number(sizeRaw || 48))));
 
