@@ -430,6 +430,24 @@
                   </div>
                 </div>`;
         }
+        // Regen helpers: only decrement on LLM actions
+        function getRegensLeft(){
+            const info = document.getElementById('regen-info');
+            if (!info) return null;
+            const m = String(info.textContent||'').match(/(\d+)/);
+            return m ? parseInt(m[1],10) : null;
+        }
+        function setRegensLeft(n){
+            const info = document.getElementById('regen-info');
+            if (!info) return;
+            const v = Math.max(0, Number(n||0));
+            info.textContent = `Regens left: ${v}`;
+        }
+        function decRegens(){
+            const cur = getRegensLeft();
+            if (cur === null) return;
+            setRegensLeft(Math.max(0, cur - 1));
+        }
         function showError(elementId, message) {
             const element = document.getElementById(elementId);
             element.textContent = message;
@@ -501,12 +519,7 @@
                 if (data.ok) {
                     currentQuote = data.data.quote;
                     displayQuote(currentQuote); // keep textarea visible (no toggle)
-                    // Reset regen state for the new generated text
-                    window.__regenState = window.__regenState || { key:'', count:0 };
-                    // do NOT reset counter on LLM success beyond updating the key; only decrement happens elsewhere
-                    window.__regenState.key = (currentQuote?.text||'').trim();
-                    const info = document.getElementById('regen-info');
-                    if (info) info.textContent = 'Regens left: 10';
+                    decRegens();
                 } else {
                     showError('quote-error', data.reason || 'Failed to generate quote');
                 }
@@ -1625,14 +1638,10 @@
         try { document.getElementById('cancel-quote-btn').onclick = () => {
             const disp = document.getElementById('quote-text-display');
             const ta = document.getElementById('quote-edit');
-            ta.classList.add('hidden');
-            disp.classList.remove('hidden');
-            document.getElementById('save-quote-btn').classList.add('hidden');
-            document.getElementById('cancel-quote-btn').classList.add('hidden');
-            document.getElementById('edit-quote-btn').classList.remove('hidden');
-            // Restore caption overlay
-            const t = (currentQuote?.text || ta.value || '').trim();
-            updateCaptionOverlay(t, !!t);
+            // remain in edit mode but clear contents
+            ta.value = '';
+            updateCaptionOverlay('', false);
+            // do not change regen counter
         }; } catch {}
         document.getElementById('save-quote-btn').onclick = async () => {
             const ta = document.getElementById('quote-edit');
@@ -1644,12 +1653,12 @@
             window.__regenState = { key: newText, count: 0 };
             const info = document.getElementById('regen-info');
             if (info) info.textContent = 'Regens left: 10';
-            // keep editor visible
-            document.getElementById('quote-text-display').classList.add('hidden');
-            ta.classList.remove('hidden');
-            document.getElementById('save-quote-btn').classList.remove('hidden');
-            document.getElementById('cancel-quote-btn').classList.remove('hidden');
-            document.getElementById('edit-quote-btn').classList.add('hidden');
+            // switch to locked/solid view after save
+            ta.classList.add('hidden');
+            document.getElementById('quote-text-display').classList.remove('hidden');
+            document.getElementById('save-quote-btn').classList.add('hidden');
+            document.getElementById('cancel-quote-btn').classList.add('hidden');
+            document.getElementById('edit-quote-btn').classList.remove('hidden');
             updateRenderPreview();
             updateCaptionOverlay(newText, true);
 
