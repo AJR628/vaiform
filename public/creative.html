@@ -928,6 +928,13 @@
             
             container.classList.remove('hidden');
             
+            // If a <video> is present for preview, hide overlay to avoid double text
+            try {
+                const ov = document.getElementById('caption-overlay');
+                const hasVideo = !!document.querySelector('#live-preview-container video, #preview-holder video');
+                if (ov) ov.style.display = hasVideo ? 'none' : 'block';
+            } catch {}
+
             // Load the asset image
             const img = new Image();
             img.crossOrigin = 'anonymous';
@@ -1523,6 +1530,8 @@
                   const proxied = `${getApiBase()}/cdn?u=${encodeURIComponent(savedUrl)}`;
                   previewImg.src = proxied;
                 }
+                // Ensure overlay visible for still image preview
+                try { const ov = document.getElementById('caption-overlay'); if (ov) ov.style.display = 'block'; } catch {}
                 const previewBox = document.getElementById('short-preview');
                 if (previewBox) {
                   const proxied = `${getApiBase()}/cdn?u=${encodeURIComponent(savedUrl)}`;

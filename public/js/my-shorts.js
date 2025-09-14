@@ -28,12 +28,11 @@ let loading = false;
 const myShortsIndex = new Map();
 
 async function fetchMine(cursor) {
-  const url = new URL('/shorts/mine', BACKEND_URL);
-  url.searchParams.set('limit', '24');
-  if (cursor) url.searchParams.set('cursor', cursor);
+  const base = BACKEND_URL.replace(/\/$/, '');
+  const url = `${base}/shorts/mine${cursor ? `?limit=24&cursor=${encodeURIComponent(cursor)}` : `?limit=24`}`;
   const headers = { Accept: 'application/json' };
   if (auth.currentUser) headers['Authorization'] = 'Bearer ' + await auth.currentUser.getIdToken();
-  const res = await fetch(url.toString(), { headers, credentials: 'omit' });
+  const res = await fetch(url, { headers, credentials: 'omit' });
   const ct = res.headers.get('content-type') || '';
   if (!res.ok) {
     const text = await res.text().catch(()=> '');
