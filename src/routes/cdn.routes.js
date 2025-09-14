@@ -10,6 +10,7 @@ const r = Router();
 r.get("/", async (req, res) => {
   try {
     const u = String(req.query?.u || "").trim();
+    console.log('[cdn] GET', u.slice(0, 140));
     if (!u || !/^https?:\/\//i.test(u)) {
       return res.status(400).json({ success:false, error:"MISSING_OR_INVALID_URL" });
     }
