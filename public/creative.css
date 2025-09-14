@@ -20,3 +20,9 @@
 }
 
 
+/* Prevent AI result preview from growing too wide */
+#ai-result-preview {
+  max-width: 420px;
+}
+
+

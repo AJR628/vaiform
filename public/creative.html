@@ -948,7 +948,16 @@
                 drawCaptionOverlay(ctx, canvasWidth, canvasHeight);
             };
             
-            img.src = selectedAsset.thumbUrl || selectedAsset.fileUrl;
+            try {
+                const raw = selectedAsset.thumbUrl || selectedAsset.fileUrl;
+                const proxied = raw && /^https:\/\/firebasestorage\.googleapis\.com\//.test(raw)
+                  ? `${getApiBase()}/cdn?u=${encodeURIComponent(raw)}`
+                  : raw;
+                img.crossOrigin = 'anonymous';
+                img.src = proxied;
+            } catch {
+                img.src = selectedAsset.thumbUrl || selectedAsset.fileUrl;
+            }
         }
 
         function drawCaptionOverlay(ctx, canvasWidth, canvasHeight) {
@@ -1549,7 +1558,7 @@
             (async ()=>{
               try {
                 const { apiFetch } = await import('./api.mjs');
-                await apiFetch('/quotes/save', { method:'POST', body:{ text: input, author: null, toneTag: (document.getElementById('quote-tone')?.value || 'default') } });
+                await apiFetch('/quotes/save', { method:'POST', body:{ text: input, author: '', toneTag: (document.getElementById('quote-tone')?.value || 'default') } });
                 try { window.VAIFORM = window.VAIFORM || {}; window.VAIFORM.currentQuoteText = input; } catch {}
               } catch (e) {
                 console.warn('Use This Text save failed:', e?.message || e);
@@ -1651,7 +1660,7 @@
             // Persist to backend so it can be used in the short without CORS issues
             try {
               const { apiFetch } = await import('./api.mjs');
-              await apiFetch('/quotes/save', { method: 'POST', body: { text: newText, author: null, toneTag: (document.getElementById('quote-tone')?.value || 'default') } });
+              await apiFetch('/quotes/save', { method: 'POST', body: { text: newText, author: '', toneTag: (document.getElementById('quote-tone')?.value || 'default') } });
               try { window.VAIFORM = window.VAIFORM || {}; window.VAIFORM.currentQuoteText = newText; } catch {}
             } catch (e) {
               console.warn('Quote save failed (non-fatal):', e?.message || e);
