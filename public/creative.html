@@ -418,6 +418,18 @@
         let currentVoiceId = null;
 
         // Helper functions
+        function updateCaptionOverlay(text = '', show = true){
+            const overlay = document.getElementById('caption-overlay');
+            if (!overlay) return;
+            if (!show || !text) { overlay.innerHTML = ''; return; }
+            const safe = String(text);
+            overlay.innerHTML = `
+                <div style="position:absolute; left:0; right:0; bottom:0; padding:12px 16px; background:linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0.55) 80%);">
+                  <div style="max-width: 90%; margin: 0 auto; text-align: center; color: #fff; font-weight: 600; text-shadow: 0 2px 6px rgba(0,0,0,0.7);">
+                    ${safe}
+                  </div>
+                </div>`;
+        }
         function showError(elementId, message) {
             const element = document.getElementById(elementId);
             element.textContent = message;
@@ -490,7 +502,9 @@
                     currentQuote = data.data.quote;
                     displayQuote(currentQuote); // keep textarea visible (no toggle)
                     // Reset regen state for the new generated text
-                    window.__regenState = { key: (currentQuote?.text||'').trim(), count: 0 };
+                    window.__regenState = window.__regenState || { key:'', count:0 };
+                    // do NOT reset counter on LLM success beyond updating the key; only decrement happens elsewhere
+                    window.__regenState.key = (currentQuote?.text||'').trim();
                     const info = document.getElementById('regen-info');
                     if (info) info.textContent = 'Regens left: 10';
                 } else {
@@ -1605,6 +1619,8 @@
             document.getElementById('save-quote-btn').classList.remove('hidden');
             document.getElementById('cancel-quote-btn').classList.remove('hidden');
             document.getElementById('edit-quote-btn').classList.add('hidden');
+            // While editing, hide caption overlay
+            updateCaptionOverlay('', false);
         }; } catch {}
         try { document.getElementById('cancel-quote-btn').onclick = () => {
             const disp = document.getElementById('quote-text-display');
@@ -1614,6 +1630,9 @@
             document.getElementById('save-quote-btn').classList.add('hidden');
             document.getElementById('cancel-quote-btn').classList.add('hidden');
             document.getElementById('edit-quote-btn').classList.remove('hidden');
+            // Restore caption overlay
+            const t = (currentQuote?.text || ta.value || '').trim();
+            updateCaptionOverlay(t, !!t);
         }; } catch {}
         document.getElementById('save-quote-btn').onclick = async () => {
             const ta = document.getElementById('quote-edit');
@@ -1632,6 +1651,7 @@
             document.getElementById('cancel-quote-btn').classList.remove('hidden');
             document.getElementById('edit-quote-btn').classList.add('hidden');
             updateRenderPreview();
+            updateCaptionOverlay(newText, true);
 
             // Persist to backend so it can be used in the short without CORS issues
             try {
