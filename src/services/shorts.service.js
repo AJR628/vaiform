@@ -24,7 +24,7 @@ export function finalizeQuoteText(mode, text) {
   return t;
 }
 
-export async function createShortService({ ownerUid, mode, text, template, durationSec, voiceover = false, wantAttribution = true, background = { kind: "solid" }, debugAudioPath, captionMode = "static", includeBottomCaption = false, watermark, overrideQuote, captionStyle, voiceId }) {
+export async function createShortService({ ownerUid, mode, text, template, durationSec, voiceover = false, wantAttribution = true, background = { kind: "solid" }, debugAudioPath, captionMode = "static", includeBottomCaption = false, watermark, overrideQuote, captionStyle, caption, voiceId }) {
   if (!ownerUid) throw new Error("MISSING_UID");
 
   const jobId = `shorts-${Date.now().toString(36)}-${Math.random().toString(36).slice(2,7)}`;
@@ -182,9 +182,10 @@ export async function createShortService({ ownerUid, mode, text, template, durat
             bgAudioVolume: background.bgAudioVolume || 0.35,
             voiceoverDelaySec: background.voiceoverDelaySec,
             tailPadSec: background.tailPadSec,
-            // Only provide captionText when the UI explicitly asked for a bottom caption.
-            captionText: includeBottomCaption === true ? usedQuote.text : null,
+            // Prefer precise caption layout when provided; gated by includeBottomCaption
+            captionText: includeBottomCaption === true ? ((caption && caption.text) || usedQuote.text) : null,
             captionStyle,
+            caption: includeBottomCaption === true ? caption : null,
             watermark: watermarkFinal,
             watermarkText: "Vaiform"
           });
@@ -232,8 +233,9 @@ export async function createShortService({ ownerUid, mode, text, template, durat
             bgAudioVolume: background.bgAudioVolume || 0.35,
             voiceoverDelaySec: background.voiceoverDelaySec,
             tailPadSec: background.tailPadSec,
-            captionText: includeBottomCaption === true ? usedQuote.text : null,
+            captionText: includeBottomCaption === true ? ((caption && caption.text) || usedQuote.text) : null,
             captionStyle,
+            caption: includeBottomCaption === true ? caption : null,
             watermark: watermarkFinal,
             watermarkText: "Vaiform"
           });
@@ -357,7 +359,8 @@ export async function createShortService({ ownerUid, mode, text, template, durat
           videoStartSec: Number(background.videoStartSec || 0),
           videoVignette: background.videoVignette === true,
           haveBgAudio,
-          captionText: includeBottomCaption === true ? usedQuote.text : null,
+          captionText: includeBottomCaption === true ? ((caption && caption.text) || usedQuote.text) : null,
+          caption: includeBottomCaption === true ? caption : null,
         });
         // annotate meta via closure var? We'll include via meta build below
         // For parity with others, nothing else here; mux will run later

@@ -233,6 +233,7 @@ export async function renderVideoQuoteOverlay({
   // content
   text, authorLine,
   captionText,
+  caption,
   // style bundle
   fontfile, fontcolor = 'white', fontsize = 72, lineSpacing = 12, shadowColor = 'black', shadowX = 2, shadowY = 2,
   box = 1, boxcolor = 'black@0.35', boxborderw = 24,
@@ -314,7 +315,48 @@ export async function renderVideoQuoteOverlay({
 
   // Optional caption (bottom, safe area, wrapped)
   let drawCaption = '';
-  if (captionText && String(captionText).trim()) {
+  if (caption && String(caption.text || '').trim()) {
+    // Honor precise caption layout from payload
+    const capTextRaw = String(caption.text).trim();
+    const fontPx = Math.max(16, Math.min(160, Number(caption.fontSizePx) || 48));
+    const maxWidthPx = Math.round(W * 0.84); // 84% canvas width safe area
+    const charW = 0.58 * fontPx; // average glyph width factor for DejaVu/Arial
+    const maxChars = Math.max(6, Math.floor(maxWidthPx / Math.max(1, charW)));
+    const words = capTextRaw.split(/\s+/);
+    const lines = [];
+    let cur = '';
+    for (const w2 of words) {
+      const next = cur ? cur + ' ' + w2 : w2;
+      if (next.length <= maxChars) cur = next; else { if (cur) lines.push(cur); cur = w2; }
+    }
+    if (cur) lines.push(cur);
+    const fitted = lines.join('\n');
+    const lineSp = Number.isFinite(Number(caption.lineSpacingPx)) ? Math.max(0, Number(caption.lineSpacingPx)) : Math.round(fontPx * 0.25);
+    const op = Math.max(0, Math.min(1, Number(caption.opacity ?? 0.8)));
+    const xPct = Math.max(0, Math.min(100, Number(caption.position?.xPct ?? 50)));
+    const yPct = Math.max(0, Math.min(100, Number(caption.position?.yPct ?? 88)));
+    const align = (caption.align === 'left' || caption.align === 'right') ? caption.align : 'center';
+    const xExpr = align === 'left' ? `(w*${(xPct/100).toFixed(4)})`
+      : (align === 'right' ? `(w*${(xPct/100).toFixed(4)})-text_w` : `(w*${(xPct/100).toFixed(4)})-text_w/2`);
+    const yExpr = `(h*${(yPct/100).toFixed(4)})-text_h/2`;
+    const wantBox = !!(caption.box && caption.box.enabled);
+    const boxAlpha = Math.max(0, Math.min(1, Number(caption.box?.bgAlpha ?? 0.0)));
+    drawCaption = `drawtext=${[
+      `text='${escText(fitted)}'`,
+      fontfile ? `fontfile='${fontfile}'` : null,
+      `x=${xExpr}`,
+      `y=${yExpr}`,
+      `fontsize=${fontPx}`,
+      `fontcolor=white@${op.toFixed(2)}`,
+      `line_spacing=${lineSp}`,
+      `borderw=2:bordercolor=black@0.85`,
+      `shadowcolor=black:shadowx=2:shadowy=2`,
+      `box=${wantBox?1:0}`,
+      wantBox ? `boxcolor=black@${boxAlpha.toFixed(2)}` : null,
+      `boxborderw=0`
+    ].filter(Boolean).join(':')}`;
+  } else if (captionText && String(captionText).trim()) {
+    // Back-compat: simple bottom caption with safe wrapping
     const CANVAS_W = W;
     const CANVAS_H = H;
     const cap = wrapCaption(captionText, CANVAS_W, CANVAS_H, { maxLines: 2, fontMax: 64, fontMin: 28 });

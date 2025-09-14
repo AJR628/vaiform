@@ -97,6 +97,23 @@ const CreateShortSchema = z
     includeBottomCaption: z.boolean().optional(),
     watermark: z.boolean().optional(),
     captionStyle: CaptionStyleSchema.optional(),
+    caption: z
+      .object({
+        text: z.string().trim().min(1).max(300),
+        fontFamily: z.string().optional(),
+        fontSizePx: z.number().int().min(16).max(160),
+        opacity: z.number().min(0).max(1).default(0.8),
+        align: z.enum(["left","center","right"]).default("center"),
+        position: z.object({ xPct: z.number().min(0).max(100), yPct: z.number().min(0).max(100) }),
+        lineSpacingPx: z.number().int().min(0).max(200).optional(),
+        box: z.object({
+          enabled: z.boolean().optional(),
+          paddingPx: z.number().int().min(0).max(64).optional(),
+          radiusPx: z.number().int().min(0).max(64).optional(),
+          bgAlpha: z.number().min(0).max(1).optional(),
+        }).optional(),
+      })
+      .optional(),
     captionText: z.string().default("").optional(),
     voiceId: z.string().optional(),
   })
@@ -196,7 +213,7 @@ export async function createShort(req, res) {
     if (!parsed.success) {
       return res.status(400).json({ success: false, error: "INVALID_INPUT", detail: parsed.error.flatten() });
     }
-    const { mode = "quote", text = "", captionText = "", template = "calm", durationSec = 8, voiceover = false, wantAttribution = true, background = { kind: "solid" }, debugAudioPath, captionMode = "static", includeBottomCaption = false, watermark, captionStyle, voiceId } = parsed.data;
+    const { mode = "quote", text = "", captionText = "", template = "calm", durationSec = 8, voiceover = false, wantAttribution = true, background = { kind: "solid" }, debugAudioPath, captionMode = "static", includeBottomCaption = false, watermark, captionStyle, caption, voiceId } = parsed.data;
 
     const ownerUid = req.user?.uid;
     if (!ownerUid) {
@@ -222,7 +239,7 @@ export async function createShort(req, res) {
 
     const effectiveText = (captionText && captionText.trim().length >= 2) ? captionText.trim() : (text || '').trim();
     const overrideQuote = effectiveText ? { text: effectiveText } : undefined;
-    const result = await createShortService({ ownerUid, mode, text, template, durationSec, voiceover, wantAttribution, background, debugAudioPath, captionMode, includeBottomCaption, watermark, captionStyle, voiceId, overrideQuote });
+    const result = await createShortService({ ownerUid, mode, text, template, durationSec, voiceover, wantAttribution, background, debugAudioPath, captionMode, includeBottomCaption, watermark, captionStyle, caption, voiceId, overrideQuote });
     return res.json({ success: true, data: result });
   } catch (e) {
     const msg = e?.message || "Short creation failed";

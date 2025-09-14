@@ -1231,6 +1231,24 @@
                     boxOpacity: parseInt(document.getElementById('caption-bg-opacity').value) / 100
                 };
 
+                // Build precise caption layout mirroring preview controls
+                const placementMap = { top: 12, middle: 50, bottom: 88 };
+                const caption = {
+                    text: (currentQuote?.text || '').trim(),
+                    fontFamily: captionStyle.font || 'system',
+                    fontSizePx: Number.isFinite(captionStyle.sizePx) ? captionStyle.sizePx : 48,
+                    opacity: Math.max(0, Math.min(1, captionStyle.opacity ?? 0.8)),
+                    align: 'center',
+                    position: { xPct: 50, yPct: placementMap[captionStyle.placement] ?? 88 },
+                    lineSpacingPx: Math.round(((Number.isFinite(captionStyle.sizePx)?captionStyle.sizePx:48) * 0.25)),
+                    box: {
+                        enabled: !!captionStyle.showBox,
+                        paddingPx: 10,
+                        radiusPx: 8,
+                        bgAlpha: Math.max(0, Math.min(1, captionStyle.boxOpacity ?? 0.5))
+                    }
+                };
+
                 // Normalize caption mode to satisfy server enum
                 // For videos, burn one bottom caption in the final render
                 const uiCaptionMode = 'static';
@@ -1255,6 +1273,7 @@
                     watermark: true,
                     // Add caption style settings
                     captionStyle,
+                    caption,
                     // Provide captionText for videos only
                     captionText: finalCaptionText,
                     // Ensure TTS has content for both image/video flows
