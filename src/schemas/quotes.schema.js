@@ -26,9 +26,10 @@ export const AiImagesSchema = z.object({
   count: z.number().int().min(1).max(2).default(2),
 }).strict();
 
+// Be tolerant of null/undefined author coming from older clients
 export const SaveQuoteSchema = z.object({
   text: z.string().trim().min(4).max(280),
-  author: z.string().trim().max(80).optional(),
+  author: z.preprocess((v) => (v == null ? "" : v), z.string().trim().max(80).optional()),
   toneTag: z.string().trim().max(40).optional(),
 }).strict();
 
