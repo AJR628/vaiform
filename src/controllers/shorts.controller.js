@@ -58,15 +58,47 @@ const BackgroundSchema = z.object({
   path: ["background"]
 });
 
-const CaptionStyleSchema = z.object({
-  font: z.string().default("system").optional(),
-  weight: z.enum(["normal", "bold"]).default("normal").optional(),
-  size: z.number().int().min(28).max(72).default(48).optional(),
-  opacity: z.number().int().min(30).max(100).default(80).optional(),
-  placement: z.enum(["top", "middle", "bottom"]).default("middle").optional(),
-  background: z.boolean().default(false).optional(),
-  bgOpacity: z.number().int().min(0).max(100).default(50).optional(),
-});
+// Flexible caption style: accepts legacy ints and new float-based fields
+const CaptionStyleSchema = z
+  .object({
+    font: z.string().optional(),
+    weight: z.enum(["normal", "bold"]).optional(),
+    // legacy name
+    size: z.number().int().min(28).max(96).optional(),
+    // new name
+    sizePx: z.number().int().min(30).max(96).optional(),
+    // allow either percent (30..100) or float (0..1)
+    opacity: z.union([
+      z.number().min(0).max(1),
+      z.number().int().min(30).max(100),
+    ]).optional(),
+    placement: z.enum(["top", "middle", "bottom"]).optional(),
+    // legacy box flags/values
+    background: z.boolean().optional(),
+    bgOpacity: z.union([
+      z.number().min(0).max(1),
+      z.number().int().min(0).max(100),
+    ]).optional(),
+    // new name
+    showBox: z.boolean().optional(),
+    boxOpacity: z.number().min(0).max(1).optional(),
+  })
+  .transform((s) => {
+    const sizeRaw = Number.isFinite(s.sizePx) ? s.sizePx : (Number.isFinite(s.size) ? s.size : 48);
+    const sizePx = Math.max(30, Math.min(96, Math.round(Number(sizeRaw || 48))));
+
+    const opRaw = s.opacity;
+    const opacity = typeof opRaw === "number" ? (opRaw > 1 ? Math.min(1, Math.max(0, opRaw / 100)) : Math.max(0, Math.min(1, opRaw))) : 0.8;
+
+    const boxOpRaw = (typeof s.boxOpacity === 'number') ? s.boxOpacity : (typeof s.bgOpacity === 'number' ? (s.bgOpacity > 1 ? s.bgOpacity / 100 : s.bgOpacity) : 0.5);
+    const boxOpacity = Math.max(0, Math.min(1, Number(boxOpRaw)));
+
+    const showBox = typeof s.showBox === 'boolean' ? s.showBox : !!s.background;
+    const font = (s.font === 'minimal' || s.font === 'cinematic' || s.font === 'system') ? s.font : 'system';
+    const weight = s.weight === 'bold' ? 'bold' : 'normal';
+    const placement = (s.placement === 'top' || s.placement === 'middle' || s.placement === 'bottom') ? s.placement : 'middle';
+    return { font, weight, sizePx, opacity, placement, showBox, boxOpacity };
+  });
 
 const CreateShortSchema = z
   .object({
@@ -86,9 +118,20 @@ const CreateShortSchema = z
     includeBottomCaption: z.boolean().optional(),
     watermark: z.boolean().optional(),
     captionStyle: CaptionStyleSchema.optional(),
+    captionText: z.string().default("").optional(),
     voiceId: z.string().optional(),
   })
+  .transform((v) => {
+    // permit empty text if captionText is provided
+    const text = typeof v.text === 'string' ? v.text : '';
+    const ctext = typeof v.captionText === 'string' ? v.captionText : '';
+    if ((text?.trim()?.length ?? 0) >= 2 || (ctext?.trim()?.length ?? 0) >= 2) return { ...v, text, captionText: ctext };
+    return { ...v, text, captionText: ctext, __INVALID__: true };
+  })
   .superRefine((val, ctx) => {
+    if (val.__INVALID__ === true) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Provide text or captionText (min 2 chars).", path: ["text"] });
+    }
     const bg = val?.background;
     if (bg?.kind === "imageUrl") {
       if (!bg.imageUrl) {
