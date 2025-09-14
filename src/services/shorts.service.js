@@ -37,6 +37,7 @@ export async function createShortService({ ownerUid, mode, text, template, durat
   const shortsRef = db.collection('shorts').doc(jobId);
   
   try {
+    try { console.log("[shorts] render opts:", { includeBottomCaption, hasCaption: !!caption, capPos: caption?.position, capAlign: caption?.align, capSize: caption?.fontSizePx }); } catch {}
     await shortsRef.set({
       ownerId: ownerUid,
       createdAt: admin.firestore.FieldValue.serverTimestamp(),

@@ -319,7 +319,8 @@ export async function renderVideoQuoteOverlay({
     // Honor precise caption layout from payload
     const capTextRaw = String(caption.text).trim();
     const fontPx = Math.max(16, Math.min(160, Number(caption.fontSizePx) || 48));
-    const maxWidthPx = Math.round(W * 0.84); // 84% canvas width safe area
+    // Derive a safe max text box width; allow wider when centered
+    const maxWidthPx = Math.round(W * 0.82);
     const charW = 0.58 * fontPx; // average glyph width factor for DejaVu/Arial
     const maxChars = Math.max(6, Math.floor(maxWidthPx / Math.max(1, charW)));
     const words = capTextRaw.split(/\s+/);
@@ -341,6 +342,7 @@ export async function renderVideoQuoteOverlay({
     const yExpr = `(h*${(yPct/100).toFixed(4)})-text_h/2`;
     const wantBox = !!(caption.box && caption.box.enabled);
     const boxAlpha = Math.max(0, Math.min(1, Number(caption.box?.bgAlpha ?? 0.0)));
+    try { console.log('[ffmpeg] CAPTION(layout)', { fontPx, xPct, yPct, align, op, lineSp, wantBox, boxAlpha, fitted }); } catch {}
     drawCaption = `drawtext=${[
       `text='${escText(fitted)}'`,
       fontfile ? `fontfile='${fontfile}'` : null,
