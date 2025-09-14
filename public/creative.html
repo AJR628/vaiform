@@ -400,7 +400,16 @@
         </div>
     </div>
 
-    <script>
+    <script type="module">
+        import { BACKEND as BACKEND_FROM_CONFIG } from '/config.js';
+
+        const API_BASE_FALLBACK = "https://17e0d1d1-e327-483d-b1ea-c41bea08fb59-00-1ef93t84nlhq6.janeway.replit.dev";
+        function getApiBase(){
+            try { if (BACKEND_FROM_CONFIG) return String(BACKEND_FROM_CONFIG).replace(/\/$/, ''); } catch {}
+            try { if (typeof window!=='undefined' && window.BACKEND) return String(window.BACKEND).replace(/\/$/,''); } catch {}
+            try { if (typeof location!=='undefined' && /replit\.dev$/i.test(location.host)) return location.origin; } catch {}
+            return API_BASE_FALLBACK;
+        }
         // Global state
         let currentLimits = null;
         let currentQuote = null;
@@ -1433,7 +1442,7 @@
                 const aiBlock = document.getElementById('ai-result-block');
                 const aiPrev = document.getElementById('ai-result-preview');
                 if (aiBlock && aiPrev) {
-                  const proxied = `/cdn?u=${encodeURIComponent(url)}`;
+                  const proxied = `${getApiBase()}/cdn?u=${encodeURIComponent(url)}`;
                   aiPrev.innerHTML = `<img crossOrigin="anonymous" src="${proxied}" class="w-full h-full object-cover block" />`;
                   // snapshot references
                   try {
@@ -1499,16 +1508,16 @@
                 }
                 if (previewImg) {
                   try { previewImg.crossOrigin = 'anonymous'; } catch {}
-                  const proxied = `/cdn?u=${encodeURIComponent(savedUrl)}`;
+                  const proxied = `${getApiBase()}/cdn?u=${encodeURIComponent(savedUrl)}`;
                   previewImg.src = proxied;
                 }
                 const previewBox = document.getElementById('short-preview');
                 if (previewBox) {
-                  const proxied = `/cdn?u=${encodeURIComponent(savedUrl)}`;
+                  const proxied = `${getApiBase()}/cdn?u=${encodeURIComponent(savedUrl)}`;
                   previewBox.style.backgroundImage = `url("${proxied}")`;
                   previewBox.setAttribute('data-bg', proxied);
                 }
-                window.VAIFORM = window.VAIFORM || {}; window.VAIFORM.currentBackgroundUrl = `/cdn?u=${encodeURIComponent(savedUrl)}`;
+                window.VAIFORM = window.VAIFORM || {}; window.VAIFORM.currentBackgroundUrl = `${getApiBase()}/cdn?u=${encodeURIComponent(savedUrl)}`;
               } catch {}
               // Feedback
               try { showToast('✅ Saved to My Images and selected'); } catch {}
