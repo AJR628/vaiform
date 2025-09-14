@@ -50,7 +50,7 @@ function cardTemplate(s) {
   const posters = resolveCover(s);
   const cover = posters.src;
   const safeQuote = (s.quoteText || '').trim();
-  const statusText = { ready: 'Ready', processing: 'Processing', failed: 'Failed' }[status] || 'Unknown';
+  const statusText = { ready: 'Ready', processing: 'Processing', failed: 'Failed', error_audio: 'No audio' }[status] || 'Unknown';
   return `
     <article class="short-card" data-status="${status}" data-id="${s.id || ''}">
       <div class="thumb">
@@ -155,10 +155,10 @@ const proxify = (u) => u ? `${PROXY_BASE}/cdn?u=${encodeURIComponent(u)}` : '';
 
 function resolveCover(s){
   const ts = (s.completedAt || s.createdAt || new Date()).toString();
-  const fallbacks = ['__meta__'];
-  let raw = s.coverImageUrl || (s.background && s.background.url) || '';
-  let first = raw ? withCache(proxify(raw), ts) : '';
-  // Do NOT guess cover.jpg with a token from short.mp4 (different token -> 403)
+  // Prefer the stored cover URL directly to avoid /cdn/meta.json churn
+  const fallbacks = [];
+  const raw = s.coverImageUrl || '';
+  const first = raw ? withCache(raw, ts) : '';
   return { src: first, fallbacks, videoUrl: s.videoUrl || '', ts };
 }
 
@@ -175,20 +175,14 @@ async function fetchShortDetail(id){
 
 window.tryNextPoster = async function(img){
   try {
-    let list = [];
-    try { list = JSON.parse(img.dataset.fallbacks || '[]'); } catch {}
-    if (!list || list.length === 0) return;
-    const next = list.shift();
-    img.dataset.fallbacks = JSON.stringify(list);
-    if (next === '__meta__'){
-      const id = img.dataset.id || '';
-      const detail = await fetchShortDetail(id);
-      const c = detail?.coverImageUrl ? withCache(detail.coverImageUrl, img.dataset.ts || Date.now()) : '';
-      if (c) { img.src = c; return; }
-      const card = img.closest('.short-card'); if (card) card.classList.add('no-thumb');
-    } else {
-      img.src = next;
+    // If direct cover failed or is missing, fall back to video frame preview
+    const v = img.dataset.video || '';
+    if (v) {
+      img.src = v + '#t=0.2';
+      return;
     }
+    const card = img.closest('.short-card');
+    if (card) card.classList.add('no-thumb');
   } catch {}
 }
 
@@ -212,40 +206,23 @@ function initPosters(){
 }
 
 function loadPoster(img, item){
-  const metaUrl = item.videoUrl ? swapNameKeepQuery(item.videoUrl, 'meta.json') : '';
-  let triedMeta = false;
-  let triedVideoPoster = false;
   let retried = false;
 
   function setSrc(src){ if (src) img.src = src; }
 
-  async function tryMeta(){
-    if (triedMeta || !metaUrl) return tryVideoPoster();
-    triedMeta = true;
-    try {
-      const proxied = proxify(metaUrl);
-      const r = await fetch(proxied || metaUrl, { cache: 'no-store', credentials: 'omit' });
-      if (!r.ok) return tryVideoPoster();
-      const m = await r.json();
-      if (m?.urls?.cover) return setSrc(withCache(proxify(m.urls.cover) || m.urls.cover, Date.now()));
-      return tryVideoPoster();
-    } catch { return tryVideoPoster(); }
-  }
-
   function tryVideoPoster(){
-    if (triedVideoPoster || !item.videoUrl) return;
-    triedVideoPoster = true;
+    if (!item?.videoUrl) return;
     setSrc(item.videoUrl + '#t=0.2');
   }
 
   img.onerror = () => {
-    if (!triedMeta || !triedVideoPoster) return tryMeta();
-    if (!retried && item.coverImageUrl){
+    if (!retried) {
       retried = true;
-      setTimeout(() => setSrc(withCache(item.coverImageUrl, Date.now())), 900);
+      return tryVideoPoster();
     }
+    const card = img.closest('.short-card'); if (card) card.classList.add('no-thumb');
   };
 
-  if (item.coverImageUrl) setSrc(withCache(proxify(item.coverImageUrl) || item.coverImageUrl, Date.now()));
-  else tryMeta();
+  if (item.coverImageUrl) setSrc(withCache(item.coverImageUrl, Date.now()));
+  else tryVideoPoster();
 }

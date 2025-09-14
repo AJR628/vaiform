@@ -78,14 +78,22 @@ export async function createShortService({ ownerUid, mode, text, template, durat
   let v = { audioPath: null };
   if (voiceover) {
     try {
-      // Use specific voice ID if provided, otherwise use default
-      const ttsOptions = { text: usedQuote.text };
-      if (voiceId) {
-        ttsOptions.voiceId = voiceId;
+      // Attempt with requested voice first
+      const primaryOpts = { text: usedQuote.text, ...(voiceId ? { voiceId } : {}) };
+      v = await synthVoice(primaryOpts);
+      if (!v?.audioPath) {
+        // Fallback: try again without a specific voice to let provider default
+        console.warn("[shorts] TTS primary failed; retrying with default voice");
+        v = await synthVoice({ text: usedQuote.text });
       }
-      v = await synthVoice(ttsOptions);
       if (v?.audioPath) {
-        try { fs.copyFileSync(v.audioPath, audioPath); audioOk = true; console.log("[shorts] TTS audio ready:", v.audioPath); } catch (e) { console.warn("[shorts] copy TTS audio failed:", e?.message || e); }
+        try {
+          fs.copyFileSync(v.audioPath, audioPath);
+          audioOk = true;
+          console.log("[shorts] TTS audio ready:", v.audioPath);
+        } catch (e) {
+          console.warn("[shorts] copy TTS audio failed:", e?.message || e);
+        }
       }
     } catch (e) {
       // soft-fail
@@ -433,13 +441,14 @@ export async function createShortService({ ownerUid, mode, text, template, durat
   try { if (imageTmpPath) fs.unlinkSync(imageTmpPath); } catch {}
   try { fs.rmSync(tmpRoot, { recursive: true, force: true }); } catch {}
 
-  // Update Firestore document with success
+  // Update Firestore document with success (or audio error)
   try {
     await shortsRef.update({
-      status: 'ready',
+      status: audioOk ? 'ready' : (voiceover ? 'error_audio' : 'ready'),
       videoUrl: publicUrl,
       coverImageUrl: coverUrl,
       completedAt: admin.firestore.FieldValue.serverTimestamp(),
+      audioOk: !!audioOk,
       usedQuote: {
         text: (usedQuote?.text || '').trim(),
         author: usedQuote?.author ?? null,
