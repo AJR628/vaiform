@@ -1493,6 +1493,8 @@
                     previewImg.style.display = 'block';
                     previewImg.style.objectFit = 'cover';
                     holder.prepend(previewImg);
+                    // Hide canvas during static image preview to avoid black overlay
+                    try { const c = holder.querySelector('#live-preview-canvas'); if (c) c.style.display = 'none'; } catch {}
                   }
                 }
                 if (previewImg) {
