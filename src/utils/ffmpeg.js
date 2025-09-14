@@ -17,8 +17,8 @@ export function runFFmpeg(args, opts = {}) {
     let proc;
     let timeoutId;
     
-    // Set timeout (default 120 seconds, configurable via opts.timeout)
-    const timeoutMs = opts.timeout || 120000;
+    // Set timeout (default 300 seconds, overridable via opts.timeout)
+    const timeoutMs = opts.timeout || 300000;
     
     try {
       if (!ffmpegPath) {

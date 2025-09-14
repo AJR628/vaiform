@@ -107,10 +107,8 @@ function runFfmpeg(args, opts = {}) {
     try { console.log('[ffmpeg] spawn args JSON:', JSON.stringify(["-y", ...args])); } catch {}
     
     // Determine timeout based on whether this is a video (longer timeout)
-    const isVideo = args.some(arg => typeof arg === 'string' && arg.includes('.mp4')) || 
-                   args.some(arg => typeof arg === 'string' && arg.includes('.mov')) ||
-                   args.some(arg => typeof arg === 'string' && arg.includes('.webm'));
-    const timeoutMs = opts.timeout || (isVideo ? 240000 : 120000); // 4min for videos, 2min for others
+    const isVideo = args.some(arg => typeof arg === 'string' && (arg.includes('.mp4') || arg.includes('.mov') || arg.includes('.webm')));
+    const timeoutMs = opts.timeout || (isVideo ? 300000 : 300000); // default 5 minutes for stability
     
     const p = spawn(ffmpegPath, ["-y", ...args], { stdio: ["ignore", "pipe", "pipe"] });
     let stdout = '', stderr = '';

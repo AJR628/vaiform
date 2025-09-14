@@ -1,4 +1,4 @@
-import { auth, provider } from './config.js';
+import { auth, provider, BACKEND_URL, BACKEND } from './config.js';
 import { onAuthStateChanged, signInWithPopup, signOut } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 
 // Auth state management
@@ -28,13 +28,21 @@ let loading = false;
 const myShortsIndex = new Map();
 
 async function fetchMine(cursor) {
-  const url = new URL('/api/shorts/mine', location.origin);
+  const url = new URL('/shorts/mine', BACKEND_URL);
   url.searchParams.set('limit', '24');
   if (cursor) url.searchParams.set('cursor', cursor);
-  const headers = {};
+  const headers = { Accept: 'application/json' };
   if (auth.currentUser) headers['Authorization'] = 'Bearer ' + await auth.currentUser.getIdToken();
-  const res = await fetch(url, { headers });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const res = await fetch(url.toString(), { headers, credentials: 'omit' });
+  const ct = res.headers.get('content-type') || '';
+  if (!res.ok) {
+    const text = await res.text().catch(()=> '');
+    throw new Error(`HTTP ${res.status}: ${text.slice(0,200)}`);
+  }
+  if (!/application\/json/i.test(ct)) {
+    const text = await res.text().catch(()=> '');
+    throw new Error(`Expected JSON, got: ${ct} | ${text.slice(0,200)}`);
+  }
   return await res.json();
 }
 
@@ -143,11 +151,14 @@ function swapNameKeepQuery(fileUrl, newName){
   } catch { return ''; }
 }
 
+const PROXY_BASE = BACKEND.replace(/\/$/, '');
+const proxify = (u) => u ? `${PROXY_BASE}/cdn?u=${encodeURIComponent(u)}` : '';
+
 function resolveCover(s){
   const ts = (s.completedAt || s.createdAt || new Date()).toString();
   const fallbacks = ['__meta__'];
-  let first = '';
-  if (s.coverImageUrl) first = withCache(s.coverImageUrl, ts);
+  let raw = s.coverImageUrl || (s.background && s.background.url) || '';
+  let first = raw ? withCache(proxify(raw), ts) : '';
   // Do NOT guess cover.jpg with a token from short.mp4 (different token -> 403)
   return { src: first, fallbacks, videoUrl: s.videoUrl || '', ts };
 }
@@ -213,10 +224,11 @@ function loadPoster(img, item){
     if (triedMeta || !metaUrl) return tryVideoPoster();
     triedMeta = true;
     try {
-      const r = await fetch(metaUrl, { cache: 'no-store', credentials: 'include' });
+      const proxied = proxify(metaUrl);
+      const r = await fetch(proxied || metaUrl, { cache: 'no-store', credentials: 'omit' });
       if (!r.ok) return tryVideoPoster();
       const m = await r.json();
-      if (m?.urls?.cover) return setSrc(withCache(m.urls.cover, Date.now()));
+      if (m?.urls?.cover) return setSrc(withCache(proxify(m.urls.cover) || m.urls.cover, Date.now()));
       return tryVideoPoster();
     } catch { return tryVideoPoster(); }
   }
@@ -235,6 +247,6 @@ function loadPoster(img, item){
     }
   };
 
-  if (item.coverImageUrl) setSrc(withCache(item.coverImageUrl, Date.now()));
+  if (item.coverImageUrl) setSrc(withCache(proxify(item.coverImageUrl) || item.coverImageUrl, Date.now()));
   else tryMeta();
 }
