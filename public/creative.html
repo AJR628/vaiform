@@ -10,6 +10,7 @@
     <!-- Auth bridge: expose auth & wire token provider before page code -->
     <script type="module" src="./auth-bridge.js"></script>
     <script type="module" src="./frontend.js"></script>
+    <link rel="stylesheet" href="/creative.css" />
     <style>
         .loading { opacity: 0.6; pointer-events: none; }
         .error { color: #ef4444; }
@@ -147,7 +148,7 @@
                 <div id="ai-result-block" class="mt-3 hidden">
                     <div class="flex flex-col items-center gap-2">
                         <div id="ai-ref-preview" class="flex gap-2 justify-center"></div>
-                        <div id="ai-result-preview" class="relative w-full rounded overflow-hidden border border-gray-600 bg-black" style="aspect-ratio: 16/9;"></div>
+                        <div id="ai-result-preview" class="relative w-full rounded overflow-hidden border border-gray-600 bg-black" style="aspect-ratio: 9/16;"></div>
                         <div class="mt-2">
                             <button id="ai-save-use-btn" class="px-3 py-1 bg-green-600 hover:bg-green-500 text-white text-xs rounded">Save & Use</button>
                         </div>
@@ -459,22 +460,23 @@
                 </div>`;
         }
         // Regen helpers: only decrement on LLM actions
-        function getRegensLeft(){
-            const info = document.getElementById('regen-info');
-            if (!info) return null;
-            const m = String(info.textContent||'').match(/(\d+)/);
-            return m ? parseInt(m[1],10) : null;
-        }
-        function setRegensLeft(n){
+        window.VAI = window.VAI || {};
+        VAI.state = VAI.state || { regensLeft: 10 };
+        (function initRegens(){
             const info = document.getElementById('regen-info');
             if (!info) return;
-            const v = Math.max(0, Number(n||0));
-            info.textContent = `Regens left: ${v}`;
+            const m = String(info.textContent||'').match(/(\d+)/);
+            const initial = m ? parseInt(m[1],10) : 10;
+            if (!Number.isFinite(VAI.state.regensLeft)) VAI.state.regensLeft = initial;
+            info.textContent = `Regens left: ${VAI.state.regensLeft}`;
+        })();
+        function setRegensLeft(n){
+            VAI.state.regensLeft = Math.max(0, Number(n||0));
+            const info = document.getElementById('regen-info');
+            if (info) info.textContent = `Regens left: ${VAI.state.regensLeft}`;
         }
         function decRegens(){
-            const cur = getRegensLeft();
-            if (cur === null) return;
-            setRegensLeft(Math.max(0, cur - 1));
+            setRegensLeft((VAI.state.regensLeft|0) - 1);
         }
         function showError(elementId, message) {
             const element = document.getElementById(elementId);
@@ -786,7 +788,7 @@
             remixArea.classList.remove('hidden');
             remixAssetsContainer.innerHTML = '';
             
-            remixAssets.forEach((asset, index) => {
+            remixAssets.slice(0,2).forEach((asset, index) => {
                 const assetDiv = document.createElement('div');
                 assetDiv.className = 'relative w-20 h-20 rounded overflow-hidden border border-gray-600';
                 
@@ -891,6 +893,7 @@
             document.getElementById('bg-opacity-value').textContent = document.getElementById('caption-bg-opacity').value + '%';
             updateRenderPreview();
             updateLivePreview();
+            try { updateCaptionOverlay((currentQuote?.text||'').trim(), true); } catch {}
         }
 
         // Update render button state based on validation
@@ -1297,16 +1300,6 @@
                 showError('quote-error', 'Please log in to remix quotes');
                 return;
             }
-            // Regen throttle: allow up to 10 per displayed quote text
-            window.__regenState = window.__regenState || { count: 0, key: null };
-            const textKey = (currentQuote?.text || '').trim();
-            if (window.__regenState.key !== textKey) {
-                window.__regenState = { key: textKey, count: 0 };
-            }
-            if (window.__regenState.count >= 10) {
-                showError('quote-error', 'Limit reached: 10 regenerations for this quote. Edit the text or change prompt.');
-                return;
-            }
             
             setLoading('generate-quote-btn', true);
             hideError('quote-error');
@@ -1327,10 +1320,7 @@
                 if (data.ok) {
                     currentQuote = data.data.quote;
                     displayQuote(currentQuote);
-                    window.__regenState.count = Math.min(10, (window.__regenState.count || 0) + 1);
-                    const left = Math.max(0, 10 - window.__regenState.count);
-                    const info = document.getElementById('regen-info');
-                    if (info) info.textContent = `Regens left: ${left}`;
+                    decRegens();
                     // Keep the editor visible with new text
                     try {
                       document.getElementById('quote-text-display').classList.add('hidden');
@@ -1411,23 +1401,7 @@
                         const aiBlock = document.getElementById('ai-result-block');
                         const aiPrev = document.getElementById('ai-result-preview');
                         if (aiBlock && aiPrev) {
-                            aiPrev.innerHTML = `<img src="${aiAsset.thumbUrl}" class="w-full h-full object-contain" />`;
-                            // snapshot references
-                            try {
-                              const refWrap = document.getElementById('ai-ref-preview');
-                              if (refWrap) {
-                                refWrap.innerHTML = '';
-                                document.querySelectorAll('#remix-assets img, #remix-assets video').forEach((el) => {
-                                  const src = el.getAttribute('src') || el.getAttribute('poster') || '';
-                                  if (src) {
-                                    const d = document.createElement('div');
-                                    d.className = 'w-full h-16 rounded overflow-hidden border border-gray-600';
-                                    d.innerHTML = `<img src="${src}" class="w-full h-full object-cover" />`;
-                                    refWrap.appendChild(d);
-                                  }
-                                });
-                              }
-                            } catch {}
+                            aiPrev.innerHTML = `<img src="${aiAsset.thumbUrl}" class="w-full h-full object-cover" />`;
                             aiBlock.classList.remove('hidden');
                         }
                         // Auto-select the generated image
@@ -1460,7 +1434,9 @@
 
             const refs = Array.from(document.querySelectorAll('#remix-assets img, #remix-assets video'))
               .map((el)=> el.getAttribute('src') || el.getAttribute('poster'))
-              .filter(Boolean).slice(0,2);
+              .filter(Boolean)
+              .filter((v, i, arr) => arr.indexOf(v) === i)
+              .slice(0,2);
 
             // Fallback to simple text-to-image if no refs
             if (refs.length < 2) {
@@ -1484,22 +1460,6 @@
                 if (aiBlock && aiPrev) {
                   const proxied = `${getApiBase()}/cdn?u=${encodeURIComponent(url)}`;
                   aiPrev.innerHTML = `<img crossOrigin="anonymous" src="${proxied}" class="w-full h-full object-cover block" />`;
-                  // snapshot references
-                  try {
-                    const refWrap = document.getElementById('ai-ref-preview');
-                    if (refWrap) {
-                      refWrap.innerHTML = '';
-                      document.querySelectorAll('#remix-assets img, #remix-assets video').forEach((el) => {
-                        const src = el.getAttribute('src') || el.getAttribute('poster') || '';
-                        if (src) {
-                          const d = document.createElement('div');
-                          d.className = 'w-full h-16 rounded overflow-hidden border border-gray-600';
-                          d.innerHTML = `<img src="${src}" class="w-full h-full object-cover" />`;
-                          refWrap.appendChild(d);
-                        }
-                      });
-                    }
-                  } catch {}
                   aiBlock.classList.remove('hidden');
                 }
               } catch (err) {
@@ -1584,10 +1544,7 @@
             document.getElementById('save-quote-btn').classList.add('hidden');
             document.getElementById('cancel-quote-btn').classList.add('hidden');
             document.getElementById('edit-quote-btn').classList.remove('hidden');
-            // reset regen counter for new edited quote
-            window.__regenState = { key: input, count: 0 };
-            const info = document.getElementById('regen-info');
-            if (info) info.textContent = 'Regens left: 10';
+            // do not reset regen counter here
             // Persist immediately so it can be used for the short without extra clicks
             (async ()=>{
               try {
@@ -1620,22 +1577,26 @@
         document.getElementById('caption-font').onchange = () => {
             updateRenderPreview();
             updateLivePreview();
+            updateCaptionOverlay((currentQuote?.text||'').trim(), true);
         };
         document.getElementById('caption-weight').onchange = () => {
             updateRenderPreview();
             updateLivePreview();
+            updateCaptionOverlay((currentQuote?.text||'').trim(), true);
         };
-        document.getElementById('caption-size').oninput = updateCaptionStyleValues;
-        document.getElementById('caption-opacity').oninput = updateCaptionStyleValues;
+        document.getElementById('caption-size').oninput = () => { updateCaptionStyleValues(); updateCaptionOverlay((currentQuote?.text||'').trim(), true); };
+        document.getElementById('caption-opacity').oninput = () => { updateCaptionStyleValues(); updateCaptionOverlay((currentQuote?.text||'').trim(), true); };
         document.getElementById('caption-placement').onchange = () => {
             updateRenderPreview();
             updateLivePreview();
+            updateCaptionOverlay((currentQuote?.text||'').trim(), true);
         };
         document.getElementById('caption-background').onchange = () => {
             updateRenderPreview();
             updateLivePreview();
+            updateCaptionOverlay((currentQuote?.text||'').trim(), true);
         };
-        document.getElementById('caption-bg-opacity').oninput = updateCaptionStyleValues;
+        document.getElementById('caption-bg-opacity').oninput = () => { updateCaptionStyleValues(); updateCaptionOverlay((currentQuote?.text||'').trim(), true); };
         
         // Voiceover event listeners
         document.getElementById('voiceover-voice').onchange = () => {
@@ -1645,7 +1606,7 @@
         };
         document.getElementById('preview-voice-btn').onclick = previewVoice;
 
-        // Remix button event listeners
+        // Remix button event listeners (success-only decrement handled inside)
         try { document.getElementById('regenerate-btn').onclick = () => remixQuote('regenerate'); } catch {}
         try { document.getElementById('rephrase-btn').onclick = () => remixQuote('rephrase'); } catch {}
         try { document.getElementById('tone-shift-btn').onclick = () => remixQuote('tone_shift'); } catch {}
@@ -1677,10 +1638,7 @@
             if (!newText) return;
             currentQuote = { ...(currentQuote||{}), text: newText };
             document.getElementById('quote-text-display').textContent = newText;
-            // reset regen state when user edits
-            window.__regenState = { key: newText, count: 0 };
-            const info = document.getElementById('regen-info');
-            if (info) info.textContent = 'Regens left: 10';
+            // do not reset regen counter on save
             // switch to locked/solid view after save
             ta.classList.add('hidden');
             document.getElementById('quote-text-display').classList.remove('hidden');
@@ -1712,6 +1670,8 @@
             const v = e.target.value || '';
             const n = Math.min(200, v.length);
             document.getElementById('quote-char-count').textContent = `${n}/200`;
+            // live overlay while editing
+            try { updateCaptionOverlay(v, true); } catch {}
         });
 
         // Tab switching
@@ -1832,10 +1792,9 @@
                 document.getElementById('save-quote-btn').classList.remove('hidden');
                 document.getElementById('cancel-quote-btn').classList.remove('hidden');
                 document.getElementById('edit-quote-btn').classList.add('hidden');
-                // Reset regen state and info
-                window.__regenState = { key: seed, count: 0 };
-                const info = document.getElementById('regen-info');
-                if (info) info.textContent = 'Regens left: 10';
+                // Do not reset regen counter on init
+                // Ensure overlay reflects initial caption settings
+                try { updateCaptionOverlay(seed, !!seed); } catch {}
                 // Seed char counter
                 const n = Math.min(200, seed.length);
                 const cc = document.getElementById('quote-char-count');
