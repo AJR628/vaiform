@@ -441,10 +441,10 @@ export async function createShortService({ ownerUid, mode, text, template, durat
       coverImageUrl: coverUrl,
       completedAt: admin.firestore.FieldValue.serverTimestamp(),
       usedQuote: {
-        text: usedQuote.text,
-        author: usedQuote.author,
-        attributed: usedQuote.attributed,
-        isParaphrase: usedQuote.isParaphrase
+        text: (usedQuote?.text || '').trim(),
+        author: usedQuote?.author ?? null,
+        attributed: !!usedQuote?.attributed,
+        isParaphrase: !!usedQuote?.isParaphrase
       }
     });
     console.log(`[shorts] Updated Firestore doc to ready: ${jobId}`);
