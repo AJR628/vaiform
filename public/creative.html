@@ -1232,9 +1232,10 @@
                 };
 
                 // Normalize caption mode to satisfy server enum
-                const uiCaptionMode = 'none';
-                const normalizedCaptionMode = uiCaptionMode === 'none' ? 'static' : uiCaptionMode;
-                const includeBottomCaption = false;
+                // For videos, burn one bottom caption in the final render
+                const uiCaptionMode = 'static';
+                const normalizedCaptionMode = uiCaptionMode;
+                const includeBottomCaption = detectedType === 'video';
 
                 const payload = {
                     mode: 'quote',
