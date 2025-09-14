@@ -269,22 +269,30 @@ export async function renderVideoQuoteOverlay({
   const tmpBase = fs.mkdtempSync(path.join(os.tmpdir(), 'vaiform-txt-'));
   const quoteTxtPath = path.join(tmpBase, 'quote.txt');
   const authorTxtPath = path.join(tmpBase, 'author.txt');
+  let drawMain = '';
   try {
-    fs.writeFileSync(quoteTxtPath, String(fit.text), { encoding: 'utf8' });
-    console.log('[drawtext][quotefile]', quoteTxtPath, 'bytes=', fs.statSync(quoteTxtPath).size);
+    const rawMain = String(text ?? '').trim();
+    if (rawMain.length >= 2) {
+      fs.writeFileSync(quoteTxtPath, String(fit.text), { encoding: 'utf8' });
+      const stat = fs.statSync(quoteTxtPath);
+      console.log('[drawtext][quotefile]', quoteTxtPath, 'bytes=', stat.size);
+      if (stat.size > 0) {
+        drawMain = `drawtext=${[
+          `textfile='${quoteTxtPath.replace(/\\/g,'/').replace(/^([A-Za-z]):\//, "$1\\:/")}'`,
+          `x=(w-text_w)/2`,
+          `y=(h-text_h)/2`,
+          `fontsize=${fit.fontsize}`,
+          `fontcolor=${fontcolor}`,
+          `shadowcolor=${shadowColor}`,`shadowx=${shadowX}`,`shadowy=${shadowY}`,
+          `borderw=2`,`bordercolor=black@0.85`,
+          `line_spacing=${effLineSpacing}`,
+          `box=0`
+        ].filter(Boolean).join(':')}`;
+      }
+    }
   } catch {}
 
-  const drawMain = `drawtext=${[
-    `textfile='${quoteTxtPath.replace(/\\/g,'/').replace(/^([A-Za-z]):\//, "$1\\:/")}'`,
-    `x=(w-text_w)/2`,
-    `y=(h-text_h)/2`,
-    `fontsize=${fit.fontsize}`,
-    `fontcolor=${fontcolor}`,
-    `shadowcolor=${shadowColor}`,`shadowx=${shadowX}`,`shadowy=${shadowY}`,
-    `borderw=2`,`bordercolor=black@0.85`,
-    `line_spacing=${effLineSpacing}`,
-    `box=0`
-  ].filter(Boolean).join(':')}`;
+  // drawMain is prepared above only when there is actual text content
   const drawAuthor = (authorLine && String(authorLine).trim()) ? (() => {
     try { fs.writeFileSync(authorTxtPath, String(authorLine).trim(), { encoding: 'utf8' }); console.log('[drawtext][authorfile]', authorTxtPath, 'bytes=', fs.statSync(authorTxtPath).size); } catch {}
     return `drawtext=${[
