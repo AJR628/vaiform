@@ -162,6 +162,7 @@ export async function createShortService({ ownerUid, mode, text, template, durat
         try {
           console.log(`[background] Processing stock video: ${background.url}`);
           const vid = await fetchVideoToTmp(background.url);
+          // For video backgrounds, do NOT burn the quote as a bottom caption unless explicitly requested.
           await renderVideoQuoteOverlay({
             videoPath: vid.path,
             outPath,
@@ -173,7 +174,8 @@ export async function createShortService({ ownerUid, mode, text, template, durat
             bgAudioVolume: background.bgAudioVolume || 0.35,
             voiceoverDelaySec: background.voiceoverDelaySec,
             tailPadSec: background.tailPadSec,
-            captionText: (includeBottomCaption === true || captionMode === "progress" || captionMode === "karaoke") ? usedQuote.text : null,
+            // Only provide captionText when the UI explicitly asked for a bottom caption.
+            captionText: includeBottomCaption === true ? usedQuote.text : null,
             captionStyle,
             watermark: watermarkFinal,
             watermarkText: "Vaiform"
@@ -210,6 +212,7 @@ export async function createShortService({ ownerUid, mode, text, template, durat
         try {
           console.log(`[background] Processing upload video: ${uploadUrl}`);
           const vid = await fetchVideoToTmp(uploadUrl);
+          // Do not burn the HTML overlay text into stock upload videos unless explicitly enabled
           await renderVideoQuoteOverlay({
             videoPath: vid.path,
             outPath,
@@ -221,7 +224,7 @@ export async function createShortService({ ownerUid, mode, text, template, durat
             bgAudioVolume: background.bgAudioVolume || 0.35,
             voiceoverDelaySec: background.voiceoverDelaySec,
             tailPadSec: background.tailPadSec,
-            captionText: (includeBottomCaption === true || captionMode === "progress" || captionMode === "karaoke") ? usedQuote.text : null,
+            captionText: includeBottomCaption === true ? usedQuote.text : null,
             captionStyle,
             watermark: watermarkFinal,
             watermarkText: "Vaiform"

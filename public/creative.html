@@ -948,11 +948,8 @@
                 canvas.width = canvasWidth;
                 canvas.height = canvasHeight;
                 
-                // Draw the image
+                // Draw the image only; caption is handled by HTML overlay to avoid double text
                 ctx.drawImage(img, 0, 0, canvasWidth, canvasHeight);
-                
-                // Draw caption overlay
-                drawCaptionOverlay(ctx, canvasWidth, canvasHeight);
             };
             
             try {
