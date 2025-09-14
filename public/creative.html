@@ -423,9 +423,37 @@
             if (!overlay) return;
             if (!show || !text) { overlay.innerHTML = ''; return; }
             const safe = String(text);
+            const fontSel = document.getElementById('caption-font');
+            const weightSel = document.getElementById('caption-weight');
+            const sizeRange = document.getElementById('caption-size');
+            const opRange = document.getElementById('caption-opacity');
+            const placeSel = document.getElementById('caption-placement');
+            const showBox = document.getElementById('caption-background');
+            const boxOpRange = document.getElementById('caption-bg-opacity');
+
+            const fontMap = {
+              System: 'system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif',
+              Minimal: 'Helvetica, Arial, sans-serif',
+              Cinematic: 'Georgia, serif'
+            };
+            const font = (fontSel?.value || 'System');
+            const fontFamily = fontMap[font] || fontMap.System;
+            const fontWeight = (weightSel?.value || 'Normal');
+            const sizePx = parseInt(sizeRange?.value || '48', 10);
+            const textOpacity = Math.max(0, Math.min(1, (parseInt(opRange?.value || '80', 10) / 100)));
+            const placement = (placeSel?.value || 'bottom').toLowerCase();
+            const wantBox = !!(showBox && showBox.checked);
+            const boxOpacity = Math.max(0, Math.min(1, (parseInt(boxOpRange?.value || '50', 10) / 100)));
+
+            let vertStyle = 'bottom:0; top:auto;';
+            if (placement === 'top') vertStyle = 'top:0; bottom:auto;';
+            if (placement === 'middle') vertStyle = 'top:50%; transform:translateY(-50%);';
+
+            const boxStyle = wantBox ? `background: rgba(0,0,0,${boxOpacity}); padding: 6px 10px; border-radius: 8px;` : '';
+
             overlay.innerHTML = `
-                <div style="position:absolute; left:0; right:0; bottom:0; padding:12px 16px; background:linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0.55) 80%);">
-                  <div style="max-width: 90%; margin: 0 auto; text-align: center; color: #fff; font-weight: 600; text-shadow: 0 2px 6px rgba(0,0,0,0.7);">
+                <div style="position:absolute; left:0; right:0; ${vertStyle} padding:12px 16px;">
+                  <div style="max-width: 92%; margin: 0 auto; text-align: center; color: rgba(255,255,255,${textOpacity}); font-weight: ${fontWeight}; font-size: ${sizePx}px; font-family: ${fontFamily}; text-shadow: 0 2px 6px rgba(0,0,0,0.6); ${boxStyle}">
                     ${safe}
                   </div>
                 </div>`;
@@ -1505,15 +1533,15 @@
                   if (live) {
                     live.classList.remove('hidden');
                     const holder = live.querySelector('.relative') || live;
-                    // Ensure the holder has height so the img is visible
-                    try { if (!holder.style.aspectRatio) holder.style.aspectRatio = '16 / 9'; } catch {}
+                    // Force 9x16 preview aspect
+                    try { holder.style.aspectRatio = '9 / 16'; } catch {}
                     try { if (!holder.style.background) holder.style.background = '#000'; } catch {}
                     // Clear holder if it only had a canvas (we'll still keep canvas for other flows)
                     // but append img above it so swap is visible immediately
                     previewImg = document.createElement('img');
                     previewImg.id = 'preview-img';
                     previewImg.style.width = '100%';
-                    previewImg.style.height = 'auto';
+                    previewImg.style.height = '100%';
                     previewImg.style.display = 'block';
                     previewImg.style.objectFit = 'cover';
                     holder.prepend(previewImg);
