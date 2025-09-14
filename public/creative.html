@@ -1547,6 +1547,16 @@
             window.__regenState = { key: input, count: 0 };
             const info = document.getElementById('regen-info');
             if (info) info.textContent = 'Regens left: 10';
+            // Persist immediately so it can be used for the short without extra clicks
+            (async ()=>{
+              try {
+                const { apiFetch } = await import('./api.mjs');
+                await apiFetch('/quotes/save', { method:'POST', body:{ text: input, author: null, toneTag: (document.getElementById('quote-tone')?.value || 'default') } });
+                try { window.VAIFORM = window.VAIFORM || {}; window.VAIFORM.currentQuoteText = input; } catch {}
+              } catch (e) {
+                console.warn('Use This Text save failed:', e?.message || e);
+              }
+            })();
         };
         document.getElementById('search-assets-btn').onclick = () => {
             assetCache.clear(); // Clear cache on new search
@@ -1641,6 +1651,7 @@
             try {
               const { apiFetch } = await import('./api.mjs');
               await apiFetch('/quotes/save', { method: 'POST', body: { text: newText, author: null, toneTag: (document.getElementById('quote-tone')?.value || 'default') } });
+              try { window.VAIFORM = window.VAIFORM || {}; window.VAIFORM.currentQuoteText = newText; } catch {}
             } catch (e) {
               console.warn('Quote save failed (non-fatal):', e?.message || e);
             }
