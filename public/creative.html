@@ -1224,11 +1224,11 @@
                 const captionStyle = {
                     font: document.getElementById('caption-font').value,
                     weight: document.getElementById('caption-weight').value,
-                    size: parseInt(document.getElementById('caption-size').value),
-                    opacity: parseInt(document.getElementById('caption-opacity').value),
+                    sizePx: parseInt(document.getElementById('caption-size').value),
+                    opacity: parseInt(document.getElementById('caption-opacity').value) / 100,
                     placement: document.getElementById('caption-placement').value,
-                    background: document.getElementById('caption-background').checked,
-                    bgOpacity: parseInt(document.getElementById('caption-bg-opacity').value)
+                    showBox: document.getElementById('caption-background').checked,
+                    boxOpacity: parseInt(document.getElementById('caption-bg-opacity').value) / 100
                 };
 
                 // Normalize caption mode to satisfy server enum
@@ -1237,9 +1237,14 @@
                 const normalizedCaptionMode = uiCaptionMode;
                 const includeBottomCaption = detectedType === 'video';
 
+                // Decide which text goes where based on background type
+                const isVideoBg = detectedType === 'video';
+                const finalText = isVideoBg ? '' : (currentQuote.text || '').trim();
+                const finalCaptionText = isVideoBg ? (currentQuote.text || '').trim() : '';
+
                 const payload = {
                     mode: 'quote',
-                    text: currentQuote.text,
+                    text: finalText,
                     template: 'calm', // Default template
                     durationSec: 8,
                     voiceover: !!currentVoiceId,
@@ -1249,7 +1254,9 @@
                     includeBottomCaption,
                     watermark: true,
                     // Add caption style settings
-                    captionStyle
+                    captionStyle,
+                    // Provide captionText for videos only
+                    captionText: finalCaptionText
                 };
 
                 // Only add voiceId if a voice is actually selected
