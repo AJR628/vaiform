@@ -103,7 +103,8 @@ const CaptionStyleSchema = z
 const CreateShortSchema = z
   .object({
     mode: z.enum(["quote", "feeling"]).default("quote").optional(),
-    text: z.string().min(2).max(280),
+    // Allow empty text; we refine later to require text or captionText
+    text: z.string().default("").optional(),
     template: z.enum(["calm", "bold", "cosmic", "minimal"]).default("calm").optional(),
     durationSec: z.number().int().min(6).max(10).default(8).optional(),
     voiceover: z.boolean().default(false).optional(),
