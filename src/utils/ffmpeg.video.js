@@ -331,19 +331,24 @@ export async function renderVideoQuoteOverlay({
     const fontPx = scaleFontPx(caption.fontSizePx, caption.previewHeightPx);
     // Match preview container: overlay has 16px side padding and inner max-width:92%
     const effectiveW = Math.max(1, RENDER_W - 32);
-    const maxWidthPx = Math.round(effectiveW * 0.92);
-    // Approximate average glyph width similar to DejaVuSans; closer to canvas measure
-    const charW = 0.58 * fontPx;
+    const maxWidthPx = Math.round(effectiveW * 0.96);
+    // Slightly narrower glyph estimate to produce fewer wraps (closer to browser)
+    const charW = 0.54 * fontPx;
     const maxChars = Math.max(6, Math.floor(maxWidthPx / Math.max(1, charW)));
-    const words = capTextRaw.split(/\s+/);
-    const lines = [];
-    let cur = '';
-    for (const w2 of words) {
-      const next = cur ? cur + ' ' + w2 : w2;
-      if (next.length <= maxChars) cur = next; else { if (cur) lines.push(cur); cur = w2; }
+    let fitted = '';
+    if (capTextRaw.includes('\n')) {
+      fitted = capTextRaw.split(/\r?\n/).map(s=>s.trim()).filter(Boolean).join('\n');
+    } else {
+      const words = capTextRaw.split(/\s+/);
+      const lines = [];
+      let cur = '';
+      for (const w2 of words) {
+        const next = cur ? cur + ' ' + w2 : w2;
+        if (next.length <= maxChars) cur = next; else { if (cur) lines.push(cur); cur = w2; }
+      }
+      if (cur) lines.push(cur);
+      fitted = lines.join('\n');
     }
-    if (cur) lines.push(cur);
-    const fitted = lines.join('\n');
     // Preview uses ~1.2 line-height; drawtext's line_spacing adds to font size
     const lsRaw = Math.round((Number(caption.fontSizePx) || 32) * 0.20);
     const scaleFactor = (Number(caption.fontSizePx) ? (fontPx / Math.max(1, Number(caption.fontSizePx))) : 1);
