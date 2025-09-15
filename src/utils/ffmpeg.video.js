@@ -380,11 +380,14 @@ export async function renderVideoQuoteOverlay({
     } catch {}
     const captionTxtEsc = captionTxtPath.replace(/\\/g,'/').replace(/^([A-Za-z]):\//, "$1\\:/");
     const fontEsc = effFont.replace(/\\/g,'/').replace(/^([A-Za-z]):\//, "$1\\:/");
+    // Prevent filterchain splitting: escape commas in unquoted expressions
+    const xSafe = xClamp.replace(/,/g, '\\,');
+    const ySafe = yClamp.replace(/,/g, '\\,');
     drawCaption = `drawtext=${[
       `textfile='${captionTxtEsc}'`,
       `fontfile='${fontEsc}'`,
-      `x=${xClamp}`,
-      `y=${yClamp}`,
+      `x=${xSafe}`,
+      `y=${ySafe}`,
       `fontsize=${fontPx}`,
       `fontcolor=white@${op.toFixed(2)}`,
       `line_spacing=${lineSp}`,
