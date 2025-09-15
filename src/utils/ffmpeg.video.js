@@ -329,11 +329,11 @@ export async function renderVideoQuoteOverlay({
       return Math.max(24, Math.min(140, px));
     }
     const fontPx = scaleFontPx(caption.fontSizePx, caption.previewHeightPx);
-    // Match preview container: overlay has 16px side padding and inner max-width:92%
-    const effectiveW = Math.max(1, RENDER_W - 32);
-    const maxWidthPx = Math.round(effectiveW * 0.96);
-    // Slightly narrower glyph estimate to produce fewer wraps (closer to browser)
-    const charW = 0.54 * fontPx;
+    // Mirror preview container: 16px side padding and max content width ≈ 92%
+    const contentW = Math.max(1, Math.round(RENDER_W * 0.92));
+    const maxWidthPx = contentW;
+    // Glyph width heuristic tuned for DejaVu Sans in ffmpeg vs browser
+    const charW = 0.60 * fontPx;
     const maxChars = Math.max(6, Math.floor(maxWidthPx / Math.max(1, charW)));
     let fitted = '';
     if (capTextRaw.includes('\n')) {
@@ -394,6 +394,8 @@ export async function renderVideoQuoteOverlay({
       `fontsize=${fontPx}`,
       `fontcolor=white@${op.toFixed(2)}`,
       `line_spacing=${lineSp}`,
+      // Ensure per-line centering within the wrapped block, matching preview
+      `text_align=center`,
       `fix_bounds=1`,
       `borderw=2:bordercolor=black@0.85`,
       `shadowcolor=black:shadowx=2:shadowy=2`,

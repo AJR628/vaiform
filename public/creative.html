@@ -433,12 +433,16 @@
             const boxOpRange = document.getElementById('caption-bg-opacity');
 
             const fontMap = {
-              System: 'system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif',
-              Minimal: 'Helvetica, Arial, sans-serif',
-              Cinematic: 'Georgia, serif'
+              // Include DejaVu Sans first to better match FFmpeg drawtext default
+              System: '\"DejaVu Sans\", \"DejaVuSans\", system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif',
+              system: '\"DejaVu Sans\", \"DejaVuSans\", system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif',
+              Minimal: '\"DejaVu Sans\", Helvetica, Arial, sans-serif',
+              minimal: '\"DejaVu Sans\", Helvetica, Arial, sans-serif',
+              Cinematic: 'Georgia, serif',
+              cinematic: 'Georgia, serif'
             };
-            const font = (fontSel?.value || 'System');
-            const fontFamily = fontMap[font] || fontMap.System;
+            const font = (fontSel?.value || 'system');
+            const fontFamily = fontMap[font] || fontMap.system;
             const fontWeight = (weightSel?.value || 'Normal');
             const sizePx = parseInt(sizeRange?.value || '48', 10);
             const textOpacity = Math.max(0, Math.min(1, (parseInt(opRange?.value || '80', 10) / 100)));
