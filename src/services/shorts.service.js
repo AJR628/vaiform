@@ -169,8 +169,19 @@ export async function createShortService({ ownerUid, mode, text, template, durat
       // Handle both image and video stock backgrounds
       if (background.type === "video" && background.url) {
         try {
-          console.log(`[background] Processing stock video: ${background.url}`);
+          console.log(`[background] start`, { assetUrl: background.url, id: jobId });
           const vid = await fetchVideoToTmp(background.url);
+          try {
+            const stat = fs.statSync(vid.path);
+            console.log('[background] downloaded', { exists: fs.existsSync(vid.path), size: stat?.size || 0, file: vid.path });
+          } catch {}
+          try {
+            await runFFmpeg(["-v","error","-hide_banner","-i", vid.path, "-t","0.1","-f","null","-"]);
+            console.log('[background] probe.done', { file: vid.path });
+          } catch (probeErr) {
+            console.error('[background] probe.fail', { message: probeErr?.message, stderr: String(probeErr?.stderr||'').slice(0,8000) });
+            throw probeErr;
+          }
           // For video backgrounds, do NOT burn the main quote; allow optional bottom caption only.
           await renderVideoQuoteOverlay({
             videoPath: vid.path,
@@ -191,8 +202,8 @@ export async function createShortService({ ownerUid, mode, text, template, durat
             watermarkText: "Vaiform"
           });
         } catch (e) {
-          console.warn("[background] stock video fallback:", e?.message || e);
-          await renderSolidQuoteVideo({ outPath, text: usedQuote.text, durationSec, template, authorLine, assPath, progressBar: karaokeModeEffective === "progress", watermark: watermarkFinal });
+          console.error('[background] RENDER_FAILED', { message: e?.message, stack: e?.stack, stderr: String(e?.stderr||'').slice(0,8000), code: e?.code });
+          throw e;
         }
       } else {
         // Handle stock images (existing logic)
@@ -241,8 +252,8 @@ export async function createShortService({ ownerUid, mode, text, template, durat
             watermarkText: "Vaiform"
           });
         } catch (e) {
-          console.warn("[background] upload video fallback:", e?.message || e);
-          await renderSolidQuoteVideo({ outPath, text: usedQuote.text, durationSec, template, authorLine, assPath });
+          console.error('[background] RENDER_FAILED', { message: e?.message, stack: e?.stack, stderr: String(e?.stderr||'').slice(0,8000), code: e?.code });
+          throw e;
         }
       } else {
         try {
@@ -366,7 +377,7 @@ export async function createShortService({ ownerUid, mode, text, template, durat
         // annotate meta via closure var? We'll include via meta build below
         // For parity with others, nothing else here; mux will run later
       } catch (e) {
-        console.warn("[background] stockVideo render error:", e?.message || e);
+        console.error('[background] stockVideo render error', { message: e?.message, stderr: String(e?.stderr||'').slice(0,8000) });
         const err = new Error("RENDER_FAILED");
         err.detail = e?.message || String(e);
         err.filter = e?.filter;
@@ -376,7 +387,8 @@ export async function createShortService({ ownerUid, mode, text, template, durat
       await renderSolidQuoteVideo({ outPath, text: usedQuote.text, durationSec, template, authorLine });
     }
   } catch (err) {
-    // Surface helpful ffmpeg missing errors to caller
+    // Fail the job on render failure; do not silently continue
+    console.error('[shorts] RENDER_FAILED upstream', { message: err?.message, stack: err?.stack, stderr: String(err?.stderr||'').slice(0,8000) });
     throw err;
   }
 
