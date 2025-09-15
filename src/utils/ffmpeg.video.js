@@ -253,6 +253,9 @@ export async function renderVideoQuoteOverlay({
   videoVignette = false,
   haveBgAudio = true,
 }) {
+  // Default font fallback if caller does not provide one
+  const DEFAULT_FONT = process.env.DRAWTEXT_FONTFILE || '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf';
+  const effFont = String(fontfile || DEFAULT_FONT);
   const W = Math.max(4, Number(width)||1080);
   const H = Math.max(4, Number(height)||1920);
   const sm = (typeof safeMargin === 'number')
@@ -306,7 +309,7 @@ export async function renderVideoQuoteOverlay({
     ].filter(Boolean).join(':')}`;
   })() : '';
   const drawWatermark = watermark ? `drawtext=${[
-    fontfile ? `fontfile='${fontfile}'` : null,
+    `fontfile='${effFont.replace(/\\/g,'/').replace(/^([A-Za-z]):\//, "$1\\:/")}'`,
     `text='${escText(watermarkText || 'Vaiform')}'`,
     `x=w-tw-${watermarkPadding}`, `y=h-th-${watermarkPadding}`,
     `fontsize=${watermarkFontSize}`, 'fontcolor=white',
@@ -358,14 +361,28 @@ export async function renderVideoQuoteOverlay({
     const wantBox = !!(caption.box && caption.box.enabled) || !!caption.wantBox;
     const boxAlpha = Math.max(0, Math.min(1, Number((caption.box?.bgAlpha ?? caption.boxAlpha) ?? 0.0)));
     try { console.log('[ffmpeg] CAPTION(layout)', { fontPxRaw: caption.fontSizePx, fontPxScaled: fontPx, xPct, yPct, vAlign, align, op, lineSp, wantBox, boxAlpha, wrappedCols: maxChars }); } catch {}
+    // Write caption file UTF-8 LF without trailing spaces
+    const captionTxtPath = path.join(tmpBase, 'caption.txt');
+    try {
+      const normalized = String(fitted)
+        .replace(/\r\n/g, '\n')
+        .split('\n')
+        .map(s => s.replace(/[ \t]+$/, ''))
+        .join('\n');
+      fs.writeFileSync(captionTxtPath, normalized, { encoding: 'utf8' });
+      try { const st = fs.statSync(captionTxtPath); console.log('[drawtext][captionfile]', captionTxtPath, 'bytes=', st.size); } catch {}
+    } catch {}
+    const captionTxtEsc = captionTxtPath.replace(/\\/g,'/').replace(/^([A-Za-z]):\//, "$1\\:/");
+    const fontEsc = effFont.replace(/\\/g,'/').replace(/^([A-Za-z]):\//, "$1\\:/");
     drawCaption = `drawtext=${[
-      `text='${escText(fitted)}'`,
-      fontfile ? `fontfile='${fontfile}'` : null,
-      `x='${xClamp.replace(/'/g, "\\'")}'`,
-      `y='${yClamp.replace(/'/g, "\\'")}'`,
+      `textfile='${captionTxtEsc}'`,
+      `fontfile='${fontEsc}'`,
+      `x=${xClamp}`,
+      `y=${yClamp}`,
       `fontsize=${fontPx}`,
       `fontcolor=white@${op.toFixed(2)}`,
       `line_spacing=${lineSp}`,
+      `use_kerning=1`,
       `fix_bounds=1`,
       `borderw=2:bordercolor=black@0.85`,
       `shadowcolor=black:shadowx=2:shadowy=2`,
@@ -380,7 +397,7 @@ export async function renderVideoQuoteOverlay({
     const cap = wrapCaption(captionText, CANVAS_W, CANVAS_H, { maxLines: 2, fontMax: 64, fontMin: 28 });
     drawCaption = `drawtext=${[
       `text='${escText(cap.text)}'`,
-      fontfile ? `fontfile='${fontfile}'` : null,
+      `fontfile='${effFont.replace(/\\/g,'/').replace(/^([A-Za-z]):\//, "$1\\:/")}'`,
       `x=(w-text_w)/2`,
       `y=${cap.yExpr}`,
       `fontsize=${cap.fontsize}`,
