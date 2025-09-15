@@ -339,7 +339,11 @@ export async function renderVideoQuoteOverlay({
     }
     if (cur) lines.push(cur);
     const fitted = lines.join('\n');
-    const lineSp = Number.isFinite(Number(caption.lineSpacingPx)) ? Math.max(0, Number(caption.lineSpacingPx)) : Math.round(fontPx * 0.26);
+    const lsRaw = Number.isFinite(Number(caption.lineSpacingPx))
+      ? Math.max(0, Number(caption.lineSpacingPx))
+      : Math.round((Number(caption.fontSizePx) || 32) * 0.26);
+    const scaleFactor = (Number(caption.fontSizePx) ? (fontPx / Math.max(1, Number(caption.fontSizePx))) : 1);
+    const lineSp = Math.max(0, Math.round(lsRaw * scaleFactor));
     const op = Math.max(0, Math.min(1, Number(caption.opacity ?? 0.8)));
     const xPct = Math.max(0, Math.min(100, Number((caption.position?.xPct ?? caption.pos?.xPct) ?? 50)));
     const yPct = Math.max(0, Math.min(100, Number((caption.position?.yPct ?? caption.pos?.yPct) ?? 88)));
@@ -349,7 +353,7 @@ export async function renderVideoQuoteOverlay({
     const vAlign = (caption.vAlign === 'top' || caption.vAlign === 'bottom') ? caption.vAlign : 'center';
     const yBase = `(h*${(yPct/100).toFixed(4)})`;
     const yExprRaw = vAlign === 'top' ? yBase : (vAlign === 'bottom' ? `${yBase}-text_h` : `${yBase}-text_h/2`);
-    const yExpr = `max(20\,min(h-20-text_h\,${yExprRaw}))`;
+    const yClamp = `max(20,min(h-20-text_h,${yExprRaw}))`;
     const wantBox = !!(caption.box && caption.box.enabled) || !!caption.wantBox;
     const boxAlpha = Math.max(0, Math.min(1, Number((caption.box?.bgAlpha ?? caption.boxAlpha) ?? 0.0)));
     try { console.log('[ffmpeg] CAPTION(layout)', { fontPxRaw: caption.fontSizePx, fontPxScaled: fontPx, xPct, yPct, vAlign, align, op, lineSp, wantBox, boxAlpha, wrappedCols: maxChars }); } catch {}
@@ -357,7 +361,7 @@ export async function renderVideoQuoteOverlay({
       `text='${escText(fitted)}'`,
       fontfile ? `fontfile='${fontfile}'` : null,
       `x=${xExpr}`,
-      `y=${yExpr}`,
+      `y='${yClamp.replace(/'/g, "\\'")}'`,
       `fontsize=${fontPx}`,
       `fontcolor=white@${op.toFixed(2)}`,
       `line_spacing=${lineSp}`,
