@@ -318,10 +318,17 @@ export async function renderVideoQuoteOverlay({
   if (caption && String(caption.text || '').trim()) {
     // Honor precise caption layout from payload
     const capTextRaw = String(caption.text).trim();
-    const fontPx = Math.max(16, Math.min(160, Number(caption.fontSizePx) || 48));
+    const RENDER_W = W;
+    const RENDER_H = H;
+    function scaleFontPx(fontSizePx = 32, previewH = 640) {
+      const s = RENDER_H / Math.max(1, Number(previewH) || 640);
+      const px = Math.round((Number(fontSizePx) || 32) * s);
+      return Math.max(24, Math.min(140, px));
+    }
+    const fontPx = scaleFontPx(caption.fontSizePx, caption.previewHeightPx);
     // Derive a safe max text box width; allow wider when centered
-    const maxWidthPx = Math.round(W * 0.82);
-    const charW = 0.58 * fontPx; // average glyph width factor for DejaVu/Arial
+    const maxWidthPx = Math.round(RENDER_W * 0.82);
+    const charW = 0.60 * fontPx; // heuristic sans serif width
     const maxChars = Math.max(6, Math.floor(maxWidthPx / Math.max(1, charW)));
     const words = capTextRaw.split(/\s+/);
     const lines = [];
@@ -332,17 +339,20 @@ export async function renderVideoQuoteOverlay({
     }
     if (cur) lines.push(cur);
     const fitted = lines.join('\n');
-    const lineSp = Number.isFinite(Number(caption.lineSpacingPx)) ? Math.max(0, Number(caption.lineSpacingPx)) : Math.round(fontPx * 0.25);
+    const lineSp = Number.isFinite(Number(caption.lineSpacingPx)) ? Math.max(0, Number(caption.lineSpacingPx)) : Math.round(fontPx * 0.26);
     const op = Math.max(0, Math.min(1, Number(caption.opacity ?? 0.8)));
-    const xPct = Math.max(0, Math.min(100, Number(caption.position?.xPct ?? 50)));
-    const yPct = Math.max(0, Math.min(100, Number(caption.position?.yPct ?? 88)));
+    const xPct = Math.max(0, Math.min(100, Number((caption.position?.xPct ?? caption.pos?.xPct) ?? 50)));
+    const yPct = Math.max(0, Math.min(100, Number((caption.position?.yPct ?? caption.pos?.yPct) ?? 88)));
     const align = (caption.align === 'left' || caption.align === 'right') ? caption.align : 'center';
     const xExpr = align === 'left' ? `(w*${(xPct/100).toFixed(4)})`
       : (align === 'right' ? `(w*${(xPct/100).toFixed(4)})-text_w` : `(w*${(xPct/100).toFixed(4)})-text_w/2`);
-    const yExpr = `(h*${(yPct/100).toFixed(4)})-text_h/2`;
-    const wantBox = !!(caption.box && caption.box.enabled);
-    const boxAlpha = Math.max(0, Math.min(1, Number(caption.box?.bgAlpha ?? 0.0)));
-    try { console.log('[ffmpeg] CAPTION(layout)', { fontPx, xPct, yPct, align, op, lineSp, wantBox, boxAlpha, fitted }); } catch {}
+    const vAlign = (caption.vAlign === 'top' || caption.vAlign === 'bottom') ? caption.vAlign : 'center';
+    const yBase = `(h*${(yPct/100).toFixed(4)})`;
+    const yExprRaw = vAlign === 'top' ? yBase : (vAlign === 'bottom' ? `${yBase}-text_h` : `${yBase}-text_h/2`);
+    const yExpr = `max(20\,min(h-20-text_h\,${yExprRaw}))`;
+    const wantBox = !!(caption.box && caption.box.enabled) || !!caption.wantBox;
+    const boxAlpha = Math.max(0, Math.min(1, Number((caption.box?.bgAlpha ?? caption.boxAlpha) ?? 0.0)));
+    try { console.log('[ffmpeg] CAPTION(layout)', { fontPxRaw: caption.fontSizePx, fontPxScaled: fontPx, xPct, yPct, vAlign, align, op, lineSp, wantBox, boxAlpha, wrappedCols: maxChars }); } catch {}
     drawCaption = `drawtext=${[
       `text='${escText(fitted)}'`,
       fontfile ? `fontfile='${fontfile}'` : null,
@@ -355,7 +365,7 @@ export async function renderVideoQuoteOverlay({
       `shadowcolor=black:shadowx=2:shadowy=2`,
       `box=${wantBox?1:0}`,
       wantBox ? `boxcolor=black@${boxAlpha.toFixed(2)}` : null,
-      `boxborderw=0`
+      `boxborderw=${wantBox?16:0}`
     ].filter(Boolean).join(':')}`;
   } else if (captionText && String(captionText).trim()) {
     // Back-compat: simple bottom caption with safe wrapping

@@ -104,7 +104,12 @@ const CreateShortSchema = z
         fontSizePx: z.number().int().min(16).max(160),
         opacity: z.number().min(0).max(1).default(0.8),
         align: z.enum(["left","center","right"]).default("center"),
-        position: z.object({ xPct: z.number().min(0).max(100), yPct: z.number().min(0).max(100) }),
+        // accept either position or pos; normalize later
+        position: z.object({ xPct: z.number().min(0).max(100), yPct: z.number().min(0).max(100) }).optional(),
+        pos: z.object({ xPct: z.number().min(0).max(100), yPct: z.number().min(0).max(100) }).optional(),
+        vAlign: z.enum(["top","center","bottom"]).optional(),
+        previewHeightPx: z.number().int().min(1).max(4000).optional(),
+        has: z.boolean().optional(),
         lineSpacingPx: z.number().int().min(0).max(200).optional(),
         box: z.object({
           enabled: z.boolean().optional(),
@@ -112,6 +117,13 @@ const CreateShortSchema = z
           radiusPx: z.number().int().min(0).max(64).optional(),
           bgAlpha: z.number().min(0).max(1).optional(),
         }).optional(),
+        wantBox: z.boolean().optional(),
+        boxAlpha: z.number().min(0).max(1).optional(),
+      })
+      .transform((c)=>{
+        if (!c) return c;
+        const pos = c.position || c.pos;
+        return { ...c, position: pos || { xPct: 50, yPct: 50 } };
       })
       .optional(),
     captionText: z.string().default("").optional(),
