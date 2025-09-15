@@ -251,7 +251,7 @@ export async function createShort(req, res) {
 
     const effectiveText = (captionText && captionText.trim().length >= 2) ? captionText.trim() : (text || '').trim();
     const overrideQuote = effectiveText ? { text: effectiveText } : undefined;
-    try { console.log("[shorts] incoming caption:", caption ? { has: true, len: (caption.text||'').length, pos: caption.position, fontSizePx: caption.fontSizePx, opacity: caption.opacity, align: caption.align } : { has:false }); } catch {}
+    try { console.log("[shorts] incoming caption:", caption ? { has: true, len: (caption.text||'').length, pos: caption.position || caption.pos, fontSizePx: caption.fontSizePx, opacity: caption.opacity, align: caption.align, vAlign: caption.vAlign, previewHeightPx: caption.previewHeightPx } : { has:false }); } catch {}
     const result = await createShortService({ ownerUid, mode, text, template, durationSec, voiceover, wantAttribution, background, debugAudioPath, captionMode, includeBottomCaption, watermark, captionStyle, caption, voiceId, overrideQuote });
     return res.json({ success: true, data: result });
   } catch (e) {
