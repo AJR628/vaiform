@@ -329,9 +329,11 @@ export async function renderVideoQuoteOverlay({
       return Math.max(24, Math.min(140, px));
     }
     const fontPx = scaleFontPx(caption.fontSizePx, caption.previewHeightPx);
-    // Derive a safe max text box width; allow wider when centered
-    const maxWidthPx = Math.round(RENDER_W * 0.78); // tighter to avoid edge spill
-    const charW = 0.66 * fontPx; // conservative avg glyph width to prevent joining
+    // Match preview container: overlay has 16px side padding and inner max-width:92%
+    const effectiveW = Math.max(1, RENDER_W - 32);
+    const maxWidthPx = Math.round(effectiveW * 0.92);
+    // Approximate average glyph width similar to DejaVuSans; closer to canvas measure
+    const charW = 0.58 * fontPx;
     const maxChars = Math.max(6, Math.floor(maxWidthPx / Math.max(1, charW)));
     const words = capTextRaw.split(/\s+/);
     const lines = [];
@@ -342,9 +344,8 @@ export async function renderVideoQuoteOverlay({
     }
     if (cur) lines.push(cur);
     const fitted = lines.join('\n');
-    const lsRaw = Number.isFinite(Number(caption.lineSpacingPx))
-      ? Math.max(0, Number(caption.lineSpacingPx))
-      : Math.round((Number(caption.fontSizePx) || 32) * 0.26);
+    // Preview uses ~1.2 line-height; drawtext's line_spacing adds to font size
+    const lsRaw = Math.round((Number(caption.fontSizePx) || 32) * 0.20);
     const scaleFactor = (Number(caption.fontSizePx) ? (fontPx / Math.max(1, Number(caption.fontSizePx))) : 1);
     const lineSp = Math.max(0, Math.round(lsRaw * scaleFactor));
     const op = Math.max(0, Math.min(1, Number(caption.opacity ?? 0.8)));
