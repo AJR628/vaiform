@@ -473,6 +473,11 @@ export async function renderVideoQuoteOverlay({
     const err = new Error('RENDER_FAILED');
     err.filter = finalFilter;
     err.cause = e;
+    if (e && typeof e === 'object') {
+      err.stderr = e.stderr || '';
+      err.code = e.code;
+    }
+    try { console.error('[ffmpeg] compose failed', { code: e?.code, message: e?.message, stderr: String(e?.stderr||'').slice(0,8000) }); } catch {}
     throw err;
   }
   return { outPath, durationSec: outSec };
