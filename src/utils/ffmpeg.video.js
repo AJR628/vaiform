@@ -377,8 +377,8 @@ export async function renderVideoQuoteOverlay({
     drawCaption = `drawtext=${[
       `textfile='${captionTxtEsc}'`,
       `fontfile='${fontEsc}'`,
-      `x=${xClamp}`,
-      `y=${yClamp}`,
+      `x='${xClamp.replace(/'/g, "\\'")}'`,
+      `y='${yClamp.replace(/'/g, "\\'")}'`,
       `fontsize=${fontPx}`,
       `fontcolor=white@${op.toFixed(2)}`,
       `line_spacing=${lineSp}`,
