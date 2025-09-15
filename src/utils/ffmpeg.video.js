@@ -327,8 +327,8 @@ export async function renderVideoQuoteOverlay({
     }
     const fontPx = scaleFontPx(caption.fontSizePx, caption.previewHeightPx);
     // Derive a safe max text box width; allow wider when centered
-    const maxWidthPx = Math.round(RENDER_W * 0.82);
-    const charW = 0.60 * fontPx; // heuristic sans serif width
+    const maxWidthPx = Math.round(RENDER_W * 0.78); // tighter to avoid edge spill
+    const charW = 0.62 * fontPx; // conservative avg glyph width
     const maxChars = Math.max(6, Math.floor(maxWidthPx / Math.max(1, charW)));
     const words = capTextRaw.split(/\s+/);
     const lines = [];
@@ -348,8 +348,9 @@ export async function renderVideoQuoteOverlay({
     const xPct = Math.max(0, Math.min(100, Number((caption.position?.xPct ?? caption.pos?.xPct) ?? 50)));
     const yPct = Math.max(0, Math.min(100, Number((caption.position?.yPct ?? caption.pos?.yPct) ?? 88)));
     const align = (caption.align === 'left' || caption.align === 'right') ? caption.align : 'center';
-    const xExpr = align === 'left' ? `(w*${(xPct/100).toFixed(4)})`
+    const xExprRaw = align === 'left' ? `(w*${(xPct/100).toFixed(4)})`
       : (align === 'right' ? `(w*${(xPct/100).toFixed(4)})-text_w` : `(w*${(xPct/100).toFixed(4)})-text_w/2`);
+    const xClamp = `max(20,min(w-20-text_w,${xExprRaw}))`;
     const vAlign = (caption.vAlign === 'top' || caption.vAlign === 'bottom') ? caption.vAlign : 'center';
     const yBase = `(h*${(yPct/100).toFixed(4)})`;
     const yExprRaw = vAlign === 'top' ? yBase : (vAlign === 'bottom' ? `${yBase}-text_h` : `${yBase}-text_h/2`);
@@ -360,11 +361,13 @@ export async function renderVideoQuoteOverlay({
     drawCaption = `drawtext=${[
       `text='${escText(fitted)}'`,
       fontfile ? `fontfile='${fontfile}'` : null,
-      `x=${xExpr}`,
+      `x='${xClamp.replace(/'/g, "\\'")}'`,
       `y='${yClamp.replace(/'/g, "\\'")}'`,
       `fontsize=${fontPx}`,
       `fontcolor=white@${op.toFixed(2)}`,
       `line_spacing=${lineSp}`,
+      `expansion=none`,
+      `fix_bounds=1`,
       `borderw=2:bordercolor=black@0.85`,
       `shadowcolor=black:shadowx=2:shadowy=2`,
       `box=${wantBox?1:0}`,
