@@ -328,7 +328,7 @@ export async function renderVideoQuoteOverlay({
     const fontPx = scaleFontPx(caption.fontSizePx, caption.previewHeightPx);
     // Derive a safe max text box width; allow wider when centered
     const maxWidthPx = Math.round(RENDER_W * 0.78); // tighter to avoid edge spill
-    const charW = 0.62 * fontPx; // conservative avg glyph width
+    const charW = 0.66 * fontPx; // conservative avg glyph width to prevent joining
     const maxChars = Math.max(6, Math.floor(maxWidthPx / Math.max(1, charW)));
     const words = capTextRaw.split(/\s+/);
     const lines = [];
@@ -366,7 +366,6 @@ export async function renderVideoQuoteOverlay({
       `fontsize=${fontPx}`,
       `fontcolor=white@${op.toFixed(2)}`,
       `line_spacing=${lineSp}`,
-      `expansion=none`,
       `fix_bounds=1`,
       `borderw=2:bordercolor=black@0.85`,
       `shadowcolor=black:shadowx=2:shadowy=2`,
