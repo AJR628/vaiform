@@ -110,7 +110,8 @@ function runFfmpeg(args, opts = {}) {
     const isVideo = args.some(arg => typeof arg === 'string' && (arg.includes('.mp4') || arg.includes('.mov') || arg.includes('.webm')));
     const timeoutMs = opts.timeout || (isVideo ? 300000 : 300000); // default 5 minutes for stability
     
-    const p = spawn(ffmpegPath, ["-y", ...args], { stdio: ["ignore", "pipe", "pipe"] });
+    // Force loglevel so parsing errors always appear on stderr
+    const p = spawn(ffmpegPath, ["-y", "-v", (process.env.FFMPEG_LOGLEVEL || 'error'), ...args], { stdio: ["ignore", "pipe", "pipe"] });
     let stdout = '', stderr = '';
     p.stdout.on('data', d => stdout += d);
     p.stderr.on('data', d => stderr += d);
@@ -122,17 +123,16 @@ function runFfmpeg(args, opts = {}) {
       reject(new Error('FFMPEG_TIMEOUT'));
     }, timeoutMs);
     
-    p.on("exit", code => {
+    p.on("exit", (code, signal) => {
       clearTimeout(timeout);
-      if (code === 0) {
-        resolve({ stdout, stderr });
-      } else {
-        reject(new Error(`ffmpeg exited with code ${code}: ${stderr}`));
-      }
+      if (code !== 0) console.error('[ffmpeg] exit', { code, signal, stderr: String(stderr).slice(0,8000) });
+      if (code === 0) resolve({ stdout, stderr }); else reject(new Error(`ffmpeg exited with code ${code} signal ${signal || ''}: ${stderr}`));
     });
+    p.on('close', (code, signal) => { if (code !== 0) console.error('[ffmpeg] close', { code, signal, stderr: String(stderr).slice(0,8000) }); });
     
     p.on('error', err => {
       clearTimeout(timeout);
+      try { console.error('[ffmpeg] error', { message: err?.message, stack: err?.stack }); } catch {}
       reject(new Error(`FFmpeg spawn error: ${err.message}`));
     });
   });
@@ -351,13 +351,19 @@ export async function renderVideoQuoteOverlay({
     const xPct = Math.max(0, Math.min(100, Number((caption.position?.xPct ?? caption.pos?.xPct) ?? 50)));
     const yPct = Math.max(0, Math.min(100, Number((caption.position?.yPct ?? caption.pos?.yPct) ?? 88)));
     const align = (caption.align === 'left' || caption.align === 'right') ? caption.align : 'center';
-    const xExprRaw = align === 'left' ? `(w*${(xPct/100).toFixed(4)})`
-      : (align === 'right' ? `(w*${(xPct/100).toFixed(4)})-text_w` : `(w*${(xPct/100).toFixed(4)})-text_w/2`);
+    const xExprRaw = align === 'left'
+      ? `(w*${(xPct/100).toFixed(4)})`
+      : (align === 'right'
+        ? `(w*${(xPct/100).toFixed(4)})-text_w`
+        : `(w*${(xPct/100).toFixed(4)})-text_w/2`);
     const xClamp = `max(20,min(w-20-text_w,${xExprRaw}))`;
     const vAlign = (caption.vAlign === 'top' || caption.vAlign === 'bottom') ? caption.vAlign : 'center';
-    const yBase = `(h*${(yPct/100).toFixed(4)})`;
-    const yExprRaw = vAlign === 'top' ? yBase : (vAlign === 'bottom' ? `${yBase}-text_h` : `${yBase}-text_h/2`);
-    const yClamp = `max(20,min(h-20-text_h,${yExprRaw}))`;
+    const yBase = vAlign === 'top'
+      ? `(h*${(yPct/100).toFixed(4)})`
+      : (vAlign === 'bottom'
+        ? `(h*${(yPct/100).toFixed(4)})-text_h`
+        : `(h*${(yPct/100).toFixed(4)})-text_h/2`);
+    const yClamp = `max(20,min(h-20-text_h,${yBase}))`;
     const wantBox = !!(caption.box && caption.box.enabled) || !!caption.wantBox;
     const boxAlpha = Math.max(0, Math.min(1, Number((caption.box?.bgAlpha ?? caption.boxAlpha) ?? 0.0)));
     try { console.log('[ffmpeg] CAPTION(layout)', { fontPxRaw: caption.fontSizePx, fontPxScaled: fontPx, xPct, yPct, vAlign, align, op, lineSp, wantBox, boxAlpha, wrappedCols: maxChars }); } catch {}
@@ -377,8 +383,8 @@ export async function renderVideoQuoteOverlay({
     drawCaption = `drawtext=${[
       `textfile='${captionTxtEsc}'`,
       `fontfile='${fontEsc}'`,
-      `x='${xClamp.replace(/'/g, "\\'")}'`,
-      `y='${yClamp.replace(/'/g, "\\'")}'`,
+      `x=${xClamp}`,
+      `y=${yClamp}`,
       `fontsize=${fontPx}`,
       `fontcolor=white@${op.toFixed(2)}`,
       `line_spacing=${lineSp}`,
