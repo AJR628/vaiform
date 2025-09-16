@@ -7,6 +7,19 @@ import fsp from "node:fs/promises";
 import { renderImageQuoteVideo } from "./ffmpeg.js";
 import { getDurationMsFromMedia } from "./media.duration.js";
 
+// --- Caption render parity with preview ---
+const CAPTION_FONT_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf";
+const CAPTION_FONT_REG  = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf";
+
+// Match preview look: slightly higher outline + soft drop shadow
+const CAPTION_ALPHA     = 0.80;   // white text opacity (preview uses ~80%)
+const STROKE_ALPHA      = 0.85;   // dark outline opacity
+const STROKE_W          = 3;      // outline width (was 2; bump for "full" look)
+const SHADOW_ALPHA      = 0.55;   // drop shadow opacity
+const SHADOW_X          = 0;      // no horizontal shift (keeps symmetry)
+const SHADOW_Y          = 2;      // slight vertical softness
+const BOX_BG_ALPHA      = 0.00;   // keep disabled unless user checks "Show box"
+
 // text/path helpers
 const esc = s => String(s).replace(/\\/g,'\\\\').replace(/:/g,'\\:').replace(/,/g,'\\,').replace(/;/g,'\\;').replace(/\[/g,'\\[').replace(/\]/g,'\\]').replace(/'/g,"\\'");
 function escText(s) {
@@ -22,6 +35,19 @@ function escText(s) {
     .replace(/\(/g, '\\(')    // expression args
     .replace(/\)/g, '\\)')
     .replace(/%/g, '\\%');    // format tokens
+}
+
+function escFF(text) {
+  if (!text) return "";
+  // Escape chars that break ffmpeg expressions
+  return String(text)
+    .replace(/\\/g, '\\\\')
+    .replace(/:/g, '\\:')
+    .replace(/,/g, '\\,')
+    .replace(/;/g, '\\;')
+    .replace(/'/g, "\\'")
+    .replace(/\[/g, '\\[')
+    .replace(/\]/g, '\\]');
 }
 export function sanitizeFilter(graph) {
   const s = String(graph);
@@ -386,17 +412,10 @@ export async function renderVideoQuoteOverlay({
     const capDraws = [];
     for (let i = 0; i < n; i++) {
       const lineY = Math.round(baseY + i * (fontPx + lineSp));
-      const escLine = String(lines[i] || '')
-        .replace(/\\/g, "\\\\")
-        .replace(/:/g, '\\:')
-        .replace(/,/g, '\\,')
-        .replace(/;/g, '\\;')
-        .replace(/\[/g, '\\[')
-        .replace(/\]/g, '\\]')
-        .replace(/'/g, "\\'");
+      const escLine = escFF(lines[i] || '');
       const yExpr = `'max(20\\,min(h-20-${fontPx}\\,${lineY}))'`;
       capDraws.push(
-        `drawtext=text='${escLine}':fontfile='${fontFile}':x=${xFinal}:y=${yExpr}:fontsize=${fontPx}:fontcolor=white@${op.toFixed(2)}:line_spacing=0:fix_bounds=1:text_shaping=1:borderw=2:bordercolor=black@0.85:shadowcolor=black:shadowx=2:shadowy=2:box=${wantBox?1:0}:boxcolor=black@${boxAlpha.toFixed(2)}:boxborderw=0`
+        `drawtext=text='${escLine}':fontfile='${CAPTION_FONT_BOLD}':x=${xFinal}:y=${yExpr}:fontsize=${fontPx}:fontcolor=white@${CAPTION_ALPHA}:line_spacing=0:fix_bounds=1:text_shaping=1:borderw=${STROKE_W}:bordercolor=black@${STROKE_ALPHA}:shadowcolor=black@${SHADOW_ALPHA}:shadowx=${SHADOW_X}:shadowy=${SHADOW_Y}:box=${wantBox?1:0}:boxcolor=black@${BOX_BG_ALPHA}:boxborderw=0`
       );
     }
 
