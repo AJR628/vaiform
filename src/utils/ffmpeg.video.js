@@ -380,7 +380,7 @@ export async function renderVideoQuoteOverlay({
     baseY = Math.max(20, Math.min(H - 20 - blockH, baseY));
 
     // per-line drawtext (centered x) — raw expression in single quotes; avoid escaping commas here
-    const xFinal = `'max(20, min(w-20-text_w, (w*0.5)-text_w/2))'`;
+    const xFinal = `'max(20\\,min(w-20-text_w\\,(w*0.5)-text_w/2))'`;
     const wantBox = !!(caption.box && (caption.box.enabled || caption.wantBox));
     const boxAlpha = Math.max(0, Math.min(1, Number(caption.box?.alpha ?? caption.boxAlpha ?? 0)));
     const capDraws = [];
@@ -394,7 +394,7 @@ export async function renderVideoQuoteOverlay({
         .replace(/\[/g, '\\[')
         .replace(/\]/g, '\\]')
         .replace(/'/g, "\\'");
-      const yExpr = `'max(20, min(h-20-${fontPx}, ${lineY}))'`;
+      const yExpr = `'max(20\\,min(h-20-${fontPx}\\,${lineY}))'`;
       capDraws.push(
         `drawtext=text='${escLine}':fontfile='${fontFile}':x=${xFinal}:y=${yExpr}:fontsize=${fontPx}:fontcolor=white@${op.toFixed(2)}:line_spacing=0:fix_bounds=1:text_shaping=1:borderw=2:bordercolor=black@0.85:shadowcolor=black:shadowx=2:shadowy=2:box=${wantBox?1:0}:boxcolor=black@${boxAlpha.toFixed(2)}:boxborderw=0`
       );
