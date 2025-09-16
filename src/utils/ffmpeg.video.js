@@ -319,93 +319,82 @@ export async function renderVideoQuoteOverlay({
   // Optional caption (bottom, safe area, wrapped)
   let drawCaption = '';
   if (caption && String(caption.text || '').trim()) {
-    // Honor precise caption layout from payload
-    const capTextRaw = String(caption.text).trim();
-    // Prefer preview-fitted lines when provided; else we compute heuristically
+    // Inputs
+    const capTextRaw = String(caption.text || '').trim();
     const fittedFromPreview = (caption.fittedText && String(caption.fittedText).trim()) ? String(caption.fittedText).trim() : null;
-    const RENDER_W = W;
-    const RENDER_H = H;
+
     function scaleFontPx(fontSizePx = 32, previewH = 640) {
-      const s = RENDER_H / Math.max(1, Number(previewH) || 640);
-      const px = Math.round((Number(fontSizePx) || 32) * s);
+      const base = Math.max(1, Number(previewH) || 640);
+      const px = Math.round((Number(fontSizePx) || 32) * (H / base));
       return Math.max(24, Math.min(140, px));
     }
     const fontPx = scaleFontPx(caption.fontSizePx, caption.previewHeightPx);
-    // If preview sent fitted text, use it verbatim to avoid re-wrapping on backend
-    let fitted = fittedFromPreview || '';
-    if (!fitted) {
-      // Mirror preview container: 16px side padding and max content width ≈ 92%
-      const contentW = Math.max(1, Math.round(RENDER_W * 0.92));
-      const maxWidthPx = contentW;
-      // Glyph width heuristic tuned for DejaVu Sans in ffmpeg vs browser
-      const charW = 0.60 * fontPx;
-      const maxChars = Math.max(6, Math.floor(maxWidthPx / Math.max(1, charW)));
-      if (capTextRaw.includes('\n')) {
-        fitted = capTextRaw.split(/\r?\n/).map(s=>s.trim()).filter(Boolean).join('\n');
-      } else {
-        const words = capTextRaw.split(/\s+/);
-        const lines = [];
-        let cur = '';
-        for (const w2 of words) {
-          const next = cur ? cur + ' ' + w2 : w2;
-          if (next.length <= maxChars) cur = next; else { if (cur) lines.push(cur); cur = w2; }
-        }
-        if (cur) lines.push(cur);
-        fitted = lines.join('\n');
-      }
-    }
-    // Preview uses ~1.2 line-height; drawtext's line_spacing adds to font size
-    const lsRaw = Math.round((Number(caption.fontSizePx) || 32) * 0.20);
-    const scaleFactor = (Number(caption.fontSizePx) ? (fontPx / Math.max(1, Number(caption.fontSizePx))) : 1);
-    const lineSp = Math.max(0, Math.round(lsRaw * scaleFactor));
+
+    // font file (bold vs regular)
+    const fontFileRegular = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf";
+    const fontFileBold    = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf";
+    const wantBold = (String(caption.fontWeight || '').toLowerCase() === 'bold' || Number(caption.fontWeight) >= 600);
+    const fontFile = wantBold ? fontFileBold : fontFileRegular;
+
+    // opacity + line spacing
     const op = Math.max(0, Math.min(1, Number(caption.opacity ?? 0.8)));
-    const xPct = Math.max(0, Math.min(100, Number((caption.position?.xPct ?? caption.pos?.xPct) ?? 50)));
-    const yPct = Math.max(0, Math.min(100, Number((caption.position?.yPct ?? caption.pos?.yPct) ?? 88)));
-    const align = (caption.align === 'left' || caption.align === 'right') ? caption.align : 'center';
-    const xExprRaw = align === 'left'
-      ? `(w*${(xPct/100).toFixed(4)})`
-      : (align === 'right'
-        ? `(w*${(xPct/100).toFixed(4)})-text_w`
-        : `(w*${(xPct/100).toFixed(4)})-text_w/2`);
-    const xClamp = `max(20,min(w-20-text_w,${xExprRaw}))`;
-    const vAlign = (caption.vAlign === 'top' || caption.vAlign === 'bottom') ? caption.vAlign : 'center';
-    const yBase = vAlign === 'top'
-      ? `(h*${(yPct/100).toFixed(4)})`
-      : (vAlign === 'bottom'
-        ? `(h*${(yPct/100).toFixed(4)})-text_h`
-        : `(h*${(yPct/100).toFixed(4)})-text_h/2`);
-    const yClamp = `max(20,min(h-20-text_h,${yBase}))`;
-    const wantBox = !!(caption.box && caption.box.enabled) || !!caption.wantBox;
-    const boxAlpha = Math.max(0, Math.min(1, Number((caption.box?.bgAlpha ?? caption.boxAlpha) ?? 0.0)));
-    try { console.log('[ffmpeg] CAPTION(layout)', { fontPxRaw: caption.fontSizePx, fontPxScaled: fontPx, xPct, yPct, vAlign, align, op, lineSp, wantBox, boxAlpha, wrappedCols: maxChars }); } catch {}
-    // Write caption file UTF-8 LF without trailing spaces
-    const captionTxtPath = path.join(tmpBase, 'caption.txt');
-    try {
-      const normalized = String(fitted)
-        .replace(/\r\n/g, '\n')
-        .split('\n')
-        .map(s => s.replace(/[ \t]+$/, ''))
-        .join('\n');
-      fs.writeFileSync(captionTxtPath, normalized, { encoding: 'utf8' });
-      try { const st = fs.statSync(captionTxtPath); console.log('[drawtext][captionfile]', captionTxtPath, 'bytes=', st.size); } catch {}
-    } catch {}
-    const captionTxtEsc = captionTxtPath.replace(/\\/g,'/').replace(/^([A-Za-z]):\//, "$1\\:/");
-    const fontEsc = effFont.replace(/\\/g,'/').replace(/^([A-Za-z]):\//, "$1\\:/");
-    drawCaption = `drawtext=${[
-      `textfile='${captionTxtEsc}'`,
-      `fontfile='${fontEsc}'`,
-      `x='${xClamp.replace(/'/g, "\\'")}'`,
-      `y='${yClamp.replace(/'/g, "\\'")}'`,
-      `fontsize=${fontPx}`,
-      `fontcolor=white@${op.toFixed(2)}`,
-      `line_spacing=${lineSp}`,
-      `fix_bounds=1`,
-      `borderw=2:bordercolor=black@0.85`,
-      `shadowcolor=black:shadowx=2:shadowy=2`,
-      `box=${wantBox?1:0}`,
-      wantBox ? `boxcolor=black@${boxAlpha.toFixed(2)}` : null,
-      `boxborderw=${wantBox?16:0}`
-    ].filter(Boolean).join(':')}`;
+    const lsRaw = Math.round((Number(caption.fontSizePx) || 32) * 0.20);
+    const lineSp = Math.max(0, Math.round(lsRaw * (fontPx / Math.max(1, Number(caption.fontSizePx) || 32))));
+
+    // text (prefer preview-fitted)
+    let capText = fittedFromPreview || '';
+    if (!capText) {
+      // fallback heuristic (kept from previous logic)
+      const contentW = Math.max(1, Math.round(W * 0.92));
+      const charW = 0.60 * fontPx;
+      const maxChars = Math.max(6, Math.floor(contentW / Math.max(1, charW)));
+      const words = capTextRaw.split(/\s+/);
+      const lines = [];
+      let cur = '';
+      for (const w2 of words) {
+        const next = cur ? cur + ' ' + w2 : w2;
+        if (next.length <= maxChars) cur = next; else { if (cur) lines.push(cur); cur = w2; }
+      }
+      if (cur) lines.push(cur);
+      capText = lines.join('\n');
+    }
+
+    // split into lines
+    const lines = capText.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+    const n = Math.max(1, lines.length);
+
+    // block height like preview
+    const blockH = (n * fontPx) + ((n - 1) * lineSp);
+
+    // base Y from vAlign + yPct
+    const vRaw = String(caption.vAlign || 'top').toLowerCase();
+    const vAlign = (vRaw === 'center') ? 'middle' : vRaw;
+    const yPct = (caption.pos?.yPct ?? caption.yPct ?? 12) / 100;
+    let baseY = H * yPct;
+    if (vAlign === 'middle') baseY -= (blockH / 2);
+    else if (vAlign === 'bottom') baseY -= blockH;
+    // clamp block
+    baseY = Math.max(20, Math.min(H - 20 - blockH, baseY));
+
+    // per-line drawtext (centered x)
+    const xFinal = `'max(20, min(w-20-text_w, (w*0.5)-text_w/2))'`;
+    const capDraws = [];
+    for (let i = 0; i < n; i++) {
+      const lineY = Math.round(baseY + i * (fontPx + lineSp));
+      const escLine = String(lines[i] || '')
+        .replace(/\\/g, "\\\\")
+        .replace(/:/g, '\\:')
+        .replace(/,/g, '\\,')
+        .replace(/;/g, '\\;')
+        .replace(/\[/g, '\\[')
+        .replace(/\]/g, '\\]')
+        .replace(/'/g, "\\'");
+      capDraws.push(
+        `drawtext=text='${escLine}':fontfile='${fontFile}':x=${xFinal}:y='max(20,min(h-20-${fontPx},${lineY}))':fontsize=${fontPx}:fontcolor=white@${op.toFixed(2)}:line_spacing=0:fix_bounds=1:borderw=2:bordercolor=black@0.85:shadowcolor=black:shadowx=2:shadowy=2:box=0:boxborderw=0`
+      );
+    }
+
+    drawCaption = capDraws.join(',');
   } else if (captionText && String(captionText).trim()) {
     // Back-compat: simple bottom caption with safe wrapping
     const CANVAS_W = W;
