@@ -1058,8 +1058,8 @@
                 if (!raw) return '';
                 const canvas = document.createElement('canvas');
                 const ctx = canvas.getContext('2d');
-                const family = getFontFamily(font);
-                const weightCss = weight || 'normal';
+                const family = String(font || 'DejaVu Sans Local');
+                const weightCss = (String(weight).toLowerCase() === 'bold') ? '700' : '400';
                 const size = Math.max(10, Number(sizePx) || 48);
                 ctx.font = `${weightCss} ${size}px ${family}`;
                 // Match overlay: max content width ≈ 92% of preview width
@@ -1272,39 +1272,41 @@
                 const previewWidthPx = Math.round((canvasEl?.clientWidth || canvasEl?.width || 360));
 
                 // Build preview-fitted lines so backend can draw exactly as shown
+                // Normalize preview family/weight to match ffmpeg font files exactly
+                const fwRaw = captionStyle.weight ?? 'normal';
+                const fontWeight = (String(fwRaw).toLowerCase() === 'bold' || Number(fwRaw) >= 600) ? 'bold' : 'normal';
+                // Force preview + measure to DejaVu Sans (matches ffmpeg)
+                const previewFontFamily = 'DejaVu Sans Local';
+
+                // Build preview-fitted lines using the same family & weight used by ffmpeg
                 const fittedText = computeFittedTextForPreview((currentQuote?.text || '').trim(), {
-                    font: captionStyle.font,
-                    weight: captionStyle.weight,
+                    font: previewFontFamily,
+                    weight: fontWeight,
                     sizePx: captionStyle.sizePx,
                     previewWidthPx
                 });
-                // normalize weight coming from UI (e.g., "Bold", 700, "bold")
-                const fwRaw = captionStyle.weight ?? 'normal';
-                const fontWeight = (String(fwRaw).toLowerCase() === 'bold' || Number(fwRaw) >= 600) ? 'bold' : 'normal';
 
                 const caption = {
                     has: true,
                     text: (currentQuote?.text || '').trim(),
                     fittedText,
-                    fontFamily: captionStyle.font || 'system',
+                    fontFamily: previewFontFamily,
                     fontWeight,
                     fontSizePx: Number.isFinite(captionStyle.sizePx) ? captionStyle.sizePx : 48,
                     opacity: Math.max(0, Math.min(1, captionStyle.opacity ?? 0.8)),
                     align: 'center',
-                    vAlign: vAlignMap[captionStyle.placement] || 'center',
+                    vAlign: vAlignMap[captionStyle.placement] || 'top',
                     pos: { xPct: 50, yPct: placementMap[captionStyle.placement] ?? 88 },
                     position: { xPct: 50, yPct: placementMap[captionStyle.placement] ?? 88 },
                     previewHeightPx,
                     lineSpacingPx: Math.round(((Number.isFinite(captionStyle.sizePx)?captionStyle.sizePx:48) * 0.25)),
                     box: {
-                        enabled: !!captionStyle.showBox,
-                        paddingPx: 10,
-                        radiusPx: 8,
-                        bgAlpha: Math.max(0, Math.min(1, captionStyle.boxOpacity ?? 0.5))
+                        enabled: !!document.querySelector('#caption-background')?.checked,
+                        alpha: Math.max(0, Math.min(1, (parseInt(document.getElementById('caption-bg-opacity')?.value || '50', 10) / 100)))
                     },
                     // convenience aliases
-                    wantBox: !!captionStyle.showBox,
-                    boxAlpha: Math.max(0, Math.min(1, captionStyle.boxOpacity ?? 0.5))
+                    wantBox: !!document.querySelector('#caption-background')?.checked,
+                    boxAlpha: Math.max(0, Math.min(1, (parseInt(document.getElementById('caption-bg-opacity')?.value || '50', 10) / 100)))
                 };
 
                 // Normalize caption mode to satisfy server enum
