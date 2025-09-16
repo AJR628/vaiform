@@ -333,7 +333,10 @@ export async function renderVideoQuoteOverlay({
     // font file (bold vs regular)
     const fontFileRegular = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf";
     const fontFileBold    = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf";
-    const wantBold = (String(caption.fontWeight || '').toLowerCase() === 'bold' || Number(caption.fontWeight) >= 600);
+    const wantBold =
+      String(caption.fontWeight || '').toLowerCase() === 'bold' ||
+      Number(caption.fontWeight) >= 600 ||
+      /bold/i.test(String(caption.fontFamily || ''));
     const fontFile = wantBold ? fontFileBold : fontFileRegular;
 
     // opacity + line spacing
@@ -378,6 +381,8 @@ export async function renderVideoQuoteOverlay({
 
     // per-line drawtext (centered x)
     const xFinal = `'max(20, min(w-20-text_w, (w*0.5)-text_w/2))'`;
+    const wantBox = !!(caption.box && (caption.box.enabled || caption.wantBox));
+    const boxAlpha = Math.max(0, Math.min(1, Number(caption.box?.alpha ?? caption.boxAlpha ?? 0)));
     const capDraws = [];
     for (let i = 0; i < n; i++) {
       const lineY = Math.round(baseY + i * (fontPx + lineSp));
@@ -390,7 +395,7 @@ export async function renderVideoQuoteOverlay({
         .replace(/\]/g, '\\]')
         .replace(/'/g, "\\'");
       capDraws.push(
-        `drawtext=text='${escLine}':fontfile='${fontFile}':x=${xFinal}:y='max(20,min(h-20-${fontPx},${lineY}))':fontsize=${fontPx}:fontcolor=white@${op.toFixed(2)}:line_spacing=0:fix_bounds=1:borderw=2:bordercolor=black@0.85:shadowcolor=black:shadowx=2:shadowy=2:box=0:boxborderw=0`
+        `drawtext=text='${escLine}':fontfile='${fontFile}':x=${xFinal}:y='max(20,min(h-20-${fontPx},${lineY}))':fontsize=${fontPx}:fontcolor=white@${op.toFixed(2)}:line_spacing=0:fix_bounds=1:borderw=2:bordercolor=black@0.85:shadowcolor=black:shadowx=2:shadowy=2:box=${wantBox?1:0}:boxcolor=black@${boxAlpha.toFixed(2)}:boxborderw=0`
       );
     }
 

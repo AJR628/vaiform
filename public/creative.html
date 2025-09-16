@@ -1278,11 +1278,16 @@
                     sizePx: captionStyle.sizePx,
                     previewWidthPx
                 });
+                // normalize weight coming from UI (e.g., "Bold", 700, "bold")
+                const fwRaw = captionStyle.weight ?? 'normal';
+                const fontWeight = (String(fwRaw).toLowerCase() === 'bold' || Number(fwRaw) >= 600) ? 'bold' : 'normal';
+
                 const caption = {
                     has: true,
                     text: (currentQuote?.text || '').trim(),
                     fittedText,
                     fontFamily: captionStyle.font || 'system',
+                    fontWeight,
                     fontSizePx: Number.isFinite(captionStyle.sizePx) ? captionStyle.sizePx : 48,
                     opacity: Math.max(0, Math.min(1, captionStyle.opacity ?? 0.8)),
                     align: 'center',
