@@ -220,6 +220,15 @@ try {
   console.warn("[web] SPA hosting setup failed:", e?.message || e);
 }
 
+// Minimal MIME fix for .woff2 (no behavior change for other assets)
+app.use((req, res, next) => {
+  try {
+    if (req.path && req.path.endsWith('.woff2')) {
+      res.setHeader('Content-Type', 'font/woff2');
+    }
+  } catch {}
+  next();
+});
 app.use(express.static("public", { redirect: false }));
 
 // Optional route table when VAIFORM_DEBUG=1
