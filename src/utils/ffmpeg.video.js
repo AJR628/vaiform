@@ -321,6 +321,8 @@ export async function renderVideoQuoteOverlay({
   if (caption && String(caption.text || '').trim()) {
     // Honor precise caption layout from payload
     const capTextRaw = String(caption.text).trim();
+    // Prefer preview-fitted lines when provided; else we compute heuristically
+    const fittedFromPreview = (caption.fittedText && String(caption.fittedText).trim()) ? String(caption.fittedText).trim() : null;
     const RENDER_W = W;
     const RENDER_H = H;
     function scaleFontPx(fontSizePx = 32, previewH = 640) {
@@ -329,25 +331,28 @@ export async function renderVideoQuoteOverlay({
       return Math.max(24, Math.min(140, px));
     }
     const fontPx = scaleFontPx(caption.fontSizePx, caption.previewHeightPx);
-    // Mirror preview container: 16px side padding and max content width ≈ 92%
-    const contentW = Math.max(1, Math.round(RENDER_W * 0.92));
-    const maxWidthPx = contentW;
-    // Glyph width heuristic tuned for DejaVu Sans in ffmpeg vs browser
-    const charW = 0.60 * fontPx;
-    const maxChars = Math.max(6, Math.floor(maxWidthPx / Math.max(1, charW)));
-    let fitted = '';
-    if (capTextRaw.includes('\n')) {
-      fitted = capTextRaw.split(/\r?\n/).map(s=>s.trim()).filter(Boolean).join('\n');
-    } else {
-      const words = capTextRaw.split(/\s+/);
-      const lines = [];
-      let cur = '';
-      for (const w2 of words) {
-        const next = cur ? cur + ' ' + w2 : w2;
-        if (next.length <= maxChars) cur = next; else { if (cur) lines.push(cur); cur = w2; }
+    // If preview sent fitted text, use it verbatim to avoid re-wrapping on backend
+    let fitted = fittedFromPreview || '';
+    if (!fitted) {
+      // Mirror preview container: 16px side padding and max content width ≈ 92%
+      const contentW = Math.max(1, Math.round(RENDER_W * 0.92));
+      const maxWidthPx = contentW;
+      // Glyph width heuristic tuned for DejaVu Sans in ffmpeg vs browser
+      const charW = 0.60 * fontPx;
+      const maxChars = Math.max(6, Math.floor(maxWidthPx / Math.max(1, charW)));
+      if (capTextRaw.includes('\n')) {
+        fitted = capTextRaw.split(/\r?\n/).map(s=>s.trim()).filter(Boolean).join('\n');
+      } else {
+        const words = capTextRaw.split(/\s+/);
+        const lines = [];
+        let cur = '';
+        for (const w2 of words) {
+          const next = cur ? cur + ' ' + w2 : w2;
+          if (next.length <= maxChars) cur = next; else { if (cur) lines.push(cur); cur = w2; }
+        }
+        if (cur) lines.push(cur);
+        fitted = lines.join('\n');
       }
-      if (cur) lines.push(cur);
-      fitted = lines.join('\n');
     }
     // Preview uses ~1.2 line-height; drawtext's line_spacing adds to font size
     const lsRaw = Math.round((Number(caption.fontSizePx) || 32) * 0.20);
@@ -394,8 +399,6 @@ export async function renderVideoQuoteOverlay({
       `fontsize=${fontPx}`,
       `fontcolor=white@${op.toFixed(2)}`,
       `line_spacing=${lineSp}`,
-      // Ensure per-line centering within the wrapped block, matching preview
-      `text_align=center`,
       `fix_bounds=1`,
       `borderw=2:bordercolor=black@0.85`,
       `shadowcolor=black:shadowx=2:shadowy=2`,

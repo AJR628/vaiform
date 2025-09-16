@@ -1051,6 +1051,34 @@
             return fontMap[font] || 'system-ui, sans-serif';
         }
 
+        // Compute preview-fitted lines using canvas metrics to mirror overlay width
+        function computeFittedTextForPreview(text, { font, weight, sizePx, previewWidthPx }) {
+            try {
+                const raw = String(text || '').trim();
+                if (!raw) return '';
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+                const family = getFontFamily(font);
+                const weightCss = weight || 'normal';
+                const size = Math.max(10, Number(sizePx) || 48);
+                ctx.font = `${weightCss} ${size}px ${family}`;
+                // Match overlay: max content width ≈ 92% of preview width
+                const maxWidth = Math.max(20, Math.round((Number(previewWidthPx)||360) * 0.92));
+                const words = raw.split(/\s+/);
+                const lines = [];
+                let cur = '';
+                for (const w of words) {
+                    const next = cur ? cur + ' ' + w : w;
+                    const width = ctx.measureText(next).width;
+                    if (width > maxWidth && cur) { lines.push(cur); cur = w; } else { cur = next; }
+                }
+                if (cur) lines.push(cur);
+                return lines.join('\n');
+            } catch {
+                return String(text || '').trim();
+            }
+        }
+
         // Voice loading and preview functions
         window.loadVoices = async function loadVoices() {
             try {
@@ -1241,9 +1269,19 @@
                 // Measure the preview canvas height (fallback to 640)
                 const canvasEl = document.getElementById('live-preview-canvas');
                 const previewHeightPx = Math.round((canvasEl?.clientHeight || canvasEl?.height || 640));
+                const previewWidthPx = Math.round((canvasEl?.clientWidth || canvasEl?.width || 360));
+
+                // Build preview-fitted lines so backend can draw exactly as shown
+                const fittedText = computeFittedTextForPreview((currentQuote?.text || '').trim(), {
+                    font: captionStyle.font,
+                    weight: captionStyle.weight,
+                    sizePx: captionStyle.sizePx,
+                    previewWidthPx
+                });
                 const caption = {
                     has: true,
                     text: (currentQuote?.text || '').trim(),
+                    fittedText,
                     fontFamily: captionStyle.font || 'system',
                     fontSizePx: Number.isFinite(captionStyle.sizePx) ? captionStyle.sizePx : 48,
                     opacity: Math.max(0, Math.min(1, captionStyle.opacity ?? 0.8)),
