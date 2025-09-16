@@ -10,18 +10,18 @@ import { getDurationMsFromMedia } from "./media.duration.js";
 // text/path helpers
 const esc = s => String(s).replace(/\\/g,'\\\\').replace(/:/g,'\\:').replace(/,/g,'\\,').replace(/;/g,'\\;').replace(/\[/g,'\\[').replace(/\]/g,'\\]').replace(/'/g,"\\'");
 function escText(s) {
-  const result = String(s ?? '')
-    .replace(/\\/g, '\\\\')
-    .replace(/:/g, '\\:')
-    .replace(/,/g, '\\,')
-    .replace(/;/g, '\\;')
-    .replace(/\[/g, '\\[')
+  // Escape EVERYTHING ffmpeg might interpret inside drawtext text=...
+  return String(s)
+    .replace(/\\/g, '\\\\')   // backslash first
+    .replace(/'/g, "\\'")     // apostrophe
+    .replace(/:/g, '\\:')     // option separator
+    .replace(/,/g, '\\,')     // filter separator
+    .replace(/;/g, '\\;')     // filterchain separator
+    .replace(/\[/g, '\\[')    // label delimiters
     .replace(/\]/g, '\\]')
-    .replace(/'/g, "\\'")
-    .replace(/\n/g, "\\n");
-  console.log('[ffmpeg] DEBUG - escText input:', s);
-  console.log('[ffmpeg] DEBUG - escText output:', result);
-  return result;
+    .replace(/\(/g, '\\(')    // expression args
+    .replace(/\)/g, '\\)')
+    .replace(/%/g, '\\%');    // format tokens
 }
 export function sanitizeFilter(graph) {
   const s = String(graph);
