@@ -101,6 +101,7 @@ const CreateShortSchema = z
       .object({
         text: z.string().trim().min(1).max(300),
         fontFamily: z.string().optional(),
+        fontWeight: z.string().optional(),
         fontSizePx: z.number().int().min(16).max(160),
         opacity: z.number().min(0).max(1).default(0.8),
         align: z.enum(["left","center","right"]).default("center"),
@@ -116,7 +117,7 @@ const CreateShortSchema = z
           paddingPx: z.number().int().min(0).max(64).optional(),
           radiusPx: z.number().int().min(0).max(64).optional(),
           bgAlpha: z.number().min(0).max(1).optional(),
-        }).optional(),
+        }).passthrough().optional(),
         wantBox: z.boolean().optional(),
         boxAlpha: z.number().min(0).max(1).optional(),
       })

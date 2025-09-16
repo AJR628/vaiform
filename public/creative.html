@@ -1286,12 +1286,16 @@
                     previewWidthPx
                 });
 
+                // Ensure font family/weight variables for parity with renderer
+                const family    = "DejaVu Sans Local";
+                const weightCss = (String(fontWeight).toLowerCase() === "bold") ? "700" : "400";
+
                 const caption = {
                     has: true,
                     text: (currentQuote?.text || '').trim(),
                     fittedText,
-                    fontFamily: previewFontFamily,
-                    fontWeight,
+                    fontFamily: family,
+                    fontWeight: (weightCss === "700") ? "bold" : "normal",
                     fontSizePx: Number.isFinite(captionStyle.sizePx) ? captionStyle.sizePx : 48,
                     opacity: Math.max(0, Math.min(1, captionStyle.opacity ?? 0.8)),
                     align: 'center',
