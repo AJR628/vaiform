@@ -411,25 +411,42 @@ export async function renderVideoQuoteOverlay({
     const wantBox = !!(caption.box && (caption.box.enabled || caption.wantBox));
     const boxAlpha = Math.max(0, Math.min(1, Number(caption.box?.alpha ?? caption.boxAlpha ?? 0)));
     
-    // Preview is authoritative - use captionResolved when present
+    // Preview is authoritative - normalize resolved values up front
     const R = captionResolved || null;
-    const finalFontPx = R ? R.fontPx        : fontPx;      // keep existing var names
-    const finalLineSp = R ? R.lineSpacing   : originalLineSp;
-    const textAlpha  = R ? R.textAlpha     : CAPTION_ALPHA;
-    const strokeW    = R ? R.strokeW       : STROKE_W;
-    const strokeA    = R ? R.strokeAlpha   : STROKE_ALPHA;
-    const shA        = R ? R.shadowAlpha   : SHADOW_ALPHA;
-    const shX        = R ? R.shadowX       : SHADOW_X;
-    const shY        = R ? R.shadowY       : SHADOW_Y;
-    const finalFontFile = R ? R.fontFile      : originalFontFile;
+    
+    // helpers (inline, no imports)
+    const clamp01 = v => Math.min(1, Math.max(0, Number(v)));
+    const num = (v, d) => {
+      const n = Number(v);
+      return Number.isFinite(n) ? n : d;
+    };
+    
+    // fallbacks keep current behavior when R is missing
+    const finalFontPx = num(R?.fontPx, fontPx);
+    const lineSpacing = num(R?.lineSpacing, originalLineSp);
+    const lineSp      = lineSpacing;               // ✅ alias used by existing template
+    const textAlpha   = clamp01(R?.textAlpha ?? 0.80);
+    const strokeW     = num(R?.strokeW, 3);
+    const strokeAlpha = clamp01(R?.strokeAlpha ?? 0.85);
+    const shadowAlpha = clamp01(R?.shadowAlpha ?? 0.55);
+    const shadowX     = num(R?.shadowX, 0);
+    const shadowY     = num(R?.shadowY, 2);
+    const fontFile    = R?.fontFile
+      ? `/usr/share/fonts/truetype/dejavu/${R.fontFile}`
+      : (wantBold
+          ? "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+          : "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf");
+    
+    // (optional but handy) one-time log so we can verify parity
+    console.log('[preflight]', { fontPx: finalFontPx, lineSpacing, textAlpha, strokeW, strokeAlpha, shadowAlpha, shadowX, shadowY, fontFile });
     
     const capDraws = [];
     for (let i = 0; i < n; i++) {
-      const lineY = Math.round(baseY + i * (finalFontPx + finalLineSp));
+      const lineY = Math.round(baseY + i * (finalFontPx + lineSp));
       const escLine = escFF(lines[i] || '');
       const yExpr = `'max(20\\,min(h-20-${finalFontPx}\\,${lineY}))'`;
       capDraws.push(
-        `drawtext=text='${escLine}':fontfile='/usr/share/fonts/truetype/dejavu/${finalFontFile}':x=${xFinal}:y=${yExpr}:fontsize=${finalFontPx}:fontcolor=white@${textAlpha}:line_spacing=${finalLineSp}:fix_bounds=1:text_shaping=1:borderw=${strokeW}:bordercolor=black@${strokeA}:shadowcolor=black@${shA}:shadowx=${shX}:shadowy=${shY}:box=${wantBox?1:0}:boxcolor=black@${BOX_BG_ALPHA}:boxborderw=0`
+        `drawtext=text='${escLine}':fontfile='${fontFile}':x=${xFinal}:y=${yExpr}:fontsize=${finalFontPx}:fontcolor=white@${textAlpha}:line_spacing=${lineSp}:fix_bounds=1:text_shaping=1:borderw=${strokeW}:bordercolor=black@${strokeAlpha}:shadowcolor=black@${shadowAlpha}:shadowx=${shadowX}:shadowy=${shadowY}:box=${wantBox?1:0}:boxcolor=black@${BOX_BG_ALPHA}:boxborderw=0`
       );
     }
 
