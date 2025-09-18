@@ -1,27 +1,59 @@
 // public/js/pricing.js
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
+import { getFirestore, doc, setDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
 
-// Firebase config (should match your existing config)
+// ✅ Vaiform project config
 const firebaseConfig = {
-  apiKey: "AIzaSyBvQcZQzQzQzQzQzQzQzQzQzQzQzQzQzQzQ",
+  apiKey: "AIzaSyBg9bqtZoTkC3vfEXk0vzLJAlTibXfjySY",
   authDomain: "vaiform.firebaseapp.com",
   projectId: "vaiform",
-  storageBucket: "vaiform.appspot.com",
-  messagingSenderId: "123456789012",
-  appId: "1:123456789012:web:abcdefghijklmnop"
+  storageBucket: "vaiform",
+  messagingSenderId: "798543382244",
+  appId: "1:798543382244:web:a826ce7ed8bebbe0b9cef1",
+  measurementId: "G-971DTZ5PEN"
 };
 
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
+const db = getFirestore(app);
 
 let currentUser = null;
+
+// Ensure user document exists with free plan setup
+async function ensureUserDoc(user) {
+  if (!user || !user.uid) return;
+  
+  try {
+    const ref = doc(db, "users", user.uid);
+    await setDoc(ref, {
+      email: user.email,
+      plan: "free",
+      isMember: false,
+      credits: 0,
+      shortDayKey: new Date().toISOString().slice(0, 10),
+      shortCountToday: 0,
+      membership: { 
+        kind: null, 
+        expiresAt: null, 
+        nextPaymentAt: null 
+      },
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp()
+    }, { merge: true });
+    
+    console.log(`[pricing] User doc ensured: ${user.uid} (${user.email})`);
+  } catch (error) {
+    console.error("Failed to ensure user doc:", error);
+  }
+}
 
 // Auth state listener
 onAuthStateChanged(auth, async (user) => {
   currentUser = user;
   if (user) {
+    await ensureUserDoc(user); // Ensure free plan setup
     await setupUser(user);
     updateUI();
   } else {
@@ -157,7 +189,9 @@ async function signIn() {
   const password = document.getElementById('authPassword').value;
   
   try {
-    await signInWithEmailAndPassword(auth, email, password);
+    const result = await signInWithEmailAndPassword(auth, email, password);
+    const user = result.user;
+    await ensureUserDoc(user); // Ensure free plan setup immediately after sign-in
     hideAuthModal();
   } catch (error) {
     alert('Sign in failed: ' + error.message);
@@ -169,7 +203,9 @@ async function signUp() {
   const password = document.getElementById('authPassword').value;
   
   try {
-    await createUserWithEmailAndPassword(auth, email, password);
+    const result = await createUserWithEmailAndPassword(auth, email, password);
+    const user = result.user;
+    await ensureUserDoc(user); // Ensure free plan setup immediately after sign-up
     hideAuthModal();
   } catch (error) {
     alert('Sign up failed: ' + error.message);

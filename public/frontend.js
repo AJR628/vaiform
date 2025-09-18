@@ -13,6 +13,34 @@ async function awaitAuthReadyOnce() {
   });
 }
 
+// Ensure user document exists with free plan setup
+async function ensureUserDoc(user) {
+  if (!user || !user.uid) return;
+  
+  try {
+    const ref = doc(db, "users", user.uid);
+    await setDoc(ref, {
+      email: user.email,
+      plan: "free",
+      isMember: false,
+      credits: 0,
+      shortDayKey: new Date().toISOString().slice(0, 10),
+      shortCountToday: 0,
+      membership: { 
+        kind: null, 
+        expiresAt: null, 
+        nextPaymentAt: null 
+      },
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp()
+    }, { merge: true });
+    
+    console.log(`[frontend] User doc ensured: ${user.uid} (${user.email})`);
+  } catch (error) {
+    console.error("Failed to ensure user doc:", error);
+  }
+}
+
 // Handy: get & copy a fresh Firebase ID token
 window.getIdTokenDebug = async (forceRefresh = true) => {
   await awaitAuthReadyOnce();
@@ -183,7 +211,11 @@ themeToggle?.addEventListener("click", () => {
 
 /* ========================= AUTH BUTTONS ========================= */
 loginBtn?.addEventListener("click", async () => {
-  try { await signInWithPopup(auth, provider); }
+  try { 
+    const result = await signInWithPopup(auth, provider);
+    const user = result.user;
+    await ensureUserDoc(user); // Ensure free plan setup immediately after sign-in
+  }
   catch (err) { console.error("Login failed:", err); }
 });
 
@@ -206,6 +238,9 @@ onAuthStateChanged(auth, async (user) => {
 
   currentUserEmail = user.email;
   if (emailHidden) emailHidden.value = currentUserEmail;
+
+  // Ensure user document exists with free plan setup
+  await ensureUserDoc(user);
 
   try {
     // Give api.mjs a brief moment to obtain the token via the bridge

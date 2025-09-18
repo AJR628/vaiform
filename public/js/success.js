@@ -2,14 +2,15 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
 import { getAuth, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
 
-// Firebase config (should match your existing config)
+// ✅ Vaiform project config
 const firebaseConfig = {
-  apiKey: "AIzaSyBvQcZQzQzQzQzQzQzQzQzQzQzQzQzQzQzQ",
+  apiKey: "AIzaSyBg9bqtZoTkC3vfEXk0vzLJAlTibXfjySY",
   authDomain: "vaiform.firebaseapp.com",
   projectId: "vaiform",
-  storageBucket: "vaiform.appspot.com",
-  messagingSenderId: "123456789012",
-  appId: "1:123456789012:web:abcdefghijklmnop"
+  storageBucket: "vaiform",
+  messagingSenderId: "798543382244",
+  appId: "1:798543382244:web:a826ce7ed8bebbe0b9cef1",
+  measurementId: "G-971DTZ5PEN"
 };
 
 // Initialize Firebase
