@@ -205,8 +205,8 @@ function buildVideoChain({ width, height, videoVignette, drawLayers }){
   // Fill portrait frame without letterboxing: scale to cover then crop
   const scale = `scale='if(gt(a,${W}/${H}),-2,${W})':'if(gt(a,${W}/${H}),${H},-2)'`;
   const crop = `crop=${W}:${H}`;
-  const core = [ scale, crop, (videoVignette ? 'vignette=PI/4:0.5' : null), 'format=yuv420p' ].filter(Boolean);
-  const vchain = makeChain('0:v', [ joinF(core), ...drawLayers ].filter(Boolean), 'vout');
+  const core = [ scale, crop, (videoVignette ? 'vignette=PI/4:0.5' : null), 'format=rgba' ].filter(Boolean);
+  const vchain = makeChain('0:v', [ joinF(core), ...drawLayers, 'format=yuv420p' ].filter(Boolean), 'vout');
   return vchain;
 }
 
@@ -837,7 +837,7 @@ export async function exportSocialImage({
 
   const scale = `scale='min(iw*${H}/ih\,${W})':'min(ih*${W}/iw\,${H})':force_original_aspect_ratio=decrease`;
   const pad = `pad=${W}:${H}:ceil((${W}-iw)/2):ceil((${H}-ih)/2)`;
-  const core = [ scale, pad, 'format=yuv420p', drawMain, drawAuthor, drawWatermark ].filter(Boolean);
+  const core = [ scale, pad, 'format=rgba', drawMain, drawAuthor, drawWatermark, 'format=yuv420p' ].filter(Boolean);
   const chain = makeChain('0:v', [ joinF(core) ], 'vout');
   const finalFilter = sanitizeFilter(chain);
 
