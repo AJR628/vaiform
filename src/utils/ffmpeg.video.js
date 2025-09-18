@@ -14,7 +14,7 @@ const CAPTION_FONT_REG  = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf";
 // Match preview look: slightly higher outline + soft drop shadow
 const CAPTION_ALPHA     = 0.80;   // white text opacity (preview uses ~80%)
 const STROKE_ALPHA      = 0.85;   // dark outline opacity
-const STROKE_W          = 3;      // outline width (was 2; bump for "full" look)
+const STROKE_W          = 3;      // outline width - matches preview styling
 const SHADOW_ALPHA      = 0.55;   // drop shadow opacity
 const SHADOW_X          = 0;      // no horizontal shift (keeps symmetry)
 const SHADOW_Y          = 2;      // slight vertical softness
@@ -372,7 +372,7 @@ export async function renderVideoQuoteOverlay({
     const originalLineSp = Math.max(0, Math.round(lsRaw * (fontPx / Math.max(1, Number(caption.fontSizePx) || 32))));
 
     // Preview is authoritative - normalize resolved values up front
-    const R = captionResolved || null;
+    const previewResolved = captionResolved || null;
     
     // helpers (inline, no imports)
     const clamp01 = v => Math.min(1, Math.max(0, Number(v)));
@@ -381,18 +381,18 @@ export async function renderVideoQuoteOverlay({
       return Number.isFinite(n) ? n : d;
     };
     
-    // fallbacks keep current behavior when R is missing
-    const finalFontPx = num(R?.fontPx, fontPx);
-    const lineSpacing = num(R?.lineSpacing, originalLineSp);
+    // fallbacks keep current behavior when previewResolved is missing
+    const finalFontPx = num(previewResolved?.fontPx, fontPx);
+    const lineSpacing = num(previewResolved?.lineSpacing, originalLineSp);
     const lineSp      = lineSpacing;               // ✅ alias used by existing template
-    const textAlpha   = clamp01(R?.textAlpha ?? 0.80);
-    const strokeW     = num(R?.strokeW, 3);
-    const strokeAlpha = clamp01(R?.strokeAlpha ?? 0.85);
-    const shadowAlpha = clamp01(R?.shadowAlpha ?? 0.55);
-    const shadowX     = num(R?.shadowX, 0);
-    const shadowY     = num(R?.shadowY, 2);
-    const fontFile    = R?.fontFile
-      ? `/usr/share/fonts/truetype/dejavu/${R.fontFile}`
+    const textAlpha   = clamp01(previewResolved?.textAlpha ?? 0.80);
+    const strokeW     = num(previewResolved?.strokeW, 3);
+    const strokeAlpha = clamp01(previewResolved?.strokeAlpha ?? 0.85);
+    const shadowAlpha = clamp01(previewResolved?.shadowAlpha ?? 0.55);
+    const shadowX     = num(previewResolved?.shadowX, 0);
+    const shadowY     = num(previewResolved?.shadowY, 2);
+    const fontFile    = previewResolved?.fontFile
+      ? `/usr/share/fonts/truetype/dejavu/${previewResolved.fontFile}`
       : (wantBold
           ? "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
           : "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf");
@@ -440,33 +440,23 @@ export async function renderVideoQuoteOverlay({
     const wantBox = !!(caption.box && (caption.box.enabled || caption.wantBox));
     const boxAlpha = Math.max(0, Math.min(1, Number(caption.box?.alpha ?? caption.boxAlpha ?? 0)));
     
-    // ---- Minimal helpers (inline in this file; do NOT export) ----
-    const _safeInt = (n, fallback) => Number.isFinite(Number(n)) ? Number(n) : fallback;
-
-    // Render video height is 1920; scale preview px -> render px 1:1 by height
-    const _calcRenderFontPx = (previewPx, previewH) => {
-      const px = _safeInt(previewPx, 28);
-      const ph = _safeInt(previewH, 685);
-      // Scale by height, clamp to sane bounds so nothing explodes on long quotes
-      return Math.max(24, Math.min(128, Math.round(px * 1920 / ph)));
-    };
-
-    // Empirically, preview line spacing ~ 0.22 * render font px (28->17 at 1920)
-    const _calcLineSpacing = (renderPx) => Math.round(renderPx * 0.22);
-
+    // ---- Use authoritative preview values when available ----
+    // captionResolved contains the exact values used in the preview - use these for perfect parity
+    const captionResolvedValues = captionResolved || null;
+    
     // Y origin in pixels from top, from preview yPct (default 12%)
     const _calcTopY = (yPct) => {
       const pct = Number.isFinite(Number(yPct)) ? Number(yPct) : 12;
       return Math.max(20, Math.round(1920 * pct / 100));
     };
 
-    // ---- Apply to current caption ----
-    const renderFontPx = _calcRenderFontPx(caption.fontSizePx, caption.previewHeightPx);
-    const renderLineSp = _calcLineSpacing(renderFontPx);
+    // Use preview-resolved values directly for perfect match
+    const renderFontPx = captionResolvedValues?.fontPx ?? caption.fontSizePx ?? 48;
+    const renderLineSp = captionResolvedValues?.lineSpacing ?? Math.round(renderFontPx * 0.25);
     const topY = _calcTopY(caption?.pos?.yPct);
     
-    const capTextAlpha = Number(caption?.opacity ?? 0.8);  // keep existing source
-    const capStrokeW = Math.max(2, Math.round(renderFontPx * 0.085)); // scale with size (~6–7 @78px)
+    const capTextAlpha = captionResolvedValues?.textAlpha ?? caption?.opacity ?? 0.8;
+    const capStrokeW = captionResolvedValues?.strokeW ?? STROKE_W; // Use preview's exact stroke width
 
     // Guard (avoid undefined var crash)
     const _lineSp = Number.isFinite(renderLineSp) ? renderLineSp : 12;
@@ -479,8 +469,8 @@ export async function renderVideoQuoteOverlay({
       lineSpacing: renderLineSp,
       textAlpha: capTextAlpha,
       strokeW: capStrokeW,
-      strokeAlpha: 0.85,
-      shadowAlpha: 0.35,
+      strokeAlpha: captionResolvedValues?.strokeAlpha ?? 0.85,
+      shadowAlpha: captionResolvedValues?.shadowAlpha ?? 0.35,
       fontFile: CAPTION_FONT_BOLD
     });
 
@@ -503,7 +493,7 @@ export async function renderVideoQuoteOverlay({
         `:y='${yExpr}'` +
         `:fontsize=${renderFontPx}` +
         `:line_spacing=${_lineSp}` +
-        `:fontcolor=black@0.35:borderw=0:shadowx=1:shadowy=1` +
+        `:fontcolor=black@${(captionResolvedValues?.shadowAlpha ?? 0.35).toFixed(2)}:borderw=0:shadowx=${captionResolvedValues?.shadowX ?? 1}:shadowy=${captionResolvedValues?.shadowY ?? 1}` +
         `:fix_bounds=1:text_shaping=1:box=0`
       );
 
@@ -515,7 +505,7 @@ export async function renderVideoQuoteOverlay({
         `:y='${yExpr}'` +
         `:fontsize=${renderFontPx}` +
         `:line_spacing=${_lineSp}` +
-        `:fontcolor=black@0.25:borderw=0:shadowx=2:shadowy=2` +
+        `:fontcolor=black@0.25:borderw=0:shadowx=${(captionResolvedValues?.shadowX ?? 1) + 1}:shadowy=${(captionResolvedValues?.shadowY ?? 1) + 1}` +
         `:fix_bounds=1:text_shaping=1:box=0`
       );
 
@@ -528,7 +518,7 @@ export async function renderVideoQuoteOverlay({
         `:fontsize=${renderFontPx}` +
         `:line_spacing=${_lineSp}` +
         `:fontcolor=white@${capTextAlpha.toFixed(2)}` +
-        `:borderw=${capStrokeW}:bordercolor=black@0.85` +
+        `:borderw=${capStrokeW}:bordercolor=black@${(captionResolvedValues?.strokeAlpha ?? 0.85).toFixed(2)}` +
         `:shadowx=0:shadowy=0` +
         `:fix_bounds=1:text_shaping=1:box=0`
       );
