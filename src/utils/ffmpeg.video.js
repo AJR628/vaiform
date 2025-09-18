@@ -435,62 +435,81 @@ export async function renderVideoQuoteOverlay({
       capText = lines.join('\n');
     }
 
-    // split into lines
-    const lines = capText.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
-    const n = Math.max(1, lines.length);
-
-    // block height like preview
-    const blockH = (n * finalFontPx) + ((n - 1) * lineSp);
-
-    // base Y from vAlign + yPct
-    const vRaw = String(caption.vAlign || 'top').toLowerCase();
-    const vAlign = (vRaw === 'center') ? 'middle' : vRaw;
-    const yPct = (caption.pos?.yPct ?? caption.yPct ?? 12) / 100;
-    let baseY = H * yPct;
-    if (vAlign === 'middle') baseY -= (blockH / 2);
-    else if (vAlign === 'bottom') baseY -= blockH;
-    // clamp block
-    baseY = Math.max(20, Math.min(H - 20 - blockH, baseY));
+    // This section is now handled by the pure painter approach above
 
     // per-line drawtext (centered x) — raw expression in single quotes; avoid escaping commas here
     const xFinal = `'max(20\\,min(w-20-text_w\\,(w*0.5)-text_w/2))'`;
     const wantBox = !!(caption.box && (caption.box.enabled || caption.wantBox));
     const boxAlpha = Math.max(0, Math.min(1, Number(caption.box?.alpha ?? caption.boxAlpha ?? 0)));
     
-    // ---- Use authoritative preview values when available ----
-    // captionResolved contains the exact values used in the preview - use these for perfect parity
-    const captionResolvedValues = captionResolved || null;
+    // ---- Pure painter approach: use captionResolved verbatim when available ----
+    const usingResolved = !!(captionResolved && captionResolved.fontPx);
     
-    // >>> ADD scaling helpers for preview -> render height conversion
-    const prevH = Number(caption.previewHeightPx) || 685; // fallback to current preview default
-    const SCALE = 1920 / prevH; // map preview height to render height
-
-    const scalePx = (v) => Math.round(Number(v || 0) * SCALE);
-    const scaleFloat = (v) => (Number(v || 0) * SCALE);
+    let fontPx, lineSpacing, strokeW, shadowX, shadowY, textAlpha, baseY, lines, n, _lineSp;
     
-    // Y origin in pixels from top, from preview yPct (default 12%)
-    const _calcTopY = (yPct) => {
-      const pct = Number.isFinite(Number(yPct)) ? Number(yPct) : 12;
-      return Math.max(20, Math.round(1920 * pct / 100));
-    };
+    if (usingResolved) {
+      // Frontend computed everything - use values verbatim, no scaling, no re-wrap
+      fontPx = Number(captionResolved.fontPx);
+      lineSpacing = Number(captionResolved.lineSpacing || Math.round(fontPx * 0.25));
+      strokeW = Number(captionResolved.strokeW || STROKE_W);
+      shadowX = Number(captionResolved.shadowX || 0);
+      shadowY = Number(captionResolved.shadowY || 2);
+      textAlpha = Number(captionResolved.textAlpha || 1.0);
+      const splitLines = captionResolved.splitLines || [];
+      
+      console.log(`[render] usingResolved=true fontPx=${fontPx} lineSpacing=${lineSpacing} strokeW=${strokeW} lines=${splitLines.length}`);
+      
+      // Use frontend's exact line breaks and positioning
+      lines = splitLines;
+      n = Math.max(1, lines.length);
+      
+      // Compute Y position from preview anchor (no scaling)
+      const yPct = Number(captionResolved.yPct || caption?.pos?.yPct || 12);
+      baseY = Math.round(H * yPct / 100);
+      
+    } else {
+      // Fallback: old behavior for backward compatibility
+      console.log('[render] usingResolved=false, falling back to legacy layout');
+      
+      // Y origin in pixels from top, from preview yPct (default 12%)
+      const _calcTopY = (yPct) => {
+        const pct = Number.isFinite(Number(yPct)) ? Number(yPct) : 12;
+        return Math.max(20, Math.round(1920 * pct / 100));
+      };
 
-    // Use preview-resolved values directly for perfect match, scaled to render height
-    const fontPx = scalePx(captionResolvedValues?.fontPx ?? caption.fontSizePx ?? 48);
-    const lineSpacing = scalePx(captionResolvedValues?.lineSpacing ?? Math.round((captionResolvedValues?.fontPx ?? caption.fontSizePx ?? 48) * 0.25));
-    const strokeW = Math.max(0, scalePx(captionResolvedValues?.strokeW ?? STROKE_W));
-    const shadowX = scalePx(captionResolvedValues?.shadowX ?? 0);
-    const shadowY = scalePx(captionResolvedValues?.shadowY ?? 2);
-    const textAlpha = Number(captionResolvedValues?.textAlpha ?? caption?.opacity ?? 0.8);
+      fontPx = Number(caption.fontSizePx ?? 48);
+      lineSpacing = Math.round(fontPx * 0.25);
+      strokeW = STROKE_W;
+      shadowX = 0;
+      shadowY = 2;
+      textAlpha = Number(caption?.opacity ?? 0.8);
+      baseY = _calcTopY(caption?.pos?.yPct);
+      
+      // Re-wrap text (legacy behavior)
+      const capTextRaw = String(caption.text || '').trim();
+      const contentW = Math.max(1, Math.round(W * 0.92));
+      const charW = 0.60 * fontPx;
+      const maxChars = Math.max(6, Math.floor(contentW / Math.max(1, charW)));
+      const words = capTextRaw.split(/\s+/);
+      lines = [];
+      let cur = '';
+      for (const w2 of words) {
+        const next = cur ? cur + ' ' + w2 : w2;
+        if (next.length <= maxChars) cur = next; else { if (cur) lines.push(cur); cur = w2; }
+      }
+      if (cur) lines.push(cur);
+      
+      n = Math.max(1, lines.length);
+    }
     
-    const topY = _calcTopY(caption?.pos?.yPct);
-
     // Guard (avoid undefined var crash)
-    const _lineSp = Number.isFinite(lineSpacing) ? lineSpacing : 12;
+    _lineSp = Number.isFinite(lineSpacing) ? lineSpacing : 12;
 
     // keep existing font path (must match ffmpeg logs)
     const CAPTION_FONT_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf";
 
-    console.log('[preflight]', { fontPx, lineSpacing, strokeW, shadowX, shadowY, textAlpha, SCALE, previewHeightPx: prevH });
+    // Final preflight log (variables are now in scope from either branch)
+    console.log('[preflight]', { fontPx, lineSpacing, strokeW, shadowX, shadowY, textAlpha, usingResolved });
 
     const capDraws = [];
     // For each caption line, push THREE layers:
@@ -498,7 +517,7 @@ export async function renderVideoQuoteOverlay({
     // 2) softening shadow pass B  
     // 3) main white text + scalable stroke
     for (let i = 0; i < n; i++) {
-      const lineY = Math.round(topY + i * (fontPx + _lineSp));
+      const lineY = Math.round(baseY + i * (fontPx + _lineSp));
       const line = lines[i] || '';
       const xExpr = xFinal;
       const yExpr = `'max(20\\,min(h-20-${fontPx}\\,${lineY}))'`;
@@ -511,7 +530,7 @@ export async function renderVideoQuoteOverlay({
         `:y='${yExpr}'` +
         `:fontsize=${fontPx}` +
         `:line_spacing=${_lineSp}` +
-        `:fontcolor=black@${(captionResolvedValues?.shadowAlpha ?? 0.35).toFixed(2)}:borderw=0:shadowx=${shadowX}:shadowy=${shadowY}` +
+        `:fontcolor=black@${(usingResolved ? (captionResolved?.shadowAlpha ?? 0.35) : 0.35).toFixed(2)}:borderw=0:shadowx=${shadowX}:shadowy=${shadowY}` +
         `:fix_bounds=1:text_shaping=1:box=0`
       );
 
@@ -536,7 +555,7 @@ export async function renderVideoQuoteOverlay({
         `:fontsize=${fontPx}` +
         `:line_spacing=${_lineSp}` +
         `:fontcolor=white@${textAlpha.toFixed(2)}` +
-        `:borderw=${strokeW}:bordercolor=black@${(captionResolvedValues?.strokeAlpha ?? 0.85).toFixed(2)}` +
+        `:borderw=${strokeW}:bordercolor=black@${(usingResolved ? (captionResolved?.strokeAlpha ?? 0.85) : 0.85).toFixed(2)}` +
         `:shadowx=0:shadowy=0` +
         `:fix_bounds=1:text_shaping=1:box=0`
       );
