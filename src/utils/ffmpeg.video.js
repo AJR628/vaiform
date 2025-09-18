@@ -440,17 +440,49 @@ export async function renderVideoQuoteOverlay({
     const wantBox = !!(caption.box && (caption.box.enabled || caption.wantBox));
     const boxAlpha = Math.max(0, Math.min(1, Number(caption.box?.alpha ?? caption.boxAlpha ?? 0)));
     
-    // --- Use preview-fitted metrics (already computed above) ---
-    const fitFontPx = fit.fontsize;          // e.g. 72–81 from [fit]
-    const fitLineSp = fit.lineSpacing;       // e.g. 12–17 from [fit]
+    // ---- Minimal helpers (inline in this file; do NOT export) ----
+    const _safeInt = (n, fallback) => Number.isFinite(Number(n)) ? Number(n) : fallback;
+
+    // Render video height is 1920; scale preview px -> render px 1:1 by height
+    const _calcRenderFontPx = (previewPx, previewH) => {
+      const px = _safeInt(previewPx, 28);
+      const ph = _safeInt(previewH, 685);
+      // Scale by height, clamp to sane bounds so nothing explodes on long quotes
+      return Math.max(24, Math.min(128, Math.round(px * 1920 / ph)));
+    };
+
+    // Empirically, preview line spacing ~ 0.22 * render font px (28->17 at 1920)
+    const _calcLineSpacing = (renderPx) => Math.round(renderPx * 0.22);
+
+    // Y origin in pixels from top, from preview yPct (default 12%)
+    const _calcTopY = (yPct) => {
+      const pct = Number.isFinite(Number(yPct)) ? Number(yPct) : 12;
+      return Math.max(20, Math.round(1920 * pct / 100));
+    };
+
+    // ---- Apply to current caption ----
+    const renderFontPx = _calcRenderFontPx(caption.fontSizePx, caption.previewHeightPx);
+    const renderLineSp = _calcLineSpacing(renderFontPx);
+    const topY = _calcTopY(caption?.pos?.yPct);
+    
     const capTextAlpha = Number(caption?.opacity ?? 0.8);  // keep existing source
-    const capStrokeW = Math.max(2, Math.round(fitFontPx * 0.085)); // scale with size (~6–7 @78px)
+    const capStrokeW = Math.max(2, Math.round(renderFontPx * 0.085)); // scale with size (~6–7 @78px)
 
     // Guard (avoid undefined var crash)
-    const _lineSp = Number.isFinite(fitLineSp) ? fitLineSp : 12;
+    const _lineSp = Number.isFinite(renderLineSp) ? renderLineSp : 12;
 
     // keep existing font path (must match ffmpeg logs)
     const CAPTION_FONT_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf";
+
+    console.log('[preflight]', {
+      fontPx: renderFontPx,
+      lineSpacing: renderLineSp,
+      textAlpha: capTextAlpha,
+      strokeW: capStrokeW,
+      strokeAlpha: 0.85,
+      shadowAlpha: 0.35,
+      fontFile: CAPTION_FONT_BOLD
+    });
 
     const capDraws = [];
     // For each caption line, push THREE layers:
@@ -458,10 +490,10 @@ export async function renderVideoQuoteOverlay({
     // 2) softening shadow pass B  
     // 3) main white text + scalable stroke
     for (let i = 0; i < n; i++) {
-      const lineY = Math.round(baseY + i * (fitFontPx + _lineSp));
+      const lineY = Math.round(topY + i * (renderFontPx + _lineSp));
       const line = lines[i] || '';
       const xExpr = xFinal;
-      const yExpr = `'max(20\\,min(h-20-${fitFontPx}\\,${lineY}))'`;
+      const yExpr = `'max(20\\,min(h-20-${renderFontPx}\\,${lineY}))'`;
 
       // pass A — subtle blur-ish base (no stroke)
       capDraws.push(
@@ -469,7 +501,7 @@ export async function renderVideoQuoteOverlay({
         `:fontfile='${CAPTION_FONT_BOLD}'` +
         `:x='${xExpr}'` +
         `:y='${yExpr}'` +
-        `:fontsize=${fitFontPx}` +
+        `:fontsize=${renderFontPx}` +
         `:line_spacing=${_lineSp}` +
         `:fontcolor=black@0.35:borderw=0:shadowx=1:shadowy=1` +
         `:fix_bounds=1:text_shaping=1:box=0`
@@ -481,7 +513,7 @@ export async function renderVideoQuoteOverlay({
         `:fontfile='${CAPTION_FONT_BOLD}'` +
         `:x='${xExpr}'` +
         `:y='${yExpr}'` +
-        `:fontsize=${fitFontPx}` +
+        `:fontsize=${renderFontPx}` +
         `:line_spacing=${_lineSp}` +
         `:fontcolor=black@0.25:borderw=0:shadowx=2:shadowy=2` +
         `:fix_bounds=1:text_shaping=1:box=0`
@@ -493,7 +525,7 @@ export async function renderVideoQuoteOverlay({
         `:fontfile='${CAPTION_FONT_BOLD}'` +
         `:x='${xExpr}'` +
         `:y='${yExpr}'` +
-        `:fontsize=${fitFontPx}` +
+        `:fontsize=${renderFontPx}` +
         `:line_spacing=${_lineSp}` +
         `:fontcolor=white@${capTextAlpha.toFixed(2)}` +
         `:borderw=${capStrokeW}:bordercolor=black@0.85` +
