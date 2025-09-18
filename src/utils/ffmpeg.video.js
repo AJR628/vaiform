@@ -440,13 +440,65 @@ export async function renderVideoQuoteOverlay({
     const wantBox = !!(caption.box && (caption.box.enabled || caption.wantBox));
     const boxAlpha = Math.max(0, Math.min(1, Number(caption.box?.alpha ?? caption.boxAlpha ?? 0)));
     
+    // --- Use preview-fitted metrics (already computed above) ---
+    const fitFontPx = fit.fontsize;          // e.g. 72–81 from [fit]
+    const fitLineSp = fit.lineSpacing;       // e.g. 12–17 from [fit]
+    const capTextAlpha = Number(caption?.opacity ?? 0.8);  // keep existing source
+    const capStrokeW = Math.max(2, Math.round(fitFontPx * 0.085)); // scale with size (~6–7 @78px)
+
+    // Guard (avoid undefined var crash)
+    const _lineSp = Number.isFinite(fitLineSp) ? fitLineSp : 12;
+
+    // keep existing font path (must match ffmpeg logs)
+    const CAPTION_FONT_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf";
+
     const capDraws = [];
+    // For each caption line, push THREE layers:
+    // 1) softening shadow pass A
+    // 2) softening shadow pass B  
+    // 3) main white text + scalable stroke
     for (let i = 0; i < n; i++) {
-      const lineY = Math.round(baseY + i * (finalFontPx + lineSp));
-      const escLine = escFF(lines[i] || '');
-      const yExpr = `'max(20\\,min(h-20-${finalFontPx}\\,${lineY}))'`;
+      const lineY = Math.round(baseY + i * (fitFontPx + _lineSp));
+      const line = lines[i] || '';
+      const xExpr = xFinal;
+      const yExpr = `'max(20\\,min(h-20-${fitFontPx}\\,${lineY}))'`;
+
+      // pass A — subtle blur-ish base (no stroke)
       capDraws.push(
-        `drawtext=text='${escLine}':fontfile='${fontFile}':x=${xFinal}:y=${yExpr}:fontsize=${finalFontPx}:fontcolor=white@${textAlpha}:line_spacing=${lineSp}:fix_bounds=1:text_shaping=1:borderw=${strokeW}:bordercolor=black@${strokeAlpha}:shadowcolor=black@${shadowAlpha}:shadowx=${shadowX}:shadowy=${shadowY}:box=${wantBox?1:0}:boxcolor=black@${BOX_BG_ALPHA}:boxborderw=0`
+        `drawtext=text='${escFF(line)}'` +
+        `:fontfile='${CAPTION_FONT_BOLD}'` +
+        `:x='${xExpr}'` +
+        `:y='${yExpr}'` +
+        `:fontsize=${fitFontPx}` +
+        `:line_spacing=${_lineSp}` +
+        `:fontcolor=black@0.35:borderw=0:shadowx=1:shadowy=1` +
+        `:fix_bounds=1:text_shaping=1:box=0`
+      );
+
+      // pass B — second soften pass (no stroke)
+      capDraws.push(
+        `drawtext=text='${escFF(line)}'` +
+        `:fontfile='${CAPTION_FONT_BOLD}'` +
+        `:x='${xExpr}'` +
+        `:y='${yExpr}'` +
+        `:fontsize=${fitFontPx}` +
+        `:line_spacing=${_lineSp}` +
+        `:fontcolor=black@0.25:borderw=0:shadowx=2:shadowy=2` +
+        `:fix_bounds=1:text_shaping=1:box=0`
+      );
+
+      // pass C — main text last (so stroke isn't dimmed)
+      capDraws.push(
+        `drawtext=text='${escFF(line)}'` +
+        `:fontfile='${CAPTION_FONT_BOLD}'` +
+        `:x='${xExpr}'` +
+        `:y='${yExpr}'` +
+        `:fontsize=${fitFontPx}` +
+        `:line_spacing=${_lineSp}` +
+        `:fontcolor=white@${capTextAlpha.toFixed(2)}` +
+        `:borderw=${capStrokeW}:bordercolor=black@0.85` +
+        `:shadowx=0:shadowy=0` +
+        `:fix_bounds=1:text_shaping=1:box=0`
       );
     }
 
