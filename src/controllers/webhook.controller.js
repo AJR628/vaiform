@@ -171,8 +171,54 @@ export async function stripeWebhook(req, res) {
           totalCredits += perUnit * qty;
         }
 
-        if (totalCredits > 0) {
-          // ✅ Use UID when available so we credit /users/{uid} (what your site reads)
+        // Check if this is a plan subscription (has plan metadata)
+        const plan = session?.metadata?.plan;
+        const billing = session?.metadata?.billing;
+        
+        if (plan && billing) {
+          // Handle plan subscription - update user membership status
+          const { ref: userRef } = await ensureUserDoc(email, uidHint);
+          
+          // Calculate bonus credits based on plan
+          const bonusCredits = plan === 'creator' ? 1500 : plan === 'pro' ? 3500 : 0;
+          
+          const membershipData = {
+            plan,
+            isMember: true,
+            membership: {
+              kind: billing,
+              plan,
+              ...(billing === 'onetime' && {
+                expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).getTime() // 30 days from now
+              })
+            },
+            credits: admin.firestore.FieldValue.increment(bonusCredits),
+          };
+          
+          await userRef.update(membershipData);
+          
+          // Record transaction for bonus credits
+          if (bonusCredits > 0) {
+            await userRef.collection("transactions").add({
+              type: "plan_bonus",
+              uid: uidHint || null,
+              email: email || null,
+              credits: bonusCredits,
+              plan,
+              billing,
+              amount: session.amount_total ?? null,
+              currency: session.currency ?? "usd",
+              stripeId: session.payment_intent || session.id,
+              status: "succeeded",
+              livemode,
+              createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+          }
+          
+          console.log(`✅ Plan activated: ${plan} ${billing} +${bonusCredits} credits → ${email || uidHint}`);
+          await eventRef.update({ status: "processed", email: email || null, uid: uidHint || null, plan, billing, bonusCredits });
+        } else if (totalCredits > 0) {
+          // Handle legacy credit pack purchases
           const { ref: userRef } = await ensureUserDoc(email, uidHint);
           await userRef.update({
             credits: admin.firestore.FieldValue.increment(totalCredits),

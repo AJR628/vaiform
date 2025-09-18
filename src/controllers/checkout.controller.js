@@ -124,6 +124,65 @@ export async function createSubscriptionSession(req, res) {
 }
 
 /**
+ * Plans & Pricing Checkout (Creator/Pro plans).
+ * Secured by requireAuth: req.user.{uid,email}
+ * Body: { plan: 'creator'|'pro', billing: 'monthly'|'onetime', uid: string, email: string }
+ */
+export async function startPlanCheckout(req, res) {
+  try {
+    const { plan, billing, uid, email } = req.body;
+    
+    // Validate inputs
+    if (!['creator', 'pro'].includes(plan)) {
+      return res.status(400).json({ ok: false, reason: "INVALID_PLAN", detail: "Plan must be 'creator' or 'pro'" });
+    }
+    if (!['monthly', 'onetime'].includes(billing)) {
+      return res.status(400).json({ ok: false, reason: "INVALID_BILLING", detail: "Billing must be 'monthly' or 'onetime'" });
+    }
+    if (!uid || !email) {
+      return res.status(400).json({ ok: false, reason: "MISSING_USER_DATA", detail: "uid and email are required" });
+    }
+
+    // Map plan + billing to Stripe price ID
+    const PRICE_MAP = {
+      "creator:monthly": process.env.STRIPE_PRICE_CREATOR_SUB,
+      "creator:onetime": process.env.STRIPE_PRICE_CREATOR_PASS,
+      "pro:monthly": process.env.STRIPE_PRICE_PRO_SUB,
+      "pro:onetime": process.env.STRIPE_PRICE_PRO_PASS,
+    };
+
+    const priceId = PRICE_MAP[`${plan}:${billing}`];
+    if (!priceId) {
+      return res.status(400).json({ ok: false, reason: "UNKNOWN_PRICE", detail: `No price configured for ${plan}:${billing}` });
+    }
+
+    const mode = billing === "monthly" ? "subscription" : "payment";
+    const FRONTEND = getFrontendBase(req);
+
+    const session = await stripe.checkout.sessions.create({
+      mode,
+      line_items: [{ price: priceId, quantity: 1 }],
+      customer_email: email,
+      success_url: `${FRONTEND}/success?plan=${plan}`,
+      cancel_url: `${FRONTEND}/pricing`,
+      metadata: { uid, email, plan, billing },
+      ...(mode === "subscription" && {
+        payment_method_collection: "always",
+        subscription_data: {
+          metadata: { uid, email, plan, billing },
+        },
+      }),
+    });
+
+    console.info(`[checkout/start] ${plan} ${billing} uid=${uid} email=${email} → ${session.url}`);
+    return res.json({ url: session.url });
+  } catch (e) {
+    console.error("[checkout/start] error", e);
+    return res.status(500).json({ ok: false, reason: "CHECKOUT_FAILED", detail: e?.message || "Checkout failed" });
+  }
+}
+
+/**
  * Billing Portal (Manage subscription / payment methods / invoices).
  * No body needed.
  */

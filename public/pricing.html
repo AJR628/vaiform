@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Plans & Pricing - Vaiform</title>
+    <link rel="stylesheet" href="creative.css">
+    <style>
+        .pricing-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+        
+        .pricing-header {
+            text-align: center;
+            margin-bottom: 3rem;
+        }
+        
+        .pricing-header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 1rem;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        .pricing-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 2rem;
+            margin-bottom: 3rem;
+        }
+        
+        .pricing-card {
+            background: white;
+            border-radius: 12px;
+            padding: 2rem;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+            border: 2px solid transparent;
+            transition: all 0.3s ease;
+            position: relative;
+        }
+        
+        .pricing-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.15);
+        }
+        
+        .pricing-card.popular {
+            border-color: #667eea;
+            transform: scale(1.05);
+        }
+        
+        .pricing-card.popular::before {
+            content: "Most Popular";
+            position: absolute;
+            top: -12px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 0.5rem 1rem;
+            border-radius: 20px;
+            font-size: 0.875rem;
+            font-weight: 600;
+        }
+        
+        .plan-name {
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+        }
+        
+        .plan-price {
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin-bottom: 1rem;
+        }
+        
+        .plan-price .currency {
+            font-size: 1.5rem;
+            vertical-align: top;
+        }
+        
+        .plan-features {
+            list-style: none;
+            padding: 0;
+            margin: 1.5rem 0;
+        }
+        
+        .plan-features li {
+            padding: 0.5rem 0;
+            display: flex;
+            align-items: center;
+        }
+        
+        .plan-features li::before {
+            content: "✓";
+            color: #10b981;
+            font-weight: bold;
+            margin-right: 0.75rem;
+            font-size: 1.2rem;
+        }
+        
+        .plan-buttons {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+        
+        .btn-plan {
+            padding: 0.75rem 1.5rem;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            text-align: center;
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+        }
+        
+        .btn-secondary {
+            background: #f3f4f6;
+            color: #374151;
+            border: 2px solid #e5e7eb;
+        }
+        
+        .btn-secondary:hover {
+            background: #e5e7eb;
+        }
+        
+        .btn-free {
+            background: #10b981;
+            color: white;
+        }
+        
+        .btn-free:hover {
+            background: #059669;
+            transform: translateY(-2px);
+        }
+        
+        .auth-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .auth-modal.show {
+            display: flex;
+        }
+        
+        .auth-modal-content {
+            background: white;
+            padding: 2rem;
+            border-radius: 12px;
+            max-width: 400px;
+            width: 90%;
+            text-align: center;
+        }
+        
+        .loading {
+            display: none;
+        }
+        
+        .loading.show {
+            display: inline-block;
+        }
+        
+        .user-info {
+            background: #f8fafc;
+            padding: 1rem;
+            border-radius: 8px;
+            margin-bottom: 2rem;
+            text-align: center;
+        }
+        
+        .plan-badge {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            border-radius: 20px;
+            font-size: 0.875rem;
+            font-weight: 600;
+            margin-left: 0.5rem;
+        }
+        
+        .plan-badge.free {
+            background: #d1fae5;
+            color: #065f46;
+        }
+        
+        .plan-badge.creator {
+            background: #dbeafe;
+            color: #1e40af;
+        }
+        
+        .plan-badge.pro {
+            background: #f3e8ff;
+            color: #6b21a8;
+        }
+    </style>
+</head>
+<body>
+    <div class="pricing-container">
+        <div class="pricing-header">
+            <h1>Plans & Pricing</h1>
+            <p>Choose the perfect plan for your content creation needs</p>
+        </div>
+        
+        <div id="userInfo" class="user-info" style="display: none;">
+            <p>Welcome back! <span id="userEmail"></span> <span id="planBadge" class="plan-badge"></span></p>
+        </div>
+        
+        <div class="pricing-grid">
+            <!-- Free Plan -->
+            <div class="pricing-card">
+                <div class="plan-name">Free</div>
+                <div class="plan-price">
+                    <span class="currency">$</span>0
+                    <span style="font-size: 1rem; font-weight: normal; color: #6b7280;">/month</span>
+                </div>
+                <ul class="plan-features">
+                    <li>Use your quote or pick from our 50-quote bank</li>
+                    <li>Up to 4 shorts/day</li>
+                    <li>Watermarked exports</li>
+                    <li>Basic templates</li>
+                </ul>
+                <div class="plan-buttons">
+                    <button id="startFreeBtn" class="btn-plan btn-free">Start Free</button>
+                </div>
+            </div>
+            
+            <!-- Creator Plan -->
+            <div class="pricing-card popular">
+                <div class="plan-name">Creator</div>
+                <div class="plan-price">
+                    <span class="currency">$</span>9.99
+                    <span style="font-size: 1rem; font-weight: normal; color: #6b7280;">/month</span>
+                </div>
+                <ul class="plan-features">
+                    <li>100 shorts/month</li>
+                    <li>No watermark</li>
+                    <li>AI quote engine + premium voices/styles</li>
+                    <li>+1,500 bonus credits</li>
+                    <li>All templates</li>
+                </ul>
+                <div class="plan-buttons">
+                    <button id="startCreatorMonthlyBtn" class="btn-plan btn-primary">Start Monthly</button>
+                    <button id="startCreatorPassBtn" class="btn-plan btn-secondary">One-Month Pass</button>
+                </div>
+            </div>
+            
+            <!-- Pro Plan -->
+            <div class="pricing-card">
+                <div class="plan-name">Pro</div>
+                <div class="plan-price">
+                    <span class="currency">$</span>19.99
+                    <span style="font-size: 1rem; font-weight: normal; color: #6b7280;">/month</span>
+                </div>
+                <ul class="plan-features">
+                    <li>250 shorts/month</li>
+                    <li>No watermark</li>
+                    <li>Advanced editing • Priority rendering</li>
+                    <li>+3,500 bonus credits</li>
+                    <li>All templates + premium features</li>
+                </ul>
+                <div class="plan-buttons">
+                    <button id="startProMonthlyBtn" class="btn-plan btn-primary">Start Monthly</button>
+                    <button id="startProPassBtn" class="btn-plan btn-secondary">One-Month Pass</button>
+                </div>
+            </div>
+        </div>
+        
+        <div style="text-align: center; color: #6b7280; font-size: 0.875rem;">
+            <p>All plans include secure payment processing via Stripe. Cancel anytime.</p>
+        </div>
+    </div>
+    
+    <!-- Auth Modal -->
+    <div id="authModal" class="auth-modal">
+        <div class="auth-modal-content">
+            <h3>Sign up to get started</h3>
+            <p>Create your free account to start making shorts</p>
+            <div id="firebaseui-auth-container"></div>
+            <button id="closeAuthModal" class="btn-plan btn-secondary" style="margin-top: 1rem;">Close</button>
+        </div>
+    </div>
+    
+    <script type="module" src="js/pricing.js"></script>
+</body>
+</html>

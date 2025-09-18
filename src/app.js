@@ -201,6 +201,11 @@ if (routes?.creative) {
   console.log("✅ Mounted creative at /creative");
 }
 
+// Mount user routes
+import userRoutes from "./src/routes/user.routes.js";
+app.use("/api/user", userRoutes);
+console.log("✅ Mounted user routes at /api/user");
+
 // ---------- STATIC LAST (disable directory redirects like /dir -> /dir/) ----------
 // --- SPA static hosting (after API routes) ---
 try {

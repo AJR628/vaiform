@@ -8,9 +8,14 @@ import {
   createSubscriptionSession,
   createBillingPortalSession,
 } from "../controllers/checkout.controller.js";
+import { startPlanCheckout } from "../controllers/checkout.controller.js";
 
 const router = Router();
 
+// New Plans & Pricing checkout
+router.post("/start", requireAuth, startPlanCheckout);
+
+// Legacy credit pack routes (keep alive but hidden)
 // One-time (single charge)
 router.post("/session", requireAuth, validate(checkoutSessionSchema), createCheckoutSession);
 

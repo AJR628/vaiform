@@ -267,6 +267,12 @@ export async function createShort(req, res) {
     const overrideQuote = effectiveText ? { text: effectiveText } : undefined;
     try { console.log("[shorts] incoming caption:", caption ? { has: true, len: (caption.text||'').length, pos: caption.position || caption.pos, fontSizePx: caption.fontSizePx, opacity: caption.opacity, align: caption.align, vAlign: caption.vAlign, previewHeightPx: caption.previewHeightPx } : { has:false }); } catch {}
     const result = await createShortService({ ownerUid, mode, text, template, durationSec, voiceover, wantAttribution, background, debugAudioPath, captionMode, includeBottomCaption, watermark, captionStyle, caption, captionResolved, voiceId, overrideQuote });
+    
+    // Increment daily short count for free users after successful creation
+    if (req.incrementShortCount) {
+      await req.incrementShortCount();
+    }
+    
     return res.json({ success: true, data: result });
   } catch (e) {
     const msg = e?.message || "Short creation failed";

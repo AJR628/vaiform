@@ -1,133 +1,108 @@
 <!DOCTYPE html>
-<html lang="en" class="dark transition-colors duration-300">
+<html lang="en">
 <head>
-  <!-- Respect saved theme before paint -->
-  <script>
-    if (localStorage.getItem("theme") === "dark") {
-      document.documentElement.classList.add("dark");
-    } else {
-      document.documentElement.classList.remove("dark");
-    }
-  </script>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Success — Vaiform</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script> tailwind.config = { darkMode: 'class' }; </script>
-</head>
-<body class="bg-gray-50 text-gray-800 dark:bg-gray-900 dark:text-gray-100 font-sans min-h-screen flex flex-col">
-
-  <!-- Header -->
-  <header class="bg-white dark:bg-gray-800 shadow sticky top-0 z-50">
-    <div class="max-w-6xl mx-auto px-4 py-4 flex justify-between items-center">
-      <div class="flex items-center gap-6">
-        <h1 class="text-2xl font-bold text-indigo-600 dark:text-indigo-400">
-          <a href="/">Vaiform</a>
-        </h1>
-        <nav class="space-x-4 text-sm font-medium text-gray-600 dark:text-gray-300">
-          <a href="/" class="hover:text-indigo-600 dark:hover:text-indigo-400">Home</a>
-          <a href="/my-images.html" class="hover:text-indigo-600 dark:hover:text-indigo-400">My Images</a>
-          <a href="/buy-credits.html" class="hover:text-indigo-600 dark:hover:text-indigo-400">Buy Credits</a>
-        </nav>
-      </div>
-      <div class="flex items-center gap-4">
-        <div id="credit-display" class="text-sm text-gray-600 dark:text-gray-300 logged-in hidden">
-          Credits: <span id="credit-count">--</span>
-        </div>
-        <!-- Auth buttons (auto-toggled by /frontend.js) -->
-        <button id="login-button"  class="px-3 py-1 rounded-lg bg-indigo-600 text-white text-sm hover:bg-indigo-700 logged-out hidden">Log in</button>
-        <button id="logout-button" class="px-3 py-1 rounded-lg bg-gray-200 dark:bg-gray-700 text-sm hover:bg-gray-300 dark:hover:bg-gray-600 logged-in hidden">Log out</button>
-
-        <button id="theme-toggle" class="text-yellow-400 hover:text-yellow-300 text-xl" title="Toggle theme">🌙</button>
-      </div>
-    </div>
-  </header>
-
-  <!-- Main -->
-  <main class="flex-1 max-w-3xl mx-auto w-full px-4 py-12">
-    <div class="text-center mb-8">
-      <h2 class="text-3xl font-semibold">🎉 Payment Successful</h2>
-      <p class="text-gray-600 dark:text-gray-400 mt-2">
-        Your credits have been added to your account.
-      </p>
-      <p id="session-note" class="text-xs text-gray-500 dark:text-gray-400 mt-1"></p>
-    </div>
-
-    <div class="flex justify-center gap-3">
-      <a href="/" class="inline-block bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg">
-        Generate Images
-      </a>
-      <a href="/my-images.html" class="inline-block bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-800 dark:text-gray-100 px-4 py-2 rounded-lg">
-        View My Images
-      </a>
-    </div>
-
-    <div class="mt-10 text-center text-sm text-gray-500 dark:text-gray-400">
-      <p>Tip: If your credit number hasn’t updated yet, click the “Credits” badge in the header to refresh.</p>
-    </div>
-  </main>
-
-  <footer class="text-center text-sm text-gray-500 py-6 dark:text-gray-400">
-    <span>© 2025 Vaiform. All rights reserved.</span>
-  </footer>
-
-  <!-- Toast -->
-  <div id="toast" class="fixed bottom-5 left-1/2 -translate-x-1/2 bg-gray-900 text-white px-4 py-2 rounded-lg text-sm hidden z-50"></div>
-
-  <!-- Shared header/auth/credits code -->
-  <script type="module" src="/js/config.js"></script>
-
-  <!-- Page logic: refresh credits + show session id -->
-  <script type="module">
-    import { auth, BACKEND_URL } from "/js/config.js";
-    import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-
-    const BASE_URL = (BACKEND_URL || "").replace(/\/+$/, "");
-    const toastEl = document.getElementById("toast");
-    const sessionNote = document.getElementById("session-note");
-    const creditDisplay = document.getElementById("credit-display");
-    const creditCount = document.getElementById("credit-count");
-
-    function toast(msg, ms = 2200) {
-      if (!toastEl) return;
-      toastEl.textContent = msg;
-      toastEl.classList.remove("hidden");
-      setTimeout(() => toastEl.classList.add("hidden"), ms);
-    }
-
-    // Show a small receipt hint if Stripe returned the session_id in the URL
-    const qp = new URLSearchParams(location.search);
-    const sid = qp.get("session_id");
-    if (sid && sessionNote) {
-      sessionNote.textContent = `Receipt reference: ${sid}`;
-    }
-
-    // Force a fresh credit fetch on this page
-    async function refreshCreditsNow(user) {
-      try {
-        const t = await user.getIdToken(true);
-        const res = await fetch(`${BASE_URL}/credits`, {
-          headers: { Authorization: `Bearer ${t}` }
-        });
-        const data = await res.json().catch(() => ({}));
-        if (res.ok && typeof data?.credits === "number") {
-          creditCount.textContent = String(data.credits);
-          creditDisplay?.classList.remove("hidden");
-          toast("✅ Credits updated!");
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Success - Vaiform</title>
+    <link rel="stylesheet" href="creative.css">
+    <style>
+        .success-container {
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 2rem;
+            text-align: center;
         }
-      } catch (e) {
-        console.warn("Credit refresh failed:", e);
-      }
-    }
-
-    onAuthStateChanged(auth, async (user) => {
-      if (!user) {
-        sessionStorage.setItem("vaiform_toast", "Please sign in to continue.");
-        location.href = "/";
-        return;
-      }
-      await refreshCreditsNow(user);
-    });
-  </script>
+        
+        .success-icon {
+            font-size: 4rem;
+            color: #10b981;
+            margin-bottom: 1rem;
+        }
+        
+        .success-title {
+            font-size: 2rem;
+            font-weight: 700;
+            margin-bottom: 1rem;
+            color: #1f2937;
+        }
+        
+        .success-message {
+            font-size: 1.125rem;
+            color: #6b7280;
+            margin-bottom: 2rem;
+        }
+        
+        .plan-info {
+            background: #f8fafc;
+            padding: 1.5rem;
+            border-radius: 8px;
+            margin-bottom: 2rem;
+        }
+        
+        .plan-badge {
+            display: inline-block;
+            padding: 0.5rem 1rem;
+            border-radius: 20px;
+            font-weight: 600;
+            margin-bottom: 1rem;
+        }
+        
+        .plan-badge.creator {
+            background: #dbeafe;
+            color: #1e40af;
+        }
+        
+        .plan-badge.pro {
+            background: #f3e8ff;
+            color: #6b21a8;
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 0.75rem 2rem;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-block;
+            transition: all 0.3s ease;
+        }
+        
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+        }
+        
+        .loading {
+            display: none;
+        }
+        
+        .loading.show {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <div class="success-container">
+        <div class="success-icon">✅</div>
+        <h1 class="success-title">Payment Successful!</h1>
+        <p class="success-message">Your plan has been activated. You're all set to start creating amazing content!</p>
+        
+        <div id="planInfo" class="plan-info" style="display: none;">
+            <div id="planBadge" class="plan-badge"></div>
+            <h3 id="planName"></h3>
+            <p id="planDetails"></p>
+        </div>
+        
+        <div id="loading" class="loading">
+            <p>Activating your plan...</p>
+        </div>
+        
+        <a href="/studio" class="btn-primary">Go to Studio</a>
+    </div>
+    
+    <script type="module" src="js/success.js"></script>
 </body>
 </html>
