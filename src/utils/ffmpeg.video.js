@@ -371,46 +371,6 @@ export async function renderVideoQuoteOverlay({
     const lsRaw = Math.round((Number(caption.fontSizePx) || 32) * 0.20);
     const originalLineSp = Math.max(0, Math.round(lsRaw * (fontPx / Math.max(1, Number(caption.fontSizePx) || 32))));
 
-    // text (prefer preview-fitted)
-    let capText = fittedFromPreview || '';
-    if (!capText) {
-      // fallback heuristic (kept from previous logic)
-      const contentW = Math.max(1, Math.round(W * 0.92));
-      const charW = 0.60 * fontPx;
-      const maxChars = Math.max(6, Math.floor(contentW / Math.max(1, charW)));
-      const words = capTextRaw.split(/\s+/);
-      const lines = [];
-      let cur = '';
-      for (const w2 of words) {
-        const next = cur ? cur + ' ' + w2 : w2;
-        if (next.length <= maxChars) cur = next; else { if (cur) lines.push(cur); cur = w2; }
-      }
-      if (cur) lines.push(cur);
-      capText = lines.join('\n');
-    }
-
-    // split into lines
-    const lines = capText.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
-    const n = Math.max(1, lines.length);
-
-    // block height like preview
-    const blockH = (n * fontPx) + ((n - 1) * lineSp);
-
-    // base Y from vAlign + yPct
-    const vRaw = String(caption.vAlign || 'top').toLowerCase();
-    const vAlign = (vRaw === 'center') ? 'middle' : vRaw;
-    const yPct = (caption.pos?.yPct ?? caption.yPct ?? 12) / 100;
-    let baseY = H * yPct;
-    if (vAlign === 'middle') baseY -= (blockH / 2);
-    else if (vAlign === 'bottom') baseY -= blockH;
-    // clamp block
-    baseY = Math.max(20, Math.min(H - 20 - blockH, baseY));
-
-    // per-line drawtext (centered x) — raw expression in single quotes; avoid escaping commas here
-    const xFinal = `'max(20\\,min(w-20-text_w\\,(w*0.5)-text_w/2))'`;
-    const wantBox = !!(caption.box && (caption.box.enabled || caption.wantBox));
-    const boxAlpha = Math.max(0, Math.min(1, Number(caption.box?.alpha ?? caption.boxAlpha ?? 0)));
-    
     // Preview is authoritative - normalize resolved values up front
     const R = captionResolved || null;
     
@@ -439,6 +399,46 @@ export async function renderVideoQuoteOverlay({
     
     // (optional but handy) one-time log so we can verify parity
     console.log('[preflight]', { fontPx: finalFontPx, lineSpacing, textAlpha, strokeW, strokeAlpha, shadowAlpha, shadowX, shadowY, fontFile });
+
+    // text (prefer preview-fitted)
+    let capText = fittedFromPreview || '';
+    if (!capText) {
+      // fallback heuristic (kept from previous logic)
+      const contentW = Math.max(1, Math.round(W * 0.92));
+      const charW = 0.60 * finalFontPx;
+      const maxChars = Math.max(6, Math.floor(contentW / Math.max(1, charW)));
+      const words = capTextRaw.split(/\s+/);
+      const lines = [];
+      let cur = '';
+      for (const w2 of words) {
+        const next = cur ? cur + ' ' + w2 : w2;
+        if (next.length <= maxChars) cur = next; else { if (cur) lines.push(cur); cur = w2; }
+      }
+      if (cur) lines.push(cur);
+      capText = lines.join('\n');
+    }
+
+    // split into lines
+    const lines = capText.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+    const n = Math.max(1, lines.length);
+
+    // block height like preview
+    const blockH = (n * finalFontPx) + ((n - 1) * lineSp);
+
+    // base Y from vAlign + yPct
+    const vRaw = String(caption.vAlign || 'top').toLowerCase();
+    const vAlign = (vRaw === 'center') ? 'middle' : vRaw;
+    const yPct = (caption.pos?.yPct ?? caption.yPct ?? 12) / 100;
+    let baseY = H * yPct;
+    if (vAlign === 'middle') baseY -= (blockH / 2);
+    else if (vAlign === 'bottom') baseY -= blockH;
+    // clamp block
+    baseY = Math.max(20, Math.min(H - 20 - blockH, baseY));
+
+    // per-line drawtext (centered x) — raw expression in single quotes; avoid escaping commas here
+    const xFinal = `'max(20\\,min(w-20-text_w\\,(w*0.5)-text_w/2))'`;
+    const wantBox = !!(caption.box && (caption.box.enabled || caption.wantBox));
+    const boxAlpha = Math.max(0, Math.min(1, Number(caption.box?.alpha ?? caption.boxAlpha ?? 0)));
     
     const capDraws = [];
     for (let i = 0; i < n; i++) {
