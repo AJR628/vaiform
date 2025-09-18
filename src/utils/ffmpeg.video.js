@@ -443,9 +443,15 @@ export async function renderVideoQuoteOverlay({
     const boxAlpha = Math.max(0, Math.min(1, Number(caption.box?.alpha ?? caption.boxAlpha ?? 0)));
     
     // ---- Pure painter approach: use captionResolved verbatim when available ----
-    const usingResolved = !!(captionResolved && captionResolved.fontPx);
+    let usingResolved = !!(captionResolved && captionResolved.fontPx && Array.isArray(captionResolved.splitLines) && captionResolved.splitLines.length > 0);
     
     let fontPx, lineSpacing, strokeW, shadowX, shadowY, textAlpha, baseY, lines, n, _lineSp;
+    
+    // Safety check: if we have captionResolved but no valid splitLines, fall back
+    if (captionResolved && captionResolved.fontPx && (!Array.isArray(captionResolved.splitLines) || captionResolved.splitLines.length === 0)) {
+      console.log('[render] captionResolved present but splitLines missing/empty; falling back to server layout');
+      usingResolved = false;
+    }
     
     if (usingResolved) {
       // Frontend computed everything - use values verbatim, no scaling, no re-wrap
@@ -485,21 +491,26 @@ export async function renderVideoQuoteOverlay({
       textAlpha = Number(caption?.opacity ?? 0.8);
       baseY = _calcTopY(caption?.pos?.yPct);
       
-      // Re-wrap text (legacy behavior)
-      const capTextRaw = String(caption.text || '').trim();
-      const contentW = Math.max(1, Math.round(W * 0.92));
-      const charW = 0.60 * fontPx;
-      const maxChars = Math.max(6, Math.floor(contentW / Math.max(1, charW)));
-      const words = capTextRaw.split(/\s+/);
-      lines = [];
-      let cur = '';
-      for (const w2 of words) {
-        const next = cur ? cur + ' ' + w2 : w2;
-        if (next.length <= maxChars) cur = next; else { if (cur) lines.push(cur); cur = w2; }
+      // Re-wrap text (legacy behavior) - get text from caption or captionText
+      const capTextRaw = String(caption.text || captionText || '').trim();
+      if (capTextRaw) {
+        const contentW = Math.max(1, Math.round(W * 0.92));
+        const charW = 0.60 * fontPx;
+        const maxChars = Math.max(6, Math.floor(contentW / Math.max(1, charW)));
+        const words = capTextRaw.split(/\s+/);
+        lines = [];
+        let cur = '';
+        for (const w2 of words) {
+          const next = cur ? cur + ' ' + w2 : w2;
+          if (next.length <= maxChars) cur = next; else { if (cur) lines.push(cur); cur = w2; }
+        }
+        if (cur) lines.push(cur);
+      } else {
+        lines = [];
       }
-      if (cur) lines.push(cur);
       
       n = Math.max(1, lines.length);
+      console.log(`[render] legacy layout: fontPx=${fontPx} lineSpacing=${lineSpacing} lines=${lines.length} text="${capTextRaw}"`);
     }
     
     // Guard (avoid undefined var crash)
@@ -512,13 +523,23 @@ export async function renderVideoQuoteOverlay({
     console.log('[preflight]', { fontPx, lineSpacing, strokeW, shadowX, shadowY, textAlpha, usingResolved });
 
     const capDraws = [];
-    // For each caption line, push THREE layers:
-    // 1) softening shadow pass A
-    // 2) softening shadow pass B  
-    // 3) main white text + scalable stroke
-    for (let i = 0; i < n; i++) {
+    
+    // Safety: if no valid lines, don't create any drawtext commands
+    if (!lines || lines.length === 0 || lines.every(line => !line.trim())) {
+      console.log('[render] no valid caption lines to draw');
+      drawCaption = '';
+    } else {
+      // For each caption line, push THREE layers:
+      // 1) softening shadow pass A
+      // 2) softening shadow pass B  
+      // 3) main white text + scalable stroke
+      for (let i = 0; i < n; i++) {
       const lineY = Math.round(baseY + i * (fontPx + _lineSp));
       const line = lines[i] || '';
+      
+      // Skip empty lines to avoid drawtext=text=''
+      if (!line.trim()) continue;
+      
       const xExpr = xFinal;
       const yExpr = `'max(20\\,min(h-20-${fontPx}\\,${lineY}))'`;
 
@@ -559,9 +580,10 @@ export async function renderVideoQuoteOverlay({
         `:shadowx=0:shadowy=0` +
         `:fix_bounds=1:text_shaping=1:box=0`
       );
-    }
+      }
 
-    drawCaption = capDraws.join(',');
+      drawCaption = capDraws.join(',');
+    }
   } else if (captionText && String(captionText).trim()) {
     // Back-compat: simple bottom caption with safe wrapping
     const CANVAS_W = W;
