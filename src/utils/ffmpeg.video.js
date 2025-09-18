@@ -415,7 +415,7 @@ export async function renderVideoQuoteOverlay({
           : "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf");
     
     // (optional but handy) one-time log so we can verify parity
-    console.log('[preflight]', { fontPx: finalFontPx, lineSpacing, textAlpha, strokeW, strokeAlpha, shadowAlpha, shadowX, shadowY, fontFile });
+    console.log('[preflight]', { fontPx: finalFontPx, lineSpacing: oldLineSpacing, textAlpha: oldTextAlpha, strokeW: oldStrokeW, strokeAlpha, shadowAlpha, shadowX: oldShadowX, shadowY: oldShadowY, fontFile });
 
     // text (prefer preview-fitted)
     let capText = fittedFromPreview || '';
