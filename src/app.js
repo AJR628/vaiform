@@ -202,7 +202,7 @@ if (routes?.creative) {
 }
 
 // Mount user routes
-import userRoutes from "./src/routes/user.routes.js";
+import userRoutes from "./routes/user.routes.js";
 app.use("/api/user", userRoutes);
 console.log("✅ Mounted user routes at /api/user");
 
