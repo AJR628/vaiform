@@ -49,6 +49,23 @@ function escFF(text) {
     .replace(/\[/g, '\\[')
     .replace(/\]/g, '\\]');
 }
+
+// Escapes text for FFmpeg drawtext (filter-syntax, not shell)
+function escapeForDrawtext(s = '') {
+  return String(s)
+    // order matters; escape backslash first
+    .replace(/\\/g, '\\\\')
+    // characters that break option parsing in drawtext:
+    .replace(/:/g, '\\:')
+    .replace(/,/g, '\\,')
+    .replace(/;/g, '\\;')
+    .replace(/\[/g, '\\[')
+    .replace(/\]/g, '\\]')
+    .replace(/%/g, '\\%')
+    // quotes & newlines
+    .replace(/'/g, "\\'")
+    .replace(/\r?\n/g, '\\n');
+}
 export function sanitizeFilter(graph) {
   const s = String(graph);
   // Protect quoted substrings so we don't touch spaces/newlines inside drawtext text='...'
@@ -337,7 +354,7 @@ export async function renderVideoQuoteOverlay({
   })() : '';
   const drawWatermark = watermark ? `drawtext=${[
     `fontfile='${effFont.replace(/\\/g,'/').replace(/^([A-Za-z]):\//, "$1\\:/")}'`,
-    `text='${escText(watermarkText || 'Vaiform')}'`,
+    `text='${escapeForDrawtext(watermarkText || 'Vaiform')}'`,
     `x=w-tw-${watermarkPadding}`, `y=h-th-${watermarkPadding}`,
     `fontsize=${watermarkFontSize}`, 'fontcolor=white',
     'shadowcolor=black','shadowx=2','shadowy=2','borderw=2','bordercolor=black@0.85','box=0'
@@ -487,7 +504,7 @@ export async function renderVideoQuoteOverlay({
 
       // pass A — subtle blur-ish base (no stroke)
       capDraws.push(
-        `drawtext=text='${escFF(line)}'` +
+        `drawtext=text='${escapeForDrawtext(line)}'` +
         `:fontfile='${CAPTION_FONT_BOLD}'` +
         `:x='${xExpr}'` +
         `:y='${yExpr}'` +
@@ -499,7 +516,7 @@ export async function renderVideoQuoteOverlay({
 
       // pass B — second soften pass (no stroke)
       capDraws.push(
-        `drawtext=text='${escFF(line)}'` +
+        `drawtext=text='${escapeForDrawtext(line)}'` +
         `:fontfile='${CAPTION_FONT_BOLD}'` +
         `:x='${xExpr}'` +
         `:y='${yExpr}'` +
@@ -511,7 +528,7 @@ export async function renderVideoQuoteOverlay({
 
       // pass C — main text last (so stroke isn't dimmed)
       capDraws.push(
-        `drawtext=text='${escFF(line)}'` +
+        `drawtext=text='${escapeForDrawtext(line)}'` +
         `:fontfile='${CAPTION_FONT_BOLD}'` +
         `:x='${xExpr}'` +
         `:y='${yExpr}'` +
@@ -531,7 +548,7 @@ export async function renderVideoQuoteOverlay({
     const CANVAS_H = H;
     const cap = wrapCaption(captionText, CANVAS_W, CANVAS_H, { maxLines: 2, fontMax: 64, fontMin: 28 });
     drawCaption = `drawtext=${[
-      `text='${escText(cap.text)}'`,
+      `text='${escapeForDrawtext(cap.text)}'`,
       `fontfile='${effFont.replace(/\\/g,'/').replace(/^([A-Za-z]):\//, "$1\\:/")}'`,
       `x=(w-text_w)/2`,
       `y=${cap.yExpr}`,
