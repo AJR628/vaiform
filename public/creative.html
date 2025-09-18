@@ -1290,6 +1290,21 @@
                 const family    = "DejaVu Sans Local";
                 const weightCss = (String(fontWeight).toLowerCase() === "bold") ? "700" : "400";
 
+                // Capture preview's resolved metrics for authoritative rendering
+                const captionResolved = {
+                    fontFamily: family,
+                    weightCss: (weightCss === "700") ? "bold" : "normal",
+                    fontFile: (weightCss === "700") ? "DejaVuSans-Bold.ttf" : "DejaVuSans.ttf",
+                    fontPx: Number.isFinite(captionStyle.sizePx) ? captionStyle.sizePx : 48,
+                    lineSpacing: Math.round(((Number.isFinite(captionStyle.sizePx)?captionStyle.sizePx:48) * 0.25)),
+                    textAlpha: Math.max(0, Math.min(1, captionStyle.opacity ?? 0.8)),
+                    strokeW: 3,
+                    strokeAlpha: 0.85,
+                    shadowAlpha: 0.55,
+                    shadowX: 0,
+                    shadowY: 2
+                };
+
                 const caption = {
                     has: true,
                     text: (currentQuote?.text || '').trim(),
@@ -1338,6 +1353,8 @@
                     // Add caption style settings
                     captionStyle,
                     caption,
+                    // Preview is authoritative - send resolved metrics
+                    captionResolved,
                     // Provide captionText for videos only
                     captionText: finalCaptionText,
                     // Ensure TTS has content for both image/video flows

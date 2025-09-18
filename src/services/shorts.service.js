@@ -24,7 +24,7 @@ export function finalizeQuoteText(mode, text) {
   return t;
 }
 
-export async function createShortService({ ownerUid, mode, text, template, durationSec, voiceover = false, wantAttribution = true, background = { kind: "solid" }, debugAudioPath, captionMode = "static", includeBottomCaption = false, watermark, overrideQuote, captionStyle, caption, voiceId }) {
+export async function createShortService({ ownerUid, mode, text, template, durationSec, voiceover = false, wantAttribution = true, background = { kind: "solid" }, debugAudioPath, captionMode = "static", includeBottomCaption = false, watermark, overrideQuote, captionStyle, caption, captionResolved, voiceId }) {
   if (!ownerUid) throw new Error("MISSING_UID");
 
   const jobId = `shorts-${Date.now().toString(36)}-${Math.random().toString(36).slice(2,7)}`;
@@ -198,6 +198,7 @@ export async function createShortService({ ownerUid, mode, text, template, durat
             captionText: includeBottomCaption === true ? ((caption && caption.text) || usedQuote.text) : null,
             captionStyle,
             caption: includeBottomCaption === true ? caption : null,
+            captionResolved,
             watermark: watermarkFinal,
             watermarkText: "Vaiform"
           });
@@ -248,6 +249,7 @@ export async function createShortService({ ownerUid, mode, text, template, durat
             captionText: includeBottomCaption === true ? ((caption && caption.text) || usedQuote.text) : null,
             captionStyle,
             caption: includeBottomCaption === true ? caption : null,
+            captionResolved,
             watermark: watermarkFinal,
             watermarkText: "Vaiform"
           });
@@ -373,6 +375,7 @@ export async function createShortService({ ownerUid, mode, text, template, durat
           haveBgAudio,
           captionText: includeBottomCaption === true ? ((caption && caption.text) || usedQuote.text) : null,
           caption: includeBottomCaption === true ? caption : null,
+          captionResolved,
         });
         // annotate meta via closure var? We'll include via meta build below
         // For parity with others, nothing else here; mux will run later

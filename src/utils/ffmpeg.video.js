@@ -260,6 +260,7 @@ export async function renderVideoQuoteOverlay({
   text, authorLine,
   captionText,
   caption,
+  captionResolved,
   // style bundle
   fontfile, fontcolor = 'white', fontsize = 72, lineSpacing = 12, shadowColor = 'black', shadowX = 2, shadowY = 2,
   box = 1, boxcolor = 'black@0.35', boxborderw = 24,
@@ -363,12 +364,12 @@ export async function renderVideoQuoteOverlay({
       String(caption.fontWeight || '').toLowerCase() === 'bold' ||
       Number(caption.fontWeight) >= 600 ||
       /bold/i.test(String(caption.fontFamily || ''));
-    const fontFile = wantBold ? fontFileBold : fontFileRegular;
+    const originalFontFile = wantBold ? fontFileBold : fontFileRegular;
 
     // opacity + line spacing
     const op = Math.max(0, Math.min(1, Number(caption.opacity ?? 0.8)));
     const lsRaw = Math.round((Number(caption.fontSizePx) || 32) * 0.20);
-    const lineSp = Math.max(0, Math.round(lsRaw * (fontPx / Math.max(1, Number(caption.fontSizePx) || 32))));
+    const originalLineSp = Math.max(0, Math.round(lsRaw * (fontPx / Math.max(1, Number(caption.fontSizePx) || 32))));
 
     // text (prefer preview-fitted)
     let capText = fittedFromPreview || '';
@@ -409,13 +410,26 @@ export async function renderVideoQuoteOverlay({
     const xFinal = `'max(20\\,min(w-20-text_w\\,(w*0.5)-text_w/2))'`;
     const wantBox = !!(caption.box && (caption.box.enabled || caption.wantBox));
     const boxAlpha = Math.max(0, Math.min(1, Number(caption.box?.alpha ?? caption.boxAlpha ?? 0)));
+    
+    // Preview is authoritative - use captionResolved when present
+    const R = captionResolved || null;
+    const finalFontPx = R ? R.fontPx        : fontPx;      // keep existing var names
+    const finalLineSp = R ? R.lineSpacing   : originalLineSp;
+    const textAlpha  = R ? R.textAlpha     : CAPTION_ALPHA;
+    const strokeW    = R ? R.strokeW       : STROKE_W;
+    const strokeA    = R ? R.strokeAlpha   : STROKE_ALPHA;
+    const shA        = R ? R.shadowAlpha   : SHADOW_ALPHA;
+    const shX        = R ? R.shadowX       : SHADOW_X;
+    const shY        = R ? R.shadowY       : SHADOW_Y;
+    const finalFontFile = R ? R.fontFile      : originalFontFile;
+    
     const capDraws = [];
     for (let i = 0; i < n; i++) {
-      const lineY = Math.round(baseY + i * (fontPx + lineSp));
+      const lineY = Math.round(baseY + i * (finalFontPx + finalLineSp));
       const escLine = escFF(lines[i] || '');
-      const yExpr = `'max(20\\,min(h-20-${fontPx}\\,${lineY}))'`;
+      const yExpr = `'max(20\\,min(h-20-${finalFontPx}\\,${lineY}))'`;
       capDraws.push(
-        `drawtext=text='${escLine}':fontfile='${CAPTION_FONT_BOLD}':x=${xFinal}:y=${yExpr}:fontsize=${fontPx}:fontcolor=white@${CAPTION_ALPHA}:line_spacing=0:fix_bounds=1:text_shaping=1:borderw=${STROKE_W}:bordercolor=black@${STROKE_ALPHA}:shadowcolor=black@${SHADOW_ALPHA}:shadowx=${SHADOW_X}:shadowy=${SHADOW_Y}:box=${wantBox?1:0}:boxcolor=black@${BOX_BG_ALPHA}:boxborderw=0`
+        `drawtext=text='${escLine}':fontfile='/usr/share/fonts/truetype/dejavu/${finalFontFile}':x=${xFinal}:y=${yExpr}:fontsize=${finalFontPx}:fontcolor=white@${textAlpha}:line_spacing=${finalLineSp}:fix_bounds=1:text_shaping=1:borderw=${strokeW}:bordercolor=black@${strokeA}:shadowcolor=black@${shA}:shadowx=${shX}:shadowy=${shY}:box=${wantBox?1:0}:boxcolor=black@${BOX_BG_ALPHA}:boxborderw=0`
       );
     }
 
