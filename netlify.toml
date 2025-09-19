@@ -1,20 +1,17 @@
-[build]
-  publish = "studio-web/dist"
-
-[[headers]]
-  for = "/*"
-  [headers.values]
-    Cache-Control = "no-store"
-
-[build]
-  publish = "public"
-
-[[headers]]
-  for = "/*"
-  [headers.values]
-    Cache-Control = "public, max-age=0, must-revalidate"
+[[redirects]]
+  from = "/api/*"
+  to   = "https://17e0d1d1-e327-483d-b1ea-c41bea08fb59-00-1ef93t84nlhq6.janeway.replit.dev/:splat"
+  status = 200
+  force = true
 
 [[redirects]]
+  from = "/stripe/webhook"
+  to   = "https://17e0d1d1-e327-483d-b1ea-c41bea08fb59-00-1ef93t84nlhq6.janeway.replit.dev/stripe/webhook"
+  status = 200
+  force = true
+
+# SPA fallback
+[[redirects]]
   from = "/*"
-  to = "/index.html"
+  to   = "/index.html"
   status = 200
