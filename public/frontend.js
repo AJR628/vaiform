@@ -1,8 +1,8 @@
 // /frontend.js
 import { auth, db, ensureUserDoc } from "./js/firebaseClient.js";
 import { BACKEND_URL, UPSCALE_COST } from "./js/config.js";
-import { onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
-import { doc, getDoc, updateDoc, increment } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { doc, getDoc, updateDoc, increment } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { apiFetch, setTokenProvider } from "./api.mjs";
 
 /* ========================= DEV HELPERS ========================= */
@@ -28,6 +28,7 @@ window.getIdTokenDebug = async (forceRefresh = true) => {
 
 /* ========================= DOM ========================= */
 const loginBtn = document.getElementById("login-button");
+const signupBtn = document.getElementById("signup-button");
 const logoutBtn = document.getElementById("logout-button");
 const creditDisplay = document.getElementById("credit-display");
 const creditCount = document.getElementById("credit-count");
@@ -185,6 +186,10 @@ themeToggle?.addEventListener("click", () => {
 
 /* ========================= AUTH BUTTONS ========================= */
 loginBtn?.addEventListener("click", () => {
+  window.location.href = "/pricing?auth=open";
+});
+
+signupBtn?.addEventListener("click", () => {
   window.location.href = "/pricing?auth=open";
 });
 

@@ -1,7 +1,7 @@
 // public/js/pricing.js
 import { auth, db, ensureUserDoc } from "/js/firebaseClient.js";
 import { uiSignIn, uiSignUp, uiGoogle, routeAfterAuth } from "/js/pricingAuthHandlers.js";
-import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
 let currentUser = null;
 

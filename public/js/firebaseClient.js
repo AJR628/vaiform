@@ -1,9 +1,9 @@
 // public/js/firebaseClient.js
-import { initializeApp, getApps } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-import { getAuth } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
-import { getFirestore, doc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { initializeApp, getApps } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getAuth } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { getFirestore, doc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
-// ✅ Firebase Web SDK config (from console)
+// ✅ Firebase Web SDK config (from console) - using same config as working config.js
 const firebaseConfig = {
   apiKey: "AIzaSyBg9bqtZoTkC3vfEXk0vzLJAlTibXfjySY",
   authDomain: "vaiform.firebaseapp.com",
