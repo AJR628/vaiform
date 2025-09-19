@@ -2,7 +2,7 @@ import { Router } from "express";
 import generateRouter from "./generate.routes.js";
 import creditsRouter from "./credits.routes.js";
 import healthRouter from "./health.routes.js";
-import webhookRouter from "./webhook.routes.js";
+import webhookRouter from "./stripe.webhook.js";
 import enhanceRouter from "./enhance.routes.js";
 import checkoutRouter from "./checkout.routes.js";
 import diagRouter from "./diag.routes.js";
