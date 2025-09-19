@@ -1,21 +1,6 @@
 // public/js/success.js
-import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
-import { getAuth, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
-
-// ✅ Vaiform project config
-const firebaseConfig = {
-  apiKey: "AIzaSyBg9bqtZoTkC3vfEXk0vzLJAlTibXfjySY",
-  authDomain: "vaiform.firebaseapp.com",
-  projectId: "vaiform",
-  storageBucket: "vaiform",
-  messagingSenderId: "798543382244",
-  appId: "1:798543382244:web:a826ce7ed8bebbe0b9cef1",
-  measurementId: "G-971DTZ5PEN"
-};
-
-// Initialize Firebase
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
+import { auth, ensureUserDoc } from "/js/firebaseClient.js";
+import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 
 let currentUser = null;
 
@@ -23,6 +8,7 @@ let currentUser = null;
 onAuthStateChanged(auth, async (user) => {
   currentUser = user;
   if (user) {
+    await ensureUserDoc(user); // Ensure free plan setup
     await checkUserPlan();
   }
 });

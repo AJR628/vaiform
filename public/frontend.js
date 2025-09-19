@@ -1,7 +1,8 @@
 // /frontend.js
-import { auth, db, provider, BACKEND_URL, UPSCALE_COST } from "./js/config.js";
-import { signInWithPopup, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { doc, getDoc, setDoc, updateDoc, serverTimestamp, increment } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { auth, db, ensureUserDoc } from "./js/firebaseClient.js";
+import { BACKEND_URL, UPSCALE_COST } from "./js/config.js";
+import { onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+import { doc, getDoc, updateDoc, increment } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { apiFetch, setTokenProvider } from "./api.mjs";
 
 /* ========================= DEV HELPERS ========================= */
@@ -13,33 +14,6 @@ async function awaitAuthReadyOnce() {
   });
 }
 
-// Ensure user document exists with free plan setup
-async function ensureUserDoc(user) {
-  if (!user || !user.uid) return;
-  
-  try {
-    const ref = doc(db, "users", user.uid);
-    await setDoc(ref, {
-      email: user.email,
-      plan: "free",
-      isMember: false,
-      credits: 0,
-      shortDayKey: new Date().toISOString().slice(0, 10),
-      shortCountToday: 0,
-      membership: { 
-        kind: null, 
-        expiresAt: null, 
-        nextPaymentAt: null 
-      },
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp()
-    }, { merge: true });
-    
-    console.log(`[frontend] User doc ensured: ${user.uid} (${user.email})`);
-  } catch (error) {
-    console.error("Failed to ensure user doc:", error);
-  }
-}
 
 // Handy: get & copy a fresh Firebase ID token
 window.getIdTokenDebug = async (forceRefresh = true) => {
@@ -210,13 +184,8 @@ themeToggle?.addEventListener("click", () => {
 });
 
 /* ========================= AUTH BUTTONS ========================= */
-loginBtn?.addEventListener("click", async () => {
-  try { 
-    const result = await signInWithPopup(auth, provider);
-    const user = result.user;
-    await ensureUserDoc(user); // Ensure free plan setup immediately after sign-in
-  }
-  catch (err) { console.error("Login failed:", err); }
+loginBtn?.addEventListener("click", () => {
+  window.location.href = "/pricing?auth=open";
 });
 
 logoutBtn?.addEventListener("click", async () => {

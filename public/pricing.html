@@ -299,7 +299,24 @@
         <div class="auth-modal-content">
             <h3>Sign up to get started</h3>
             <p>Create your free account to start making shorts</p>
-            <div id="firebaseui-auth-container"></div>
+            
+            <!-- Google Sign In -->
+            <button id="googleSignInBtn" class="btn-plan btn-primary" style="width: 100%; margin-bottom: 1rem;">
+                Sign in with Google
+            </button>
+            
+            <div style="text-align: center; margin: 1rem 0; color: #6b7280;">or</div>
+            
+            <!-- Email/Password Form -->
+            <div id="emailAuthForm">
+                <div style="margin-bottom: 1rem;">
+                    <input type="email" id="authEmail" placeholder="Email" style="width: 100%; padding: 0.75rem; margin-bottom: 0.5rem; border: 1px solid #d1d5db; border-radius: 4px;">
+                    <input type="password" id="authPassword" placeholder="Password" style="width: 100%; padding: 0.75rem; margin-bottom: 0.5rem; border: 1px solid #d1d5db; border-radius: 4px;">
+                </div>
+                <button id="signInBtn" class="btn-plan btn-primary" style="margin-right: 0.5rem;">Sign In</button>
+                <button id="signUpBtn" class="btn-plan btn-secondary">Sign Up</button>
+            </div>
+            
             <button id="closeAuthModal" class="btn-plan btn-secondary" style="margin-top: 1rem;">Close</button>
         </div>
     </div>

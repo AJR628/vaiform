@@ -1,53 +1,10 @@
 // public/js/pricing.js
-import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
-import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
-import { getFirestore, doc, setDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
-
-// ✅ Vaiform project config
-const firebaseConfig = {
-  apiKey: "AIzaSyBg9bqtZoTkC3vfEXk0vzLJAlTibXfjySY",
-  authDomain: "vaiform.firebaseapp.com",
-  projectId: "vaiform",
-  storageBucket: "vaiform",
-  messagingSenderId: "798543382244",
-  appId: "1:798543382244:web:a826ce7ed8bebbe0b9cef1",
-  measurementId: "G-971DTZ5PEN"
-};
-
-// Initialize Firebase
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const db = getFirestore(app);
+import { auth, db, ensureUserDoc } from "/js/firebaseClient.js";
+import { uiSignIn, uiSignUp, uiGoogle, routeAfterAuth } from "/js/pricingAuthHandlers.js";
+import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 
 let currentUser = null;
 
-// Ensure user document exists with free plan setup
-async function ensureUserDoc(user) {
-  if (!user || !user.uid) return;
-  
-  try {
-    const ref = doc(db, "users", user.uid);
-    await setDoc(ref, {
-      email: user.email,
-      plan: "free",
-      isMember: false,
-      credits: 0,
-      shortDayKey: new Date().toISOString().slice(0, 10),
-      shortCountToday: 0,
-      membership: { 
-        kind: null, 
-        expiresAt: null, 
-        nextPaymentAt: null 
-      },
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp()
-    }, { merge: true });
-    
-    console.log(`[pricing] User doc ensured: ${user.uid} (${user.email})`);
-  } catch (error) {
-    console.error("Failed to ensure user doc:", error);
-  }
-}
 
 // Auth state listener
 onAuthStateChanged(auth, async (user) => {
@@ -124,24 +81,25 @@ function hideUserInfo() {
 
 // Checkout functions
 async function startCheckout(plan, billing) {
-  if (!currentUser) {
+  const user = auth.currentUser;
+  if (!user) {
     showAuthModal();
     return;
   }
   
   try {
-    const token = await currentUser.getIdToken();
+    const idToken = await user.getIdToken(true);
     const response = await fetch('/api/checkout/start', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${token}`,
+        'Authorization': `Bearer ${idToken}`,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
         plan,
         billing,
-        uid: currentUser.uid,
-        email: currentUser.email
+        uid: user.uid,
+        email: user.email
       })
     });
     
@@ -162,21 +120,6 @@ async function startCheckout(plan, billing) {
 function showAuthModal() {
   const modal = document.getElementById('authModal');
   modal.classList.add('show');
-  
-  // Simple email/password auth form
-  const authContainer = document.getElementById('firebaseui-auth-container');
-  authContainer.innerHTML = `
-    <div style="margin-bottom: 1rem;">
-      <input type="email" id="authEmail" placeholder="Email" style="width: 100%; padding: 0.75rem; margin-bottom: 0.5rem; border: 1px solid #d1d5db; border-radius: 4px;">
-      <input type="password" id="authPassword" placeholder="Password" style="width: 100%; padding: 0.75rem; margin-bottom: 0.5rem; border: 1px solid #d1d5db; border-radius: 4px;">
-    </div>
-    <button id="signInBtn" class="btn-plan btn-primary" style="margin-right: 0.5rem;">Sign In</button>
-    <button id="signUpBtn" class="btn-plan btn-secondary">Sign Up</button>
-  `;
-  
-  // Add event listeners
-  document.getElementById('signInBtn').addEventListener('click', signIn);
-  document.getElementById('signUpBtn').addEventListener('click', signUp);
 }
 
 function hideAuthModal() {
@@ -189,12 +132,11 @@ async function signIn() {
   const password = document.getElementById('authPassword').value;
   
   try {
-    const result = await signInWithEmailAndPassword(auth, email, password);
-    const user = result.user;
-    await ensureUserDoc(user); // Ensure free plan setup immediately after sign-in
+    const user = await uiSignIn(email, password);
     hideAuthModal();
+    await routeAfterAuth(user);
   } catch (error) {
-    alert('Sign in failed: ' + error.message);
+    alert(error.message);
   }
 }
 
@@ -203,17 +145,22 @@ async function signUp() {
   const password = document.getElementById('authPassword').value;
   
   try {
-    const result = await createUserWithEmailAndPassword(auth, email, password);
-    const user = result.user;
-    await ensureUserDoc(user); // Ensure free plan setup immediately after sign-up
+    const user = await uiSignUp(email, password);
     hideAuthModal();
+    await routeAfterAuth(user);
   } catch (error) {
-    alert('Sign up failed: ' + error.message);
+    alert(error.message);
   }
 }
 
 // Event listeners
 document.addEventListener('DOMContentLoaded', () => {
+  // Auto-open auth modal if ?auth=open in URL
+  const params = new URLSearchParams(location.search);
+  if (params.get("auth") === "open") {
+    showAuthModal();
+  }
+
   // Free plan button
   document.getElementById('startFreeBtn').addEventListener('click', () => {
     if (currentUser) {
@@ -249,6 +196,17 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('authModal').addEventListener('click', (e) => {
     if (e.target.id === 'authModal') {
       hideAuthModal();
+    }
+  });
+
+  // Google sign-in button
+  document.getElementById('googleSignInBtn').addEventListener('click', async () => {
+    try {
+      const user = await uiGoogle();
+      hideAuthModal();
+      await routeAfterAuth(user);
+    } catch (error) {
+      alert(error.message);
     }
   });
 });
