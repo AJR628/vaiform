@@ -99,6 +99,10 @@ async function resolveUidHint({ email = null, session = null, invoice = null }) 
 
 // ---- main handler -----------------------------------------------------------
 export async function stripeWebhook(req, res) {
+  console.log(`[webhook] Received webhook request: ${req.method} ${req.url}`);
+  console.log(`[webhook] Headers:`, req.headers);
+  console.log(`[webhook] Body length:`, req.body?.length || 0);
+  
   if (!WEBHOOK_SECRET) {
     console.error("❌ Missing STRIPE_WEBHOOK_SECRET; cannot verify Stripe signatures.");
     return res.status(500).json({ success: false, error: 'Webhook misconfigured' });

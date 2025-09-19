@@ -20,7 +20,7 @@ import whoamiRoutes from "./routes/whoami.routes.js";
 import creditsRoutes from "./routes/credits.routes.js";
 import diagRoutes from "./routes/diag.routes.js";
 import generateRoutes from "./routes/generate.routes.js";
-import webhookRoutes from "./routes/webhook.routes.js";
+// Old webhook routes removed - using /stripe/webhook instead
 import { getCreditsHandler } from "./handlers/credits.get.js";
 import diagHeadersRoutes from "./routes/diag.headers.routes.js";
 import cdnRoutes from "./routes/cdn.routes.js";
@@ -65,7 +65,11 @@ app.use(cors({
   credentials: true
 }));
 
-// ---------- Parsers FIRST ----------
+// ---------- Stripe webhook FIRST (before JSON parser) ----------
+import stripeWebhookRoutes from "./routes/stripe.webhook.js";
+app.use("/stripe/webhook", stripeWebhookRoutes);
+
+// ---------- Parsers AFTER webhook ----------
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
@@ -80,9 +84,6 @@ if (DBG) {
   });
 }
 
-// ---------- Stripe webhook: raw body ONLY here ----------
-app.post("/webhook", express.raw({ type: "application/json" }), webhookRoutes);
-
 // GET-only trailing-slash normalizer (skip API paths)
 app.use((req, res, next) => {
   if (req.method !== "GET") return next();
@@ -93,7 +94,7 @@ app.use((req, res, next) => {
     p.startsWith("/whoami")   ||
     p.startsWith("/diag")     ||
     p.startsWith("/health")   ||
-    p.startsWith("/webhook")  ||
+    p.startsWith("/stripe/webhook")  ||
     p.startsWith("/api/")
   ) return next();
   if (p.length > 1 && p.endsWith("/")) {
