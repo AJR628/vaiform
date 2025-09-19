@@ -1,17 +1,23 @@
 import express from "express";
 import Stripe from "stripe";
+import admin from "../config/firebase.js";
 
 const router = express.Router();
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
+  apiVersion: "2025-06-30.basil",
+});
 
 // POST /stripe/webhook must use raw body
 router.post("/", express.raw({ type: "application/json" }), async (req, res) => {
+  console.log("[webhook] hit", new Date().toISOString());
+  
   let event;
   try {
     const sig = req.headers["stripe-signature"];
     event = stripe.webhooks.constructEvent(req.body, sig, process.env.STRIPE_WEBHOOK_SECRET);
+    console.log("[webhook] type:", event.type);
   } catch (err) {
-    console.error("[stripe] signature verification failed:", err.message);
+    console.error("[webhook] signature verification failed:", err.message);
     return res.status(400).send(`Webhook Error: ${err.message}`);
   }
 
@@ -19,28 +25,73 @@ router.post("/", express.raw({ type: "application/json" }), async (req, res) => 
     switch (event.type) {
       case "checkout.session.completed": {
         const session = event.data.object;
-        // TODO: resolve user (uid/email from session.metadata)
-        // TODO: set isMember=true, plan from metadata.plan, kind from mode, credit top-up
+        console.log("[webhook] session metadata:", session.metadata);
+        
+        if (session.metadata?.uid && session.metadata?.plan) {
+          await grantCreditsAndUpdatePlan(session.metadata);
+        }
         break;
       }
       case "invoice.payment_succeeded": {
         // TODO: subscription renewal → top up credits, update nextPaymentAt
+        console.log("[webhook] invoice payment succeeded:", event.data.object.id);
         break;
       }
       case "customer.subscription.deleted": {
         // TODO: mark isMember=false, clear plan/kind
+        console.log("[webhook] subscription deleted:", event.data.object.id);
         break;
       }
       default:
+        console.log("[webhook] unhandled event type:", event.type);
         break;
     }
     return res.json({ received: true });
   } catch (e) {
-    console.error("[stripe] handler error", e);
-    return res.status(500).json({ ok: false });
+    console.error("[webhook] handler error", e);
+    return res.status(500).json({ ok: false, reason: "WEBHOOK_ERROR", detail: e?.message });
   }
 });
 
-router.get("/", (_req, res) => res.json({ status: "ok", endpoint: "/stripe/webhook" }));
+async function grantCreditsAndUpdatePlan(metadata) {
+  const { uid, plan, billing } = metadata;
+  
+  if (!uid || !plan) {
+    console.error("[webhook] Missing uid or plan in metadata:", metadata);
+    return;
+  }
+
+  // Map plan to credits
+  const CREDIT_MAP = {
+    creator: 1500,
+    pro: 5000,
+  };
+
+  const credits = CREDIT_MAP[plan] || 0;
+  const db = admin.firestore();
+  const userRef = db.collection('users').doc(uid);
+  
+  const updateData = {
+    plan,
+    isMember: true,
+    credits: admin.firestore.FieldValue.increment(credits),
+    membership: {
+      kind: billing === 'monthly' ? 'subscription' : 'onetime',
+      billing,
+      startedAt: admin.firestore.FieldValue.serverTimestamp(),
+      ...(billing === 'onetime' && {
+        expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).getTime(), // 30 days from now
+      }),
+    },
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  };
+
+  await userRef.update(updateData);
+  console.log(`[plan] Upgraded uid=${uid} -> ${plan}, credits +${credits}`);
+}
+
+router.get("/", (_req, res) => {
+  res.status(200).json({ ok: true, msg: "Webhook endpoint (GET) alive" });
+});
 
 export default router;

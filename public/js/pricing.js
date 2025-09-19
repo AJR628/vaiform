@@ -4,6 +4,10 @@ import { uiSignIn, uiSignUp, uiGoogle, routeAfterAuth } from "/js/pricingAuthHan
 import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { API_BASE } from "/js/apiBase.js";
 
+// Use BACKEND_BASE from env.js if available, otherwise fall back to current origin
+const API = (window.__ENV && window.__ENV.BACKEND_BASE) || window.location.origin;
+console.log("[api] BACKEND_BASE =", API);
+
 let currentUser = null;
 
 
@@ -157,7 +161,7 @@ async function proceedWithCheckout(plan, billing) {
   try {
     const user = auth.currentUser;
     const idToken = await user.getIdToken(true);
-    const response = await fetch(`${API_BASE}/checkout/start`, {
+    const response = await fetch(`${API}/checkout/start`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
