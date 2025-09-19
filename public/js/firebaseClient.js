@@ -3,9 +3,9 @@ import { initializeApp, getApps } from "https://www.gstatic.com/firebasejs/10.12
 import { getAuth } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { getFirestore, doc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
-// ✅ Firebase Web SDK config (from console) - using same config as working config.js
+// ✅ Firebase Web SDK config (from console) - using EXACT same config as working config.js
 const firebaseConfig = {
-  apiKey: "AIzaSyBg9bqtZoTkC3vfEXk0vzLJAlTibXfjySY",
+  apiKey: "AIzaSyBg9bqtZoTkC3vfEXk0vzLJAITibXfjvSY",  // Fixed: was missing 'I' character
   authDomain: "vaiform.firebaseapp.com",
   projectId: "vaiform",
   storageBucket: "vaiform.appspot.com",   // <-- must be appspot for browser

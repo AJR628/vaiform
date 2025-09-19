@@ -185,10 +185,12 @@ themeToggle?.addEventListener("click", () => {
 });
 
 /* ========================= AUTH BUTTONS ========================= */
+// Login button opens home login modal (for existing users)
 loginBtn?.addEventListener("click", () => {
-  window.location.href = "/pricing?auth=open";
+  showHomeLoginModal();
 });
 
+// Sign up button redirects to pricing page (to choose a plan)
 signupBtn?.addEventListener("click", () => {
   window.location.href = "/pricing?auth=open";
 });
@@ -603,6 +605,69 @@ window.getId = async (forceRefresh = true) => {
   // Run once on load to match current UI state
   handleStyleChange();
 })();
+
+/* ========================= HOME LOGIN MODAL ========================= */
+function showHomeLoginModal() {
+  document.getElementById('loginModal').classList.remove('hidden');
+}
+
+function hideHomeLoginModal() {
+  document.getElementById('loginModal').classList.add('hidden');
+  // Clear form
+  document.getElementById('homeLoginEmail').value = '';
+  document.getElementById('homeLoginPassword').value = '';
+}
+
+// Home login modal event handlers
+document.getElementById('closeLoginModal')?.addEventListener('click', hideHomeLoginModal);
+
+// Click outside modal to close
+document.getElementById('loginModal')?.addEventListener('click', (e) => {
+  if (e.target.id === 'loginModal') hideHomeLoginModal();
+});
+
+// Home email/password sign in
+document.getElementById('homeSignInBtn')?.addEventListener('click', async () => {
+  const email = document.getElementById('homeLoginEmail').value;
+  const password = document.getElementById('homeLoginPassword').value;
+  
+  if (!email || !password) {
+    alert('Please enter both email and password');
+    return;
+  }
+  
+  try {
+    const { signInWithEmailAndPassword } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js");
+    await signInWithEmailAndPassword(auth, email, password);
+    await ensureUserDoc(auth.currentUser);
+    hideHomeLoginModal();
+    console.log('✅ Home login successful');
+  } catch (error) {
+    console.error('Home login failed:', error);
+    alert('Login failed: ' + error.message);
+  }
+});
+
+// Home Google sign in
+document.getElementById('homeGoogleSignInBtn')?.addEventListener('click', async () => {
+  try {
+    const { GoogleAuthProvider, signInWithPopup } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js");
+    const provider = new GoogleAuthProvider();
+    const result = await signInWithPopup(auth, provider);
+    await ensureUserDoc(result.user);
+    hideHomeLoginModal();
+    console.log('✅ Home Google login successful');
+  } catch (error) {
+    console.error('Home Google login failed:', error);
+    alert('Google login failed: ' + error.message);
+  }
+});
+
+// "Sign up here" link in login modal
+document.getElementById('goToSignUpBtn')?.addEventListener('click', () => {
+  hideHomeLoginModal();
+  window.location.href = "/pricing?auth=open";
+});
 
 /* ========================= INIT ========================= */
 (() => {
