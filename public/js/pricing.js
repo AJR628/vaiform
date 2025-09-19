@@ -2,6 +2,7 @@
 import { auth, db, ensureUserDoc } from "/js/firebaseClient.js";
 import { uiSignIn, uiSignUp, uiGoogle, routeAfterAuth } from "/js/pricingAuthHandlers.js";
 import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { API_BASE } from "/js/apiBase.js";
 
 let currentUser = null;
 
@@ -22,7 +23,7 @@ onAuthStateChanged(auth, async (user) => {
 async function setupUser(user) {
   try {
     const token = await user.getIdToken();
-    const response = await fetch('/api/user/setup', {
+    const response = await fetch(`${API_BASE}/user/setup`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`,
@@ -47,7 +48,7 @@ async function updateUI() {
   
   try {
     const token = await currentUser.getIdToken();
-    const response = await fetch('/api/user/me', {
+      const response = await fetch(`${API_BASE}/user/me`, {
       headers: {
         'Authorization': `Bearer ${token}`
       }
@@ -156,7 +157,7 @@ async function proceedWithCheckout(plan, billing) {
   try {
     const user = auth.currentUser;
     const idToken = await user.getIdToken(true);
-    const response = await fetch('/api/checkout/start', {
+    const response = await fetch(`${API_BASE}/checkout/start`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

@@ -66,10 +66,13 @@ app.use(cors({
 }));
 
 // ---------- Stripe webhook FIRST (before JSON parser) ----------
-import stripeWebhookRoutes from "./routes/stripe.webhook.js";
-app.use("/stripe/webhook", stripeWebhookRoutes);
+import stripeWebhook from "./routes/stripe.webhook.js";
 
-// ---------- Parsers AFTER webhook ----------
+// 1) Webhook first (raw)
+app.use("/stripe/webhook", stripeWebhook);
+console.log("✅ Mounted stripe webhook at /stripe/webhook");
+
+// 2) Then JSON for the rest
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 

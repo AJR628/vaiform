@@ -1,5 +1,6 @@
 import { auth, provider, BACKEND_URL, BACKEND } from './config.js';
 import { onAuthStateChanged, signInWithPopup, signOut } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
+import { API_BASE } from './apiBase.js';
 
 // Auth state management
 onAuthStateChanged(auth, (user) => {
@@ -125,7 +126,7 @@ async function refreshCredits(){
   try {
     if (!auth.currentUser) { setCreditCount('--'); return; }
     const token = await auth.currentUser.getIdToken();
-    const res = await fetch('/api/credits', { headers: { 'Authorization': `Bearer ${token}` }, credentials: 'include' });
+    const res = await fetch(`${API_BASE}/credits`, { headers: { 'Authorization': `Bearer ${token}` }, credentials: 'include' });
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const j = await res.json();
     setCreditCount(j?.credits ?? '--');
@@ -166,7 +167,7 @@ async function fetchShortDetail(id){
   try {
     if (!id || !auth.currentUser) return null;
     const token = await auth.currentUser.getIdToken();
-    const res = await fetch(`/api/shorts/${id}`, { headers: { Authorization: `Bearer ${token}` }, credentials: 'include' });
+    const res = await fetch(`${API_BASE}/shorts/${id}`, { headers: { Authorization: `Bearer ${token}` }, credentials: 'include' });
     if (!res.ok) return null;
     const j = await res.json();
     return j?.data || null;

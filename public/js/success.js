@@ -1,6 +1,7 @@
 // public/js/success.js
 import { auth, ensureUserDoc } from "/js/firebaseClient.js";
 import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { API_BASE } from "/js/apiBase.js";
 
 let currentUser = null;
 
@@ -28,7 +29,7 @@ async function checkUserPlan() {
     const maxAttempts = 10;
     
     while (attempts < maxAttempts) {
-      const response = await fetch('/api/user/me', {
+      const response = await fetch(`${API_BASE}/user/me`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
