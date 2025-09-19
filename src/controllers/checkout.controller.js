@@ -159,13 +159,15 @@ export async function startPlanCheckout(req, res) {
     const mode = billing === "monthly" ? "subscription" : "payment";
     const FRONTEND = getFrontendBase(req);
 
-    const session = await stripe.checkout.sessions.create({
-      mode,
-      line_items: [{ price: priceId, quantity: 1 }],
-      customer_email: email,
-      success_url: `${FRONTEND}/success?plan=${plan}`,
-      cancel_url: `${FRONTEND}/pricing`,
-      metadata: { uid, email, plan, billing },
+            console.log(`[checkout/start] Creating session with metadata:`, { uid, email, plan, billing, priceId, mode });
+            
+            const session = await stripe.checkout.sessions.create({
+              mode,
+              line_items: [{ price: priceId, quantity: 1 }],
+              customer_email: email,
+              success_url: `${FRONTEND}/success?plan=${plan}`,
+              cancel_url: `${FRONTEND}/pricing`,
+              metadata: { uid, email, plan, billing },
       ...(mode === "subscription" && {
         payment_method_collection: "always",
         subscription_data: {

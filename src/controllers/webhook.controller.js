@@ -175,6 +175,14 @@ export async function stripeWebhook(req, res) {
         const plan = session?.metadata?.plan;
         const billing = session?.metadata?.billing;
         
+        console.log(`[webhook] checkout.session.completed metadata:`, {
+          plan,
+          billing,
+          email,
+          uidHint,
+          allMetadata: session?.metadata
+        });
+        
         if (plan && billing) {
           // Handle plan subscription - update user membership status
           const { ref: userRef } = await ensureUserDoc(email, uidHint);
