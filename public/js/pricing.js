@@ -2,6 +2,7 @@
 import { auth, db, ensureUserDoc } from "/js/firebaseClient.js";
 import { uiSignIn, uiSignUp, uiGoogle, routeAfterAuth } from "/js/pricingAuthHandlers.js";
 import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { doc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { API_BASE } from "/js/apiBase.js";
 
 // Use BACKEND_BASE from env.js if available, otherwise fall back to current origin
@@ -16,55 +17,26 @@ onAuthStateChanged(auth, async (user) => {
   currentUser = user;
   if (user) {
     await ensureUserDoc(user); // Ensure free plan setup
-    await setupUser(user);
-    updateUI();
+    setupFirestoreListener(user);
   } else {
     hideUserInfo();
   }
 });
 
-// Setup user document after auth
-async function setupUser(user) {
-  try {
-    const token = await user.getIdToken();
-    const response = await fetch(`${API_BASE}/user/setup`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      }
-    });
-    
-    if (!response.ok) {
-      console.error('User setup failed:', await response.text());
-    }
-  } catch (error) {
-    console.error('Error setting up user:', error);
-  }
-}
-
-// Update UI based on user state
-async function updateUI() {
-  if (!currentUser) {
-    hideUserInfo();
-    return;
-  }
+// Setup real-time Firestore listener for user data
+function setupFirestoreListener(user) {
+  const userRef = doc(db, 'users', user.uid);
   
-  try {
-    const token = await currentUser.getIdToken();
-      const response = await fetch(`${API_BASE}/user/me`, {
-      headers: {
-        'Authorization': `Bearer ${token}`
-      }
-    });
+  // Real-time listener for user data changes
+  onSnapshot(userRef, (snap) => {
+    if (!snap.exists()) return;
     
-    if (response.ok) {
-      const data = await response.json();
-      showUserInfo(data.data);
-    }
-  } catch (error) {
-    console.error('Error fetching user data:', error);
-  }
+    const userData = snap.data();
+    showUserInfo(userData);
+    console.log('[pricing] user plan:', userData.plan, 'credits:', userData.credits);
+  }, (error) => {
+    console.error('Firestore listener error:', error);
+  });
 }
 
 function showUserInfo(userData) {

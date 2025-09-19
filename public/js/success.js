@@ -1,63 +1,51 @@
 // public/js/success.js
-import { auth, ensureUserDoc } from "/js/firebaseClient.js";
+import { auth, db, ensureUserDoc } from "/js/firebaseClient.js";
 import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { API_BASE } from "/js/apiBase.js";
+import { doc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 let currentUser = null;
+const planFromUrl = new URLSearchParams(location.search).get('plan'); // creator/pro/etc.
 
 // Auth state listener
 onAuthStateChanged(auth, async (user) => {
   currentUser = user;
   if (user) {
     await ensureUserDoc(user); // Ensure free plan setup
-    await checkUserPlan();
+    setupFirestoreListener(user);
   }
 });
 
-// Check user plan status
-async function checkUserPlan() {
+// Setup real-time Firestore listener for user data
+function setupFirestoreListener(user) {
+  const userRef = doc(db, 'users', user.uid);
   const loading = document.getElementById('loading');
   const planInfo = document.getElementById('planInfo');
   
   loading.classList.add('show');
   
-  try {
-    const token = await currentUser.getIdToken();
+  // Live update in case webhook lands a second later
+  onSnapshot(userRef, (snap) => {
+    if (!snap.exists()) return;
     
-    // Poll for membership status (webhook might take a moment)
-    let attempts = 0;
-    const maxAttempts = 10;
+    const userData = snap.data();
+    console.log('[success] user plan:', userData.plan, 'credits:', userData.credits);
     
-    while (attempts < maxAttempts) {
-      const response = await fetch(`${API_BASE}/user/me`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-      
-      if (response.ok) {
-        const data = await response.json();
-        
-        if (data.data.isMember) {
-          showPlanInfo(data.data);
-          loading.classList.remove('show');
-          return;
-        }
-      }
-      
-      // Wait 2 seconds before next attempt
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      attempts++;
+    // Check if user has been upgraded to a paid plan
+    if (userData.isMember && userData.plan !== 'free') {
+      showPlanInfo(userData);
+      loading.classList.remove('show');
+    } else if (planFromUrl && userData.plan === planFromUrl) {
+      // Plan matches URL parameter
+      showPlanInfo(userData);
+      loading.classList.remove('show');
+    } else {
+      // Still waiting for webhook
+      loading.innerHTML = '<p>Activating your plan...</p>';
     }
-    
-    // If we get here, membership wasn't activated yet
-    console.warn('Plan activation is taking longer than expected');
-    loading.innerHTML = '<p>Plan activation is taking longer than expected. Please refresh the page in a few minutes.</p>';
-    
-  } catch (error) {
-    console.error('Error checking user plan:', error);
+  }, (error) => {
+    console.error('Firestore listener error:', error);
     loading.innerHTML = '<p>Error checking plan status. Please try refreshing the page.</p>';
-  }
+  });
 }
 
 // Show plan information

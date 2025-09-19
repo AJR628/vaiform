@@ -210,6 +210,12 @@ import userRoutes from "./routes/user.routes.js";
 app.use("/api/user", userRoutes);
 console.log("✅ Mounted user routes at /api/user");
 
+// Optional no-op alias for legacy /api/user/setup calls (frontend now uses Firestore)
+app.post("/api/user/setup", (req, res) => {
+  console.log("[legacy] /api/user/setup called - no-op (frontend uses Firestore)");
+  res.status(204).end(); // no content – frontend no longer relies on this
+});
+
 // ---------- STATIC LAST (disable directory redirects like /dir -> /dir/) ----------
 // --- SPA static hosting (after API routes) ---
 try {

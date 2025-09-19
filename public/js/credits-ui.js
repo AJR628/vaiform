@@ -1,7 +1,8 @@
 // Minimal shared credits UI for pages that show logged-in/logged-out + credits
-import { auth, provider } from "./config.js";
+import { auth, provider, db } from "./config.js";
+import { ensureUserDoc } from "./firebaseClient.js";
 import { onIdTokenChanged, onAuthStateChanged, signInWithPopup, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { apiFetch } from "../api.mjs";
+import { doc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const loginBtn       = document.getElementById("login-button");
 const logoutBtn      = document.getElementById("logout-button");
@@ -18,14 +19,27 @@ function updateCreditUI(n = 0) {
   if (creditCount) creditCount.textContent = String(Number.isFinite(n) ? n : 0);
 }
 
-async function refreshCredits() {
-  try {
-    const data = await apiFetch("/credits", { method: "GET" });
-    const credits = Number(data?.credits ?? 0);
-    updateCreditUI(Number.isNaN(credits) ? 0 : credits);
-  } catch (e) {
-    console.warn("[credits-ui] refreshCredits failed:", e);
+let firestoreUnsubscribe = null;
+
+function setupFirestoreListener(user) {
+  // Clean up previous listener
+  if (firestoreUnsubscribe) {
+    firestoreUnsubscribe();
   }
+  
+  const userRef = doc(db, 'users', user.uid);
+  
+  // Real-time listener for user data changes
+  firestoreUnsubscribe = onSnapshot(userRef, (snap) => {
+    if (!snap.exists()) return;
+    
+    const userData = snap.data();
+    const credits = Number(userData.credits ?? 0);
+    updateCreditUI(credits);
+    console.log('[credits-ui] user credits:', credits);
+  }, (error) => {
+    console.error('[credits-ui] Firestore listener error:', error);
+  });
 }
 
 loginBtn?.addEventListener("click", async () => {
@@ -34,14 +48,11 @@ loginBtn?.addEventListener("click", async () => {
 logoutBtn?.addEventListener("click", async () => {
   try { await signOut(auth); } catch (e) { console.warn("Logout failed:", e); }
 });
-creditDisplay?.addEventListener("click", () => refreshCredits());
-
 // Keep token provider hot and update credits quickly after login/refresh
 onIdTokenChanged(auth, async (u) => {
   if (u) {
     // If the api helper is present, this short wait ensures token is ready
     if (window.__vaiform_diag__?.tokenWait) { try { await window.__vaiform_diag__.tokenWait(2500); } catch {} }
-    await refreshCredits();
   }
 });
 
@@ -49,12 +60,14 @@ onAuthStateChanged(auth, async (u) => {
   const loggedIn = !!u;
   toggleAuthClasses(loggedIn);
   if (loggedIn) {
-    // Make sure we show something even if /credits is slow
-    updateCreditUI(0);
-    await refreshCredits();
+    await ensureUserDoc(u); // Ensure user doc exists
+    setupFirestoreListener(u); // Setup real-time listener
   } else {
+    // Clean up listener when logged out
+    if (firestoreUnsubscribe) {
+      firestoreUnsubscribe();
+      firestoreUnsubscribe = null;
+    }
     updateCreditUI(0);
   }
 });
-
-export { refreshCredits };
