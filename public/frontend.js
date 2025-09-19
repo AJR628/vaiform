@@ -1,9 +1,12 @@
 // /frontend.js
-import { auth, db, ensureUserDoc } from "./js/firebaseClient.js";
+import { db, ensureUserDoc } from "./js/firebaseClient.js";
 import { BACKEND_URL, UPSCALE_COST } from "./js/config.js";
 import { onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { doc, getDoc, updateDoc, increment } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { apiFetch, setTokenProvider } from "./api.mjs";
+
+// Use the auth instance from the auth bridge (window.auth)
+const auth = window.auth;
 
 /* ========================= DEV HELPERS ========================= */
 // Wait until Firebase auth knows our user (once)

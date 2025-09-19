@@ -79,41 +79,23 @@ function hideUserInfo() {
   userInfo.style.display = 'none';
 }
 
+// Store selected plan for after authentication
+let selectedPlan = null;
+let selectedBilling = null;
+
 // Checkout functions
 async function startCheckout(plan, billing) {
   const user = auth.currentUser;
   if (!user) {
+    // Store the plan selection and show auth modal
+    selectedPlan = plan;
+    selectedBilling = billing;
     showAuthModal();
     return;
   }
   
-  try {
-    const idToken = await user.getIdToken(true);
-    const response = await fetch('/api/checkout/start', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${idToken}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        plan,
-        billing,
-        uid: user.uid,
-        email: user.email
-      })
-    });
-    
-    const data = await response.json();
-    
-    if (data.url) {
-      window.location.href = data.url;
-    } else {
-      alert(`Checkout failed: ${data.reason || 'Unknown error'}`);
-    }
-  } catch (error) {
-    console.error('Checkout error:', error);
-    alert('Checkout failed. Please try again.');
-  }
+  // User is authenticated, proceed with checkout
+  await proceedWithCheckout(plan, billing);
 }
 
 // Auth modal functions
@@ -130,11 +112,19 @@ function hideAuthModal() {
 async function signIn() {
   const email = document.getElementById('authEmail').value;
   const password = document.getElementById('authPassword').value;
-  
+
   try {
     const user = await uiSignIn(email, password);
     hideAuthModal();
-    await routeAfterAuth(user);
+    
+    // If user selected a paid plan before auth, proceed to checkout
+    if (selectedPlan && selectedBilling) {
+      await proceedWithCheckout(selectedPlan, selectedBilling);
+      selectedPlan = null;
+      selectedBilling = null;
+    } else {
+      await routeAfterAuth(user);
+    }
   } catch (error) {
     alert(error.message);
   }
@@ -143,23 +133,62 @@ async function signIn() {
 async function signUp() {
   const email = document.getElementById('authEmail').value;
   const password = document.getElementById('authPassword').value;
-  
+
   try {
     const user = await uiSignUp(email, password);
     hideAuthModal();
-    await routeAfterAuth(user);
+    
+    // If user selected a paid plan before auth, proceed to checkout
+    if (selectedPlan && selectedBilling) {
+      await proceedWithCheckout(selectedPlan, selectedBilling);
+      selectedPlan = null;
+      selectedBilling = null;
+    } else {
+      await routeAfterAuth(user);
+    }
   } catch (error) {
     alert(error.message);
   }
 }
 
+// Proceed with checkout after authentication
+async function proceedWithCheckout(plan, billing) {
+  try {
+    const user = auth.currentUser;
+    const idToken = await user.getIdToken(true);
+    const response = await fetch('/api/checkout/start', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${idToken}`
+      },
+      body: JSON.stringify({
+        plan,
+        billing,
+        uid: user.uid,
+        email: user.email
+      })
+    });
+
+    const data = await response.json();
+    if (data.url) {
+      window.location.href = data.url;
+    } else {
+      alert('Checkout failed: ' + (data.reason || 'Unknown error'));
+    }
+  } catch (error) {
+    console.error('Checkout error:', error);
+    alert('Checkout failed: ' + error.message);
+  }
+}
+
 // Event listeners
 document.addEventListener('DOMContentLoaded', () => {
-  // Auto-open auth modal if ?auth=open in URL
-  const params = new URLSearchParams(location.search);
-  if (params.get("auth") === "open") {
-    showAuthModal();
-  }
+  // Don't auto-open auth modal - let users choose plans first
+  // const params = new URLSearchParams(location.search);
+  // if (params.get("auth") === "open") {
+  //   showAuthModal();
+  // }
 
   // Free plan button
   document.getElementById('startFreeBtn').addEventListener('click', () => {
@@ -204,7 +233,15 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       const user = await uiGoogle();
       hideAuthModal();
-      await routeAfterAuth(user);
+      
+      // If user selected a paid plan before auth, proceed to checkout
+      if (selectedPlan && selectedBilling) {
+        await proceedWithCheckout(selectedPlan, selectedBilling);
+        selectedPlan = null;
+        selectedBilling = null;
+      } else {
+        await routeAfterAuth(user);
+      }
     } catch (error) {
       alert(error.message);
     }
