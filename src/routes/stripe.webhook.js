@@ -28,7 +28,15 @@ router.post("/", express.raw({ type: "application/json" }), async (req, res) => 
         console.log("[webhook] session metadata:", session.metadata);
         
         if (session.metadata?.uid && session.metadata?.plan) {
-          await grantCreditsAndUpdatePlan(session.metadata);
+          try {
+            await grantCreditsAndUpdatePlan(session.metadata);
+            console.log(`[webhook] Successfully processed payment for uid=${session.metadata.uid}`);
+          } catch (error) {
+            console.error(`[webhook] Failed to process payment for uid=${session.metadata.uid}:`, error);
+            // Don't throw here - we still want to return success to Stripe to avoid retries
+          }
+        } else {
+          console.error("[webhook] Missing uid or plan in session metadata:", session.metadata);
         }
         break;
       }
@@ -86,8 +94,32 @@ async function grantCreditsAndUpdatePlan(metadata) {
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
   };
 
-  await userRef.update(updateData);
-  console.log(`[plan] Upgraded uid=${uid} -> ${plan}, credits +${credits}`);
+  try {
+    // Use set with merge to ensure document exists, then update credits
+    await userRef.set({
+      plan,
+      isMember: true,
+      membership: {
+        kind: billing === 'monthly' ? 'subscription' : 'onetime',
+        billing,
+        startedAt: admin.firestore.FieldValue.serverTimestamp(),
+        ...(billing === 'onetime' && {
+          expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).getTime(), // 30 days from now
+        }),
+      },
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+    
+    // Then increment credits separately to ensure it works
+    await userRef.update({
+      credits: admin.firestore.FieldValue.increment(credits),
+    });
+    
+    console.log(`[plan] Upgraded uid=${uid} -> ${plan}, credits +${credits}`);
+  } catch (error) {
+    console.error(`[webhook] Failed to update user ${uid}:`, error);
+    throw error;
+  }
 }
 
 router.get("/", (_req, res) => {
