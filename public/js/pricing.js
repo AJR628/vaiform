@@ -5,8 +5,10 @@ import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/f
 import { doc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { API_BASE } from "/js/apiBase.js";
 
-// Use BACKEND_BASE from env.js if available, otherwise fall back to current origin
-const API = (window.__ENV && window.__ENV.BACKEND_BASE) || window.location.origin;
+// Use backend URL directly to bypass Netlify redirects
+const API = window.location.hostname.includes('localhost') 
+  ? 'http://localhost:3000' 
+  : 'https://17e0d1d1-e327-483d-b1ea-c41bea08fb59-00-1ef93t84nlhq6.janeway.replit.dev';
 console.log("[api] BACKEND_BASE =", API);
 
 let currentUser = null;
@@ -133,7 +135,7 @@ async function proceedWithCheckout(plan, billing) {
   try {
     const user = auth.currentUser;
     const idToken = await user.getIdToken(true);
-    const response = await fetch(`${API}/api/checkout/start`, {
+    const response = await fetch(`${API}/checkout/start`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -147,7 +149,14 @@ async function proceedWithCheckout(plan, billing) {
       })
     });
 
-    const data = await response.json();
+    const contentType = response.headers.get('content-type') || '';
+    const body = contentType.includes('application/json') ? await response.json() : await response.text();
+
+    if (!response.ok) {
+      throw new Error(`Checkout failed [${response.status}] ${contentType.includes('html') ? '(HTML page returned — check route/redirect)' : ''}: ${typeof body === 'string' ? body.slice(0,200) : JSON.stringify(body)}`);
+    }
+
+    const data = body;
     if (data.url) {
       window.location.href = data.url;
     } else {
