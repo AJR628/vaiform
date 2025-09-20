@@ -76,11 +76,11 @@ export async function ensureUserDocByUid(uid, email) {
 
   let uidSnap = await uidRef.get();
   if (!uidSnap.exists) {
+    // ✅ Create user doc without credits/plan/membership fields (pricing system handles these)
     await uidRef.set(
       {
         email: email || null,
         uid,
-        credits: 0,
         createdAt: now,
         updatedAt: now,
       },
@@ -158,19 +158,19 @@ export async function ensureUserDoc(arg1, arg2) {
     const ref = db.collection('users').doc(email);
     const snap = await ref.get();
     if (!snap.exists) {
+      // ✅ Create legacy doc without credits field (pricing system handles these)
       await ref.set(
         {
           email,
           uid: null,
-          credits: 0,
           createdAt: admin.firestore.FieldValue.serverTimestamp(),
           updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         },
         { merge: true }
       );
-      return { ref, data: { email, uid: null, credits: 0 } };
+      return { ref, data: { email, uid: null } };
     }
-    return { ref, data: snap.data() || { email, uid: null, credits: 0 } };
+    return { ref, data: snap.data() || { email, uid: null } };
   }
 
   // Case B: first arg is UID (second may be email)

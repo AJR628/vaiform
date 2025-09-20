@@ -13,12 +13,10 @@ export async function ensureFreeUser(uid, email) {
   const now = admin.firestore.FieldValue.serverTimestamp();
   const dayKey = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
   
+  // ✅ Create user doc without plan/credits/membership fields (pricing system handles these)
   const userDoc = {
     uid,
     email: email || null,
-    plan: 'free',
-    isMember: false,
-    credits: 0,
     shortDayKey: dayKey,
     shortCountToday: 0,
     createdAt: now,
@@ -28,7 +26,7 @@ export async function ensureFreeUser(uid, email) {
   // Use merge to avoid overwriting existing data
   await userRef.set(userDoc, { merge: true });
   
-  console.log(`[user] Free user ensured: ${uid} (${email})`);
+  console.log(`[user] User ensured: ${uid} (${email})`);
   return { ref: userRef, data: userDoc };
 }
 

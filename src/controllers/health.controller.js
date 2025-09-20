@@ -104,12 +104,13 @@ export const register = async (req, res) => {
       return res.json({ success: true, message: 'User already exists.' });
     }
 
+    // ✅ Create user doc without credits field (pricing system handles these)
     await userRef.set({
-      credits: 50,
+      email,
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
     });
 
-    res.json({ success: true, message: 'New user created with 50 credits.' });
+    res.json({ success: true, message: 'New user created.' });
   } catch (err) {
     console.error('❌ Error in /register:', err.message);
     res.status(500).json({ success: false, error: 'Registration failed.' });

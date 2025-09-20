@@ -1,5 +1,5 @@
 // js/config.js
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { initializeApp, getApps } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, GoogleAuthProvider } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { getFirestore } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
@@ -28,8 +28,9 @@ export { BACKEND };
 export const FRONTEND_URL = "https://vaiform.com";
 export const UPSCALE_COST = 10;
 
-// ====== INIT ======
-const app = initializeApp(firebaseConfig);
+// ====== INIT ====== 
+// ✅ Prevent duplicate Firebase initialization
+const app = getApps().length ? getApps()[0] : initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const db = getFirestore(app);
 export const provider = new GoogleAuthProvider();
