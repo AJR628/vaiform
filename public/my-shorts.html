@@ -5,6 +5,21 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>My Shorts - Vaiform</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Unified Header and Auth -->
+    <script type="module">
+        import { createUnifiedHeader, initializeHeader } from "./components/header.js";
+        import { initializeAuth } from "./components/auth-utils.js";
+        
+        // Load unified header
+        document.getElementById('unified-header').innerHTML = createUnifiedHeader();
+        initializeHeader();
+        
+        // Initialize auth after a short delay to ensure Firebase is ready
+        setTimeout(() => {
+            initializeAuth();
+        }, 100);
+    </script>
+    
     <!-- Use the same modular config used by Creative Studio -->
     <script type="module" src="./js/firebaseClient.js"></script>
     <style>
@@ -150,34 +165,8 @@
     </style>
 </head>
 <body class="bg-gray-900 text-white min-h-screen">
-    <!-- Header -->
-    <header class="bg-gray-800 border-b border-gray-700">
-        <div class="max-w-6xl mx-auto px-4 py-4 flex justify-between items-center">
-            <div class="flex items-center gap-6">
-                <h1 class="text-2xl font-bold text-indigo-400">
-                    <a href="/">Vaiform</a>
-                </h1>
-                <nav class="space-x-4 text-sm font-medium text-gray-300">
-                    <a href="/" class="hover:text-indigo-400">Home</a>
-                    <a href="/creative.html" class="hover:text-indigo-400">Creative Studio</a>
-                    <a href="/my-images.html" class="hover:text-indigo-400">My Images</a>
-                    <a href="/my-shorts.html" class="text-indigo-400">My Shorts</a>
-                    <a href="/buy-credits.html" class="hover:text-indigo-400">Buy Credits</a>
-                </nav>
-            </div>
-            <div class="flex items-center gap-4">
-                <div id="credit-display" class="text-sm text-gray-300 logged-in hidden">
-                    Credits: <span id="credit-count">--</span>
-                </div>
-                <button id="login-btn" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-medium logged-out">
-                    Login
-                </button>
-                <button id="logout-btn" class="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-lg text-sm font-medium logged-in hidden">
-                    Logout
-                </button>
-            </div>
-        </div>
-    </header>
+    <!-- Unified Header -->
+    <div id="unified-header"></div>
 
     <!-- My Shorts page -->
     <main id="my-shorts-page" class="page page--myshorts">

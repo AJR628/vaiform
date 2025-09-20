@@ -219,6 +219,9 @@
     </style>
 </head>
 <body>
+    <!-- Unified Header -->
+    <div id="unified-header"></div>
+    
     <div class="pricing-container">
         <div class="pricing-header">
             <h1>Plans & Pricing</h1>
@@ -322,6 +325,21 @@
             <button id="closeAuthModal" class="btn-plan btn-secondary" style="margin-top: 1rem;">Close</button>
         </div>
     </div>
+    
+    <!-- Unified Header and Auth -->
+    <script type="module">
+        import { createUnifiedHeader, initializeHeader } from "./components/header.js";
+        import { initializeAuth } from "./components/auth-utils.js";
+        
+        // Load unified header
+        document.getElementById('unified-header').innerHTML = createUnifiedHeader();
+        initializeHeader();
+        
+        // Initialize auth after a short delay to ensure Firebase is ready
+        setTimeout(() => {
+            initializeAuth();
+        }, 100);
+    </script>
     
     <script src="js/env.js"></script>
     <script type="module" src="js/pricing.js"></script>

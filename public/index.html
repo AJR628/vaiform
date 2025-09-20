@@ -23,231 +23,22 @@
 </head>
 <body class="bg-gray-50 text-gray-800 dark:bg-gray-900 dark:text-gray-100 font-sans min-h-screen flex flex-col transition-colors duration-300">
 
-  <!-- Header -->
-  <header class="bg-white dark:bg-gray-800 shadow sticky top-0 z-50">
-    <div class="max-w-6xl mx-auto px-4 py-4 flex justify-between items-center">
-      <div class="flex items-center gap-6">
-        <h1 class="text-2xl font-bold text-indigo-600 dark:text-indigo-400">
-          <a href="/">Vaiform</a>
-        </h1>
-        <nav class="space-x-4 text-sm font-medium text-gray-600 dark:text-gray-300">
-          <a href="/" class="hover:text-indigo-600 dark:hover:text-indigo-400">Home</a>
-          <a href="/creative.html" class="hover:text-indigo-600 dark:hover:text-indigo-400">Creative Studio</a>
-          <a href="/my-images.html" class="hover:text-indigo-600 dark:hover:text-indigo-400">My Images</a>
-          <a href="/pricing.html" class="hover:text-indigo-600 dark:hover:text-indigo-400">Plans & Pricing</a>
-          <a href="/buy-credits.html" class="hover:text-indigo-600 dark:hover:text-indigo-400 logged-in hidden">Buy More Credits</a>
-        </nav>
-      </div>
-      <div class="flex items-center gap-4">
-        <div id="credit-display" class="text-sm text-gray-600 dark:text-gray-300 logged-in hidden">
-          Credits: <span id="credit-count">--</span>
-        </div>
-        <button id="theme-toggle" class="text-yellow-400 hover:text-yellow-300 text-xl" title="Toggle theme">🌙</button>
-        <button id="signup-button" class="text-sm bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700 logged-out hidden">Sign Up</button>
-        <button id="login-button" class="text-sm border px-3 py-1 rounded logged-out hidden">Login</button>
-        <button id="logout-button" class="text-sm border px-3 py-1 rounded logged-in hidden">Logout</button>
-      </div>
-    </div>
-  </header>
+  <!-- Unified Header -->
+  <div id="unified-header"></div>
 
-  <!-- Main Content -->
+  <!-- Auto-redirect to Creative Studio -->
   <main class="flex-1 w-full max-w-2xl mx-auto px-4 py-10 space-y-8">
     <section class="text-center">
-      <h2 class="text-3xl font-semibold mb-4">Create Unique AI-Generated Images</h2>
-      <p class="text-gray-600 dark:text-gray-400">Enter a prompt, enhance it, and fine-tune your settings for stunning results.</p>
+      <h2 class="text-3xl font-semibold mb-4">Welcome to Vaiform</h2>
+      <p class="text-gray-600 dark:text-gray-400">Redirecting to Creative Studio...</p>
+      <div class="mt-8">
+        <div class="inline-block h-8 w-8 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
+      </div>
+      <p class="text-sm text-gray-500 dark:text-gray-400 mt-4">
+        If you are not redirected automatically, 
+        <a href="/creative.html" class="text-indigo-600 dark:text-indigo-400 hover:underline">click here</a>
+      </p>
     </section>
-
-    <form id="generate-form" class="space-y-6">
-      <!-- Prompt -->
-      <div>
-        <label for="prompt" class="block text-sm font-medium mb-1">Prompt</label>
-        <textarea id="prompt" rows="3" required class="w-full rounded-md border border-gray-300 dark:border-gray-600 p-2 bg-white dark:bg-gray-800"></textarea>
-      </div>
-
-      <!-- ✨ Enhance Prompt -->
-      <div>
-        <div class="flex items-center gap-2">
-          <button type="button" id="enhance-button" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md flex items-center gap-2">
-            ✨ Enhance Prompt
-            <span id="enhance-spinner" class="hidden h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
-          </button>
-          <span class="text-xs text-gray-400 italic">(1 credit)</span>
-        </div>
-        <p class="text-xs text-gray-500 dark:text-gray-400 italic mt-1">
-          Powered by a custom-trained AI to expand and enrich your prompts.
-        </p>
-      </div>
-
-      <!-- Reference Image Upload (drag/drop) -->
-      <div>
-        <label for="referenceImage" class="block text-sm font-medium mb-1">
-          Optional Reference Image
-          <span class="ml-1 text-xs font-normal text-gray-500 dark:text-gray-400">(auto-optimized)</span>
-        </label>
-
-                 <!-- Drop zone and image preview container -->
-         <div class="relative h-64 w-full max-w-md mx-auto">
-           <!-- Drop zone -->
-           <div
-             id="dropZone"
-             class="absolute inset-0 flex items-center justify-center border-2 border-dashed border-gray-400 dark:border-gray-600 rounded-md text-center cursor-pointer bg-white dark:bg-gray-800 hover:border-indigo-500 transition"
-             role="button"
-             tabindex="0"
-             aria-label="Upload a reference image by clicking or dragging and dropping"
-             aria-describedby="upload-optimization-note"
-           >
-             <input
-               type="file"
-               id="referenceImage"
-               accept="image/*"
-               class="absolute inset-0 opacity-0 cursor-pointer"
-               aria-describedby="upload-optimization-note"
-             />
-             <p class="text-sm text-gray-600 dark:text-gray-300">📎 Drag & drop or click to upload</p>
-           </div>
-
-           <!-- Image preview (overlays the drop zone) -->
-           <img 
-             id="referencePreview" 
-             class="absolute inset-0 w-full h-full object-contain rounded-md shadow hidden border dark:border-gray-600" 
-             alt="Reference preview" 
-           />
-           
-           <!-- Remove button (positioned over the image) -->
-           <button 
-             type="button" 
-             id="removeImageBtn" 
-             class="absolute top-2 right-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-sm px-2 py-1 rounded-full shadow-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition hidden z-10"
-           >
-             ✖
-           </button>
-         </div>
-
-        <p id="upload-optimization-note" class="mt-2 text-xs text-gray-500 dark:text-gray-400">
-          Images are automatically optimized for faster processing and best AI results. Large uploads are resized
-          up to <span class="font-medium">1536px</span> on the longest side and lightly re-encoded before <span class="font-medium">AI processing</span>.
-        </p>
-
-        <!-- Collapsible info -->
-        <details class="optimize-details mt-1 text-xs text-gray-500 dark:text-gray-400">
-          <summary class="cursor-pointer select-none hover:underline">ⓘ What does this mean?</summary>
-          <div class="optimize-details-content mt-1 pl-4 pr-2 overflow-hidden">
-            When you upload a reference image, our system automatically resizes it to a maximum of
-            <span class="font-medium">1536px</span> on the longest side and lightly compresses it before AI processing.
-            This ensures faster generation times, reduced errors, and consistent quality.
-            Your original file is never stored — only the optimized version is used for generation.
-          </div>
-        </details>
-      </div>
-
-      <!-- Mode indicator + toggle -->
-      <div class="mt-2 flex items-center justify-between">
-        <p id="generationMode" class="text-sm font-medium text-indigo-600 dark:text-indigo-400">
-          📝 Text-to-Image
-        </p>
-        <div class="flex items-center gap-2" id="imageToggleWrapper">
-          <input type="checkbox" id="imageModeToggle" class="w-4 h-4" />
-          <label for="imageModeToggle" class="text-sm text-gray-600 dark:text-gray-300">Use Image-to-Image</label>
-        </div>
-      </div>
-
-      <!-- Style helper (Pixar) -->
-      <p id="style-helper" class="text-xs mt-2 text-pink-600 dark:text-pink-400 font-medium"></p>
-
-      <!-- Image Quantity & Upscale -->
-      <div class="grid grid-cols-2 gap-4">
-        <div>
-          <label for="numImages" class="block text-sm font-medium">Number of Images</label>
-          <select id="numImages" class="w-full rounded-md border border-gray-300 dark:border-gray-600 p-2 bg-white dark:bg-gray-800">
-            <option value="1">1 Image (20 credits)</option>
-            <option value="2">2 Images (40 credits)</option>
-            <option value="4" selected>4 Images (70 credits - Best Value)</option>
-          </select>
-        </div>
-        <div class="flex items-center">
-          <input type="checkbox" id="upscale-toggle" class="mr-2" />
-          <label for="upscale-toggle" class="text-sm font-medium">Upscale Images</label>
-        </div>
-      </div>
-
-      <!-- Style -->
-      <div>
-        <label for="style" class="block text-sm font-medium">Style</label>
-        <select id="style" name="style" class="w-full p-2 rounded border dark:bg-gray-800 dark:text-white">
-          <option value="realistic" selected>📸 Realistic</option>
-          <option value="cartoon">🎨 Cartoon</option>
-          <option value="pixar">🎬 Pixar / 3D Cartoon</option>
-        </select>
-      </div>
-
-      <!-- Advanced Settings -->
-      <details class="border rounded-md p-4 bg-white dark:bg-gray-800">
-        <summary class="font-medium cursor-pointer mb-2">Advanced Settings</summary>
-        <div class="space-y-4 mt-4">
-          <div>
-            <label for="guidance" class="block text-sm">
-              Guidance Scale (1–20)
-              <span class="block text-xs text-gray-500 dark:text-gray-400">Higher = more faithful to prompt</span>
-            </label>
-            <input type="number" id="guidance" min="1" max="20" step="0.1" class="w-full rounded-md border border-gray-300 dark:border-gray-600 p-2 bg-white dark:bg-gray-800">
-          </div>
-          <div>
-            <label for="steps" class="block text-sm">
-              Inference Steps
-              <span class="block text-xs text-gray-500 dark:text-gray-400">More steps = more detail (slower)</span>
-            </label>
-            <input type="number" id="steps" min="10" max="100" class="w-full rounded-md border border-gray-300 dark:border-gray-600 p-2 bg-white dark:bg-gray-800">
-          </div>
-          <div>
-            <label for="seed" class="block text-sm">
-              Seed (optional)
-              <span class="block text-xs text-gray-500 dark:text-gray-400">Same seed = reproducible results</span>
-            </label>
-            <input type="number" id="seed" class="w-full rounded-md border border-gray-300 dark:border-gray-600 p-2 bg-white dark:bg-gray-800">
-          </div>
-          <div>
-            <label for="scheduler" class="block text-sm">
-              Scheduler
-              <span class="block text-xs text-gray-500 dark:text-gray-400">Controls how noise is reduced during generation</span>
-            </label>
-            <select id="scheduler" class="w-full rounded-md border border-gray-300 dark:border-gray-600 p-2 bg-white dark:bg-gray-800">
-              <option value="">Default</option>
-              <option value="DDIM">DDIM</option>
-              <option value="K_EULER">K_EULER</option>
-            </select>
-          </div>
-          <div>
-            <label for="refiner" class="block text-sm">
-              Refiner
-              <span class="block text-xs text-gray-500 dark:text-gray-400">Optional extra polish on the result</span>
-            </label>
-            <select id="refiner" class="w-full rounded-md border border-gray-300 dark:border-gray-600 p-2 bg-white dark:bg-gray-800">
-              <option value="">Default</option>
-              <option value="none">None</option>
-              <option value="expert_ensemble_refiner">Expert Ensemble Refiner</option>
-            </select>
-          </div>
-        </div>
-      </details>
-
-      <input type="hidden" id="email" />
-
-      <button type="submit" id="generate-button" class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold px-6 py-2 rounded-md shadow">
-        Generate Images
-      </button>
-
-      <!-- Loading spinner -->
-      <div id="loading-spinner"
-           class="hidden flex flex-col items-center gap-2 my-4 opacity-0 transition-opacity duration-300 ease-in-out"
-           role="status"
-           aria-live="polite">
-        <div class="h-8 w-8 border-4 border-indigo-500 dark:border-indigo-400 border-t-transparent rounded-full animate-spin"></div>
-        <p class="text-xs text-gray-600 dark:text-gray-300 text-center">
-          Please allow 2–3 minutes for image generation.
-        </p>
-      </div>
-
-    </form>
   </main>
 
   <footer class="text-center text-sm text-gray-500 py-6 dark:text-gray-400">
@@ -319,45 +110,32 @@
     })();
   </script>
 
-  <!-- Login Modal -->
-  <div id="loginModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
-    <div class="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-md mx-4">
-      <h3 class="text-xl font-semibold mb-4 text-gray-900 dark:text-white">Sign In to Your Account</h3>
-      
-      <!-- Google Sign In -->
-      <button id="homeGoogleSignInBtn" class="w-full bg-red-600 text-white py-2 px-4 rounded hover:bg-red-700 mb-4">
-        Sign in with Google
-      </button>
-      
-      <div class="text-center text-gray-500 dark:text-gray-400 mb-4">or</div>
-      
-      <!-- Email/Password Form -->
-      <form id="homeLoginForm" onsubmit="return false;" class="space-y-4">
-        <input type="email" id="homeLoginEmail" placeholder="Email" required 
-               class="w-full p-3 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
-        <input type="password" id="homeLoginPassword" placeholder="Password" required 
-               class="w-full p-3 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
-        <button type="button" id="homeSignInBtn" class="w-full bg-blue-600 text-white py-2 px-4 rounded hover:bg-blue-700">
-          Sign In
-        </button>
-      </form>
-      
-      <div class="mt-4 text-center">
-        <p class="text-sm text-gray-600 dark:text-gray-400">
-          Don't have an account? 
-          <button id="goToSignUpBtn" class="text-blue-600 dark:text-blue-400 hover:underline">Sign up here</button>
-        </p>
-      </div>
-      
-      <button id="closeLoginModal" class="mt-4 w-full bg-gray-300 dark:bg-gray-600 text-gray-700 dark:text-gray-300 py-2 px-4 rounded hover:bg-gray-400 dark:hover:bg-gray-500">
-        Close
-      </button>
-    </div>
-  </div>
 
-  <!-- App script (load last so all DOM is present) -->
+  <!-- Unified Header and Auth -->
+  <script type="module">
+    import { createUnifiedHeader, initializeHeader } from "./components/header.js";
+    import { initializeAuth } from "./components/auth-utils.js";
+    
+    // Load unified header
+    document.getElementById('unified-header').innerHTML = createUnifiedHeader();
+    initializeHeader();
+    
+    // Initialize auth after a short delay to ensure Firebase is ready
+    setTimeout(() => {
+      initializeAuth();
+    }, 100);
+  </script>
+  
+  <!-- Auto-redirect to Creative Studio -->
+  <script>
+    // Redirect to Creative Studio after a short delay
+    setTimeout(() => {
+      window.location.href = '/creative.html';
+    }, 2000);
+  </script>
+  
+  <!-- Firebase and Auth Bridge -->
   <script type="module" src="./js/config.js"></script>
-  <!-- Auth bridge: expose auth & wire token provider before app code -->
   <script type="module">
     // Bridge Firebase auth from firebaseClient.js → api.js token provider
     import { setTokenProvider } from "./api.mjs";
@@ -383,7 +161,6 @@
       setTokenProvider(async () => (u?.getIdToken ? u.getIdToken() : null));
     });
   </script>
-  <script type="module" src="./frontend.js"></script>
   <!-- Debug helper: add ?kill-sw=1 to URL to unregister stale service workers -->
   <script>
     if (location.search.includes('kill-sw=1')) {

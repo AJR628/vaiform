@@ -66,31 +66,8 @@
 </head>
 <body class="bg-gray-50 text-gray-800 dark:bg-gray-900 dark:text-gray-100 font-sans min-h-screen transition-colors duration-300">
 
-  <!-- Header -->
-  <header class="bg-white dark:bg-gray-800 shadow sticky top-0 z-50">
-    <div class="max-w-6xl mx-auto px-4 py-4 flex justify-between items-center">
-      <div class="flex items-center gap-6">
-        <h1 class="text-2xl font-bold text-indigo-600 dark:text-indigo-400">
-          <a href="/">Vaiform</a>
-        </h1>
-        <nav class="space-x-4 text-sm font-medium text-gray-600 dark:text-gray-300">
-          <a href="/" class="hover:text-indigo-600 dark:hover:text-indigo-400">Home</a>
-          <a href="/creative.html" class="hover:text-indigo-600 dark:hover:text-indigo-400">Creative Studio</a>
-          <a href="/my-images.html" class="hover:text-indigo-600 dark:hover:text-indigo-400 font-semibold underline">My Images</a>
-          <a href="/buy-credits.html" class="hover:text-indigo-600 dark:hover:text-indigo-400">Buy Credits</a>
-        </nav>
-      </div>
-      <div class="flex items-center gap-4">
-        <div id="credit-display" class="text-sm text-gray-600 dark:text-gray-300 logged-in hidden">
-          Credits: <span id="credit-count">--</span>
-        </div>
-
-        <button id="login-button"  class="text-sm px-3 py-1 rounded border logged-out hidden">Login</button>
-        <button id="logout-button" class="text-sm px-3 py-1 rounded bg-red-500 text-white hover:bg-red-600 logged-in hidden">Logout</button>
-        <button id="theme-toggle" class="text-yellow-400 hover:text-yellow-300 text-xl">🌙</button>
-      </div>
-    </div>
-  </header>
+  <!-- Unified Header -->
+  <div id="unified-header"></div>
 
   <!-- Main -->
   <main class="max-w-6xl mx-auto px-4 py-8">
@@ -157,6 +134,21 @@
   </script>
 
   <!-- App scripts (order matters: frontend helpers first, then page logic) -->
+  <!-- Unified Header and Auth -->
+  <script type="module">
+    import { createUnifiedHeader, initializeHeader } from "./components/header.js";
+    import { initializeAuth } from "./components/auth-utils.js";
+    
+    // Load unified header
+    document.getElementById('unified-header').innerHTML = createUnifiedHeader();
+    initializeHeader();
+    
+    // Initialize auth after a short delay to ensure Firebase is ready
+    setTimeout(() => {
+      initializeAuth();
+    }, 100);
+  </script>
+  
   <script type="module" src="./js/firebaseClient.js"></script>
   <!-- Auth bridge: expose auth & wire token provider before page code -->
   <script type="module" src="./auth-bridge.js"></script>
