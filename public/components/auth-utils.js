@@ -1,4 +1,5 @@
 // Shared authentication utilities for consistent auth handling across pages
+import { updateCreditsDisplay, fetchAndUpdateCredits } from '/js/credits-ui.js?v=20250920a';
 
 export function initializeAuth() {
   // Wait for Firebase to be available
@@ -21,7 +22,7 @@ export function initializeAuth() {
     onAuthStateChanged(auth, (user) => {
       updateAuthUI(user);
       if (user) {
-        updateCreditsDisplay();
+        fetchAndUpdateCredits();
       }
     });
 
@@ -67,28 +68,7 @@ function updateAuthUI(user) {
   }
 }
 
-async function updateCreditsDisplay() {
-  const creditCount = document.getElementById('credit-count');
-  if (!creditCount) return;
-
-  try {
-    // Import Firestore functions
-    const { doc, getDoc } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
-    const { db } = await import('./js/firebaseClient.js');
-    
-    const user = window.auth.currentUser;
-    if (!user) return;
-
-    const userDoc = await getDoc(doc(db, 'users', user.uid));
-    if (userDoc.exists()) {
-      const userData = userDoc.data();
-      creditCount.textContent = userData.credits || 0;
-    }
-  } catch (error) {
-    console.error('Error updating credits display:', error);
-    creditCount.textContent = '--';
-  }
-}
+// Removed - now handled by credits-ui.js module
 
 // Function to check if user is authenticated and show login modal if not
 export function requireAuth(callback) {

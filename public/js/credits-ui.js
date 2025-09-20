@@ -1,72 +1,58 @@
-// Minimal shared credits UI for pages that show logged-in/logged-out + credits
-import { auth, db, ensureUserDoc, provider } from "./firebaseClient.js";
-import { onIdTokenChanged, onAuthStateChanged, signInWithPopup, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { doc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+// Credits display utility functions
+// Centralized credit management for consistent UI updates
 
-const loginBtn       = document.getElementById("login-button");
-const logoutBtn      = document.getElementById("logout-button");
-const creditDisplay  = document.getElementById("credit-display");
-const creditCount    = document.getElementById("credit-count");
-
-function toggleAuthClasses(loggedIn) {
-  document.querySelectorAll(".logged-in")?.forEach(el => el.classList.toggle("hidden", !loggedIn));
-  document.querySelectorAll(".logged-out")?.forEach(el => el.classList.toggle("hidden", loggedIn));
-}
-
-function updateCreditUI(n = 0) {
-  if (creditDisplay) creditDisplay.classList.remove("hidden");
-  if (creditCount) creditCount.textContent = String(Number.isFinite(n) ? n : 0);
-}
-
-let firestoreUnsubscribe = null;
-
-function setupFirestoreListener(user) {
-  // Clean up previous listener
-  if (firestoreUnsubscribe) {
-    firestoreUnsubscribe();
-  }
+export async function updateCreditsDisplay(credits) {
+  const creditCountElements = document.querySelectorAll('#credit-count, .credit-count');
+  const creditBadgeElements = document.querySelectorAll('#credits-badge, .credits-badge');
   
-  const userRef = doc(db, 'users', user.uid);
+  // Update all credit count displays
+  creditCountElements.forEach(el => {
+    if (el) el.textContent = credits || '--';
+  });
   
-  // Real-time listener for user data changes
-  firestoreUnsubscribe = onSnapshot(userRef, (snap) => {
-    if (!snap.exists()) return;
-    
-    const userData = snap.data();
-    const credits = Number(userData.credits ?? 0);
-    updateCreditUI(credits);
-    console.log('[credits-ui] user credits:', credits);
-  }, (error) => {
-    console.error('[credits-ui] Firestore listener error:', error);
+  // Update all credit badge displays
+  creditBadgeElements.forEach(el => {
+    if (el) el.textContent = credits || '--';
   });
 }
 
-loginBtn?.addEventListener("click", async () => {
-  try { await signInWithPopup(auth, provider); } catch (e) { console.warn("Login failed:", e); }
-});
-logoutBtn?.addEventListener("click", async () => {
-  try { await signOut(auth); } catch (e) { console.warn("Logout failed:", e); }
-});
-// Keep token provider hot and update credits quickly after login/refresh
-onIdTokenChanged(auth, async (u) => {
-  if (u) {
-    // If the api helper is present, this short wait ensures token is ready
-    if (window.__vaiform_diag__?.tokenWait) { try { await window.__vaiform_diag__.tokenWait(2500); } catch {} }
-  }
-});
-
-onAuthStateChanged(auth, async (u) => {
-  const loggedIn = !!u;
-  toggleAuthClasses(loggedIn);
-  if (loggedIn) {
-    await ensureUserDoc(u); // Ensure user doc exists
-    setupFirestoreListener(u); // Setup real-time listener
-  } else {
-    // Clean up listener when logged out
-    if (firestoreUnsubscribe) {
-      firestoreUnsubscribe();
-      firestoreUnsubscribe = null;
+export async function fetchAndUpdateCredits() {
+  try {
+    // Import Firebase functions dynamically
+    const { doc, getDoc } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+    
+    // Check if Firebase is available
+    if (typeof window.auth === 'undefined' || typeof window.db === 'undefined') {
+      console.warn('Firebase not yet available for credits update');
+      return;
     }
-    updateCreditUI(0);
+    
+    const user = window.auth.currentUser;
+    if (!user) return;
+
+    const userDoc = await getDoc(doc(window.db, 'users', user.uid));
+    if (userDoc.exists()) {
+      const userData = userDoc.data();
+      const credits = userData.credits || 0;
+      await updateCreditsDisplay(credits);
+      return credits;
+    }
+  } catch (error) {
+    console.error('Error fetching credits:', error);
+    await updateCreditsDisplay('--');
   }
-});
+}
+
+// Initialize credits display when page loads
+export function initCreditsDisplay() {
+  // Wait for Firebase to be ready
+  const checkFirebaseReady = () => {
+    if (window.auth && window.db) {
+      fetchAndUpdateCredits();
+    } else {
+      setTimeout(checkFirebaseReady, 100);
+    }
+  };
+  
+  checkFirebaseReady();
+}

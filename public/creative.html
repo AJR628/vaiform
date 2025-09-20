@@ -24,6 +24,7 @@
     <script type="module" src="./js/firebaseClient.js"></script>
     <!-- Auth bridge: expose auth & wire token provider before page code -->
     <script type="module" src="./auth-bridge.js"></script>
+    <script type="module" src="/js/credits-ui.js?v=20250920a"></script>
     <script type="module" src="./frontend.js"></script>
     <link rel="stylesheet" href="/creative.css" />
     <!-- Load DejaVu Sans font to match FFmpeg rendering -->
@@ -767,11 +768,11 @@
             
             let media;
             if (asset.provider === 'ai' || asset.type === 'ai-generated') {
-                media = `<img src="${asset.thumbUrl || asset.fileUrl}" alt="${asset.query}" class="w-full h-32 object-cover" />`;
+                media = `<img src="${asset.thumbUrl || asset.fileUrl}" alt="${asset.query}" class="w-full h-32 object-cover" loading="lazy" decoding="async" referrerpolicy="no-referrer" onerror="this.src='/img/placeholder.svg'" />`;
             } else if (currentAssetType === 'images') {
-                media = `<img src="${asset.thumbUrl || asset.fileUrl}" alt="${asset.query}" class="w-full h-32 object-cover" />`;
+                media = `<img src="${asset.thumbUrl || asset.fileUrl}" alt="${asset.query}" class="w-full h-32 object-cover" loading="lazy" decoding="async" referrerpolicy="no-referrer" onerror="this.src='/img/placeholder.svg'" />`;
             } else {
-                media = `<video src="${asset.fileUrl}" class="w-full h-32 object-cover" muted playsinline></video>`;
+                media = `<video src="${asset.fileUrl}" class="w-full h-32 object-cover" muted playsinline preload="metadata" onerror="this.style.display='none'"></video>`;
             }
             
             const attribution = asset.provider === 'ai' 
@@ -890,10 +891,10 @@
                 assetDiv.className = 'relative w-20 h-20 rounded overflow-hidden border border-gray-600';
                 
                 const media = asset.provider === 'ai' || asset.type === 'ai-generated'
-                    ? `<img src="${asset.thumbUrl || asset.fileUrl}" alt="${asset.query}" class="w-full h-full object-cover" />`
+                    ? `<img src="${asset.thumbUrl || asset.fileUrl}" alt="${asset.query}" class="w-full h-full object-cover" loading="lazy" decoding="async" referrerpolicy="no-referrer" onerror="this.src='/img/placeholder.svg'" />`
                     : currentAssetType === 'images'
-                        ? `<img src="${asset.thumbUrl || asset.fileUrl}" alt="${asset.query}" class="w-full h-full object-cover" />`
-                        : `<video src="${asset.fileUrl}" class="w-full h-full object-cover" muted playsinline></video>`;
+                        ? `<img src="${asset.thumbUrl || asset.fileUrl}" alt="${asset.query}" class="w-full h-full object-cover" loading="lazy" decoding="async" referrerpolicy="no-referrer" onerror="this.src='/img/placeholder.svg'" />`
+                        : `<video src="${asset.fileUrl}" class="w-full h-full object-cover" muted playsinline preload="metadata" onerror="this.style.display='none'"></video>`;
                 
                 assetDiv.innerHTML = `
                     ${media}
@@ -1653,7 +1654,8 @@
                     if (url) {
                         // Update credits display if successful (20 credits deducted by backend)
                         window.currentCredits -= 20;
-                        updateCreditsDisplay();
+                        const { updateCreditsDisplay } = await import('/js/credits-ui.js?v=20250920a');
+                        updateCreditsDisplay(window.currentCredits);
                         
                         const aiAsset = {
                             id: `ai-${Date.now()}`,
@@ -1671,7 +1673,7 @@
                         const aiBlock = document.getElementById('ai-result-block');
                         const aiPrev = document.getElementById('ai-result-preview');
                         if (aiBlock && aiPrev) {
-                            aiPrev.innerHTML = `<img src="${aiAsset.thumbUrl}" class="w-full h-full object-cover" />`;
+                            aiPrev.innerHTML = `<img src="${aiAsset.thumbUrl}" class="w-full h-full object-cover" loading="lazy" decoding="async" referrerpolicy="no-referrer" onerror="this.src='/img/placeholder.svg'" />`;
                             aiBlock.classList.remove('hidden');
                         }
                         // Auto-select the generated image
@@ -1745,7 +1747,8 @@
                 // Update credits display if successful
                 if (data?.data?.creditsDeducted) {
                     window.currentCredits -= data.data.creditsDeducted;
-                    updateCreditsDisplay();
+                    const { updateCreditsDisplay } = await import('/js/credits-ui.js?v=20250920a');
+                    updateCreditsDisplay(window.currentCredits);
                 }
                 
                 // Display result
