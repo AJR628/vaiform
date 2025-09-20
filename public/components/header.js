@@ -59,42 +59,48 @@ export function initializeHeader() {
     }
   });
   
-  // Initialize theme toggle
-  const themeToggle = document.getElementById('theme-toggle');
-  if (themeToggle) {
-    themeToggle.addEventListener('click', () => {
-      const html = document.documentElement;
-      const isDark = html.classList.contains('dark');
+  // Initialize theme toggle with a small delay to ensure DOM is ready
+  setTimeout(() => {
+    const themeToggle = document.getElementById('theme-toggle');
+    if (themeToggle) {
+      // Remove any existing event listeners
+      themeToggle.replaceWith(themeToggle.cloneNode(true));
+      const newThemeToggle = document.getElementById('theme-toggle');
       
-      if (isDark) {
-        // Switch to light theme
-        html.classList.remove('dark');
-        localStorage.setItem('theme', 'light');
-        themeToggle.textContent = '☀️';
-        updateHeaderTheme('light');
-      } else {
-        // Switch to dark theme
-        html.classList.add('dark');
-        localStorage.setItem('theme', 'dark');
-        themeToggle.textContent = '🌙';
+      newThemeToggle.addEventListener('click', () => {
+        const html = document.documentElement;
+        const isDark = html.classList.contains('dark');
+        
+        if (isDark) {
+          // Switch to light theme
+          html.classList.remove('dark');
+          localStorage.setItem('theme', 'light');
+          newThemeToggle.textContent = '☀️';
+          updateHeaderTheme('light');
+        } else {
+          // Switch to dark theme
+          html.classList.add('dark');
+          localStorage.setItem('theme', 'dark');
+          newThemeToggle.textContent = '🌙';
+          updateHeaderTheme('dark');
+        }
+      });
+      
+      // Set initial theme - default to dark
+      const savedTheme = localStorage.getItem('theme');
+      const shouldBeDark = savedTheme !== 'light'; // Default to dark unless explicitly set to light
+      
+      if (shouldBeDark) {
+        document.documentElement.classList.add('dark');
+        newThemeToggle.textContent = '🌙';
         updateHeaderTheme('dark');
+      } else {
+        document.documentElement.classList.remove('dark');
+        newThemeToggle.textContent = '☀️';
+        updateHeaderTheme('light');
       }
-    });
-    
-    // Set initial theme - default to dark
-    const savedTheme = localStorage.getItem('theme');
-    const shouldBeDark = savedTheme !== 'light'; // Default to dark unless explicitly set to light
-    
-    if (shouldBeDark) {
-      document.documentElement.classList.add('dark');
-      themeToggle.textContent = '🌙';
-      updateHeaderTheme('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-      themeToggle.textContent = '☀️';
-      updateHeaderTheme('light');
     }
-  }
+  }, 100);
 }
 
 // Function to update header theme classes
@@ -106,7 +112,7 @@ function updateHeaderTheme(theme) {
     // Dark theme header
     header.className = 'bg-gray-800 shadow sticky top-0 z-50';
     
-    // Update body background
+    // Update body background and text
     document.body.className = document.body.className.replace(/bg-white|bg-gray-50/, 'bg-gray-900');
     document.body.className = document.body.className.replace(/text-gray-800|text-gray-900/, 'text-gray-100');
     
@@ -128,11 +134,14 @@ function updateHeaderTheme(theme) {
     authButtons.forEach(btn => {
       btn.className = btn.className.replace(/border-gray-300|text-gray-600/, 'border-gray-600 text-gray-300');
     });
+    
+    // Update form elements for dark theme
+    updateFormElementsTheme('dark');
   } else {
     // Light theme header
     header.className = 'bg-white shadow sticky top-0 z-50';
     
-    // Update body background
+    // Update body background and text
     document.body.className = document.body.className.replace(/bg-gray-900|bg-gray-950/, 'bg-gray-50');
     document.body.className = document.body.className.replace(/text-gray-100/, 'text-gray-800');
     
@@ -154,5 +163,56 @@ function updateHeaderTheme(theme) {
     authButtons.forEach(btn => {
       btn.className = btn.className.replace(/border-gray-600|text-gray-300/, 'border-gray-300 text-gray-600');
     });
+    
+    // Update form elements for light theme
+    updateFormElementsTheme('light');
   }
+}
+
+// Function to update form elements theme
+function updateFormElementsTheme(theme) {
+  // Update input fields
+  const inputs = document.querySelectorAll('input, textarea, select');
+  inputs.forEach(input => {
+    if (theme === 'dark') {
+      // Dark theme form elements
+      input.className = input.className.replace(/bg-white|bg-gray-50/, 'bg-gray-800');
+      input.className = input.className.replace(/text-gray-800|text-gray-900/, 'text-gray-100');
+      input.className = input.className.replace(/border-gray-300/, 'border-gray-600');
+    } else {
+      // Light theme form elements
+      input.className = input.className.replace(/bg-gray-800|bg-gray-900/, 'bg-white');
+      input.className = input.className.replace(/text-gray-100/, 'text-gray-800');
+      input.className = input.className.replace(/border-gray-600/, 'border-gray-300');
+    }
+  });
+  
+  // Update buttons
+  const buttons = document.querySelectorAll('button');
+  buttons.forEach(button => {
+    // Skip theme toggle button
+    if (button.id === 'theme-toggle') return;
+    
+    if (theme === 'dark') {
+      // Dark theme buttons
+      if (button.className.includes('bg-blue-600') || button.className.includes('bg-indigo-600')) {
+        // Keep primary buttons as is
+        return;
+      }
+      // Update secondary buttons
+      button.className = button.className.replace(/bg-white|bg-gray-50/, 'bg-gray-700');
+      button.className = button.className.replace(/text-gray-800/, 'text-gray-100');
+      button.className = button.className.replace(/border-gray-300/, 'border-gray-600');
+    } else {
+      // Light theme buttons
+      if (button.className.includes('bg-blue-600') || button.className.includes('bg-indigo-600')) {
+        // Keep primary buttons as is
+        return;
+      }
+      // Update secondary buttons
+      button.className = button.className.replace(/bg-gray-700|bg-gray-800/, 'bg-white');
+      button.className = button.className.replace(/text-gray-100/, 'text-gray-800');
+      button.className = button.className.replace(/border-gray-600/, 'border-gray-300');
+    }
+  });
 }

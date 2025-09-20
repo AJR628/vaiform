@@ -231,79 +231,121 @@
     <!-- Unified Header -->
     <div id="unified-header"></div>
     
-    <div class="pricing-container">
-        <div class="pricing-header">
-            <h1>Plans & Pricing</h1>
-            <p>Choose the perfect plan for your content creation needs</p>
+    <div class="max-w-6xl mx-auto px-4 py-8">
+        <div class="text-center mb-8">
+            <h1 class="text-3xl font-semibold mb-4">Plans & Pricing</h1>
+            <p class="text-gray-600 dark:text-gray-400">Choose the perfect plan for your content creation needs</p>
         </div>
         
-        <div id="userInfo" class="user-info" style="display: none;">
-            <p>Welcome back! <span id="userEmail"></span> <span id="planBadge" class="plan-badge"></span></p>
+        <div id="userInfo" class="text-center mb-6" style="display: none;">
+            <p class="text-gray-600 dark:text-gray-400">Welcome back! <span id="userEmail"></span> <span id="planBadge" class="px-2 py-1 rounded-full text-xs font-medium"></span></p>
         </div>
         
-        <div class="pricing-grid">
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
             <!-- Free Plan -->
-            <div class="pricing-card">
-                <div class="plan-name">🆓 Free</div>
-                <div class="plan-price">
-                    <span class="currency">$</span>0
-                    <span style="font-size: 1rem; font-weight: normal; color: #6b7280;">/month</span>
+            <div class="bg-white dark:bg-gray-800 rounded-lg p-6 shadow border border-gray-200 dark:border-gray-700">
+                <div class="text-center mb-4">
+                    <h3 class="text-xl font-semibold mb-2">🆓 Free</h3>
+                    <div class="text-3xl font-bold mb-2">$0 <span class="text-lg text-gray-500 dark:text-gray-400">/month</span></div>
                 </div>
-                <ul class="plan-features">
-                    <li>Use your own quote or pick from a 50-quote bank</li>
-                    <li>Up to 4 shorts per day</li>
-                    <li>Watermarked exports</li>
-                    <li>Basic templates</li>
+                <ul class="space-y-2 mb-6">
+                    <li class="flex items-center text-sm">
+                        <span class="text-green-500 mr-2">✓</span>
+                        Use your own quote or pick from a 50-quote bank
+                    </li>
+                    <li class="flex items-center text-sm">
+                        <span class="text-green-500 mr-2">✓</span>
+                        Up to 4 shorts per day
+                    </li>
+                    <li class="flex items-center text-sm">
+                        <span class="text-green-500 mr-2">✓</span>
+                        Watermarked exports
+                    </li>
+                    <li class="flex items-center text-sm">
+                        <span class="text-green-500 mr-2">✓</span>
+                        Basic templates
+                    </li>
                 </ul>
-                <div class="plan-buttons">
-                    <button id="startFreeBtn" class="btn-plan btn-free">Start Free</button>
-                </div>
+                <button id="startFreeBtn" class="w-full bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-md">Start Free</button>
             </div>
             
             <!-- Creator Plan -->
-            <div class="pricing-card popular">
-                <div class="plan-badge">Most Popular</div>
-                <div class="plan-name">✨ Creator</div>
-                <div class="plan-price">
-                    <span class="currency">$</span>9.99
-                    <span style="font-size: 1rem; font-weight: normal; color: #6b7280;">/month (or One-Month Pass)</span>
+            <div class="bg-white dark:bg-gray-800 rounded-lg p-6 shadow border border-gray-200 dark:border-gray-700 relative">
+                <div class="bg-purple-100 dark:bg-purple-900 text-purple-700 dark:text-purple-300 px-2 py-1 rounded-full text-xs font-medium mb-4 inline-block">Most Popular</div>
+                <div class="text-center mb-4">
+                    <h3 class="text-xl font-semibold mb-2">✨ Creator</h3>
+                    <div class="text-3xl font-bold mb-2">$9.99 <span class="text-lg text-gray-500 dark:text-gray-400">/month</span></div>
+                    <div class="text-sm text-gray-500 dark:text-gray-400">(or One-Month Pass)</div>
                 </div>
-                <ul class="plan-features">
-                    <li>100 shorts / month</li>
-                    <li>No watermark</li>
-                    <li>AI quote engine + premium voices/styles</li>
-                    <li>+1,500 bonus credits</li>
-                    <li>Access to all templates</li>
+                <ul class="space-y-2 mb-6">
+                    <li class="flex items-center text-sm">
+                        <span class="text-green-500 mr-2">✓</span>
+                        100 shorts / month
+                    </li>
+                    <li class="flex items-center text-sm">
+                        <span class="text-green-500 mr-2">✓</span>
+                        No watermark
+                    </li>
+                    <li class="flex items-center text-sm">
+                        <span class="text-green-500 mr-2">✓</span>
+                        AI quote engine + premium voices/styles
+                    </li>
+                    <li class="flex items-center text-sm">
+                        <span class="text-green-500 mr-2">✓</span>
+                        +1,500 bonus credits
+                    </li>
+                    <li class="flex items-center text-sm">
+                        <span class="text-green-500 mr-2">✓</span>
+                        Access to all templates
+                    </li>
                 </ul>
-                <div class="plan-buttons">
-                    <button id="startCreatorMonthlyBtn" class="btn-plan btn-primary">Start Monthly</button>
-                    <button id="startCreatorPassBtn" class="btn-plan btn-secondary">One-Month Pass</button>
+                <div class="space-y-2">
+                    <button id="startCreatorMonthlyBtn" class="w-full bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md">Start Monthly</button>
+                    <button id="startCreatorPassBtn" class="w-full bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-md">One-Month Pass</button>
                 </div>
             </div>
             
             <!-- Pro Plan -->
-            <div class="pricing-card">
-                <div class="plan-name">🚀 Pro</div>
-                <div class="plan-price">
-                    <span class="currency">$</span>19.99
-                    <span style="font-size: 1rem; font-weight: normal; color: #6b7280;">/month (or One-Month Pass)</span>
+            <div class="bg-white dark:bg-gray-800 rounded-lg p-6 shadow border border-gray-200 dark:border-gray-700">
+                <div class="text-center mb-4">
+                    <h3 class="text-xl font-semibold mb-2">🚀 Pro</h3>
+                    <div class="text-3xl font-bold mb-2">$19.99 <span class="text-lg text-gray-500 dark:text-gray-400">/month</span></div>
+                    <div class="text-sm text-gray-500 dark:text-gray-400">(or One-Month Pass)</div>
                 </div>
-                <ul class="plan-features">
-                    <li>250 shorts / month</li>
-                    <li>No watermark</li>
-                    <li>Advanced editing + priority rendering</li>
-                    <li>AI quote engine + premium voices/styles</li>
-                    <li>+3,500 bonus credits</li>
-                    <li>All templates + premium features</li>
+                <ul class="space-y-2 mb-6">
+                    <li class="flex items-center text-sm">
+                        <span class="text-green-500 mr-2">✓</span>
+                        250 shorts / month
+                    </li>
+                    <li class="flex items-center text-sm">
+                        <span class="text-green-500 mr-2">✓</span>
+                        No watermark
+                    </li>
+                    <li class="flex items-center text-sm">
+                        <span class="text-green-500 mr-2">✓</span>
+                        Advanced editing + priority rendering
+                    </li>
+                    <li class="flex items-center text-sm">
+                        <span class="text-green-500 mr-2">✓</span>
+                        AI quote engine + premium voices/styles
+                    </li>
+                    <li class="flex items-center text-sm">
+                        <span class="text-green-500 mr-2">✓</span>
+                        +3,500 bonus credits
+                    </li>
+                    <li class="flex items-center text-sm">
+                        <span class="text-green-500 mr-2">✓</span>
+                        All templates + premium features
+                    </li>
                 </ul>
-                <div class="plan-buttons">
-                    <button id="startProMonthlyBtn" class="btn-plan btn-primary">Start Monthly</button>
-                    <button id="startProPassBtn" class="btn-plan btn-secondary">One-Month Pass</button>
+                <div class="space-y-2">
+                    <button id="startProMonthlyBtn" class="w-full bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md">Start Monthly</button>
+                    <button id="startProPassBtn" class="w-full bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-md">One-Month Pass</button>
                 </div>
             </div>
         </div>
         
-        <div style="text-align: center; color: #6b7280; font-size: 0.875rem;">
+        <div class="text-center text-gray-500 dark:text-gray-400 text-sm mt-8">
             <p>All plans include secure payment processing via Stripe. Cancel anytime.</p>
         </div>
     </div>
