@@ -76,7 +76,7 @@ async function grantCreditsAndUpdatePlan(metadata) {
     await db.runTransaction(async (t) => {
       const snap = await t.get(userRef);
       const now = admin.firestore.Timestamp.now();
-      const creditsToAdd = plan === "creator" ? 1500 : plan === "pro" ? 5000 : 0;
+      const creditsToAdd = plan === "creator" ? 1000 : plan === "pro" ? 2500 : 0;
       const expiresAt = billing === "onetime"
         ? admin.firestore.Timestamp.fromDate(new Date(Date.now() + 30*24*60*60*1000))
         : null;

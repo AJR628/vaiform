@@ -2,6 +2,7 @@ import { AssetsOptionsSchema, AiImagesSchema } from "../schemas/quotes.schema.js
 import { pexelsSearchVideos } from "../services/pexels.videos.provider.js";
 import { pexelsSearchPhotos } from "../services/pexels.photos.provider.js";
 import { generateAIImage } from "../services/ai.image.provider.js";
+import { ensureUserDoc, debitCreditsTx, refundCredits } from "../services/credit.service.js";
 
 export async function getAssetsOptions(req, res) {
   try {
@@ -92,6 +93,31 @@ export async function generateAiImages(req, res) {
       return res.status(400).json({ ok: false, reason: "BAD_REQUEST", detail: parsed.error.flatten() });
     }
     const { prompt, style = "realistic", count = 2 } = parsed.data;
+    const { uid, email } = req.user || {};
+
+    if (!uid) {
+      return res.status(401).json({ ok: false, reason: "UNAUTHENTICATED", detail: "Login required" });
+    }
+
+    // Ensure user doc exists
+    await ensureUserDoc(uid, email);
+
+    // Calculate cost: 20 credits per image
+    const cost = count * 20;
+    
+    // Check if user has sufficient credits and debit them
+    try {
+      await debitCreditsTx(uid, cost);
+    } catch (err) {
+      if (err.code === 'INSUFFICIENT_CREDITS') {
+        return res.status(400).json({ 
+          ok: false, 
+          reason: "INSUFFICIENT_CREDITS", 
+          detail: `You need ${cost} credits to generate ${count} AI image(s). You have insufficient credits.` 
+        });
+      }
+      throw err;
+    }
 
     // Map style to Replicate model parameters
     const styleMap = {
@@ -101,32 +127,64 @@ export async function generateAiImages(req, res) {
     const config = styleMap[style] || styleMap.realistic;
 
     const results = [];
-    for (let i = 0; i < count; i++) {
-      try {
-        const result = await generateAIImage({ prompt, style: config.model, params: { guidance: config.guidance }, uid: req.user?.uid || null, jobId: `frontend-${Date.now()}`, index: i });
-        if (result?.url) {
-          results.push({
-            id: `ai-${Date.now()}-${i}`,
-            url: result.url,
-            prompt,
-            style,
-            generated: true
-          });
+    let successCount = 0;
+    
+    try {
+      for (let i = 0; i < count; i++) {
+        try {
+          const result = await generateAIImage({ prompt, style: config.model, params: { guidance: config.guidance }, uid, jobId: `frontend-${Date.now()}`, index: i });
+          if (result?.url) {
+            results.push({
+              id: `ai-${Date.now()}-${i}`,
+              url: result.url,
+              prompt,
+              style,
+              generated: true
+            });
+            successCount++;
+          }
+        } catch (e) {
+          console.warn(`AI image generation ${i} failed:`, e?.message);
         }
-      } catch (e) {
-        console.warn(`AI image generation ${i} failed:`, e?.message);
       }
-    }
 
-    return res.json({ 
-      ok: true, 
-      data: { 
-        images: results,
-        count: results.length,
-        requested: count,
-        style 
-      } 
-    });
+      // If no images were generated successfully, refund the credits
+      if (successCount === 0) {
+        await refundCredits(uid, cost);
+        return res.status(500).json({ 
+          ok: false, 
+          reason: "GENERATION_FAILED", 
+          detail: "All AI image generations failed. Credits have been refunded." 
+        });
+      }
+
+      // If partial success, refund credits for failed generations
+      if (successCount < count) {
+        const failedCount = count - successCount;
+        const refundAmount = failedCount * 20;
+        await refundCredits(uid, refundAmount);
+      }
+
+      return res.json({ 
+        ok: true, 
+        data: { 
+          images: results,
+          count: results.length,
+          requested: count,
+          style,
+          cost: successCount * 20,
+          creditsDeducted: successCount * 20
+        } 
+      });
+    } catch (e) {
+      // If generation fails completely, refund all credits
+      await refundCredits(uid, cost);
+      return res.status(500).json({ 
+        ok: false, 
+        reason: "GENERATION_FAILED", 
+        detail: e?.message || "AI image generation failed. Credits have been refunded." 
+      });
+    }
   } catch (e) {
     return res.status(500).json({ ok: false, reason: "SERVER_ERROR", detail: e?.message || "AI image generation failed" });
   }

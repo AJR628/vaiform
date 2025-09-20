@@ -274,7 +274,7 @@
                         class="px-3 py-1 bg-purple-600 hover:bg-purple-500 text-white text-xs rounded"
                         title="Generate a new AI image using the selected references"
                     >
-                        Remix with AI
+                        20 Credits
                     </button>
                 </div>
             </div>
@@ -1606,6 +1606,12 @@
                 return;
             }
             
+            // Check if user has sufficient credits (20 credits for AI generation)
+            if (window.currentCredits < 20) {
+                showError('ai-error', 'You need 20 credits to generate AI images. You have insufficient credits.');
+                return;
+            }
+            
             const prompt = document.getElementById('ai-prompt').value;
             const styleSlider = document.getElementById('ai-style-slider').value;
             
@@ -1645,6 +1651,10 @@
                     const first = imgs[0];
                     const url = typeof first === 'string' ? first : (first?.url || first);
                     if (url) {
+                        // Update credits display if successful (20 credits deducted by backend)
+                        window.currentCredits -= 20;
+                        updateCreditsDisplay();
+                        
                         const aiAsset = {
                             id: `ai-${Date.now()}`,
                             fileUrl: url,
@@ -1674,7 +1684,11 @@
                     showError('ai-error', (data && (data.reason || data.error)) || 'Failed to generate AI image');
                 }
             } catch (error) {
-                showError('ai-error', error.message || 'Network error');
+                if (error?.reason === 'INSUFFICIENT_CREDITS') {
+                    showError('ai-error', 'You need 20 credits to generate AI images. You have insufficient credits.');
+                } else {
+                    showError('ai-error', error.message || 'Network error');
+                }
             } finally {
                 setLoading('generate-ai-btn', false);
             }
@@ -1685,6 +1699,19 @@
             const t = e.target;
             if (!t || t.id !== 'remix-generate-btn') return;
             e.preventDefault();
+            
+            // Check if user is logged in
+            if (!window.auth?.currentUser) {
+                showError('ai-error', 'Please log in to generate AI images');
+                return;
+            }
+            
+            // Check if user has sufficient credits (20 credits for AI generation)
+            if (window.currentCredits < 20) {
+                showError('ai-error', 'You need 20 credits to generate AI images. You have insufficient credits.');
+                return;
+            }
+            
             // Collect refs + prompt + style, then call generate endpoint
             const base = document.getElementById('ai-prompt');
             const prompt = (base?.value || '').trim();
@@ -1714,6 +1741,13 @@
                 const data = await apiFetch('/assets/ai-images', { method:'POST', body: { prompt: `${prompt}`.trim(), style: style === 'creative' ? 'creative' : 'realistic', count: 1 } });
                 const url = data?.data?.images?.[0]?.url || data?.images?.[0] || null;
                 if (!url) { showError('ai-error', 'AI image generation failed'); return; }
+                
+                // Update credits display if successful
+                if (data?.data?.creditsDeducted) {
+                    window.currentCredits -= data.data.creditsDeducted;
+                    updateCreditsDisplay();
+                }
+                
                 // Display result
                 const aiBlock = document.getElementById('ai-result-block');
                 const aiPrev = document.getElementById('ai-result-preview');
@@ -1723,7 +1757,11 @@
                   aiBlock.classList.remove('hidden');
                 }
               } catch (err) {
-                showError('ai-error', err?.message || 'AI generation error');
+                if (err?.reason === 'INSUFFICIENT_CREDITS') {
+                    showError('ai-error', 'You need 20 credits to generate AI images. You have insufficient credits.');
+                } else {
+                    showError('ai-error', err?.message || 'AI generation error');
+                }
               }
             })();
         });
