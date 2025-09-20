@@ -227,20 +227,22 @@
         }
     </script>
 </head>
-<body class="bg-gray-900 text-gray-100 min-h-screen">
+<body class="bg-gray-50 text-gray-800 dark:bg-gray-900 dark:text-gray-100 font-sans min-h-screen flex flex-col transition-colors duration-300">
     <!-- Unified Header -->
     <div id="unified-header"></div>
     
-    <div class="max-w-6xl mx-auto px-4 py-8">
-        <div class="text-center mb-8">
-            <h1 class="text-3xl font-semibold mb-4">Plans & Pricing</h1>
+    <!-- Main Content -->
+    <main class="flex-1 w-full max-w-4xl mx-auto px-4 py-10 space-y-8">
+        <section class="text-center">
+            <h2 class="text-3xl font-semibold mb-4">Plans & Pricing</h2>
             <p class="text-gray-600 dark:text-gray-400">Choose the perfect plan for your content creation needs</p>
-        </div>
-        
+        </section>
+
         <div id="userInfo" class="text-center mb-6" style="display: none;">
             <p class="text-gray-600 dark:text-gray-400">Welcome back! <span id="userEmail"></span> <span id="planBadge" class="px-2 py-1 rounded-full text-xs font-medium"></span></p>
         </div>
-        
+
+        <!-- Pricing Cards -->
         <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
             <!-- Free Plan -->
             <div class="bg-white dark:bg-gray-800 rounded-lg p-6 shadow border border-gray-200 dark:border-gray-700">
@@ -345,10 +347,14 @@
             </div>
         </div>
         
-        <div class="text-center text-gray-500 dark:text-gray-400 text-sm mt-8">
+        <div class="text-center text-gray-500 dark:text-gray-400 text-sm">
             <p>All plans include secure payment processing via Stripe. Cancel anytime.</p>
         </div>
-    </div>
+    </main>
+
+    <footer class="text-center text-sm text-gray-500 py-6 dark:text-gray-400">
+        <span>© 2025 Vaiform. All rights reserved.</span>
+    </footer>
     
     <!-- Auth Modal -->
     <div id="authModal" class="auth-modal">
