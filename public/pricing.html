@@ -1,222 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Plans & Pricing - Vaiform</title>
-    <link rel="stylesheet" href="creative.css">
-    <style>
-        .pricing-container {
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 2rem;
-        }
-        
-        .pricing-header {
-            text-align: center;
-            margin-bottom: 3rem;
-        }
-        
-        .pricing-header h1 {
-            font-size: 2.5rem;
-            margin-bottom: 1rem;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-        }
-        
-        .pricing-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-            gap: 2rem;
-            margin-bottom: 3rem;
-        }
-        
-        .pricing-card {
-            background: white;
-            border-radius: 12px;
-            padding: 2rem;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
-            border: 2px solid transparent;
-            transition: all 0.3s ease;
-            position: relative;
-        }
-        
-        .pricing-card:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.15);
-        }
-        
-        .pricing-card.popular {
-            border-color: #667eea;
-            transform: scale(1.05);
-        }
-        
-        .pricing-card.popular::before {
-            content: "Most Popular";
-            position: absolute;
-            top: -12px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 0.5rem 1rem;
-            border-radius: 20px;
-            font-size: 0.875rem;
-            font-weight: 600;
-        }
-        
-        .plan-name {
-            font-size: 1.5rem;
-            font-weight: 700;
-            margin-bottom: 0.5rem;
-        }
-        
-        .plan-price {
-            font-size: 2.5rem;
-            font-weight: 700;
-            margin-bottom: 1rem;
-        }
-        
-        .plan-price .currency {
-            font-size: 1.5rem;
-            vertical-align: top;
-        }
-        
-        .plan-features {
-            list-style: none;
-            padding: 0;
-            margin: 1.5rem 0;
-        }
-        
-        .plan-features li {
-            padding: 0.5rem 0;
-            display: flex;
-            align-items: center;
-        }
-        
-        .plan-features li::before {
-            content: "✓";
-            color: #10b981;
-            font-weight: bold;
-            margin-right: 0.75rem;
-            font-size: 1.2rem;
-        }
-        
-        .plan-buttons {
-            display: flex;
-            flex-direction: column;
-            gap: 0.75rem;
-        }
-        
-        .btn-plan {
-            padding: 0.75rem 1.5rem;
-            border: none;
-            border-radius: 8px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            text-decoration: none;
-            text-align: center;
-        }
-        
-        .btn-primary {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-        }
-        
-        .btn-primary:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
-        }
-        
-        .btn-secondary {
-            background: #f3f4f6;
-            color: #374151;
-            border: 2px solid #e5e7eb;
-        }
-        
-        .btn-secondary:hover {
-            background: #e5e7eb;
-        }
-        
-        .btn-free {
-            background: #10b981;
-            color: white;
-        }
-        
-        .btn-free:hover {
-            background: #059669;
-            transform: translateY(-2px);
-        }
-        
-        .auth-modal {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0, 0, 0, 0.5);
-            z-index: 1000;
-            align-items: center;
-            justify-content: center;
-        }
-        
-        .auth-modal.show {
-            display: flex;
-        }
-        
-        .auth-modal-content {
-            background: white;
-            padding: 2rem;
-            border-radius: 12px;
-            max-width: 400px;
-            width: 90%;
-            text-align: center;
-        }
-        
-        .loading {
-            display: none;
-        }
-        
-        .loading.show {
-            display: inline-block;
-        }
-        
-        .user-info {
-            background: #f8fafc;
-            padding: 1rem;
-            border-radius: 8px;
-            margin-bottom: 2rem;
-            text-align: center;
-        }
-        
-        .plan-badge {
-            display: inline-block;
-            padding: 0.25rem 0.75rem;
-            border-radius: 20px;
-            font-size: 0.875rem;
-            font-weight: 600;
-            margin-left: 0.5rem;
-        }
-        
-        .plan-badge.free {
-            background: #d1fae5;
-            color: #065f46;
-        }
-        
-        .plan-badge.creator {
-            background: #dbeafe;
-            color: #1e40af;
-        }
-        
-        .plan-badge.pro {
-            background: #f3e8ff;
-            color: #6b21a8;
-        }
-    </style>
     <!-- Respect saved theme before paint - default to dark -->
     <script>
         const savedTheme = localStorage.getItem("theme");
@@ -226,162 +10,147 @@
             document.documentElement.classList.add("dark");
         }
     </script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Plans & Pricing - Vaiform</title>
+    
+    <!-- Tailwind -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = { darkMode: 'class' };
+    </script>
 </head>
 <body class="bg-gray-50 text-gray-800 dark:bg-gray-900 dark:text-gray-100 font-sans min-h-screen flex flex-col transition-colors duration-300">
     <!-- Unified Header -->
     <div id="unified-header"></div>
     
     <!-- Main Content -->
-    <main class="flex-1 w-full max-w-4xl mx-auto px-4 py-10 space-y-8">
+    <main class="flex-1 w-full max-w-2xl mx-auto px-4 py-10 space-y-8">
+        <!-- Header Section -->
         <section class="text-center">
             <h2 class="text-3xl font-semibold mb-4">Plans & Pricing</h2>
             <p class="text-gray-600 dark:text-gray-400">Choose the perfect plan for your content creation needs</p>
         </section>
 
-        <div id="userInfo" class="text-center mb-6" style="display: none;">
-            <p class="text-gray-600 dark:text-gray-400">Welcome back! <span id="userEmail"></span> <span id="planBadge" class="px-2 py-1 rounded-full text-xs font-medium"></span></p>
+        <!-- User Info Section -->
+        <div id="userInfo" class="bg-white dark:bg-gray-800 rounded-lg p-4 border border-gray-200 dark:border-gray-700 text-center hidden">
+            <p class="text-gray-600 dark:text-gray-400">Welcome back! <span id="userEmail" class="font-medium"></span> <span id="planBadge" class="px-2 py-1 rounded-full text-xs font-medium ml-2"></span></p>
         </div>
 
-        <!-- Pricing Cards -->
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <!-- Pricing Plans Container -->
+        <div class="bg-white dark:bg-gray-900 rounded-lg p-6 space-y-6 border border-gray-200 dark:border-gray-700">
             <!-- Free Plan -->
-            <div class="bg-white dark:bg-gray-800 rounded-lg p-6 shadow border border-gray-200 dark:border-gray-700">
+            <div class="bg-gray-50 dark:bg-gray-800 rounded-lg p-6 border border-gray-200 dark:border-gray-700">
                 <div class="text-center mb-4">
-                    <h3 class="text-xl font-semibold mb-2">🆓 Free</h3>
-                    <div class="text-3xl font-bold mb-2">$0 <span class="text-lg text-gray-500 dark:text-gray-400">/month</span></div>
+                    <h3 class="text-xl font-semibold mb-2 text-gray-900 dark:text-white">🆓 Free</h3>
+                    <div class="text-3xl font-bold mb-2 text-gray-900 dark:text-white">$0 <span class="text-lg text-gray-500 dark:text-gray-400">/month</span></div>
                 </div>
                 <ul class="space-y-2 mb-6">
-                    <li class="flex items-center text-sm">
+                    <li class="flex items-center text-sm text-gray-700 dark:text-gray-300">
                         <span class="text-green-500 mr-2">✓</span>
                         Use your own quote or pick from a 50-quote bank
                     </li>
-                    <li class="flex items-center text-sm">
+                    <li class="flex items-center text-sm text-gray-700 dark:text-gray-300">
                         <span class="text-green-500 mr-2">✓</span>
                         Up to 4 shorts per day
                     </li>
-                    <li class="flex items-center text-sm">
+                    <li class="flex items-center text-sm text-gray-700 dark:text-gray-300">
                         <span class="text-green-500 mr-2">✓</span>
                         Watermarked exports
                     </li>
-                    <li class="flex items-center text-sm">
+                    <li class="flex items-center text-sm text-gray-700 dark:text-gray-300">
                         <span class="text-green-500 mr-2">✓</span>
                         Basic templates
                     </li>
                 </ul>
-                <button id="startFreeBtn" class="w-full bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-md">Start Free</button>
+                <button id="startFreeBtn" class="w-full bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-md font-medium transition-colors">Start Free</button>
             </div>
             
             <!-- Creator Plan -->
-            <div class="bg-white dark:bg-gray-800 rounded-lg p-6 shadow border border-gray-200 dark:border-gray-700 relative">
-                <div class="bg-purple-100 dark:bg-purple-900 text-purple-700 dark:text-purple-300 px-2 py-1 rounded-full text-xs font-medium mb-4 inline-block">Most Popular</div>
+            <div class="bg-gray-50 dark:bg-gray-800 rounded-lg p-6 border-2 border-blue-500 relative">
+                <div class="absolute -top-3 left-1/2 transform -translate-x-1/2 bg-blue-500 text-white px-3 py-1 rounded-full text-xs font-medium">Most Popular</div>
                 <div class="text-center mb-4">
-                    <h3 class="text-xl font-semibold mb-2">✨ Creator</h3>
-                    <div class="text-3xl font-bold mb-2">$9.99 <span class="text-lg text-gray-500 dark:text-gray-400">/month</span></div>
+                    <h3 class="text-xl font-semibold mb-2 text-gray-900 dark:text-white">✨ Creator</h3>
+                    <div class="text-3xl font-bold mb-2 text-gray-900 dark:text-white">$9.99 <span class="text-lg text-gray-500 dark:text-gray-400">/month</span></div>
                     <div class="text-sm text-gray-500 dark:text-gray-400">(or One-Month Pass)</div>
                 </div>
                 <ul class="space-y-2 mb-6">
-                    <li class="flex items-center text-sm">
+                    <li class="flex items-center text-sm text-gray-700 dark:text-gray-300">
                         <span class="text-green-500 mr-2">✓</span>
                         100 shorts / month
                     </li>
-                    <li class="flex items-center text-sm">
+                    <li class="flex items-center text-sm text-gray-700 dark:text-gray-300">
                         <span class="text-green-500 mr-2">✓</span>
                         No watermark
                     </li>
-                    <li class="flex items-center text-sm">
+                    <li class="flex items-center text-sm text-gray-700 dark:text-gray-300">
                         <span class="text-green-500 mr-2">✓</span>
                         AI quote engine + premium voices/styles
                     </li>
-                    <li class="flex items-center text-sm">
+                    <li class="flex items-center text-sm text-gray-700 dark:text-gray-300">
                         <span class="text-green-500 mr-2">✓</span>
                         +1,500 bonus credits
                     </li>
-                    <li class="flex items-center text-sm">
+                    <li class="flex items-center text-sm text-gray-700 dark:text-gray-300">
                         <span class="text-green-500 mr-2">✓</span>
                         Access to all templates
                     </li>
                 </ul>
                 <div class="space-y-2">
-                    <button id="startCreatorMonthlyBtn" class="w-full bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md">Start Monthly</button>
-                    <button id="startCreatorPassBtn" class="w-full bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-md">One-Month Pass</button>
+                    <button id="startCreatorMonthlyBtn" class="w-full bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md font-medium transition-colors">Start Monthly</button>
+                    <button id="startCreatorPassBtn" class="w-full bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-md font-medium transition-colors">One-Month Pass</button>
                 </div>
             </div>
             
             <!-- Pro Plan -->
-            <div class="bg-white dark:bg-gray-800 rounded-lg p-6 shadow border border-gray-200 dark:border-gray-700">
+            <div class="bg-gray-50 dark:bg-gray-800 rounded-lg p-6 border border-gray-200 dark:border-gray-700">
                 <div class="text-center mb-4">
-                    <h3 class="text-xl font-semibold mb-2">🚀 Pro</h3>
-                    <div class="text-3xl font-bold mb-2">$19.99 <span class="text-lg text-gray-500 dark:text-gray-400">/month</span></div>
+                    <h3 class="text-xl font-semibold mb-2 text-gray-900 dark:text-white">🚀 Pro</h3>
+                    <div class="text-3xl font-bold mb-2 text-gray-900 dark:text-white">$19.99 <span class="text-lg text-gray-500 dark:text-gray-400">/month</span></div>
                     <div class="text-sm text-gray-500 dark:text-gray-400">(or One-Month Pass)</div>
                 </div>
                 <ul class="space-y-2 mb-6">
-                    <li class="flex items-center text-sm">
+                    <li class="flex items-center text-sm text-gray-700 dark:text-gray-300">
                         <span class="text-green-500 mr-2">✓</span>
                         250 shorts / month
                     </li>
-                    <li class="flex items-center text-sm">
+                    <li class="flex items-center text-sm text-gray-700 dark:text-gray-300">
                         <span class="text-green-500 mr-2">✓</span>
                         No watermark
                     </li>
-                    <li class="flex items-center text-sm">
+                    <li class="flex items-center text-sm text-gray-700 dark:text-gray-300">
                         <span class="text-green-500 mr-2">✓</span>
                         Advanced editing + priority rendering
                     </li>
-                    <li class="flex items-center text-sm">
+                    <li class="flex items-center text-sm text-gray-700 dark:text-gray-300">
                         <span class="text-green-500 mr-2">✓</span>
                         AI quote engine + premium voices/styles
                     </li>
-                    <li class="flex items-center text-sm">
+                    <li class="flex items-center text-sm text-gray-700 dark:text-gray-300">
                         <span class="text-green-500 mr-2">✓</span>
                         +3,500 bonus credits
                     </li>
-                    <li class="flex items-center text-sm">
+                    <li class="flex items-center text-sm text-gray-700 dark:text-gray-300">
                         <span class="text-green-500 mr-2">✓</span>
                         All templates + premium features
                     </li>
                 </ul>
                 <div class="space-y-2">
-                    <button id="startProMonthlyBtn" class="w-full bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md">Start Monthly</button>
-                    <button id="startProPassBtn" class="w-full bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-md">One-Month Pass</button>
+                    <button id="startProMonthlyBtn" class="w-full bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md font-medium transition-colors">Start Monthly</button>
+                    <button id="startProPassBtn" class="w-full bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-md font-medium transition-colors">One-Month Pass</button>
                 </div>
             </div>
         </div>
         
-        <div class="text-center text-gray-500 dark:text-gray-400 text-sm">
-            <p>All plans include secure payment processing via Stripe. Cancel anytime.</p>
+        <!-- Footer Note -->
+        <div class="bg-white dark:bg-gray-800 rounded-lg p-4 border border-gray-200 dark:border-gray-700 text-center">
+            <p class="text-gray-500 dark:text-gray-400 text-sm">All plans include secure payment processing via Stripe. Cancel anytime.</p>
         </div>
     </main>
 
     <footer class="text-center text-sm text-gray-500 py-6 dark:text-gray-400">
         <span>© 2025 Vaiform. All rights reserved.</span>
     </footer>
-    
-    <!-- Auth Modal -->
-    <div id="authModal" class="auth-modal">
-        <div class="auth-modal-content">
-            <h3>Sign up to get started</h3>
-            <p>Create your free account to start making shorts</p>
-            
-            <!-- Google Sign In -->
-            <button id="googleSignInBtn" class="btn-plan btn-primary" style="width: 100%; margin-bottom: 1rem;">
-                Sign in with Google
-            </button>
-            
-            <div style="text-align: center; margin: 1rem 0; color: #6b7280;">or</div>
-            
-            <!-- Email/Password Form -->
-            <form id="emailAuthForm" onsubmit="return false;">
-                <div style="margin-bottom: 1rem;">
-                    <input type="email" id="authEmail" placeholder="Email" required style="width: 100%; padding: 0.75rem; margin-bottom: 0.5rem; border: 1px solid #d1d5db; border-radius: 4px;">
-                    <input type="password" id="authPassword" placeholder="Password" required style="width: 100%; padding: 0.75rem; margin-bottom: 0.5rem; border: 1px solid #d1d5db; border-radius: 4px;">
-                </div>
-                <button type="button" id="signInBtn" class="btn-plan btn-primary" style="margin-right: 0.5rem;">Sign In</button>
-                <button type="button" id="signUpBtn" class="btn-plan btn-secondary">Sign Up</button>
-            </form>
-            
-            <button id="closeAuthModal" class="btn-plan btn-secondary" style="margin-top: 1rem;">Close</button>
-        </div>
-    </div>
     
     <!-- Unified Header and Auth -->
     <script type="module">
@@ -398,7 +167,33 @@
         }, 100);
     </script>
     
-    <script src="js/env.js"></script>
+    <!-- Firebase and Auth Bridge -->
+    <script type="module" src="./js/config.js"></script>
+    <script type="module">
+        // Bridge Firebase auth from firebaseClient.js → api.js token provider
+        import { setTokenProvider } from "./api.mjs";
+        import { auth } from "./js/firebaseClient.js";
+        import { onIdTokenChanged, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+
+        // Expose the modular auth instance for any legacy code expecting window.auth
+        try { if (!window.auth) window.auth = auth; } catch {}
+
+        // 1) Provide a token immediately if possible
+        setTokenProvider(async () => {
+            const u = auth.currentUser;
+            return u?.getIdToken ? u.getIdToken() : null;
+        });
+
+        // 2) Update provider whenever Firebase rotates/refreshes the ID token
+        onIdTokenChanged(auth, (u) => {
+            setTokenProvider(async () => (u?.getIdToken ? u.getIdToken() : null));
+        });
+
+        // 3) Also react to login/logout
+        onAuthStateChanged(auth, (u) => {
+            setTokenProvider(async () => (u?.getIdToken ? u.getIdToken() : null));
+        });
+    </script>
     <script type="module" src="js/pricing.js"></script>
 </body>
 </html>

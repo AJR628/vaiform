@@ -70,8 +70,8 @@
         </div>
 
         <!-- Quote Generation Section -->
-        <div class="bg-gray-900 rounded-lg p-6 space-y-4">
-            <h2 class="text-xl font-semibold">Generate Quote</h2>
+        <div class="bg-white dark:bg-gray-900 rounded-lg p-6 space-y-4 border border-gray-200 dark:border-gray-700">
+            <h2 class="text-xl font-semibold text-gray-900 dark:text-white">Generate Quote</h2>
             
             <div class="flex gap-4 items-center">
                 <input
@@ -79,10 +79,10 @@
                     id="quote-text"
                     value="Create a motivational quote about success"
                     placeholder="Describe what kind of quote you want..."
-                    class="flex-1 bg-gray-800 border border-gray-700 rounded px-3 py-2"
+                    class="flex-1 bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-3 py-2 text-gray-900 dark:text-white"
                 />
-                <div class="text-xs text-gray-400 w-20 text-right" id="quote-char-count">0/200</div>
-                <select id="quote-tone" class="bg-gray-800 border border-gray-700 rounded px-3 py-2">
+                <div class="text-xs text-gray-500 dark:text-gray-400 w-20 text-right" id="quote-char-count">0/200</div>
+                <select id="quote-tone" class="bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-3 py-2 text-gray-900 dark:text-white">
                     <option value="default">Default</option>
                     <option value="motivational">Motivational</option>
                     <option value="witty">Witty</option>
@@ -107,11 +107,11 @@
 
             <div id="quote-error" class="error text-sm hidden"></div>
 
-            <div id="quote-result" class="bg-gray-800 rounded p-4 space-y-3 hidden">
+            <div id="quote-result" class="bg-gray-100 dark:bg-gray-800 rounded p-4 space-y-3 hidden border border-gray-200 dark:border-gray-700">
                 <div class="flex items-start justify-between gap-3">
                     <div class="flex-1">
-                        <div id="quote-text-display" class="text-lg font-medium"></div>
-                        <textarea id="quote-edit" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm hidden"></textarea>
+                        <div id="quote-text-display" class="text-lg font-medium text-gray-900 dark:text-white"></div>
+                        <textarea id="quote-edit" class="w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded px-3 py-2 text-sm hidden text-gray-900 dark:text-white"></textarea>
                     </div>
                     <div class="flex flex-col gap-2 items-end">
                         <div id="regen-info" class="text-xs text-gray-400">Regens left: 10</div>
@@ -141,8 +141,8 @@
         </div>
 
         <!-- Asset Selection Section -->
-        <div class="bg-gray-900 rounded-lg p-6 space-y-4">
-            <h2 class="text-xl font-semibold">Choose Background</h2>
+        <div class="bg-white dark:bg-gray-900 rounded-lg p-6 space-y-4 border border-gray-200 dark:border-gray-700">
+            <h2 class="text-xl font-semibold text-gray-900 dark:text-white">Choose Background</h2>
             
             <!-- Asset Type Tabs -->
             <div class="flex gap-2">
@@ -158,8 +158,8 @@
             </div>
 
             <!-- Remix Area -->
-            <div id="remix-area" class="bg-gray-800 rounded-lg p-4 mb-4 hidden">
-                <h3 class="text-sm font-medium text-gray-300 mb-3">Remix References (up to 2)</h3>
+            <div id="remix-area" class="bg-gray-100 dark:bg-gray-800 rounded-lg p-4 mb-4 hidden border border-gray-200 dark:border-gray-700">
+                <h3 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Remix References (up to 2)</h3>
                 <div id="remix-assets" class="flex gap-4">
                     <!-- Remix assets will be added here -->
                 </div>
@@ -180,7 +180,7 @@
                         id="ai-prompt"
                         value="A serene mountain landscape at sunset"
                         placeholder="Describe what to create from these references..."
-                        class="flex-1 min-w-[16rem] bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm"
+                        class="flex-1 min-w-[16rem] bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded px-3 py-2 text-sm text-gray-900 dark:text-white"
                     />
                     <div class="flex items-center gap-2">
                         <span class="text-xs text-gray-400">Realistic</span>
@@ -212,7 +212,7 @@
                     id="asset-query"
                     value="nature"
                     placeholder="Search for images/videos..."
-                    class="flex-1 bg-gray-800 border border-gray-700 rounded px-3 py-2"
+                    class="flex-1 bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-3 py-2 text-gray-900 dark:text-white"
                 />
                 <button
                     id="search-assets-btn"
@@ -270,14 +270,14 @@
         </div>
 
         <!-- Caption Style Section -->
-        <div class="bg-gray-900 rounded-lg p-6 space-y-4">
-            <h2 class="text-xl font-semibold">Caption Style</h2>
+        <div class="bg-white dark:bg-gray-900 rounded-lg p-6 space-y-4 border border-gray-200 dark:border-gray-700">
+            <h2 class="text-xl font-semibold text-gray-900 dark:text-white">Caption Style</h2>
             
             <div class="grid grid-cols-2 gap-4">
                 <!-- Font Family -->
                 <div>
-                    <label class="block text-sm font-medium text-gray-300 mb-2">Font</label>
-                    <select id="caption-font" class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2">
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Font</label>
+                    <select id="caption-font" class="w-full bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-3 py-2 text-gray-900 dark:text-white">
                         <option value="system">System</option>
                         <option value="bold">Bold</option>
                         <option value="cinematic">Cinematic</option>
@@ -287,8 +287,8 @@
                 
                 <!-- Font Weight -->
                 <div>
-                    <label class="block text-sm font-medium text-gray-300 mb-2">Weight</label>
-                    <select id="caption-weight" class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2">
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Weight</label>
+                    <select id="caption-weight" class="w-full bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-3 py-2 text-gray-900 dark:text-white">
                         <option value="normal">Normal</option>
                         <option value="bold">Bold</option>
                     </select>
@@ -296,7 +296,7 @@
                 
                 <!-- Size -->
                 <div>
-                    <label class="block text-sm font-medium text-gray-300 mb-2">Size: <span id="size-value">48px</span></label>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Size: <span id="size-value">48px</span></label>
                     <input
                         type="range"
                         id="caption-size"
@@ -309,7 +309,7 @@
                 
                 <!-- Opacity -->
                 <div>
-                    <label class="block text-sm font-medium text-gray-300 mb-2">Opacity: <span id="opacity-value">80%</span></label>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Opacity: <span id="opacity-value">80%</span></label>
                     <input
                         type="range"
                         id="caption-opacity"
@@ -322,8 +322,8 @@
                 
                 <!-- Placement -->
                 <div>
-                    <label class="block text-sm font-medium text-gray-300 mb-2">Placement</label>
-                    <select id="caption-placement" class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2">
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Placement</label>
+                    <select id="caption-placement" class="w-full bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-3 py-2 text-gray-900 dark:text-white">
                         <option value="top">Top</option>
                         <option value="middle">Middle</option>
                         <option value="bottom">Bottom</option>
@@ -332,7 +332,7 @@
                 
                 <!-- Background Box -->
                 <div>
-                    <label class="block text-sm font-medium text-gray-300 mb-2">Background</label>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Background</label>
                     <div class="flex items-center gap-4">
                         <label class="flex items-center gap-2">
                             <input type="checkbox" id="caption-background" class="rounded" />
@@ -355,14 +355,14 @@
         </div>
 
         <!-- Voiceover Section -->
-        <div class="bg-gray-900 rounded-lg p-6 space-y-4">
-            <h2 class="text-xl font-semibold">Voiceover</h2>
+        <div class="bg-white dark:bg-gray-900 rounded-lg p-6 space-y-4 border border-gray-200 dark:border-gray-700">
+            <h2 class="text-xl font-semibold text-gray-900 dark:text-white">Voiceover</h2>
             
             <div class="grid grid-cols-2 gap-4">
                 <div>
-                    <label class="block text-sm font-medium text-gray-300 mb-2">Voice</label>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Voice</label>
                     <div class="flex gap-2">
-                        <select id="voiceover-voice" class="flex-1 bg-gray-800 border border-gray-700 rounded px-3 py-2">
+                        <select id="voiceover-voice" class="flex-1 bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-3 py-2 text-gray-900 dark:text-white">
                             <option value="">Loading voices...</option>
                         </select>
                         <button id="retry-voices-btn" onclick="loadVoices()" class="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm">
@@ -385,8 +385,8 @@
         </div>
 
         <!-- Render Section -->
-        <div class="bg-gray-900 rounded-lg p-6 space-y-4">
-            <h2 class="text-xl font-semibold">Create Short</h2>
+        <div class="bg-white dark:bg-gray-900 rounded-lg p-6 space-y-4 border border-gray-200 dark:border-gray-700">
+            <h2 class="text-xl font-semibold text-gray-900 dark:text-white">Create Short</h2>
             
             <!-- Live Preview Canvas -->
             <div id="live-preview-container" class="hidden">
@@ -397,12 +397,12 @@
                 </div>
             </div>
             
-            <div id="render-preview" class="bg-gray-800 rounded p-4 hidden">
-                <div class="text-sm text-gray-400 mb-2">Preview:</div>
-                <div id="preview-quote" class="text-lg font-medium mb-2"></div>
-                <div id="preview-asset" class="text-sm text-gray-400"></div>
-                <div id="preview-caption-style" class="text-sm text-gray-400"></div>
-                <div id="preview-voiceover" class="text-sm text-gray-400"></div>
+            <div id="render-preview" class="bg-gray-100 dark:bg-gray-800 rounded p-4 hidden border border-gray-200 dark:border-gray-700">
+                <div class="text-sm text-gray-600 dark:text-gray-400 mb-2">Preview:</div>
+                <div id="preview-quote" class="text-lg font-medium mb-2 text-gray-900 dark:text-white"></div>
+                <div id="preview-asset" class="text-sm text-gray-600 dark:text-gray-400"></div>
+                <div id="preview-caption-style" class="text-sm text-gray-600 dark:text-gray-400"></div>
+                <div id="preview-voiceover" class="text-sm text-gray-600 dark:text-gray-400"></div>
             </div>
             
             <button
