@@ -2,7 +2,7 @@
 import { db, ensureUserDoc } from "./js/firebaseClient.js";
 import { BACKEND_URL, UPSCALE_COST } from "./js/config.js";
 import { onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { doc, getDoc, updateDoc, increment } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { doc, getDoc, updateDoc, increment, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { apiFetch, setTokenProvider } from "./api.mjs";
 
 // Use the auth instance from the auth bridge (window.auth)
@@ -80,6 +80,7 @@ let currentUserEmail = null;
 let currentCredits = 0;
 let uploadedImageBase64 = ""; // we store a Data URL here (image/webp)
 let enhancingBusy = false;
+let firestoreUnsubscribe = null;
 
 /* ========================= UI HELPERS ========================= */
 const showToast = (msg, ms = 2200) => {
@@ -110,6 +111,28 @@ async function getIdToken(forceRefresh = false) {
 
 
 /* ========================= CREDITS ========================= */
+function setupFirestoreListener(user) {
+  // Clean up previous listener
+  if (firestoreUnsubscribe) {
+    firestoreUnsubscribe();
+  }
+  
+  const userRef = doc(db, 'users', user.uid);
+  
+  // Real-time listener for user data changes
+  firestoreUnsubscribe = onSnapshot(userRef, (snap) => {
+    if (!snap.exists()) return;
+    
+    const userData = snap.data();
+    const credits = Number(userData.credits ?? 0);
+    updateCreditUI(credits);
+    console.log('[frontend] user credits:', credits);
+  }, (error) => {
+    console.error('[frontend] Firestore listener error:', error);
+  });
+}
+
+// Keep the old function for backward compatibility (click to refresh)
 async function refreshCredits(force = true, retries = 1) {
   if (!auth.currentUser) { updateCreditUI(0); return; }
   try {
@@ -212,6 +235,12 @@ onAuthStateChanged(auth, async (user) => {
     currentUserEmail = null;
     creditDisplay?.classList.add("hidden");
     updateCreditUI(0);
+    
+    // Clean up Firestore listener when logged out
+    if (firestoreUnsubscribe) {
+      firestoreUnsubscribe();
+      firestoreUnsubscribe = null;
+    }
     return;
   }
 
@@ -220,14 +249,9 @@ onAuthStateChanged(auth, async (user) => {
 
   // Ensure user document exists with free plan setup
   await ensureUserDoc(user);
-
-  try {
-    // Give api.mjs a brief moment to obtain the token via the bridge
-    if (window.__vaiform_diag__?.tokenWait) { await window.__vaiform_diag__.tokenWait(4000); }
-    await refreshCredits(true); // hits /credits
-  } catch (e) {
-    console.error("Failed to refresh credits:", e);
-  }
+  
+  // Setup real-time Firestore listener for credits
+  setupFirestoreListener(user);
 });
 
 /* ========================= ENHANCE PROMPT ========================= */

@@ -1,4 +1,5 @@
-import { auth, provider, BACKEND_URL, BACKEND } from './config.js';
+import { auth, provider } from './firebaseClient.js';
+import { BACKEND_URL, BACKEND } from './config.js';
 import { onAuthStateChanged, signInWithPopup, signOut } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 import { API_BASE } from './apiBase.js';
 

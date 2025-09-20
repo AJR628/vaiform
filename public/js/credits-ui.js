@@ -1,6 +1,5 @@
 // Minimal shared credits UI for pages that show logged-in/logged-out + credits
-import { auth, provider, db } from "./config.js";
-import { ensureUserDoc } from "./firebaseClient.js";
+import { auth, db, ensureUserDoc, provider } from "./firebaseClient.js";
 import { onIdTokenChanged, onAuthStateChanged, signInWithPopup, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { doc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 

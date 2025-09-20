@@ -1,6 +1,6 @@
 // Bridge Firebase auth → api.js token provider (works with compat or when window.auth is present)
 import { setTokenProvider } from "./api.mjs";
-import { auth } from "./js/config.js";
+import { auth } from "./js/firebaseClient.js";
 import { onIdTokenChanged, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
 // Expose the modular auth instance for any legacy code expecting window.auth

@@ -2,7 +2,8 @@
 // Read-only Firestore usage; all writes happen on the server.
 // Upscale hits /generate/upscale and then we re-render the gallery.
 
-import { auth, db, BACKEND_URL, UPSCALE_COST } from "./config.js";
+import { auth, db } from "./firebaseClient.js";
+import { BACKEND_URL, UPSCALE_COST } from "./config.js";
 import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import {
   collection, query, orderBy, getDocs
