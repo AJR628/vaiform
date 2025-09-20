@@ -11,6 +11,7 @@ export const firebaseConfig = {
   storageBucket: "vaiform.appspot.com",
   messagingSenderId: "798543382244",
   appId: "1:798543382244:web:a826ce7ed8bebbe0b9cef1",
+  measurementId: "G-971DTZ5PEN"
 };
 
 // Pull canonical BACKEND and compute our own base, so we don't rely on API_ROOT here.

@@ -1,5 +1,6 @@
 // /js/buy-credits.js
-import { auth, BACKEND_URL, provider } from "./config.js";
+import { auth, provider } from "./firebaseClient.js";
+const BACKEND_URL = "https://17e0d1d1-e327-483d-b1ea-c41bea08fb59-00-1ef93t84nlhq6.janeway.replit.dev/api";
 import { onAuthStateChanged, signInWithPopup } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { apiFetch } from "../api.mjs";
 const toastEl = document.getElementById("toast");

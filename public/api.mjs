@@ -3,9 +3,9 @@ try { if (typeof window !== "undefined" && (window.__VAIFORM_DEBUG__ === "1" || 
   console.info("[api.mjs] v4", { path: import.meta.url });
 }} catch {}
 
-// Use exports that actually exist in js/config.js, and derive API_ROOT
-import { BACKEND_URL } from "./js/config.js";
-import { BACKEND } from "./config.js"; // root-level config.js
+// Use hardcoded constants to avoid Firebase initialization conflicts
+const BACKEND_URL = "https://17e0d1d1-e327-483d-b1ea-c41bea08fb59-00-1ef93t84nlhq6.janeway.replit.dev/api";
+const BACKEND = "https://17e0d1d1-e327-483d-b1ea-c41bea08fb59-00-1ef93t84nlhq6.janeway.replit.dev/";
 const API_ROOT = BACKEND_URL;
 
 // Allow pages to provide a token-getter (Firebase)

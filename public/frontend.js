@@ -1,6 +1,7 @@
 // /frontend.js
 import { db, ensureUserDoc } from "./js/firebaseClient.js";
-import { BACKEND_URL, UPSCALE_COST } from "./js/config.js";
+const BACKEND_URL = "https://17e0d1d1-e327-483d-b1ea-c41bea08fb59-00-1ef93t84nlhq6.janeway.replit.dev/api";
+const UPSCALE_COST = 10;
 import { onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { doc, getDoc, updateDoc, increment, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { apiFetch, setTokenProvider } from "./api.mjs";

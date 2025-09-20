@@ -1,5 +1,6 @@
 import { auth, provider } from './firebaseClient.js';
-import { BACKEND_URL, BACKEND } from './config.js';
+const BACKEND_URL = "https://17e0d1d1-e327-483d-b1ea-c41bea08fb59-00-1ef93t84nlhq6.janeway.replit.dev/api";
+const BACKEND = "https://17e0d1d1-e327-483d-b1ea-c41bea08fb59-00-1ef93t84nlhq6.janeway.replit.dev/";
 import { onAuthStateChanged, signInWithPopup, signOut } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 import { API_BASE } from './apiBase.js';
 
