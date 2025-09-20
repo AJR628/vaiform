@@ -7,8 +7,8 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Unified Header and Auth -->
     <script type="module">
-        import { createUnifiedHeader, initializeHeader } from "./components/header.js";
-        import { initializeAuth } from "./components/auth-utils.js";
+        import { createUnifiedHeader, initializeHeader } from "/components/header.js";
+        import { initializeAuth } from "/components/auth-utils.js";
         
         // Load unified header
         document.getElementById('unified-header').innerHTML = createUnifiedHeader();
@@ -24,7 +24,13 @@
     <script type="module" src="./js/firebaseClient.js"></script>
     <!-- Auth bridge: expose auth & wire token provider before page code -->
     <script type="module" src="./auth-bridge.js"></script>
-    <script type="module" src="/js/credits-ui.js?v=20250920a"></script>
+    <script type="module" src="/js/credits-ui.js?v=20250920b"></script>
+    <script type="module">
+        // Make credits functions globally available
+        import { updateCreditsDisplay, fetchAndUpdateCredits } from '/js/credits-ui.js?v=20250920b';
+        window.updateCreditsDisplay = updateCreditsDisplay;
+        window.fetchAndUpdateCredits = fetchAndUpdateCredits;
+    </script>
     <script type="module" src="./frontend.js"></script>
     <link rel="stylesheet" href="/creative.css" />
     <!-- Load DejaVu Sans font to match FFmpeg rendering -->
@@ -1646,16 +1652,17 @@
                     }
                 });
                 
-                if ((data?.success === true && Array.isArray(data?.data?.images)) || data.images || data?.data?.images) {
+                if (data?.ok === true && data?.data?.images) {
                     // Handle successful generation
-                    const imgs = data.images || data?.data?.images || [];
+                    const imgs = data.data.images || [];
                     const first = imgs[0];
                     const url = typeof first === 'string' ? first : (first?.url || first);
                     if (url) {
                         // Update credits display if successful (20 credits deducted by backend)
                         window.currentCredits -= 20;
-                        const { updateCreditsDisplay } = await import('/js/credits-ui.js?v=20250920a');
-                        updateCreditsDisplay(window.currentCredits);
+                        if (window.updateCreditsDisplay) {
+                            window.updateCreditsDisplay(window.currentCredits);
+                        }
                         
                         const aiAsset = {
                             id: `ai-${Date.now()}`,
@@ -1741,14 +1748,23 @@
                 // Compose a richer prompt mentioning references implicitly
                 const styleMap = style === 'creative' ? 'illustration' : 'photographic';
                 const data = await apiFetch('/assets/ai-images', { method:'POST', body: { prompt: `${prompt}`.trim(), style: style === 'creative' ? 'creative' : 'realistic', count: 1 } });
-                const url = data?.data?.images?.[0]?.url || data?.images?.[0] || null;
-                if (!url) { showError('ai-error', 'AI image generation failed'); return; }
+                console.log('[AI Image] Response:', data); // Debug log
+                if (!data?.ok || !data?.data?.images || data.data.images.length === 0) {
+                    console.error('[AI Image] Failed:', data);
+                    showError('ai-error', 'AI image generation failed'); 
+                    return; 
+                }
+                
+                const firstImage = data.data.images[0];
+                const url = firstImage?.url || null;
+                if (!url) { showError('ai-error', 'No image URL in response'); return; }
                 
                 // Update credits display if successful
                 if (data?.data?.creditsDeducted) {
                     window.currentCredits -= data.data.creditsDeducted;
-                    const { updateCreditsDisplay } = await import('/js/credits-ui.js?v=20250920a');
-                    updateCreditsDisplay(window.currentCredits);
+                    if (window.updateCreditsDisplay) {
+                        window.updateCreditsDisplay(window.currentCredits);
+                    }
                 }
                 
                 // Display result

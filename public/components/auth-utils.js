@@ -1,5 +1,5 @@
 // Shared authentication utilities for consistent auth handling across pages
-import { updateCreditsDisplay, fetchAndUpdateCredits } from '/js/credits-ui.js?v=20250920a';
+import { updateCreditsDisplay, fetchAndUpdateCredits } from '/js/credits-ui.js?v=20250920b';
 
 export function initializeAuth() {
   // Wait for Firebase to be available

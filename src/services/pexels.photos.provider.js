@@ -44,7 +44,7 @@ export async function pexelsSearchPhotos({ query, perPage = 12, page = 1 }) {
       height: p?.height || null,
       photographer: p?.photographer || null,
       sourceUrl: p?.url || null,
-      thumbUrl: p?.src?.small || p?.src?.tiny || null,
+      thumbUrl: p?.src?.medium || p?.src?.small || null,
     });
   }
   mem.set(cacheKey, { at: now, ttl: 12 * 60 * 60 * 1000, items });
