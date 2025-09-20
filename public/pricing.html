@@ -217,8 +217,17 @@
             color: #6b21a8;
         }
     </style>
+    <!-- Respect saved theme before paint - default to dark -->
+    <script>
+        const savedTheme = localStorage.getItem("theme");
+        if (savedTheme === "light") {
+            document.documentElement.classList.remove("dark");
+        } else {
+            document.documentElement.classList.add("dark");
+        }
+    </script>
 </head>
-<body>
+<body class="bg-gray-900 text-gray-100 min-h-screen">
     <!-- Unified Header -->
     <div id="unified-header"></div>
     
