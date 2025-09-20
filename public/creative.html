@@ -1085,15 +1085,20 @@
         function computeFittedTextForPreview(text, { font, weight, sizePx, previewWidthPx }) {
             try {
                 const raw = String(text || '').trim();
-                if (!raw) return '';
+                if (!raw) {
+                    return '';
+                }
+                
                 const canvas = document.createElement('canvas');
                 const ctx = canvas.getContext('2d');
                 const family = "DejaVu Sans Local";
                 const weightCss = (String(weight).toLowerCase() === 'bold') ? '700' : '400';
                 const size = Math.max(10, Number(sizePx) || 48);
                 ctx.font = `${weightCss} ${size}px ${family}`;
+                
                 // Match overlay: max content width ≈ 92% of preview width
                 const maxWidth = Math.max(20, Math.round((Number(previewWidthPx)||360) * 0.92));
+                
                 const words = raw.split(/\s+/);
                 const lines = [];
                 let cur = '';
@@ -1103,8 +1108,10 @@
                     if (width > maxWidth && cur) { lines.push(cur); cur = w; } else { cur = next; }
                 }
                 if (cur) lines.push(cur);
-                return lines.join('\n');
-            } catch {
+                
+                const result = lines.join('\n');
+                return result;
+            } catch (error) {
                 return String(text || '').trim();
             }
         }
@@ -1309,32 +1316,53 @@
                 const previewFontFamily = 'DejaVu Sans Local';
 
                 // Build preview-fitted lines using the same family & weight used by ffmpeg
-                const fittedText = computeFittedTextForPreview((currentQuote?.text || '').trim(), {
+                const quoteText = (currentQuote?.text || '').trim();
+                console.log('[render] Computing fitted text for:', { quoteText, previewFontFamily, fontWeight, sizePx: captionStyle.sizePx, previewWidthPx });
+                
+                // First, calculate the scaling we'll need
+                const tempPreviewToRenderScale = 1920 / Math.max(1, previewHeightPx);
+                const tempScaledFontPx = Math.round((captionStyle.sizePx || 48) * tempPreviewToRenderScale);
+                
+                const fittedText = computeFittedTextForPreview(quoteText, {
                     font: previewFontFamily,
                     weight: fontWeight,
-                    sizePx: captionStyle.sizePx,
-                    previewWidthPx
+                    sizePx: tempScaledFontPx, // Use scaled font size for measurement
+                    previewWidthPx: 1080 // Use final render width for accurate measurement
                 });
+                
+                console.log('[render] Fitted text result:', fittedText);
 
                 // Ensure font family/weight variables for parity with renderer
                 const family    = "DejaVu Sans Local";
                 const weightCss = (String(fontWeight).toLowerCase() === "bold") ? "700" : "400";
+
+                // Scale font size from preview canvas to final render dimensions
+                const previewToRenderScale = 1920 / Math.max(1, previewHeightPx); // Scale factor from preview to 1920px height
+                const scaledFontPx = Math.round((captionStyle.sizePx || 48) * previewToRenderScale);
+                
+                console.log('[render] Font scaling:', { 
+                    previewHeightPx, 
+                    renderHeight: 1920, 
+                    previewToRenderScale, 
+                    originalSizePx: captionStyle.sizePx, 
+                    scaledFontPx 
+                });
 
                 // Capture preview's resolved metrics for authoritative rendering
                 const captionResolved = {
                     fontFamily: family,
                     weightCss: (weightCss === "700") ? "bold" : "normal",
                     fontFile: (weightCss === "700") ? "DejaVuSans-Bold.ttf" : "DejaVuSans.ttf",
-                    fontPx: Number.isFinite(captionStyle.sizePx) ? captionStyle.sizePx : 48,
-                    lineSpacing: Math.round(((Number.isFinite(captionStyle.sizePx)?captionStyle.sizePx:48) * 0.20)), // Match preview: size * 1.2 spacing = size * 0.2 line spacing
+                    fontPx: scaledFontPx, // Use scaled font size for final render
+                    lineSpacing: Math.round(scaledFontPx * 0.20), // Scale line spacing too
                     textAlpha: Math.max(0, Math.min(1, captionStyle.opacity ?? 0.8)),
-                    strokeW: 3,
+                    strokeW: Math.max(1, Math.round(3 * previewToRenderScale)), // Scale stroke width
                     strokeAlpha: 0.85,
                     shadowAlpha: 0.55,
                     shadowX: 0,
-                    shadowY: 2,
+                    shadowY: Math.round(2 * previewToRenderScale), // Scale shadow offset
                     // Add splitLines from preview for exact text layout
-                    splitLines: fittedText ? fittedText.split('\n') : [],
+                    splitLines: fittedText ? fittedText.split('\n') : (quoteText ? [quoteText] : []),
                     yPct: placementMap[captionStyle.placement] ?? 88
                 };
 
