@@ -1043,11 +1043,11 @@
             const img = new Image();
             img.crossOrigin = 'anonymous';
             img.onload = () => {
-                // Set canvas size (maintain aspect ratio, max width 400px)
+                // Set canvas size for consistent 9:16 portrait aspect ratio
+                const targetAspectRatio = 16 / 9; // Portrait: height/width = 16/9
                 const maxWidth = 400;
-                const aspectRatio = img.height / img.width;
-                const canvasWidth = Math.min(maxWidth, img.width);
-                const canvasHeight = canvasWidth * aspectRatio;
+                const canvasWidth = maxWidth;
+                const canvasHeight = Math.round(canvasWidth * targetAspectRatio); // 400 * (16/9) ≈ 711px
                 
                 canvas.width = canvasWidth;
                 canvas.height = canvasHeight;
@@ -1419,8 +1419,9 @@
                 const weightCss = (String(fontWeight).toLowerCase() === "bold") ? "700" : "400";
 
                 // Scale font size from preview canvas to final render dimensions
-                const previewToRenderScale = 1920 / Math.max(1, previewHeightPx); // Scale factor from preview to 1920px height
-                const scaledFontPx = Math.round((captionStyle.sizePx || 48) * previewToRenderScale);
+                // Preview canvas is 400x711 (9:16), final render is 1080x1920 (9:16)
+                const previewToRenderScale = Math.min(10, 1920 / Math.max(400, previewHeightPx)); // Use consistent scaling
+                const scaledFontPx = Math.min(200, Math.max(10, Math.round((captionStyle.sizePx || 48) * previewToRenderScale)));
                 
                 console.log('[render] Font scaling:', { 
                     previewHeightPx, 
@@ -1429,6 +1430,13 @@
                     originalSizePx: captionStyle.sizePx, 
                     scaledFontPx 
                 });
+                
+                console.log('[render] Validation values:', {
+                    fontPx: scaledFontPx,
+                    lineSpacing: Math.min(100, Math.max(0, Math.round(scaledFontPx * 0.20))),
+                    strokeW: Math.min(10, Math.max(0, Math.round(3 * previewToRenderScale))),
+                    shadowY: Math.min(10, Math.max(-10, Math.round(2 * previewToRenderScale)))
+                });
 
                 // Capture preview's resolved metrics for authoritative rendering
                 const captionResolved = {
@@ -1436,13 +1444,13 @@
                     weightCss: (weightCss === "700") ? "bold" : "normal",
                     fontFile: (weightCss === "700") ? "DejaVuSans-Bold.ttf" : "DejaVuSans.ttf",
                     fontPx: scaledFontPx, // Use scaled font size for final render
-                    lineSpacing: Math.round(scaledFontPx * 0.20), // Scale line spacing too
+                    lineSpacing: Math.min(100, Math.max(0, Math.round(scaledFontPx * 0.20))), // Scale line spacing too
                     textAlpha: Math.max(0, Math.min(1, captionStyle.opacity ?? 0.8)),
-                    strokeW: Math.max(1, Math.round(3 * previewToRenderScale)), // Scale stroke width
+                    strokeW: Math.min(10, Math.max(0, Math.round(3 * previewToRenderScale))), // Scale stroke width
                     strokeAlpha: 0.85,
                     shadowAlpha: 0.55,
                     shadowX: 0,
-                    shadowY: Math.round(2 * previewToRenderScale), // Scale shadow offset
+                    shadowY: Math.min(10, Math.max(-10, Math.round(2 * previewToRenderScale))), // Scale shadow offset
                     // Add splitLines from preview for exact text layout
                     splitLines: fittedText ? fittedText.split('\n') : (quoteText ? [quoteText] : []),
                     yPct: placementMap[captionStyle.placement] ?? 88
@@ -1668,6 +1676,8 @@
                             id: `ai-${Date.now()}`,
                             fileUrl: url,
                             thumbUrl: url,
+                            width: 1080,
+                            height: 1920,
                             query: prompt,
                             provider: 'ai',
                             type: 'ai-generated'
@@ -1798,7 +1808,7 @@
               const reg = await apiFetch('/uploads/register', { method:'POST', body:{ imageUrl: url } });
               const savedUrl = reg?.data?.url || url;
               // Mark selection locally and update preview immediately
-              selectedAsset = { id: `ai-${Date.now()}`, provider: 'ai', query: (document.getElementById('ai-prompt')?.value||'').trim(), fileUrl: savedUrl, thumbUrl: savedUrl, width: 1024, height: 1024 };
+              selectedAsset = { id: `ai-${Date.now()}`, provider: 'ai', query: (document.getElementById('ai-prompt')?.value||'').trim(), fileUrl: savedUrl, thumbUrl: savedUrl, width: 1080, height: 1920 };
               updateRenderPreview();
               updateRenderButtonState();
               // Also update dedicated preview nodes if present
