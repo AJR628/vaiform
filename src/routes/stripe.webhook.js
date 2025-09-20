@@ -62,60 +62,42 @@ router.post("/", express.raw({ type: "application/json" }), async (req, res) => 
 });
 
 async function grantCreditsAndUpdatePlan(metadata) {
-  const { uid, plan, billing } = metadata;
+  const { uid, plan, billing, email } = metadata;
   
   if (!uid || !plan) {
     console.error("[webhook] Missing uid or plan in metadata:", metadata);
     return;
   }
 
-  // Map plan to credits
-  const CREDIT_MAP = {
-    creator: 1500,
-    pro: 5000,
-  };
-
-  const credits = CREDIT_MAP[plan] || 0;
   const db = admin.firestore();
-  const userRef = db.collection('users').doc(uid);
+  const userRef = db.collection("users").doc(uid);
   
-  const updateData = {
-    plan,
-    isMember: true,
-    credits: admin.firestore.FieldValue.increment(credits),
-    membership: {
-      kind: billing === 'monthly' ? 'subscription' : 'onetime',
-      billing,
-      startedAt: admin.firestore.FieldValue.serverTimestamp(),
-      ...(billing === 'onetime' && {
-        expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).getTime(), // 30 days from now
-      }),
-    },
-    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-  };
-
   try {
-    // Use set with merge to ensure document exists, then update credits
-    await userRef.set({
-      plan,
-      isMember: true,
-      membership: {
-        kind: billing === 'monthly' ? 'subscription' : 'onetime',
-        billing,
-        startedAt: admin.firestore.FieldValue.serverTimestamp(),
-        ...(billing === 'onetime' && {
-          expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).getTime(), // 30 days from now
-        }),
-      },
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-    }, { merge: true });
-    
-    // Then increment credits separately to ensure it works
-    await userRef.update({
-      credits: admin.firestore.FieldValue.increment(credits),
+    await db.runTransaction(async (t) => {
+      const snap = await t.get(userRef);
+      const now = admin.firestore.Timestamp.now();
+      const creditsToAdd = plan === "creator" ? 1500 : plan === "pro" ? 5000 : 0;
+      const expiresAt = billing === "onetime"
+        ? admin.firestore.Timestamp.fromDate(new Date(Date.now() + 30*24*60*60*1000))
+        : null;
+
+      t.set(userRef, {
+        email: email || admin.firestore.FieldValue.delete(),
+        plan,
+        isMember: true,
+        credits: admin.firestore.FieldValue.increment(creditsToAdd),
+        membership: { 
+          kind: billing === "onetime" ? "onetime" : "subscription", 
+          billing, 
+          startedAt: now, 
+          expiresAt 
+        },
+        lastPaymentAt: now,
+        updatedAt: now,
+      }, { merge: true });
     });
     
-    console.log(`[plan] Upgraded uid=${uid} -> ${plan}, credits +${credits}`);
+    console.log(`[plan] Upgraded uid=${uid} -> ${plan}, credits +${creditsToAdd}`);
   } catch (error) {
     console.error(`[webhook] Failed to update user ${uid}:`, error);
     throw error;

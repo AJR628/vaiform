@@ -8,7 +8,15 @@ service cloud.firestore {
 
     // Canonical users by UID
     match /users/{uid} {
-      allow read, write: if isSelf(uid);
+      allow read: if isSignedIn() && request.auth.uid == uid;
+      allow create: if isSignedIn() && request.auth.uid == uid
+        && !(("plan" in request.resource.data) || ("credits" in request.resource.data) || ("membership" in request.resource.data));
+      allow update: if isSignedIn() && request.auth.uid == uid
+        && !(
+          ("plan" in request.resource.data.diff().changedKeys())
+          || ("credits" in request.resource.data.diff().changedKeys())
+          || ("membership" in request.resource.data.diff().changedKeys())
+        );
 
       match /generations/{genId} {
         allow read, write: if isSelf(uid);

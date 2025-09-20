@@ -1,7 +1,7 @@
 // public/js/firebaseClient.js
 import { initializeApp, getApps } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, GoogleAuthProvider } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { getFirestore, doc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { getFirestore, doc, setDoc, getDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 // ✅ Firebase Web SDK config (from console) - using EXACT same config as working config.js
 const firebaseConfig = {
@@ -19,29 +19,35 @@ export const auth = getAuth(app);
 export const db = getFirestore(app);
 export const provider = new GoogleAuthProvider();
 
-// initialize Free profile for every new login/signup
+// initialize user profile for every new login/signup - ONLY if document doesn't exist
 export async function ensureUserDoc(user) {
   if (!user || !user.uid) return;
   
   try {
     const ref = doc(db, "users", user.uid);
-    await setDoc(ref, {
-      email: user.email || null,
-      plan: "free",
-      isMember: false,
-      credits: 0,
-      shortDayKey: new Date().toISOString().slice(0, 10),
-      shortCountToday: 0,
-      membership: { 
-        kind: null, 
-        expiresAt: null, 
-        nextPaymentAt: null 
-      },
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp()
-    }, { merge: true });
-    
-    console.log(`[firebaseClient] User doc ensured: ${user.uid} (${user.email})`);
+    const snap = await getDoc(ref);
+
+    if (!snap.exists()) {
+      // Only create document if it doesn't exist - with free plan defaults
+      await setDoc(ref, {
+        uid: user.uid,
+        email: user.email || null,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+        isMember: false,
+        membership: { kind: null, billing: null, startedAt: null, expiresAt: null, nextPaymentAt: null },
+        shortDayKey: new Date().toISOString().slice(0,10),
+        shortCountToday: 0,
+      }, { merge: true });
+      console.log(`[firebaseClient] User doc created: ${user.uid} (${user.email})`);
+    } else {
+      // Only update email and timestamp for existing documents - don't overwrite plan/credits/membership
+      await setDoc(ref, {
+        email: user.email || null,
+        updatedAt: serverTimestamp(),
+      }, { merge: true });
+      console.log(`[firebaseClient] User doc updated (email only): ${user.uid}`);
+    }
   } catch (error) {
     console.error("Failed to ensure user doc:", error);
   }
