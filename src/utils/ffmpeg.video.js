@@ -374,16 +374,18 @@ export async function renderVideoQuoteOverlay({
     }
     const oldFontPx = scaleFontPx(caption.fontSizePx, caption.previewHeightPx);
 
-    // font file (bold vs regular)
+    // font file (bold vs regular) - match preview weight detection exactly
     const fontFileRegular = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf";
     const fontFileBold    = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf";
     const wantBold =
       String(caption.fontWeight || '').toLowerCase() === 'bold' ||
       Number(caption.fontWeight) >= 600 ||
-      /bold/i.test(String(caption.fontFamily || ''));
+      /bold/i.test(String(caption.fontFamily || '')) ||
+      String(caption.weight || '').toLowerCase() === 'bold' ||  // Add support for weight field
+      Number(caption.weight) >= 600;
     const originalFontFile = wantBold ? fontFileBold : fontFileRegular;
 
-    // opacity + line spacing
+    // opacity + line spacing - match preview exactly (size * 1.2 - size = size * 0.2)
     const op = Math.max(0, Math.min(1, Number(caption.opacity ?? 0.8)));
     const lsRaw = Math.round((Number(caption.fontSizePx) || 32) * 0.20);
     const originalLineSp = Math.max(0, Math.round(lsRaw * (oldFontPx / Math.max(1, Number(caption.fontSizePx) || 32))));

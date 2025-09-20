@@ -11,6 +11,24 @@
     <script type="module" src="./auth-bridge.js"></script>
     <script type="module" src="./frontend.js"></script>
     <link rel="stylesheet" href="/creative.css" />
+    <!-- Load DejaVu Sans font to match FFmpeg rendering -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DejaVu+Sans:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        @font-face {
+            font-family: 'DejaVu Sans Local';
+            src: local('DejaVu Sans'), local('DejaVuSans'), url('https://fonts.gstatic.com/s/dejavusans/v1/DejaVuSans.woff2') format('woff2');
+            font-weight: normal;
+            font-style: normal;
+        }
+        @font-face {
+            font-family: 'DejaVu Sans Local';
+            src: local('DejaVu Sans Bold'), local('DejaVuSans-Bold'), url('https://fonts.gstatic.com/s/dejavusans/v1/DejaVuSans-Bold.woff2') format('woff2');
+            font-weight: bold;
+            font-style: normal;
+        }
+    </style>
     <style>
         .loading { opacity: 0.6; pointer-events: none; }
         .error { color: #ef4444; }
@@ -979,11 +997,17 @@
             const showBackground = document.getElementById('caption-background').checked;
             const bgOpacity = parseInt(document.getElementById('caption-bg-opacity').value) / 100;
             
-            // Set font
-            ctx.font = `${weight} ${size}px ${getFontFamily(font)}`;
+            // Set font - ensure weight mapping matches FFmpeg
+            const cssWeight = (String(weight).toLowerCase() === 'bold' || Number(weight) >= 600) ? 'bold' : 'normal';
+            ctx.font = `${cssWeight} ${size}px ${getFontFamily(font)}`;
             ctx.fillStyle = `rgba(255, 255, 255, ${opacity})`;
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
+            
+            // Add stroke to match FFmpeg rendering
+            ctx.lineWidth = 3;
+            ctx.strokeStyle = `rgba(0, 0, 0, 0.85)`;
+            ctx.miterLimit = 2;
             
             // Calculate text position
             let y;
@@ -1037,18 +1061,24 @@
             const startY = y - (lines.length - 1) * lineHeight / 2;
             
             lines.forEach((line, index) => {
-                ctx.fillText(line, canvasWidth / 2, startY + index * lineHeight);
+                const x = canvasWidth / 2;
+                const y = startY + index * lineHeight;
+                
+                // Draw stroke first (matches FFmpeg layering)
+                ctx.strokeText(line, x, y);
+                // Draw fill text on top
+                ctx.fillText(line, x, y);
             });
         }
 
         function getFontFamily(font) {
             const fontMap = {
-                'system': 'system-ui, -apple-system, sans-serif',
-                'bold': 'system-ui, -apple-system, sans-serif',
-                'cinematic': 'Georgia, serif',
-                'minimal': 'Helvetica, Arial, sans-serif'
+                'system': 'DejaVu Sans Local, system-ui, -apple-system, sans-serif',
+                'bold': 'DejaVu Sans Local, system-ui, -apple-system, sans-serif', 
+                'cinematic': 'DejaVu Sans Local, Georgia, serif',
+                'minimal': 'DejaVu Sans Local, Helvetica, Arial, sans-serif'
             };
-            return fontMap[font] || 'system-ui, sans-serif';
+            return fontMap[font] || 'DejaVu Sans Local, system-ui, sans-serif';
         }
 
         // Compute preview-fitted lines using canvas metrics to mirror overlay width
@@ -1296,13 +1326,16 @@
                     weightCss: (weightCss === "700") ? "bold" : "normal",
                     fontFile: (weightCss === "700") ? "DejaVuSans-Bold.ttf" : "DejaVuSans.ttf",
                     fontPx: Number.isFinite(captionStyle.sizePx) ? captionStyle.sizePx : 48,
-                    lineSpacing: Math.round(((Number.isFinite(captionStyle.sizePx)?captionStyle.sizePx:48) * 0.25)),
+                    lineSpacing: Math.round(((Number.isFinite(captionStyle.sizePx)?captionStyle.sizePx:48) * 0.20)), // Match preview: size * 1.2 spacing = size * 0.2 line spacing
                     textAlpha: Math.max(0, Math.min(1, captionStyle.opacity ?? 0.8)),
                     strokeW: 3,
                     strokeAlpha: 0.85,
                     shadowAlpha: 0.55,
                     shadowX: 0,
-                    shadowY: 2
+                    shadowY: 2,
+                    // Add splitLines from preview for exact text layout
+                    splitLines: fittedText ? fittedText.split('\n') : [],
+                    yPct: placementMap[captionStyle.placement] ?? 88
                 };
 
                 const caption = {
@@ -1311,6 +1344,7 @@
                     fittedText,
                     fontFamily: family,
                     fontWeight: (weightCss === "700") ? "bold" : "normal",
+                    weight: captionStyle.weight, // Pass through original weight for FFmpeg processing
                     fontSizePx: Number.isFinite(captionStyle.sizePx) ? captionStyle.sizePx : 48,
                     opacity: Math.max(0, Math.min(1, captionStyle.opacity ?? 0.8)),
                     align: 'center',
@@ -1318,7 +1352,7 @@
                     pos: { xPct: 50, yPct: placementMap[captionStyle.placement] ?? 88 },
                     position: { xPct: 50, yPct: placementMap[captionStyle.placement] ?? 88 },
                     previewHeightPx,
-                    lineSpacingPx: Math.round(((Number.isFinite(captionStyle.sizePx)?captionStyle.sizePx:48) * 0.25)),
+                    lineSpacingPx: Math.round(((Number.isFinite(captionStyle.sizePx)?captionStyle.sizePx:48) * 0.20)), // Match preview calculation
                     box: {
                         enabled: !!document.querySelector('#caption-background')?.checked,
                         alpha: Math.max(0, Math.min(1, (parseInt(document.getElementById('caption-bg-opacity')?.value || '50', 10) / 100)))
