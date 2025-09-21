@@ -350,6 +350,23 @@ export async function renderVideoQuoteOverlay({
     ? (safeMargin <= 1 ? Math.round(Math.min(W,H) * clamp01(safeMargin)) : Math.round(safeMargin))
     : Math.round(Math.min(W,H) * 0.06);
 
+  // ---- PNG OVERLAY BRANCH: if captionImage exists, use overlay path and SKIP drawtext ----
+  let usingCaptionPng = false;
+  let captionPngPath = null;
+  
+  if (captionImage?.dataUrl) {
+    usingCaptionPng = true;
+    try {
+      const { file: pngPath } = await saveDataUrlToTmp(captionImage.dataUrl, "caption");
+      captionPngPath = pngPath;
+      console.log("[render] using caption PNG overlay:", pngPath);
+      console.log("[render] USING OVERLAY - skipping drawtext. Caption PNG:", pngPath);
+    } catch (error) {
+      console.warn("[render] failed to save caption PNG, falling back to drawtext:", error.message);
+      usingCaptionPng = false;
+    }
+  }
+
   const fit = fitQuoteToBox({ text, boxWidthPx: W - sm*2, baseFontSize: fontsize || 72 });
   const effLineSpacing = Math.max(2, Number.isFinite(lineSpacing) ? lineSpacing : fit.lineSpacing);
   try {
@@ -487,24 +504,6 @@ export async function renderVideoQuoteOverlay({
     }
 
     // This section is now handled by the pure painter approach above
-
-    // ---- PNG OVERLAY BRANCH: if captionImage exists, use overlay path and SKIP drawtext ----
-    let usingCaptionPng = false;
-    let overlayInputIndex = null;
-    let overlayFilter = "";
-    let captionPngPath = null;
-    
-    if (captionImage?.dataUrl) {
-      usingCaptionPng = true;
-      try {
-        const { file: pngPath } = await saveDataUrlToTmp(captionImage.dataUrl, "caption");
-        captionPngPath = pngPath;
-        console.log("[render] using caption PNG overlay:", pngPath);
-      } catch (error) {
-        console.warn("[render] failed to save caption PNG, falling back to drawtext:", error.message);
-        usingCaptionPng = false;
-      }
-    }
 
     // per-line drawtext (centered x) — raw expression in single quotes; avoid escaping commas here
     const xFinal = `'max(20\\,min(w-20-text_w\\,(w*0.5)-text_w/2))'`;
@@ -691,7 +690,7 @@ export async function renderVideoQuoteOverlay({
     width: W, 
     height: H, 
     videoVignette, 
-    drawLayers: usingCaptionPng ? [] : [drawMain, drawAuthor, drawWatermark, drawCaption].filter(Boolean),
+    drawLayers: usingCaptionPng ? [drawMain, drawAuthor, drawWatermark].filter(Boolean) : [drawMain, drawAuthor, drawWatermark, drawCaption].filter(Boolean),
     captionImage: CAPTION_OVERLAY ? captionImage : null,
     usingCaptionPng,
     captionPngPath
