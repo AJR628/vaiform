@@ -1,19 +1,21 @@
-import pkg from '@napi-rs/canvas';
-const { createCanvas, registerFont = null } = pkg;
+import { createCanvas, GlobalFonts } from '@napi-rs/canvas';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 
-// Register the font
+// Register the font using GlobalFonts API
 const fontPath = path.resolve('assets/fonts/DejaVuSans-Bold.ttf');
-if (fs.existsSync(fontPath) && registerFont) {
+if (fs.existsSync(fontPath)) {
   try {
-    registerFont(fontPath, { family: 'DejaVuSans', weight: 'bold' });
+    const fontBuffer = fs.readFileSync(fontPath);
+    GlobalFonts.register(fontBuffer, 'Inter-Bold');
+    console.log('[caption] Font registered successfully: Inter-Bold');
   } catch (err) {
     console.warn('[caption] Font registration failed:', err.message);
+    console.warn('[caption] Falling back to system font');
   }
-} else if (!registerFont) {
-  console.warn('[caption] registerFont not available in @napi-rs/canvas');
+} else {
+  console.warn('[caption] Font file not found:', fontPath);
 }
 
 /**
@@ -93,9 +95,9 @@ export async function renderCaptionImage(jobId, style) {
   const canvas = createCanvas(canvasW, canvasH);
   const ctx = canvas.getContext('2d');
 
-  // Set font
-  const fontSpec = `${fontWeight === 700 ? 'bold' : 'normal'} ${fontPx}px ${fontFamily}`;
-  ctx.font = fontSpec;
+  // Set font using registered Inter-Bold
+  ctx.font = `${fontWeight || 700} ${fontPx}px "Inter-Bold"`;
+  console.log(`[caption] Font set to: ${ctx.font}`);
   ctx.textBaseline = 'top';
 
   // Word wrap text to fit within box width
@@ -219,16 +221,17 @@ export async function renderCaptionImage(jobId, style) {
   const buffer = canvas.toBuffer('image/png');
   await fs.promises.writeFile(pngPath, buffer);
 
-  console.log(`[caption] job=${jobId} x=${minX} y=${minY} w=${trimmedWidth} h=${trimmedHeight} lines=${lines.length} font=${fontPx}`);
+  console.log(`[caption] lines=${lines.length} fontPx=${fontPx} bbox={x:${minX},y:${minY},w:${trimmedWidth},h:${trimmedHeight}}`);
 
   return {
     pngPath,
+    publicUrl: null, // Will be set by the caller if uploaded
     xPx: minX,
     yPx: minY,
     wPx: trimmedWidth,
     hPx: trimmedHeight,
     meta: {
-      lines,
+      splitLines: lines, // Use splitLines as expected by the system
       baselines,
       fontPx,
       lineSpacingPx,

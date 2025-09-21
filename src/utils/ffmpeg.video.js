@@ -220,18 +220,19 @@ function fitQuoteToBox({ text, boxWidthPx, baseFontSize = 72 }) {
 function buildVideoChain({ width, height, videoVignette, drawLayers, captionImage }){
   const W = Math.max(4, Number(width)||1080);
   const H = Math.max(4, Number(height)||1920);
-  // Fill portrait frame without letterboxing: scale to cover then crop
-  const scale = `scale='if(gt(a,${W}/${H}),-2,${W})':'if(gt(a,${W}/${H}),${H},-2)'`;
-  const crop = `crop=${W}:${H}`;
-  const core = [ scale, crop, (videoVignette ? 'vignette=PI/4:0.5' : null), 'format=rgba' ].filter(Boolean);
   
-  // If using PNG overlay for captions, create intermediate label and overlay
+  // If using PNG overlay for captions, use the required format
   if (CAPTION_OVERLAY && captionImage) {
-    const baseChain = makeChain('0:v', [ joinF(core), ...drawLayers ].filter(Boolean), 'v0');
-    const overlayChain = `[v0][1:v]overlay=x=${captionImage.xPx}:y=${captionImage.yPx}:eof_action=pass:format=auto,format=yuv420p[vout]`;
+    console.log(`[render] USING OVERLAY at x=${captionImage.xPx} y=${captionImage.yPx} w=${captionImage.wPx} h=${captionImage.hPx}`);
+    // Build filter graph as specified: scale -> crop -> setsar -> overlay
+    const baseChain = `[0:v]scale=${W}:${H}:force_original_aspect_ratio=increase,crop=${W}:${H},setsar=1[v0]`;
+    const overlayChain = `[v0][1:v]overlay=${captionImage.xPx}:${captionImage.yPx}:format=auto[vout]`;
     return `${baseChain};${overlayChain}`;
   } else {
     // Legacy drawtext approach
+    const scale = `scale='if(gt(a,${W}/${H}),-2,${W})':'if(gt(a,${W}/${H}),${H},-2)'`;
+    const crop = `crop=${W}:${H}`;
+    const core = [ scale, crop, (videoVignette ? 'vignette=PI/4:0.5' : null), 'format=rgba' ].filter(Boolean);
     const vchain = makeChain('0:v', [ joinF(core), ...drawLayers, 'format=yuv420p' ].filter(Boolean), 'vout');
     return vchain;
   }
@@ -376,7 +377,7 @@ export async function renderVideoQuoteOverlay({
   
   // Skip drawtext caption rendering when using PNG overlay
   if (CAPTION_OVERLAY && captionImage) {
-    console.log('[ffmpeg] Using PNG overlay for captions, skipping drawtext');
+    console.log(`[render] USING OVERLAY - skipping drawtext. Caption PNG: ${captionImage.pngPath}`);
     drawCaption = '';
   } else if (caption && String(caption.text || '').trim()) {
     // Inputs
@@ -690,7 +691,7 @@ export async function renderVideoQuoteOverlay({
   const args = [
     '-y',
     '-i', videoPath,
-    ...(CAPTION_OVERLAY && captionImage ? ['-i', captionImage.pngPath] : []),
+    ...(CAPTION_OVERLAY && captionImage ? ['-i', captionImage.pngPath || captionImage.localPath] : []),
     ...(ttsPath ? ['-i', ttsPath] : []),
     '-ss', '0.5',
     '-filter_complex', finalFilter,

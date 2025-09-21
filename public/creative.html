@@ -33,24 +33,7 @@
     </script>
     <script type="module" src="./frontend.js"></script>
     <link rel="stylesheet" href="/creative.css" />
-    <!-- Load DejaVu Sans font to match FFmpeg rendering -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=DejaVu+Sans:wght@400;700&display=swap" rel="stylesheet">
-    <style>
-        @font-face {
-            font-family: 'DejaVu Sans Local';
-            src: local('DejaVu Sans'), local('DejaVuSans'), url('https://fonts.gstatic.com/s/dejavusans/v1/DejaVuSans.woff2') format('woff2');
-            font-weight: normal;
-            font-style: normal;
-        }
-        @font-face {
-            font-family: 'DejaVu Sans Local';
-            src: local('DejaVu Sans Bold'), local('DejaVuSans-Bold'), url('https://fonts.gstatic.com/s/dejavusans/v1/DejaVuSans-Bold.woff2') format('woff2');
-            font-weight: bold;
-            font-style: normal;
-        }
-    </style>
+    <!-- Caption rendering now uses server-side PNG overlay - no fonts needed -->
     <style>
         .loading { opacity: 0.6; pointer-events: none; }
         .error { color: #ef4444; }
@@ -518,50 +501,72 @@
         let availableVoices = [];
         let currentVoiceId = null;
 
-        // Helper functions
-        function updateCaptionOverlay(text = '', show = true){
+        // Helper functions - PNG overlay system
+        let captionOverlayState = null;
+        let captionDebounceTimer = null;
+        
+        async function updateCaptionOverlay(text = '', show = true) {
             const overlay = document.getElementById('caption-overlay');
             if (!overlay) return;
-            if (!show || !text) { overlay.innerHTML = ''; return; }
-            const safe = String(text);
-            const fontSel = document.getElementById('caption-font');
-            const weightSel = document.getElementById('caption-weight');
-            const sizeRange = document.getElementById('caption-size');
-            const opRange = document.getElementById('caption-opacity');
-            const placeSel = document.getElementById('caption-placement');
-            const showBox = document.getElementById('caption-background');
-            const boxOpRange = document.getElementById('caption-bg-opacity');
+            
+            // Clear existing overlay
+            overlay.innerHTML = '';
+            
+            if (!show || !text?.trim()) {
+                captionOverlayState = null;
+                return;
+            }
 
-            const fontMap = {
-              // Include DejaVu Sans first to better match FFmpeg drawtext default
-              System: '\"DejaVu Sans\", \"DejaVuSans\", system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif',
-              system: '\"DejaVu Sans\", \"DejaVuSans\", system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif',
-              Minimal: '\"DejaVu Sans\", Helvetica, Arial, sans-serif',
-              minimal: '\"DejaVu Sans\", Helvetica, Arial, sans-serif',
-              Cinematic: 'Georgia, serif',
-              cinematic: 'Georgia, serif'
+            // Get caption style parameters
+            const sizePx = parseInt(document.getElementById('caption-size')?.value || '48', 10);
+            const placement = (document.getElementById('caption-placement')?.value || 'bottom').toLowerCase();
+            
+            // Calculate position based on placement
+            let boxXPx = 42, boxYPx = 230, boxWPx = 996, boxHPx = 400;
+            if (placement === 'top') {
+                boxYPx = 100;
+            } else if (placement === 'middle') {
+                boxYPx = 760; // Center of 1920 height
+            } else { // bottom
+                boxYPx = 1400;
+            }
+
+            const captionStyle = {
+                text: text.trim(),
+                fontPx: sizePx,
+                align: 'center',
+                boxXPx,
+                boxYPx,
+                boxWPx,
+                boxHPx
             };
-            const font = (fontSel?.value || 'system');
-            const fontFamily = fontMap[font] || fontMap.system;
-            const fontWeight = (weightSel?.value || 'Normal');
-            const sizePx = parseInt(sizeRange?.value || '48', 10);
-            const textOpacity = Math.max(0, Math.min(1, (parseInt(opRange?.value || '80', 10) / 100)));
-            const placement = (placeSel?.value || 'bottom').toLowerCase();
-            const wantBox = !!(showBox && showBox.checked);
-            const boxOpacity = Math.max(0, Math.min(1, (parseInt(boxOpRange?.value || '50', 10) / 100)));
 
-            let vertStyle = 'bottom:0; top:auto;';
-            if (placement === 'top') vertStyle = 'top:0; bottom:auto;';
-            if (placement === 'middle') vertStyle = 'top:50%; transform:translateY(-50%);';
-
-            const boxStyle = wantBox ? `background: rgba(0,0,0,${boxOpacity}); padding: 6px 10px; border-radius: 8px;` : '';
-
-            overlay.innerHTML = `
-                <div style="position:absolute; left:0; right:0; ${vertStyle} padding:12px 16px;">
-                  <div style="max-width: 92%; margin: 0 auto; text-align: center; color: rgba(255,255,255,${textOpacity}); font-weight: ${fontWeight}; font-size: ${sizePx}px; font-family: ${fontFamily}; text-shadow: 0 2px 6px rgba(0,0,0,0.6); ${boxStyle}">
-                    ${safe}
-                  </div>
-                </div>`;
+            // Debounce caption generation
+            clearTimeout(captionDebounceTimer);
+            captionDebounceTimer = setTimeout(async () => {
+                try {
+                    // Import the caption preview function
+                    const { generateCaptionPreview, createCaptionOverlay } = await import('./js/caption-preview.js');
+                    
+                    // Generate caption PNG
+                    const result = await generateCaptionPreview(captionStyle);
+                    captionOverlayState = result;
+                    
+                    // Calculate preview scaling (assuming 400px preview width)
+                    const previewContainer = document.getElementById('live-preview-container');
+                    const previewCanvas = document.getElementById('live-preview-canvas');
+                    const previewW = previewCanvas?.width || 400;
+                    const previewH = previewCanvas?.height || Math.round(400 * (16/9));
+                    
+                    // Create and position the overlay image
+                    createCaptionOverlay(result, overlay, { previewW, previewH });
+                    
+                } catch (error) {
+                    console.error('[caption-overlay] Failed to generate PNG:', error);
+                    // Fallback to simple text display on error
+                    overlay.innerHTML = `<div style="position: absolute; bottom: 20px; left: 20px; right: 20px; text-align: center; color: white; font-size: ${sizePx}px; text-shadow: 2px 2px 4px rgba(0,0,0,0.8);">${text}</div>`;
+                }
+            }, 300); // 300ms debounce
         }
         // Regen helpers: only decrement on LLM actions
         window.VAI = window.VAI || {};
