@@ -112,6 +112,15 @@ const CreateShortSchema = z
         previewHeightPx: z.number().int().min(1).max(4000).optional(),
         has: z.boolean().optional(),
         lineSpacingPx: z.number().int().min(0).max(200).optional(),
+        // New PNG overlay fields
+        imageDataUrl: z.string().startsWith("data:image/").optional(),
+        resolved: z.object({
+          splitLines: z.array(z.string()).optional(),
+          fontPx: z.number().optional(),
+          lineSpacing: z.number().optional(),
+          xPct: z.number().optional(),
+          yPct: z.number().optional(),
+        }).optional(),
         box: z.object({
           enabled: z.boolean().optional(),
           paddingPx: z.number().int().min(0).max(64).optional(),
@@ -275,7 +284,17 @@ export async function createShort(req, res) {
 
     const effectiveText = (captionText && captionText.trim().length >= 2) ? captionText.trim() : (text || '').trim();
     const overrideQuote = effectiveText ? { text: effectiveText } : undefined;
-    try { console.log("[shorts] incoming caption:", caption ? { has: true, len: (caption.text||'').length, pos: caption.position || caption.pos, fontSizePx: caption.fontSizePx, opacity: caption.opacity, align: caption.align, vAlign: caption.vAlign, previewHeightPx: caption.previewHeightPx } : { has:false }); } catch {}
+    
+    // Force overlay path: if caption exists but no PNG overlay, reject
+    if (caption?.has && caption.text?.trim() && !caption.imageDataUrl && !captionImage?.dataUrl) {
+      return res.status(400).json({ 
+        success: false, 
+        error: "INVALID_INPUT", 
+        message: "Caption overlay missing; retry." 
+      });
+    }
+    
+    try { console.log("[shorts] incoming caption:", caption ? { has: true, len: (caption.text||'').length, pos: caption.position || caption.pos, fontSizePx: caption.fontSizePx, opacity: caption.opacity, align: caption.align, vAlign: caption.vAlign, previewHeightPx: caption.previewHeightPx, hasOverlay: !!(caption.imageDataUrl || captionImage?.dataUrl) } : { has:false }); } catch {}
     const result = await createShortService({ ownerUid, mode, text, template, durationSec, voiceover, wantAttribution, background, debugAudioPath, captionMode, includeBottomCaption, watermark, captionStyle, caption, captionResolved, captionImage, voiceId, overrideQuote });
     
     // Increment daily short count for free users after successful creation

@@ -85,7 +85,21 @@ router.post("/caption/preview", express.json(), async (req, res) => {
     for (const line of lines) { ctx.fillText(line, W/2, cy); cy += lh; }
 
     const dataUrl = canvas.toDataURL("image/png");
-    return res.json({ success:true, dataUrl, width:W, height:H });
+    
+    // Include meta information for render reuse
+    const meta = {
+      splitLines: lines,
+      fontPx: Number(fontPx),
+      lineSpacing: lh,
+      xPct: 50, // centered
+      yPct: Math.round((y - Number(fontPx)) / H * 100),
+      align: "center",
+      vAlign: placement === "top" ? "top" : placement === "bottom" ? "bottom" : "center",
+      previewHeightPx: H,
+      opacity: Number(opacity)
+    };
+    
+    return res.json({ success:true, dataUrl, width:W, height:H, meta });
   } catch (e) {
     return res.status(400).json({ success:false, error:"INVALID_INPUT", detail:String(e?.message || e) });
   }

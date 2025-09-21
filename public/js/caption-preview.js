@@ -59,7 +59,12 @@ export async function generateCaptionPreview(opts) {
   });
   if (!data?.success) throw new Error(data?.detail || data?.error || "Preview generation failed");
 
-  lastCaptionPNG = { dataUrl: data.dataUrl, width: data.width, height: data.height };
+  lastCaptionPNG = { 
+    dataUrl: data.dataUrl, 
+    width: data.width, 
+    height: data.height,
+    meta: data.meta 
+  };
   
   // Update global reference
   if (typeof window !== 'undefined') {

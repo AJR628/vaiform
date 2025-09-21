@@ -510,15 +510,19 @@ export async function renderVideoQuoteOverlay({
     const wantBox = !!(caption.box && (caption.box.enabled || caption.wantBox));
     const boxAlpha = Math.max(0, Math.min(1, Number(caption.box?.alpha ?? caption.boxAlpha ?? 0)));
     
+    // If caption is required but no PNG overlay, fail explicitly
+    if ((captionText || caption?.text) && !usingCaptionPng) {
+      throw new Error("Caption resolution missing: overlay not provided");
+    }
+    
     // ---- Pure painter approach: use captionResolved verbatim when available (only if NOT using PNG) ----
     let usingResolved = !usingCaptionPng && !!(captionResolved && captionResolved.fontPx && Array.isArray(captionResolved.splitLines) && captionResolved.splitLines.length > 0);
     
     let fontPx, lineSpacing, strokeW, shadowX, shadowY, textAlpha, baseY, lines, n, _lineSp;
     
-    // Safety check: if we have captionResolved but no valid splitLines, fall back
+    // Safety check: if we have captionResolved but no valid splitLines, fail explicitly
     if (captionResolved && captionResolved.fontPx && (!Array.isArray(captionResolved.splitLines) || captionResolved.splitLines.length === 0)) {
-      console.log('[render] captionResolved present but splitLines missing/empty; falling back to server layout');
-      usingResolved = false;
+      throw new Error("Caption resolution missing: overlay not provided");
     }
     
     if (usingResolved) {

@@ -116,10 +116,13 @@ export async function createShortService({ ownerUid, mode, text, template, durat
     ? watermark
     : ((process.env.WATERMARK_ENABLED ?? "true") !== "false");
 
-  // Handle caption image (either dataUrl or imageUrl)
+  // Handle caption image (prioritize caption.imageDataUrl, then captionImage.dataUrl, then imageUrl)
   let captionImageLocal = null;
-  if (captionImage?.dataUrl) {
-    console.log("[preflight] captionImage provided → will overlay PNG");
+  if (caption?.imageDataUrl) {
+    console.log("[preflight] caption.imageDataUrl provided → will overlay PNG");
+    captionImageLocal = { dataUrl: caption.imageDataUrl }; // New format from caption object
+  } else if (captionImage?.dataUrl) {
+    console.log("[preflight] captionImage.dataUrl provided → will overlay PNG");
     captionImageLocal = captionImage; // Pass through dataUrl directly
   } else if (captionImage?.imageUrl) {
     try {

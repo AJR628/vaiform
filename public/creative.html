@@ -1556,16 +1556,38 @@
                     }
                 }
 
+                // Hard guard: if preview overlay isn't ready, block render
+                if ((finalCaptionText || finalText || '').trim() && !window.lastCaptionPNG?.dataUrl) {
+                    alert("Generating caption overlay, try again in a second");
+                    renderBtn.disabled = false;
+                    renderBtn.textContent = originalText;
+                    return;
+                }
+                
                 // BEFORE sending: prioritize PNG when available; suppress legacy text
                 let effectiveCaptionText = finalCaptionText;
                 let effectiveCaptionResolved = captionResolved;
                 
                 if (window.lastCaptionPNG?.dataUrl) {
-                    captionImage = window.lastCaptionPNG; // { dataUrl, width, height }
-                    // Do not also send raw captionText/quoteText for server rendering when PNG exists
-                    effectiveCaptionText = ""; // suppress legacy text rendering
-                    effectiveCaptionResolved = undefined; // ensure backend doesn't treat as signal to fallback
-                    console.log("[render] sending captionImage PNG:", !!captionImage);
+                    // Use new caption format with PNG overlay
+                    caption = {
+                        has: true,
+                        text: (finalCaptionText || finalText || '').trim(),
+                        imageDataUrl: window.lastCaptionPNG.dataUrl,
+                        resolved: window.lastCaptionPNG.meta,
+                        pos: { xPct: 50, yPct: 12 },
+                        align: "center",
+                        vAlign: "top",
+                        fontSizePx: 72,
+                        opacity: 1,
+                        previewHeightPx: 640
+                    };
+                    
+                    // Suppress legacy fields
+                    effectiveCaptionText = ""; 
+                    effectiveCaptionResolved = undefined;
+                    captionImage = undefined; // Remove old format
+                    console.log("[render] sending caption PNG overlay:", !!caption.imageDataUrl);
                 }
                 
                 const payload = {
@@ -1640,7 +1662,13 @@
                 }
             } catch (error) {
                 console.error('Render error:', error);
-                alert(`Render failed: ${error.message || 'Network error'}`);
+                
+                // Handle caption overlay missing error specifically
+                if (error.message?.includes("Caption overlay missing")) {
+                    alert("Caption overlay missing. Please wait for preview to generate, then try rendering again.");
+                } else {
+                    alert(`Render failed: ${error.message || 'Network error'}`);
+                }
             } finally {
                 renderBtn.disabled = false;
                 renderBtn.textContent = originalText;
