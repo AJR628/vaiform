@@ -17,9 +17,16 @@ function safeRegisterFont(file, family, weight = "normal") {
   try {
     const p = path.join(process.cwd(), "assets", "fonts", file);
     if (!fs.existsSync(p)) throw new Error("missing");
-    registerFont(p, { family, weight });
-    console.log(`[font] registered ${file} as ${family}/${weight}`);
-    return true;
+    
+    // Check if registerFont is available
+    if (typeof registerFont === 'function') {
+      registerFont(p, { family, weight });
+      console.log(`[font] registered ${file} as ${family}/${weight}`);
+      return true;
+    } else {
+      console.warn(`[font] registerFont not available in @napi-rs/canvas`);
+      return false;
+    }
   } catch (e) {
     console.warn(`[font] register failed for ${file}: ${e.message}`);
     return false;
@@ -230,7 +237,7 @@ if (routes?.preview) {
 
 // Mount caption preview routes
 import captionPreviewRoutes from "./routes/caption.preview.routes.js";
-app.use(captionPreviewRoutes);
+app.use("/api", captionPreviewRoutes);
 console.log("✅ Mounted caption preview at /api/caption/preview");
 
 // Mount user routes

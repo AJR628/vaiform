@@ -1,7 +1,6 @@
 import express from "express";
 import pkg from "@napi-rs/canvas";
 const { createCanvas } = pkg;
-import { HAVE_DEJAVU_BOLD } from "../app.js";
 
 const router = express.Router();
 
@@ -11,7 +10,7 @@ router.post("/api/caption/preview", express.json(), async (req, res) => {
       text,
       width = 1080,
       height = 1920,
-      fontFamily = HAVE_DEJAVU_BOLD ? "DejaVu Sans Local" : "Arial",
+      fontFamily = "DejaVu Sans Local",
       weightCss = "bold",
       fontPx = 48,
       color = "#FFFFFF",
