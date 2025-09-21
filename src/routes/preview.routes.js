@@ -71,12 +71,10 @@ router.post('/caption', requireAuth, async (req, res) => {
     let publicUrl = null;
     try {
       const uid = req.user?.uid;
-      if (uid) {
-        const storagePath = `previews/${uid}/${jobId}/caption.png`;
-        const uploadResult = await uploadPublic(captionImage.pngPath, storagePath, 'image/png');
-        publicUrl = uploadResult.publicUrl;
-        captionImage.publicUrl = publicUrl;
-      }
+      const storagePath = `previews/${uid}/${jobId}/caption.png`;
+      const uploadResult = await uploadPublic(captionImage.pngPath, storagePath, 'image/png');
+      publicUrl = uploadResult.publicUrl;
+      captionImage.publicUrl = publicUrl;
     } catch (uploadErr) {
       console.warn(`[preview] Upload failed for ${jobId}:`, uploadErr.message);
       // Continue without public URL - client will need to handle local file

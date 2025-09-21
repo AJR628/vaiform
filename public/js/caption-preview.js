@@ -61,27 +61,44 @@ export async function generateCaptionPreview(options) {
   };
 
   try {
-    // Get auth token
+    // Get auth token with better error handling
+    let token = null;
     const user = window.auth?.currentUser;
-    if (!user) {
-      throw new Error('Authentication required');
+    
+    if (user) {
+      try {
+        token = await user.getIdToken();
+      } catch (authError) {
+        console.warn('[caption-preview] Auth token failed, trying without auth:', authError.message);
+      }
+    } else {
+      console.warn('[caption-preview] No authenticated user found, trying without auth');
     }
 
-    const token = await user.getIdToken();
+    const headers = {
+      'Content-Type': 'application/json',
+    };
+    
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
 
     const response = await fetch('/api/preview/caption', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
-      },
+      headers,
       body: JSON.stringify(payload),
     });
+
+    // Handle HTML error responses (like 404 pages)
+    const contentType = response.headers.get('content-type');
+    if (!contentType || !contentType.includes('application/json')) {
+      throw new Error(`Server returned ${response.status}: ${response.statusText}. Expected JSON response.`);
+    }
 
     const result = await response.json();
 
     if (!response.ok) {
-      throw new Error(result.detail || result.reason || 'Preview generation failed');
+      throw new Error(result.detail || result.reason || `HTTP ${response.status}: Preview generation failed`);
     }
 
     if (!result.ok) {

@@ -3,19 +3,47 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 
-// Register the font using GlobalFonts API
+// Register the font using GlobalFonts API - Replit compatible
 const fontPath = path.resolve('assets/fonts/DejaVuSans-Bold.ttf');
+let fontRegistered = false;
+
+// Check available fonts first
+try {
+  const availableFonts = GlobalFonts.families;
+  console.log('[caption] Available system fonts:', availableFonts.slice(0, 10)); // Show first 10
+} catch (err) {
+  console.log('[caption] Could not list system fonts');
+}
+
 if (fs.existsSync(fontPath)) {
   try {
-    const fontBuffer = fs.readFileSync(fontPath);
-    GlobalFonts.register(fontBuffer, 'Inter-Bold');
-    console.log('[caption] Font registered successfully: Inter-Bold');
+    // Method 1: Simple path registration (most compatible)
+    try {
+      GlobalFonts.register(fontPath, 'DejaVu-Bold');
+      fontRegistered = true;
+      console.log('[caption] Font registered successfully: DejaVu-Bold (path method)');
+    } catch (pathErr) {
+      // Method 2: Buffer registration
+      try {
+        const fontBuffer = fs.readFileSync(fontPath);
+        GlobalFonts.register(fontBuffer, 'DejaVu-Bold');
+        fontRegistered = true;
+        console.log('[caption] Font registered successfully: DejaVu-Bold (buffer method)');
+      } catch (bufferErr) {
+        console.warn('[caption] Both font registration methods failed:');
+        console.warn('[caption] Path error:', pathErr.message);
+        console.warn('[caption] Buffer error:', bufferErr.message);
+      }
+    }
   } catch (err) {
-    console.warn('[caption] Font registration failed:', err.message);
-    console.warn('[caption] Falling back to system font');
+    console.warn('[caption] Font registration setup failed:', err.message);
   }
 } else {
   console.warn('[caption] Font file not found:', fontPath);
+}
+
+if (!fontRegistered) {
+  console.warn('[caption] Using system font fallback');
 }
 
 /**
@@ -95,9 +123,10 @@ export async function renderCaptionImage(jobId, style) {
   const canvas = createCanvas(canvasW, canvasH);
   const ctx = canvas.getContext('2d');
 
-  // Set font using registered Inter-Bold
-  ctx.font = `${fontWeight || 700} ${fontPx}px "Inter-Bold"`;
-  console.log(`[caption] Font set to: ${ctx.font}`);
+  // Set font with fallbacks for better compatibility
+  const fontName = fontRegistered ? 'DejaVu-Bold' : 'Arial, sans-serif';
+  ctx.font = `${fontWeight || 700} ${fontPx}px ${fontName}`;
+  console.log(`[caption] Font set to: ${ctx.font} (registered: ${fontRegistered})`);
   ctx.textBaseline = 'top';
 
   // Word wrap text to fit within box width
