@@ -10,7 +10,8 @@ import routes from "./routes/index.js";
 import "./config/firebase.js"; // ensure Firebase Admin is initialized
 
 // Font registration for caption rendering
-import { registerFont } from "@napi-rs/canvas";
+import pkg from "@napi-rs/canvas";
+const { registerFont } = pkg;
 
 function safeRegisterFont(file, family, weight = "normal") {
   try {

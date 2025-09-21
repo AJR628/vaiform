@@ -1,5 +1,6 @@
 import express from "express";
-import { createCanvas } from "@napi-rs/canvas";
+import pkg from "@napi-rs/canvas";
+const { createCanvas } = pkg;
 import { HAVE_DEJAVU_BOLD } from "../app.js";
 
 const router = express.Router();
