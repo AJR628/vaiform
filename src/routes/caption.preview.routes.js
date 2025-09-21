@@ -4,7 +4,7 @@ const { createCanvas } = pkg;
 
 const router = express.Router();
 
-router.post("/api/caption/preview", express.json(), async (req, res) => {
+router.post("/caption/preview", express.json(), async (req, res) => {
   try {
     const {
       text,
@@ -60,7 +60,8 @@ router.post("/api/caption/preview", express.json(), async (req, res) => {
     let y;
     if (placement === "top") y = padding + Number(fontPx);
     else if (placement === "bottom") y = H - padding - textH + Number(fontPx);
-    else y = Math.round((H - textH) / 2) + Number(fontPx);
+    else if (placement === "center") y = Math.round((H - textH) / 2) + Number(fontPx);
+    else y = Math.round((H - textH) / 2) + Number(fontPx); // fallback to center
 
     const boxW = maxW + padding * 2;
     const boxH = textH + padding * 2;
@@ -100,5 +101,36 @@ function roundRect(ctx, x, y, w, h, r) {
   ctx.arcTo(x, y, x + w, y, rr);
   ctx.closePath();
 }
+
+// Smoke test route for quick debugging
+router.get("/diag/caption-smoke", async (req, res) => {
+  try {
+    const W = 1080, H = 1920;
+    const canvas = createCanvas(W, H);
+    const ctx = canvas.getContext("2d");
+    ctx.clearRect(0, 0, W, H);
+    
+    // Simple test with DejaVu font
+    ctx.font = `bold 48px "DejaVu Sans Local"`;
+    ctx.fillStyle = "#FFFFFF";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("SMOKE TEST", W/2, H/2);
+    
+    const dataUrl = canvas.toDataURL("image/png");
+    return res.json({ 
+      ok: true, 
+      message: "Caption smoke test passed",
+      hasDataUrl: !!dataUrl,
+      dataUrlLength: dataUrl.length 
+    });
+  } catch (e) {
+    return res.status(500).json({ 
+      ok: false, 
+      error: String(e?.message || e),
+      message: "Caption smoke test failed"
+    });
+  }
+});
 
 export default router;

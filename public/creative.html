@@ -517,28 +517,36 @@
                 return;
             }
 
-            // Get caption style parameters
+            // Get caption style parameters from UI
             const sizePx = parseInt(document.getElementById('caption-size')?.value || '48', 10);
+            const opacityPct = parseInt(document.getElementById('caption-opacity')?.value || '85', 10);
             const placement = (document.getElementById('caption-placement')?.value || 'bottom').toLowerCase();
-            
-            // Calculate position based on placement
-            let boxXPx = 42, boxYPx = 230, boxWPx = 996, boxHPx = 400;
-            if (placement === 'top') {
-                boxYPx = 100;
-            } else if (placement === 'middle') {
-                boxYPx = 760; // Center of 1920 height
-            } else { // bottom
-                boxYPx = 1400;
-            }
+            const showBoxToggle = document.getElementById('caption-background')?.checked || false;
+            const boxOpacityPct = parseInt(document.getElementById('caption-bg-opacity')?.value || '50', 10);
+            const selectedWeight = document.getElementById('caption-weight')?.value || 'bold';
 
+            // Map placement UI to server values
+            const placementMapping = {
+                'top': 'top',
+                'middle': 'center', 
+                'bottom': 'bottom'
+            };
+            
             const captionStyle = {
                 text: text.trim(),
-                fontPx: sizePx,
-                align: 'center',
-                boxXPx,
-                boxYPx,
-                boxWPx,
-                boxHPx
+                sizePx: sizePx,
+                fontFamily: "DejaVu Sans Local",
+                weight: selectedWeight,
+                color: "#FFFFFF",
+                opacity: opacityPct / 100,
+                shadow: true,
+                showBox: showBoxToggle,
+                boxColor: `rgba(0,0,0,${boxOpacityPct/100})`,
+                placement: placementMapping[placement] || 'center',
+                lineHeight: 1.1,
+                padding: 24,
+                maxWidthPct: 0.85,
+                borderRadius: 16
             };
 
             // Debounce caption generation
@@ -548,10 +556,11 @@
                     console.log('[caption-overlay] Generating PNG preview...');
                     
                     // Import the caption preview function
-                    const { generateCaptionPreview, createCaptionOverlay } = await import('./js/caption-preview.js');
+                    const { generateCaptionPreview, getLastCaptionPNG, createCaptionOverlay } = await import('./js/caption-preview.js');
                     
                     // Generate caption PNG
-                    const result = await generateCaptionPreview(captionStyle);
+                    await generateCaptionPreview(captionStyle);
+                    const result = getLastCaptionPNG();
                     captionOverlayState = result;
                     
                     console.log('[caption-overlay] PNG preview generated:', result);
@@ -1519,28 +1528,19 @@
                 const finalText = isVideoBg ? '' : (currentQuote.text || '').trim();
                 const finalCaptionText = isVideoBg ? (currentQuote.text || '').trim() : '';
 
-                // Generate caption PNG if there's caption text
+                // Reuse existing caption PNG if there's caption text
                 let captionImage = null;
                 if ((finalCaptionText || finalText || '').trim()) {
                     try {
-                        console.log('[render] Generating caption PNG...');
+                        console.log('[render] Reusing caption PNG from preview...');
                         
                         // Import the caption preview functions
-                        const { generateCaptionPreview, getLastCaptionPNG } = await import('./js/caption-preview.js');
-                        
-                        // Generate caption PNG using the new JSON API
-                        await generateCaptionPreview({
-                            text: (finalCaptionText || finalText || '').trim(),
-                            sizePx: captionResolved.fontPx || 48,
-                            placement: captionResolved.placement || 'center',
-                            showBox: captionResolved.showBox || false,
-                            opacity: captionResolved.opacity || 0.85
-                        });
+                        const { getLastCaptionPNG } = await import('./js/caption-preview.js');
                         
                         // Get the stored PNG from the preview function
                         const captionPNG = getLastCaptionPNG();
                         if (!captionPNG?.dataUrl) {
-                            throw new Error("Caption image not ready. Click Preview first.");
+                            throw new Error("Caption image not ready. Generate preview first.");
                         }
                         
                         captionImage = {
@@ -1549,9 +1549,9 @@
                             height: captionPNG.height
                         };
                         
-                        console.log('[render] Caption PNG generated:', captionImage);
+                        console.log('[render] captionImage', captionImage);
                     } catch (error) {
-                        console.warn('[render] Caption PNG generation failed, falling back to drawtext:', error);
+                        console.warn('[render] Caption PNG reuse failed, falling back to drawtext:', error);
                         // Continue without PNG - will use drawtext fallback
                     }
                 }

@@ -3,6 +3,9 @@
  * Provides functions to generate caption PNG previews using the new JSON API
  */
 
+// Import API helpers to use same backend as other endpoints
+import { apiFetch } from "../api.mjs";
+
 let lastCaptionPNG = null; // { dataUrl, width, height }
 
 /**
@@ -44,14 +47,12 @@ export async function generateCaptionPreview(opts) {
     borderRadius: Number(opts.borderRadius || 16)
   };
 
-  const res = await fetch("/api/caption/preview", {
+  console.log("[caption-overlay] POST /caption/preview");
+  const data = await apiFetch("/caption/preview", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-    credentials: "include"
+    body: payload
   });
-  const data = await res.json();
-  if (!res.ok || !data?.success) throw new Error(data?.detail || data?.error || `HTTP ${res.status}`);
+  if (!data?.success) throw new Error(data?.detail || data?.error || "Preview generation failed");
 
   lastCaptionPNG = { dataUrl: data.dataUrl, width: data.width, height: data.height };
 
