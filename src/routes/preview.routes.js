@@ -3,7 +3,7 @@ import { z } from 'zod';
 import crypto from 'node:crypto';
 import { renderCaptionImage } from '../caption/renderCaptionImage.js';
 import { uploadPublic } from '../utils/storage.js';
-import { requireAuth } from '../middleware/requireAuth.js';
+import requireAuth from '../middleware/requireAuth.js';
 
 const router = Router();
 

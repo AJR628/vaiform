@@ -3,13 +3,18 @@ import Stripe from "stripe";
 import admin from "../config/firebase.js";
 
 const router = express.Router();
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
+const stripe = process.env.STRIPE_SECRET_KEY ? new Stripe(process.env.STRIPE_SECRET_KEY, {
   apiVersion: "2025-06-30.basil",
-});
+}) : null;
 
 // POST /stripe/webhook must use raw body
 router.post("/", express.raw({ type: "application/json" }), async (req, res) => {
   console.log("[webhook] hit", new Date().toISOString());
+  
+  if (!stripe) {
+    console.warn("[webhook] Stripe not configured, ignoring webhook");
+    return res.status(200).send("OK");
+  }
   
   let event;
   try {

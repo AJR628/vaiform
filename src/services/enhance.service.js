@@ -2,16 +2,16 @@
 import OpenAI from 'openai';
 
 // Single client instance (reads OPENAI_API_KEY from env)
-const openai = new OpenAI({
+const openai = process.env.OPENAI_API_KEY ? new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
-});
+}) : null;
 
 // Clamp helper
 const clamp01 = (n) => Math.max(0, Math.min(1, Number(n)));
 
 export async function enhancePrompt(prompt, strength = 0.5) {
   // Fallback if no API key present (keeps dev unblocked)
-  if (!openai.apiKey) {
+  if (!openai) {
     return `${prompt} [enhanced:${clamp01(strength)}]`;
   }
 

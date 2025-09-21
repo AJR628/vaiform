@@ -1,16 +1,19 @@
-import { createCanvas, registerFont } from '@napi-rs/canvas';
+import pkg from '@napi-rs/canvas';
+const { createCanvas, registerFont = null } = pkg;
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 
 // Register the font
 const fontPath = path.resolve('assets/fonts/DejaVuSans-Bold.ttf');
-if (fs.existsSync(fontPath)) {
+if (fs.existsSync(fontPath) && registerFont) {
   try {
     registerFont(fontPath, { family: 'DejaVuSans', weight: 'bold' });
   } catch (err) {
     console.warn('[caption] Font registration failed:', err.message);
   }
+} else if (!registerFont) {
+  console.warn('[caption] registerFont not available in @napi-rs/canvas');
 }
 
 /**
