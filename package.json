@@ -3,20 +3,21 @@
   "version": "0.1.0",
   "type": "module",
   "dependencies": {
+    "@napi-rs/canvas": "^0.1.80",
     "body-parser": "^1.20.3",
     "cors": "^2.8.5",
     "dotenv": "^17.2.1",
     "express": "^4.19.2",
+    "ffmpeg-static": "^5.2.0",
     "firebase-admin": "^12.6.0",
+    "multer": "^1.4.5-lts.1",
     "nodemailer": "^7.0.5",
     "openai": "^4.104.0",
     "replicate": "^1.0.1",
     "sharp": "^0.33.5",
     "stripe": "^18.4.0",
     "uuid": "^11.1.0",
-    "zod": "^3.25.76",
-    "ffmpeg-static": "^5.2.0",
-    "multer": "^1.4.5-lts.1"
+    "zod": "^3.25.76"
   },
   "scripts": {
     "start": "node server.js",
@@ -34,7 +35,7 @@
     "@eslint/js": "^9.33.0",
     "eslint": "^9.33.0",
     "globals": "^16.3.0",
-    "prettier": "^3.3.3",
-    "husky": "^8.0.0"
+    "husky": "^8.0.0",
+    "prettier": "^3.3.3"
   }
 }

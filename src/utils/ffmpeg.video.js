@@ -6,6 +6,7 @@ import fs from "node:fs";
 import fsp from "node:fs/promises";
 import { renderImageQuoteVideo } from "./ffmpeg.js";
 import { getDurationMsFromMedia } from "./media.duration.js";
+import { CAPTION_OVERLAY } from "../config/env.js";
 
 // --- Caption render parity with preview ---
 const CAPTION_FONT_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf";
@@ -216,15 +217,24 @@ function fitQuoteToBox({ text, boxWidthPx, baseFontSize = 72 }) {
   return { text: lines.join('\n'), fontsize: fz, lineSpacing };
 }
 
-function buildVideoChain({ width, height, videoVignette, drawLayers }){
+function buildVideoChain({ width, height, videoVignette, drawLayers, captionImage }){
   const W = Math.max(4, Number(width)||1080);
   const H = Math.max(4, Number(height)||1920);
   // Fill portrait frame without letterboxing: scale to cover then crop
   const scale = `scale='if(gt(a,${W}/${H}),-2,${W})':'if(gt(a,${W}/${H}),${H},-2)'`;
   const crop = `crop=${W}:${H}`;
   const core = [ scale, crop, (videoVignette ? 'vignette=PI/4:0.5' : null), 'format=rgba' ].filter(Boolean);
-  const vchain = makeChain('0:v', [ joinF(core), ...drawLayers, 'format=yuv420p' ].filter(Boolean), 'vout');
-  return vchain;
+  
+  // If using PNG overlay for captions, create intermediate label and overlay
+  if (CAPTION_OVERLAY && captionImage) {
+    const baseChain = makeChain('0:v', [ joinF(core), ...drawLayers ].filter(Boolean), 'v0');
+    const overlayChain = `[v0][1:v]overlay=x=${captionImage.xPx}:y=${captionImage.yPx}:eof_action=pass:format=auto,format=yuv420p[vout]`;
+    return `${baseChain};${overlayChain}`;
+  } else {
+    // Legacy drawtext approach
+    const vchain = makeChain('0:v', [ joinF(core), ...drawLayers, 'format=yuv420p' ].filter(Boolean), 'vout');
+    return vchain;
+  }
 }
 
 function buildAudioChain({ outSec, keepVideoAudio, haveBgAudio, ttsPath, leadInMs, tailSec, bgVol }){
@@ -278,6 +288,7 @@ export async function renderVideoQuoteOverlay({
   captionText,
   caption,
   captionResolved,
+  captionImage,
   // style bundle
   fontfile, fontcolor = 'white', fontsize = 72, lineSpacing = 12, shadowColor = 'black', shadowX = 2, shadowY = 2,
   box = 1, boxcolor = 'black@0.35', boxborderw = 24,
@@ -362,7 +373,12 @@ export async function renderVideoQuoteOverlay({
 
   // Optional caption (bottom, safe area, wrapped)
   let drawCaption = '';
-  if (caption && String(caption.text || '').trim()) {
+  
+  // Skip drawtext caption rendering when using PNG overlay
+  if (CAPTION_OVERLAY && captionImage) {
+    console.log('[ffmpeg] Using PNG overlay for captions, skipping drawtext');
+    drawCaption = '';
+  } else if (caption && String(caption.text || '').trim()) {
     // Inputs
     const capTextRaw = String(caption.text || '').trim();
     const fittedFromPreview = (caption.fittedText && String(caption.fittedText).trim()) ? String(caption.fittedText).trim() : null;
@@ -617,7 +633,13 @@ export async function renderVideoQuoteOverlay({
   console.log('[ffmpeg] DEBUG - text param:', text);
   console.log('[ffmpeg] DEBUG - captionText param:', captionText);
 
-  const vchain = buildVideoChain({ width: W, height: H, videoVignette, drawLayers: [drawMain, drawAuthor, drawWatermark, drawCaption].filter(Boolean) });
+  const vchain = buildVideoChain({ 
+    width: W, 
+    height: H, 
+    videoVignette, 
+    drawLayers: [drawMain, drawAuthor, drawWatermark, drawCaption].filter(Boolean),
+    captionImage: CAPTION_OVERLAY ? captionImage : null
+  });
   // If includeBottomCaption flag is passed via captionStyle, honor it
 
   // ---- Audio chain builders ----
@@ -668,6 +690,7 @@ export async function renderVideoQuoteOverlay({
   const args = [
     '-y',
     '-i', videoPath,
+    ...(CAPTION_OVERLAY && captionImage ? ['-i', captionImage.pngPath] : []),
     ...(ttsPath ? ['-i', ttsPath] : []),
     '-ss', '0.5',
     '-filter_complex', finalFilter,

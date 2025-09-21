@@ -24,7 +24,7 @@ export function finalizeQuoteText(mode, text) {
   return t;
 }
 
-export async function createShortService({ ownerUid, mode, text, template, durationSec, voiceover = false, wantAttribution = true, background = { kind: "solid" }, debugAudioPath, captionMode = "static", includeBottomCaption = false, watermark, overrideQuote, captionStyle, caption, captionResolved, voiceId }) {
+export async function createShortService({ ownerUid, mode, text, template, durationSec, voiceover = false, wantAttribution = true, background = { kind: "solid" }, debugAudioPath, captionMode = "static", includeBottomCaption = false, watermark, overrideQuote, captionStyle, caption, captionResolved, captionImage, voiceId }) {
   if (!ownerUid) throw new Error("MISSING_UID");
 
   const jobId = `shorts-${Date.now().toString(36)}-${Math.random().toString(36).slice(2,7)}`;
@@ -116,6 +116,24 @@ export async function createShortService({ ownerUid, mode, text, template, durat
     ? watermark
     : ((process.env.WATERMARK_ENABLED ?? "true") !== "false");
 
+  // Download caption image if provided
+  let captionImageLocal = null;
+  if (captionImage?.imageUrl) {
+    try {
+      console.log(`[shorts] Downloading caption image: ${captionImage.imageUrl}`);
+      const { fetchImageToTmp } = await import("../utils/image.fetch.js");
+      const downloaded = await fetchImageToTmp(captionImage.imageUrl);
+      captionImageLocal = {
+        ...captionImage,
+        pngPath: downloaded.path,
+      };
+      console.log(`[shorts] Caption image downloaded to: ${downloaded.path}`);
+    } catch (err) {
+      console.warn(`[shorts] Failed to download caption image: ${err.message}`);
+      // Continue without caption overlay - will fall back to drawtext
+    }
+  }
+
   // Karaoke ASS (optional)
   const wantKaraoke = captionMode === "karaoke";
   let karaokeModeEffective = "none";
@@ -199,6 +217,7 @@ export async function createShortService({ ownerUid, mode, text, template, durat
             captionStyle,
             caption: includeBottomCaption === true ? caption : null,
             captionResolved,
+            captionImage: captionImageLocal,
             watermark: watermarkFinal,
             watermarkText: "Vaiform"
           });
@@ -250,6 +269,7 @@ export async function createShortService({ ownerUid, mode, text, template, durat
             captionStyle,
             caption: includeBottomCaption === true ? caption : null,
             captionResolved,
+            captionImage: captionImageLocal,
             watermark: watermarkFinal,
             watermarkText: "Vaiform"
           });
@@ -376,6 +396,7 @@ export async function createShortService({ ownerUid, mode, text, template, durat
           captionText: includeBottomCaption === true ? ((caption && caption.text) || usedQuote.text) : null,
           caption: includeBottomCaption === true ? caption : null,
           captionResolved,
+          captionImage: captionImageLocal,
         });
         // annotate meta via closure var? We'll include via meta build below
         // For parity with others, nothing else here; mux will run later

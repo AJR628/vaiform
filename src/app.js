@@ -204,6 +204,10 @@ if (routes?.creative) {
   app.use("/creative", routes.creative);
   console.log("✅ Mounted creative at /creative");
 }
+if (routes?.preview) {
+  app.use("/api/preview", routes.preview);
+  console.log("✅ Mounted preview at /api/preview");
+}
 
 // Mount user routes
 import userRoutes from "./routes/user.routes.js";

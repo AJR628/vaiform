@@ -140,6 +140,13 @@ const CreateShortSchema = z
       shadowX: z.number().int().min(-10).max(10).optional(),
       shadowY: z.number().int().min(-10).max(10).optional(),
     }).optional(),
+    captionImage: z.object({
+      imageUrl: z.string().url(),
+      xPx: z.number().int().min(0).max(1080),
+      yPx: z.number().int().min(0).max(1920),
+      wPx: z.number().int().min(1).max(1080).optional(),
+      hPx: z.number().int().min(1).max(1920).optional(),
+    }).optional(),
     captionText: z.string().default("").optional(),
     voiceId: z.string().optional(),
   })
@@ -239,7 +246,7 @@ export async function createShort(req, res) {
     if (!parsed.success) {
       return res.status(400).json({ success: false, error: "INVALID_INPUT", detail: parsed.error.flatten() });
     }
-    const { mode = "quote", text = "", captionText = "", template = "calm", durationSec = 8, voiceover = false, wantAttribution = true, background = { kind: "solid" }, debugAudioPath, captionMode = "static", includeBottomCaption = false, watermark, captionStyle, caption, captionResolved, voiceId } = parsed.data;
+    const { mode = "quote", text = "", captionText = "", template = "calm", durationSec = 8, voiceover = false, wantAttribution = true, background = { kind: "solid" }, debugAudioPath, captionMode = "static", includeBottomCaption = false, watermark, captionStyle, caption, captionResolved, captionImage, voiceId } = parsed.data;
 
     const ownerUid = req.user?.uid;
     if (!ownerUid) {
@@ -266,7 +273,7 @@ export async function createShort(req, res) {
     const effectiveText = (captionText && captionText.trim().length >= 2) ? captionText.trim() : (text || '').trim();
     const overrideQuote = effectiveText ? { text: effectiveText } : undefined;
     try { console.log("[shorts] incoming caption:", caption ? { has: true, len: (caption.text||'').length, pos: caption.position || caption.pos, fontSizePx: caption.fontSizePx, opacity: caption.opacity, align: caption.align, vAlign: caption.vAlign, previewHeightPx: caption.previewHeightPx } : { has:false }); } catch {}
-    const result = await createShortService({ ownerUid, mode, text, template, durationSec, voiceover, wantAttribution, background, debugAudioPath, captionMode, includeBottomCaption, watermark, captionStyle, caption, captionResolved, voiceId, overrideQuote });
+    const result = await createShortService({ ownerUid, mode, text, template, durationSec, voiceover, wantAttribution, background, debugAudioPath, captionMode, includeBottomCaption, watermark, captionStyle, caption, captionResolved, captionImage, voiceId, overrideQuote });
     
     // Increment daily short count for free users after successful creation
     if (req.incrementShortCount) {
