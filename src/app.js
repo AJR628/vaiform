@@ -9,6 +9,24 @@ import fs from "fs";
 import routes from "./routes/index.js";
 import "./config/firebase.js"; // ensure Firebase Admin is initialized
 
+// Font registration for caption rendering
+import { registerFont } from "@napi-rs/canvas";
+
+function safeRegisterFont(file, family, weight = "normal") {
+  try {
+    const p = path.join(process.cwd(), "assets", "fonts", file);
+    if (!fs.existsSync(p)) throw new Error("missing");
+    registerFont(p, { family, weight });
+    console.log(`[font] registered ${file} as ${family}/${weight}`);
+    return true;
+  } catch (e) {
+    console.warn(`[font] register failed for ${file}: ${e.message}`);
+    return false;
+  }
+}
+
+export const HAVE_DEJAVU_BOLD = safeRegisterFont("DejaVuSans-Bold.ttf", "DejaVu Sans Local", "bold");
+
 // 🔧 Gate A helpers
 import envCheck from "./middleware/envCheck.js";
 import reqId from "./middleware/reqId.js";
@@ -209,6 +227,11 @@ if (routes?.preview) {
   console.log("✅ Mounted preview at /api/preview");
 }
 
+// Mount caption preview routes
+import captionPreviewRoutes from "./routes/caption.preview.routes.js";
+app.use(captionPreviewRoutes);
+console.log("✅ Mounted caption preview at /api/caption/preview");
+
 // Mount user routes
 import userRoutes from "./routes/user.routes.js";
 app.use("/api/user", userRoutes);
@@ -238,6 +261,19 @@ try {
 } catch (e) {
   console.warn("[web] SPA hosting setup failed:", e?.message || e);
 }
+
+// Serve assets with correct MIME types
+app.use(
+  "/assets",
+  express.static(path.join(process.cwd(), "assets"), {
+    setHeaders: (res, filePath) => {
+      if (filePath.endsWith(".ttf"))  res.setHeader("Content-Type", "font/ttf");
+      if (filePath.endsWith(".otf"))  res.setHeader("Content-Type", "font/otf");
+      if (filePath.endsWith(".woff")) res.setHeader("Content-Type", "font/woff");
+      if (filePath.endsWith(".woff2"))res.setHeader("Content-Type", "font/woff2");
+    },
+  })
+);
 
 // Minimal MIME fix for .woff2 (no behavior change for other assets)
 app.use((req, res, next) => {

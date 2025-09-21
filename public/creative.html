@@ -1525,28 +1525,28 @@
                     try {
                         console.log('[render] Generating caption PNG...');
                         
-                        // Import the caption preview function
-                        const { generateCaptionPreview } = await import('./js/caption-preview.js');
+                        // Import the caption preview functions
+                        const { generateCaptionPreview, getLastCaptionPNG } = await import('./js/caption-preview.js');
                         
-                        // Generate caption PNG using the same data as preview
-                        const captionPngData = await generateCaptionPreview({
+                        // Generate caption PNG using the new JSON API
+                        await generateCaptionPreview({
                             text: (finalCaptionText || finalText || '').trim(),
-                            jobId: `render-${Date.now().toString(36)}`,
-                            fontPx: captionResolved.fontPx || 48,
-                            align: 'center',
-                            // Use exact coordinates from caption positioning
-                            xPx: Math.round((1080 - 996) / 2), // Center horizontally with margin
-                            yPx: Math.round(1920 * (captionResolved.yPct || 12) / 100), // Use yPct from placement
-                            wPx: 996,
-                            hPx: 400
+                            sizePx: captionResolved.fontPx || 48,
+                            placement: captionResolved.placement || 'center',
+                            showBox: captionResolved.showBox || false,
+                            opacity: captionResolved.opacity || 0.85
                         });
                         
+                        // Get the stored PNG from the preview function
+                        const captionPNG = getLastCaptionPNG();
+                        if (!captionPNG?.dataUrl) {
+                            throw new Error("Caption image not ready. Click Preview first.");
+                        }
+                        
                         captionImage = {
-                            imageUrl: captionPngData.imageUrl,
-                            xPx: captionPngData.xPx,
-                            yPx: captionPngData.yPx,
-                            wPx: captionPngData.wPx,
-                            hPx: captionPngData.hPx
+                            dataUrl: captionPNG.dataUrl,
+                            width: captionPNG.width,
+                            height: captionPNG.height
                         };
                         
                         console.log('[render] Caption PNG generated:', captionImage);

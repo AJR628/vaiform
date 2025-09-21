@@ -1,119 +1,68 @@
 /**
  * Caption Preview API Integration
- * Provides functions to generate caption PNG previews using the new overlay system
+ * Provides functions to generate caption PNG previews using the new JSON API
  */
+
+let lastCaptionPNG = null; // { dataUrl, width, height }
 
 /**
- * Generate a caption preview PNG
- * @param {Object} options - Caption style options
- * @param {string} options.text - Caption text
- * @param {string} [options.jobId] - Optional job ID
- * @param {number} [options.fontPx=44] - Font size in pixels
- * @param {string} [options.align='center'] - Text alignment
- * @param {number} [options.xPx=42] - Caption box X position
- * @param {number} [options.yPx=230] - Caption box Y position
- * @param {number} [options.wPx=996] - Caption box width
- * @param {number} [options.hPx=400] - Caption box height
- * @returns {Promise<Object>} Caption image result
+ * Generate a caption preview PNG using the new JSON API
+ * @param {Object} opts - Caption style options
+ * @param {string} opts.text - Caption text
+ * @param {string} [opts.fontFamily='DejaVu Sans Local'] - Font family
+ * @param {string} [opts.weight='bold'] - Font weight
+ * @param {number} [opts.sizePx=48] - Font size in pixels
+ * @param {string} [opts.color='#FFFFFF'] - Text color
+ * @param {number} [opts.opacity=0.85] - Text opacity
+ * @param {boolean} [opts.shadow=true] - Enable text shadow
+ * @param {boolean} [opts.showBox=false] - Show background box
+ * @param {string} [opts.boxColor='rgba(0,0,0,0.35)'] - Box color
+ * @param {string} [opts.placement='center'] - Text placement
+ * @param {number} [opts.lineHeight=1.1] - Line height
+ * @param {number} [opts.padding=24] - Padding
+ * @param {number} [opts.maxWidthPct=0.8] - Max width percentage
+ * @param {number} [opts.borderRadius=16] - Border radius
+ * @returns {Promise<void>}
  */
-export async function generateCaptionPreview(options) {
-  const {
-    text,
-    jobId,
-    fontPx = 44,
-    align = 'center',
-    xPx = 42,
-    yPx = 230,
-    wPx = 996,
-    hPx = 400,
-  } = options;
-
-  if (!text?.trim()) {
-    throw new Error('Caption text is required');
-  }
-
-  const style = {
-    text: text.trim(),
-    fontFamily: 'DejaVuSans',
-    fontWeight: 700,
-    fontPx,
-    lineSpacingPx: Math.round(fontPx * 1.2),
-    align,
-    textAlpha: 1.0,
-    fill: 'rgba(255,255,255,1)',
-    strokePx: 3,
-    strokeColor: 'rgba(0,0,0,0.85)',
-    shadowX: 0,
-    shadowY: 2,
-    shadowBlur: 4,
-    shadowColor: 'rgba(0,0,0,0.55)',
-    boxXPx: xPx,
-    boxYPx: yPx,
-    boxWPx: wPx,
-    boxHPx: hPx,
-    canvasW: 1080,
-    canvasH: 1920,
-  };
-
+export async function generateCaptionPreview(opts) {
   const payload = {
-    style,
-    ...(jobId && { jobId }),
+    text: opts.text,
+    width: 1080,
+    height: 1920,
+    fontFamily: opts.fontFamily || "DejaVu Sans Local",
+    weightCss: opts.weight || "bold",
+    fontPx: Number(opts.sizePx || 48),
+    color: opts.color || "#FFFFFF",
+    opacity: Number(opts.opacity ?? 0.85),
+    shadow: !!opts.shadow,
+    showBox: !!opts.showBox,            // keep false to remove gray box
+    boxColor: opts.boxColor || "rgba(0,0,0,0.35)",
+    placement: opts.placement || "center",
+    lineHeight: Number(opts.lineHeight || 1.1),
+    padding: Number(opts.padding || 24),
+    maxWidthPct: Number(opts.maxWidthPct || 0.8),
+    borderRadius: Number(opts.borderRadius || 16)
   };
 
-  try {
-    // Get auth token with better error handling
-    let token = null;
-    const user = window.auth?.currentUser;
-    
-    if (user) {
-      try {
-        token = await user.getIdToken();
-      } catch (authError) {
-        console.warn('[caption-preview] Auth token failed, trying without auth:', authError.message);
-      }
-    } else {
-      console.warn('[caption-preview] No authenticated user found, trying without auth');
-    }
+  const res = await fetch("/api/caption/preview", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+    credentials: "include"
+  });
+  const data = await res.json();
+  if (!res.ok || !data?.success) throw new Error(data?.detail || data?.error || `HTTP ${res.status}`);
 
-    const headers = {
-      'Content-Type': 'application/json',
-    };
-    
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+  lastCaptionPNG = { dataUrl: data.dataUrl, width: data.width, height: data.height };
 
-    const response = await fetch('/api/preview/caption', {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(payload),
-    });
-
-    // Handle HTML error responses (like 404 pages)
-    const contentType = response.headers.get('content-type');
-    if (!contentType || !contentType.includes('application/json')) {
-      throw new Error(`Server returned ${response.status}: ${response.statusText}. Expected JSON response.`);
-    }
-
-    const result = await response.json();
-
-    if (!response.ok) {
-      throw new Error(result.detail || result.reason || `HTTP ${response.status}: Preview generation failed`);
-    }
-
-    if (!result.ok) {
-      throw new Error(result.detail || result.reason || 'Preview generation failed');
-    }
-
-    return result.data;
-  } catch (error) {
-    console.error('[caption-preview] Generation failed:', error);
-    throw error;
-  }
+  const img = document.getElementById("captionOverlay");
+  if (img) { img.src = data.dataUrl; img.style.display = "block"; }
 }
 
+export function getLastCaptionPNG(){ return lastCaptionPNG; }
+
 /**
- * Create a caption overlay element for preview
+ * Create a caption overlay element for preview (legacy compatibility)
  * @param {Object} captionData - Caption image data from generateCaptionPreview
  * @param {HTMLElement} container - Container element for the overlay
  * @param {Object} [scaling] - Scaling options for different preview sizes
@@ -130,14 +79,14 @@ export function createCaptionOverlay(captionData, container, scaling = {}) {
   
   // Create overlay image element
   const overlay = document.createElement('img');
-  overlay.src = captionData.imageUrl;
+  overlay.src = captionData.dataUrl || captionData.imageUrl;
   overlay.className = 'caption-overlay';
   overlay.style.cssText = `
     position: absolute;
-    left: ${captionData.xPx * scaleX}px;
-    top: ${captionData.yPx * scaleY}px;
-    width: ${captionData.wPx * scaleX}px;
-    height: ${captionData.hPx * scaleY}px;
+    left: ${(captionData.xPx || 0) * scaleX}px;
+    top: ${(captionData.yPx || 0) * scaleY}px;
+    width: ${(captionData.wPx || 1080) * scaleX}px;
+    height: ${(captionData.hPx || 1920) * scaleY}px;
     pointer-events: none;
     z-index: 10;
   `;
@@ -165,7 +114,8 @@ export function createDebouncedCaptionPreview(callback, delay = 300) {
     clearTimeout(timeoutId);
     timeoutId = setTimeout(async () => {
       try {
-        const result = await generateCaptionPreview(options);
+        await generateCaptionPreview(options);
+        const result = getLastCaptionPNG();
         callback(null, result);
       } catch (error) {
         callback(error, null);
