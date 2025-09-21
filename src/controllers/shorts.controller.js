@@ -97,45 +97,8 @@ const CreateShortSchema = z
     includeBottomCaption: z.boolean().optional(),
     watermark: z.boolean().optional(),
     captionStyle: CaptionStyleSchema.optional(),
-    caption: z
-      .object({
-        text: z.string().trim().min(1).max(300),
-        fontFamily: z.string().optional(),
-        fontWeight: z.string().optional(),
-        fontSizePx: z.number().int().min(16).max(160),
-        opacity: z.number().min(0).max(1).default(0.8),
-        align: z.enum(["left","center","right"]).default("center"),
-        // accept either position or pos; normalize later
-        position: z.object({ xPct: z.number().min(0).max(100), yPct: z.number().min(0).max(100) }).optional(),
-        pos: z.object({ xPct: z.number().min(0).max(100), yPct: z.number().min(0).max(100) }).optional(),
-        vAlign: z.enum(["top","center","bottom"]).optional(),
-        previewHeightPx: z.number().int().min(1).max(4000).optional(),
-        has: z.boolean().optional(),
-        lineSpacingPx: z.number().int().min(0).max(200).optional(),
-        // New PNG overlay fields
-        imageDataUrl: z.string().startsWith("data:image/").optional(),
-        resolved: z.object({
-          splitLines: z.array(z.string()).optional(),
-          fontPx: z.number().optional(),
-          lineSpacing: z.number().optional(),
-          xPct: z.number().optional(),
-          yPct: z.number().optional(),
-        }).optional(),
-        box: z.object({
-          enabled: z.boolean().optional(),
-          paddingPx: z.number().int().min(0).max(64).optional(),
-          radiusPx: z.number().int().min(0).max(64).optional(),
-          bgAlpha: z.number().min(0).max(1).optional(),
-        }).passthrough().optional(),
-        wantBox: z.boolean().optional(),
-        boxAlpha: z.number().min(0).max(1).optional(),
-      })
-      .transform((c)=>{
-        if (!c) return c;
-        const pos = c.position || c.pos;
-        return { ...c, position: pos || { xPct: 50, yPct: 50 } };
-      })
-      .optional(),
+    // v1 schema: caption is a number (font size), captionImage is dataUrl string
+    caption: z.number().int().min(8).max(160).optional(),
     captionResolved: z.object({
       fontFamily: z.string().optional(),
       weightCss: z.string().optional(),
@@ -149,16 +112,8 @@ const CreateShortSchema = z
       shadowX: z.number().int().min(-10).max(10).optional(),
       shadowY: z.number().int().min(-10).max(10).optional(),
     }).optional(),
-    captionImage: z.object({
-      imageUrl: z.string().url().optional(),
-      dataUrl: z.string().startsWith("data:image/").optional(),
-      xPx: z.number().int().min(0).max(1080).optional(),
-      yPx: z.number().int().min(0).max(1920).optional(),
-      wPx: z.number().int().min(1).max(1080).optional(),
-      hPx: z.number().int().min(1).max(1920).optional(),
-      width: z.number().int().min(1).max(4000).optional(),
-      height: z.number().int().min(1).max(4000).optional(),
-    }).optional(),
+    // v1 schema: captionImage is a dataUrl string
+    captionImage: z.string().startsWith("data:image/").optional(),
     captionText: z.string().default("").optional(),
     voiceId: z.string().optional(),
   })
@@ -285,16 +240,9 @@ export async function createShort(req, res) {
     const effectiveText = (captionText && captionText.trim().length >= 2) ? captionText.trim() : (text || '').trim();
     const overrideQuote = effectiveText ? { text: effectiveText } : undefined;
     
-    // Force overlay path: if caption exists but no PNG overlay, reject
-    if (caption?.has && caption.text?.trim() && !caption.imageDataUrl && !captionImage?.dataUrl) {
-      return res.status(400).json({ 
-        success: false, 
-        error: "INVALID_INPUT", 
-        message: "Caption overlay missing; retry." 
-      });
-    }
+    // Note: caption is now a number (font size) in v1 schema, not an object
     
-    try { console.log("[shorts] incoming caption:", caption ? { has: true, len: (caption.text||'').length, pos: caption.position || caption.pos, fontSizePx: caption.fontSizePx, opacity: caption.opacity, align: caption.align, vAlign: caption.vAlign, previewHeightPx: caption.previewHeightPx, hasOverlay: !!(caption.imageDataUrl || captionImage?.dataUrl) } : { has:false }); } catch {}
+    try { console.log("[shorts] incoming caption:", { fontPx: caption, captionText: !!captionText, hasOverlay: !!(captionImage && typeof captionImage === 'string') }); } catch {}
     const result = await createShortService({ ownerUid, mode, text, template, durationSec, voiceover, wantAttribution, background, debugAudioPath, captionMode, includeBottomCaption, watermark, captionStyle, caption, captionResolved, captionImage, voiceId, overrideQuote });
     
     // Increment daily short count for free users after successful creation

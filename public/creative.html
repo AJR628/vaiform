@@ -1569,58 +1569,39 @@
                     return;
                 }
                 
-                // BEFORE sending: prioritize PNG when available; suppress legacy text
-                let effectiveCaptionText = finalCaptionText;
-                let effectiveCaptionResolved = captionResolved;
+                // Compute server-compatible caption font size (v1 schema expects number ≤160)
+                const computedFontPx = Math.min(160, Math.round(scaledFontPxClamped ?? 72));
                 
-                if (window.lastCaptionPNG?.dataUrl) {
-                    // Use new caption format with PNG overlay
-                    caption = {
-                        has: true,
-                        text: (finalCaptionText || finalText || '').trim(),
-                        imageDataUrl: window.lastCaptionPNG.dataUrl,
-                        resolved: window.lastCaptionPNG.meta,
-                        pos: { xPct: 50, yPct: 12 },
-                        align: "center",
-                        vAlign: "top",
-                        fontSizePx: scaledFontPxClamped, // Use the properly scaled font size
-                        opacity: captionStyle.opacity,
-                        previewHeightPx
-                    };
-                    
-                    // Suppress legacy fields
-                    effectiveCaptionText = ""; 
-                    effectiveCaptionResolved = undefined;
-                    captionImage = undefined; // Remove old format
-                    console.log("[render] sending caption PNG overlay:", !!caption.imageDataUrl);
-                }
+                // Get PNG overlay data if available
+                const useOverlay = !!(window.lastCaptionPNG?.dataUrl);
+                const captionPngDataUrl = window.lastCaptionPNG?.dataUrl ?? null;
+                const renderQuoteText = (finalCaptionText || finalText || '').trim();
                 
+                console.log("[render] overlay status:", { useOverlay, hasDataUrl: !!captionPngDataUrl, computedFontPx });
+                
+                // Build v1-compatible payload
                 let payload = {
                     mode: 'quote',
                     text: finalText,
-                    template: 'calm', // Default template
+                    template: 'calm',
                     durationSec: 8,
                     voiceover: !!currentVoiceId,
                     wantAttribution: true,
                     background,
-                    captionMode: normalizedCaptionMode,
-                    includeBottomCaption,
-                    watermark: true,
-                    // Add caption style settings (with clamped font size for server validation)
-                    captionStyle: {
-                        ...captionStyle,
-                        sizePx: scaledFontPxClamped // Send clamped render size so server validation passes
-                    },
-                    caption,
-                    // Preview is authoritative - send resolved metrics (only if no PNG)
-                    captionResolved: effectiveCaptionResolved,
-                    // Include the generated caption PNG
-                    captionImage,
-                    // Provide captionText for videos only (suppressed when PNG exists)
-                    captionText: effectiveCaptionText,
-                    // Ensure TTS has content for both image/video flows
-                    ttsText: (finalCaptionText || finalText || '').trim()
+                    includeBottomCaption: true,
+                    // v1 expects a number here, not an object
+                    caption: computedFontPx,
+                    // keep for TTS/subtitles/debugging on server
+                    captionText: renderQuoteText,
+                    voiceId: currentVoiceId,
+                    watermark: true
                 };
+                
+                // Add PNG overlay if available
+                if (useOverlay && captionPngDataUrl) {
+                    payload.captionImage = captionPngDataUrl; // data:image/png;base64,...
+                    console.log("[render] including PNG overlay in payload");
+                }
 
                 // Only add voiceId if a voice is actually selected
                 if (currentVoiceId) {
@@ -1671,14 +1652,24 @@
             } catch (error) {
                 console.error('Render error:', error); // includes stack trace
                 
-                // Handle caption overlay missing error specifically
-                if (error.message?.includes("Caption overlay missing")) {
-                    alert("Caption overlay missing. Please wait for preview to generate, then try rendering again.");
-                } else if (error.message?.includes("Caption resolution missing")) {
-                    alert("Caption overlay not provided. Please wait for preview to generate, then try rendering again.");
-                } else {
-                    alert(`Render failed: ${error.message || 'Network error'}`);
-                }
+                // Better 400 error surfacing
+                const errorMsg = (() => {
+                    try {
+                        if (error.message?.includes('fieldErrors')) {
+                            const match = error.message.match(/fieldErrors":\s*(\{[^}]+\})/);
+                            if (match) return `Validation error: ${match[1]}`;
+                        }
+                        if (error.message?.includes("Caption overlay missing")) {
+                            return "Caption overlay missing. Please wait for preview to generate, then try rendering again.";
+                        }
+                        if (error.message?.includes("Caption resolution missing")) {
+                            return "Caption overlay not provided. Please wait for preview to generate, then try rendering again.";
+                        }
+                    } catch {}
+                    return error?.message || 'Network error';
+                })();
+                
+                alert(`Render failed: ${errorMsg}`);
             } finally {
                 renderBtn.disabled = false;
                 renderBtn.textContent = originalText;
