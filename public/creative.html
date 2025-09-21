@@ -1556,6 +1556,18 @@
                     }
                 }
 
+                // BEFORE sending: prioritize PNG when available; suppress legacy text
+                let effectiveCaptionText = finalCaptionText;
+                let effectiveCaptionResolved = captionResolved;
+                
+                if (window.lastCaptionPNG?.dataUrl) {
+                    captionImage = window.lastCaptionPNG; // { dataUrl, width, height }
+                    // Do not also send raw captionText/quoteText for server rendering when PNG exists
+                    effectiveCaptionText = ""; // suppress legacy text rendering
+                    effectiveCaptionResolved = undefined; // ensure backend doesn't treat as signal to fallback
+                    console.log("[render] sending captionImage PNG:", !!captionImage);
+                }
+                
                 const payload = {
                     mode: 'quote',
                     text: finalText,
@@ -1570,12 +1582,12 @@
                     // Add caption style settings
                     captionStyle,
                     caption,
-                    // Preview is authoritative - send resolved metrics
-                    captionResolved,
+                    // Preview is authoritative - send resolved metrics (only if no PNG)
+                    captionResolved: effectiveCaptionResolved,
                     // Include the generated caption PNG
                     captionImage,
-                    // Provide captionText for videos only
-                    captionText: finalCaptionText,
+                    // Provide captionText for videos only (suppressed when PNG exists)
+                    captionText: effectiveCaptionText,
                     // Ensure TTS has content for both image/video flows
                     ttsText: (finalCaptionText || finalText || '').trim()
                 };

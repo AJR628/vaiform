@@ -8,6 +8,11 @@ import { apiFetch } from "../api.mjs";
 
 let lastCaptionPNG = null; // { dataUrl, width, height }
 
+// Make lastCaptionPNG globally accessible
+if (typeof window !== 'undefined') {
+  window.lastCaptionPNG = lastCaptionPNG;
+}
+
 /**
  * Generate a caption preview PNG using the new JSON API
  * @param {Object} opts - Caption style options
@@ -55,6 +60,11 @@ export async function generateCaptionPreview(opts) {
   if (!data?.success) throw new Error(data?.detail || data?.error || "Preview generation failed");
 
   lastCaptionPNG = { dataUrl: data.dataUrl, width: data.width, height: data.height };
+  
+  // Update global reference
+  if (typeof window !== 'undefined') {
+    window.lastCaptionPNG = lastCaptionPNG;
+  }
 
   const img = document.getElementById("captionOverlay");
   if (img) { img.src = data.dataUrl; img.style.display = "block"; }

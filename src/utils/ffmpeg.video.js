@@ -8,6 +8,27 @@ import { renderImageQuoteVideo } from "./ffmpeg.js";
 import { getDurationMsFromMedia } from "./media.duration.js";
 import { CAPTION_OVERLAY } from "../config/env.js";
 
+// Helper function to save dataUrl to temporary file
+export async function saveDataUrlToTmp(dataUrl, prefix = "caption") {
+  const m = /^data:(.+?);base64,(.*)$/.exec(dataUrl || "");
+  if (!m) throw new Error("BAD_DATA_URL");
+  const [, mime, b64] = m;
+  const buf = Buffer.from(b64, "base64");
+  const ext = mime.includes("png") ? ".png" : ".bin";
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "vaiform-"));
+  const file = path.join(tmpDir, `${prefix}${ext}`);
+  fs.writeFileSync(file, buf);
+  return { file, mime };
+}
+
+// Helper function to write caption text to file (safe from escaping issues)
+function writeCaptionTxt(text) {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "vaiform-"));
+  const file = path.join(tmpDir, "caption.txt");
+  fs.writeFileSync(file, text ?? "", { encoding: "utf8" });
+  return file;
+}
+
 // --- Caption render parity with preview ---
 const CAPTION_FONT_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf";
 const CAPTION_FONT_REG  = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf";
@@ -217,14 +238,25 @@ function fitQuoteToBox({ text, boxWidthPx, baseFontSize = 72 }) {
   return { text: lines.join('\n'), fontsize: fz, lineSpacing };
 }
 
-function buildVideoChain({ width, height, videoVignette, drawLayers, captionImage }){
+function buildVideoChain({ width, height, videoVignette, drawLayers, captionImage, usingCaptionPng, captionPngPath }){
   const W = Math.max(4, Number(width)||1080);
   const H = Math.max(4, Number(height)||1920);
   
-  // If using PNG overlay for captions, use the required format
-  if (CAPTION_OVERLAY && captionImage) {
-    console.log(`[render] USING OVERLAY at x=${captionImage.xPx} y=${captionImage.yPx} w=${captionImage.wPx} h=${captionImage.hPx}`);
-    // Build filter graph as specified: scale -> crop -> setsar -> overlay
+  // If using PNG overlay for captions, use the new overlay format
+  if (usingCaptionPng && captionPngPath) {
+    console.log(`[render] USING PNG OVERLAY from: ${captionPngPath}`);
+    // Build filter graph: scale -> crop -> format -> [vmain], then overlay PNG at center
+    const scale = `scale='if(gt(a,${W}/${H}),-2,${W})':'if(gt(a,${W}/${H}),${H},-2)'`;
+    const crop = `crop=${W}:${H}`;
+    const core = [ scale, crop, (videoVignette ? 'vignette=PI/4:0.5' : null), 'format=rgba' ].filter(Boolean);
+    const baseChain = makeChain('0:v', core, 'vmain');
+    
+    // Overlay PNG at center (PNG is already positioned correctly)
+    const overlayChain = `[vmain][1:v]overlay=(W-w)/2:(H-h)/2:format=auto[vout]`;
+    return `${baseChain};${overlayChain}`;
+  } else if (CAPTION_OVERLAY && captionImage) {
+    // Legacy overlay format (keep for backward compatibility)
+    console.log(`[render] USING LEGACY OVERLAY at x=${captionImage.xPx} y=${captionImage.yPx} w=${captionImage.wPx} h=${captionImage.hPx}`);
     const baseChain = `[0:v]scale=${W}:${H}:force_original_aspect_ratio=increase,crop=${W}:${H},setsar=1[v0]`;
     const overlayChain = `[v0][1:v]overlay=${captionImage.xPx}:${captionImage.yPx}:format=auto[vout]`;
     return `${baseChain};${overlayChain}`;
@@ -456,13 +488,31 @@ export async function renderVideoQuoteOverlay({
 
     // This section is now handled by the pure painter approach above
 
+    // ---- PNG OVERLAY BRANCH: if captionImage exists, use overlay path and SKIP drawtext ----
+    let usingCaptionPng = false;
+    let overlayInputIndex = null;
+    let overlayFilter = "";
+    let captionPngPath = null;
+    
+    if (captionImage?.dataUrl) {
+      usingCaptionPng = true;
+      try {
+        const { file: pngPath } = await saveDataUrlToTmp(captionImage.dataUrl, "caption");
+        captionPngPath = pngPath;
+        console.log("[render] using caption PNG overlay:", pngPath);
+      } catch (error) {
+        console.warn("[render] failed to save caption PNG, falling back to drawtext:", error.message);
+        usingCaptionPng = false;
+      }
+    }
+
     // per-line drawtext (centered x) — raw expression in single quotes; avoid escaping commas here
     const xFinal = `'max(20\\,min(w-20-text_w\\,(w*0.5)-text_w/2))'`;
     const wantBox = !!(caption.box && (caption.box.enabled || caption.wantBox));
     const boxAlpha = Math.max(0, Math.min(1, Number(caption.box?.alpha ?? caption.boxAlpha ?? 0)));
     
-    // ---- Pure painter approach: use captionResolved verbatim when available ----
-    let usingResolved = !!(captionResolved && captionResolved.fontPx && Array.isArray(captionResolved.splitLines) && captionResolved.splitLines.length > 0);
+    // ---- Pure painter approach: use captionResolved verbatim when available (only if NOT using PNG) ----
+    let usingResolved = !usingCaptionPng && !!(captionResolved && captionResolved.fontPx && Array.isArray(captionResolved.splitLines) && captionResolved.splitLines.length > 0);
     
     let fontPx, lineSpacing, strokeW, shadowX, shadowY, textAlpha, baseY, lines, n, _lineSp;
     
@@ -556,15 +606,18 @@ export async function renderVideoQuoteOverlay({
       const lineY = Math.round(baseY + i * (fontPx + _lineSp));
       const line = lines[i] || '';
       
-      // Skip empty lines to avoid drawtext=text=''
+      // Skip empty lines to avoid drawtext=textfile=''
       if (!line.trim()) continue;
       
       const xExpr = xFinal;
       const yExpr = `'max(20\\,min(h-20-${fontPx}\\,${lineY}))'`;
+      
+      // Write line to temp file for safe handling of special characters
+      const lineTxtFile = writeCaptionTxt(line);
 
       // pass A — subtle blur-ish base (no stroke)
       capDraws.push(
-        `drawtext=text='${escapeForDrawtext(line)}'` +
+        `drawtext=textfile='${lineTxtFile}'` +
         `:fontfile='${CAPTION_FONT_BOLD}'` +
         `:x='${xExpr}'` +
         `:y='${yExpr}'` +
@@ -576,7 +629,7 @@ export async function renderVideoQuoteOverlay({
 
       // pass B — second soften pass (no stroke)
       capDraws.push(
-        `drawtext=text='${escapeForDrawtext(line)}'` +
+        `drawtext=textfile='${lineTxtFile}'` +
         `:fontfile='${CAPTION_FONT_BOLD}'` +
         `:x='${xExpr}'` +
         `:y='${yExpr}'` +
@@ -588,7 +641,7 @@ export async function renderVideoQuoteOverlay({
 
       // pass C — main text last (so stroke isn't dimmed)
       capDraws.push(
-        `drawtext=text='${escapeForDrawtext(line)}'` +
+        `drawtext=textfile='${lineTxtFile}'` +
         `:fontfile='${CAPTION_FONT_BOLD}'` +
         `:x='${xExpr}'` +
         `:y='${yExpr}'` +
@@ -638,8 +691,10 @@ export async function renderVideoQuoteOverlay({
     width: W, 
     height: H, 
     videoVignette, 
-    drawLayers: [drawMain, drawAuthor, drawWatermark, drawCaption].filter(Boolean),
-    captionImage: CAPTION_OVERLAY ? captionImage : null
+    drawLayers: usingCaptionPng ? [] : [drawMain, drawAuthor, drawWatermark, drawCaption].filter(Boolean),
+    captionImage: CAPTION_OVERLAY ? captionImage : null,
+    usingCaptionPng,
+    captionPngPath
   });
   // If includeBottomCaption flag is passed via captionStyle, honor it
 
@@ -691,7 +746,8 @@ export async function renderVideoQuoteOverlay({
   const args = [
     '-y',
     '-i', videoPath,
-    ...(CAPTION_OVERLAY && captionImage ? ['-i', captionImage.pngPath || captionImage.localPath] : []),
+    ...(usingCaptionPng && captionPngPath ? ['-i', captionPngPath] : []),
+    ...(CAPTION_OVERLAY && captionImage && !usingCaptionPng ? ['-i', captionImage.pngPath || captionImage.localPath] : []),
     ...(ttsPath ? ['-i', ttsPath] : []),
     '-ss', '0.5',
     '-filter_complex', finalFilter,

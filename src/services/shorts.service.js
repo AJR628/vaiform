@@ -116,9 +116,12 @@ export async function createShortService({ ownerUid, mode, text, template, durat
     ? watermark
     : ((process.env.WATERMARK_ENABLED ?? "true") !== "false");
 
-  // Download caption image if provided
+  // Handle caption image (either dataUrl or imageUrl)
   let captionImageLocal = null;
-  if (captionImage?.imageUrl) {
+  if (captionImage?.dataUrl) {
+    console.log("[preflight] captionImage provided → will overlay PNG");
+    captionImageLocal = captionImage; // Pass through dataUrl directly
+  } else if (captionImage?.imageUrl) {
     try {
       console.log(`[shorts] Downloading caption image: ${captionImage.imageUrl}`);
       const { fetchImageToTmp } = await import("../utils/image.fetch.js");
