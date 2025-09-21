@@ -1493,7 +1493,7 @@
                     yPct: placementMap[captionStyle.placement] ?? 88
                 };
 
-                const caption = {
+                let caption = {
                     has: true,
                     text: (currentQuote?.text || '').trim(),
                     fittedText,
@@ -1578,9 +1578,9 @@
                         pos: { xPct: 50, yPct: 12 },
                         align: "center",
                         vAlign: "top",
-                        fontSizePx: 72,
-                        opacity: 1,
-                        previewHeightPx: 640
+                        fontSizePx: scaledFontPx, // Use the properly scaled font size
+                        opacity: captionStyle.opacity,
+                        previewHeightPx
                     };
                     
                     // Suppress legacy fields
@@ -1661,11 +1661,13 @@
                     alert(`Render failed: ${data.error || 'Unknown error'}`);
                 }
             } catch (error) {
-                console.error('Render error:', error);
+                console.error('Render error:', error); // includes stack trace
                 
                 // Handle caption overlay missing error specifically
                 if (error.message?.includes("Caption overlay missing")) {
                     alert("Caption overlay missing. Please wait for preview to generate, then try rendering again.");
+                } else if (error.message?.includes("Caption resolution missing")) {
+                    alert("Caption overlay not provided. Please wait for preview to generate, then try rendering again.");
                 } else {
                     alert(`Render failed: ${error.message || 'Network error'}`);
                 }
