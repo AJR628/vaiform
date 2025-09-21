@@ -1460,17 +1460,22 @@
                 const previewToRenderScale = Math.min(10, 1920 / Math.max(400, previewHeightPx)); // Use consistent scaling
                 const scaledFontPx = Math.min(200, Math.max(10, Math.round((captionStyle.sizePx || 48) * previewToRenderScale)));
                 
+                // Clamp scaled font size to backend limits
+                const CAPTION_PX_MAX = 160;
+                const scaledFontPxClamped = Math.min(Math.round(scaledFontPx), CAPTION_PX_MAX);
+                
                 console.log('[render] Font scaling:', { 
                     previewHeightPx, 
                     renderHeight: 1920, 
                     previewToRenderScale, 
                     originalSizePx: captionStyle.sizePx, 
-                    scaledFontPx 
+                    scaledFontPx,
+                    scaledFontPxClamped
                 });
                 
                 console.log('[render] Validation values:', {
-                    fontPx: scaledFontPx,
-                    lineSpacing: Math.min(100, Math.max(0, Math.round(scaledFontPx * 0.20))),
+                    fontPx: scaledFontPxClamped,
+                    lineSpacing: Math.min(100, Math.max(0, Math.round(scaledFontPxClamped * 0.20))),
                     strokeW: Math.min(10, Math.max(0, Math.round(3 * previewToRenderScale))),
                     shadowY: Math.min(10, Math.max(-10, Math.round(2 * previewToRenderScale)))
                 });
@@ -1480,8 +1485,8 @@
                     fontFamily: family,
                     weightCss: (weightCss === "700") ? "bold" : "normal",
                     fontFile: (weightCss === "700") ? "DejaVuSans-Bold.ttf" : "DejaVuSans.ttf",
-                    fontPx: scaledFontPx, // Use scaled font size for final render
-                    lineSpacing: Math.min(100, Math.max(0, Math.round(scaledFontPx * 0.20))), // Scale line spacing too
+                    fontPx: scaledFontPxClamped, // Use clamped font size for final render
+                    lineSpacing: Math.min(100, Math.max(0, Math.round(scaledFontPxClamped * 0.20))), // Scale line spacing too
                     textAlpha: Math.max(0, Math.min(1, captionStyle.opacity ?? 0.8)),
                     strokeW: Math.min(10, Math.max(0, Math.round(3 * previewToRenderScale))), // Scale stroke width
                     strokeAlpha: 0.85,
@@ -1500,14 +1505,14 @@
                     fontFamily: family,
                     fontWeight: (weightCss === "700") ? "bold" : "normal",
                     weight: captionStyle.weight, // Pass through original weight for FFmpeg processing
-                    fontSizePx: Number.isFinite(captionStyle.sizePx) ? captionStyle.sizePx : 48,
+                    fontSizePx: scaledFontPxClamped,
                     opacity: Math.max(0, Math.min(1, captionStyle.opacity ?? 0.8)),
                     align: 'center',
                     vAlign: vAlignMap[captionStyle.placement] || 'top',
                     pos: { xPct: 50, yPct: placementMap[captionStyle.placement] ?? 88 },
                     position: { xPct: 50, yPct: placementMap[captionStyle.placement] ?? 88 },
                     previewHeightPx,
-                    lineSpacingPx: Math.round(((Number.isFinite(captionStyle.sizePx)?captionStyle.sizePx:48) * 0.20)), // Match preview calculation
+                    lineSpacingPx: Math.round(scaledFontPxClamped * 0.20), // Use clamped font size
                     box: {
                         enabled: !!document.querySelector('#caption-background')?.checked,
                         alpha: Math.max(0, Math.min(1, (parseInt(document.getElementById('caption-bg-opacity')?.value || '50', 10) / 100)))
@@ -1578,7 +1583,7 @@
                         pos: { xPct: 50, yPct: 12 },
                         align: "center",
                         vAlign: "top",
-                        fontSizePx: scaledFontPx, // Use the properly scaled font size
+                        fontSizePx: scaledFontPxClamped, // Use the properly scaled font size
                         opacity: captionStyle.opacity,
                         previewHeightPx
                     };
@@ -1590,7 +1595,7 @@
                     console.log("[render] sending caption PNG overlay:", !!caption.imageDataUrl);
                 }
                 
-                const payload = {
+                let payload = {
                     mode: 'quote',
                     text: finalText,
                     template: 'calm', // Default template
@@ -1601,8 +1606,11 @@
                     captionMode: normalizedCaptionMode,
                     includeBottomCaption,
                     watermark: true,
-                    // Add caption style settings
-                    captionStyle,
+                    // Add caption style settings (with clamped font size for server validation)
+                    captionStyle: {
+                        ...captionStyle,
+                        sizePx: scaledFontPxClamped // Send clamped render size so server validation passes
+                    },
                     caption,
                     // Preview is authoritative - send resolved metrics (only if no PNG)
                     captionResolved: effectiveCaptionResolved,
