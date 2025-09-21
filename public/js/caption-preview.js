@@ -73,6 +73,11 @@ export async function generateCaptionPreview(opts) {
 
   const img = document.getElementById("captionOverlay");
   if (img) { img.src = data.dataUrl; img.style.display = "block"; }
+  
+  // Expose preview canvas height for scaling calculations
+  if (typeof window !== 'undefined') {
+    window.__vaiform_previewHeightPx = data.height;
+  }
 }
 
 export function getLastCaptionPNG(){ return lastCaptionPNG; }

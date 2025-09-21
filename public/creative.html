@@ -1339,6 +1339,17 @@
             }
         }
 
+        // Helper function for better error messages
+        function summarizeCreateError(err) {
+            try {
+                const msg = String(err?.message || err);
+                const json = JSON.parse(msg.replace(/^Error:\s*/, ''));
+                const fe = json?.detail?.fieldErrors || {};
+                if (fe.caption?.length) return `Caption: ${fe.caption.join(', ')}`;
+            } catch {}
+            return null;
+        }
+
         // Render short function
         async function renderShort() {
             if (!currentQuote || !selectedAsset) {
@@ -1569,20 +1580,40 @@
                     return;
                 }
                 
-                // Compute server-compatible caption font size (v1 schema expects number ≤160)
-                const computedFontPx = Math.min(160, Math.round(scaledFontPxClamped ?? 72));
+                // --- PREVIEW → RENDER SCALE + CLAMP ---------------------------------
+                const CAPTION_MAX = 160;
+                const CAPTION_MIN = 12; // sanity floor
+                
+                // The preview size the user set on the slider (in preview pixels)
+                const previewFontPx = captionStyle?.sizePx ?? 48;
+                
+                // Use the actual preview canvas height if available
+                const previewCanvas = document.getElementById('caption-preview-canvas');
+                const renderPreviewHeightPx =
+                    (previewCanvas && Number(previewCanvas.height)) ||
+                    (window.__vaiform_previewHeightPx ? Number(window.__vaiform_previewHeightPx) : 640);
+                
+                const renderHeight = 1920;
+                const scale = renderHeight / renderPreviewHeightPx;
+                
+                // Compute render font size and clamp to server limit
+                let captionFontPx = Math.round(previewFontPx * scale);
+                captionFontPx = Math.max(CAPTION_MIN, Math.min(captionFontPx, CAPTION_MAX));
+                
+                // Debug info
+                console.log('[render] Caption scaling:', { previewFontPx, previewHeightPx: renderPreviewHeightPx, scale, captionFontPx });
                 
                 // Get PNG overlay data if available
                 const useOverlay = !!(window.lastCaptionPNG?.dataUrl);
                 const captionPngDataUrl = window.lastCaptionPNG?.dataUrl ?? null;
                 const renderQuoteText = (finalCaptionText || finalText || '').trim();
                 
-                console.log("[render] overlay status:", { useOverlay, hasDataUrl: !!captionPngDataUrl, computedFontPx });
+                console.log("[render] overlay status:", { useOverlay, hasDataUrl: !!captionPngDataUrl, captionFontPx });
                 
                 // Build v1-compatible payload
                 let payload = {
                     mode: 'quote',
-                    text: finalText,
+                    text: '', // we use ttsText + overlay
                     template: 'calm',
                     durationSec: 8,
                     voiceover: !!currentVoiceId,
@@ -1590,11 +1621,14 @@
                     background,
                     includeBottomCaption: true,
                     // v1 expects a number here, not an object
-                    caption: computedFontPx,
+                    caption: captionFontPx,
                     // keep for TTS/subtitles/debugging on server
                     captionText: renderQuoteText,
-                    voiceId: currentVoiceId,
-                    watermark: true
+                    ttsText: renderQuoteText,
+                    watermark: true,
+                    // Keep existing position/alignment keys
+                    capPos: { xPct: 50, yPct: 12 },
+                    capAlign: 'center'
                 };
                 
                 // Add PNG overlay if available
@@ -1652,24 +1686,8 @@
             } catch (error) {
                 console.error('Render error:', error); // includes stack trace
                 
-                // Better 400 error surfacing
-                const errorMsg = (() => {
-                    try {
-                        if (error.message?.includes('fieldErrors')) {
-                            const match = error.message.match(/fieldErrors":\s*(\{[^}]+\})/);
-                            if (match) return `Validation error: ${match[1]}`;
-                        }
-                        if (error.message?.includes("Caption overlay missing")) {
-                            return "Caption overlay missing. Please wait for preview to generate, then try rendering again.";
-                        }
-                        if (error.message?.includes("Caption resolution missing")) {
-                            return "Caption overlay not provided. Please wait for preview to generate, then try rendering again.";
-                        }
-                    } catch {}
-                    return error?.message || 'Network error';
-                })();
-                
-                alert(`Render failed: ${errorMsg}`);
+                const hint = summarizeCreateError(error);
+                alert(`Render failed${hint ? ': ' + hint : ': ' + (error?.message || 'Unknown error')}`);
             } finally {
                 renderBtn.disabled = false;
                 renderBtn.textContent = originalText;
