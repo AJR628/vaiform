@@ -1491,6 +1491,43 @@
                 const finalText = isVideoBg ? '' : (currentQuote.text || '').trim();
                 const finalCaptionText = isVideoBg ? (currentQuote.text || '').trim() : '';
 
+                // Generate caption PNG if there's caption text
+                let captionImage = null;
+                if ((finalCaptionText || finalText || '').trim()) {
+                    try {
+                        console.log('[render] Generating caption PNG...');
+                        
+                        // Import the caption preview function
+                        const { generateCaptionPreview } = await import('./js/caption-preview.js');
+                        
+                        // Generate caption PNG using the same data as preview
+                        const captionPngData = await generateCaptionPreview({
+                            text: (finalCaptionText || finalText || '').trim(),
+                            jobId: `render-${Date.now().toString(36)}`,
+                            fontPx: captionResolved.fontPx || 48,
+                            align: 'center',
+                            // Use exact coordinates from caption positioning
+                            xPx: Math.round((1080 - 996) / 2), // Center horizontally with margin
+                            yPx: Math.round(1920 * (captionResolved.yPct || 12) / 100), // Use yPct from placement
+                            wPx: 996,
+                            hPx: 400
+                        });
+                        
+                        captionImage = {
+                            imageUrl: captionPngData.imageUrl,
+                            xPx: captionPngData.xPx,
+                            yPx: captionPngData.yPx,
+                            wPx: captionPngData.wPx,
+                            hPx: captionPngData.hPx
+                        };
+                        
+                        console.log('[render] Caption PNG generated:', captionImage);
+                    } catch (error) {
+                        console.warn('[render] Caption PNG generation failed, falling back to drawtext:', error);
+                        // Continue without PNG - will use drawtext fallback
+                    }
+                }
+
                 const payload = {
                     mode: 'quote',
                     text: finalText,
@@ -1507,6 +1544,8 @@
                     caption,
                     // Preview is authoritative - send resolved metrics
                     captionResolved,
+                    // Include the generated caption PNG
+                    captionImage,
                     // Provide captionText for videos only
                     captionText: finalCaptionText,
                     // Ensure TTS has content for both image/video flows
