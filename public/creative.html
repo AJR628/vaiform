@@ -1350,6 +1350,14 @@
             return null;
         }
 
+        // Helper functions for payload construction
+        function clamp(n, min, max) { return Math.max(min, Math.min(max, n)); }
+        
+        // Drop undefined keys before fetch; keeps payload clean
+        function stripUndefined(obj) {
+            return Object.fromEntries(Object.entries(obj).filter(([, v]) => v !== undefined));
+        }
+
         // Render short function
         async function renderShort() {
             if (!currentQuote || !selectedAsset) {
@@ -1430,60 +1438,70 @@
                     boxOpacity: parseInt(document.getElementById('caption-bg-opacity').value) / 100
                 };
                 
-                // Build clean payload following contract requirements
-                const text = (currentQuote?.text || '').toString();
-                const hasText = text.trim().length > 0;
+                // --- BEGIN strictly-typed payload construction ---
 
-                // Slider value is the *render* font size. Clamp hard to the API limits.
-                const renderFontPx = Math.max(28, Math.min(160, Number(captionStyle.sizePx) || 28));
+                // 1) Get current quote text safely as a string
+                const quoteText = ((currentQuote && currentQuote.text) || '').toString();
 
-                // Placement -> top/bottom positioning defaults (only for numeric mode)
-                const placement = captionStyle.placement === 'bottom' ? 'bottom' : 'top';
-                const pos = placement === 'top'
-                  ? { xPct: 50, yPct: 12 }
-                  : { xPct: 50, yPct: 88 };
+                // 2) Clamp slider font size to API range (28–160). Use the UI slider value, not any scaled preview value.
+                const sliderSizePxRaw = Number(captionStyle?.sizePx);
+                const sliderSizePx = clamp(isNaN(sliderSizePxRaw) ? 28 : sliderSizePxRaw, 28, 160);
 
-                const overlay = window.__lastCaptionOverlay || null;
+                // 3) Find last generated overlay from preview step
+                //    (caption-preview.js should already be writing this)
+                const overlay = window.__lastCaptionOverlay;
+                // overlay shape we expect: { dataUrl: 'data:image/png;base64,...', width, height, meta: {...} }
+                const overlayDataUrl = overlay && typeof overlay.dataUrl === 'string' ? overlay.dataUrl : undefined;
 
-                // If we have an overlay, send a minimal caption (server will ignore numeric fields)
-                // If not, include the numeric caption fields with the clamped font size.
-                const caption = overlay ? { has: hasText } : {
-                  has: hasText,
-                  fontPx: renderFontPx,
-                  pos,
-                  align: 'center',
-                  vAlign: placement === 'top' ? 'top' : 'bottom',
-                };
+                // 4) Voice handling (don't change existing selection logic—just make sure we send strings)
+                const voiceId = (currentVoiceId || '').toString();
+                const wantVoiceover = !!currentVoiceId; // keep existing toggle, but normalize to boolean
 
-                const payload = {
+                // 5) Background (use what the page already computed)
+                const bg = background; // must be whatever your UI already sets up
+
+                // 6) Build payload with correct types
+                let payload = {
                   mode: 'quote',
                   template: 'calm',
                   durationSec: 8,
-                  voiceover: !!currentVoiceId,
+                  voiceover: wantVoiceover,
                   includeBottomCaption: true,
                   wantAttribution: true,
                   watermark: true,
 
-                  background,   // keep existing structure
-                  captionMode: 'static',
+                  // strings only
+                  text: quoteText,
+                  captionText: quoteText,
+                  ttsText: wantVoiceover ? quoteText : '',
 
-                  // IMPORTANT: strings, not booleans
-                  text,       // used by backend + TTS
-                  ttsText: text,
-                  captionText: text,
+                  // API expects `caption` as a NUMBER (font px)
+                  caption: sliderSizePx,
 
-                  caption,
-                  ...(overlay ? { captionImage: overlay } : {}),
+                  // API expects `captionImage` as a STRING (data URL) when present
+                  captionImage: overlayDataUrl,
+
+                  // keep existing background contract
+                  background: bg,
+
+                  // pass voice id only if voiceover is on (string type)
+                  voiceId: wantVoiceover && voiceId ? voiceId : undefined,
                 };
 
-                console.log('[render] Clean payload built:', payload);
-                console.log('[render] Caption field:', caption);
-                console.log('[render] Has overlay:', !!overlay);
+                // remove undefined keys so contract stays clean
+                payload = stripUndefined(payload);
 
-                // Only add voiceId if a voice is actually selected
-                if (currentVoiceId) {
-                    payload.voiceId = currentVoiceId;
-                }
+                // 7) Log minimal, type-focused debug
+                console.debug('[render] payload.types', {
+                  caption_type: typeof payload.caption,               // expect 'number'
+                  captionImage_type: typeof payload.captionImage,     // 'string' when present or 'undefined'
+                  text_type: typeof payload.text,                     // 'string'
+                  captionText_type: typeof payload.captionText,       // 'string'
+                  ttsText_type: typeof payload.ttsText,               // 'string'
+                  voiceId_type: typeof payload.voiceId,               // 'string' or 'undefined'
+                });
+
+                // --- END strictly-typed payload construction ---
 
                 console.log('[render] Final payload:', payload);
                 console.log('[render] Background object:', background);
