@@ -488,6 +488,31 @@
             return API_BASE_FIXED.replace(/\/$/, '');
         }
 
+        // --- Auth ready (wait for Firebase to finish initializing exactly once) ---
+        window.__authReady = window.__authReady || new Promise((resolve) => {
+          try {
+            // If firebase auth is already available, attach listener; otherwise poll briefly
+            const attach = () => {
+              if (window.firebase && window.firebase.auth) {
+                window.firebase.auth().onAuthStateChanged((user) => {
+                  window.__currentUser = user || null;
+                  resolve(user || null);
+                });
+                return true;
+              }
+              return false;
+            };
+            if (!attach()) {
+              const t = setInterval(() => {
+                if (attach()) clearInterval(t);
+              }, 50);
+              setTimeout(() => { clearInterval(t); resolve(null); }, 5000); // worst-case resolve
+            }
+          } catch {
+            resolve(null);
+          }
+        });
+
         // --- Caption sizing constants (HOISTED) ---
         const UI_MIN_PX = 36;     // slider min visual
         const UI_MID_PX = 72;     // slider mid visual  
@@ -525,6 +550,25 @@
         // expose for other code
         window.getCaptionPx = getCaptionPx;
         window.__captionSizeMapping = { mapSliderToPx, API_MIN_PX, API_MAX_PX, UI_MIN_PX, UI_MID_PX, UI_MAX_PX };
+
+        // --- Auth-aware login warning function ---
+        async function ensureLoggedInOrWarn() {
+          const warnEl = document.getElementById('asset-error'); // the red text element
+          if (!warnEl) return true; // nothing to do
+          const user = await window.__authReady;
+          const isLoggedIn = !!user;
+          if (isLoggedIn) {
+            warnEl.style.display = 'none'; // hide when logged in
+          }
+          return isLoggedIn;
+        }
+
+        // --- Helper to get active asset type ---
+        function getActiveAssetType() {
+          const activeTab = document.querySelector('[data-type].bg-blue-600') ||
+                            document.querySelector('[data-type]');
+          return activeTab?.dataset.type || 'images'; // fallback to images (default tab)
+        }
 
         // --- Debounced caption overlay refresh (prevents blocking assets) ---
         let overlayRefreshTimer = null;
@@ -1137,36 +1181,36 @@
           // Wrap each init so one failure doesn't stop the others
           const safe = (label, fn) => { try { fn && fn(); } catch (e) { console.error(`[init] ${label} failed`, e); } };
 
-          // PRIORITY: Initialize assets first so stock media loading always works
-          try {
-            console.log('[init] Starting asset browser initialization...');
-            // Ensure the assets browser is definitely wired
-            // Force a first page load in the active tab if grid is empty
-            const activeTab = document.querySelector('[data-type].bg-blue-600') ||
-                              document.querySelector('[data-type]');
-            const kind = activeTab?.dataset.type || 'images'; // fallback to images (default tab)
-            const grid = document.getElementById(`${kind}-grid`) ||
-                         document.querySelector(`[data-grid="${kind}"]`) ||
-                         document.getElementById('asset-grid');
-            const qEl  = document.getElementById('asset-query') ||
-                         document.querySelector('[data-asset-query]') ||
-                         document.querySelector('input[placeholder*="nature"]');
-            const query = (qEl?.value || 'nature').trim();
+          // PRIORITY: Initialize assets after auth is ready
+          (async () => {
+            try {
+              console.log('[init] Starting asset browser initialization...');
+              // Wait for auth to settle once, then decide what to do
+              const ok = await ensureLoggedInOrWarn();
+              // If logged in (or you want to allow anonymous browsing anyway), kick off first load
+              if (ok) {
+                const activeType = getActiveAssetType();   // 'images' | 'videos' | 'ai'
+                const q = (document.getElementById('asset-query')?.value || 'nature').trim();
+                const grid = document.getElementById(`${activeType}-grid`) ||
+                             document.querySelector(`[data-grid="${activeType}"]`) ||
+                             document.getElementById('asset-grid');
+                
+                console.log('[assets] Checking initial load:', { activeType, gridEmpty: grid?.childElementCount === 0, query: q });
 
-            console.log('[assets] Checking initial load:', { kind, gridEmpty: grid?.childElementCount === 0, query });
-
-            if (grid && grid.childElementCount === 0) {
-              console.log('[assets] Loading initial assets for', kind);
-              if (typeof loadAssets === 'function') {
-                currentAssetType = kind; // Set the global state
-                await loadAssets(1); // Wait for assets to load
-              } else {
-                console.warn('[assets] loadAssets function not found');
+                if (grid && grid.childElementCount === 0) {
+                  console.log('[assets] Loading initial assets for', activeType);
+                  if (typeof loadAssets === 'function') {
+                    currentAssetType = activeType; // Set the global state
+                    await loadAssets(1); // Wait for assets to load
+                  } else {
+                    console.warn('[assets] loadAssets function not found');
+                  }
+                }
               }
+            } catch (e) {
+              console.error('[init] Asset browser initialization failed:', e);
             }
-          } catch (e) {
-            console.error('[init] Asset browser initialization failed:', e);
-          }
+          })();
 
           // SECONDARY: Initialize caption UI (non-blocking)
           safe('caption-size', () => (typeof initCaptionSizeUI === 'function') && initCaptionSizeUI());
@@ -2170,7 +2214,7 @@
 
         // Tab switching
         document.querySelectorAll('[data-type]').forEach(tab => {
-            tab.onclick = () => {
+            tab.onclick = async () => {
                 currentAssetType = tab.dataset.type;
                 
                 // Update tab styles
@@ -2195,9 +2239,16 @@
                 assetCache.clear();
                 currentAssetPage = 1;
                 
-                // Load assets for new type
+                // Load assets for new type with auth check
                 if (currentAssetType !== 'ai') {
-                    loadAssets(1);
+                    const ok = await ensureLoggedInOrWarn();
+                    if (ok) {
+                        try { 
+                            await loadAssets(1); 
+                        } catch (e) { 
+                            console.warn('[assets] tab load failed', e); 
+                        }
+                    }
                 }
             };
         });
