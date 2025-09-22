@@ -1144,7 +1144,7 @@
             // Force a first page load in the active tab if grid is empty
             const activeTab = document.querySelector('[data-type].bg-blue-600') ||
                               document.querySelector('[data-type]');
-            const kind = activeTab?.dataset.type || 'videos'; // fallback to videos
+            const kind = activeTab?.dataset.type || 'images'; // fallback to images (default tab)
             const grid = document.getElementById(`${kind}-grid`) ||
                          document.querySelector(`[data-grid="${kind}"]`) ||
                          document.getElementById('asset-grid');

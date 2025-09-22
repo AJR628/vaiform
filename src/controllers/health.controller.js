@@ -17,12 +17,14 @@ export const healthz = async (_req, res) => {
       replicateKey: !!process.env.REPLICATE_API_TOKEN,
       stripeKey: !!process.env.STRIPE_SECRET_KEY,
       openaiKey: !!process.env.OPENAI_API_KEY,
+      pexelsKey: !!process.env.PEXELS_API_KEY,
       firebaseServiceAccountLoaded: !!admin.apps.length,
     },
     firestore: isCI ? 'skipped (CI)' : null,
     storage: isCI ? 'skipped (CI)' : null,
     openai: isCI ? 'skipped (CI)' : null,
     replicate: process.env.REPLICATE_API_TOKEN ? 'configured' : 'no_key',
+    pexels: process.env.PEXELS_API_KEY ? 'configured' : 'no_key',
   };
 
   if (!isCI) {
@@ -72,6 +74,7 @@ export const version = (_req, res) =>
     replicateKey: !!process.env.REPLICATE_API_TOKEN,
     stripeKey: !!process.env.STRIPE_SECRET_KEY,
     openaiKey: !!process.env.OPENAI_API_KEY,
+    pexelsKey: !!process.env.PEXELS_API_KEY,
     firebaseConfigured: !!admin.apps.length,
     commit: process.env.COMMIT_SHA || process.env.GITHUB_SHA || 'dev',
   });
