@@ -518,12 +518,27 @@
             }
 
             // Get caption style parameters from UI
-            const sizePx = parseInt(document.getElementById('caption-size')?.value || '48', 10);
+            const sliderSizePx = parseInt(document.getElementById('caption-size')?.value || '48', 10);
             const opacityPct = parseInt(document.getElementById('caption-opacity')?.value || '85', 10);
             const placement = (document.getElementById('caption-placement')?.value || 'bottom').toLowerCase();
             const showBoxToggle = document.getElementById('caption-background')?.checked || false;
             const boxOpacityPct = parseInt(document.getElementById('caption-bg-opacity')?.value || '50', 10);
             const selectedWeight = document.getElementById('caption-weight')?.value || 'bold';
+
+            // Compute proper preview font scaling
+            const renderH = 1920;
+            const livePreviewEl = document.getElementById('live-preview-canvas');
+            const previewH = livePreviewEl?.height || 640; // current value
+            const scale = renderH / previewH;
+            const previewFontPx = Math.max(36, Math.round(sliderSizePx / scale)); // Ensure min readable size
+            
+            console.log('[preview-scaling]', { 
+                sliderSizePx, 
+                previewH, 
+                renderH, 
+                scale: scale.toFixed(2), 
+                previewFontPx 
+            });
 
             // Map placement UI to server values
             const placementMapping = {
@@ -534,7 +549,7 @@
             
             const captionStyle = {
                 text: text.trim(),
-                sizePx: sizePx,
+                sizePx: previewFontPx, // Use computed preview font size
                 fontFamily: "DejaVu Sans Local",
                 weight: selectedWeight,
                 color: "#FFFFFF",
@@ -1460,7 +1475,7 @@
                 // 5) Background (use what the page already computed)
                 const bg = background; // must be whatever your UI already sets up
 
-                // 6) Build payload with correct types
+                // 6) Build payload with correct conditional logic
                 let payload = {
                   mode: 'quote',
                   template: 'calm',
@@ -1472,14 +1487,7 @@
 
                   // strings only
                   text: quoteText,
-                  captionText: quoteText,
                   ttsText: wantVoiceover ? quoteText : '',
-
-                  // API expects `caption` as a NUMBER (font px)
-                  caption: sliderSizePx,
-
-                  // API expects `captionImage` as a STRING (data URL) when present
-                  captionImage: overlayDataUrl,
 
                   // keep existing background contract
                   background: bg,
@@ -1488,17 +1496,36 @@
                   voiceId: wantVoiceover && voiceId ? voiceId : undefined,
                 };
 
+                // Conditional caption logic based on overlay presence
+                if (overlayDataUrl) {
+                  // If overlay exists, send minimal caption + captionImage
+                  payload.caption = { has: true };
+                  payload.captionImage = overlayDataUrl;
+                  // Do NOT include captionText when using overlay
+                } else {
+                  // If no overlay, send full caption object + captionText
+                  payload.caption = {
+                    has: true,
+                    fontPx: sliderSizePx,
+                    opacity: clamp(captionStyle.opacity || 0.8, 0, 1),
+                    placement: captionStyle.placement || 'bottom',
+                    align: 'center'
+                  };
+                  payload.captionText = String(quoteText || '');
+                }
+
                 // remove undefined keys so contract stays clean
                 payload = stripUndefined(payload);
 
                 // 7) Log minimal, type-focused debug
                 console.debug('[render] payload.types', {
-                  caption_type: typeof payload.caption,               // expect 'number'
-                  captionImage_type: typeof payload.captionImage,     // 'string' when present or 'undefined'
+                  caption_type: typeof payload.caption,               // expect 'object'
+                  captionImage_type: typeof payload.captionImage,     // 'string' when overlay present or 'undefined'
                   text_type: typeof payload.text,                     // 'string'
-                  captionText_type: typeof payload.captionText,       // 'string'
+                  captionText_type: typeof payload.captionText,       // 'string' when no overlay or 'undefined'
                   ttsText_type: typeof payload.ttsText,               // 'string'
                   voiceId_type: typeof payload.voiceId,               // 'string' or 'undefined'
+                  hasOverlay: !!overlayDataUrl,                       // boolean for debugging
                 });
 
                 // --- END strictly-typed payload construction ---
