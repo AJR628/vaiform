@@ -525,19 +525,12 @@
             const boxOpacityPct = parseInt(document.getElementById('caption-bg-opacity')?.value || '50', 10);
             const selectedWeight = document.getElementById('caption-weight')?.value || 'bold';
 
-            // Compute proper preview font scaling
-            const renderH = 1920;
-            const livePreviewEl = document.getElementById('live-preview-canvas');
-            const previewH = livePreviewEl?.height || 640; // current value
-            const scale = renderH / previewH;
-            const previewFontPx = Math.max(36, Math.round(sliderSizePx / scale)); // Ensure min readable size
+            // Pass slider value directly (no scaling by preview/render height)
+            const fontPx = Math.max(28, Math.min(160, sliderSizePx));
             
             console.log('[preview-scaling]', { 
                 sliderSizePx, 
-                previewH, 
-                renderH, 
-                scale: scale.toFixed(2), 
-                previewFontPx 
+                fontPx 
             });
 
             // Map placement UI to server values
@@ -549,7 +542,7 @@
             
             const captionStyle = {
                 text: text.trim(),
-                sizePx: previewFontPx, // Use computed preview font size
+                sizePx: fontPx, // Pass slider directly
                 fontFamily: "DejaVu Sans Local",
                 weight: selectedWeight,
                 color: "#FFFFFF",
@@ -1496,22 +1489,21 @@
                   voiceId: wantVoiceover && voiceId ? voiceId : undefined,
                 };
 
-                // Conditional caption logic based on overlay presence
+                // IMPORTANT: caption vs overlay – never send caption as an object
                 if (overlayDataUrl) {
-                  // If overlay exists, send minimal caption + captionImage
-                  payload.caption = { has: true };
-                  payload.captionImage = overlayDataUrl;
-                  // Do NOT include captionText when using overlay
+                  payload.captionImage = overlayDataUrl;            // string data URL
+                  // do NOT include payload.caption at all when overlay is present
                 } else {
-                  // If no overlay, send full caption object + captionText
-                  payload.caption = {
-                    has: true,
-                    fontPx: sliderSizePx,
-                    opacity: clamp(captionStyle.opacity || 0.8, 0, 1),
-                    placement: captionStyle.placement || 'bottom',
-                    align: 'center'
+                  payload.caption = sliderSizePx;                  // number (not object)
+                  payload.captionMode = 'static';    // keep if you already send it
+                  // Only include style if your backend expects it when no overlay:
+                  payload.captionStyle = {
+                    placement: captionStyle.placement || 'bottom',        // e.g. 'top' | 'center' | 'bottom'
+                    align: 'center',                // if you have it
+                    opacity: clamp(captionStyle.opacity || 0.8, 0, 1),            // 0..1 if applicable
+                    weight: captionStyle.weight || 'bold',              // 'normal' | 'bold'
+                    font: captionStyle.font || 'DejaVu Sans Local',                  // 'system' | 'bold' etc if used by API
                   };
-                  payload.captionText = String(quoteText || '');
                 }
 
                 // remove undefined keys so contract stays clean
@@ -1519,13 +1511,13 @@
 
                 // 7) Log minimal, type-focused debug
                 console.debug('[render] payload.types', {
-                  caption_type: typeof payload.caption,               // expect 'object'
+                  caption_type: typeof payload.caption,               // expect 'number' when no overlay, 'undefined' when overlay
                   captionImage_type: typeof payload.captionImage,     // 'string' when overlay present or 'undefined'
                   text_type: typeof payload.text,                     // 'string'
-                  captionText_type: typeof payload.captionText,       // 'string' when no overlay or 'undefined'
                   ttsText_type: typeof payload.ttsText,               // 'string'
                   voiceId_type: typeof payload.voiceId,               // 'string' or 'undefined'
                   hasOverlay: !!overlayDataUrl,                       // boolean for debugging
+                  caption_value: payload.caption,                     // show actual value
                 });
 
                 // --- END strictly-typed payload construction ---
