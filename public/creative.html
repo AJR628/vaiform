@@ -531,6 +531,9 @@
           // return populateVoicesDropdown();
         });
 
+        // Helper for clearer logging
+        window.__log = (...args) => console.log('[assets]', ...args);
+
         // Global state
         let currentLimits = null;
         let currentQuote = null;
@@ -1100,9 +1103,69 @@
           update(); // initialize
         }
         
-        // Ensure init runs after DOM is ready
+        // --- robust page bootstrap (run after DOM is ready)
         document.addEventListener('DOMContentLoaded', () => {
-          try { initCaptionSizeUI(); } catch (e) { console.error('initCaptionSizeUI failed', e); }
+          // Wrap each init so one failure doesn't stop the others
+          const safe = (label, fn) => { try { fn && fn(); } catch (e) { console.error(`[init] ${label} failed`, e); } };
+
+          // Keep existing inits
+          safe('caption-size', () => (typeof initCaptionSizeUI === 'function') && initCaptionSizeUI());
+
+          // Ensure the assets browser is definitely wired
+          safe('assets-browser', () => {
+            // Force a first page load in the active tab if grid is empty
+            const activeTab = document.querySelector('[data-type].bg-blue-600') ||
+                              document.querySelector('[data-type]');
+            const kind = activeTab?.dataset.type || 'videos'; // fallback to videos
+            const grid = document.getElementById(`${kind}-grid`) ||
+                         document.querySelector(`[data-grid="${kind}"]`) ||
+                         document.getElementById('assets-grid');
+            const qEl  = document.getElementById('asset-query') ||
+                         document.querySelector('[data-asset-query]') ||
+                         document.querySelector('input[placeholder*="nature"]');
+            const query = (qEl?.value || 'nature').trim();
+
+            console.log('[assets] Checking initial load:', { kind, gridEmpty: grid?.childElementCount === 0, query });
+
+            if (grid && grid.childElementCount === 0) {
+              console.log('[assets] Loading initial assets for', kind);
+              if (typeof loadAssets === 'function') {
+                currentAssetType = kind; // Set the global state
+                loadAssets(1);
+              } else {
+                console.warn('[assets] loadAssets function not found');
+              }
+            }
+          });
+
+          // Re-load when switching tabs if nothing is shown yet
+          safe('assets-tab-wiring', () => {
+            const tabs = document.querySelectorAll('[data-type]');
+            tabs.forEach(tab => {
+              tab.addEventListener('click', () => {
+                setTimeout(() => { // Small delay to let tab switching complete
+                  const kind = tab.dataset.type; // 'images' | 'videos' | 'ai'
+                  const grid = document.getElementById(`${kind}-grid`) ||
+                               document.querySelector(`[data-grid="${kind}"]`) ||
+                               document.getElementById('assets-grid');
+                  const qEl  = document.getElementById('asset-query') ||
+                               document.querySelector('[data-asset-query]') ||
+                               document.querySelector('input[placeholder*="nature"]');
+                  const query = (qEl?.value || 'nature').trim();
+
+                  console.log('[assets] Tab clicked:', { kind, gridEmpty: grid?.childElementCount === 0, query });
+
+                  if (grid && grid.childElementCount === 0) {
+                    console.log('[assets] Loading assets for tab', kind);
+                    if (typeof loadAssets === 'function') {
+                      currentAssetType = kind; // Set the global state
+                      loadAssets(1);
+                    }
+                  }
+                }, 100);
+              }, { passive: true });
+            });
+          });
         });
 
         // Update render button state based on validation
