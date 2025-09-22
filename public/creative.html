@@ -360,13 +360,13 @@
                 
                 <!-- Size -->
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Size: <span id="size-value">48px</span></label>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Size: <span id="size-value">72px</span></label>
                     <input
                         type="range"
                         id="caption-size"
-                        min="28"
-                        max="72"
-                        value="48"
+                        min="0"
+                        max="100"
+                        value="50"
                         class="w-full"
                     />
                 </div>
@@ -518,19 +518,15 @@
             }
 
             // Get caption style parameters from UI
-            const sliderSizePx = parseInt(document.getElementById('caption-size')?.value || '48', 10);
+            const sizePx = getCaptionPx(); // Use mapped size
             const opacityPct = parseInt(document.getElementById('caption-opacity')?.value || '85', 10);
             const placement = (document.getElementById('caption-placement')?.value || 'bottom').toLowerCase();
             const showBoxToggle = document.getElementById('caption-background')?.checked || false;
             const boxOpacityPct = parseInt(document.getElementById('caption-bg-opacity')?.value || '50', 10);
             const selectedWeight = document.getElementById('caption-weight')?.value || 'bold';
-
-            // Pass slider value directly (no scaling by preview/render height)
-            const fontPx = Math.max(28, Math.min(160, sliderSizePx));
             
             console.log('[preview-scaling]', { 
-                sliderSizePx, 
-                fontPx 
+                mappedSizePx: sizePx
             });
 
             // Map placement UI to server values
@@ -542,7 +538,7 @@
             
             const captionStyle = {
                 text: text.trim(),
-                sizePx: fontPx, // Pass slider directly
+                sizePx: sizePx, // Use mapped size
                 fontFamily: "DejaVu Sans Local",
                 weight: selectedWeight,
                 color: "#FFFFFF",
@@ -1010,7 +1006,7 @@
                 // Update caption style preview
                 const font = document.getElementById('caption-font').value;
                 const weight = document.getElementById('caption-weight').value;
-                const size = document.getElementById('caption-size').value;
+                const size = getCaptionPx();
                 const opacity = document.getElementById('caption-opacity').value;
                 const placement = document.getElementById('caption-placement').value;
                 const background = document.getElementById('caption-background').checked;
@@ -1037,13 +1033,31 @@
 
         // Update caption style values
         function updateCaptionStyleValues() {
-            document.getElementById('size-value').textContent = document.getElementById('caption-size').value + 'px';
+            const px = getCaptionPx();
+            document.getElementById('size-value').textContent = `${px}px`;
             document.getElementById('opacity-value').textContent = document.getElementById('caption-opacity').value + '%';
             document.getElementById('bg-opacity-value').textContent = document.getElementById('caption-bg-opacity').value + '%';
             updateRenderPreview();
             updateLivePreview();
             try { updateCaptionOverlay((currentQuote?.text||'').trim(), true); } catch {}
         }
+
+        // Initialize caption size UI
+        (function initCaptionSizeUI(){
+          const el = document.getElementById('caption-size');
+          const label = document.getElementById('size-value');
+          if (!el || !label) return;
+          function update() {
+            const px = getCaptionPx();
+            label.textContent = `${px}px`;
+            // If your preview refresh is a function, call it here:
+            if (typeof window.refreshCaptionPreview === 'function') {
+              window.refreshCaptionPreview();
+            }
+          }
+          el.addEventListener('input', update);
+          update(); // initialize
+        })();
 
         // Update render button state based on validation
         function updateRenderButtonState() {
@@ -1118,7 +1132,7 @@
             
             const font = document.getElementById('caption-font').value;
             const weight = document.getElementById('caption-weight').value;
-            const size = parseInt(document.getElementById('caption-size').value);
+            const size = getCaptionPx();
             const opacity = parseInt(document.getElementById('caption-opacity').value) / 100;
             const placement = document.getElementById('caption-placement').value;
             const showBackground = document.getElementById('caption-background').checked;
@@ -1358,6 +1372,37 @@
             return null;
         }
 
+        // === Caption size mapping (single source of truth) ===
+        const API_MIN = 28;      // server contract
+        const API_MAX = 160;     // server contract
+
+        // Visual targets
+        const UI_MIN_PX = 36;    // left end (readable)
+        const UI_MID_PX = 72;    // middle (your desired "big")
+        const UI_MAX_PX = 140;   // right end (bold but < 160)
+
+        function mapSliderToPx(sliderVal /* 0..100 */) {
+          const v = Math.max(0, Math.min(100, Number(sliderVal) || 50));
+          if (v <= 50) {
+            // 0..50  →  36..72
+            const t = v / 50;
+            return UI_MIN_PX + t * (UI_MID_PX - UI_MIN_PX);
+          } else {
+            // 50..100 → 72..140
+            const t = (v - 50) / 50;
+            return UI_MID_PX + t * (UI_MAX_PX - UI_MID_PX);
+          }
+        }
+
+        function clampApi(px) {
+          return Math.max(API_MIN, Math.min(API_MAX, Math.round(px)));
+        }
+
+        function getCaptionPx() {
+          const el = document.getElementById('caption-size');
+          return clampApi(mapSliderToPx(el ? el.value : 50));
+        }
+
         // Helper functions for payload construction
         function clamp(n, min, max) { return Math.max(min, Math.min(max, n)); }
         
@@ -1439,7 +1484,7 @@
                 const captionStyle = {
                     font: document.getElementById('caption-font').value,
                     weight: document.getElementById('caption-weight').value,
-                    sizePx: parseInt(document.getElementById('caption-size').value),
+                    sizePx: getCaptionPx(),
                     opacity: parseInt(document.getElementById('caption-opacity').value) / 100,
                     placement: document.getElementById('caption-placement').value,
                     showBox: document.getElementById('caption-background').checked,
@@ -1451,9 +1496,8 @@
                 // 1) Get current quote text safely as a string
                 const quoteText = ((currentQuote && currentQuote.text) || '').toString();
 
-                // 2) Clamp slider font size to API range (28–160). Use the UI slider value, not any scaled preview value.
-                const sliderSizePxRaw = Number(captionStyle?.sizePx);
-                const sliderSizePx = clamp(isNaN(sliderSizePxRaw) ? 28 : sliderSizePxRaw, 28, 160);
+                // 2) Get mapped and clamped font size
+                const sizePx = getCaptionPx();
 
                 // 3) Find last generated overlay from preview step
                 //    (caption-preview.js should already be writing this)
@@ -1494,7 +1538,7 @@
                   payload.captionImage = overlayDataUrl;            // string data URL
                   // do NOT include payload.caption at all when overlay is present
                 } else {
-                  payload.caption = sliderSizePx;                  // number (not object)
+                  payload.caption = sizePx;                  // number (not object)
                   payload.captionMode = 'static';    // keep if you already send it
                   // Only include style if your backend expects it when no overlay:
                   payload.captionStyle = {
@@ -1518,6 +1562,7 @@
                   voiceId_type: typeof payload.voiceId,               // 'string' or 'undefined'
                   hasOverlay: !!overlayDataUrl,                       // boolean for debugging
                   caption_value: payload.caption,                     // show actual value
+                  mappedSizePx: sizePx,                            // show mapped font size
                 });
 
                 // --- END strictly-typed payload construction ---
