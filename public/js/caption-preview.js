@@ -33,6 +33,14 @@ if (typeof window !== 'undefined') {
  * @returns {Promise<void>}
  */
 export async function generateCaptionPreview(opts) {
+  // Clear overlay if text is empty
+  if (!opts.text || !opts.text.trim()) {
+    if (typeof window !== 'undefined') {
+      window.__lastCaptionOverlay = null;
+    }
+    return;
+  }
+
   const payload = {
     text: opts.text,
     width: 1080,
@@ -69,6 +77,13 @@ export async function generateCaptionPreview(opts) {
   // Update global reference
   if (typeof window !== 'undefined') {
     window.lastCaptionPNG = lastCaptionPNG;
+    // Store as the new overlay format for render payload
+    window.__lastCaptionOverlay = {
+      dataUrl: data.dataUrl,
+      width: data.width,
+      height: data.height,
+      meta: data.meta || {}
+    };
   }
 
   const img = document.getElementById("captionOverlay");

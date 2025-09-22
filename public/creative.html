@@ -1429,222 +1429,65 @@
                     showBox: document.getElementById('caption-background').checked,
                     boxOpacity: parseInt(document.getElementById('caption-bg-opacity').value) / 100
                 };
-
-                // Build precise caption layout mirroring preview controls
-                const placementMap = { top: 12, middle: 50, bottom: 88 };
-                const vAlignMap = { top: 'top', middle: 'center', bottom: 'bottom' };
-                // Measure the preview canvas height (fallback to 640)
-                const canvasEl = document.getElementById('live-preview-canvas');
-                const previewHeightPx = Math.round((canvasEl?.clientHeight || canvasEl?.height || 640));
-                const previewWidthPx = Math.round((canvasEl?.clientWidth || canvasEl?.width || 360));
-
-                // Build preview-fitted lines so backend can draw exactly as shown
-                // Normalize preview family/weight to match ffmpeg font files exactly
-                const fwRaw = captionStyle.weight ?? 'normal';
-                const fontWeight = (String(fwRaw).toLowerCase() === 'bold' || Number(fwRaw) >= 600) ? 'bold' : 'normal';
-                // Force preview + measure to DejaVu Sans (matches ffmpeg)
-                const previewFontFamily = 'DejaVu Sans Local';
-
-                // Build preview-fitted lines using the same family & weight used by ffmpeg
-                const quoteText = (currentQuote?.text || '').trim();
-                console.log('[render] Computing fitted text for:', { quoteText, previewFontFamily, fontWeight, sizePx: captionStyle.sizePx, previewWidthPx });
                 
-                // First, calculate the scaling we'll need
-                const tempPreviewToRenderScale = 1920 / Math.max(1, previewHeightPx);
-                const tempScaledFontPx = Math.round((captionStyle.sizePx || 48) * tempPreviewToRenderScale);
-                
-                const fittedText = computeFittedTextForPreview(quoteText, {
-                    font: previewFontFamily,
-                    weight: fontWeight,
-                    sizePx: tempScaledFontPx, // Use scaled font size for measurement
-                    previewWidthPx: 1080 // Use final render width for accurate measurement
-                });
-                
-                console.log('[render] Fitted text result:', fittedText);
+                // Build clean payload following contract requirements
+                const text = (currentQuote?.text || '').toString();
+                const hasText = text.trim().length > 0;
 
-                // Ensure font family/weight variables for parity with renderer
-                const family    = "DejaVu Sans Local";
-                const weightCss = (String(fontWeight).toLowerCase() === "bold") ? "700" : "400";
+                // Slider value is the *render* font size. Clamp hard to the API limits.
+                const renderFontPx = Math.max(28, Math.min(160, Number(captionStyle.sizePx) || 28));
 
-                // Scale font size from preview canvas to final render dimensions
-                // Preview canvas is 400x711 (9:16), final render is 1080x1920 (9:16)
-                const previewToRenderScale = Math.min(10, 1920 / Math.max(400, previewHeightPx)); // Use consistent scaling
-                const scaledFontPx = Math.min(200, Math.max(10, Math.round((captionStyle.sizePx || 48) * previewToRenderScale)));
-                
-                // Clamp scaled font size to backend limits
-                const CAPTION_PX_MAX = 160;
-                const scaledFontPxClamped = Math.min(Math.round(scaledFontPx), CAPTION_PX_MAX);
-                
-                console.log('[render] Font scaling:', { 
-                    previewHeightPx, 
-                    renderHeight: 1920, 
-                    previewToRenderScale, 
-                    originalSizePx: captionStyle.sizePx, 
-                    scaledFontPx,
-                    scaledFontPxClamped
-                });
-                
-                console.log('[render] Validation values:', {
-                    fontPx: scaledFontPxClamped,
-                    lineSpacing: Math.min(100, Math.max(0, Math.round(scaledFontPxClamped * 0.20))),
-                    strokeW: Math.min(10, Math.max(0, Math.round(3 * previewToRenderScale))),
-                    shadowY: Math.min(10, Math.max(-10, Math.round(2 * previewToRenderScale)))
-                });
+                // Placement -> top/bottom positioning defaults (only for numeric mode)
+                const placement = captionStyle.placement === 'bottom' ? 'bottom' : 'top';
+                const pos = placement === 'top'
+                  ? { xPct: 50, yPct: 12 }
+                  : { xPct: 50, yPct: 88 };
 
-                // Capture preview's resolved metrics for authoritative rendering
-                const captionResolved = {
-                    fontFamily: family,
-                    weightCss: (weightCss === "700") ? "bold" : "normal",
-                    fontFile: (weightCss === "700") ? "DejaVuSans-Bold.ttf" : "DejaVuSans.ttf",
-                    fontPx: scaledFontPxClamped, // Use clamped font size for final render
-                    lineSpacing: Math.min(100, Math.max(0, Math.round(scaledFontPxClamped * 0.20))), // Scale line spacing too
-                    textAlpha: Math.max(0, Math.min(1, captionStyle.opacity ?? 0.8)),
-                    strokeW: Math.min(10, Math.max(0, Math.round(3 * previewToRenderScale))), // Scale stroke width
-                    strokeAlpha: 0.85,
-                    shadowAlpha: 0.55,
-                    shadowX: 0,
-                    shadowY: Math.min(10, Math.max(-10, Math.round(2 * previewToRenderScale))), // Scale shadow offset
-                    // Add splitLines from preview for exact text layout
-                    splitLines: fittedText ? fittedText.split('\n') : (quoteText ? [quoteText] : []),
-                    yPct: placementMap[captionStyle.placement] ?? 88
+                const overlay = window.__lastCaptionOverlay || null;
+
+                // If we have an overlay, send a minimal caption (server will ignore numeric fields)
+                // If not, include the numeric caption fields with the clamped font size.
+                const caption = overlay ? { has: hasText } : {
+                  has: hasText,
+                  fontPx: renderFontPx,
+                  pos,
+                  align: 'center',
+                  vAlign: placement === 'top' ? 'top' : 'bottom',
                 };
 
-                let caption = {
-                    has: true,
-                    text: (currentQuote?.text || '').trim(),
-                    fittedText,
-                    fontFamily: family,
-                    fontWeight: (weightCss === "700") ? "bold" : "normal",
-                    weight: captionStyle.weight, // Pass through original weight for FFmpeg processing
-                    fontSizePx: scaledFontPxClamped,
-                    opacity: Math.max(0, Math.min(1, captionStyle.opacity ?? 0.8)),
-                    align: 'center',
-                    vAlign: vAlignMap[captionStyle.placement] || 'top',
-                    pos: { xPct: 50, yPct: placementMap[captionStyle.placement] ?? 88 },
-                    position: { xPct: 50, yPct: placementMap[captionStyle.placement] ?? 88 },
-                    previewHeightPx,
-                    lineSpacingPx: Math.round(scaledFontPxClamped * 0.20), // Use clamped font size
-                    box: {
-                        enabled: !!document.querySelector('#caption-background')?.checked,
-                        alpha: Math.max(0, Math.min(1, (parseInt(document.getElementById('caption-bg-opacity')?.value || '50', 10) / 100)))
-                    },
-                    // convenience aliases
-                    wantBox: !!document.querySelector('#caption-background')?.checked,
-                    boxAlpha: Math.max(0, Math.min(1, (parseInt(document.getElementById('caption-bg-opacity')?.value || '50', 10) / 100)))
+                const payload = {
+                  mode: 'quote',
+                  template: 'calm',
+                  durationSec: 8,
+                  voiceover: !!currentVoiceId,
+                  includeBottomCaption: true,
+                  wantAttribution: true,
+                  watermark: true,
+
+                  background,   // keep existing structure
+                  captionMode: 'static',
+
+                  // IMPORTANT: strings, not booleans
+                  text,       // used by backend + TTS
+                  ttsText: text,
+                  captionText: text,
+
+                  caption,
+                  ...(overlay ? { captionImage: overlay } : {}),
                 };
 
-                // Normalize caption mode to satisfy server enum
-                // For videos, burn one bottom caption in the final render
-                const uiCaptionMode = 'static';
-                const normalizedCaptionMode = uiCaptionMode;
-                const includeBottomCaption = detectedType === 'video';
-
-                // Decide which text goes where based on background type
-                const isVideoBg = detectedType === 'video';
-                const finalText = isVideoBg ? '' : (currentQuote.text || '').trim();
-                const finalCaptionText = isVideoBg ? (currentQuote.text || '').trim() : '';
-
-                // Reuse existing caption PNG if there's caption text
-                let captionImage = null;
-                if ((finalCaptionText || finalText || '').trim()) {
-                    try {
-                        console.log('[render] Reusing caption PNG from preview...');
-                        
-                        // Import the caption preview functions
-                        const { getLastCaptionPNG } = await import('./js/caption-preview.js');
-                        
-                        // Get the stored PNG from the preview function
-                        const captionPNG = getLastCaptionPNG();
-                        if (!captionPNG?.dataUrl) {
-                            throw new Error("Caption image not ready. Generate preview first.");
-                        }
-                        
-                        captionImage = {
-                            dataUrl: captionPNG.dataUrl,
-                            width: captionPNG.width,
-                            height: captionPNG.height
-                        };
-                        
-                        console.log('[render] captionImage', captionImage);
-                    } catch (error) {
-                        console.warn('[render] Caption PNG reuse failed, falling back to drawtext:', error);
-                        // Continue without PNG - will use drawtext fallback
-                    }
-                }
-
-                // Hard guard: if preview overlay isn't ready, block render
-                if ((finalCaptionText || finalText || '').trim() && !window.lastCaptionPNG?.dataUrl) {
-                    alert("Generating caption overlay, try again in a second");
-                    renderBtn.disabled = false;
-                    renderBtn.textContent = originalText;
-                    return;
-                }
-                
-                // --- PREVIEW → RENDER SCALE + CLAMP ---------------------------------
-                const CAPTION_MAX = 160;
-                const CAPTION_MIN = 12; // sanity floor
-                
-                // The preview size the user set on the slider (in preview pixels)
-                const previewFontPx = captionStyle?.sizePx ?? 48;
-                
-                // Use the actual preview canvas height if available
-                const previewCanvas = document.getElementById('caption-preview-canvas');
-                const renderPreviewHeightPx =
-                    (previewCanvas && Number(previewCanvas.height)) ||
-                    (window.__vaiform_previewHeightPx ? Number(window.__vaiform_previewHeightPx) : 640);
-                
-                const renderHeight = 1920;
-                const scale = renderHeight / renderPreviewHeightPx;
-                
-                // Compute render font size and clamp to server limit
-                let captionFontPx = Math.round(previewFontPx * scale);
-                captionFontPx = Math.max(CAPTION_MIN, Math.min(captionFontPx, CAPTION_MAX));
-                
-                // Debug info
-                console.log('[render] Caption scaling:', { previewFontPx, previewHeightPx: renderPreviewHeightPx, scale, captionFontPx });
-                
-                // Get PNG overlay data if available
-                const useOverlay = !!(window.lastCaptionPNG?.dataUrl);
-                const captionPngDataUrl = window.lastCaptionPNG?.dataUrl ?? null;
-                const renderQuoteText = (finalCaptionText || finalText || '').trim();
-                
-                console.log("[render] overlay status:", { useOverlay, hasDataUrl: !!captionPngDataUrl, captionFontPx });
-                
-                // Build v1-compatible payload
-                let payload = {
-                    mode: 'quote',
-                    text: '', // we use ttsText + overlay
-                    template: 'calm',
-                    durationSec: 8,
-                    voiceover: !!currentVoiceId,
-                    wantAttribution: true,
-                    background,
-                    includeBottomCaption: true,
-                    // v1 expects a number here, not an object
-                    caption: captionFontPx,
-                    // keep for TTS/subtitles/debugging on server
-                    captionText: renderQuoteText,
-                    ttsText: renderQuoteText,
-                    watermark: true,
-                    // Keep existing position/alignment keys
-                    capPos: { xPct: 50, yPct: 12 },
-                    capAlign: 'center'
-                };
-                
-                // Add PNG overlay if available
-                if (useOverlay && captionPngDataUrl) {
-                    payload.captionImage = captionPngDataUrl; // data:image/png;base64,...
-                    console.log("[render] including PNG overlay in payload");
-                }
+                console.log('[render] Clean payload built:', payload);
+                console.log('[render] Caption field:', caption);
+                console.log('[render] Has overlay:', !!overlay);
 
                 // Only add voiceId if a voice is actually selected
                 if (currentVoiceId) {
                     payload.voiceId = currentVoiceId;
                 }
 
-                console.log('Render payload:', payload);
-                console.log('Background object:', background);
-                console.log('Current voice ID:', currentVoiceId);
+                console.log('[render] Final payload:', payload);
+                console.log('[render] Background object:', background);
+                console.log('[render] Current voice ID:', currentVoiceId);
 
                 // Final validation before sending
                 if (background.url && background.type) {
