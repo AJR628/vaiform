@@ -488,41 +488,59 @@
             return API_BASE_FIXED.replace(/\/$/, '');
         }
 
+        // --- Caption sizing constants (HOISTED) ---
+        const UI_MIN_PX = 36;     // slider min visual
+        const UI_MID_PX = 72;     // slider mid visual  
+        const UI_MAX_PX = 140;    // slider max visual
+        const API_MIN_PX = 28;    // backend clamp lower bound
+        const API_MAX_PX = 160;   // backend clamp upper bound
+
         // --- Caption size mapping (define BEFORE any usage)
-        (function () {
-          // API constraints
-          const API_MIN = 28, API_MAX = 160;
-
-          // UI feel: middle ≈ 72px, min readable, max big-but-safe
-          const UI_MIN_PX = 36, UI_MID_PX = 72, UI_MAX_PX = 140;
-
-          function mapSliderToPx(v) {
-            v = Math.max(0, Math.min(100, Number(v) || 50));
-            if (v <= 50) {             // 0..50  -> 36..72
+        function mapSliderToPx(sliderVal) {
+          // linear map slider value to pixel range, then clamp to API bounds
+          const raw = Number(sliderVal);
+          let uiPx;
+          
+          if (!isFinite(raw)) {
+            uiPx = UI_MID_PX; // fallback to middle
+          } else {
+            const v = Math.max(0, Math.min(100, raw));
+            if (v <= 50) {             // 0..50  -> UI_MIN_PX..UI_MID_PX
               const t = v / 50;
-              return UI_MIN_PX + t * (UI_MID_PX - UI_MIN_PX);
-            }                          // 50..100 -> 72..140
-            const t = (v - 50) / 50;
-            return UI_MID_PX + t * (UI_MAX_PX - UI_MID_PX);
-          }
-          function clampApi(px) {
-            return Math.max(API_MIN, Math.min(API_MAX, Math.round(px)));
-          }
-          function getCaptionPx() {
-            try {
-              const el = document.getElementById('caption-size');
-              const raw = el ? el.value : 50;
-              return clampApi(mapSliderToPx(raw));
-            } catch (e) {
-              console.warn('[caption] size fallback → 72px', e);
-              return UI_MID_PX;
+              uiPx = UI_MIN_PX + t * (UI_MID_PX - UI_MIN_PX);
+            } else {                   // 50..100 -> UI_MID_PX..UI_MAX_PX
+              const t = (v - 50) / 50;
+              uiPx = UI_MID_PX + t * (UI_MAX_PX - UI_MID_PX);
             }
           }
+          
+          return Math.max(API_MIN_PX, Math.min(API_MAX_PX, Math.round(uiPx)));
+        }
 
-          // expose just what other code needs
-          window.getCaptionPx = getCaptionPx;
-          window.__captionSizeMapping = { mapSliderToPx, clampApi, API_MIN, API_MAX, UI_MIN_PX, UI_MID_PX, UI_MAX_PX };
-        })();
+        function getCaptionPx() {
+          const el = document.getElementById('caption-size');
+          return mapSliderToPx(el ? el.value : 50);
+        }
+
+        // expose for other code
+        window.getCaptionPx = getCaptionPx;
+        window.__captionSizeMapping = { mapSliderToPx, API_MIN_PX, API_MAX_PX, UI_MIN_PX, UI_MID_PX, UI_MAX_PX };
+
+        // --- Debounced caption overlay refresh (prevents blocking assets) ---
+        let overlayRefreshTimer = null;
+        function queueCaptionOverlayRefresh() {
+          if (overlayRefreshTimer) clearTimeout(overlayRefreshTimer);
+          overlayRefreshTimer = setTimeout(() => {
+            try {
+              // Call existing caption overlay update function
+              if (typeof updateCaptionOverlay === 'function' && currentQuote?.text) {
+                updateCaptionOverlay(currentQuote.text.trim(), true);
+              }
+            } catch (e) {
+              console.warn('[caption-overlay] preview failed (non-fatal)', e);
+            }
+          }, 120); // 120ms debounce to reduce server load
+        }
 
         // Safe placeholder if real loader is attached later
         window.loadVoices = window.loadVoices || (async function () {
@@ -1094,32 +1112,42 @@
           const el = document.getElementById('caption-size');
           const label = document.getElementById('size-value');
           if (!el || !label) return;
+          
           function update() {
-            const px = window.getCaptionPx();
-            label.textContent = `${px}px`;
-            console.log('[caption] Updated label to:', `${px}px`);
+            try {
+              const px = getCaptionPx(); // use the hoisted function
+              label.textContent = `${px}px`;
+              // refresh preview overlay without blocking rest of UI
+              queueCaptionOverlayRefresh();
+              // also update other caption style values
+              if (typeof updateCaptionStyleValues === 'function') {
+                updateCaptionStyleValues();
+              }
+            } catch (err) {
+              console.error('[caption-size] update failed:', err);
+            }
           }
+
           el.addEventListener('input', update);
-          update(); // initialize
+          update(); // initial paint
         }
         
         // --- robust page bootstrap (run after DOM is ready)
-        document.addEventListener('DOMContentLoaded', () => {
+        document.addEventListener('DOMContentLoaded', async () => {
           // Wrap each init so one failure doesn't stop the others
           const safe = (label, fn) => { try { fn && fn(); } catch (e) { console.error(`[init] ${label} failed`, e); } };
 
-          // Keep existing inits
-          safe('caption-size', () => (typeof initCaptionSizeUI === 'function') && initCaptionSizeUI());
-
-          // Ensure the assets browser is definitely wired
-          safe('assets-browser', () => {
+          // PRIORITY: Initialize assets first so stock media loading always works
+          try {
+            console.log('[init] Starting asset browser initialization...');
+            // Ensure the assets browser is definitely wired
             // Force a first page load in the active tab if grid is empty
             const activeTab = document.querySelector('[data-type].bg-blue-600') ||
                               document.querySelector('[data-type]');
             const kind = activeTab?.dataset.type || 'videos'; // fallback to videos
             const grid = document.getElementById(`${kind}-grid`) ||
                          document.querySelector(`[data-grid="${kind}"]`) ||
-                         document.getElementById('assets-grid');
+                         document.getElementById('asset-grid');
             const qEl  = document.getElementById('asset-query') ||
                          document.querySelector('[data-asset-query]') ||
                          document.querySelector('input[placeholder*="nature"]');
@@ -1131,12 +1159,19 @@
               console.log('[assets] Loading initial assets for', kind);
               if (typeof loadAssets === 'function') {
                 currentAssetType = kind; // Set the global state
-                loadAssets(1);
+                await loadAssets(1); // Wait for assets to load
               } else {
                 console.warn('[assets] loadAssets function not found');
               }
             }
-          });
+          } catch (e) {
+            console.error('[init] Asset browser initialization failed:', e);
+          }
+
+          // SECONDARY: Initialize caption UI (non-blocking)
+          safe('caption-size', () => (typeof initCaptionSizeUI === 'function') && initCaptionSizeUI());
+
+          // Asset browser setup is now handled above in priority section
 
           // Re-load when switching tabs if nothing is shown yet
           safe('assets-tab-wiring', () => {
@@ -2043,7 +2078,7 @@
             updateLivePreview();
             updateCaptionOverlay((currentQuote?.text||'').trim(), true);
         };
-        document.getElementById('caption-size').oninput = () => { updateCaptionStyleValues(); updateCaptionOverlay((currentQuote?.text||'').trim(), true); };
+        // Legacy caption-size handler removed - now handled by initCaptionSizeUI()
         document.getElementById('caption-opacity').oninput = () => { updateCaptionStyleValues(); updateCaptionOverlay((currentQuote?.text||'').trim(), true); };
         document.getElementById('caption-placement').onchange = () => {
             updateRenderPreview();
