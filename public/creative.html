@@ -651,6 +651,32 @@
           return _pexelsPreviewUrlFromPhoto(photo, needW, needH, headroom);
         }
 
+        // --- Pexels hi-res intercept helpers (preview-only) ---
+        function _buildHiResPexelsUrlFromBase(baseUrl, needW, needH) {
+          try {
+            const u = new URL(baseUrl);
+            if (u.hostname !== 'images.pexels.com') return baseUrl;
+            // We always prefer fit=crop + explicit w/h + dpr
+            const dpr = Math.min(2, Math.max(1, window.devicePixelRatio || 1));
+            u.searchParams.set('auto', 'compress');
+            u.searchParams.set('cs', 'tinysrgb');
+            u.searchParams.set('fit', 'crop');
+            u.searchParams.set('dpr', String(dpr));
+            u.searchParams.set('w', String(Math.ceil(needW * 1.2)));
+            u.searchParams.set('h', String(Math.ceil(needH * 1.2)));
+            // remove stray h=350 if present
+            return u.toString();
+          } catch { return baseUrl; }
+        }
+
+        // Given whatever the app thinks is the preview URL, ensure it is hi-res for the canvas draw.
+        function _ensureHiResPreviewUrl(rawUrl, canvas) {
+          if (!rawUrl) return rawUrl;
+          const needW = canvas.width || canvas.clientWidth;
+          const needH = canvas.height || canvas.clientHeight;
+          return _buildHiResPexelsUrlFromBase(rawUrl, needW, needH);
+        }
+
         function setupHiDPICanvas(canvas, cssW, cssH) {
           const dpr = Math.max(1, window.devicePixelRatio || 1);
           canvas.width  = Math.round(cssW * dpr);
@@ -1492,7 +1518,6 @@
             
             const container = document.getElementById('live-preview-container');
             const canvas = document.getElementById('live-preview-canvas');
-            const ctx = canvas.getContext('2d');
             
             container.classList.remove('hidden');
             
@@ -1506,57 +1531,33 @@
             // Get CSS dimensions
             const cssW = container.clientWidth;
             const cssH = Math.round(cssW * 16 / 9);
+            const { ctx } = _setupHiDPICanvas(canvas, cssW, cssH);
 
-            // For Pexels images, ensure we have a hi-res preview URL
-            if (selectedAsset.provider === 'pexels') {
-                let previewUrl = selectedAsset.previewUrl || window.state?.selectedAsset?.previewUrl;
-                
-                if (!previewUrl || !_isHiResPreviewUrl(previewUrl)) {
-                    // Rebuild if missing or wrong
-                    const dpr = Math.max(1, window.devicePixelRatio || 1);
-                    const photo = _currentPexelsPhoto || selectedAsset.photo || window.state?.selectedAsset?.photo;
-                    if (photo) {
-                        previewUrl = _pexelsPreviewUrlFromPhoto(photo, cssW * dpr, cssH * dpr, 1.2);
-                        // Store it in both places for consistency
-                        selectedAsset.previewUrl = previewUrl;
-                        if (!window.state) window.state = {};
-                        window.state.selectedAsset = { ...selectedAsset };
-                    }
-                }
-                
-                if (previewUrl && _isHiResPreviewUrl(previewUrl)) {
-                    _setupHiDPICanvas(canvas, cssW, cssH);
-                    _drawBackground(previewUrl, canvas, cssW, cssH, 'bg:updateLivePreview');
-                    window._currentPreviewUrl = previewUrl;
-                    return;
-                }
-            }
+            // Choose the background URL from whatever the app thinks it should be
+            let url = selectedAsset?.previewUrl || selectedAsset?.url || selectedAsset?.thumbUrl || selectedAsset?.fileUrl;
+            
+            // >>> Insert this one line to force hi-res for Pexels:
+            url = _ensureHiResPreviewUrl(url, canvas);
 
-            // Fallback to existing logic for other assets
+            // Load & draw the background
             const img = new Image();
             img.crossOrigin = 'anonymous';
-            img.onload = () => {
-                // Use high-quality canvas drawing with HiDPI support
-                const targetAspectRatio = 16 / 9; // Portrait: height/width = 16/9
-                const maxWidth = 400;
-                const canvasWidth = maxWidth;
-                const canvasHeight = Math.round(canvasWidth * targetAspectRatio); // 400 * (16/9) ≈ 711px
-                
-                // Draw with high-quality helper (HiDPI + cover-fit)
-                drawPreviewOnCanvas(canvas, ctx, img, canvasWidth, canvasHeight);
-            };
+            img.decoding = 'async';
+            img.src = url;
             
-            try {
-                const raw = selectedAsset.thumbUrl || selectedAsset.fileUrl;
-                const imageUrl = raw && /^https:\/\/firebasestorage\.googleapis\.com\//.test(raw)
-                  ? `${getApiBase()}/cdn?u=${encodeURIComponent(raw)}`
-                  : raw;
+            img.onload = () => {
+                const iw = img.naturalWidth, ih = img.naturalHeight;
+                const scale = Math.max(cssW/iw, cssH/ih);
+                const dw = iw*scale, dh = ih*scale;
+                const dx = (cssW - dw)/2, dy = (cssH - dh)/2;
+
+                ctx.clearRect(0,0,cssW,cssH);
+                ctx.drawImage(img, dx, dy, dw, dh);
                 
-                img.crossOrigin = 'anonymous';
-                img.src = imageUrl;
-            } catch {
-                img.src = selectedAsset.thumbUrl || selectedAsset.fileUrl;
-            }
+                // Debug
+                window._currentPreviewUrl = url;
+                _tapCanvas('bg:updateLivePreview');
+            };
         }
 
         function drawCaptionOverlay(ctx, canvasWidth, canvasHeight) {
