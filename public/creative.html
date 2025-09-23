@@ -551,11 +551,30 @@
         function clampFontPx(requestedPx, text, family = 'system-ui', weight = 'bold') {
             const CANVAS_W = 1080, CANVAS_H = 1920;
             const horizontalPaddingPx = Math.round(CANVAS_W * 0.08); // ~8% side gutters
+            const verticalPaddingPx = Math.round(CANVAS_H * 0.08); // ~8% top/bottom gutters
             const maxTextWidth = CANVAS_W - 2 * horizontalPaddingPx;
+            const maxTextHeight = CANVAS_H - 2 * verticalPaddingPx;
             
-            // Simple guardrail: never exceed a cap that would overflow a single long word/line
+            // Calculate estimated text height based on line count
+            const estimatedLines = Math.ceil(text.length / 20); // rough estimate
+            const lineHeight = 1.1;
+            const estimatedHeight = requestedPx * estimatedLines * lineHeight;
+            
+            // Clamp based on available vertical space
+            let clampedPx = requestedPx;
+            if (estimatedHeight > maxTextHeight) {
+                clampedPx = Math.floor(maxTextHeight / (estimatedLines * lineHeight));
+            }
+            
+            // Simple guardrail: never exceed a cap that would overflow
             const ABS_MAX = 200; // keep UX reasonable
-            return Math.min(requestedPx, ABS_MAX);
+            clampedPx = Math.min(clampedPx, ABS_MAX);
+            
+            if (clampedPx !== requestedPx) {
+                console.warn(`[caption] Font size ${requestedPx}px clamped to ${clampedPx}px to prevent overflow`);
+            }
+            
+            return clampedPx;
         }
 
         // Preview geometry helper for proper scaling
@@ -885,7 +904,17 @@
                 }
             }
             
+            // Validate yPct to prevent extreme values
+            function validateYPct(yPct) {
+                const clamped = Math.max(0.05, Math.min(0.95, Number(yPct)));
+                if (clamped !== Number(yPct)) {
+                    console.warn(`[caption] yPct ${yPct} clamped to ${clamped} to prevent off-screen positioning`);
+                }
+                return clamped;
+            }
+            
             const placementData = placementToVAlignAndYPct(placement);
+            const validatedYPct = validateYPct(placementData.yPct);
             
             const captionStyle = {
                 text: text.trim(),
@@ -898,7 +927,7 @@
                 showBox: showBoxToggle,
                 boxColor: `rgba(0,0,0,${boxOpacityPct/100})`,
                 placement: placementData.vAlign, // Use vAlign for server compatibility
-                yPct: placementData.yPct,        // Add yPct for precise positioning
+                yPct: validatedYPct,              // Use validated yPct for precise positioning
                 lineHeight: 1.1,
                 padding: 24,
                 maxWidthPct: 0.85,
@@ -938,6 +967,8 @@
                         ovW: result.meta?.wPx || 1080,
                         ovH: result.meta?.hPx || 1920,
                         placement: captionStyle.placement,
+                        yPct: result.meta?.yPct,
+                        fontPx: result.meta?.fontPx,
                         topCss: 'calculated'
                     });
                     

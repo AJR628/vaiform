@@ -64,8 +64,9 @@ router.post("/caption/preview", express.json(), async (req, res) => {
 
     let y;
     if (yPct !== undefined && yPct !== null) {
-      // Use precise Y position from client (0..1 range)
-      y = Math.round(H * Number(yPct)) + clampedFontPx;
+      // Use precise Y position from client (0..1 range) - yPct represents final text position
+      y = Math.round(H * Number(yPct));
+      console.log(`[caption] Using yPct ${yPct} -> y=${y} (no +fontPx addition)`);
     } else {
       // Fallback to placement-based positioning
       if (placement === "top") y = padding + clampedFontPx;

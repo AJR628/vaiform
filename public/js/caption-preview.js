@@ -118,20 +118,31 @@ export function createCaptionOverlay(captionData, container, scaling = {}) {
   overlay.src = captionData.dataUrl || captionData.imageUrl;
   overlay.className = 'caption-overlay';
   
-  // Calculate Y position based on placement with small pixel pad
+  // Use server's yPct directly for precise positioning (not hardcoded placement logic)
   let topCss;
-  const padPx = 24; // Small pixel padding
-  switch (placement.toLowerCase()) {
-    case 'top':
-      topCss = padPx;
-      break;
-    case 'bottom':
-      topCss = previewH - (captionData.meta?.hPx || 1920) * scaleY - padPx;
-      break;
-    case 'center':
-    default:
-      topCss = (previewH - (captionData.meta?.hPx || 1920) * scaleY) / 2;
-      break;
+  if (captionData.meta?.yPct !== undefined && captionData.meta?.yPct !== null) {
+    // Use server's precise yPct positioning
+    topCss = captionData.meta.yPct * previewH;
+    console.debug('[preview-overlay] Using server yPct:', {
+      yPct: captionData.meta.yPct,
+      previewH: previewH,
+      topCss: topCss
+    });
+  } else {
+    // Fallback to placement-based positioning
+    const padPx = 24; // Small pixel padding
+    switch (placement.toLowerCase()) {
+      case 'top':
+        topCss = padPx;
+        break;
+      case 'bottom':
+        topCss = previewH - (captionData.meta?.hPx || 1920) * scaleY - padPx;
+        break;
+      case 'center':
+      default:
+        topCss = (previewH - (captionData.meta?.hPx || 1920) * scaleY) / 2;
+        break;
+    }
   }
   
   // Clamp within frame bounds
