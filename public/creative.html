@@ -570,6 +570,72 @@
           return activeTab?.dataset.type || 'images'; // fallback to images (default tab)
         }
 
+        // --- High-quality Pexels preview URL helper ---
+        function bestPexelsPreviewUrl(photo, targetWidth = 720, targetHeight = 1280) {
+          if (!photo || !photo.src) return null;
+          
+          const src = photo.src;
+          const dpr = Math.min(window.devicePixelRatio || 1, 2); // Cap at 2x for performance
+          
+          // Prefer portrait, then large2x, then large, fallback to original/medium
+          let baseUrl = src.portrait || src.large2x || src.large || src.original || src.medium;
+          
+          if (!baseUrl) return null;
+          
+          // Add Pexels optimization parameters for high-quality preview
+          const params = new URLSearchParams({
+            auto: 'compress',
+            cs: 'tinysrgb',
+            dpr: dpr.toString(),
+            fit: 'crop',
+            w: targetWidth.toString(),
+            h: targetHeight.toString()
+          });
+          
+          return `${baseUrl}?${params.toString()}`;
+        }
+
+        // --- High-quality canvas drawing helper with HiDPI support ---
+        function drawPreviewOnCanvas(canvas, ctx, img, targetWidth = 400, targetHeight = 711) {
+          const dpr = Math.min(window.devicePixelRatio || 1, 2); // Cap at 2x for performance
+          
+          // Set up HiDPI canvas
+          canvas.width = targetWidth * dpr;
+          canvas.height = targetHeight * dpr;
+          canvas.style.width = `${targetWidth}px`;
+          canvas.style.height = `${targetHeight}px`;
+          
+          // Enable high-quality image smoothing
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = 'high';
+          
+          // Set transform for HiDPI
+          ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+          
+          // Calculate cover-fit dimensions (fill canvas without distortion)
+          const imgAspect = img.naturalWidth / img.naturalHeight;
+          const canvasAspect = targetWidth / targetHeight;
+          
+          let drawWidth, drawHeight, drawX, drawY;
+          
+          if (imgAspect > canvasAspect) {
+            // Image is wider - fit height, crop width
+            drawHeight = targetHeight;
+            drawWidth = drawHeight * imgAspect;
+            drawX = (targetWidth - drawWidth) / 2;
+            drawY = 0;
+          } else {
+            // Image is taller - fit width, crop height
+            drawWidth = targetWidth;
+            drawHeight = drawWidth / imgAspect;
+            drawX = 0;
+            drawY = (targetHeight - drawHeight) / 2;
+          }
+          
+          // Draw the image with cover-fit
+          ctx.drawImage(img, drawX, drawY, drawWidth, drawHeight);
+        }
+
         // --- Debounced caption overlay refresh (prevents blocking assets) ---
         let overlayRefreshTimer = null;
         function queueCaptionOverlayRefresh() {
@@ -1286,30 +1352,38 @@
                 if (ov) ov.style.display = hasVideo ? 'none' : 'block';
             } catch {}
 
-            // Load the asset image
+            // Load the asset image with high-quality preview
             const img = new Image();
             img.crossOrigin = 'anonymous';
             img.onload = () => {
-                // Set canvas size for consistent 9:16 portrait aspect ratio
+                // Use high-quality canvas drawing with HiDPI support
                 const targetAspectRatio = 16 / 9; // Portrait: height/width = 16/9
                 const maxWidth = 400;
                 const canvasWidth = maxWidth;
                 const canvasHeight = Math.round(canvasWidth * targetAspectRatio); // 400 * (16/9) ≈ 711px
                 
-                canvas.width = canvasWidth;
-                canvas.height = canvasHeight;
-                
-                // Draw the image only; caption is handled by HTML overlay to avoid double text
-                ctx.drawImage(img, 0, 0, canvasWidth, canvasHeight);
+                // Draw with high-quality helper (HiDPI + cover-fit)
+                drawPreviewOnCanvas(canvas, ctx, img, canvasWidth, canvasHeight);
             };
             
             try {
-                const raw = selectedAsset.thumbUrl || selectedAsset.fileUrl;
-                const proxied = raw && /^https:\/\/firebasestorage\.googleapis\.com\//.test(raw)
-                  ? `${getApiBase()}/cdn?u=${encodeURIComponent(raw)}`
-                  : raw;
+                let imageUrl;
+                
+                // For Pexels images, use high-quality preview URL
+                if (selectedAsset.provider === 'pexels' && selectedAsset.src) {
+                    imageUrl = bestPexelsPreviewUrl(selectedAsset, 720, 1280);
+                }
+                
+                // Fallback to existing logic for other assets
+                if (!imageUrl) {
+                    const raw = selectedAsset.thumbUrl || selectedAsset.fileUrl;
+                    imageUrl = raw && /^https:\/\/firebasestorage\.googleapis\.com\//.test(raw)
+                      ? `${getApiBase()}/cdn?u=${encodeURIComponent(raw)}`
+                      : raw;
+                }
+                
                 img.crossOrigin = 'anonymous';
-                img.src = proxied;
+                img.src = imageUrl;
             } catch {
                 img.src = selectedAsset.thumbUrl || selectedAsset.fileUrl;
             }
