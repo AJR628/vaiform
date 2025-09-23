@@ -534,21 +534,21 @@
               const t = v / 50;
               uiPx = UI_MIN_PX + t * (UI_MID_PX - UI_MIN_PX);
             } else {                   // 50..100 -> UI_MID_PX..UI_MAX_PX
-              const t = (v - 50) / 50;
+            const t = (v - 50) / 50;
               uiPx = UI_MID_PX + t * (UI_MAX_PX - UI_MID_PX);
-            }
+          }
           }
           
           return Math.max(API_MIN_PX, Math.min(API_MAX_PX, Math.round(uiPx)));
         }
 
-        function getCaptionPx() {
-          const el = document.getElementById('caption-size');
+          function getCaptionPx() {
+              const el = document.getElementById('caption-size');
           return mapSliderToPx(el ? el.value : 50);
         }
 
         // expose for other code
-        window.getCaptionPx = getCaptionPx;
+          window.getCaptionPx = getCaptionPx;
         window.__captionSizeMapping = { mapSliderToPx, API_MIN_PX, API_MAX_PX, UI_MIN_PX, UI_MID_PX, UI_MAX_PX };
 
         // --- Auth-aware login warning function ---
@@ -1143,6 +1143,11 @@
             const url = pexelsPreviewUrl(photo, canvas.width, canvas.height, 1.2);
             window._currentPreviewUrl = url;
 
+            // Store high-quality preview URL in selectedAsset for use by updateLivePreview
+            if (selectedAsset && selectedAsset.provider === 'pexels') {
+                selectedAsset.previewUrl = url;
+            }
+
             const img = new Image();
             img.crossOrigin = 'anonymous';
             img.decoding = 'async';
@@ -1315,7 +1320,7 @@
           function update() {
             try {
               const px = getCaptionPx(); // use the hoisted function
-              label.textContent = `${px}px`;
+            label.textContent = `${px}px`;
               // refresh preview overlay without blocking rest of UI
               queueCaptionOverlayRefresh();
               // also update other caption style values
@@ -1352,15 +1357,15 @@
                 
                 console.log('[assets] Checking initial load:', { activeType, gridEmpty: grid?.childElementCount === 0, query: q });
 
-                if (grid && grid.childElementCount === 0) {
+            if (grid && grid.childElementCount === 0) {
                   console.log('[assets] Loading initial assets for', activeType);
-                  if (typeof loadAssets === 'function') {
+              if (typeof loadAssets === 'function') {
                     currentAssetType = activeType; // Set the global state
                     await loadAssets(1); // Wait for assets to load
-                  } else {
-                    console.warn('[assets] loadAssets function not found');
-                  }
-                }
+              } else {
+                console.warn('[assets] loadAssets function not found');
+              }
+            }
               }
             } catch (e) {
               console.error('[init] Asset browser initialization failed:', e);
@@ -1458,17 +1463,17 @@
             try {
                 let imageUrl;
                 
-                // For Pexels images, use high-quality preview URL
-                if (selectedAsset.provider === 'pexels' && selectedAsset.src) {
-                    imageUrl = bestPexelsPreviewUrl(selectedAsset, 720, 1280);
+                // For Pexels images, use stored high-quality preview URL
+                if (selectedAsset.provider === 'pexels' && selectedAsset.previewUrl) {
+                    imageUrl = selectedAsset.previewUrl;
                 }
                 
                 // Fallback to existing logic for other assets
                 if (!imageUrl) {
-                    const raw = selectedAsset.thumbUrl || selectedAsset.fileUrl;
+                const raw = selectedAsset.thumbUrl || selectedAsset.fileUrl;
                     imageUrl = raw && /^https:\/\/firebasestorage\.googleapis\.com\//.test(raw)
-                      ? `${getApiBase()}/cdn?u=${encodeURIComponent(raw)}`
-                      : raw;
+                  ? `${getApiBase()}/cdn?u=${encodeURIComponent(raw)}`
+                  : raw;
                 }
                 
                 img.crossOrigin = 'anonymous';
@@ -2381,6 +2386,8 @@
             clearTimeout(resizeTimeout);
             resizeTimeout = setTimeout(() => {
                 if (_currentPexelsPhoto && selectedAsset?.provider === 'pexels') {
+                    // Update selectedAsset with the current photo data before re-rendering
+                    selectedAsset = { ...selectedAsset, ..._currentPexelsPhoto };
                     onPexelsUse(_currentPexelsPhoto);
                 }
             }, 150); // Debounce resize events
