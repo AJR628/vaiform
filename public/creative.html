@@ -1172,7 +1172,9 @@
             
             // Special handling for Pexels assets - high-quality preview
             if (asset.provider === 'pexels' && asset.src) {
-                await onPexelsUse(asset);
+                // Ensure the asset has the photo data for later use
+                selectedAsset.photo = asset.src;
+                await onPexelsUse(asset.src);
             }
             
             updateRenderPreview();
@@ -1205,6 +1207,9 @@
                 thumbUrl: photo?.src?.medium,
                 previewUrl
             };
+            
+            // Also update the global selectedAsset to keep them in sync
+            selectedAsset.previewUrl = previewUrl;
 
             console.log('[pexels-use] previewUrl', previewUrl);
             await _drawBackground(window.state.selectedAsset.previewUrl, canvas, cssW, cssH, 'bg:pexels-use');
@@ -1504,18 +1509,25 @@
 
             // For Pexels images, ensure we have a hi-res preview URL
             if (selectedAsset.provider === 'pexels') {
-                const url = window.state?.selectedAsset?.previewUrl;
-                if (!url || !_isHiResPreviewUrl(url)) {
+                let previewUrl = selectedAsset.previewUrl || window.state?.selectedAsset?.previewUrl;
+                
+                if (!previewUrl || !_isHiResPreviewUrl(previewUrl)) {
                     // Rebuild if missing or wrong
                     const dpr = Math.max(1, window.devicePixelRatio || 1);
-                    const photo = _currentPexelsPhoto || window.state?.selectedAsset?.photo;
+                    const photo = _currentPexelsPhoto || selectedAsset.photo || window.state?.selectedAsset?.photo;
                     if (photo) {
-                        window.state.selectedAsset.previewUrl = _pexelsPreviewUrlFromPhoto(photo, cssW * dpr, cssH * dpr, 1.2);
+                        previewUrl = _pexelsPreviewUrlFromPhoto(photo, cssW * dpr, cssH * dpr, 1.2);
+                        // Store it in both places for consistency
+                        selectedAsset.previewUrl = previewUrl;
+                        if (!window.state) window.state = {};
+                        window.state.selectedAsset = { ...selectedAsset };
                     }
                 }
-                if (window.state?.selectedAsset?.previewUrl) {
+                
+                if (previewUrl && _isHiResPreviewUrl(previewUrl)) {
                     _setupHiDPICanvas(canvas, cssW, cssH);
-                    _drawBackground(window.state.selectedAsset.previewUrl, canvas, cssW, cssH, 'bg:updateLivePreview');
+                    _drawBackground(previewUrl, canvas, cssW, cssH, 'bg:updateLivePreview');
+                    window._currentPreviewUrl = previewUrl;
                     return;
                 }
             }
