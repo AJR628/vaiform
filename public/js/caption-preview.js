@@ -109,7 +109,7 @@ export function getLastCaptionPNG(){ return lastCaptionPNG; }
 export function createCaptionOverlay(captionData, container, scaling = {}) {
   const { previewW = 1080, previewH = 1920 } = scaling;
   
-  // Calculate scale factors
+  // Calculate scale factors for 1:1 canvas mapping
   const scaleX = previewW / 1080;
   const scaleY = previewH / 1920;
   
@@ -117,14 +117,18 @@ export function createCaptionOverlay(captionData, container, scaling = {}) {
   const overlay = document.createElement('img');
   overlay.src = captionData.dataUrl || captionData.imageUrl;
   overlay.className = 'caption-overlay';
+  
+  // Draw overlay 1:1 with canvas (no cover-fit cropping)
+  // The overlay PNG is already 1080×1920, so we scale it to match the preview canvas
   overlay.style.cssText = `
     position: absolute;
-    left: ${(captionData.xPx || 0) * scaleX}px;
-    top: ${(captionData.yPx || 0) * scaleY}px;
-    width: ${(captionData.wPx || 1080) * scaleX}px;
-    height: ${(captionData.hPx || 1920) * scaleY}px;
+    left: 0;
+    top: 0;
+    width: ${previewW}px;
+    height: ${previewH}px;
     pointer-events: none;
     z-index: 10;
+    object-fit: none; /* No cover-fit, draw 1:1 */
   `;
   
   // Remove any existing caption overlays

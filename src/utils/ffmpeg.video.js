@@ -245,14 +245,15 @@ function buildVideoChain({ width, height, videoVignette, drawLayers, captionImag
   // If using PNG overlay for captions, use the new overlay format
   if (usingCaptionPng && captionPngPath) {
     console.log(`[render] USING PNG OVERLAY from: ${captionPngPath}`);
-    // Build filter graph: scale -> crop -> format -> [vmain], then overlay PNG at center
+    // Build filter graph: scale -> crop -> format -> [vmain], then overlay PNG
     const scale = `scale='if(gt(a,${W}/${H}),-2,${W})':'if(gt(a,${W}/${H}),${H},-2)'`;
     const crop = `crop=${W}:${H}`;
     const core = [ scale, crop, (videoVignette ? 'vignette=PI/4:0.5' : null), 'format=rgba' ].filter(Boolean);
     const baseChain = makeChain('0:v', core, 'vmain');
     
-    // Overlay PNG at center (PNG is already positioned correctly)
-    const overlayChain = `[vmain][1:v]overlay=(W-w)/2:(H-h)/2:format=auto[vout]`;
+    // Overlay PNG at top-left (PNG is already positioned correctly at 1080×1920)
+    // The PNG contains the caption in the right position, so we just overlay it 1:1
+    const overlayChain = `[vmain][1:v]overlay=0:0:format=auto[vout]`;
     return `${baseChain};${overlayChain}`;
   } else if (CAPTION_OVERLAY && captionImage) {
     // Legacy overlay format (keep for backward compatibility)

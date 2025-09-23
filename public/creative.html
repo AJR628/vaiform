@@ -542,9 +542,20 @@
           return Math.max(API_MIN_PX, Math.min(API_MAX_PX, Math.round(uiPx)));
         }
 
-          function getCaptionPx() {
-              const el = document.getElementById('caption-size');
-          return mapSliderToPx(el ? el.value : 50);
+        function getCaptionPx() {
+            const el = document.getElementById('caption-size');
+            return mapSliderToPx(el ? el.value : 50);
+        }
+        
+        // Font size clamping to prevent overflow
+        function clampFontPx(requestedPx, text, family = 'system-ui', weight = 'bold') {
+            const CANVAS_W = 1080, CANVAS_H = 1920;
+            const horizontalPaddingPx = Math.round(CANVAS_W * 0.08); // ~8% side gutters
+            const maxTextWidth = CANVAS_W - 2 * horizontalPaddingPx;
+            
+            // Simple guardrail: never exceed a cap that would overflow a single long word/line
+            const ABS_MAX = 200; // keep UX reasonable
+            return Math.min(requestedPx, ABS_MAX);
         }
 
         // expose for other code
@@ -832,7 +843,8 @@
             }
 
             // Get caption style parameters from UI
-            const sizePx = window.getCaptionPx(); // Use mapped size
+            const rawSizePx = window.getCaptionPx(); // Use mapped size
+            const sizePx = clampFontPx(rawSizePx, text.trim()); // Apply font clamping
             const opacityPct = parseInt(document.getElementById('caption-opacity')?.value || '85', 10);
             const placement = (document.getElementById('caption-placement')?.value || 'bottom').toLowerCase();
             const showBoxToggle = document.getElementById('caption-background')?.checked || false;
@@ -843,12 +855,23 @@
                 mappedSizePx: sizePx
             });
 
-            // Map placement UI to server values
-            const placementMapping = {
-                'top': 'top',
-                'middle': 'center', 
-                'bottom': 'bottom'
-            };
+            // Single source of truth for placement mapping
+            function placementToVAlignAndYPct(placement) {
+                // 9:16 canvas with top/middle/bottom zones and some breathing room
+                const padPctTop = 0.08;     // ~8% top padding
+                const padPctBottom = 0.08;  // ~8% bottom padding
+                switch ((placement || 'top').toLowerCase()) {
+                    case 'middle':
+                        return { vAlign: 'middle', yPct: 0.5 };
+                    case 'bottom':
+                        return { vAlign: 'bottom', yPct: 1 - padPctBottom }; // e.g. 0.92
+                    case 'top':
+                    default:
+                        return { vAlign: 'top', yPct: padPctTop };           // e.g. 0.08
+                }
+            }
+            
+            const placementData = placementToVAlignAndYPct(placement);
             
             const captionStyle = {
                 text: text.trim(),
@@ -860,7 +883,8 @@
                 shadow: true,
                 showBox: showBoxToggle,
                 boxColor: `rgba(0,0,0,${boxOpacityPct/100})`,
-                placement: placementMapping[placement] || 'center',
+                placement: placementData.vAlign, // Use vAlign for server compatibility
+                yPct: placementData.yPct,        // Add yPct for precise positioning
                 lineHeight: 1.1,
                 padding: 24,
                 maxWidthPct: 0.85,
