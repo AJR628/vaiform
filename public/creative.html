@@ -558,6 +558,20 @@
             return Math.min(requestedPx, ABS_MAX);
         }
 
+        // Preview geometry helper for proper scaling
+        function getPreviewGeometry(canvas) {
+            const rect = canvas.getBoundingClientRect();
+            const dpr = Math.max(1, window.devicePixelRatio || 1);
+            const cssW = rect.width;
+            const cssH = rect.height;
+            const backingW = canvas.width;
+            const backingH = canvas.height;
+            const scaleX = cssW / 1080; // CSS size to PNG native size
+            const scaleY = cssH / 1920;
+            
+            return { dpr, cssW, cssH, backingW, backingH, scaleX, scaleY };
+        }
+
         // expose for other code
           window.getCaptionPx = getCaptionPx;
         window.__captionSizeMapping = { mapSliderToPx, API_MIN_PX, API_MAX_PX, UI_MIN_PX, UI_MID_PX, UI_MAX_PX };
@@ -907,14 +921,32 @@
                     
                     console.log('[caption-overlay] PNG preview generated:', result);
                     
-                    // Calculate preview scaling (assuming 400px preview width)
+                    // Calculate preview scaling using geometry helper
                     const previewContainer = document.getElementById('live-preview-container');
                     const previewCanvas = document.getElementById('live-preview-canvas');
-                    const previewW = previewCanvas?.width || 400;
-                    const previewH = previewCanvas?.height || Math.round(400 * (16/9));
+                    const geometry = getPreviewGeometry(previewCanvas);
                     
-                    // Create and position the overlay image
-                    createCaptionOverlay(result, overlay, { previewW, previewH });
+                    // Debug logging for scaling
+                    console.debug('[preview-scaling]', {
+                        cssW: geometry.cssW,
+                        cssH: geometry.cssH,
+                        backingW: geometry.backingW,
+                        backingH: geometry.backingH,
+                        dpr: geometry.dpr,
+                        scaleX: geometry.scaleX,
+                        scaleY: geometry.scaleY,
+                        ovW: result.meta?.wPx || 1080,
+                        ovH: result.meta?.hPx || 1920,
+                        placement: captionStyle.placement,
+                        topCss: 'calculated'
+                    });
+                    
+                    // Create and position the overlay image with placement
+                    createCaptionOverlay(result, overlay, { 
+                        previewW: geometry.cssW, 
+                        previewH: geometry.cssH,
+                        placement: captionStyle.placement
+                    });
                     
                     console.log('[caption-overlay] PNG overlay created successfully');
                     

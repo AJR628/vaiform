@@ -251,9 +251,9 @@ function buildVideoChain({ width, height, videoVignette, drawLayers, captionImag
     const core = [ scale, crop, (videoVignette ? 'vignette=PI/4:0.5' : null), 'format=rgba' ].filter(Boolean);
     const baseChain = makeChain('0:v', core, 'vmain');
     
-    // Overlay PNG at top-left (PNG is already positioned correctly at 1080×1920)
-    // The PNG contains the caption in the right position, so we just overlay it 1:1
-    const overlayChain = `[vmain][1:v]overlay=0:0:format=auto[vout]`;
+    // Overlay PNG with placement-aware Y positioning
+    // The PNG is 1080×1920 with caption positioned correctly, so we overlay it 1:1
+    const overlayChain = `[vmain][1:v]overlay=(W-w)/2:0:format=auto[vout]`;
     return `${baseChain};${overlayChain}`;
   } else if (CAPTION_OVERLAY && captionImage) {
     // Legacy overlay format (keep for backward compatibility)

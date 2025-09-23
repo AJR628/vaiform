@@ -157,7 +157,49 @@ export async function renderCaptionImage(jobId, style) {
   }
 
   // Calculate total text height
-  const totalTextHeight = lines.length * fontPx + (lines.length - 1) * lineSpacingPx;
+  let totalTextHeight = lines.length * fontPx + (lines.length - 1) * lineSpacingPx;
+  
+  // Max-height clamp (90% of 1920) - if text block exceeds, scale font down and re-wrap
+  const maxHeightPx = Math.round(canvasH * 0.9); // 90% of 1920 = 1728px
+  let finalFontPx = fontPx;
+  let finalLines = lines;
+  let finalLineSpacing = lineSpacingPx;
+  
+  if (totalTextHeight > maxHeightPx) {
+    console.log(`[caption] Text height ${totalTextHeight}px exceeds max ${maxHeightPx}px, scaling down font`);
+    
+    // Scale font down proportionally
+    const scaleFactor = maxHeightPx / totalTextHeight;
+    finalFontPx = Math.max(16, Math.round(fontPx * scaleFactor)); // Minimum 16px
+    finalLineSpacing = Math.round(lineSpacingPx * scaleFactor);
+    
+    // Re-wrap with smaller font
+    ctx.font = `${fontWeight || 700} ${finalFontPx}px ${fontName}`;
+    const newLines = [];
+    let currentLine = '';
+    
+    for (const word of words) {
+      const testLine = currentLine ? `${currentLine} ${word}` : word;
+      const metrics = ctx.measureText(testLine);
+      
+      if (metrics.width <= boxWPx && currentLine) {
+        currentLine = testLine;
+      } else {
+        if (currentLine) {
+          newLines.push(currentLine);
+        }
+        currentLine = word;
+      }
+    }
+    
+    if (currentLine) {
+      newLines.push(currentLine);
+    }
+    
+    finalLines = newLines;
+    totalTextHeight = finalLines.length * finalFontPx + (finalLines.length - 1) * finalLineSpacing;
+    console.log(`[caption] Scaled to fontPx=${finalFontPx}, lines=${finalLines.length}, height=${totalTextHeight}px`);
+  }
   
   // Center vertically within the box
   const startY = boxYPx + (boxHPx - totalTextHeight) / 2;
@@ -167,8 +209,8 @@ export async function renderCaptionImage(jobId, style) {
   const baselines = [];
 
   // Render each line
-  lines.forEach((line, index) => {
-    const y = Math.round(startY + index * (fontPx + lineSpacingPx));
+  finalLines.forEach((line, index) => {
+    const y = Math.round(startY + index * (finalFontPx + finalLineSpacing));
     baselines.push(y);
     
     // Calculate X position based on alignment
@@ -193,7 +235,7 @@ export async function renderCaptionImage(jobId, style) {
     minX = Math.min(minX, x - strokePx - Math.abs(shadowX));
     minY = Math.min(minY, y - strokePx - Math.abs(shadowY));
     maxX = Math.max(maxX, x + lineMetrics.width + strokePx + Math.abs(shadowX));
-    maxY = Math.max(maxY, y + fontPx + strokePx + Math.abs(shadowY));
+    maxY = Math.max(maxY, y + finalFontPx + strokePx + Math.abs(shadowY));
 
     // Render shadow (if enabled)
     if (shadowBlur > 0 || shadowX !== 0 || shadowY !== 0) {
@@ -250,7 +292,7 @@ export async function renderCaptionImage(jobId, style) {
   const buffer = canvas.toBuffer('image/png');
   await fs.promises.writeFile(pngPath, buffer);
 
-  console.log(`[caption] lines=${lines.length} fontPx=${fontPx} bbox={x:${minX},y:${minY},w:${trimmedWidth},h:${trimmedHeight}}`);
+  console.log(`[caption] lines=${finalLines.length} fontPx=${finalFontPx} bbox={x:${minX},y:${minY},w:${trimmedWidth},h:${trimmedHeight}}`);
 
   return {
     pngPath,
@@ -260,10 +302,10 @@ export async function renderCaptionImage(jobId, style) {
     wPx: trimmedWidth,
     hPx: trimmedHeight,
     meta: {
-      splitLines: lines, // Use splitLines as expected by the system
+      splitLines: finalLines, // Use finalLines as expected by the system
       baselines,
-      fontPx,
-      lineSpacingPx,
+      fontPx: finalFontPx,
+      lineSpacingPx: finalLineSpacing,
     },
   };
 }

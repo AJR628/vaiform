@@ -107,10 +107,10 @@ export function getLastCaptionPNG(){ return lastCaptionPNG; }
  * @returns {HTMLImageElement} The created overlay image element
  */
 export function createCaptionOverlay(captionData, container, scaling = {}) {
-  const { previewW = 1080, previewH = 1920 } = scaling;
+  const { previewW = 1080, previewH = 1920, placement = 'center' } = scaling;
   
-  // Calculate scale factors for 1:1 canvas mapping
-  const scaleX = previewW / 1080;
+  // Calculate scale factors for CSS size scaling (not canvas backing size)
+  const scaleX = previewW / 1080; // CSS size to PNG native size
   const scaleY = previewH / 1920;
   
   // Create overlay image element
@@ -118,17 +118,35 @@ export function createCaptionOverlay(captionData, container, scaling = {}) {
   overlay.src = captionData.dataUrl || captionData.imageUrl;
   overlay.className = 'caption-overlay';
   
-  // Draw overlay 1:1 with canvas (no cover-fit cropping)
-  // The overlay PNG is already 1080×1920, so we scale it to match the preview canvas
+  // Calculate Y position based on placement with small pixel pad
+  let topCss;
+  const padPx = 24; // Small pixel padding
+  switch (placement.toLowerCase()) {
+    case 'top':
+      topCss = padPx;
+      break;
+    case 'bottom':
+      topCss = previewH - (captionData.meta?.hPx || 1920) * scaleY - padPx;
+      break;
+    case 'center':
+    default:
+      topCss = (previewH - (captionData.meta?.hPx || 1920) * scaleY) / 2;
+      break;
+  }
+  
+  // Clamp within frame bounds
+  topCss = Math.max(0, Math.min(topCss, previewH - (captionData.meta?.hPx || 1920) * scaleY));
+  
+  // Use CSS size scales for proper positioning
   overlay.style.cssText = `
     position: absolute;
-    left: 0;
-    top: 0;
-    width: ${previewW}px;
-    height: ${previewH}px;
+    left: ${(previewW - (captionData.meta?.wPx || 1080) * scaleX) / 2}px;
+    top: ${topCss}px;
+    width: ${(captionData.meta?.wPx || 1080) * scaleX}px;
+    height: ${(captionData.meta?.hPx || 1920) * scaleY}px;
     pointer-events: none;
     z-index: 10;
-    object-fit: none; /* No cover-fit, draw 1:1 */
+    object-fit: none;
   `;
   
   // Remove any existing caption overlays
