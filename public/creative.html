@@ -631,7 +631,9 @@
         }
         
         // Visual breadcrumb on the canvas so we know who drew last
+        const DEBUG_CANVAS = false;
         function _tapCanvas(label) {
+          if (!DEBUG_CANVAS) return;
           try {
             const c = document.getElementById('live-preview-canvas');
             if (!c) return;
