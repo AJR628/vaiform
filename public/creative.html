@@ -595,6 +595,36 @@
           return `${baseUrl}?${params.toString()}`;
         }
 
+        // === Pexels Preview Quality Helpers (additive; do not modify other code) ===
+        function pexelsPreviewUrl(photo, needW, needH, headroom = 1.2) {
+          const base =
+            (photo?.src?.portrait) ||
+            (photo?.src?.large2x) ||
+            (photo?.src?.large) ||
+            (photo?.src?.original) ||
+            (photo?.src?.medium);
+
+          if (!base) return null;
+          const join = base.includes('?') ? '&' : '?';
+          const dpr = Math.min(2, Math.max(1, window.devicePixelRatio || 1));
+          const w = Math.ceil(needW * headroom);
+          const h = Math.ceil(needH * headroom);
+          return `${base}${join}auto=compress&cs=tinysrgb&fit=crop&dpr=${dpr}&w=${w}&h=${h}`;
+        }
+
+        function setupHiDPICanvas(canvas, cssW, cssH) {
+          const dpr = Math.max(1, window.devicePixelRatio || 1);
+          canvas.width  = Math.round(cssW * dpr);
+          canvas.height = Math.round(cssH * dpr);
+          canvas.style.width  = `${cssW}px`;
+          canvas.style.height = `${cssH}px`;
+          const ctx = canvas.getContext('2d');
+          ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = 'high';
+          return { ctx, dpr };
+        }
+
         // --- High-quality canvas drawing helper with HiDPI support ---
         function drawPreviewOnCanvas(canvas, ctx, img, targetWidth = 400, targetHeight = 711) {
           const dpr = Math.min(window.devicePixelRatio || 1, 2); // Cap at 2x for performance
@@ -635,6 +665,10 @@
           // Draw the image with cover-fit
           ctx.drawImage(img, drawX, drawY, drawWidth, drawHeight);
         }
+
+        // --- Race protection for preview loading ---
+        let _previewReqId = 0;
+        let _currentPexelsPhoto = null; // Track current photo for resize re-rendering
 
         // --- Debounced caption overlay refresh (prevents blocking assets) ---
         let overlayRefreshTimer = null;
@@ -1071,12 +1105,67 @@
         }
 
         // Use asset function
-        function useAsset(asset) {
+        async function useAsset(asset) {
             selectedAsset = asset;
+            
+            // Special handling for Pexels assets - high-quality preview
+            if (asset.provider === 'pexels' && asset.src) {
+                await onPexelsUse(asset);
+            }
+            
             updateRenderPreview();
             updateRenderButtonState();
             // Scroll to render section
             document.getElementById('render-preview').scrollIntoView({ behavior: 'smooth' });
+        }
+
+        // High-quality Pexels preview handler with race protection
+        async function onPexelsUse(photo) {
+            const reqId = ++_previewReqId;
+            _currentPexelsPhoto = photo; // Track for resize re-rendering
+
+            const canvas = document.getElementById('live-preview-canvas');
+            const container = canvas.parentElement;
+            const cssW = container.clientWidth;
+            const cssH = Math.round(cssW * 16 / 9);
+
+            const dpr = Math.max(1, window.devicePixelRatio || 1);
+            canvas.width = Math.round(cssW * dpr);
+            canvas.height = Math.round(cssH * dpr);
+            canvas.style.width = cssW + 'px';
+            canvas.style.height = cssH + 'px';
+
+            const ctx = canvas.getContext('2d');
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = 'high';
+
+            const url = pexelsPreviewUrl(photo, canvas.width, canvas.height, 1.2);
+            window._currentPreviewUrl = url;
+
+            const img = new Image();
+            img.crossOrigin = 'anonymous';
+            img.decoding = 'async';
+            img.src = url;
+
+            try {
+                await img.decode();
+            } catch (e) {
+                // Fallback if decode fails
+                const base = photo?.src?.large2x || photo?.src?.large || photo?.src?.original || photo?.src?.medium;
+                if (!base || reqId !== _previewReqId) return;
+                img.src = base;
+                await img.decode();
+            }
+            if (reqId !== _previewReqId) return; // ignore stale load
+
+            const iw = img.naturalWidth, ih = img.naturalHeight;
+            const scale = Math.max(cssW / iw, cssH / ih);
+            const dw = iw * scale, dh = ih * scale;
+            const dx = (cssW - dw) / 2, dy = (cssH - dh) / 2;
+
+            ctx.clearRect(0, 0, cssW, cssH);
+            ctx.drawImage(img, dx, dy, dw, dh);
         }
 
         // Add to remix function
@@ -2284,6 +2373,17 @@
             document.getElementById('quote-char-count').textContent = `${n}/200`;
             // live overlay while editing
             try { updateCaptionOverlay(v, true); } catch {}
+        });
+
+        // Resize listener for zoom/resize scenarios - re-render Pexels preview
+        let resizeTimeout;
+        window.addEventListener('resize', () => {
+            clearTimeout(resizeTimeout);
+            resizeTimeout = setTimeout(() => {
+                if (_currentPexelsPhoto && selectedAsset?.provider === 'pexels') {
+                    onPexelsUse(_currentPexelsPhoto);
+                }
+            }, 150); // Debounce resize events
         });
 
         // Tab switching
