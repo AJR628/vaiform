@@ -455,7 +455,7 @@
             <!-- Live Preview Canvas -->
             <div id="live-preview-container" class="hidden">
                 <div class="text-sm text-gray-400 mb-2">Live Preview:</div>
-                <div class="relative w-full max-w-md mx-auto bg-black rounded-lg overflow-hidden">
+                <div class="relative mx-auto bg-black rounded-lg overflow-hidden aspect-[9/16] max-w-[400px]">
                     <canvas id="live-preview-canvas" class="w-full h-auto"></canvas>
                     <div class="absolute inset-0 pointer-events-none" id="caption-overlay"></div>
                 </div>
@@ -675,6 +675,25 @@
           const needW = canvas.width || canvas.clientWidth;
           const needH = canvas.height || canvas.clientHeight;
           return _buildHiResPexelsUrlFromBase(rawUrl, needW, needH);
+        }
+
+        function layoutPreviewDims() {
+          const box =
+            document.querySelector('#live-preview-container .relative') ||
+            document.querySelector('#live-preview-container .preview-box') ||
+            document.getElementById('live-preview-container');
+          const cssW = box.clientWidth;
+          const cssH = Math.round(cssW * 16 / 9); // lock to 9:16 portrait
+          return { cssW, cssH };
+        }
+
+        function drawCover(ctx, img, cssW, cssH) {
+          const iw = img.naturalWidth, ih = img.naturalHeight;
+          const scale = Math.max(cssW / iw, cssH / ih); // COVER (fill + crop)
+          const dw = iw * scale, dh = ih * scale;
+          const dx = (cssW - dw) / 2, dy = (cssH - dh) / 2;
+          ctx.clearRect(0, 0, cssW, cssH);
+          ctx.drawImage(img, dx, dy, dw, dh);
         }
 
         function setupHiDPICanvas(canvas, cssW, cssH) {
@@ -1528,9 +1547,8 @@
                 if (ov) ov.style.display = hasVideo ? 'none' : 'block';
             } catch {}
 
-            // Get CSS dimensions
-            const cssW = container.clientWidth;
-            const cssH = Math.round(cssW * 16 / 9);
+            // 9:16 CSS sizing + HiDPI backing
+            const { cssW, cssH } = layoutPreviewDims();
             const { ctx } = _setupHiDPICanvas(canvas, cssW, cssH);
 
             // Choose the background URL from whatever the app thinks it should be
@@ -1546,13 +1564,8 @@
             img.src = url;
             
             img.onload = () => {
-                const iw = img.naturalWidth, ih = img.naturalHeight;
-                const scale = Math.max(cssW/iw, cssH/ih);
-                const dw = iw*scale, dh = ih*scale;
-                const dx = (cssW - dw)/2, dy = (cssH - dh)/2;
-
-                ctx.clearRect(0,0,cssW,cssH);
-                ctx.drawImage(img, dx, dy, dw, dh);
+                // COVER draw (no stretching)
+                drawCover(ctx, img, cssW, cssH);
                 
                 // Debug
                 window._currentPreviewUrl = url;
@@ -2457,19 +2470,24 @@
             try { updateCaptionOverlay(v, true); } catch {}
         });
 
-        // Resize listener for zoom/resize scenarios - re-render Pexels preview
+        // Resize listener for zoom/resize scenarios - re-render preview
         let resizeTimeout;
         window.addEventListener('resize', () => {
             clearTimeout(resizeTimeout);
             resizeTimeout = setTimeout(() => {
-                if (_currentPexelsPhoto && selectedAsset?.provider === 'pexels') {
-                    // Preserve existing previewUrl when updating selectedAsset
-                    const existingPreviewUrl = selectedAsset.previewUrl;
-                    selectedAsset = { ...selectedAsset, ..._currentPexelsPhoto };
-                    if (existingPreviewUrl) {
-                        selectedAsset.previewUrl = existingPreviewUrl;
+                if (selectedAsset) {
+                    if (_currentPexelsPhoto && selectedAsset?.provider === 'pexels') {
+                        // Preserve existing previewUrl when updating selectedAsset
+                        const existingPreviewUrl = selectedAsset.previewUrl;
+                        selectedAsset = { ...selectedAsset, ..._currentPexelsPhoto };
+                        if (existingPreviewUrl) {
+                            selectedAsset.previewUrl = existingPreviewUrl;
+                        }
+                        onPexelsUse(_currentPexelsPhoto);
+                    } else {
+                        // For non-Pexels assets, just redraw the preview
+                        updateLivePreview();
                     }
-                    onPexelsUse(_currentPexelsPhoto);
                 }
             }, 150); // Debounce resize events
         });
