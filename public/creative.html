@@ -595,21 +595,60 @@
           return `${baseUrl}?${params.toString()}`;
         }
 
-        // === Pexels Preview Quality Helpers (additive; do not modify other code) ===
-        function pexelsPreviewUrl(photo, needW, needH, headroom = 1.2) {
+        // === Pexels Preview Quality + Trace Helpers ===
+        function _isHiResPreviewUrl(url) {
+          if (!url) return false;
+          // Must NOT be just h=350; should include fit=crop and explicit w/h and dpr
+          return /fit=crop/.test(url) && /[?&]w=\d+/.test(url) && /[?&]h=\d+/.test(url);
+        }
+        
+        function _pexelsPreviewUrlFromPhoto(photo, needW, needH, headroom = 1.2) {
           const base =
             (photo?.src?.portrait) ||
             (photo?.src?.large2x) ||
             (photo?.src?.large) ||
             (photo?.src?.original) ||
             (photo?.src?.medium);
-
           if (!base) return null;
           const join = base.includes('?') ? '&' : '?';
           const dpr = Math.min(2, Math.max(1, window.devicePixelRatio || 1));
           const w = Math.ceil(needW * headroom);
           const h = Math.ceil(needH * headroom);
           return `${base}${join}auto=compress&cs=tinysrgb&fit=crop&dpr=${dpr}&w=${w}&h=${h}`;
+        }
+        
+        function _setupHiDPICanvas(canvas, cssW, cssH) {
+          const dpr = Math.max(1, window.devicePixelRatio || 1);
+          canvas.width  = Math.round(cssW * dpr);
+          canvas.height = Math.round(cssH * dpr);
+          canvas.style.width  = `${cssW}px`;
+          canvas.style.height = `${cssH}px`;
+          const ctx = canvas.getContext('2d');
+          ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = 'high';
+          return { ctx, dpr };
+        }
+        
+        // Visual breadcrumb on the canvas so we know who drew last
+        function _tapCanvas(label) {
+          try {
+            const c = document.getElementById('live-preview-canvas');
+            if (!c) return;
+            const x = c.getContext('2d');
+            x.save();
+            x.font = '12px system-ui';
+            x.fillStyle = 'rgba(255,255,255,.95)';
+            x.strokeStyle = 'rgba(0,0,0,.6)';
+            x.strokeText(label, 8, 18);
+            x.fillText(label, 8, 18);
+            x.restore();
+          } catch {}
+        }
+
+        // Legacy function - now calls the new helper
+        function pexelsPreviewUrl(photo, needW, needH, headroom = 1.2) {
+          return _pexelsPreviewUrlFromPhoto(photo, needW, needH, headroom);
         }
 
         function setupHiDPICanvas(canvas, cssW, cssH) {
@@ -669,6 +708,25 @@
         // --- Race protection for preview loading ---
         let _previewReqId = 0;
         let _currentPexelsPhoto = null; // Track current photo for resize re-rendering
+
+        async function _drawBackground(url, canvas, cssW, cssH, who='drawBackground') {
+          const my = ++_previewReqId;
+          const img = new Image();
+          img.crossOrigin = 'anonymous';
+          img.decoding = 'async';
+          img.src = url;
+          await img.decode();
+          if (my !== _previewReqId) return;
+          const ctx = canvas.getContext('2d');
+          const iw = img.naturalWidth, ih = img.naturalHeight;
+          const scale = Math.max(cssW/iw, cssH/ih);
+          const dw = iw*scale, dh = ih*scale;
+          const dx = (cssW - dw)/2, dy = (cssH - dh)/2;
+          ctx.clearRect(0,0,cssW,cssH);
+          ctx.drawImage(img, dx, dy, dw, dh);
+          window._currentPreviewUrl = url;
+          _tapCanvas(`${who}`);
+        }
 
         // --- Debounced caption overlay refresh (prevents blocking assets) ---
         let overlayRefreshTimer = null;
@@ -1108,6 +1166,10 @@
         async function useAsset(asset) {
             selectedAsset = asset;
             
+            // Initialize window.state if needed
+            if (!window.state) window.state = {};
+            window.state.selectedAsset = asset;
+            
             // Special handling for Pexels assets - high-quality preview
             if (asset.provider === 'pexels' && asset.src) {
                 await onPexelsUse(asset);
@@ -1129,48 +1191,38 @@
             const cssW = container.clientWidth;
             const cssH = Math.round(cssW * 16 / 9);
 
+            _setupHiDPICanvas(canvas, cssW, cssH);
+
             const dpr = Math.max(1, window.devicePixelRatio || 1);
-            canvas.width = Math.round(cssW * dpr);
-            canvas.height = Math.round(cssH * dpr);
-            canvas.style.width = cssW + 'px';
-            canvas.style.height = cssH + 'px';
+            const previewUrl = _pexelsPreviewUrlFromPhoto(photo, cssW * dpr, cssH * dpr, 1.2);
 
-            const ctx = canvas.getContext('2d');
-            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-            ctx.imageSmoothingEnabled = true;
-            ctx.imageSmoothingQuality = 'high';
+            // Persist both URLs for later redraws (resize/caption)
+            if (!window.state) window.state = {};
+            window.state.selectedAsset = {
+                ...(window.state.selectedAsset || {}),
+                provider: 'pexels',
+                id: photo?.id,
+                thumbUrl: photo?.src?.medium,
+                previewUrl
+            };
 
-            const url = pexelsPreviewUrl(photo, canvas.width, canvas.height, 1.2);
-            window._currentPreviewUrl = url;
+            console.log('[pexels-use] previewUrl', previewUrl);
+            await _drawBackground(window.state.selectedAsset.previewUrl, canvas, cssW, cssH, 'bg:pexels-use');
 
-            // Store high-quality preview URL in selectedAsset for use by updateLivePreview
-            if (selectedAsset && selectedAsset.provider === 'pexels') {
-                selectedAsset.previewUrl = url;
-            }
-
-            const img = new Image();
-            img.crossOrigin = 'anonymous';
-            img.decoding = 'async';
-            img.src = url;
-
+            // Add write-trap to detect accidental overwrites
             try {
-                await img.decode();
-            } catch (e) {
-                // Fallback if decode fails
-                const base = photo?.src?.large2x || photo?.src?.large || photo?.src?.original || photo?.src?.medium;
-                if (!base || reqId !== _previewReqId) return;
-                img.src = base;
-                await img.decode();
-            }
-            if (reqId !== _previewReqId) return; // ignore stale load
-
-            const iw = img.naturalWidth, ih = img.naturalHeight;
-            const scale = Math.max(cssW / iw, cssH / ih);
-            const dw = iw * scale, dh = ih * scale;
-            const dx = (cssW - dw) / 2, dy = (cssH - dh) / 2;
-
-            ctx.clearRect(0, 0, cssW, cssH);
-            ctx.drawImage(img, dx, dy, dw, dh);
+                const sa = window.state.selectedAsset;
+                let _pv = sa.previewUrl;
+                Object.defineProperty(sa, 'previewUrl', {
+                    get() { return _pv; },
+                    set(v) {
+                        if (!_isHiResPreviewUrl(v)) {
+                            console.warn('[trap] previewUrl being set to NON-hires url:', v);
+                        }
+                        _pv = v;
+                    }
+                });
+            } catch {}
         }
 
         // Add to remix function
@@ -1446,7 +1498,29 @@
                 if (ov) ov.style.display = hasVideo ? 'none' : 'block';
             } catch {}
 
-            // Load the asset image with high-quality preview
+            // Get CSS dimensions
+            const cssW = container.clientWidth;
+            const cssH = Math.round(cssW * 16 / 9);
+
+            // For Pexels images, ensure we have a hi-res preview URL
+            if (selectedAsset.provider === 'pexels') {
+                const url = window.state?.selectedAsset?.previewUrl;
+                if (!url || !_isHiResPreviewUrl(url)) {
+                    // Rebuild if missing or wrong
+                    const dpr = Math.max(1, window.devicePixelRatio || 1);
+                    const photo = _currentPexelsPhoto || window.state?.selectedAsset?.photo;
+                    if (photo) {
+                        window.state.selectedAsset.previewUrl = _pexelsPreviewUrlFromPhoto(photo, cssW * dpr, cssH * dpr, 1.2);
+                    }
+                }
+                if (window.state?.selectedAsset?.previewUrl) {
+                    _setupHiDPICanvas(canvas, cssW, cssH);
+                    _drawBackground(window.state.selectedAsset.previewUrl, canvas, cssW, cssH, 'bg:updateLivePreview');
+                    return;
+                }
+            }
+
+            // Fallback to existing logic for other assets
             const img = new Image();
             img.crossOrigin = 'anonymous';
             img.onload = () => {
@@ -1461,20 +1535,10 @@
             };
             
             try {
-                let imageUrl;
-                
-                // For Pexels images, use stored high-quality preview URL
-                if (selectedAsset.provider === 'pexels' && selectedAsset.previewUrl) {
-                    imageUrl = selectedAsset.previewUrl;
-                }
-                
-                // Fallback to existing logic for other assets
-                if (!imageUrl) {
                 const raw = selectedAsset.thumbUrl || selectedAsset.fileUrl;
-                    imageUrl = raw && /^https:\/\/firebasestorage\.googleapis\.com\//.test(raw)
+                const imageUrl = raw && /^https:\/\/firebasestorage\.googleapis\.com\//.test(raw)
                   ? `${getApiBase()}/cdn?u=${encodeURIComponent(raw)}`
                   : raw;
-                }
                 
                 img.crossOrigin = 'anonymous';
                 img.src = imageUrl;
@@ -2386,8 +2450,12 @@
             clearTimeout(resizeTimeout);
             resizeTimeout = setTimeout(() => {
                 if (_currentPexelsPhoto && selectedAsset?.provider === 'pexels') {
-                    // Update selectedAsset with the current photo data before re-rendering
+                    // Preserve existing previewUrl when updating selectedAsset
+                    const existingPreviewUrl = selectedAsset.previewUrl;
                     selectedAsset = { ...selectedAsset, ..._currentPexelsPhoto };
+                    if (existingPreviewUrl) {
+                        selectedAsset.previewUrl = existingPreviewUrl;
+                    }
                     onPexelsUse(_currentPexelsPhoto);
                 }
             }, 150); // Debounce resize events
