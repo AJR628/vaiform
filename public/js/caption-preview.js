@@ -95,19 +95,19 @@ export async function generateCaptionPreview(opts) {
     window.lastCaptionPNG = lastCaptionPNG;
     // Store as the new overlay format for render payload
     window.__lastCaptionOverlay = {
-      dataUrl: data.dataUrl,
-      width: data.width,
-      height: data.height,
-      meta: data.meta || {}
+      dataUrl: imageUrl,
+      width: data.data?.wPx || 1080,
+      height: data.data?.hPx || 1920,
+      meta: data.data?.meta || {}
     };
   }
 
   const img = document.getElementById("captionOverlay");
-  if (img) { img.src = data.dataUrl; img.style.display = "block"; }
+  if (img) { img.src = imageUrl; img.style.display = "block"; }
   
   // Expose preview canvas height for scaling calculations
   if (typeof window !== 'undefined') {
-    window.__vaiform_previewHeightPx = data.height;
+    window.__vaiform_previewHeightPx = data.data?.hPx || 1920;
   }
 }
 
@@ -135,46 +135,57 @@ export function createCaptionOverlay(captionData, container, scaling = {}) {
   overlay.className = 'caption-overlay';
   
   // Scale overlay size with scale = previewW / 1080
-  // Use a less aggressive scaling factor to maintain text legibility
+  // Use consistent scaling to match the background image
   const scale = previewW / 1080;
-  const scaleFactor = Math.max(0.5, scale); // Minimum 50% scale to keep text readable
+  const scaleFactor = scale; // Use exact scale to match background
   const dispW = (captionData.meta?.wPx || 1080) * scaleFactor;
   const dispH = (captionData.meta?.hPx || 1920) * scaleFactor;
   
-  // Apply anchor-aware math using server meta
+  // Use server-provided dimensions for accurate positioning
   const xPct = captionData.meta?.xPct || 50;
-  // Compute yPct if missing from server meta (critical fix for positioning)
-  const yPct = captionData.meta?.yPct ?? (typeof captionData.meta?.yPx === 'number' && previewH ? captionData.meta.yPx / previewH : 0.5);
-  const totalTextH = captionData.meta?.totalTextH ?? (typeof captionData.meta?.hPx === 'number' ? captionData.meta.hPx : 0);
+  const yPct = captionData.meta?.yPct || 0.5;
+  const totalTextH = captionData.meta?.totalTextH || captionData.meta?.hPx || 0;
   const align = captionData.meta?.align || 'center';
   const vAlign = captionData.meta?.vAlign || 'center';
+  const internalPadding = captionData.meta?.internalPadding || 0;
   
   // Scale totalTextH with preview scale for proper height calculation
   const scaledTotalTextH = totalTextH * scaleFactor;
   
-  // Calculate anchor points using server-computed yPct
+  // Define safe margins to prevent clipping (5% top, 8% bottom)
+  const safeTopMargin = previewH * 0.05;
+  const safeBottomMargin = previewH * 0.08;
+  
+  // Calculate anchor points using server-computed positioning
   const anchorX = (xPct / 100) * previewW;
   const anchorY = yPct * previewH;
   
-  // Calculate position based on alignment
+  // Calculate position based on alignment - use text-aware positioning
   let left = anchorX;
   let top = anchorY;
   
+  // Horizontal alignment
   if (align === 'center') left -= dispW / 2;
   else if (align === 'right') left -= dispW;
   
-  // Use the server-computed yPct directly for positioning
-  // The server already accounts for placement, so we just center the overlay
-  top = anchorY - (dispH / 2);
+  // Vertical alignment - use text height for proper centering, accounting for internal padding
+  const scaledPadding = internalPadding * scaleFactor;
+  if (vAlign === 'center') {
+    top = anchorY - (scaledTotalTextH / 2) - scaledPadding;
+  } else if (vAlign === 'bottom') {
+    top = anchorY - scaledTotalTextH - scaledPadding;
+  } else {
+    // top alignment
+    top = anchorY - scaledPadding;
+  }
   
-  // Clamp positioning to prevent clipping above/below preview bounds
+  // Clamp positioning using safe margins and text height
   left = Math.max(0, Math.min(left, previewW - dispW));
-  top = Math.max(0, Math.min(top, previewH - dispH));
   
-  // Additional clamp to ensure text doesn't get cut off at edges
-  const minTop = Math.max(0, top);
-  const maxTop = Math.min(previewH - scaledTotalTextH, top);
-  top = Math.max(minTop, maxTop);
+  // Use safe margins and text height for proper clamping
+  const minTop = safeTopMargin;
+  const maxTop = previewH - safeBottomMargin - scaledTotalTextH;
+  top = Math.max(minTop, Math.min(maxTop, top));
   
   // Add final visual clamp if overlay is larger than frame
   let finalScale = 1;
@@ -185,25 +196,32 @@ export function createCaptionOverlay(captionData, container, scaling = {}) {
   const finalDispW = dispW * finalScale;
   const finalDispH = dispH * finalScale;
   
-  // Recalculate position with final scale
+  // Recalculate position with final scale using text-aware positioning
   left = anchorX;
   top = anchorY;
+  
+  // Horizontal alignment
   if (align === 'center') left -= finalDispW / 2;
   else if (align === 'right') left -= finalDispW;
-  if (vAlign === 'center') top -= finalDispH / 2;
-  else if (vAlign === 'bottom') top -= finalDispH;
   
-  // Final clamp
+  // Vertical alignment using scaled text height and padding
+  const finalScaledTextH = scaledTotalTextH * finalScale;
+  const finalScaledPadding = scaledPadding * finalScale;
+  if (vAlign === 'center') top -= (finalScaledTextH / 2) + finalScaledPadding;
+  else if (vAlign === 'bottom') top -= finalScaledTextH + finalScaledPadding;
+  
+  // Final clamp with safe margins
   left = Math.max(0, Math.min(left, previewW - finalDispW));
-  top = Math.max(0, Math.min(top, previewH - finalDispH));
+  top = Math.max(safeTopMargin, Math.min(top, previewH - safeBottomMargin - finalScaledTextH));
   
   // Debug logging to verify calculations
   console.log('[preview-overlay] positioning:', {
     W: previewW, H: previewH,
     iW: captionData.meta?.wPx || 1080, iH: captionData.meta?.hPx || 1920,
     dispW: finalDispW, dispH: finalDispH,
-    scaledTotalTextH,
-    scaleFactor,
+    scaledTotalTextH, finalScaledTextH,
+    scaleFactor, finalScale,
+    safeTopMargin, safeBottomMargin,
     xPct, yPct, align, vAlign,
     left, top,
     computedYPct: yPct,

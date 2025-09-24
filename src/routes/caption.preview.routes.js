@@ -26,22 +26,24 @@ router.post("/caption/preview", express.json(), async (req, res) => {
       borderRadius = 16
     } = req.body || {};
 
-    // Map font families to available fonts (only use registered fonts)
+    // Map font families to registered fonts
     const fontMap = {
-      'DejaVu Sans Local': 'DejaVu Sans Local',
-      'DejaVu Serif Local': 'DejaVu Serif Local',
-      'DejaVu Serif Bold Local': 'DejaVu Serif Bold Local'
+      'DejaVuSans': 'DejaVu-Bold',
+      'DejaVu Sans Local': 'DejaVu-Bold',
+      'DejaVu Serif Local': 'DejaVu Serif',
+      'DejaVu Serif Bold Local': 'DejaVu Serif Bold'
     };
     
-    const actualFontFamily = fontMap[fontFamily] || 'DejaVu Sans Local';
+    const actualFontFamily = fontMap[fontFamily] || 'DejaVu-Bold';
 
     if (typeof text !== "string" || !text.trim()) {
       return res.status(400).json({ success:false, error:"INVALID_INPUT", detail:"text required" });
     }
 
-    // Server-side font clamping to prevent overflow
-    const ABS_MAX_FONT = 200; // Keep UX reasonable
-    const clampedFontPx = Math.min(Number(fontPx) || 48, ABS_MAX_FONT);
+    // Server-side font clamping to prevent overflow (match frontend limits)
+    const ABS_MAX_FONT = 180; // Match frontend API_MAX_PX
+    const ABS_MIN_FONT = 48;  // Match frontend API_MIN_PX
+    const clampedFontPx = Math.max(ABS_MIN_FONT, Math.min(Number(fontPx) || 48, ABS_MAX_FONT));
 
     // Validate required numeric inputs
     if (!Number.isFinite(width) || !Number.isFinite(height) || !Number.isFinite(clampedFontPx)) {
@@ -55,6 +57,7 @@ router.post("/caption/preview", express.json(), async (req, res) => {
 
     const maxW = Math.round(W * Number(maxWidthPct));
     console.log(`[caption] Using maxWidthPct=${maxWidthPct}, maxW=${maxW}`);
+    console.log(`[caption] Font set to: ${actualFontFamily} (weight: ${weightCss})`);
     ctx.font = `${weightCss} ${clampedFontPx}px "${actualFontFamily}"`;
     ctx.fillStyle = color;
     ctx.globalAlpha = Number(opacity);
@@ -109,8 +112,10 @@ router.post("/caption/preview", express.json(), async (req, res) => {
     
     console.log(`[caption] placement=${placement}, fontPx=${clampedFontPx}, totalTextH=${totalTextH}, yPct=${finalYPct}, y=${y}`);
 
-    const boxW = maxW + padding * 2;
-    const boxH = textH + padding * 2;
+    // Add internal padding to the text box to prevent clipping
+    const internalPadding = 32; // 32px padding on all sides
+    const boxW = maxW + internalPadding * 2;
+    const boxH = textH + internalPadding * 2;
     const x = Math.round((W - boxW) / 2);
 
     if (showBox) {
@@ -127,12 +132,14 @@ router.post("/caption/preview", express.json(), async (req, res) => {
     if (shadow) { ctx.shadowColor = "rgba(0,0,0,0.6)"; ctx.shadowBlur = 12; ctx.shadowOffsetY = 2; }
     else { ctx.shadowColor = "transparent"; }
 
-    let cy = y;
+    // Position text within the padded box
+    const textStartY = y + internalPadding;
+    let cy = textStartY;
     for (const line of lines) { ctx.fillText(line, W/2, cy); cy += lh; }
 
     const dataUrl = canvas.toDataURL("image/png");
     
-    // Include meta information for render reuse
+    // Include meta information for render reuse with proper height data
     const meta = {
       splitLines: lines,
       fontPx: clampedFontPx, // Use clamped font size
@@ -143,7 +150,11 @@ router.post("/caption/preview", express.json(), async (req, res) => {
       vAlign: placement === "top" ? "top" : placement === "bottom" ? "bottom" : "center",
       previewHeightPx: H,
       opacity: Number(opacity),
-      boxHPx: totalTextH // Include block height for debugging
+      totalTextH: totalTextH, // Total text height for positioning
+      hPx: boxH, // Height of padded text box
+      wPx: boxW, // Width of padded text box
+      placement: placement, // Include placement for reference
+      internalPadding: internalPadding // Include padding info for frontend
     };
     
     // Debug logging
@@ -158,7 +169,17 @@ router.post("/caption/preview", express.json(), async (req, res) => {
       safeH: Math.floor(H * 0.84)
     });
     
-    return res.json({ success:true, dataUrl, width:W, height:H, meta });
+    return res.json({ 
+      ok: true, 
+      data: {
+        imageUrl: dataUrl,
+        wPx: W,
+        hPx: H,
+        xPx: 0,
+        yPx: y,
+        meta: meta
+      }
+    });
   } catch (e) {
     return res.status(400).json({ success:false, error:"INVALID_INPUT", detail:String(e?.message || e) });
   }

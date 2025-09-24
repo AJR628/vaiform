@@ -243,7 +243,7 @@ function buildVideoChain({ width, height, videoVignette, drawLayers, captionImag
   const H = Math.max(4, Number(height)||1920);
   
   // If using PNG overlay for captions, use the new overlay format
-  if (usingCaptionPng && captionPngPath) {
+  if (usingCaptionPng && captionPngPath && fs.existsSync(captionPngPath)) {
     console.log(`[render] USING PNG OVERLAY from: ${captionPngPath}`);
     // Build filter graph: scale -> crop -> format -> [vmain], then overlay PNG
     const scale = `scale='if(gt(a,${W}/${H}),-2,${W})':'if(gt(a,${W}/${H}),${H},-2)'`;
@@ -385,8 +385,22 @@ export async function renderVideoQuoteOverlay({
   // Guard: Verify caption PNG path exists before using in ffmpeg
   if (usingCaptionPng && (!captionPngPath || !fs.existsSync(captionPngPath))) {
     console.warn("[render] Caption PNG path invalid or missing, falling back to drawtext");
+    console.warn("[render] PNG path was:", captionPngPath);
+    console.warn("[render] File exists:", captionPngPath ? fs.existsSync(captionPngPath) : false);
     usingCaptionPng = false;
     captionPngPath = null;
+  }
+  
+  // Additional guard: Ensure PNG file is not empty
+  if (usingCaptionPng && captionPngPath && fs.existsSync(captionPngPath)) {
+    const stats = fs.statSync(captionPngPath);
+    if (stats.size === 0) {
+      console.warn("[render] Caption PNG file is empty, falling back to drawtext");
+      usingCaptionPng = false;
+      captionPngPath = null;
+    } else {
+      console.log(`[render] Caption PNG verified: ${captionPngPath} (${stats.size} bytes)`);
+    }
   }
 
   const fit = fitQuoteToBox({ text, boxWidthPx: W - sm*2, baseFontSize: fontsize || 72 });
@@ -773,7 +787,7 @@ export async function renderVideoQuoteOverlay({
   const args = [
     '-y',
     '-i', videoPath,
-    ...(usingCaptionPng && captionPngPath && fs.existsSync(captionPngPath) ? ['-i', captionPngPath] : []),
+    ...(usingCaptionPng && captionPngPath && fs.existsSync(captionPngPath) && fs.statSync(captionPngPath).size > 0 ? ['-i', captionPngPath] : []),
     ...(CAPTION_OVERLAY && captionImage && !usingCaptionPng ? ['-i', captionImage.pngPath || captionImage.localPath] : []),
     ...(ttsPath ? ['-i', ttsPath] : []),
     '-ss', '0.5',

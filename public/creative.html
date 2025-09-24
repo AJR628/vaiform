@@ -514,11 +514,11 @@
         });
 
         // --- Caption sizing constants (HOISTED) ---
-        const UI_MIN_PX = 36;     // slider min visual
-        const UI_MID_PX = 72;     // slider mid visual  
-        const UI_MAX_PX = 140;    // slider max visual
-        const API_MIN_PX = 28;    // backend clamp lower bound
-        const API_MAX_PX = 160;   // backend clamp upper bound
+        const UI_MIN_PX = 48;     // slider min visual (increased for better range)
+        const UI_MID_PX = 96;     // slider mid visual (increased)
+        const UI_MAX_PX = 180;    // slider max visual (increased to match API_MAX_PX)
+        const API_MIN_PX = 48;    // backend clamp lower bound (increased)
+        const API_MAX_PX = 180;   // backend clamp upper bound (increased)
 
         // --- Caption size mapping (define BEFORE any usage)
         function mapSliderToPx(sliderVal) {
@@ -949,10 +949,10 @@
             
             // Map UI font selection to server font names (only use registered fonts)
             const fontMapping = {
-                'system': { family: 'DejaVu Sans Local', weightCss: 'normal' },
-                'bold': { family: 'DejaVu Sans Local', weightCss: 'bold' },
-                'cinematic': { family: 'DejaVu Serif Local', weightCss: 'normal' },
-                'minimal': { family: 'DejaVu Sans Local', weightCss: 'normal' }
+                'system': { family: 'DejaVuSans', weightCss: 'normal' },
+                'bold': { family: 'DejaVuSans', weightCss: 'bold' },
+                'cinematic': { family: 'DejaVuSans', weightCss: 'bold' }, // Fallback to DejaVu until we add more fonts
+                'minimal': { family: 'DejaVuSans', weightCss: 'normal' }
             };
             
             const selectedFont = document.getElementById('caption-font')?.value || 'system';

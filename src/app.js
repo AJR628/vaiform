@@ -9,22 +9,22 @@ import fs from "fs";
 import routes from "./routes/index.js";
 import "./config/firebase.js"; // ensure Firebase Admin is initialized
 
-// Font registration for caption rendering
+// Font registration for caption rendering using GlobalFonts API
 import pkg from "@napi-rs/canvas";
-const { registerFont } = pkg;
+const { GlobalFonts } = pkg;
 
 function safeRegisterFont(file, family, weight = "normal") {
   try {
     const p = path.join(process.cwd(), "assets", "fonts", file);
     if (!fs.existsSync(p)) throw new Error("missing");
     
-    // Check if registerFont is available
-    if (typeof registerFont === 'function') {
-      registerFont(p, { family, weight });
+    // Use GlobalFonts API which is more reliable
+    if (GlobalFonts && typeof GlobalFonts.register === 'function') {
+      GlobalFonts.register(p, family);
       console.log(`[font] registered ${file} as ${family}/${weight}`);
       return true;
     } else {
-      console.warn(`[font] registerFont not available in @napi-rs/canvas`);
+      console.warn(`[font] GlobalFonts.register not available in @napi-rs/canvas`);
       return false;
     }
   } catch (e) {
@@ -33,7 +33,7 @@ function safeRegisterFont(file, family, weight = "normal") {
   }
 }
 
-export const HAVE_DEJAVU_BOLD = safeRegisterFont("DejaVuSans-Bold.ttf", "DejaVu Sans Local", "bold");
+export const HAVE_DEJAVU_BOLD = safeRegisterFont("DejaVuSans-Bold.ttf", "DejaVu-Bold");
 
 // 🔧 Gate A helpers
 import envCheck from "./middleware/envCheck.js";
