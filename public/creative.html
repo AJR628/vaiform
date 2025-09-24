@@ -1181,6 +1181,13 @@
             document.getElementById('save-quote-btn').classList.remove('hidden');
             document.getElementById('cancel-quote-btn').classList.remove('hidden');
             document.getElementById('edit-quote-btn').classList.add('hidden');
+            
+            // Trigger preview when quote is available
+            if (selectedAsset) {
+                updateLivePreview();
+                updateCaptionOverlay(quote.text.trim(), true);
+            }
+            
             // Update char counter from textarea content
             try {
               const cc = document.getElementById('quote-char-count');
@@ -1381,6 +1388,13 @@
             
             updateRenderPreview();
             updateRenderButtonState();
+            
+            // Trigger preview when asset is used
+            if (currentQuote) {
+                updateLivePreview();
+                updateCaptionOverlay(currentQuote.text.trim(), true);
+            }
+            
             // Scroll to render section
             document.getElementById('render-preview').scrollIntoView({ behavior: 'smooth' });
         }
@@ -1634,6 +1648,23 @@
                 // Optional: fall back to a default 360x640 CSS size and retry once
             }
         }
+
+        // Manual trigger function for debugging
+        function forcePreviewUpdate() {
+            console.log('[preview-debug] Forcing preview update');
+            if (currentQuote && selectedAsset) {
+                updateLivePreview();
+                updateCaptionOverlay(currentQuote.text.trim(), true);
+            } else {
+                console.log('[preview-debug] Missing quote or asset:', { 
+                    hasQuote: !!currentQuote, 
+                    hasAsset: !!selectedAsset 
+                });
+            }
+        }
+
+        // Make it globally available for debugging
+        window.forcePreviewUpdate = forcePreviewUpdate;
 
         // Initialize caption size UI (safe DOM ready wrapper)
         function initCaptionSizeUI(){
@@ -2891,12 +2922,26 @@
         window.addEventListener('load', () => {
             console.log('[preview-init] Page loaded, initializing preview');
             initPreviewSystem();
+            
+            // Also trigger preview if we already have both quote and asset
+            if (currentQuote && selectedAsset) {
+                console.log('[preview-init] Both quote and asset available, triggering preview');
+                updateLivePreview();
+                updateCaptionOverlay(currentQuote.text.trim(), true);
+            }
         });
         
         document.addEventListener('visibilitychange', () => {
             if (!document.hidden) {
                 console.log('[preview-init] Tab visible, reinitializing preview');
                 initPreviewSystem();
+                
+                // Also trigger preview if we already have both quote and asset
+                if (currentQuote && selectedAsset) {
+                    console.log('[preview-init] Both quote and asset available, triggering preview');
+                    updateLivePreview();
+                    updateCaptionOverlay(currentQuote.text.trim(), true);
+                }
             }
         });
     </script>
