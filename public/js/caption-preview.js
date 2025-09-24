@@ -141,9 +141,14 @@ export function createCaptionOverlay(captionData, container, scaling = {}) {
   
   // Apply anchor-aware math using server meta
   const xPct = captionData.meta?.xPct || 50;
-  const yPct = captionData.meta?.yPct || 0.5;
+  // Compute yPct if missing from server meta (critical fix for positioning)
+  const yPct = captionData.meta?.yPct ?? (typeof captionData.meta?.yPx === 'number' && previewH ? captionData.meta.yPx / previewH : 0.5);
+  const totalTextH = captionData.meta?.totalTextH ?? (typeof captionData.meta?.hPx === 'number' ? captionData.meta.hPx : 0);
   const align = captionData.meta?.align || 'center';
   const vAlign = captionData.meta?.vAlign || 'center';
+  
+  // Scale totalTextH with preview scale for proper height calculation
+  const scaledTotalTextH = totalTextH * scale;
   
   // Calculate anchor points
   const anchorX = (xPct / 100) * previewW;
@@ -159,9 +164,14 @@ export function createCaptionOverlay(captionData, container, scaling = {}) {
   if (vAlign === 'center') top -= dispH / 2;
   else if (vAlign === 'bottom') top -= dispH;
   
-  // Final clamp to keep overlay within frame bounds
+  // Clamp positioning to prevent clipping above/below preview bounds
   left = Math.max(0, Math.min(left, previewW - dispW));
   top = Math.max(0, Math.min(top, previewH - dispH));
+  
+  // Additional clamp to ensure text doesn't get cut off at edges
+  const minTop = Math.max(0, top);
+  const maxTop = Math.min(previewH - scaledTotalTextH, top);
+  top = Math.max(minTop, maxTop);
   
   // Add final visual clamp if overlay is larger than frame
   let finalScale = 1;
@@ -189,8 +199,11 @@ export function createCaptionOverlay(captionData, container, scaling = {}) {
     W: previewW, H: previewH,
     iW: captionData.meta?.wPx || 1080, iH: captionData.meta?.hPx || 1920,
     dispW: finalDispW, dispH: finalDispH,
+    scaledTotalTextH,
     xPct, yPct, align, vAlign,
-    left, top
+    left, top,
+    computedYPct: yPct,
+    totalTextH: totalTextH
   });
   
   // Apply calculated position and size

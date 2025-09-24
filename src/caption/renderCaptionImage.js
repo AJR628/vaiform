@@ -307,6 +307,12 @@ export async function renderCaptionImage(jobId, style) {
 
   console.log(`[caption] lines=${lines.length} fontPx=${clampedFontPx} bbox={x:${minX},y:${minY},w:${trimmedWidth},h:${trimmedHeight}}`);
 
+  // Compute yPct for proper vertical positioning
+  const yPct = minY / canvasH;
+  
+  // Track actual font family used (for fallback detection)
+  const fontFamilyUsed = fontRegistered ? 'DejaVu-Bold' : 'Arial';
+  
   return {
     pngPath,
     publicUrl: null, // Will be set by the caller if uploaded
@@ -319,6 +325,9 @@ export async function renderCaptionImage(jobId, style) {
       baselines,
       fontPx: clampedFontPx,
       lineSpacingPx: lineSpacingPx,
+      yPct: yPct, // Add computed yPct for proper positioning
+      totalTextH: trimmedHeight, // Total text height for scaling
+      fontFamilyUsed: fontFamilyUsed, // Track actual font used
     },
   };
 }

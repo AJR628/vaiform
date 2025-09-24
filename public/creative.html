@@ -1028,6 +1028,11 @@
                     
                     console.log('[caption-overlay] PNG overlay created successfully');
                     
+                    // Log font fallback info if available
+                    if (result.meta?.fontFamilyUsed) {
+                        console.log('[caption-overlay] Font used:', result.meta.fontFamilyUsed);
+                    }
+                    
                 } catch (error) {
                     console.error('[caption-overlay] Failed to generate PNG:', error);
                     console.error('[caption-overlay] Error details:', error.message);
@@ -2763,7 +2768,9 @@
             try {
                 const seedInput = document.getElementById('quote-text');
                 const seed = (seedInput?.value || '').trim();
-                currentQuote = { text: seed };
+                // Use default caption if no seed text provided
+                const defaultCaption = seed || 'Success is the result of persistent effort and unwavering belief in yourself.';
+                currentQuote = { text: defaultCaption };
                 displayQuote(currentQuote);
                 // Switch to edit mode by default so users can type immediately
                 const disp = document.getElementById('quote-text-display');
@@ -2774,10 +2781,10 @@
                 document.getElementById('cancel-quote-btn').classList.remove('hidden');
                 document.getElementById('edit-quote-btn').classList.add('hidden');
                 // Do not reset regen counter on init
-                // Ensure overlay reflects initial caption settings
-                try { updateCaptionOverlay(seed, !!seed); } catch {}
+                // Ensure overlay reflects initial caption settings - always render on first load
+                try { updateCaptionOverlay(defaultCaption, true); } catch {}
                 // Seed char counter
-                const n = Math.min(200, seed.length);
+                const n = Math.min(200, defaultCaption.length);
                 const cc = document.getElementById('quote-char-count');
                 if (cc) cc.textContent = `${n}/200`;
             } catch {}

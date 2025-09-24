@@ -381,6 +381,13 @@ export async function renderVideoQuoteOverlay({
       captionPngPath = null;
     }
   }
+  
+  // Guard: Verify caption PNG path exists before using in ffmpeg
+  if (usingCaptionPng && (!captionPngPath || !fs.existsSync(captionPngPath))) {
+    console.warn("[render] Caption PNG path invalid or missing, falling back to drawtext");
+    usingCaptionPng = false;
+    captionPngPath = null;
+  }
 
   const fit = fitQuoteToBox({ text, boxWidthPx: W - sm*2, baseFontSize: fontsize || 72 });
   const effLineSpacing = Math.max(2, Number.isFinite(lineSpacing) ? lineSpacing : fit.lineSpacing);
@@ -766,7 +773,7 @@ export async function renderVideoQuoteOverlay({
   const args = [
     '-y',
     '-i', videoPath,
-    ...(usingCaptionPng && captionPngPath ? ['-i', captionPngPath] : []),
+    ...(usingCaptionPng && captionPngPath && fs.existsSync(captionPngPath) ? ['-i', captionPngPath] : []),
     ...(CAPTION_OVERLAY && captionImage && !usingCaptionPng ? ['-i', captionImage.pngPath || captionImage.localPath] : []),
     ...(ttsPath ? ['-i', ttsPath] : []),
     '-ss', '0.5',
