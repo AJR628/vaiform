@@ -41,13 +41,17 @@ export async function generateCaptionPreview(opts) {
     return;
   }
 
+  // TASK 1: Clamp fontPx and lineSpacingPx to prevent HTTP 400 errors
+  const fontPx = Math.max(24, Math.min(200, Number(opts.sizePx || 48)));
+  const lineSpacingPx = Math.max(24, Math.min(200, Math.round(fontPx * Number(opts.lineHeight || 1.1))));
+  
   const payload = {
     style: {
       text: opts.text,
       fontFamily: opts.fontFamily || "DejaVuSans",
       fontWeight: opts.weight === "bold" ? 700 : 400,
-      fontPx: Number(opts.sizePx || 48),
-      lineSpacingPx: Math.min(100, Math.round(Number(opts.sizePx || 48) * Number(opts.lineHeight || 1.1))),
+      fontPx: fontPx,
+      lineSpacingPx: lineSpacingPx,
       align: "center",
       textAlpha: Number(opts.opacity ?? 0.85),
       fill: opts.color || "rgba(255,255,255,1)",
@@ -125,21 +129,36 @@ export function getLastCaptionPNG(){ return lastCaptionPNG; }
 export function createCaptionOverlay(captionData, container, scaling = {}) {
   const { previewW = 1080, previewH = 1920, placement = 'center' } = scaling;
   
-  // Calculate scale factors for CSS size scaling (not canvas backing size)
-  const scaleX = previewW / 1080; // CSS size to PNG native size
-  const scaleY = previewH / 1920;
+  // TASK 4: Ensure container has proper dimensions
+  if (!container) {
+    console.warn('[caption-overlay] No container provided');
+    return null;
+  }
+  
+  // Get actual container dimensions if not provided
+  const actualW = container.clientWidth || previewW;
+  const actualH = container.clientHeight || previewH;
+  
+  // TASK 4: Use actual container dimensions for proper scaling
+  const finalW = actualW || previewW;
+  const finalH = actualH || previewH;
+  
+  // TASK 2: Use one scale everywhere - compute single scale factor from server px to CSS px
+  const serverFrameW = 1080;  // Server frame width in pixels
+  const serverFrameH = Math.round(serverFrameW * (finalH / finalW)); // Server frame height maintaining aspect
+  
+  const sx = finalW / serverFrameW;
+  const sy = finalH / serverFrameH;
+  const s = Math.min(sx, sy); // Keep aspect safe; we're full-frame so sx≈sy
   
   // Create overlay image element
   const overlay = document.createElement('img');
   overlay.src = captionData.dataUrl || captionData.imageUrl;
   overlay.className = 'caption-overlay';
   
-  // Scale overlay size with scale = previewW / 1080
-  // Use consistent scaling to match the background image
-  const scale = previewW / 1080;
-  const scaleFactor = scale; // Use exact scale to match background
-  const dispW = (captionData.meta?.wPx || 1080) * scaleFactor;
-  const dispH = (captionData.meta?.hPx || 1920) * scaleFactor;
+  // Convert all overlay geometry to CSS with single scale factor
+  const dispW = (captionData.meta?.wPx || 1080) * s;
+  const dispH = (captionData.meta?.hPx || 1920) * s;
   
   // Use server-provided dimensions for accurate positioning
   const xPct = captionData.meta?.xPct || 50;
@@ -149,16 +168,17 @@ export function createCaptionOverlay(captionData, container, scaling = {}) {
   const vAlign = captionData.meta?.vAlign || 'center';
   const internalPadding = captionData.meta?.internalPadding || 0;
   
-  // Scale totalTextH with preview scale for proper height calculation
-  const scaledTotalTextH = totalTextH * scaleFactor;
+  // TASK 2: Scale totalTextH with single scale factor
+  const scaledTotalTextH = totalTextH * s;
   
   // Define safe margins to prevent clipping (5% top, 8% bottom)
   const safeTopMargin = previewH * 0.05;
   const safeBottomMargin = previewH * 0.08;
   
+  // TASK 3: Correct vertical placement math with clamping
   // Calculate anchor points using server-computed positioning
-  const anchorX = (xPct / 100) * previewW;
-  const anchorY = yPct * previewH;
+  const anchorX = (xPct / 100) * finalW;
+  const anchorY = yPct * finalH;
   
   // Calculate position based on alignment - use text-aware positioning
   let left = anchorX;
@@ -168,29 +188,33 @@ export function createCaptionOverlay(captionData, container, scaling = {}) {
   if (align === 'center') left -= dispW / 2;
   else if (align === 'right') left -= dispW;
   
-  // Vertical alignment - use text height for proper centering, accounting for internal padding
-  const scaledPadding = internalPadding * scaleFactor;
+  // TASK 3: Vertical alignment with proper clamping
+  const scaledPadding = internalPadding * s;
+  const pad = 48 * s; // Server px padding scaled to CSS
+  
   if (vAlign === 'center') {
+    // Center the text block at anchorY by subtracting half the height
     top = anchorY - (scaledTotalTextH / 2) - scaledPadding;
   } else if (vAlign === 'bottom') {
+    // Position text block above anchorY
     top = anchorY - scaledTotalTextH - scaledPadding;
   } else {
-    // top alignment
+    // top alignment - position text block below anchorY
     top = anchorY - scaledPadding;
   }
   
-  // Clamp positioning using safe margins and text height
-  left = Math.max(0, Math.min(left, previewW - dispW));
-  
-  // Use safe margins and text height for proper clamping
-  const minTop = safeTopMargin;
-  const maxTop = previewH - safeBottomMargin - scaledTotalTextH;
+  // TASK 3: Clamp with padding to prevent off-screen positioning
+  const minTop = pad;
+  const maxTop = finalH - pad - scaledTotalTextH;
   top = Math.max(minTop, Math.min(maxTop, top));
   
-  // Add final visual clamp if overlay is larger than frame
+  // Clamp horizontal positioning
+  left = Math.max(0, Math.min(left, finalW - dispW));
+  
+  // TASK 4: Add final visual clamp if overlay is larger than frame
   let finalScale = 1;
-  if (dispW > previewW || dispH > previewH) {
-    finalScale = Math.min(previewW / dispW, previewH / dispH);
+  if (dispW > finalW || dispH > finalH) {
+    finalScale = Math.min(finalW / dispW, finalH / dispH);
   }
   
   const finalDispW = dispW * finalScale;
@@ -204,23 +228,23 @@ export function createCaptionOverlay(captionData, container, scaling = {}) {
   if (align === 'center') left -= finalDispW / 2;
   else if (align === 'right') left -= finalDispW;
   
-  // Vertical alignment using scaled text height and padding
+  // TASK 2: Vertical alignment using single scale factor
   const finalScaledTextH = scaledTotalTextH * finalScale;
   const finalScaledPadding = scaledPadding * finalScale;
   if (vAlign === 'center') top -= (finalScaledTextH / 2) + finalScaledPadding;
   else if (vAlign === 'bottom') top -= finalScaledTextH + finalScaledPadding;
   
-  // Final clamp with safe margins
-  left = Math.max(0, Math.min(left, previewW - finalDispW));
-  top = Math.max(safeTopMargin, Math.min(top, previewH - safeBottomMargin - finalScaledTextH));
+  // TASK 4: Final clamp with safe margins using actual container dimensions
+  left = Math.max(0, Math.min(left, finalW - finalDispW));
+  top = Math.max(safeTopMargin, Math.min(top, finalH - safeBottomMargin - finalScaledTextH));
   
-  // Debug logging to verify calculations
+  // TASK 4: Debug logging with actual container dimensions
   console.log('[preview-overlay] positioning:', {
-    W: previewW, H: previewH,
+    W: finalW, H: finalH, // Actual container dimensions
     iW: captionData.meta?.wPx || 1080, iH: captionData.meta?.hPx || 1920,
     dispW: finalDispW, dispH: finalDispH,
     scaledTotalTextH, finalScaledTextH,
-    scaleFactor, finalScale,
+    s, finalScale, // Single scale factor
     safeTopMargin, safeBottomMargin,
     xPct, yPct, align, vAlign,
     left, top,

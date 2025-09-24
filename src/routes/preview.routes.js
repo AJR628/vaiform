@@ -12,7 +12,7 @@ const CaptionStyleSchema = z.object({
   fontFamily: z.string().default('DejaVuSans'),
   fontWeight: z.union([z.literal(400), z.literal(700)]).default(700),
   fontPx: z.number().int().min(16).max(200).default(44),
-  lineSpacingPx: z.number().int().min(0).max(100).default(52),
+  lineSpacingPx: z.number().int().min(0).max(200).default(52),
   align: z.enum(['left', 'center', 'right']).default('center'),
   textAlpha: z.number().min(0).max(1).default(1.0),
   fill: z.string().default('rgba(255,255,255,1)'),

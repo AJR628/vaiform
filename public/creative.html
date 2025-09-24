@@ -457,7 +457,8 @@
                 <div class="text-sm text-gray-400 mb-2">Live Preview:</div>
                 <div class="relative mx-auto bg-black rounded-lg overflow-hidden aspect-[9/16] max-w-[400px]">
                     <canvas id="live-preview-canvas" class="w-full h-auto"></canvas>
-                    <div class="absolute inset-0 pointer-events-none" id="caption-overlay"></div>
+                    <!-- TASK 4: Fix overlay container to match canvas CSS size -->
+                    <div class="absolute inset-0 pointer-events-none" id="caption-overlay" style="width: 100%; height: 100%;"></div>
                 </div>
             </div>
             
@@ -518,7 +519,7 @@
         const UI_MID_PX = 72;     // slider mid visual (more reasonable middle)
         const UI_MAX_PX = 120;    // slider max visual (capped to prevent overflow)
         const API_MIN_PX = 32;    // backend clamp lower bound
-        const API_MAX_PX = 120;   // backend clamp upper bound (capped to prevent overflow)
+        const API_MAX_PX = 200;   // backend clamp upper bound (increased to match server limit)
 
         // --- Caption size mapping (define BEFORE any usage)
         function mapSliderToPx(sliderVal) {
@@ -905,6 +906,14 @@
             const overlay = document.getElementById('caption-overlay');
             if (!overlay) return;
             
+            // TASK 5: Check if canvas has real dimensions before proceeding
+            const canvas = document.getElementById('live-preview-canvas');
+            if (!canvas || canvas.clientWidth === 0 || canvas.clientHeight === 0) {
+                console.log('[caption-overlay] Canvas not ready, scheduling retry...');
+                setTimeout(() => updateCaptionOverlay(text, show), 100);
+                return;
+            }
+            
             // Clear existing overlay
             overlay.innerHTML = '';
             
@@ -1037,23 +1046,10 @@
                     console.error('[caption-overlay] Failed to generate PNG:', error);
                     console.error('[caption-overlay] Error details:', error.message);
                     
-                    // Enhanced fallback to simple text display on error
-                    const fallbackStyle = `
-                        position: absolute; 
-                        bottom: 20px; 
-                        left: 20px; 
-                        right: 20px; 
-                        text-align: center; 
-                        color: white; 
-                        font-size: ${sizePx}px; 
-                        font-weight: bold;
-                        text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
-                        background: rgba(0,0,0,0.3);
-                        padding: 8px;
-                        border-radius: 4px;
-                    `;
-                    overlay.innerHTML = `<div style="${fallbackStyle}">${text}</div>`;
-                    console.log('[caption-overlay] Using fallback text display');
+                    // TASK 7: Disable HTML fallback to prevent mega-sized text issues
+                    // The fallback was causing the "yo" situation mentioned in the task
+                    console.log('[caption-overlay] PNG generation failed, not using HTML fallback');
+                    overlay.innerHTML = ''; // Clear overlay instead of showing fallback text
                 }
             }, 300); // 300ms debounce
         }
@@ -1564,6 +1560,34 @@
             try { updateCaptionOverlay((currentQuote?.text||'').trim(), true); } catch {}
         }
 
+        // TASK 5: Initialize preview system with proper canvas readiness check
+        function initPreviewSystem() {
+            const canvas = document.getElementById('live-preview-canvas');
+            const container = document.getElementById('live-preview-container');
+            
+            if (!canvas || !container) {
+                console.warn('[preview-init] Canvas or container not found');
+                return;
+            }
+            
+            // Wait for canvas to have real dimensions
+            const checkCanvasReady = () => {
+                if (canvas.clientWidth > 0 && canvas.clientHeight > 0) {
+                    console.log('[preview-init] Canvas ready, initializing preview system');
+                    // Trigger initial preview if we have content
+                    if (currentQuote?.text && selectedAsset) {
+                        updateLivePreview();
+                        updateCaptionOverlay(currentQuote.text.trim(), true);
+                    }
+                } else {
+                    console.log('[preview-init] Canvas not ready, retrying...');
+                    setTimeout(checkCanvasReady, 100);
+                }
+            };
+            
+            checkCanvasReady();
+        }
+
         // Initialize caption size UI (safe DOM ready wrapper)
         function initCaptionSizeUI(){
           const el = document.getElementById('caption-size');
@@ -1685,12 +1709,19 @@
             }
         }
 
-        // Live preview functionality
+        // TASK 5: Live preview functionality with race condition protection
         function updateLivePreview() {
             if (!currentQuote || !selectedAsset) return;
             
             const container = document.getElementById('live-preview-container');
             const canvas = document.getElementById('live-preview-canvas');
+            
+            // TASK 5: Check if canvas has real dimensions before proceeding
+            if (!canvas || canvas.clientWidth === 0 || canvas.clientHeight === 0) {
+                console.log('[preview-scaling] Canvas not ready, scheduling retry...');
+                setTimeout(updateLivePreview, 100);
+                return;
+            }
             
             container.classList.remove('hidden');
             
@@ -2781,8 +2812,13 @@
                 document.getElementById('cancel-quote-btn').classList.remove('hidden');
                 document.getElementById('edit-quote-btn').classList.add('hidden');
                 // Do not reset regen counter on init
-                // Ensure overlay reflects initial caption settings - always render on first load
-                try { updateCaptionOverlay(defaultCaption, true); } catch {}
+                // TASK 5: Initialize preview system after content is ready
+                try { 
+                    initPreviewSystem();
+                } catch (e) {
+                    console.warn('[preview-init] failed:', e);
+                }
+                
                 // Seed char counter
                 const n = Math.min(200, defaultCaption.length);
                 const cc = document.getElementById('quote-char-count');

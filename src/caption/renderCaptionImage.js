@@ -1,42 +1,27 @@
-import { createCanvas, GlobalFonts } from '@napi-rs/canvas';
+import { createCanvas, registerFont } from 'canvas';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 
-// Register the font using GlobalFonts API - Replit compatible
+// TASK 6: Register custom fonts using canvas@2 registerFont API
 const fontPath = path.resolve('assets/fonts/DejaVuSans-Bold.ttf');
 let fontRegistered = false;
 
 // Check available fonts first
 try {
-  const availableFonts = GlobalFonts.families;
-  console.log('[caption] Available system fonts:', availableFonts.slice(0, 10)); // Show first 10
+  console.log('[caption] Using canvas@2 for font registration');
 } catch (err) {
-  console.log('[caption] Could not list system fonts');
+  console.log('[caption] Could not initialize canvas');
 }
 
 if (fs.existsSync(fontPath)) {
   try {
-    // Method 1: Simple path registration (most compatible)
-    try {
-      GlobalFonts.register(fontPath, 'DejaVu-Bold');
-      fontRegistered = true;
-      console.log('[caption] Font registered successfully: DejaVu-Bold (path method)');
-    } catch (pathErr) {
-      // Method 2: Buffer registration
-      try {
-        const fontBuffer = fs.readFileSync(fontPath);
-        GlobalFonts.register(fontBuffer, 'DejaVu-Bold');
-        fontRegistered = true;
-        console.log('[caption] Font registered successfully: DejaVu-Bold (buffer method)');
-      } catch (bufferErr) {
-        console.warn('[caption] Both font registration methods failed:');
-        console.warn('[caption] Path error:', pathErr.message);
-        console.warn('[caption] Buffer error:', bufferErr.message);
-      }
-    }
+    // TASK 6: Use canvas@2 registerFont API for better font support
+    registerFont(fontPath, { family: 'DejaVu-Bold' });
+    fontRegistered = true;
+    console.log('[caption] Font registered successfully: DejaVu-Bold using canvas@2');
   } catch (err) {
-    console.warn('[caption] Font registration setup failed:', err.message);
+    console.warn('[caption] Font registration failed:', err.message);
   }
 } else {
   console.warn('[caption] Font file not found:', fontPath);
