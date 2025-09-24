@@ -8,8 +8,8 @@ router.post("/caption/preview", express.json(), async (req, res) => {
   try {
     const {
       text,
-      width = 1080,
-      height = 1920,
+      width, // Don't use defaults - force consistent canvas size
+      height, // Don't use defaults - force consistent canvas size
       fontFamily = "DejaVu Sans Local",
       weightCss = "bold",
       fontPx = 48,
@@ -26,6 +26,10 @@ router.post("/caption/preview", express.json(), async (req, res) => {
       borderRadius = 16
     } = req.body || {};
 
+    // Force consistent canvas dimensions for all caption previews
+    const W = 1080; // Standard canvas width
+    const H = 1920; // Standard canvas height
+
     // Map font families to registered fonts
     const fontMap = {
       'DejaVuSans': 'DejaVu-Bold',
@@ -41,16 +45,14 @@ router.post("/caption/preview", express.json(), async (req, res) => {
     }
 
     // Server-side font clamping to prevent overflow (match frontend limits)
-    const ABS_MAX_FONT = 180; // Match frontend API_MAX_PX
+    const ABS_MAX_FONT = 300; // Match frontend API_MAX_PX for larger text
     const ABS_MIN_FONT = 48;  // Match frontend API_MIN_PX
     const clampedFontPx = Math.max(ABS_MIN_FONT, Math.min(Number(fontPx) || 48, ABS_MAX_FONT));
 
     // Validate required numeric inputs
-    if (!Number.isFinite(width) || !Number.isFinite(height) || !Number.isFinite(clampedFontPx)) {
-      return res.status(400).json({ success:false, error:"INVALID_INPUT", detail:"width, height, and fontPx must be valid numbers" });
+    if (!Number.isFinite(clampedFontPx)) {
+      return res.status(400).json({ success:false, error:"INVALID_INPUT", detail:"fontPx must be a valid number" });
     }
-
-    const W = Math.round(width), H = Math.round(height);
     const canvas = createCanvas(W, H);
     const ctx = canvas.getContext("2d");
     ctx.clearRect(0, 0, W, H);

@@ -515,10 +515,10 @@
 
         // --- Caption sizing constants (HOISTED) ---
         const UI_MIN_PX = 48;     // slider min visual (increased for better range)
-        const UI_MID_PX = 96;     // slider mid visual (increased)
-        const UI_MAX_PX = 180;    // slider max visual (increased to match API_MAX_PX)
+        const UI_MID_PX = 150;    // slider mid visual (increased for better distribution)
+        const UI_MAX_PX = 300;    // slider max visual (increased for larger text)
         const API_MIN_PX = 48;    // backend clamp lower bound (increased)
-        const API_MAX_PX = 180;   // backend clamp upper bound (increased)
+        const API_MAX_PX = 300;   // backend clamp upper bound (increased for larger text)
 
         // --- Caption size mapping (define BEFORE any usage)
         function mapSliderToPx(sliderVal) {

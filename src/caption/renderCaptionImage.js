@@ -156,25 +156,26 @@ export async function renderCaptionImage(jobId, style) {
     throw new Error('No valid text lines after word wrapping');
   }
 
-  // Server-side font clamping
+  // Server-side font clamping - more lenient to preserve requested font sizes
   let clampedFontPx = fontPx;
-  const SAFE_W = Math.floor(canvasW * 0.92);   // 4% pad each side
-  const SAFE_H = Math.floor(canvasH * 0.84);   // leave 8% top/btm combined for padding
+  const SAFE_W = Math.floor(canvasW * 0.95);   // 2.5% pad each side (more lenient)
+  const SAFE_H = Math.floor(canvasH * 0.90);   // leave 5% top/btm combined for padding (more lenient)
   
-  // Decrease font until all lines fit inside the safe box & total height ok
+  // Only decrease font if text would be completely unreadable
+  // Allow larger fonts to use more of the available space
   while (true) {
     const testHeight = lines.length * clampedFontPx + (lines.length - 1) * lineSpacingPx;
     if (testHeight <= SAFE_H) break;
-    clampedFontPx -= 2;
-    if (clampedFontPx <= 20) break;
+    clampedFontPx -= 4; // Decrease by 4px instead of 2px for efficiency
+    if (clampedFontPx <= 32) break; // Minimum 32px instead of 20px
   }
   
   // Calculate total text height with clamped font
   let totalTextHeight = lines.length * clampedFontPx + (lines.length - 1) * lineSpacingPx;
   
-  // Max-height clamp (90% of 1920) - if text block exceeds, scale font down and re-wrap
-  const maxHeightPx = Math.round(canvasH * 0.9); // 90% of 1920 = 1728px
-  let finalFontPx = fontPx;
+  // Max-height clamp (95% of 1920) - if text block exceeds, scale font down and re-wrap
+  const maxHeightPx = Math.round(canvasH * 0.95); // 95% of 1920 = 1824px (more lenient)
+  let finalFontPx = clampedFontPx; // Use the already-clamped font size
   let finalLines = lines;
   let finalLineSpacing = lineSpacingPx;
   
@@ -183,7 +184,7 @@ export async function renderCaptionImage(jobId, style) {
     
     // Scale font down proportionally
     const scaleFactor = maxHeightPx / totalTextHeight;
-    finalFontPx = Math.max(16, Math.round(fontPx * scaleFactor)); // Minimum 16px
+    finalFontPx = Math.max(32, Math.round(clampedFontPx * scaleFactor)); // Minimum 32px
     finalLineSpacing = Math.round(lineSpacingPx * scaleFactor);
     
     // Re-wrap with smaller font
@@ -214,26 +215,33 @@ export async function renderCaptionImage(jobId, style) {
     console.log(`[caption] Scaled to fontPx=${finalFontPx}, lines=${finalLines.length}, height=${totalTextHeight}px`);
   }
   
-  // Position text based on placement setting
+  // Position text based on placement setting using full canvas dimensions
   let startY;
   const placement = style.placement || 'center';
   
+  // Define safe margins for the full canvas
+  const safeTopMargin = Math.max(50, canvasH * 0.05); // 5% from top, min 50px
+  const safeBottomMargin = Math.max(50, canvasH * 0.08); // 8% from bottom, min 50px
+  
   switch (placement) {
     case 'top':
-      // Position text in upper third with padding from top
-      startY = boxYPx + Math.max(50, boxHPx * 0.1); // 10% from top, min 50px padding
+      // Position text in upper safe area
+      startY = safeTopMargin;
       break;
     case 'bottom':
-      // Position text in lower third with padding from bottom  
-      startY = boxYPx + boxHPx - totalTextHeight - Math.max(50, boxHPx * 0.1); // 10% from bottom, min 50px padding
+      // Position text in lower safe area
+      startY = canvasH - safeBottomMargin - totalTextHeight;
       break;
     case 'middle':
     case 'center':
     default:
-      // Center vertically within the box
-      startY = boxYPx + (boxHPx - totalTextHeight) / 2;
+      // Center vertically within the safe area
+      startY = (canvasH - totalTextHeight) / 2;
       break;
   }
+  
+  // Ensure startY is within safe bounds
+  startY = Math.max(safeTopMargin, Math.min(startY, canvasH - safeBottomMargin - totalTextHeight));
   
   // Track actual bounds for trimming
   let minX = canvasW, minY = canvasH, maxX = 0, maxY = 0;
@@ -241,7 +249,7 @@ export async function renderCaptionImage(jobId, style) {
 
   // Render each line
   lines.forEach((line, index) => {
-    const y = Math.round(startY + index * (clampedFontPx + lineSpacingPx));
+    const y = Math.round(startY + index * (finalFontPx + lineSpacingPx));
     baselines.push(y);
     
     // Calculate X position based on alignment
@@ -266,7 +274,7 @@ export async function renderCaptionImage(jobId, style) {
     minX = Math.min(minX, x - strokePx - Math.abs(shadowX));
     minY = Math.min(minY, y - strokePx - Math.abs(shadowY));
     maxX = Math.max(maxX, x + lineMetrics.width + strokePx + Math.abs(shadowX));
-    maxY = Math.max(maxY, y + clampedFontPx + strokePx + Math.abs(shadowY));
+    maxY = Math.max(maxY, y + finalFontPx + strokePx + Math.abs(shadowY));
 
     // Render shadow (if enabled)
     if (shadowBlur > 0 || shadowX !== 0 || shadowY !== 0) {
@@ -331,7 +339,7 @@ export async function renderCaptionImage(jobId, style) {
   const buffer = canvas.toBuffer('image/png');
   await fs.promises.writeFile(pngPath, buffer);
 
-  console.log(`[caption] lines=${lines.length} fontPx=${clampedFontPx} bbox={x:${minX},y:${minY},w:${trimmedWidth},h:${trimmedHeight}}`);
+  console.log(`[caption] lines=${lines.length} fontPx=${finalFontPx} bbox={x:${minX},y:${minY},w:${trimmedWidth},h:${trimmedHeight}}`);
 
   // Compute yPct for proper vertical positioning based on placement
   // The minY represents where the text actually starts, but we need to compute
@@ -352,7 +360,7 @@ export async function renderCaptionImage(jobId, style) {
     meta: {
       splitLines: lines, // Use lines as expected by the system
       baselines,
-      fontPx: clampedFontPx,
+      fontPx: finalFontPx,
       lineSpacingPx: lineSpacingPx,
       yPct: yPct, // Add computed yPct for proper positioning
       totalTextH: trimmedHeight, // Total text height for scaling
