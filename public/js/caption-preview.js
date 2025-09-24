@@ -189,7 +189,7 @@ export function createCaptionOverlay(captionData, container, scaling = {}) {
   
   // Use meta.yPct for precise vertical positioning (server-computed)
   const targetTop = (yPct * finalH) - (scaledTotalTextH / 2);
-  const top = Math.max(safeTopMargin, Math.min(targetTop, finalH - safeBottomMargin - scaledTotalTextH));
+  let top = Math.max(safeTopMargin, Math.min(targetTop, finalH - safeBottomMargin - scaledTotalTextH)); // top is clamped later; needs let
   
   console.log('[preview-overlay] positioning:', {
     W: finalW, H: finalH, iw: captionData.meta?.wPx, iH: captionData.meta?.hPx,
