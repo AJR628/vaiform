@@ -360,13 +360,13 @@
                 
                 <!-- Size -->
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Size: <span id="size-value">72px</span></label>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Size: <span id="size-value">80px</span></label>
                     <input
                         type="range"
                         id="caption-size"
                         min="0"
                         max="100"
-                        value="50"
+                        value="60"
                         class="w-full"
                     />
                 </div>
@@ -390,7 +390,7 @@
                     <select id="caption-placement" class="w-full bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-3 py-2 text-gray-900 dark:text-white">
                         <option value="top">Top</option>
                         <option value="middle">Middle</option>
-                        <option value="bottom">Bottom</option>
+                        <option value="bottom" selected>Bottom</option>
                     </select>
                 </div>
                 
@@ -514,11 +514,11 @@
         });
 
         // --- Caption sizing constants (HOISTED) ---
-        const UI_MIN_PX = 48;     // slider min visual (increased for better range)
-        const UI_MID_PX = 150;    // slider mid visual (increased for better distribution)
-        const UI_MAX_PX = 300;    // slider max visual (increased for larger text)
-        const API_MIN_PX = 48;    // backend clamp lower bound (increased)
-        const API_MAX_PX = 300;   // backend clamp upper bound (increased for larger text)
+        const UI_MIN_PX = 32;     // slider min visual (smaller for better range)
+        const UI_MID_PX = 72;     // slider mid visual (more reasonable middle)
+        const UI_MAX_PX = 120;    // slider max visual (capped to prevent overflow)
+        const API_MIN_PX = 32;    // backend clamp lower bound
+        const API_MAX_PX = 120;   // backend clamp upper bound (capped to prevent overflow)
 
         // --- Caption size mapping (define BEFORE any usage)
         function mapSliderToPx(sliderVal) {
@@ -927,11 +927,11 @@
 
             // Map UI selection to server placement format
             function placementToServerFormat(placement) {
-                switch ((placement || 'top').toLowerCase()) {
-                    case 'middle': return { placement: 'middle', yPct: 0.50 };
-                    case 'bottom': return { placement: 'bottom', yPct: 0.90 }; // 90% from top
-                    case 'top':
-                    default:       return { placement: 'top',    yPct: 0.10 }; // 10% from top
+                switch ((placement || 'bottom').toLowerCase()) {
+                    case 'top':    return { placement: 'top',    yPct: 0.15 }; // 15% from top
+                    case 'middle': return { placement: 'center', yPct: 0.50 }; // center
+                    case 'bottom': 
+                    default:       return { placement: 'bottom', yPct: 0.85 }; // 85% from top
                 }
             }
             

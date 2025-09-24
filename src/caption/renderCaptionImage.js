@@ -156,25 +156,24 @@ export async function renderCaptionImage(jobId, style) {
     throw new Error('No valid text lines after word wrapping');
   }
 
-  // Server-side font clamping - more lenient to preserve requested font sizes
+  // Server-side font clamping - more conservative to prevent overflow
   let clampedFontPx = fontPx;
-  const SAFE_W = Math.floor(canvasW * 0.95);   // 2.5% pad each side (more lenient)
-  const SAFE_H = Math.floor(canvasH * 0.90);   // leave 5% top/btm combined for padding (more lenient)
+  const SAFE_W = Math.floor(canvasW * 0.90);   // 5% pad each side
+  const SAFE_H = Math.floor(canvasH * 0.80);   // leave 10% top/btm combined for padding
   
-  // Only decrease font if text would be completely unreadable
-  // Allow larger fonts to use more of the available space
+  // Clamp font size to prevent text from running off page
   while (true) {
     const testHeight = lines.length * clampedFontPx + (lines.length - 1) * lineSpacingPx;
     if (testHeight <= SAFE_H) break;
-    clampedFontPx -= 4; // Decrease by 4px instead of 2px for efficiency
-    if (clampedFontPx <= 32) break; // Minimum 32px instead of 20px
+    clampedFontPx -= 2; // Decrease by 2px for smoother transitions
+    if (clampedFontPx <= 24) break; // Minimum 24px
   }
   
   // Calculate total text height with clamped font
   let totalTextHeight = lines.length * clampedFontPx + (lines.length - 1) * lineSpacingPx;
   
-  // Max-height clamp (95% of 1920) - if text block exceeds, scale font down and re-wrap
-  const maxHeightPx = Math.round(canvasH * 0.95); // 95% of 1920 = 1824px (more lenient)
+  // Max-height clamp (80% of 1920) - if text block exceeds, scale font down and re-wrap
+  const maxHeightPx = Math.round(canvasH * 0.80); // 80% of 1920 = 1536px (more conservative)
   let finalFontPx = clampedFontPx; // Use the already-clamped font size
   let finalLines = lines;
   let finalLineSpacing = lineSpacingPx;
@@ -184,7 +183,7 @@ export async function renderCaptionImage(jobId, style) {
     
     // Scale font down proportionally
     const scaleFactor = maxHeightPx / totalTextHeight;
-    finalFontPx = Math.max(32, Math.round(clampedFontPx * scaleFactor)); // Minimum 32px
+    finalFontPx = Math.max(24, Math.round(clampedFontPx * scaleFactor)); // Minimum 24px
     finalLineSpacing = Math.round(lineSpacingPx * scaleFactor);
     
     // Re-wrap with smaller font

@@ -45,8 +45,8 @@ router.post("/caption/preview", express.json(), async (req, res) => {
     }
 
     // Server-side font clamping to prevent overflow (match frontend limits)
-    const ABS_MAX_FONT = 300; // Match frontend API_MAX_PX for larger text
-    const ABS_MIN_FONT = 48;  // Match frontend API_MIN_PX
+    const ABS_MAX_FONT = 120; // Match frontend API_MAX_PX for larger text
+    const ABS_MIN_FONT = 32;  // Match frontend API_MIN_PX
     const clampedFontPx = Math.max(ABS_MIN_FONT, Math.min(Number(fontPx) || 48, ABS_MAX_FONT));
 
     // Validate required numeric inputs
@@ -87,9 +87,9 @@ router.post("/caption/preview", express.json(), async (req, res) => {
       return res.status(400).json({ success:false, error:"INVALID_INPUT", detail:"failed to compute text dimensions" });
     }
 
-    // Calculate yPct based on placement and text block height (revert to original logic)
-    const padPctTop = 0.06;      // 6% top safe area (slightly higher)
-    const padPctBottom = 0.08;   // 8% bottom safe area
+    // Calculate yPct based on placement and text block height
+    const padPctTop = 0.10;      // 10% top safe area
+    const padPctBottom = 0.10;   // 10% bottom safe area
     const totalTextH = lines.length * lh;
     
     let calculatedYPct;
@@ -98,14 +98,15 @@ router.post("/caption/preview", express.json(), async (req, res) => {
         calculatedYPct = padPctTop; // top is easy: top pad
         break;
       case 'center':
-        calculatedYPct = 0.5 - (totalTextH / (2 * H)); // center the whole block
+      case 'middle':
+        calculatedYPct = 0.5; // center the whole block
         break;
       case 'bottom':
         calculatedYPct = 1 - padPctBottom - (totalTextH / H); // sit above bottom pad
         calculatedYPct = Math.max(padPctTop, Math.min(calculatedYPct, 1 - padPctBottom)); // clamp to safe band
         break;
       default:
-        calculatedYPct = padPctTop;
+        calculatedYPct = 0.5; // default to center
     }
     
     // Use provided yPct or calculated one
