@@ -973,6 +973,12 @@
             const placementData = placementToServerFormat(placement);
             const validatedYPct = validateYPct(placementData.yPct);
             
+            console.log('[caption-debug] Placement mapping:', {
+                uiPlacement: placement,
+                serverPlacement: placementData.placement,
+                yPct: validatedYPct
+            });
+            
             // Map UI font selection to server font names (only use registered fonts)
             const fontMapping = {
                 'system': { family: 'DejaVuSans', weightCss: 'normal' },
@@ -1001,6 +1007,12 @@
                 maxWidthPct: 0.90, // increased for bigger text
                 borderRadius: 16
             };
+            
+            console.log('[caption-debug] Final captionStyle:', {
+                placement: captionStyle.placement,
+                yPct: captionStyle.yPct,
+                text: captionStyle.text.substring(0, 50) + '...'
+            });
 
             // Debounce caption generation
             clearTimeout(captionDebounceTimer);

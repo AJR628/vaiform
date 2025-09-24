@@ -66,11 +66,13 @@ export async function generateCaptionPreview(opts) {
       boxWPx: 996,
       boxHPx: 400,
       canvasW: 1080,
-      canvasH: 1920
+      canvasH: 1920,
+      placement: opts.placement || 'center',
+      yPct: opts.yPct || 0.5
     }
   };
 
-  console.log("[caption-overlay] POST /preview/caption");
+  console.log("[caption-overlay] POST /preview/caption with placement:", opts.placement, "yPct:", opts.yPct);
   const data = await apiFetch("/preview/caption", {
     method: "POST",
     body: payload
