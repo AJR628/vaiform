@@ -218,7 +218,7 @@ export function createCaptionOverlay(captionData, container, scaling = {}) {
   
   // Recalculate position with final scale using text-aware positioning
   left = anchorX;
-  top = anchorY;
+  top = targetTop; // Use computed targetTop instead of undefined anchorY
   
   // Horizontal alignment
   if (align === 'center') left -= finalDispW / 2;

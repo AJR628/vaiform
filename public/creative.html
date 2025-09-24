@@ -1012,6 +1012,9 @@
                 try {
                     console.log('[caption-overlay] Generating PNG preview...');
                     
+                    // Ensure preview container is visible before generating overlay
+                    document.getElementById('live-preview-container')?.classList.remove('hidden');
+                    
                     // Import the caption preview function
                     const { generateCaptionPreview, getLastCaptionPNG, createCaptionOverlay } = await import('./js/caption-preview.js');
                     
