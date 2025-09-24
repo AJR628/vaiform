@@ -118,43 +118,72 @@ export function createCaptionOverlay(captionData, container, scaling = {}) {
   overlay.src = captionData.dataUrl || captionData.imageUrl;
   overlay.className = 'caption-overlay';
   
-  // Use server's yPct directly for precise positioning (not hardcoded placement logic)
-  let topCss;
-  if (captionData.meta?.yPct !== undefined && captionData.meta?.yPct !== null) {
-    // Use server's precise yPct positioning
-    topCss = captionData.meta.yPct * previewH;
-    console.debug('[preview-overlay] Using server yPct:', {
-      yPct: captionData.meta.yPct,
-      previewH: previewH,
-      topCss: topCss
-    });
-  } else {
-    // Fallback to placement-based positioning
-    const padPx = 24; // Small pixel padding
-    switch (placement.toLowerCase()) {
-      case 'top':
-        topCss = padPx;
-        break;
-      case 'bottom':
-        topCss = previewH - (captionData.meta?.hPx || 1920) * scaleY - padPx;
-        break;
-      case 'center':
-      default:
-        topCss = (previewH - (captionData.meta?.hPx || 1920) * scaleY) / 2;
-        break;
-    }
+  // Scale overlay size with scale = previewW / 1080
+  const scale = previewW / 1080;
+  const dispW = (captionData.meta?.wPx || 1080) * scale;
+  const dispH = (captionData.meta?.hPx || 1920) * scale;
+  
+  // Apply anchor-aware math using server meta
+  const xPct = captionData.meta?.xPct || 50;
+  const yPct = captionData.meta?.yPct || 0.5;
+  const align = captionData.meta?.align || 'center';
+  const vAlign = captionData.meta?.vAlign || 'center';
+  
+  // Calculate anchor points
+  const anchorX = (xPct / 100) * previewW;
+  const anchorY = yPct * previewH;
+  
+  // Calculate position based on alignment
+  let left = anchorX;
+  let top = anchorY;
+  
+  if (align === 'center') left -= dispW / 2;
+  else if (align === 'right') left -= dispW;
+  
+  if (vAlign === 'center') top -= dispH / 2;
+  else if (vAlign === 'bottom') top -= dispH;
+  
+  // Final clamp to keep overlay within frame bounds
+  left = Math.max(0, Math.min(left, previewW - dispW));
+  top = Math.max(0, Math.min(top, previewH - dispH));
+  
+  // Add final visual clamp if overlay is larger than frame
+  let finalScale = 1;
+  if (dispW > previewW || dispH > previewH) {
+    finalScale = Math.min(previewW / dispW, previewH / dispH);
   }
   
-  // Clamp within frame bounds
-  topCss = Math.max(0, Math.min(topCss, previewH - (captionData.meta?.hPx || 1920) * scaleY));
+  const finalDispW = dispW * finalScale;
+  const finalDispH = dispH * finalScale;
   
-  // Always size the overlay to the *preview frame* (same aspect 1080x1920)
+  // Recalculate position with final scale
+  left = anchorX;
+  top = anchorY;
+  if (align === 'center') left -= finalDispW / 2;
+  else if (align === 'right') left -= finalDispW;
+  if (vAlign === 'center') top -= finalDispH / 2;
+  else if (vAlign === 'bottom') top -= finalDispH;
+  
+  // Final clamp
+  left = Math.max(0, Math.min(left, previewW - finalDispW));
+  top = Math.max(0, Math.min(top, previewH - finalDispH));
+  
+  // Debug logging to verify calculations
+  console.log('[preview-overlay] positioning:', {
+    W: previewW, H: previewH,
+    iW: captionData.meta?.wPx || 1080, iH: captionData.meta?.hPx || 1920,
+    dispW: finalDispW, dispH: finalDispH,
+    xPct, yPct, align, vAlign,
+    left, top
+  });
+  
+  // Apply calculated position and size
   overlay.style.cssText = `
     position: absolute;
-    left: 0;
-    top: 0;
-    width: ${previewW}px;
-    height: ${previewH}px;
+    left: ${left}px;
+    top: ${top}px;
+    width: ${finalDispW}px;
+    height: ${finalDispH}px;
     pointer-events: none;
     z-index: 10;
     object-fit: contain;
