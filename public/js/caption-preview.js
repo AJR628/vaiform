@@ -194,15 +194,30 @@ export function createCaptionOverlay(captionData, container, scaling = {}) {
   const scaledPadding = internalPadding * s;
   const pad = 48 * s; // Server px padding scaled to CSS
   
-  if (vAlign === 'center') {
-    // Center the text block at anchorY by subtracting half the height
-    top = anchorY - (scaledTotalTextH / 2) - scaledPadding;
-  } else if (vAlign === 'bottom') {
-    // Position text block above anchorY
-    top = anchorY - scaledTotalTextH - scaledPadding;
-  } else {
-    // top alignment - position text block below anchorY
-    top = anchorY - scaledPadding;
+  // Use placement parameter instead of vAlign from server
+  console.log('[preview-overlay] positioning:', {
+    W: finalW, H: finalH, iw: captionData.meta?.wPx, iH: captionData.meta?.hPx,
+    dispw: dispW, dispH: dispH, align, vAlign, placement, yPct,
+    computedYPct: placement === 'top' ? safeTopMargin / finalH : 
+                  placement === 'bottom' ? (finalH - safeBottomMargin) / finalH : 0.5,
+    finalscale: s, finalscaledTextH: scaledTotalTextH, totalTextH,
+    left: left, top: top, safeTopMargin, safeBottomMargin
+  });
+  
+  switch (placement) {
+    case 'top':
+      // Position text block at top with safe margin
+      top = safeTopMargin;
+      break;
+    case 'bottom':
+      // Position text block at bottom with safe margin
+      top = finalH - safeBottomMargin - scaledTotalTextH;
+      break;
+    case 'center':
+    default:
+      // Center the text block
+      top = (finalH - scaledTotalTextH) / 2;
+      break;
   }
   
   // TASK 3: Clamp with padding to prevent off-screen positioning
