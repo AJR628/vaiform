@@ -18,13 +18,18 @@ router.post("/caption/preview", express.json(), async (req, res) => {
       shadow = true,
       showBox = false,              // default OFF to remove gray box (polished UX)
       boxColor = "rgba(0,0,0,0.35)",
-      placement = "center",         // 'top' | 'center' | 'bottom'
       yPct,                         // Optional precise Y position (0..1)
       lineHeight = 1.1,
       padding = 24,
       maxWidthPct = 0.8,
       borderRadius = 16
     } = req.body || {};
+
+    // Read placement from SSOT path first, then fallback, with validation
+    const rawPlacement = (req.body?.style?.placement ?? req.body?.placement ?? 'center');
+    const placement = ['top','center','bottom'].includes(String(rawPlacement).toLowerCase())
+      ? String(rawPlacement).toLowerCase()
+      : 'center';
 
     // Force consistent canvas dimensions for all caption previews
     const W = 1080; // Standard canvas width
