@@ -931,12 +931,12 @@
             const placementData = placementToVAlignAndYPct(placement);
             const validatedYPct = validateYPct(placementData.yPct);
             
-            // Map UI font selection to server font names
+            // Map UI font selection to server font names (only use registered fonts)
             const fontMapping = {
                 'system': 'DejaVu Sans Local',
                 'bold': 'DejaVu Serif Bold Local',
-                'cinematic': 'Cinzel Decorative',
-                'minimal': 'Inter'
+                'cinematic': 'DejaVu Sans Local', // Fallback to registered font
+                'minimal': 'DejaVu Sans Local' // Fallback to registered font
             };
             
             const selectedFont = document.getElementById('caption-font')?.value || 'system';

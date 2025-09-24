@@ -26,12 +26,12 @@ router.post("/caption/preview", express.json(), async (req, res) => {
       borderRadius = 16
     } = req.body || {};
 
-    // Map font families to available fonts
+    // Map font families to available fonts (only use registered fonts)
     const fontMap = {
       'DejaVu Sans Local': 'DejaVu Sans Local',
       'DejaVu Serif Bold Local': 'DejaVu Serif Bold Local', 
-      'Cinzel Decorative': 'Cinzel Decorative',
-      'Inter': 'Inter'
+      'Cinzel Decorative': 'DejaVu Sans Local', // Fallback to registered font
+      'Inter': 'DejaVu Sans Local' // Fallback to registered font
     };
     
     const actualFontFamily = fontMap[fontFamily] || 'DejaVu Sans Local';
@@ -43,6 +43,11 @@ router.post("/caption/preview", express.json(), async (req, res) => {
     // Server-side font clamping to prevent overflow
     const ABS_MAX_FONT = 200; // Keep UX reasonable
     const clampedFontPx = Math.min(Number(fontPx) || 48, ABS_MAX_FONT);
+
+    // Validate required numeric inputs
+    if (!Number.isFinite(width) || !Number.isFinite(height) || !Number.isFinite(clampedFontPx)) {
+      return res.status(400).json({ success:false, error:"INVALID_INPUT", detail:"width, height, and fontPx must be valid numbers" });
+    }
 
     const W = Math.round(width), H = Math.round(height);
     const canvas = createCanvas(W, H);
@@ -72,10 +77,15 @@ router.post("/caption/preview", express.json(), async (req, res) => {
     const lines = wrapLines(text);
     const lh = Math.round(clampedFontPx * Number(lineHeight));
     const textH = lines.length * lh;
+    
+    // Ensure we have valid text dimensions
+    if (!lines.length || !Number.isFinite(textH)) {
+      return res.status(400).json({ success:false, error:"INVALID_INPUT", detail:"failed to compute text dimensions" });
+    }
 
     // Calculate yPct based on placement and text block height
     const PAD_TOP_PCT = 0.08;   // 8% from top
-    const PAD_BOT_PCT = 0.05;   // 5% from bottom (closer than before)
+    const PAD_BOT_PCT = 0.02;   // 2% from bottom (much closer to edge)
     
     function computeTopY(H, blockH, placement) {
       if (placement === 'top')    return Math.round(PAD_TOP_PCT * H);
@@ -92,7 +102,7 @@ router.post("/caption/preview", express.json(), async (req, res) => {
     const finalYPct = yPct !== undefined && yPct !== null ? Number(yPct) : calculatedYPct;
     const y = Math.round(H * finalYPct);
     
-    console.log(`[caption] placement=${placement}, fontPx=${clampedFontPx}, totalTextH=${totalTextH}, yPct=${finalYPct}, y=${y}`);
+    console.log(`[caption] placement=${placement}, fontPx=${clampedFontPx}, totalTextH=${blockH}, yPct=${finalYPct}, y=${y}`);
 
     const boxW = maxW + padding * 2;
     const boxH = textH + padding * 2;

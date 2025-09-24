@@ -42,36 +42,52 @@ export async function generateCaptionPreview(opts) {
   }
 
   const payload = {
-    text: opts.text,
-    width: 1080,
-    height: 1920,
-    fontFamily: opts.fontFamily || "DejaVu Sans Local",
-    weightCss: opts.weight || "bold",
-    fontPx: Number(opts.sizePx || 48),
-    color: opts.color || "#FFFFFF",
-    opacity: Number(opts.opacity ?? 0.85),
-    shadow: !!opts.shadow,
-    showBox: !!opts.showBox,            // keep false to remove gray box
-    boxColor: opts.boxColor || "rgba(0,0,0,0.35)",
-    placement: opts.placement || "center",
-    lineHeight: Number(opts.lineHeight || 1.1),
-    padding: Number(opts.padding || 24),
-    maxWidthPct: Number(opts.maxWidthPct || 0.8),
-    borderRadius: Number(opts.borderRadius || 16)
+    style: {
+      text: opts.text,
+      fontFamily: opts.fontFamily || "DejaVuSans",
+      fontWeight: opts.weight === "bold" ? 700 : 400,
+      fontPx: Number(opts.sizePx || 48),
+      lineSpacingPx: Math.round(Number(opts.sizePx || 48) * Number(opts.lineHeight || 1.1)),
+      align: "center",
+      textAlpha: Number(opts.opacity ?? 0.85),
+      fill: opts.color || "rgba(255,255,255,1)",
+      strokePx: 3,
+      strokeColor: "rgba(0,0,0,0.85)",
+      shadowX: 0,
+      shadowY: 2,
+      shadowBlur: 4,
+      shadowColor: "rgba(0,0,0,0.55)",
+      boxXPx: 42,
+      boxYPx: opts.placement === "top" ? 230 : opts.placement === "bottom" ? 1500 : 960,
+      boxWPx: 996,
+      boxHPx: 400,
+      canvasW: 1080,
+      canvasH: 1920
+    }
   };
 
-  console.log("[caption-overlay] POST /caption/preview");
-  const data = await apiFetch("/caption/preview", {
+  console.log("[caption-overlay] POST /preview/caption");
+  const data = await apiFetch("/preview/caption", {
     method: "POST",
     body: payload
   });
-  if (!data?.success) throw new Error(data?.detail || data?.error || "Preview generation failed");
+  if (!data?.ok) throw new Error(data?.detail || data?.reason || "Preview generation failed");
+
+  // Convert the response to the expected format
+  const imageUrl = data.data?.imageUrl;
+  if (!imageUrl) throw new Error("No image URL in response");
 
   lastCaptionPNG = { 
-    dataUrl: data.dataUrl, 
-    width: data.width, 
-    height: data.height,
-    meta: data.meta 
+    dataUrl: imageUrl, 
+    width: data.data?.wPx || 1080, 
+    height: data.data?.hPx || 1920,
+    meta: {
+      xPx: data.data?.xPx || 0,
+      yPx: data.data?.yPx || 0,
+      wPx: data.data?.wPx || 1080,
+      hPx: data.data?.hPx || 1920,
+      ...data.data?.meta
+    }
   };
   
   // Update global reference
