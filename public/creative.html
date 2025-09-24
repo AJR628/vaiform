@@ -542,9 +542,74 @@
           return Math.max(API_MIN_PX, Math.min(API_MAX_PX, Math.round(uiPx)));
         }
 
-          function getCaptionPx() {
-              const el = document.getElementById('caption-size');
-          return mapSliderToPx(el ? el.value : 50);
+        function getCaptionPx() {
+            const el = document.getElementById('caption-size');
+            return mapSliderToPx(el ? el.value : 50);
+        }
+        
+        // Font size clamping to prevent overflow with binary search for better responsiveness
+        function fitFontPx(targetFontPx, text, W = 1080, H = 1920) {
+            const min = 24, max = 160;
+            const padPctTop = 0.08, padPctBottom = 0.08;
+            const maxWidthPct = 0.90; // increased from 0.85
+            const lineHeight = 1.05; // reduced from 1.1
+            const maxTextWidth = W * maxWidthPct;
+            const maxTextHeight = H * (1 - padPctTop - padPctBottom);
+            
+            function measureFits(fontPx) {
+                // Simple word wrapping simulation
+                const words = text.split(' ');
+                const lines = [];
+                let currentLine = '';
+                
+                for (const word of words) {
+                    const testLine = currentLine ? `${currentLine} ${word}` : word;
+                    // Rough width estimation (fontPx * 0.6 is approximate)
+                    const estimatedWidth = testLine.length * fontPx * 0.6;
+                    
+                    if (estimatedWidth <= maxTextWidth && currentLine) {
+                        currentLine = testLine;
+                    } else {
+                        if (currentLine) lines.push(currentLine);
+                        currentLine = word;
+                    }
+                }
+                if (currentLine) lines.push(currentLine);
+                
+                const totalHeight = lines.length * fontPx * lineHeight;
+                return totalHeight <= maxTextHeight;
+            }
+            
+            let lo = min, hi = Math.min(max, targetFontPx), best = lo;
+            while (lo <= hi) {
+                const mid = (lo + hi) >> 1; // binary search
+                if (measureFits(mid)) { 
+                    best = mid; 
+                    lo = mid + 1; 
+                } else { 
+                    hi = mid - 1; 
+                }
+            }
+            
+            if (best !== targetFontPx) {
+                console.log(`[caption] Font size ${targetFontPx}px fitted to ${best}px for better responsiveness`);
+            }
+            
+            return best;
+        }
+
+        // Preview geometry helper for proper scaling
+        function getPreviewGeometry(canvas) {
+            const rect = canvas.getBoundingClientRect();
+            const dpr = Math.max(1, window.devicePixelRatio || 1);
+            const cssW = rect.width;
+            const cssH = rect.height;
+            const backingW = canvas.width;
+            const backingH = canvas.height;
+            const scaleX = cssW / 1080; // CSS size to PNG native size
+            const scaleY = cssH / 1920;
+            
+            return { dpr, cssW, cssH, backingW, backingH, scaleX, scaleY };
         }
 
         // expose for other code
@@ -832,7 +897,8 @@
             }
 
             // Get caption style parameters from UI
-            const sizePx = window.getCaptionPx(); // Use mapped size
+            const rawSizePx = window.getCaptionPx(); // Use mapped size
+            const sizePx = fitFontPx(rawSizePx, text.trim(), 1080, 1920); // Apply responsive font fitting
             const opacityPct = parseInt(document.getElementById('caption-opacity')?.value || '85', 10);
             const placement = (document.getElementById('caption-placement')?.value || 'bottom').toLowerCase();
             const showBoxToggle = document.getElementById('caption-background')?.checked || false;
@@ -843,27 +909,54 @@
                 mappedSizePx: sizePx
             });
 
-            // Map placement UI to server values
-            const placementMapping = {
-                'top': 'top',
-                'middle': 'center', 
-                'bottom': 'bottom'
+            // Map UI selection to vertical position (percent of full 1080x1920 frame)
+            function placementToVAlignAndYPct(placement) {
+                switch ((placement || 'top').toLowerCase()) {
+                    case 'middle': return { vAlign: 'center', yPct: 0.50 };
+                    case 'bottom': return { vAlign: 'bottom', yPct: 0.92 }; // ~8% pad from bottom
+                    case 'top':
+                    default:       return { vAlign: 'top',    yPct: 0.08 }; // ~8% pad from top
+                }
+            }
+            
+            // Validate yPct to prevent extreme values
+            function validateYPct(yPct) {
+                const clamped = Math.max(0.05, Math.min(0.95, Number(yPct)));
+                if (clamped !== Number(yPct)) {
+                    console.warn(`[caption] yPct ${yPct} clamped to ${clamped} to prevent off-screen positioning`);
+                }
+                return clamped;
+            }
+            
+            const placementData = placementToVAlignAndYPct(placement);
+            const validatedYPct = validateYPct(placementData.yPct);
+            
+            // Map UI font selection to server font names
+            const fontMapping = {
+                'system': 'DejaVu Sans Local',
+                'serif': 'DejaVu Sans Local', // fallback to available font
+                'mono': 'DejaVu Sans Local',  // fallback to available font
+                'bold': 'DejaVu Sans Local'
             };
+            
+            const selectedFont = document.getElementById('caption-font')?.value || 'system';
+            const serverFontFamily = fontMapping[selectedFont] || 'DejaVu Sans Local';
             
             const captionStyle = {
                 text: text.trim(),
-                sizePx: sizePx, // Use mapped size
-                fontFamily: "DejaVu Sans Local",
+                sizePx: sizePx, // Use fitted size
+                fontFamily: serverFontFamily,
                 weight: selectedWeight,
                 color: "#FFFFFF",
                 opacity: opacityPct / 100,
                 shadow: true,
                 showBox: showBoxToggle,
                 boxColor: `rgba(0,0,0,${boxOpacityPct/100})`,
-                placement: placementMapping[placement] || 'center',
-                lineHeight: 1.1,
+                placement: placementData.vAlign, // Use vAlign for server compatibility
+                yPct: validatedYPct,              // Use validated yPct for precise positioning
+                lineHeight: 1.05, // reduced for better stacking
                 padding: 24,
-                maxWidthPct: 0.85,
+                maxWidthPct: 0.90, // increased for bigger text
                 borderRadius: 16
             };
 
@@ -883,14 +976,39 @@
                     
                     console.log('[caption-overlay] PNG preview generated:', result);
                     
-                    // Calculate preview scaling (assuming 400px preview width)
+                    // Calculate preview scaling using geometry helper
                     const previewContainer = document.getElementById('live-preview-container');
                     const previewCanvas = document.getElementById('live-preview-canvas');
-                    const previewW = previewCanvas?.width || 400;
-                    const previewH = previewCanvas?.height || Math.round(400 * (16/9));
+                    const geometry = getPreviewGeometry(previewCanvas);
                     
-                    // Create and position the overlay image
-                    createCaptionOverlay(result, overlay, { previewW, previewH });
+                    // Debug logging for scaling
+                    console.debug('[preview-scaling]', {
+                        cssW: geometry.cssW,
+                        cssH: geometry.cssH,
+                        backingW: geometry.backingW,
+                        backingH: geometry.backingH,
+                        dpr: geometry.dpr,
+                        scaleX: geometry.scaleX,
+                        scaleY: geometry.scaleY,
+                        ovW: result.meta?.wPx || 1080,
+                        ovH: result.meta?.hPx || 1920,
+                        placement: captionStyle.placement,
+                        yPct: result.meta?.yPct,
+                        fontPx: result.meta?.fontPx
+                    });
+                    
+                    // Create and position the overlay image with placement
+                    createCaptionOverlay(result, overlay, { 
+                        previewW: geometry.cssW, 
+                        previewH: geometry.cssH,
+                        placement: captionStyle.placement
+                    });
+                    
+                    // Debug logging
+                    console.log('[preview-scaling]', { 
+                        previewW: geometry.cssW, 
+                        previewH: geometry.cssH 
+                    });
                     
                     console.log('[caption-overlay] PNG overlay created successfully');
                     

@@ -107,24 +107,87 @@ export function getLastCaptionPNG(){ return lastCaptionPNG; }
  * @returns {HTMLImageElement} The created overlay image element
  */
 export function createCaptionOverlay(captionData, container, scaling = {}) {
-  const { previewW = 1080, previewH = 1920 } = scaling;
+  const { previewW = 1080, previewH = 1920, placement = 'center' } = scaling;
   
-  // Calculate scale factors
-  const scaleX = previewW / 1080;
+  // Calculate scale factors for CSS size scaling (not canvas backing size)
+  const scaleX = previewW / 1080; // CSS size to PNG native size
   const scaleY = previewH / 1920;
   
   // Create overlay image element
   const overlay = document.createElement('img');
   overlay.src = captionData.dataUrl || captionData.imageUrl;
   overlay.className = 'caption-overlay';
+  
+  // Scale overlay size with scale = previewW / 1080
+  const scale = previewW / 1080;
+  const dispW = (captionData.meta?.wPx || 1080) * scale;
+  const dispH = (captionData.meta?.hPx || 1920) * scale;
+  
+  // Apply anchor-aware math using server meta
+  const xPct = captionData.meta?.xPct || 50;
+  const yPct = captionData.meta?.yPct || 0.5;
+  const align = captionData.meta?.align || 'center';
+  const vAlign = captionData.meta?.vAlign || 'center';
+  
+  // Calculate anchor points
+  const anchorX = (xPct / 100) * previewW;
+  const anchorY = yPct * previewH;
+  
+  // Calculate position based on alignment
+  let left = anchorX;
+  let top = anchorY;
+  
+  if (align === 'center') left -= dispW / 2;
+  else if (align === 'right') left -= dispW;
+  
+  if (vAlign === 'center') top -= dispH / 2;
+  else if (vAlign === 'bottom') top -= dispH;
+  
+  // Final clamp to keep overlay within frame bounds
+  left = Math.max(0, Math.min(left, previewW - dispW));
+  top = Math.max(0, Math.min(top, previewH - dispH));
+  
+  // Add final visual clamp if overlay is larger than frame
+  let finalScale = 1;
+  if (dispW > previewW || dispH > previewH) {
+    finalScale = Math.min(previewW / dispW, previewH / dispH);
+  }
+  
+  const finalDispW = dispW * finalScale;
+  const finalDispH = dispH * finalScale;
+  
+  // Recalculate position with final scale
+  left = anchorX;
+  top = anchorY;
+  if (align === 'center') left -= finalDispW / 2;
+  else if (align === 'right') left -= finalDispW;
+  if (vAlign === 'center') top -= finalDispH / 2;
+  else if (vAlign === 'bottom') top -= finalDispH;
+  
+  // Final clamp
+  left = Math.max(0, Math.min(left, previewW - finalDispW));
+  top = Math.max(0, Math.min(top, previewH - finalDispH));
+  
+  // Debug logging to verify calculations
+  console.log('[preview-overlay] positioning:', {
+    W: previewW, H: previewH,
+    iW: captionData.meta?.wPx || 1080, iH: captionData.meta?.hPx || 1920,
+    dispW: finalDispW, dispH: finalDispH,
+    xPct, yPct, align, vAlign,
+    left, top
+  });
+  
+  // Apply calculated position and size
   overlay.style.cssText = `
     position: absolute;
-    left: ${(captionData.xPx || 0) * scaleX}px;
-    top: ${(captionData.yPx || 0) * scaleY}px;
-    width: ${(captionData.wPx || 1080) * scaleX}px;
-    height: ${(captionData.hPx || 1920) * scaleY}px;
+    left: ${left}px;
+    top: ${top}px;
+    width: ${finalDispW}px;
+    height: ${finalDispH}px;
     pointer-events: none;
     z-index: 10;
+    object-fit: contain;
+    user-select: none;
   `;
   
   // Remove any existing caption overlays

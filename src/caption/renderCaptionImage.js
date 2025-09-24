@@ -156,8 +156,63 @@ export async function renderCaptionImage(jobId, style) {
     throw new Error('No valid text lines after word wrapping');
   }
 
-  // Calculate total text height
-  const totalTextHeight = lines.length * fontPx + (lines.length - 1) * lineSpacingPx;
+  // Server-side font clamping
+  let clampedFontPx = fontPx;
+  const SAFE_W = Math.floor(canvasW * 0.92);   // 4% pad each side
+  const SAFE_H = Math.floor(canvasH * 0.84);   // leave 8% top/btm combined for padding
+  
+  // Decrease font until all lines fit inside the safe box & total height ok
+  while (true) {
+    const testHeight = lines.length * clampedFontPx + (lines.length - 1) * lineSpacingPx;
+    if (testHeight <= SAFE_H) break;
+    clampedFontPx -= 2;
+    if (clampedFontPx <= 20) break;
+  }
+  
+  // Calculate total text height with clamped font
+  let totalTextHeight = lines.length * clampedFontPx + (lines.length - 1) * lineSpacingPx;
+  
+  // Max-height clamp (90% of 1920) - if text block exceeds, scale font down and re-wrap
+  const maxHeightPx = Math.round(canvasH * 0.9); // 90% of 1920 = 1728px
+  let finalFontPx = fontPx;
+  let finalLines = lines;
+  let finalLineSpacing = lineSpacingPx;
+  
+  if (totalTextHeight > maxHeightPx) {
+    console.log(`[caption] Text height ${totalTextHeight}px exceeds max ${maxHeightPx}px, scaling down font`);
+    
+    // Scale font down proportionally
+    const scaleFactor = maxHeightPx / totalTextHeight;
+    finalFontPx = Math.max(16, Math.round(fontPx * scaleFactor)); // Minimum 16px
+    finalLineSpacing = Math.round(lineSpacingPx * scaleFactor);
+    
+    // Re-wrap with smaller font
+    ctx.font = `${fontWeight || 700} ${finalFontPx}px ${fontName}`;
+    const newLines = [];
+    let currentLine = '';
+    
+    for (const word of words) {
+      const testLine = currentLine ? `${currentLine} ${word}` : word;
+      const metrics = ctx.measureText(testLine);
+      
+      if (metrics.width <= boxWPx && currentLine) {
+        currentLine = testLine;
+      } else {
+        if (currentLine) {
+          newLines.push(currentLine);
+        }
+        currentLine = word;
+      }
+    }
+    
+    if (currentLine) {
+      newLines.push(currentLine);
+    }
+    
+    finalLines = newLines;
+    totalTextHeight = finalLines.length * finalFontPx + (finalLines.length - 1) * finalLineSpacing;
+    console.log(`[caption] Scaled to fontPx=${finalFontPx}, lines=${finalLines.length}, height=${totalTextHeight}px`);
+  }
   
   // Center vertically within the box
   const startY = boxYPx + (boxHPx - totalTextHeight) / 2;
@@ -168,7 +223,7 @@ export async function renderCaptionImage(jobId, style) {
 
   // Render each line
   lines.forEach((line, index) => {
-    const y = Math.round(startY + index * (fontPx + lineSpacingPx));
+    const y = Math.round(startY + index * (clampedFontPx + lineSpacingPx));
     baselines.push(y);
     
     // Calculate X position based on alignment
@@ -193,7 +248,7 @@ export async function renderCaptionImage(jobId, style) {
     minX = Math.min(minX, x - strokePx - Math.abs(shadowX));
     minY = Math.min(minY, y - strokePx - Math.abs(shadowY));
     maxX = Math.max(maxX, x + lineMetrics.width + strokePx + Math.abs(shadowX));
-    maxY = Math.max(maxY, y + fontPx + strokePx + Math.abs(shadowY));
+    maxY = Math.max(maxY, y + clampedFontPx + strokePx + Math.abs(shadowY));
 
     // Render shadow (if enabled)
     if (shadowBlur > 0 || shadowX !== 0 || shadowY !== 0) {
@@ -250,7 +305,7 @@ export async function renderCaptionImage(jobId, style) {
   const buffer = canvas.toBuffer('image/png');
   await fs.promises.writeFile(pngPath, buffer);
 
-  console.log(`[caption] lines=${lines.length} fontPx=${fontPx} bbox={x:${minX},y:${minY},w:${trimmedWidth},h:${trimmedHeight}}`);
+  console.log(`[caption] lines=${lines.length} fontPx=${clampedFontPx} bbox={x:${minX},y:${minY},w:${trimmedWidth},h:${trimmedHeight}}`);
 
   return {
     pngPath,
@@ -260,10 +315,10 @@ export async function renderCaptionImage(jobId, style) {
     wPx: trimmedWidth,
     hPx: trimmedHeight,
     meta: {
-      splitLines: lines, // Use splitLines as expected by the system
+      splitLines: lines, // Use lines as expected by the system
       baselines,
-      fontPx,
-      lineSpacingPx,
+      fontPx: clampedFontPx,
+      lineSpacingPx: lineSpacingPx,
     },
   };
 }

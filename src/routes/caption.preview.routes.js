@@ -19,6 +19,7 @@ router.post("/caption/preview", express.json(), async (req, res) => {
       showBox = false,              // default OFF to remove gray box
       boxColor = "rgba(0,0,0,0.35)",
       placement = "center",         // 'top' | 'center' | 'bottom'
+      yPct,                         // Optional precise Y position (0..1)
       lineHeight = 1.1,
       padding = 24,
       maxWidthPct = 0.8,
@@ -29,13 +30,18 @@ router.post("/caption/preview", express.json(), async (req, res) => {
       return res.status(400).json({ success:false, error:"INVALID_INPUT", detail:"text required" });
     }
 
+    // Server-side font clamping to prevent overflow
+    const ABS_MAX_FONT = 200; // Keep UX reasonable
+    const clampedFontPx = Math.min(Number(fontPx) || 48, ABS_MAX_FONT);
+
     const W = Math.round(width), H = Math.round(height);
     const canvas = createCanvas(W, H);
     const ctx = canvas.getContext("2d");
     ctx.clearRect(0, 0, W, H);
 
     const maxW = Math.round(W * Number(maxWidthPct));
-    ctx.font = `${weightCss} ${Number(fontPx)}px "${fontFamily}"`;
+    console.log(`[caption] Using maxWidthPct=${maxWidthPct}, maxW=${maxW}`);
+    ctx.font = `${weightCss} ${clampedFontPx}px "${fontFamily}"`;
     ctx.fillStyle = color;
     ctx.globalAlpha = Number(opacity);
 
@@ -54,14 +60,35 @@ router.post("/caption/preview", express.json(), async (req, res) => {
       return lines;
     }
     const lines = wrapLines(text);
-    const lh = Math.round(Number(fontPx) * Number(lineHeight));
+    const lh = Math.round(clampedFontPx * Number(lineHeight));
     const textH = lines.length * lh;
 
-    let y;
-    if (placement === "top") y = padding + Number(fontPx);
-    else if (placement === "bottom") y = H - padding - textH + Number(fontPx);
-    else if (placement === "center") y = Math.round((H - textH) / 2) + Number(fontPx);
-    else y = Math.round((H - textH) / 2) + Number(fontPx); // fallback to center
+    // Calculate yPct based on placement and text block height
+    const padPctTop = 0.08;      // 8% top safe area
+    const padPctBottom = 0.08;   // 8% bottom safe area
+    const totalTextH = lines.length * clampedFontPx * Number(lineHeight);
+    
+    let calculatedYPct;
+    switch (placement) {
+      case 'top':
+        calculatedYPct = padPctTop; // top is easy: top pad
+        break;
+      case 'center':
+        calculatedYPct = 0.5 - (totalTextH / (2 * H)); // center the whole block
+        break;
+      case 'bottom':
+        calculatedYPct = 1 - padPctBottom - (totalTextH / H); // sit above bottom pad
+        calculatedYPct = Math.max(padPctTop, Math.min(calculatedYPct, 1 - padPctBottom)); // clamp to safe band
+        break;
+      default:
+        calculatedYPct = padPctTop;
+    }
+    
+    // Use provided yPct or calculated one
+    const finalYPct = yPct !== undefined && yPct !== null ? Number(yPct) : calculatedYPct;
+    const y = Math.round(H * finalYPct);
+    
+    console.log(`[caption] placement=${placement}, fontPx=${clampedFontPx}, totalTextH=${totalTextH}, yPct=${finalYPct}, y=${y}`);
 
     const boxW = maxW + padding * 2;
     const boxH = textH + padding * 2;
@@ -71,7 +98,7 @@ router.post("/caption/preview", express.json(), async (req, res) => {
       ctx.save();
       ctx.globalAlpha = 1.0;
       ctx.fillStyle = boxColor;
-      roundRect(ctx, x, y - Number(fontPx) - padding, boxW, boxH, borderRadius);
+      roundRect(ctx, x, y - clampedFontPx - padding, boxW, boxH, borderRadius);
       ctx.fill();
       ctx.restore();
     }
@@ -89,15 +116,27 @@ router.post("/caption/preview", express.json(), async (req, res) => {
     // Include meta information for render reuse
     const meta = {
       splitLines: lines,
-      fontPx: Number(fontPx),
+      fontPx: clampedFontPx, // Use clamped font size
       lineSpacing: lh,
       xPct: 50, // centered
-      yPct: Math.round((y - Number(fontPx)) / H * 100),
+      yPct: finalYPct, // Use calculated yPct
       align: "center",
       vAlign: placement === "top" ? "top" : placement === "bottom" ? "bottom" : "center",
       previewHeightPx: H,
       opacity: Number(opacity)
     };
+    
+    // Debug logging
+    console.log('[caption-overlay] meta:', {
+      fontPx: clampedFontPx,
+      lineSpacing: lh,
+      xPct: 50,
+      yPct: meta.yPct,
+      vAlign: meta.vAlign,
+      frame: { W, H },
+      safeW: Math.floor(W * 0.92),
+      safeH: Math.floor(H * 0.84)
+    });
     
     return res.json({ success:true, dataUrl, width:W, height:H, meta });
   } catch (e) {
