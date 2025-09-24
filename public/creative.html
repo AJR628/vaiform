@@ -884,6 +884,23 @@
         let captionOverlayState = null;
         let captionDebounceTimer = null;
         
+        // Debounced caption preview generator
+        function debouncedPreview(delay = 200) {
+            clearTimeout(captionDebounceTimer);
+            captionDebounceTimer = setTimeout(() => {
+                if (currentQuote?.text?.trim()) {
+                    updateCaptionOverlay(currentQuote.text.trim(), true);
+                }
+            }, delay);
+        }
+        
+        function maybeGenerateCaptionPreview() {
+            const txt = currentQuote?.text?.trim() || '';
+            if (txt.length && selectedAsset) {
+                debouncedPreview();
+            }
+        }
+        
         async function updateCaptionOverlay(text = '', show = true) {
             const overlay = document.getElementById('caption-overlay');
             if (!overlay) return;
@@ -901,7 +918,7 @@
             const sizePx = fitFontPx(rawSizePx, text.trim(), 1080, 1920); // Apply responsive font fitting
             const opacityPct = parseInt(document.getElementById('caption-opacity')?.value || '85', 10);
             const placement = (document.getElementById('caption-placement')?.value || 'bottom').toLowerCase();
-            const showBoxToggle = document.getElementById('caption-background')?.checked || false;
+            const showBoxToggle = document.getElementById('caption-background')?.checked || false; // Default to false (no gray box)
             const boxOpacityPct = parseInt(document.getElementById('caption-bg-opacity')?.value || '50', 10);
             const selectedWeight = document.getElementById('caption-weight')?.value || 'bold';
             
@@ -933,20 +950,20 @@
             
             // Map UI font selection to server font names (only use registered fonts)
             const fontMapping = {
-                'system': 'DejaVu Sans Local',
-                'bold': 'DejaVu Serif Bold Local',
-                'cinematic': 'DejaVu Sans Local', // Fallback to registered font
-                'minimal': 'DejaVu Sans Local' // Fallback to registered font
+                'system': { family: 'DejaVu Sans Local', weightCss: 'normal' },
+                'bold': { family: 'DejaVu Sans Local', weightCss: 'bold' },
+                'cinematic': { family: 'DejaVu Serif Local', weightCss: 'normal' },
+                'minimal': { family: 'DejaVu Sans Local', weightCss: 'normal' }
             };
             
             const selectedFont = document.getElementById('caption-font')?.value || 'system';
-            const serverFontFamily = fontMapping[selectedFont] || 'DejaVu Sans Local';
+            const fontConfig = fontMapping[selectedFont] || fontMapping['system'];
             
             const captionStyle = {
                 text: text.trim(),
                 sizePx: sizePx, // Use fitted size
-                fontFamily: serverFontFamily,
-                weight: selectedWeight,
+                fontFamily: fontConfig.family,
+                weight: fontConfig.weightCss,
                 color: "#FFFFFF",
                 opacity: opacityPct / 100,
                 shadow: true,
@@ -1317,13 +1334,7 @@
             updateRenderButtonState();
             
             // Trigger caption preview immediately after asset selection
-            if (currentQuote?.text) {
-                try {
-                    updateCaptionOverlay(currentQuote.text.trim(), true);
-                } catch (e) {
-                    console.warn('[caption-overlay] auto-preview failed (non-fatal)', e);
-                }
-            }
+            maybeGenerateCaptionPreview();
         }
 
         function updatePagination() {
@@ -1609,6 +1620,9 @@
               console.error('[init] Asset browser initialization failed:', e);
             }
           })();
+
+          // Trigger caption preview if we have text and asset
+          safe('caption-preview-init', () => maybeGenerateCaptionPreview());
 
           // SECONDARY: Initialize caption UI (non-blocking)
           safe('caption-size', () => (typeof initCaptionSizeUI === 'function') && initCaptionSizeUI());

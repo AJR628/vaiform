@@ -257,10 +257,17 @@ function buildVideoChain({ width, height, videoVignette, drawLayers, captionImag
     return `${baseChain};${overlayChain}`;
   } else if (CAPTION_OVERLAY && captionImage) {
     // Legacy overlay format (keep for backward compatibility)
-    console.log(`[render] USING LEGACY OVERLAY at x=${captionImage.xPx} y=${captionImage.yPx} w=${captionImage.wPx} h=${captionImage.hPx}`);
-    const baseChain = `[0:v]scale=${W}:${H}:force_original_aspect_ratio=increase,crop=${W}:${H},setsar=1[v0]`;
-    const overlayChain = `[v0][1:v]overlay=${captionImage.xPx}:${captionImage.yPx}:format=auto[vout]`;
-    return `${baseChain};${overlayChain}`;
+    // Verify the overlay file exists before using it
+    const overlayPath = captionImage.pngPath || captionImage.localPath;
+    if (overlayPath && fs.existsSync(overlayPath) && fs.statSync(overlayPath).size > 0) {
+      console.log(`[render] USING LEGACY OVERLAY at x=${captionImage.xPx} y=${captionImage.yPx} w=${captionImage.wPx} h=${captionImage.hPx}`);
+      const baseChain = `[0:v]scale=${W}:${H}:force_original_aspect_ratio=increase,crop=${W}:${H},setsar=1[v0]`;
+      const overlayChain = `[v0][1:v]overlay=${captionImage.xPx}:${captionImage.yPx}:format=auto[vout]`;
+      return `${baseChain};${overlayChain}`;
+    } else {
+      console.warn(`[render] Legacy overlay file not found or empty: ${overlayPath}, falling back to drawtext`);
+      // Fall through to drawtext approach
+    }
   } else {
     // Legacy drawtext approach
     const scale = `scale='if(gt(a,${W}/${H}),-2,${W})':'if(gt(a,${W}/${H}),${H},-2)'`;
@@ -359,12 +366,19 @@ export async function renderVideoQuoteOverlay({
     usingCaptionPng = true;
     try {
       const { file: pngPath } = await saveDataUrlToTmp(captionImage.dataUrl, "caption");
-      captionPngPath = pngPath;
-      console.log("[render] using caption PNG overlay:", pngPath);
-      console.log("[render] USING OVERLAY - skipping drawtext. Caption PNG:", pngPath);
+      
+      // Verify the PNG file exists and is readable
+      if (fs.existsSync(pngPath) && fs.statSync(pngPath).size > 0) {
+        captionPngPath = pngPath;
+        console.log("[render] using caption PNG overlay:", pngPath);
+        console.log("[render] USING OVERLAY - skipping drawtext. Caption PNG:", pngPath);
+      } else {
+        throw new Error("PNG file is empty or doesn't exist");
+      }
     } catch (error) {
-      console.warn("[render] failed to save caption PNG, falling back to drawtext:", error.message);
+      console.warn("[render] failed to save or verify caption PNG, falling back to drawtext:", error.message);
       usingCaptionPng = false;
+      captionPngPath = null;
     }
   }
 

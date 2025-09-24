@@ -16,7 +16,7 @@ router.post("/caption/preview", express.json(), async (req, res) => {
       color = "#FFFFFF",
       opacity = 0.85,
       shadow = true,
-      showBox = false,              // default OFF to remove gray box
+      showBox = false,              // default OFF to remove gray box (polished UX)
       boxColor = "rgba(0,0,0,0.35)",
       placement = "center",         // 'top' | 'center' | 'bottom'
       yPct,                         // Optional precise Y position (0..1)
@@ -29,9 +29,8 @@ router.post("/caption/preview", express.json(), async (req, res) => {
     // Map font families to available fonts (only use registered fonts)
     const fontMap = {
       'DejaVu Sans Local': 'DejaVu Sans Local',
-      'DejaVu Serif Bold Local': 'DejaVu Serif Bold Local', 
-      'Cinzel Decorative': 'DejaVu Sans Local', // Fallback to registered font
-      'Inter': 'DejaVu Sans Local' // Fallback to registered font
+      'DejaVu Serif Local': 'DejaVu Serif Local',
+      'DejaVu Serif Bold Local': 'DejaVu Serif Bold Local'
     };
     
     const actualFontFamily = fontMap[fontFamily] || 'DejaVu Sans Local';
@@ -84,25 +83,31 @@ router.post("/caption/preview", express.json(), async (req, res) => {
     }
 
     // Calculate yPct based on placement and text block height
-    const PAD_TOP_PCT = 0.08;   // 8% from top
-    const PAD_BOT_PCT = 0.02;   // 2% from bottom (much closer to edge)
+    const SAFE_TOP_PCT = 0.04;     // ~77px on 1920 (closer to top)
+    const SAFE_BOTTOM_PCT = 0.04;  // ~77px on 1920 (closer to bottom)
     
-    function computeTopY(H, blockH, placement) {
-      if (placement === 'top')    return Math.round(PAD_TOP_PCT * H);
-      if (placement === 'middle') return Math.round((H - blockH) / 2);
-      // bottom
-      return Math.round(H - (PAD_BOT_PCT * H) - blockH);
+    function yPctFor(placement, H, totalTextH) {
+      if (placement === 'top') {
+        // top edge of caption block anchored at safe top
+        return SAFE_TOP_PCT;
+      }
+      if (placement === 'bottom') {
+        // bottom edge at safe bottom → compute top edge
+        const topPx = (H * (1 - SAFE_BOTTOM_PCT)) - totalTextH;
+        return topPx / H;
+      }
+      // center: top edge = (H - blockHeight) / 2
+      return (H - totalTextH) / (2 * H);
     }
     
-    const blockH = Math.ceil(clampedFontPx * Number(lineHeight) * lines.length);
-    const topY = computeTopY(H, blockH, placement);
-    const calculatedYPct = topY / H;
+    const totalTextH = Math.ceil(clampedFontPx * Number(lineHeight) * lines.length);
+    const calculatedYPct = yPctFor(placement, H, totalTextH);
     
     // Use provided yPct or calculated one
     const finalYPct = yPct !== undefined && yPct !== null ? Number(yPct) : calculatedYPct;
     const y = Math.round(H * finalYPct);
     
-    console.log(`[caption] placement=${placement}, fontPx=${clampedFontPx}, totalTextH=${blockH}, yPct=${finalYPct}, y=${y}`);
+    console.log(`[caption] placement=${placement}, fontPx=${clampedFontPx}, totalTextH=${totalTextH}, yPct=${finalYPct}, y=${y}`);
 
     const boxW = maxW + padding * 2;
     const boxH = textH + padding * 2;
@@ -138,7 +143,7 @@ router.post("/caption/preview", express.json(), async (req, res) => {
       vAlign: placement === "top" ? "top" : placement === "bottom" ? "bottom" : "center",
       previewHeightPx: H,
       opacity: Number(opacity),
-      boxHPx: blockH // Include block height for debugging
+      boxHPx: totalTextH // Include block height for debugging
     };
     
     // Debug logging
