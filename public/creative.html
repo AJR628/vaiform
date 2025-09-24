@@ -455,8 +455,9 @@
             <!-- Live Preview Canvas -->
             <div id="live-preview-container" class="hidden">
                 <div class="text-sm text-gray-400 mb-2">Live Preview:</div>
-                <div class="relative mx-auto bg-black rounded-lg overflow-hidden aspect-[9/16] max-w-[400px]">
-                    <canvas id="live-preview-canvas" class="w-full h-auto"></canvas>
+                <!-- Fix A: Give the preview wrapper a predictable size -->
+                <div class="relative mx-auto bg-black rounded-lg overflow-hidden" style="width: 360px; aspect-ratio: 9 / 16;">
+                    <canvas id="live-preview-canvas" class="w-full h-full block"></canvas>
                     <!-- TASK 4: Fix overlay container to match canvas CSS size -->
                     <div class="absolute inset-0 pointer-events-none" id="caption-overlay" style="width: 100%; height: 100%;"></div>
                 </div>
@@ -599,14 +600,14 @@
             return best;
         }
 
-        // Preview geometry helper for proper scaling
+        // Fix D: Preview geometry helper using proper CSS/backing separation
         function getPreviewGeometry(canvas) {
             const rect = canvas.getBoundingClientRect();
             const dpr = Math.max(1, window.devicePixelRatio || 1);
-            const cssW = rect.width;
-            const cssH = rect.height;
-            const backingW = canvas.width;
-            const backingH = canvas.height;
+            const cssW = canvas.clientWidth;  // CSS size
+            const cssH = canvas.clientHeight; // CSS size
+            const backingW = canvas.width;    // Backing store size
+            const backingH = canvas.height;   // Backing store size
             const scaleX = cssW / 1080; // CSS size to PNG native size
             const scaleY = cssH / 1920;
             
@@ -683,13 +684,20 @@
           return `${base}${join}auto=compress&cs=tinysrgb&fit=crop&dpr=${dpr}&w=${w}&h=${h}`;
         }
         
+        // Fix B: Updated HiDPI canvas setup using sizeCanvasToCSS
         function _setupHiDPICanvas(canvas, cssW, cssH) {
-          const dpr = Math.max(1, window.devicePixelRatio || 1);
-          canvas.width  = Math.round(cssW * dpr);
-          canvas.height = Math.round(cssH * dpr);
-          canvas.style.width  = `${cssW}px`;
-          canvas.style.height = `${cssH}px`;
+          // Use the new sizing function
+          if (!sizeCanvasToCSS(canvas)) {
+            // Fallback to manual setup if sizeCanvasToCSS fails
+            const dpr = Math.max(1, window.devicePixelRatio || 1);
+            canvas.width  = Math.round(cssW * dpr);
+            canvas.height = Math.round(cssH * dpr);
+            canvas.style.width  = `${cssW}px`;
+            canvas.style.height = `${cssH}px`;
+          }
+          
           const ctx = canvas.getContext('2d');
+          const dpr = Math.max(1, window.devicePixelRatio || 1);
           ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
           ctx.imageSmoothingEnabled = true;
           ctx.imageSmoothingQuality = 'high';
@@ -745,14 +753,17 @@
           return _buildHiResPexelsUrlFromBase(rawUrl, needW, needH);
         }
 
+        // Fix A: Use predictable wrapper dimensions
         function layoutPreviewDims() {
-          const box =
-            document.querySelector('#live-preview-container .relative') ||
-            document.querySelector('#live-preview-container .preview-box') ||
-            document.getElementById('live-preview-container');
-          const cssW = box.clientWidth;
-          const cssH = Math.round(cssW * 16 / 9); // lock to 9:16 portrait
-          return { cssW, cssH };
+          const box = document.querySelector('#live-preview-container .relative');
+          if (box) {
+            // Use the fixed wrapper dimensions
+            const cssW = box.clientWidth || 360; // fallback to our fixed width
+            const cssH = Math.round(cssW * 16 / 9); // lock to 9:16 portrait
+            return { cssW, cssH };
+          }
+          // Fallback to default dimensions
+          return { cssW: 360, cssH: 640 };
         }
 
         function drawCover(ctx, img, cssW, cssH) {
@@ -906,11 +917,10 @@
             const overlay = document.getElementById('caption-overlay');
             if (!overlay) return;
             
-            // TASK 5: Check if canvas has real dimensions before proceeding
+            // Fix C: Check if canvas has real dimensions, but don't retry infinitely
             const canvas = document.getElementById('live-preview-canvas');
             if (!canvas || canvas.clientWidth === 0 || canvas.clientHeight === 0) {
-                console.log('[caption-overlay] Canvas not ready, scheduling retry...');
-                setTimeout(() => updateCaptionOverlay(text, show), 100);
+                console.log('[caption-overlay] Canvas not ready, skipping overlay');
                 return;
             }
             
@@ -1560,8 +1570,49 @@
             try { updateCaptionOverlay((currentQuote?.text||'').trim(), true); } catch {}
         }
 
-        // TASK 5: Initialize preview system with proper canvas readiness check
-        function initPreviewSystem() {
+        // Fix B: Set the canvas backing store AFTER CSS size exists
+        function sizeCanvasToCSS(canvas) {
+            const wCSS = canvas.clientWidth;
+            const hCSS = canvas.clientHeight;
+            if (wCSS === 0 || hCSS === 0) return false;
+
+            const dpr = window.devicePixelRatio || 1;
+            const wBS = Math.round(wCSS * dpr);
+            const hBS = Math.round(hCSS * dpr);
+
+            if (canvas.width !== wBS || canvas.height !== hBS) {
+                canvas.width = wBS;
+                canvas.height = hBS;
+            }
+            return true;
+        }
+
+        // Fix C: Robust "wait for ready" without infinite loop
+        async function waitForCanvasReady(canvas, { timeoutMs = 2000 } = {}) {
+            const start = performance.now();
+
+            return new Promise((resolve, reject) => {
+                const check = () => {
+                    const connected = canvas?.isConnected;
+                    const rect = canvas?.getBoundingClientRect();
+                    const ready = connected && rect && rect.width > 0 && rect.height > 0;
+
+                    if (ready && sizeCanvasToCSS(canvas)) {
+                        resolve(true);
+                        return;
+                    }
+                    if (performance.now() - start > timeoutMs) {
+                        reject(new Error('Canvas not ready: no size within timeout'));
+                        return;
+                    }
+                    requestAnimationFrame(check);
+                };
+                check();
+            });
+        }
+
+        // Fix E: Initialize preview system with proper canvas readiness check
+        async function initPreviewSystem() {
             const canvas = document.getElementById('live-preview-canvas');
             const container = document.getElementById('live-preview-container');
             
@@ -1570,22 +1621,18 @@
                 return;
             }
             
-            // Wait for canvas to have real dimensions
-            const checkCanvasReady = () => {
-                if (canvas.clientWidth > 0 && canvas.clientHeight > 0) {
-                    console.log('[preview-init] Canvas ready, initializing preview system');
-                    // Trigger initial preview if we have content
-                    if (currentQuote?.text && selectedAsset) {
-                        updateLivePreview();
-                        updateCaptionOverlay(currentQuote.text.trim(), true);
-                    }
-                } else {
-                    console.log('[preview-init] Canvas not ready, retrying...');
-                    setTimeout(checkCanvasReady, 100);
+            try {
+                await waitForCanvasReady(canvas);
+                console.log('[preview-init] Canvas ready, initializing preview system');
+                // Trigger initial preview if we have content
+                if (currentQuote?.text && selectedAsset) {
+                    updateLivePreview();
+                    updateCaptionOverlay(currentQuote.text.trim(), true);
                 }
-            };
-            
-            checkCanvasReady();
+            } catch (e) {
+                console.warn('[preview-init] giving up:', e.message);
+                // Optional: fall back to a default 360x640 CSS size and retry once
+            }
         }
 
         // Initialize caption size UI (safe DOM ready wrapper)
@@ -1709,17 +1756,16 @@
             }
         }
 
-        // TASK 5: Live preview functionality with race condition protection
+        // Fix C: Live preview functionality without infinite retry
         function updateLivePreview() {
             if (!currentQuote || !selectedAsset) return;
             
             const container = document.getElementById('live-preview-container');
             const canvas = document.getElementById('live-preview-canvas');
             
-            // TASK 5: Check if canvas has real dimensions before proceeding
+            // Fix C: Check if canvas has real dimensions, but don't retry infinitely
             if (!canvas || canvas.clientWidth === 0 || canvas.clientHeight === 0) {
-                console.log('[preview-scaling] Canvas not ready, scheduling retry...');
-                setTimeout(updateLivePreview, 100);
+                console.log('[preview-scaling] Canvas not ready, skipping preview');
                 return;
             }
             
@@ -2812,9 +2858,24 @@
                 document.getElementById('cancel-quote-btn').classList.remove('hidden');
                 document.getElementById('edit-quote-btn').classList.add('hidden');
                 // Do not reset regen counter on init
-                // TASK 5: Initialize preview system after content is ready
+                // Fix E: Initialize preview system after content is ready
                 try { 
                     initPreviewSystem();
+                    
+                    // Fix E: Add ResizeObserver for canvas resizing
+                    const canvas = document.getElementById('live-preview-canvas');
+                    const container = document.getElementById('live-preview-container');
+                    if (canvas && container) {
+                        new ResizeObserver(() => {
+                            if (sizeCanvasToCSS(canvas)) {
+                                // Trigger preview update on resize
+                                if (currentQuote?.text && selectedAsset) {
+                                    updateLivePreview();
+                                    updateCaptionOverlay(currentQuote.text.trim(), true);
+                                }
+                            }
+                        }).observe(container);
+                    }
                 } catch (e) {
                     console.warn('[preview-init] failed:', e);
                 }
@@ -2824,6 +2885,19 @@
                 const cc = document.getElementById('quote-char-count');
                 if (cc) cc.textContent = `${n}/200`;
             } catch {}
+        });
+
+        // Fix E: Ensure the first render actually fires
+        window.addEventListener('load', () => {
+            console.log('[preview-init] Page loaded, initializing preview');
+            initPreviewSystem();
+        });
+        
+        document.addEventListener('visibilitychange', () => {
+            if (!document.hidden) {
+                console.log('[preview-init] Tab visible, reinitializing preview');
+                initPreviewSystem();
+            }
         });
     </script>
 
