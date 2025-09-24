@@ -259,19 +259,26 @@ export async function renderImageQuoteVideo({
   if (!imagePath) throw new Error("imagePath is required");
   if (!text || !String(text).trim()) throw new Error("text is required");
 
+  console.log(`[renderImageQuoteVideo] Starting image video render: ${imagePath} -> ${outPath}`);
+  
   const safeText = escapeDrawtext(String(text).trim());
   const fontPath = fontfile || resolveFont();
   const fontOpt = fontPath ? `:fontfile=${escapeFilterPath(fontPath)}` : "";
 
+  // Simplified approach: create an 8s mp4 from a still image
+  // Use basic scaling and cropping without complex Ken Burns
   const cover = `scale='if(gt(a,${width}/${height}),-2,${width})':'if(gt(a,${width}/${height}),${height},-2)',crop=${width}:${height}`;
 
-  const zStart = kenBurns === "out" ? 1.08 : 1.0;
-  const zEnd = kenBurns === "out" ? 1.0 : 1.08;
-  const frames = Math.max(Math.floor(durationSec * fps), 1);
-  const zStep = (zEnd - zStart) / Math.max(frames - 1, 1);
-  const kb = `zoompan=z='${zStart}+${zStep}*on':d=${frames}:fps=${fps}:x='0':y='0':s=${width}x${height}`;
+  // Simplified Ken Burns effect - less complex to avoid hanging
+  let kb = null;
+  if (kenBurns) {
+    const zStart = kenBurns === "out" ? 1.05 : 1.0;  // Reduced zoom range
+    const zEnd = kenBurns === "out" ? 1.0 : 1.05;
+    kb = `zoompan=z='${zStart}+(${zEnd}-${zStart})*t/${durationSec}':d=${durationSec}:fps=${fps}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=${width}x${height}`;
+  }
 
-  const layers = [cover, kenBurns ? kb : null, "format=yuv420p"].filter(Boolean);
+  const layers = [cover, kb, "format=yuv420p"].filter(Boolean);
+  
   if (assPath) {
     const esc = (p) => {
       let out = String(p).replace(/\\/g, "/");
@@ -306,6 +313,7 @@ export async function renderImageQuoteVideo({
   }
 
   const vf = layers.join(",");
+  console.log(`[renderImageQuoteVideo] Filter: ${vf}`);
 
   const args = [
     "-loop", "1",
@@ -316,11 +324,19 @@ export async function renderImageQuoteVideo({
     "-c:v", "libx264",
     "-pix_fmt", "yuv420p",
     "-movflags", "+faststart",
-    "-an",
+    "-an",  // No audio - will be mixed later
     outPath,
   ];
 
-  await runFFmpeg(args);
+  console.log(`[renderImageQuoteVideo] FFmpeg args:`, args);
+  
+  try {
+    await runFFmpeg(args, { timeout: 60000 }); // 60 second timeout
+    console.log(`[renderImageQuoteVideo] Successfully rendered: ${outPath}`);
+  } catch (error) {
+    console.error(`[renderImageQuoteVideo] Failed to render image video:`, error);
+    throw error;
+  }
 }
 
 export default {

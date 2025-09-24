@@ -26,6 +26,16 @@ router.post("/caption/preview", express.json(), async (req, res) => {
       borderRadius = 16
     } = req.body || {};
 
+    // Map font families to available fonts
+    const fontMap = {
+      'DejaVu Sans Local': 'DejaVu Sans Local',
+      'DejaVu Serif Bold Local': 'DejaVu Serif Bold Local', 
+      'Cinzel Decorative': 'Cinzel Decorative',
+      'Inter': 'Inter'
+    };
+    
+    const actualFontFamily = fontMap[fontFamily] || 'DejaVu Sans Local';
+
     if (typeof text !== "string" || !text.trim()) {
       return res.status(400).json({ success:false, error:"INVALID_INPUT", detail:"text required" });
     }
@@ -41,7 +51,7 @@ router.post("/caption/preview", express.json(), async (req, res) => {
 
     const maxW = Math.round(W * Number(maxWidthPct));
     console.log(`[caption] Using maxWidthPct=${maxWidthPct}, maxW=${maxW}`);
-    ctx.font = `${weightCss} ${clampedFontPx}px "${fontFamily}"`;
+    ctx.font = `${weightCss} ${clampedFontPx}px "${actualFontFamily}"`;
     ctx.fillStyle = color;
     ctx.globalAlpha = Number(opacity);
 
@@ -64,25 +74,19 @@ router.post("/caption/preview", express.json(), async (req, res) => {
     const textH = lines.length * lh;
 
     // Calculate yPct based on placement and text block height
-    const padPctTop = 0.08;      // 8% top safe area
-    const padPctBottom = 0.08;   // 8% bottom safe area
-    const totalTextH = lines.length * clampedFontPx * Number(lineHeight);
+    const PAD_TOP_PCT = 0.08;   // 8% from top
+    const PAD_BOT_PCT = 0.05;   // 5% from bottom (closer than before)
     
-    let calculatedYPct;
-    switch (placement) {
-      case 'top':
-        calculatedYPct = padPctTop; // top is easy: top pad
-        break;
-      case 'center':
-        calculatedYPct = 0.5 - (totalTextH / (2 * H)); // center the whole block
-        break;
-      case 'bottom':
-        calculatedYPct = 1 - padPctBottom - (totalTextH / H); // sit above bottom pad
-        calculatedYPct = Math.max(padPctTop, Math.min(calculatedYPct, 1 - padPctBottom)); // clamp to safe band
-        break;
-      default:
-        calculatedYPct = padPctTop;
+    function computeTopY(H, blockH, placement) {
+      if (placement === 'top')    return Math.round(PAD_TOP_PCT * H);
+      if (placement === 'middle') return Math.round((H - blockH) / 2);
+      // bottom
+      return Math.round(H - (PAD_BOT_PCT * H) - blockH);
     }
+    
+    const blockH = Math.ceil(clampedFontPx * Number(lineHeight) * lines.length);
+    const topY = computeTopY(H, blockH, placement);
+    const calculatedYPct = topY / H;
     
     // Use provided yPct or calculated one
     const finalYPct = yPct !== undefined && yPct !== null ? Number(yPct) : calculatedYPct;
@@ -104,7 +108,7 @@ router.post("/caption/preview", express.json(), async (req, res) => {
     }
 
     ctx.textAlign = "center";
-    ctx.textBaseline = "alphabetic";
+    ctx.textBaseline = "top";      // IMPORTANT: Use top baseline for proper positioning
     if (shadow) { ctx.shadowColor = "rgba(0,0,0,0.6)"; ctx.shadowBlur = 12; ctx.shadowOffsetY = 2; }
     else { ctx.shadowColor = "transparent"; }
 
@@ -123,7 +127,8 @@ router.post("/caption/preview", express.json(), async (req, res) => {
       align: "center",
       vAlign: placement === "top" ? "top" : placement === "bottom" ? "bottom" : "center",
       previewHeightPx: H,
-      opacity: Number(opacity)
+      opacity: Number(opacity),
+      boxHPx: blockH // Include block height for debugging
     };
     
     // Debug logging

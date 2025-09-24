@@ -934,9 +934,9 @@
             // Map UI font selection to server font names
             const fontMapping = {
                 'system': 'DejaVu Sans Local',
-                'serif': 'DejaVu Sans Local', // fallback to available font
-                'mono': 'DejaVu Sans Local',  // fallback to available font
-                'bold': 'DejaVu Sans Local'
+                'bold': 'DejaVu Serif Bold Local',
+                'cinematic': 'Cinzel Decorative',
+                'minimal': 'Inter'
             };
             
             const selectedFont = document.getElementById('caption-font')?.value || 'system';
@@ -1127,6 +1127,13 @@
                     currentQuote = data.data.quote;
                     displayQuote(currentQuote); // keep textarea visible (no toggle)
                     decRegens();
+                    
+                    // Trigger caption preview immediately after quote generation
+                    try {
+                        updateCaptionOverlay(currentQuote.text.trim(), true);
+                    } catch (e) {
+                        console.warn('[caption-overlay] auto-preview failed (non-fatal)', e);
+                    }
                 } else {
                     showError('quote-error', data.reason || 'Failed to generate quote');
                 }
@@ -1308,6 +1315,15 @@
             loadAssets(1);
             updateRenderPreview();
             updateRenderButtonState();
+            
+            // Trigger caption preview immediately after asset selection
+            if (currentQuote?.text) {
+                try {
+                    updateCaptionOverlay(currentQuote.text.trim(), true);
+                } catch (e) {
+                    console.warn('[caption-overlay] auto-preview failed (non-fatal)', e);
+                }
+            }
         }
 
         function updatePagination() {
@@ -2471,6 +2487,13 @@
                 console.warn('Use This Text save failed:', e?.message || e);
               }
             })();
+            
+            // Trigger caption preview immediately after using text
+            try {
+                updateCaptionOverlay(input, true);
+            } catch (e) {
+                console.warn('[caption-overlay] auto-preview failed (non-fatal)', e);
+            }
         };
         document.getElementById('search-assets-btn').onclick = () => {
             assetCache.clear(); // Clear cache on new search
