@@ -47,7 +47,7 @@ export async function generateCaptionPreview(opts) {
       fontFamily: opts.fontFamily || "DejaVuSans",
       fontWeight: opts.weight === "bold" ? 700 : 400,
       fontPx: Number(opts.sizePx || 48),
-      lineSpacingPx: Math.round(Number(opts.sizePx || 48) * Number(opts.lineHeight || 1.1)),
+      lineSpacingPx: Math.min(100, Math.round(Number(opts.sizePx || 48) * Number(opts.lineHeight || 1.1))),
       align: "center",
       textAlpha: Number(opts.opacity ?? 0.85),
       fill: opts.color || "rgba(255,255,255,1)",

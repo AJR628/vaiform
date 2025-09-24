@@ -82,26 +82,26 @@ router.post("/caption/preview", express.json(), async (req, res) => {
       return res.status(400).json({ success:false, error:"INVALID_INPUT", detail:"failed to compute text dimensions" });
     }
 
-    // Calculate yPct based on placement and text block height
-    const SAFE_TOP_PCT = 0.04;     // ~77px on 1920 (closer to top)
-    const SAFE_BOTTOM_PCT = 0.04;  // ~77px on 1920 (closer to bottom)
+    // Calculate yPct based on placement and text block height (revert to original logic)
+    const padPctTop = 0.06;      // 6% top safe area (slightly higher)
+    const padPctBottom = 0.08;   // 8% bottom safe area
+    const totalTextH = lines.length * lh;
     
-    function yPctFor(placement, H, totalTextH) {
-      if (placement === 'top') {
-        // top edge of caption block anchored at safe top
-        return SAFE_TOP_PCT;
-      }
-      if (placement === 'bottom') {
-        // bottom edge at safe bottom → compute top edge
-        const topPx = (H * (1 - SAFE_BOTTOM_PCT)) - totalTextH;
-        return topPx / H;
-      }
-      // center: top edge = (H - blockHeight) / 2
-      return (H - totalTextH) / (2 * H);
+    let calculatedYPct;
+    switch (placement) {
+      case 'top':
+        calculatedYPct = padPctTop; // top is easy: top pad
+        break;
+      case 'center':
+        calculatedYPct = 0.5 - (totalTextH / (2 * H)); // center the whole block
+        break;
+      case 'bottom':
+        calculatedYPct = 1 - padPctBottom - (totalTextH / H); // sit above bottom pad
+        calculatedYPct = Math.max(padPctTop, Math.min(calculatedYPct, 1 - padPctBottom)); // clamp to safe band
+        break;
+      default:
+        calculatedYPct = padPctTop;
     }
-    
-    const totalTextH = Math.ceil(clampedFontPx * Number(lineHeight) * lines.length);
-    const calculatedYPct = yPctFor(placement, H, totalTextH);
     
     // Use provided yPct or calculated one
     const finalYPct = yPct !== undefined && yPct !== null ? Number(yPct) : calculatedYPct;

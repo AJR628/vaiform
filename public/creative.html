@@ -914,11 +914,10 @@
             }
 
             // Get caption style parameters from UI
-            const rawSizePx = window.getCaptionPx(); // Use mapped size
-            const sizePx = fitFontPx(rawSizePx, text.trim(), 1080, 1920); // Apply responsive font fitting
+            const sizePx = window.getCaptionPx(); // Use original mapped size logic
             const opacityPct = parseInt(document.getElementById('caption-opacity')?.value || '85', 10);
             const placement = (document.getElementById('caption-placement')?.value || 'bottom').toLowerCase();
-            const showBoxToggle = document.getElementById('caption-background')?.checked || false; // Default to false (no gray box)
+            const showBoxToggle = document.getElementById('caption-background')?.checked || false;
             const boxOpacityPct = parseInt(document.getElementById('caption-bg-opacity')?.value || '50', 10);
             const selectedWeight = document.getElementById('caption-weight')?.value || 'bold';
             
