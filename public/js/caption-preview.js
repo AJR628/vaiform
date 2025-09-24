@@ -200,9 +200,9 @@ export function createCaptionOverlay(captionData, container, scaling = {}) {
   });
   
   // TASK 3: Clamp with padding to prevent off-screen positioning
-  const minTop = pad;
-  const maxTop = finalH - pad - scaledTotalTextH;
-  top = Math.max(minTop, Math.min(maxTop, top));
+  const minTop = safeTopMargin;
+  const maxTop = finalH - safeBottomMargin - scaledTotalTextH;
+  top = Math.max(minTop, Math.min(targetTop, maxTop));
   
   // Clamp horizontal positioning
   left = Math.max(0, Math.min(left, finalW - dispW));
