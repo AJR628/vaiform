@@ -1,34 +1,58 @@
-import { createCanvas, registerFont } from 'canvas';
+import { createCanvas, GlobalFonts } from '@napi-rs/canvas';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 
-// TASK 6: Register custom fonts using canvas@2 registerFont API
+// TASK 6: Improved font registration with @napi-rs/canvas
 const fontPath = path.resolve('assets/fonts/DejaVuSans-Bold.ttf');
 let fontRegistered = false;
 
 // Check available fonts first
 try {
-  console.log('[caption] Using canvas@2 for font registration');
+  const availableFonts = GlobalFonts.families;
+  console.log('[caption] Available system fonts:', availableFonts.slice(0, 10));
 } catch (err) {
-  console.log('[caption] Could not initialize canvas');
+  console.log('[caption] Could not list system fonts');
 }
 
 if (fs.existsSync(fontPath)) {
   try {
-    // TASK 6: Use canvas@2 registerFont API for better font support
-    registerFont(fontPath, { family: 'DejaVu-Bold' });
-    fontRegistered = true;
-    console.log('[caption] Font registered successfully: DejaVu-Bold using canvas@2');
+    // TASK 6: Try multiple registration methods for better compatibility
+    try {
+      // Method 1: Direct path registration
+      GlobalFonts.register(fontPath, 'DejaVu-Bold');
+      fontRegistered = true;
+      console.log('[caption] Font registered successfully: DejaVu-Bold (path method)');
+    } catch (pathErr) {
+      try {
+        // Method 2: Buffer registration
+        const fontBuffer = fs.readFileSync(fontPath);
+        GlobalFonts.register(fontBuffer, 'DejaVu-Bold');
+        fontRegistered = true;
+        console.log('[caption] Font registered successfully: DejaVu-Bold (buffer method)');
+      } catch (bufferErr) {
+        // Method 3: Try with different family name
+        try {
+          GlobalFonts.register(fontPath, 'DejaVuSans-Bold');
+          fontRegistered = true;
+          console.log('[caption] Font registered successfully: DejaVuSans-Bold (alt name)');
+        } catch (altErr) {
+          console.warn('[caption] All font registration methods failed:');
+          console.warn('[caption] Path error:', pathErr.message);
+          console.warn('[caption] Buffer error:', bufferErr.message);
+          console.warn('[caption] Alt name error:', altErr.message);
+        }
+      }
+    }
   } catch (err) {
-    console.warn('[caption] Font registration failed:', err.message);
+    console.warn('[caption] Font registration setup failed:', err.message);
   }
 } else {
   console.warn('[caption] Font file not found:', fontPath);
 }
 
 if (!fontRegistered) {
-  console.warn('[caption] Using system font fallback');
+  console.warn('[caption] Using system font fallback - DejaVu-Bold will not be available');
 }
 
 /**
