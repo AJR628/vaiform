@@ -40,6 +40,7 @@ router.post("/caption/preview", express.json(), async (req, res) => {
     ctx.clearRect(0, 0, W, H);
 
     const maxW = Math.round(W * Number(maxWidthPct));
+    console.log(`[caption] Using maxWidthPct=${maxWidthPct}, maxW=${maxW}`);
     ctx.font = `${weightCss} ${clampedFontPx}px "${fontFamily}"`;
     ctx.fillStyle = color;
     ctx.globalAlpha = Number(opacity);
@@ -62,18 +63,32 @@ router.post("/caption/preview", express.json(), async (req, res) => {
     const lh = Math.round(clampedFontPx * Number(lineHeight));
     const textH = lines.length * lh;
 
-    let y;
-    if (yPct !== undefined && yPct !== null) {
-      // Don't add fontPx to y; yPct already encodes the intended anchor position
-      y = Math.round(H * Number(yPct));
-      console.log(`[caption] Using yPct ${yPct} -> y=${y} (no +fontPx addition)`);
-    } else {
-      // Fallback to placement-based positioning
-      if (placement === "top") y = Math.round(H * 0.08); // fallback like "top"
-      else if (placement === "bottom") y = Math.round(H * 0.92);
-      else if (placement === "center") y = Math.round(H * 0.50);
-      else y = Math.round(H * 0.08); // fallback to top
+    // Calculate yPct based on placement and text block height
+    const padPctTop = 0.08;      // 8% top safe area
+    const padPctBottom = 0.08;   // 8% bottom safe area
+    const totalTextH = lines.length * clampedFontPx * Number(lineHeight);
+    
+    let calculatedYPct;
+    switch (placement) {
+      case 'top':
+        calculatedYPct = padPctTop; // top is easy: top pad
+        break;
+      case 'center':
+        calculatedYPct = 0.5 - (totalTextH / (2 * H)); // center the whole block
+        break;
+      case 'bottom':
+        calculatedYPct = 1 - padPctBottom - (totalTextH / H); // sit above bottom pad
+        calculatedYPct = Math.max(padPctTop, Math.min(calculatedYPct, 1 - padPctBottom)); // clamp to safe band
+        break;
+      default:
+        calculatedYPct = padPctTop;
     }
+    
+    // Use provided yPct or calculated one
+    const finalYPct = yPct !== undefined && yPct !== null ? Number(yPct) : calculatedYPct;
+    const y = Math.round(H * finalYPct);
+    
+    console.log(`[caption] placement=${placement}, fontPx=${clampedFontPx}, totalTextH=${totalTextH}, yPct=${finalYPct}, y=${y}`);
 
     const boxW = maxW + padding * 2;
     const boxH = textH + padding * 2;
@@ -104,7 +119,7 @@ router.post("/caption/preview", express.json(), async (req, res) => {
       fontPx: clampedFontPx, // Use clamped font size
       lineSpacing: lh,
       xPct: 50, // centered
-      yPct: yPct !== undefined ? Number(yPct) : Math.round((y - clampedFontPx) / H * 100) / 100, // Use provided yPct or calculate
+      yPct: finalYPct, // Use calculated yPct
       align: "center",
       vAlign: placement === "top" ? "top" : placement === "bottom" ? "bottom" : "center",
       previewHeightPx: H,
