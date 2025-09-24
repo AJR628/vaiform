@@ -148,16 +148,17 @@ export function createCaptionOverlay(captionData, container, scaling = {}) {
   // Clamp within frame bounds
   topCss = Math.max(0, Math.min(topCss, previewH - (captionData.meta?.hPx || 1920) * scaleY));
   
-  // Use CSS size scales for proper positioning
+  // Always size the overlay to the *preview frame* (same aspect 1080x1920)
   overlay.style.cssText = `
     position: absolute;
-    left: ${(previewW - (captionData.meta?.wPx || 1080) * scaleX) / 2}px;
-    top: ${topCss}px;
-    width: ${(captionData.meta?.wPx || 1080) * scaleX}px;
-    height: ${(captionData.meta?.hPx || 1920) * scaleY}px;
+    left: 0;
+    top: 0;
+    width: ${previewW}px;
+    height: ${previewH}px;
     pointer-events: none;
     z-index: 10;
-    object-fit: none;
+    object-fit: contain;
+    user-select: none;
   `;
   
   // Remove any existing caption overlays

@@ -64,15 +64,15 @@ router.post("/caption/preview", express.json(), async (req, res) => {
 
     let y;
     if (yPct !== undefined && yPct !== null) {
-      // Use precise Y position from client (0..1 range) - yPct represents final text position
+      // Don't add fontPx to y; yPct already encodes the intended anchor position
       y = Math.round(H * Number(yPct));
       console.log(`[caption] Using yPct ${yPct} -> y=${y} (no +fontPx addition)`);
     } else {
       // Fallback to placement-based positioning
-      if (placement === "top") y = padding + clampedFontPx;
-      else if (placement === "bottom") y = H - padding - textH + clampedFontPx;
-      else if (placement === "center") y = Math.round((H - textH) / 2) + clampedFontPx;
-      else y = Math.round((H - textH) / 2) + clampedFontPx; // fallback to center
+      if (placement === "top") y = Math.round(H * 0.08); // fallback like "top"
+      else if (placement === "bottom") y = Math.round(H * 0.92);
+      else if (placement === "center") y = Math.round(H * 0.50);
+      else y = Math.round(H * 0.08); // fallback to top
     }
 
     const boxW = maxW + padding * 2;
@@ -110,6 +110,18 @@ router.post("/caption/preview", express.json(), async (req, res) => {
       previewHeightPx: H,
       opacity: Number(opacity)
     };
+    
+    // Debug logging
+    console.log('[caption-overlay] meta:', {
+      fontPx: clampedFontPx,
+      lineSpacing: lh,
+      xPct: 50,
+      yPct: meta.yPct,
+      vAlign: meta.vAlign,
+      frame: { W, H },
+      safeW: Math.floor(W * 0.92),
+      safeH: Math.floor(H * 0.84)
+    });
     
     return res.json({ success:true, dataUrl, width:W, height:H, meta });
   } catch (e) {

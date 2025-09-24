@@ -156,8 +156,21 @@ export async function renderCaptionImage(jobId, style) {
     throw new Error('No valid text lines after word wrapping');
   }
 
-  // Calculate total text height
-  let totalTextHeight = lines.length * fontPx + (lines.length - 1) * lineSpacingPx;
+  // Server-side font clamping
+  let clampedFontPx = fontPx;
+  const SAFE_W = Math.floor(canvasW * 0.92);   // 4% pad each side
+  const SAFE_H = Math.floor(canvasH * 0.84);   // leave 8% top/btm combined for padding
+  
+  // Decrease font until all lines fit inside the safe box & total height ok
+  while (true) {
+    const testHeight = lines.length * clampedFontPx + (lines.length - 1) * lineSpacingPx;
+    if (testHeight <= SAFE_H) break;
+    clampedFontPx -= 2;
+    if (clampedFontPx <= 20) break;
+  }
+  
+  // Calculate total text height with clamped font
+  let totalTextHeight = lines.length * clampedFontPx + (lines.length - 1) * lineSpacingPx;
   
   // Max-height clamp (90% of 1920) - if text block exceeds, scale font down and re-wrap
   const maxHeightPx = Math.round(canvasH * 0.9); // 90% of 1920 = 1728px
@@ -209,8 +222,8 @@ export async function renderCaptionImage(jobId, style) {
   const baselines = [];
 
   // Render each line
-  finalLines.forEach((line, index) => {
-    const y = Math.round(startY + index * (finalFontPx + finalLineSpacing));
+  lines.forEach((line, index) => {
+    const y = Math.round(startY + index * (clampedFontPx + lineSpacingPx));
     baselines.push(y);
     
     // Calculate X position based on alignment
@@ -235,7 +248,7 @@ export async function renderCaptionImage(jobId, style) {
     minX = Math.min(minX, x - strokePx - Math.abs(shadowX));
     minY = Math.min(minY, y - strokePx - Math.abs(shadowY));
     maxX = Math.max(maxX, x + lineMetrics.width + strokePx + Math.abs(shadowX));
-    maxY = Math.max(maxY, y + finalFontPx + strokePx + Math.abs(shadowY));
+    maxY = Math.max(maxY, y + clampedFontPx + strokePx + Math.abs(shadowY));
 
     // Render shadow (if enabled)
     if (shadowBlur > 0 || shadowX !== 0 || shadowY !== 0) {
@@ -292,7 +305,7 @@ export async function renderCaptionImage(jobId, style) {
   const buffer = canvas.toBuffer('image/png');
   await fs.promises.writeFile(pngPath, buffer);
 
-  console.log(`[caption] lines=${finalLines.length} fontPx=${finalFontPx} bbox={x:${minX},y:${minY},w:${trimmedWidth},h:${trimmedHeight}}`);
+  console.log(`[caption] lines=${lines.length} fontPx=${clampedFontPx} bbox={x:${minX},y:${minY},w:${trimmedWidth},h:${trimmedHeight}}`);
 
   return {
     pngPath,
@@ -302,10 +315,10 @@ export async function renderCaptionImage(jobId, style) {
     wPx: trimmedWidth,
     hPx: trimmedHeight,
     meta: {
-      splitLines: finalLines, // Use finalLines as expected by the system
+      splitLines: lines, // Use lines as expected by the system
       baselines,
-      fontPx: finalFontPx,
-      lineSpacingPx: finalLineSpacing,
+      fontPx: clampedFontPx,
+      lineSpacingPx: lineSpacingPx,
     },
   };
 }

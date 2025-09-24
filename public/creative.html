@@ -548,33 +548,16 @@
         }
         
         // Font size clamping to prevent overflow
-        function clampFontPx(requestedPx, text, family = 'system-ui', weight = 'bold') {
-            const CANVAS_W = 1080, CANVAS_H = 1920;
-            const horizontalPaddingPx = Math.round(CANVAS_W * 0.08); // ~8% side gutters
-            const verticalPaddingPx = Math.round(CANVAS_H * 0.08); // ~8% top/bottom gutters
-            const maxTextWidth = CANVAS_W - 2 * horizontalPaddingPx;
-            const maxTextHeight = CANVAS_H - 2 * verticalPaddingPx;
+        function clampFontPx(px, W = 1080, H = 1920) {
+            const maxByHeight = Math.floor(H * 0.12); // 12% of frame height
+            const maxByWidth = Math.floor(W * 0.10); // rough width guard for long words
+            const clamped = Math.max(20, Math.min(px, Math.min(maxByHeight, maxByWidth)));
             
-            // Calculate estimated text height based on line count
-            const estimatedLines = Math.ceil(text.length / 20); // rough estimate
-            const lineHeight = 1.1;
-            const estimatedHeight = requestedPx * estimatedLines * lineHeight;
-            
-            // Clamp based on available vertical space
-            let clampedPx = requestedPx;
-            if (estimatedHeight > maxTextHeight) {
-                clampedPx = Math.floor(maxTextHeight / (estimatedLines * lineHeight));
+            if (clamped !== px) {
+                console.warn(`[caption] Font size ${px}px clamped to ${clamped}px to prevent overflow`);
             }
             
-            // Simple guardrail: never exceed a cap that would overflow
-            const ABS_MAX = 200; // keep UX reasonable
-            clampedPx = Math.min(clampedPx, ABS_MAX);
-            
-            if (clampedPx !== requestedPx) {
-                console.warn(`[caption] Font size ${requestedPx}px clamped to ${clampedPx}px to prevent overflow`);
-            }
-            
-            return clampedPx;
+            return clamped;
         }
 
         // Preview geometry helper for proper scaling
@@ -877,7 +860,7 @@
 
             // Get caption style parameters from UI
             const rawSizePx = window.getCaptionPx(); // Use mapped size
-            const sizePx = clampFontPx(rawSizePx, text.trim()); // Apply font clamping
+            const sizePx = clampFontPx(rawSizePx, 1080, 1920); // Apply font clamping
             const opacityPct = parseInt(document.getElementById('caption-opacity')?.value || '85', 10);
             const placement = (document.getElementById('caption-placement')?.value || 'bottom').toLowerCase();
             const showBoxToggle = document.getElementById('caption-background')?.checked || false;
@@ -888,19 +871,13 @@
                 mappedSizePx: sizePx
             });
 
-            // Single source of truth for placement mapping
+            // Map UI selection to vertical position (percent of full 1080x1920 frame)
             function placementToVAlignAndYPct(placement) {
-                // 9:16 canvas with top/middle/bottom zones and some breathing room
-                const padPctTop = 0.08;     // ~8% top padding
-                const padPctBottom = 0.08;  // ~8% bottom padding
                 switch ((placement || 'top').toLowerCase()) {
-                    case 'middle':
-                        return { vAlign: 'middle', yPct: 0.5 };
-                    case 'bottom':
-                        return { vAlign: 'bottom', yPct: 1 - padPctBottom }; // e.g. 0.92
+                    case 'middle': return { vAlign: 'center', yPct: 0.50 };
+                    case 'bottom': return { vAlign: 'bottom', yPct: 0.92 }; // ~8% pad from bottom
                     case 'top':
-                    default:
-                        return { vAlign: 'top', yPct: padPctTop };           // e.g. 0.08
+                    default:       return { vAlign: 'top',    yPct: 0.08 }; // ~8% pad from top
                 }
             }
             
@@ -977,6 +954,12 @@
                         previewW: geometry.cssW, 
                         previewH: geometry.cssH,
                         placement: captionStyle.placement
+                    });
+                    
+                    // Debug logging
+                    console.log('[preview-scaling]', { 
+                        previewW: geometry.cssW, 
+                        previewH: geometry.cssH 
                     });
                     
                     console.log('[caption-overlay] PNG overlay created successfully');
