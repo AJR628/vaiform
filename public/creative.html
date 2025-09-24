@@ -917,6 +917,13 @@
             const overlay = document.getElementById('caption-overlay');
             if (!overlay) return;
             
+            // Check if container is visible first
+            const container = document.getElementById('live-preview-container');
+            if (!container || container.classList.contains('hidden')) {
+                console.log('[caption-overlay] Container not visible, skipping overlay');
+                return;
+            }
+            
             // Fix C: Check if canvas has real dimensions, but don't retry infinitely
             const canvas = document.getElementById('live-preview-canvas');
             if (!canvas || canvas.clientWidth === 0 || canvas.clientHeight === 0) {
@@ -1564,7 +1571,15 @@
                 
                 preview.classList.remove('hidden');
                 renderBtn.classList.remove('hidden');
-                updateLivePreview();
+                document.getElementById('live-preview-container').classList.remove('hidden');
+                
+                // Wait a frame for the container to be visible, then update preview
+                requestAnimationFrame(() => {
+                    updateLivePreview();
+                    if (currentQuote) {
+                        updateCaptionOverlay(currentQuote.text.trim(), true);
+                    }
+                });
             } else {
                 preview.classList.add('hidden');
                 renderBtn.classList.add('hidden');
@@ -1609,7 +1624,9 @@
                 const check = () => {
                     const connected = canvas?.isConnected;
                     const rect = canvas?.getBoundingClientRect();
-                    const ready = connected && rect && rect.width > 0 && rect.height > 0;
+                    const container = document.getElementById('live-preview-container');
+                    const containerVisible = container && !container.classList.contains('hidden');
+                    const ready = connected && rect && rect.width > 0 && rect.height > 0 && containerVisible;
 
                     if (ready && sizeCanvasToCSS(canvas)) {
                         resolve(true);
@@ -1793,6 +1810,12 @@
             
             const container = document.getElementById('live-preview-container');
             const canvas = document.getElementById('live-preview-canvas');
+            
+            // Check if container is visible first
+            if (!container || container.classList.contains('hidden')) {
+                console.log('[preview-scaling] Container not visible, skipping preview');
+                return;
+            }
             
             // Fix C: Check if canvas has real dimensions, but don't retry infinitely
             if (!canvas || canvas.clientWidth === 0 || canvas.clientHeight === 0) {
