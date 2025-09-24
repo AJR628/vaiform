@@ -177,48 +177,27 @@ export function createCaptionOverlay(captionData, container, scaling = {}) {
   const safeTopMargin = previewH * 0.05;
   const safeBottomMargin = previewH * 0.08;
   
-  // TASK 3: Correct vertical placement math with clamping
   // Calculate anchor points using server-computed positioning
   const anchorX = (xPct / 100) * finalW;
-  const anchorY = yPct * finalH;
   
   // Calculate position based on alignment - use text-aware positioning
   let left = anchorX;
-  let top = anchorY;
   
   // Horizontal alignment
   if (align === 'center') left -= dispW / 2;
   else if (align === 'right') left -= dispW;
   
-  // TASK 3: Vertical alignment with proper clamping
-  const scaledPadding = internalPadding * s;
-  const pad = 48 * s; // Server px padding scaled to CSS
+  // Use meta.yPct for precise vertical positioning (server-computed)
+  const targetTop = (yPct * finalH) - (scaledTotalTextH / 2);
+  const top = Math.max(safeTopMargin, Math.min(targetTop, finalH - safeBottomMargin - scaledTotalTextH));
   
-  // Use placement parameter instead of vAlign from server
   console.log('[preview-overlay] positioning:', {
     W: finalW, H: finalH, iw: captionData.meta?.wPx, iH: captionData.meta?.hPx,
     dispw: dispW, dispH: dispH, align, vAlign, placement, yPct,
-    computedYPct: placement === 'top' ? safeTopMargin / finalH : 
-                  placement === 'bottom' ? (finalH - safeBottomMargin) / finalH : 0.5,
+    computedYPct: yPct,
     finalscale: s, finalscaledTextH: scaledTotalTextH, totalTextH,
-    left: left, top: top, safeTopMargin, safeBottomMargin
+    left: left, top: top, targetTop, safeTopMargin, safeBottomMargin
   });
-  
-  switch (placement) {
-    case 'top':
-      // Position text block at top with safe margin
-      top = safeTopMargin;
-      break;
-    case 'bottom':
-      // Position text block at bottom with safe margin
-      top = finalH - safeBottomMargin - scaledTotalTextH;
-      break;
-    case 'center':
-    default:
-      // Center the text block
-      top = (finalH - scaledTotalTextH) / 2;
-      break;
-  }
   
   // TASK 3: Clamp with padding to prevent off-screen positioning
   const minTop = pad;

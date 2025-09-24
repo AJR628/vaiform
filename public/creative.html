@@ -520,28 +520,23 @@
         const UI_MID_PX = 72;     // slider mid visual (more reasonable middle)
         const UI_MAX_PX = 120;    // slider max visual (capped to prevent overflow)
         const API_MIN_PX = 32;    // backend clamp lower bound
-        const API_MAX_PX = 200;   // backend clamp upper bound (increased to match server limit)
+        const API_MAX_PX = 120;   // backend clamp upper bound (match server ABS_MAX_FONT)
 
         // --- Caption size mapping (define BEFORE any usage)
         function mapSliderToPx(sliderVal) {
-          // linear map slider value to pixel range, then clamp to API bounds
+          // non-linear map slider value to pixel range, then clamp to API bounds
           const raw = Number(sliderVal);
-          let uiPx;
           
           if (!isFinite(raw)) {
-            uiPx = UI_MID_PX; // fallback to middle
-          } else {
-            const v = Math.max(0, Math.min(100, raw));
-            if (v <= 50) {             // 0..50  -> UI_MIN_PX..UI_MID_PX
-              const t = v / 50;
-              uiPx = UI_MIN_PX + t * (UI_MID_PX - UI_MIN_PX);
-            } else {                   // 50..100 -> UI_MID_PX..UI_MAX_PX
-            const t = (v - 50) / 50;
-              uiPx = UI_MID_PX + t * (UI_MAX_PX - UI_MID_PX);
-          }
+            return API_MIN_PX + (API_MAX_PX - API_MIN_PX) / 2; // fallback to middle
           }
           
-          return Math.max(API_MIN_PX, Math.min(API_MAX_PX, Math.round(uiPx)));
+          const v = Math.max(0, Math.min(100, raw));
+          const t = v / 100;
+          // Non-linear mapping: size = 32 + (120-32)*Math.pow(t,0.6)
+          const size = API_MIN_PX + (API_MAX_PX - API_MIN_PX) * Math.pow(t, 0.6);
+          
+          return Math.max(API_MIN_PX, Math.min(API_MAX_PX, Math.round(size)));
         }
 
         function getCaptionPx() {
@@ -954,10 +949,10 @@
             // Map UI selection to server placement format
             function placementToServerFormat(placement) {
                 switch ((placement || 'bottom').toLowerCase()) {
-                    case 'top':    return { placement: 'top',    yPct: 0.15 }; // 15% from top
-                    case 'middle': return { placement: 'center', yPct: 0.50 }; // center
+                    case 'top':    return { placement: 'top' };
+                    case 'middle': return { placement: 'center' };
                     case 'bottom': 
-                    default:       return { placement: 'bottom', yPct: 0.85 }; // 85% from top
+                    default:       return { placement: 'bottom' };
                 }
             }
             
@@ -971,12 +966,10 @@
             }
             
             const placementData = placementToServerFormat(placement);
-            const validatedYPct = validateYPct(placementData.yPct);
             
             console.log('[caption-debug] Placement mapping:', {
                 uiPlacement: placement,
-                serverPlacement: placementData.placement,
-                yPct: validatedYPct
+                serverPlacement: placementData.placement
             });
             
             // Map UI font selection to server font names (only use registered fonts)
@@ -1000,8 +993,7 @@
                 shadow: true,
                 showBox: showBoxToggle,
                 boxColor: `rgba(0,0,0,${boxOpacityPct/100})`,
-                placement: placementData.placement, // Use placement for server compatibility
-                yPct: validatedYPct,                // Use validated yPct for precise positioning
+                placement: placementData.placement, // Server will compute yPct based on placement
                 lineHeight: 1.05, // reduced for better stacking
                 padding: 24,
                 maxWidthPct: 0.90, // increased for bigger text

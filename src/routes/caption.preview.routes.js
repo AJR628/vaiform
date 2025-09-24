@@ -88,22 +88,22 @@ router.post("/caption/preview", express.json(), async (req, res) => {
     }
 
     // Calculate yPct based on placement and text block height
-    const padPctTop = 0.10;      // 10% top safe area
-    const padPctBottom = 0.10;   // 10% bottom safe area
+    const safeTopMarginPct = 0.10;      // 10% top safe area
+    const safeBottomMarginPct = 0.10;   // 10% bottom safe area
     const totalTextH = lines.length * lh;
     
     let calculatedYPct;
     switch (placement) {
       case 'top':
-        calculatedYPct = padPctTop; // top is easy: top pad
+        calculatedYPct = safeTopMarginPct; // top is easy: top pad
         break;
       case 'center':
       case 'middle':
         calculatedYPct = 0.5; // center the whole block
         break;
       case 'bottom':
-        calculatedYPct = 1 - padPctBottom - (totalTextH / H); // sit above bottom pad
-        calculatedYPct = Math.max(padPctTop, Math.min(calculatedYPct, 1 - padPctBottom)); // clamp to safe band
+        calculatedYPct = 1 - safeBottomMarginPct - (totalTextH / H); // sit above bottom pad
+        calculatedYPct = Math.max(safeTopMarginPct, Math.min(calculatedYPct, 1 - safeBottomMarginPct)); // clamp to safe band
         break;
       default:
         calculatedYPct = 0.5; // default to center
@@ -148,7 +148,7 @@ router.post("/caption/preview", express.json(), async (req, res) => {
       fontPx: clampedFontPx, // Use clamped font size
       lineSpacing: lh,
       xPct: 50, // centered
-      yPct: finalYPct, // Use calculated yPct
+      yPct: finalYPct, // Use calculated yPct (center of text block)
       align: "center",
       vAlign: placement === "top" ? "top" : placement === "bottom" ? "bottom" : "center",
       previewHeightPx: H,
@@ -157,7 +157,9 @@ router.post("/caption/preview", express.json(), async (req, res) => {
       hPx: boxH, // Height of padded text box
       wPx: boxW, // Width of padded text box
       placement: placement, // Include placement for reference
-      internalPadding: internalPadding // Include padding info for frontend
+      internalPadding: internalPadding, // Include padding info for frontend
+      safeTopMarginPct: safeTopMarginPct, // Document safe margins
+      safeBottomMarginPct: safeBottomMarginPct
     };
     
     // Debug logging
