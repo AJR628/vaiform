@@ -169,6 +169,7 @@ export function createCaptionOverlay(captionData, container, scaling = {}) {
   const align = captionData.meta?.align || 'center';
   const vAlign = captionData.meta?.vAlign || 'center';
   const internalPadding = captionData.meta?.internalPadding || 0;
+  const lineSpacingPx = captionData.meta?.lineSpacingPx ?? captionData.meta?.lineSpacing ?? 0;
   
   // TASK 2: Scale totalTextH with single scale factor
   const scaledTotalTextH = totalTextH * s;
