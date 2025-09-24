@@ -73,7 +73,7 @@ export async function generateCaptionPreview(opts) {
   };
 
   console.log("[caption-overlay] POST /preview/caption with placement:", opts.placement, "yPct:", opts.yPct);
-  const data = await apiFetch("/preview/caption", {
+  const data = await apiFetch("/caption/preview", {
     method: "POST",
     body: payload
   });
