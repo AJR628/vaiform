@@ -6,24 +6,28 @@ const router = express.Router();
 
 router.post("/caption/preview", express.json(), async (req, res) => {
   try {
-    const {
-      text,
-      width, // Don't use defaults - force consistent canvas size
-      height, // Don't use defaults - force consistent canvas size
-      fontFamily = "DejaVu Sans Local",
-      weightCss = "bold",
-      fontPx = 48,
-      color = "#FFFFFF",
-      opacity = 0.85,
-      shadow = true,
-      showBox = false,              // default OFF to remove gray box (polished UX)
-      boxColor = "rgba(0,0,0,0.35)",
-      yPct,                         // Optional precise Y position (0..1)
-      lineHeight = 1.1,
-      padding = 24,
-      maxWidthPct = 0.8,
-      borderRadius = 16
-    } = req.body || {};
+    const b = req.body || {};
+    const s = b.style || {};
+
+    // SSOT: prefer style.*, then fall back to top-level
+    const text = (s.text ?? b.text ?? "").toString().trim();
+    const fontFamily = (s.fontFamily ?? b.fontFamily ?? "DejaVu Sans Local");
+    const weightCss = (s.weightCss ?? b.weightCss ?? "bold");
+    const fontPx = (s.fontPx ?? b.fontPx ?? 48);
+    const color = (s.color ?? b.color ?? "#FFFFFF");
+    const opacity = Number(s.opacity ?? b.opacity ?? 0.85);
+    const shadow = (s.shadow ?? b.shadow ?? true);
+    const showBox = (s.showBox ?? b.showBox ?? false);
+    const boxColor = (s.boxColor ?? b.boxColor ?? "rgba(0,0,0,0.35)");
+    const yPct = (s.yPct ?? b.yPct);
+    const lineHeight = (s.lineHeight ?? b.lineHeight ?? 1.1);
+    const padding = (s.padding ?? b.padding ?? 24);
+    const maxWidthPct = (s.maxWidthPct ?? b.maxWidthPct ?? 0.8);
+    const borderRadius = (s.borderRadius ?? b.borderRadius ?? 16);
+
+    if (!text) {
+      return res.status(400).json({ success: false, error: "INVALID_INPUT", detail: "text required" });
+    }
 
     // Read placement from SSOT path first, then fallback, with validation
     const rawPlacement = (req.body?.style?.placement ?? req.body?.placement ?? 'center');
