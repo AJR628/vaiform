@@ -214,8 +214,26 @@ export async function renderCaptionImage(jobId, style) {
     console.log(`[caption] Scaled to fontPx=${finalFontPx}, lines=${finalLines.length}, height=${totalTextHeight}px`);
   }
   
-  // Center vertically within the box
-  const startY = boxYPx + (boxHPx - totalTextHeight) / 2;
+  // Position text based on placement setting
+  let startY;
+  const placement = style.placement || 'center';
+  
+  switch (placement) {
+    case 'top':
+      // Position text in upper third with padding from top
+      startY = boxYPx + Math.max(50, boxHPx * 0.1); // 10% from top, min 50px padding
+      break;
+    case 'bottom':
+      // Position text in lower third with padding from bottom  
+      startY = boxYPx + boxHPx - totalTextHeight - Math.max(50, boxHPx * 0.1); // 10% from bottom, min 50px padding
+      break;
+    case 'middle':
+    case 'center':
+    default:
+      // Center vertically within the box
+      startY = boxYPx + (boxHPx - totalTextHeight) / 2;
+      break;
+  }
   
   // Track actual bounds for trimming
   let minX = canvasW, minY = canvasH, maxX = 0, maxY = 0;
@@ -283,11 +301,19 @@ export async function renderCaptionImage(jobId, style) {
     ctx.restore();
   });
 
-  // Ensure bounds are valid
+  // Ensure bounds are valid and within canvas
   minX = Math.max(0, Math.floor(minX));
   minY = Math.max(0, Math.floor(minY));
   maxX = Math.min(canvasW, Math.ceil(maxX));
   maxY = Math.min(canvasH, Math.ceil(maxY));
+  
+  // Ensure text doesn't render off-canvas
+  if (minY >= canvasH || maxY <= 0 || minX >= canvasW || maxX <= 0) {
+    console.warn(`[caption] Text bounds are off-canvas: minY=${minY}, maxY=${maxY}, canvasH=${canvasH}`);
+    // Clamp to canvas bounds
+    minY = Math.max(0, Math.min(minY, canvasH - 50)); // Leave 50px padding
+    maxY = Math.min(canvasH, Math.max(maxY, 50)); // Leave 50px padding
+  }
 
   const trimmedWidth = maxX - minX;
   const trimmedHeight = maxY - minY;
@@ -307,8 +333,11 @@ export async function renderCaptionImage(jobId, style) {
 
   console.log(`[caption] lines=${lines.length} fontPx=${clampedFontPx} bbox={x:${minX},y:${minY},w:${trimmedWidth},h:${trimmedHeight}}`);
 
-  // Compute yPct for proper vertical positioning
-  const yPct = minY / canvasH;
+  // Compute yPct for proper vertical positioning based on placement
+  // The minY represents where the text actually starts, but we need to compute
+  // the center point of the text block for proper placement
+  const textCenterY = minY + (trimmedHeight / 2);
+  const yPct = textCenterY / canvasH;
   
   // Track actual font family used (for fallback detection)
   const fontFamilyUsed = fontRegistered ? 'DejaVu-Bold' : 'Arial';

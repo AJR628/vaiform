@@ -135,9 +135,11 @@ export function createCaptionOverlay(captionData, container, scaling = {}) {
   overlay.className = 'caption-overlay';
   
   // Scale overlay size with scale = previewW / 1080
+  // Use a less aggressive scaling factor to maintain text legibility
   const scale = previewW / 1080;
-  const dispW = (captionData.meta?.wPx || 1080) * scale;
-  const dispH = (captionData.meta?.hPx || 1920) * scale;
+  const scaleFactor = Math.max(0.5, scale); // Minimum 50% scale to keep text readable
+  const dispW = (captionData.meta?.wPx || 1080) * scaleFactor;
+  const dispH = (captionData.meta?.hPx || 1920) * scaleFactor;
   
   // Apply anchor-aware math using server meta
   const xPct = captionData.meta?.xPct || 50;
@@ -148,9 +150,9 @@ export function createCaptionOverlay(captionData, container, scaling = {}) {
   const vAlign = captionData.meta?.vAlign || 'center';
   
   // Scale totalTextH with preview scale for proper height calculation
-  const scaledTotalTextH = totalTextH * scale;
+  const scaledTotalTextH = totalTextH * scaleFactor;
   
-  // Calculate anchor points
+  // Calculate anchor points using server-computed yPct
   const anchorX = (xPct / 100) * previewW;
   const anchorY = yPct * previewH;
   
@@ -161,8 +163,9 @@ export function createCaptionOverlay(captionData, container, scaling = {}) {
   if (align === 'center') left -= dispW / 2;
   else if (align === 'right') left -= dispW;
   
-  if (vAlign === 'center') top -= dispH / 2;
-  else if (vAlign === 'bottom') top -= dispH;
+  // Use the server-computed yPct directly for positioning
+  // The server already accounts for placement, so we just center the overlay
+  top = anchorY - (dispH / 2);
   
   // Clamp positioning to prevent clipping above/below preview bounds
   left = Math.max(0, Math.min(left, previewW - dispW));
@@ -200,10 +203,12 @@ export function createCaptionOverlay(captionData, container, scaling = {}) {
     iW: captionData.meta?.wPx || 1080, iH: captionData.meta?.hPx || 1920,
     dispW: finalDispW, dispH: finalDispH,
     scaledTotalTextH,
+    scaleFactor,
     xPct, yPct, align, vAlign,
     left, top,
     computedYPct: yPct,
-    totalTextH: totalTextH
+    totalTextH: totalTextH,
+    placement: captionData.meta?.placement
   });
   
   // Apply calculated position and size

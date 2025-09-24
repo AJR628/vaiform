@@ -925,13 +925,13 @@
                 mappedSizePx: sizePx
             });
 
-            // Map UI selection to vertical position (percent of full 1080x1920 frame)
-            function placementToVAlignAndYPct(placement) {
+            // Map UI selection to server placement format
+            function placementToServerFormat(placement) {
                 switch ((placement || 'top').toLowerCase()) {
-                    case 'middle': return { vAlign: 'center', yPct: 0.50 };
-                    case 'bottom': return { vAlign: 'bottom', yPct: 0.92 }; // ~8% pad from bottom
+                    case 'middle': return { placement: 'middle', yPct: 0.50 };
+                    case 'bottom': return { placement: 'bottom', yPct: 0.90 }; // 90% from top
                     case 'top':
-                    default:       return { vAlign: 'top',    yPct: 0.08 }; // ~8% pad from top
+                    default:       return { placement: 'top',    yPct: 0.10 }; // 10% from top
                 }
             }
             
@@ -944,7 +944,7 @@
                 return clamped;
             }
             
-            const placementData = placementToVAlignAndYPct(placement);
+            const placementData = placementToServerFormat(placement);
             const validatedYPct = validateYPct(placementData.yPct);
             
             // Map UI font selection to server font names (only use registered fonts)
@@ -968,8 +968,8 @@
                 shadow: true,
                 showBox: showBoxToggle,
                 boxColor: `rgba(0,0,0,${boxOpacityPct/100})`,
-                placement: placementData.vAlign, // Use vAlign for server compatibility
-                yPct: validatedYPct,              // Use validated yPct for precise positioning
+                placement: placementData.placement, // Use placement for server compatibility
+                yPct: validatedYPct,                // Use validated yPct for precise positioning
                 lineHeight: 1.05, // reduced for better stacking
                 padding: 24,
                 maxWidthPct: 0.90, // increased for bigger text
