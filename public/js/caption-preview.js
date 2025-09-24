@@ -189,13 +189,12 @@ export function createCaptionOverlay(captionData, container, scaling = {}) {
   
   // Use meta.yPct for precise vertical positioning (server-computed)
   const targetTop = (yPct * finalH) - (scaledTotalTextH / 2);
-  let top = Math.max(safeTopMargin, Math.min(targetTop, finalH - safeBottomMargin - scaledTotalTextH)); // top is clamped later; needs let
+  let top = Math.max(safeTopMargin, Math.min(targetTop, finalH - safeBottomMargin - scaledTotalTextH));
   
   console.log('[preview-overlay] positioning:', {
     W: finalW, H: finalH, iw: captionData.meta?.wPx, iH: captionData.meta?.hPx,
-    dispw: dispW, dispH: dispH, align, vAlign, placement, yPct,
-    computedYPct: yPct,
-    finalscale: s, finalscaledTextH: scaledTotalTextH, totalTextH,
+    dispw: dispW, dispH: dispH, align, placement, yPct,
+    finalscale: s, scaledTotalTextH, totalTextH,
     left: left, top: top, targetTop, safeTopMargin, safeBottomMargin
   });
   
@@ -226,6 +225,7 @@ export function createCaptionOverlay(captionData, container, scaling = {}) {
   
   // TASK 2: Vertical alignment using single scale factor
   const finalScaledTextH = scaledTotalTextH * finalScale;
+  const scaledPadding = internalPadding * s;
   const finalScaledPadding = scaledPadding * finalScale;
   if (vAlign === 'center') top -= (finalScaledTextH / 2) + finalScaledPadding;
   else if (vAlign === 'bottom') top -= finalScaledTextH + finalScaledPadding;
@@ -236,17 +236,10 @@ export function createCaptionOverlay(captionData, container, scaling = {}) {
   
   // TASK 4: Debug logging with actual container dimensions
   console.log('[preview-overlay] positioning:', {
-    W: finalW, H: finalH, // Actual container dimensions
-    iW: captionData.meta?.wPx || 1080, iH: captionData.meta?.hPx || 1920,
-    dispW: finalDispW, dispH: finalDispH,
-    scaledTotalTextH, finalScaledTextH,
-    s, finalScale, // Single scale factor
-    safeTopMargin, safeBottomMargin,
-    xPct, yPct, align, vAlign,
-    left, top,
-    computedYPct: yPct,
-    totalTextH: totalTextH,
-    placement: captionData.meta?.placement
+    W: finalW, H: finalH, iw: captionData.meta?.wPx, iH: captionData.meta?.hPx,
+    dispW: finalDispW, dispH: finalDispH, align, placement, yPct,
+    finalScale: s, scaledTotalTextH, totalTextH, left, top, targetTop,
+    safeTopMargin, safeBottomMargin
   });
   
   // Apply calculated position and size
