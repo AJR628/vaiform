@@ -473,9 +473,9 @@
                     <!-- TASK 4: Fix overlay container to match canvas CSS size -->
                     <img
                       id="caption-overlay"
-                      class="absolute inset-0 pointer-events-none"
-                      alt="Caption overlay"
-                      style="display:none; width:100%; height:100%; object-fit:fill; z-index:2;"
+                      alt="caption overlay"
+                      class="absolute inset-0 pointer-events-none block w-full h-full"
+                      style="z-index:2"
                     />
                 </div>
             </div>
@@ -1673,7 +1673,7 @@
             });
         }
 
-        // Fix E: Initialize preview system with proper canvas readiness check
+        // Fix E: Initialize preview system with immediate canvas sizing
         async function initPreviewSystem() {
             const canvas = document.getElementById('live-preview-canvas');
             const container = document.getElementById('live-preview-container');
@@ -1683,17 +1683,26 @@
                 return;
             }
             
-            try {
-                await waitForCanvasReady(canvas);
-                console.log('[preview-init] Canvas ready, initializing preview system');
-                // Trigger initial preview if we have content
-                if (currentQuote?.text && selectedAsset) {
-                    updateLivePreview();
-                    updateCaptionOverlay(currentQuote.text.trim(), true);
-                }
-            } catch (e) {
-                console.warn('[preview-init] giving up:', e.message);
-                // Optional: fall back to a default 360x640 CSS size and retry once
+            // Size canvas immediately from wrapper dimensions
+            const wrapper = canvas.parentElement;
+            const cssW = wrapper ? wrapper.clientWidth : 360; // fallback 360
+            const cssH = wrapper ? wrapper.clientHeight : 640; // fallback 640
+            
+            // Set canvas.style.width/height in CSS pixels
+            canvas.style.width = `${cssW}px`;
+            canvas.style.height = `${cssH}px`;
+            
+            // Set canvas.width/height in device pixels (multiply by devicePixelRatio)
+            const dpr = window.devicePixelRatio || 1;
+            canvas.width = Math.round(cssW * dpr);
+            canvas.height = Math.round(cssH * dpr);
+            
+            console.log('[preview-init] Canvas sized immediately:', { cssW, cssH, dpr, canvasW: canvas.width, canvasH: canvas.height });
+            
+            // Trigger initial preview if we have content
+            if (currentQuote?.text && selectedAsset) {
+                updateLivePreview();
+                updateCaptionOverlay(currentQuote.text.trim(), true);
             }
         }
 
