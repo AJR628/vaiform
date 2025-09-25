@@ -42,7 +42,13 @@ export async function generateCaptionPreview(opts) {
   }
 
   // TASK 1: Clamp fontPx and lineSpacingPx to prevent HTTP 400 errors
-  const fontPx = Math.max(24, Math.min(200, Number(opts.sizePx || 48)));
+  // If fontPx wasn't provided by caller, pull the current slider-mapped px from UI.
+  // This preserves SSOT (server still clamps), but avoids the 48px server default.
+  const ensureFontPx =
+    Number.isFinite(opts?.fontPx) ? opts.fontPx
+    : (typeof window?.getCaptionPx === 'function' ? Number(window.getCaptionPx()) : undefined);
+
+  const fontPx = Math.max(24, Math.min(200, Number(ensureFontPx || opts.sizePx || 48)));
   const lineSpacingPx = Math.max(24, Math.min(200, Math.round(fontPx * Number(opts.lineHeight || 1.1))));
   
   const payload = {
