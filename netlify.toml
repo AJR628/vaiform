@@ -1,3 +1,13 @@
+[build]
+  base = "web"
+  command = "npm ci && npm run build"
+  publish = "dist"
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    Cache-Control = "no-store"
+
 [[redirects]]
   from = "/api/*"
   to   = "https://17e0d1d1-e327-483d-b1ea-c41bea08fb59-00-1ef93t84nlhq6.janeway.replit.dev/:splat"
@@ -10,7 +20,6 @@
   status = 200
   force = true
 
-# SPA fallback
 [[redirects]]
   from = "/*"
   to   = "/index.html"
