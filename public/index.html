@@ -129,10 +129,12 @@
   
   <!-- Auto-redirect to Creative Studio -->
   <script>
-    // Redirect to Creative Studio after a short delay
-    setTimeout(() => {
-      window.location.href = '/creative.html';
-    }, 2000);
+    // Only redirect if we're on the actual home page, not on other HTML pages
+    if (window.location.pathname === '/' || window.location.pathname === '/index.html') {
+      setTimeout(() => {
+        window.location.href = '/creative.html';
+      }, 2000);
+    }
   </script>
   
   <!-- Firebase and Auth Bridge -->

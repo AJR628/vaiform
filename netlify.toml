@@ -16,13 +16,44 @@ command = "rm -rf node_modules package-lock.json && npm install && npm run build
   status = 200
   force = true
 
-# Serve static HTML files directly, no SPA redirect
+# Serve specific HTML files directly
 [[redirects]]
-  from = "/*.html"
-  to = "/:splat"
+  from = "/creative.html"
+  to = "/creative.html"
   status = 200
+  force = true
 
-# SPA fallback only for non-HTML routes
+[[redirects]]
+  from = "/pricing.html"
+  to = "/pricing.html"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/my-shorts.html"
+  to = "/my-shorts.html"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/my-images.html"
+  to = "/my-images.html"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/login.html"
+  to = "/login.html"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/success.html"
+  to = "/success.html"
+  status = 200
+  force = true
+
+# SPA fallback for React app routes
 [[redirects]]
   from = "/*"
   to = "/index.html"

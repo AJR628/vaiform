@@ -45,7 +45,7 @@ export async function routeAfterAuth(user) {
     const userData = snap.data() || {};
     
     if (userData.isMember) {
-      window.location.href = "/creative";
+      window.location.href = "/creative.html";
     } else {
       window.location.href = "/pricing";
     }
