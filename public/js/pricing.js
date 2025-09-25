@@ -179,8 +179,8 @@ document.addEventListener('DOMContentLoaded', () => {
   // Free plan button
   document.getElementById('startFreeBtn').addEventListener('click', () => {
     if (currentUser) {
-      // User is already signed in, redirect to studio
-      window.location.href = '/studio';
+      // User is already signed in, redirect to creative
+      window.location.href = '/creative.html';
     } else {
       showAuthModal();
     }

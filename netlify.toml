@@ -1,7 +1,7 @@
 [build]
 base = "web"
 publish = "dist"
-command = "rm -rf node_modules package-lock.json && npm install && npm run build"
+command = "rm -rf node_modules package-lock.json && npm install && npm run build && cp -r ../public/* dist/"
 
 # proxy to Replit backend
 [[redirects]]
@@ -16,11 +16,7 @@ command = "rm -rf node_modules package-lock.json && npm install && npm run build
   status = 200
   force = true
 
-# SPA fallback - redirect all requests to index.html
-[[redirects]]
-  from = "/*"
-  to = "/index.html"
-  status = 200
+# No SPA redirect - serve static files directly
 
 # Force cache busting for assets
 [[headers]]
