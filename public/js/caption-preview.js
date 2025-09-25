@@ -114,7 +114,7 @@ export async function generateCaptionPreview(opts) {
     };
   }
 
-  const img = document.getElementById("captionOverlay");
+  const img = document.getElementById("caption-overlay");
   if (img) { 
     img.src = imageUrl; 
     img.style.display = "block";
