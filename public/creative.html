@@ -112,6 +112,18 @@
             color: #ffffff !important;
             border-color: #4b5563 !important; /* gray-600 */
         }
+        
+        /* --- Caption overlay stacking & sizing --- */
+        #live-preview-container { position: relative; }
+        #live-preview-canvas { position: relative; z-index: 1; display: block; width: 100%; height: auto; }
+        #caption-overlay {
+            position: absolute;
+            left: 0; top: 0;
+            width: 100%; height: 100%;
+            z-index: 2;
+            pointer-events: none;
+            opacity: 1;
+        }
     </style>
     <!-- Respect saved theme before paint - default to dark -->
     <script>
@@ -912,10 +924,17 @@
             const overlay = document.getElementById('caption-overlay');
             if (!overlay) return;
             
-            // Check if container is visible first
+            // Ensure container is visible and has a size before drawing (one rAF retry)
             const container = document.getElementById('live-preview-container');
-            if (!container || container.classList.contains('hidden')) {
-                console.log('[caption-overlay] Container not visible, skipping overlay');
+            if (!container) return;
+            container.classList.remove('hidden');
+            const ensureSized = () =>
+                (container.clientWidth > 0 && container.clientHeight > 0) ? true : false;
+            if (!ensureSized()) {
+                await new Promise(requestAnimationFrame);
+            }
+            if (!ensureSized()) {
+                console.warn('[caption-overlay] Container still has no size, skipping overlay');
                 return;
             }
             

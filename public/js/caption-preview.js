@@ -109,7 +109,18 @@ export async function generateCaptionPreview(opts) {
   }
 
   const img = document.getElementById("captionOverlay");
-  if (img) { img.src = imageUrl; img.style.display = "block"; }
+  if (img) { 
+    img.src = imageUrl; 
+    img.style.display = "block";
+    // Make sure overlay fills the container box (stacked above media)
+    img.style.position = "absolute";
+    img.style.left = "0";
+    img.style.top = "0";
+    img.style.width = "100%";
+    img.style.height = "100%";
+    img.style.zIndex = "2";
+    img.style.pointerEvents = "none";
+  }
   
   // Expose preview canvas height for scaling calculations
   if (typeof window !== 'undefined') {
