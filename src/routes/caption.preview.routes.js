@@ -10,7 +10,11 @@ router.post("/caption/preview", express.json(), async (req, res) => {
     const s = b.style || {};
 
     // SSOT: prefer style.*, then fall back to top-level
-    const text = (s.text ?? b.text ?? "").toString().trim();
+    const text = (req.body?.style?.text ?? req.body?.text ?? "").toString().trim();
+    if (!text) {
+      return res.status(400).json({ success: false, error: "INVALID_INPUT", detail: "text required" });
+    }
+
     const fontFamily = (s.fontFamily ?? b.fontFamily ?? "DejaVu Sans Local");
     const weightCss = (s.weightCss ?? b.weightCss ?? "bold");
     const fontPx = (s.fontPx ?? b.fontPx ?? 48);
@@ -24,10 +28,6 @@ router.post("/caption/preview", express.json(), async (req, res) => {
     const padding = (s.padding ?? b.padding ?? 24);
     const maxWidthPct = (s.maxWidthPct ?? b.maxWidthPct ?? 0.8);
     const borderRadius = (s.borderRadius ?? b.borderRadius ?? 16);
-
-    if (!text) {
-      return res.status(400).json({ success: false, error: "INVALID_INPUT", detail: "text required" });
-    }
 
     // Read placement from SSOT path first, then fallback, with validation
     const rawPlacement = (req.body?.style?.placement ?? req.body?.placement ?? 'center');
