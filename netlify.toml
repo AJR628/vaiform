@@ -1,8 +1,7 @@
 [build]
 base = "web"
 publish = "dist"
-# One-time debug: print package.json that Netlify sees, then build
-command = "echo '--- PWD ---' && pwd && echo '--- LS ---' && ls -la && echo '--- /web/package.json ---' && cat package.json && echo '--- npm run (list) ---' && npm run || true && npm ci && echo '--- vite version ---' && npx vite --version || true && npm run build"
+command = "npm ci && npm run build"
 
 # proxy to Replit backend
 [[redirects]]
@@ -23,7 +22,7 @@ command = "echo '--- PWD ---' && pwd && echo '--- LS ---' && ls -la && echo '---
   to = "/index.html"
   status = 200
 
-# Correct headers syntax: array item with nested values
+# disable caching to avoid stale HTML/JS
 [[headers]]
   for = "/*"
   [headers.values]
