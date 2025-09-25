@@ -16,7 +16,17 @@ command = "rm -rf node_modules package-lock.json && npm install && npm run build
   status = 200
   force = true
 
-# No SPA redirect - serve static files directly
+# Serve static HTML files directly, no SPA redirect
+[[redirects]]
+  from = "/*.html"
+  to = "/:splat"
+  status = 200
+
+# SPA fallback only for non-HTML routes
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 404
 
 # Force cache busting for assets
 [[headers]]
