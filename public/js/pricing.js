@@ -204,18 +204,26 @@ document.addEventListener('DOMContentLoaded', () => {
     startCheckout('pro', 'onetime');
   });
   
-  // Auth modal close
-  document.getElementById('closeAuthModal').addEventListener('click', hideAuthModal);
+  // Auth modal close (only if element exists)
+  const closeAuthModal = document.getElementById('closeAuthModal');
+  if (closeAuthModal) {
+    closeAuthModal.addEventListener('click', hideAuthModal);
+  }
   
-  // Close modal on outside click
-  document.getElementById('authModal').addEventListener('click', (e) => {
-    if (e.target.id === 'authModal') {
-      hideAuthModal();
-    }
-  });
+  // Close modal on outside click (only if element exists)
+  const authModal = document.getElementById('authModal');
+  if (authModal) {
+    authModal.addEventListener('click', (e) => {
+      if (e.target.id === 'authModal') {
+        hideAuthModal();
+      }
+    });
+  }
 
-  // Google sign-in button
-  document.getElementById('googleSignInBtn').addEventListener('click', async () => {
+  // Google sign-in button (only if element exists)
+  const googleSignInBtn = document.getElementById('googleSignInBtn');
+  if (googleSignInBtn) {
+    googleSignInBtn.addEventListener('click', async () => {
     try {
       const user = await uiGoogle();
       hideAuthModal();
@@ -231,5 +239,6 @@ document.addEventListener('DOMContentLoaded', () => {
     } catch (error) {
       alert(error.message);
     }
-  });
+    });
+  }
 });
