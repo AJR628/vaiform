@@ -116,6 +116,15 @@ export async function generateCaptionPreview(opts) {
 
   const el = document.getElementById("caption-overlay");
   if (el) {
+    // If it's an <img>, use src. If it's a <div>, use background-image.
+    if (el.tagName === "IMG") {
+      el.src = imageUrl;
+    } else {
+      el.style.backgroundImage = `url(${imageUrl})`;
+      el.style.backgroundRepeat = "no-repeat";
+      el.style.backgroundPosition = "center";
+      el.style.backgroundSize = "contain";
+    }
     el.style.display = "block";
     el.style.position = "absolute";
     el.style.left = "0";
@@ -124,7 +133,6 @@ export async function generateCaptionPreview(opts) {
     el.style.height = "100%";
     el.style.zIndex = "2";
     el.style.pointerEvents = "none";
-    el.src = imageUrl; // works because it's an <img>
   }
   
   // Expose preview canvas height for scaling calculations
