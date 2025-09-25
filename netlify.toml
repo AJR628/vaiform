@@ -1,7 +1,7 @@
 [build]
 base = "web"
 publish = "dist"
-command = "echo '=== Starting build ===' && rm -rf node_modules package-lock.json && echo '=== Installing dependencies ===' && npm install && echo '=== Building project ===' && npm run build && echo '=== Build complete, checking dist ===' && ls -la dist/ && echo '=== Dist contents ===' && find dist/ -type f -exec ls -la {} \\;"
+command = "rm -rf node_modules package-lock.json && npm install && npm run build"
 
 # proxy to Replit backend
 [[redirects]]
@@ -16,7 +16,7 @@ command = "echo '=== Starting build ===' && rm -rf node_modules package-lock.jso
   status = 200
   force = true
 
-# SPA fallback
+# SPA fallback - redirect all requests to index.html
 [[redirects]]
   from = "/*"
   to = "/index.html"
