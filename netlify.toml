@@ -22,6 +22,14 @@ command = "rm -rf node_modules package-lock.json && npm install && npm run build
   to = "/index.html"
   status = 200
 
+# Force cache busting for assets
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "no-cache, no-store, must-revalidate"
+    Pragma = "no-cache"
+    Expires = "0"
+
 # disable caching to avoid stale HTML/JS
 [[headers]]
   for = "/*"
