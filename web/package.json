@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build && npm run copy-public",
-    "copy-public": "node scripts/copy-public.js",
+    "copy-public": "node scripts/copy-public.mjs",
     "preview": "vite preview --port 8080",
     "deploy:netlify": "bash scripts/deploy-netlify.sh"
   },

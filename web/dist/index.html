@@ -1,15 +1,174 @@
-<!doctype html>
-<html>
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Vaiform Studio</title>
-    <script type="module" crossorigin src="/assets/index-DmIxHPfx.js"></script>
-    <link rel="stylesheet" crossorigin href="/assets/index-82pvW8qn.css">
-  </head>
-  <body>
-    <div id="root"></div>
-  </body>
-  </html>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <!-- Respect saved theme before paint - default to dark -->
+  <script>
+    const savedTheme = localStorage.getItem("theme");
+    if (savedTheme === "light") {
+      document.documentElement.classList.remove("dark");
+    } else {
+      document.documentElement.classList.add("dark");
+    }
+  </script>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Vaiform</title>
+
+  <!-- Tailwind -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = { darkMode: 'class' };
+  </script>
+  <!-- Initial visibility is controlled by classes (logged-in / logged-out + hidden). -->
+  <!-- Removed ID-based display overrides that blocked JS toggling. -->
+</head>
+<body class="bg-gray-900 text-gray-100 font-sans min-h-screen flex flex-col transition-colors duration-300">
+
+  <!-- Unified Header -->
+  <div id="unified-header"></div>
+
+  <!-- Auto-redirect to Creative Studio -->
+  <main class="flex-1 w-full max-w-2xl mx-auto px-4 py-10 space-y-8">
+    <section class="text-center">
+      <h2 class="text-3xl font-semibold mb-4">Welcome to Vaiform</h2>
+      <p class="text-gray-600 dark:text-gray-400">Redirecting to Creative Studio...</p>
+      <div class="mt-8">
+        <div class="inline-block h-8 w-8 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
+      </div>
+      <p class="text-sm text-gray-500 dark:text-gray-400 mt-4">
+        If you are not redirected automatically, 
+        <a href="/creative.html" class="text-indigo-600 dark:text-indigo-400 hover:underline">click here</a>
+      </p>
+    </section>
+  </main>
+
+  <footer class="text-center text-sm text-gray-500 py-6 dark:text-gray-400">
+    <span>© 2025 Vaiform. All rights reserved.</span>
+  </footer>
+
+  <!-- Toast -->
+  <div
+    id="toast"
+    class="fixed bottom-5 left-1/2 transform -translate-x-1/2 bg-gray-900 text-white px-4 py-2 rounded-lg text-sm hidden z-50"
+    aria-live="polite"
+  ></div>
+
+  <!-- Show toast message passed via sessionStorage (e.g., from /login.html) -->
+  <script>
+    (function () {
+      try {
+        const msg = sessionStorage.getItem("vaiform_toast");
+        if (msg) {
+          const el = document.getElementById("toast");
+          if (el) {
+            el.textContent = msg;
+            el.classList.remove("hidden");
+            setTimeout(() => el.classList.add("hidden"), 2400);
+          }
+          sessionStorage.removeItem("vaiform_toast");
+        }
+      } catch (e) {
+        console.warn("Toast session message failed:", e);
+      }
+    })();
+  </script>
+
+  <!-- Smooth <details> animation -->
+  <script>
+    (function () {
+      const prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      if (prefersReduced) return; // respect user preference
+
+      document.querySelectorAll('.optimize-details').forEach((details) => {
+        const content = details.querySelector('.optimize-details-content');
+        if (!content) return;
+
+        // Start closed height
+        if (!details.open) content.style.height = '0px';
+
+        details.addEventListener('toggle', () => {
+          const start = content.getBoundingClientRect().height;
+          content.style.height = 'auto';
+          const end = content.getBoundingClientRect().height;
+          content.style.height = start + 'px';
+          content.getBoundingClientRect();
+
+          requestAnimationFrame(() => {
+            content.style.transition = 'height 180ms ease';
+            content.style.height = details.open ? end + 'px' : '0px';
+          });
+
+          const onEnd = () => {
+            content.style.transition = '';
+            if (details.open) {
+              content.style.height = 'auto';
+            }
+            content.removeEventListener('transitionend', onEnd);
+          };
+          content.addEventListener('transitionend', onEnd);
+        });
+      });
+    })();
+  </script>
 
 
+  <!-- Unified Header and Auth -->
+  <script type="module">
+    import { createUnifiedHeader, initializeHeader } from "./components/header.js";
+    import { initializeAuth } from "./components/auth-utils.js";
+    
+    // Load unified header
+    document.getElementById('unified-header').innerHTML = createUnifiedHeader();
+    initializeHeader();
+    
+    // Initialize auth after a short delay to ensure Firebase is ready
+    setTimeout(() => {
+      initializeAuth();
+    }, 100);
+  </script>
+  
+  <!-- Auto-redirect to Creative Studio -->
+  <script>
+    // Redirect to Creative Studio after a short delay
+    setTimeout(() => {
+      window.location.href = '/creative.html';
+    }, 2000);
+  </script>
+  
+  <!-- Firebase and Auth Bridge -->
+  <script type="module" src="./js/config.js"></script>
+  <script type="module">
+    // Bridge Firebase auth from firebaseClient.js → api.js token provider
+    import { setTokenProvider } from "./api.mjs";
+    import { auth } from "./js/firebaseClient.js";
+    import { onIdTokenChanged, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+
+    // Expose the modular auth instance for any legacy code expecting window.auth
+    try { if (!window.auth) window.auth = auth; } catch {}
+
+    // 1) Provide a token immediately if possible
+    setTokenProvider(async () => {
+      const u = auth.currentUser;
+      return u?.getIdToken ? u.getIdToken() : null;
+    });
+
+    // 2) Update provider whenever Firebase rotates/refreshes the ID token
+    onIdTokenChanged(auth, (u) => {
+      setTokenProvider(async () => (u?.getIdToken ? u.getIdToken() : null));
+    });
+
+    // 3) Also react to login/logout
+    onAuthStateChanged(auth, (u) => {
+      setTokenProvider(async () => (u?.getIdToken ? u.getIdToken() : null));
+    });
+  </script>
+  <!-- Debug helper: add ?kill-sw=1 to URL to unregister stale service workers -->
+  <script>
+    if (location.search.includes('kill-sw=1')) {
+      var s = document.createElement('script');
+      s.src = '/kill-sw.js';
+      document.head.appendChild(s);
+    }
+  </script>
+</body>
+</html>

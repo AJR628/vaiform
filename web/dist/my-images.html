@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en" class="dark transition-colors duration-300">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>My Images - Vaiform</title>
+
+  <!-- Tailwind -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>tailwind.config = { darkMode: 'class' };</script>
+  
+  <!-- Custom styles for generating placeholders -->
+  <style>
+    .card.generating { 
+      position: relative; 
+      border: 1px solid #ddd; 
+      border-radius: 12px; 
+      padding: 12px; 
+      display: flex; 
+      gap: 12px; 
+      background: white;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .dark .card.generating {
+      background: #1f2937;
+      border-color: #4b5563;
+    }
+    .card.generating .skeleton { 
+      width: 128px; 
+      height: 128px; 
+      background: linear-gradient(90deg,#eee,#f5f5f5,#eee); 
+      background-size: 200% 100%; 
+      animation: shimmer 1.2s infinite; 
+      border-radius: 8px; 
+    }
+    .dark .card.generating .skeleton {
+      background: linear-gradient(90deg,#374151,#4b5563,#374151);
+    }
+    .card.generating .meta { 
+      display: flex; 
+      flex-direction: column; 
+      justify-content: center; 
+      flex: 1;
+    }
+    .card.generating .spinner { 
+      width: 16px; 
+      height: 16px; 
+      border: 2px solid #ccc; 
+      border-top-color: #555; 
+      border-radius: 50%; 
+      animation: spin 0.9s linear infinite; 
+      margin-top: 8px; 
+    }
+    .dark .card.generating .spinner {
+      border-color: #6b7280;
+      border-top-color: #9ca3af;
+    }
+    @keyframes spin { 
+      to { transform: rotate(360deg); } 
+    }
+    @keyframes shimmer { 
+      0%{background-position:200% 0} 
+      100%{background-position:-200% 0} 
+    }
+  </style>
+</head>
+<body class="bg-gray-900 text-gray-100 font-sans min-h-screen transition-colors duration-300">
+
+  <!-- Unified Header -->
+  <div id="unified-header"></div>
+
+  <!-- Main -->
+  <main class="max-w-6xl mx-auto px-4 py-8">
+    <div class="flex justify-between items-center mb-4">
+      <h2 class="text-3xl font-semibold">🖼️ Your AI Generated Images</h2>
+      <button id="download-selected" class="bg-indigo-600 text-white px-4 py-2 rounded hidden">
+        ⬇ Download Selected
+      </button>
+    </div>
+    <div id="toast" class="text-center text-sm text-gray-400 mb-4 hidden"></div>
+    <div id="gallery" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4"></div>
+  </main>
+
+  <!-- Image Modal -->
+  <!-- add `flex` so justify/items-center actually center content -->
+  <div id="image-modal" class="fixed inset-0 bg-black/90 hidden z-50 flex items-center justify-center select-none">
+    <!-- Close button -->
+    <button id="modal-close" class="absolute top-3 right-3 text-white/90 hover:text-white text-2xl leading-none px-3 py-1" aria-label="Close">✕</button>
+
+    <!-- Prev -->
+    <button id="modal-prev" class="absolute left-2 md:left-4 text-white/80 hover:text-white text-4xl px-3 py-2" aria-label="Previous">‹</button>
+
+    <!-- Image -->
+    <img id="modal-img" class="max-w-[95vw] max-h-[90vh] w-auto h-auto object-contain rounded shadow-lg" />
+
+    <!-- Next -->
+    <button id="modal-next" class="absolute right-2 md:right-4 text-white/80 hover:text-white text-4xl px-3 py-2" aria-label="Next">›</button>
+  </div>
+
+  <!-- Dark Mode Script -->
+  <script>
+    const themeToggle = document.getElementById("theme-toggle");
+    if (localStorage.getItem("theme") === "dark") {
+      document.documentElement.classList.add("dark");
+      themeToggle.textContent = "🌙";
+    } else {
+      document.documentElement.classList.remove("dark");
+      themeToggle.textContent = "☀️";
+    }
+    themeToggle.addEventListener("click", () => {
+      const isDark = document.documentElement.classList.toggle("dark");
+      localStorage.setItem("theme", isDark ? "dark" : "light");
+      themeToggle.textContent = isDark ? "🌙" : "☀️";
+    });
+  </script>
+
+  <!-- Read & show session toast messages -->
+  <script>
+    (function () {
+      try {
+        const msg = sessionStorage.getItem("vaiform_toast");
+        if (!msg) return;
+        const el = document.getElementById("toast");
+        if (el) {
+          el.textContent = msg;
+          el.classList.remove("hidden");
+          setTimeout(() => el.classList.add("hidden"), 2400);
+        }
+        sessionStorage.removeItem("vaiform_toast");
+      } catch (e) {
+        console.warn("Toast session message failed:", e);
+      }
+    })();
+  </script>
+
+  <!-- App scripts (order matters: frontend helpers first, then page logic) -->
+  <!-- Unified Header and Auth -->
+  <script type="module">
+    import { createUnifiedHeader, initializeHeader } from "./components/header.js";
+    import { initializeAuth } from "./components/auth-utils.js";
+    
+    // Load unified header
+    document.getElementById('unified-header').innerHTML = createUnifiedHeader();
+    initializeHeader();
+    
+    // Initialize auth after a short delay to ensure Firebase is ready
+    setTimeout(() => {
+      initializeAuth();
+    }, 100);
+  </script>
+  
+  <script type="module" src="./js/firebaseClient.js"></script>
+  <!-- Auth bridge: expose auth & wire token provider before page code -->
+  <script type="module" src="./auth-bridge.js"></script>
+  <script type="module" src="./js/my-images.js"></script>
+  <!-- Debug helper: add ?kill-sw=1 to URL to unregister stale service workers -->
+  <script>
+    if (location.search.includes('kill-sw=1')) {
+      var s = document.createElement('script');
+      s.src = '/kill-sw.js';
+      document.head.appendChild(s);
+    }
+  </script>
+</body>
+</html>
