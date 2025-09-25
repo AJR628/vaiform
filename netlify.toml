@@ -1,6 +1,6 @@
 [build]
 base = "web"
-publish = "web/dist"
+publish = "dist"
 command = "rm -rf node_modules package-lock.json && npm install && npm run build"
 
 # proxy to Replit backend
