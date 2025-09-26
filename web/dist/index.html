@@ -129,10 +129,21 @@
   
   <!-- Auto-redirect to Creative Studio -->
   <script>
-    // Redirect to Creative Studio after a short delay
-    setTimeout(() => {
-      window.location.href = '/creative.html';
-    }, 2000);
+    // Only redirect from the actual home page, never from other pages
+    const currentPath = window.location.pathname;
+    const isHomePage = currentPath === '/' || currentPath === '/index.html';
+    const isNotCreativePage = !currentPath.includes('creative');
+    
+    console.log('Redirect check:', { currentPath, isHomePage, isNotCreativePage });
+    
+    if (isHomePage && isNotCreativePage) {
+      console.log('Redirecting to creative studio...');
+      setTimeout(() => {
+        window.location.href = '/creative.html';
+      }, 2000);
+    } else {
+      console.log('Not redirecting - not on home page or already on creative page');
+    }
   </script>
   
   <!-- Firebase and Auth Bridge -->
