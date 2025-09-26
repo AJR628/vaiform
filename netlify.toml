@@ -3,6 +3,13 @@ base = "web"
 publish = "dist"
 command = "rm -rf node_modules package-lock.json && npm install && npm run build"
 
+# CRITICAL: Override SPA redirect - must be first
+[[redirects]]
+  from = "/creative.html"
+  to = "/creative.html"
+  status = 200
+  force = true
+
 # proxy to Replit backend
 [[redirects]]
   from = "/api/*"
@@ -16,44 +23,50 @@ command = "rm -rf node_modules package-lock.json && npm install && npm run build
   status = 200
   force = true
 
-# Serve specific HTML files directly
+# Override SPA redirect for HTML files - this should take precedence
 [[redirects]]
   from = "/creative.html"
   to = "/creative.html"
   status = 200
   force = true
+  conditions = {Country = ["*"]}
 
 [[redirects]]
   from = "/pricing.html"
   to = "/pricing.html"
   status = 200
   force = true
+  conditions = {Country = ["*"]}
 
 [[redirects]]
   from = "/my-shorts.html"
   to = "/my-shorts.html"
   status = 200
   force = true
+  conditions = {Country = ["*"]}
 
 [[redirects]]
   from = "/my-images.html"
   to = "/my-images.html"
   status = 200
   force = true
+  conditions = {Country = ["*"]}
 
 [[redirects]]
   from = "/login.html"
   to = "/login.html"
   status = 200
   force = true
+  conditions = {Country = ["*"]}
 
 [[redirects]]
   from = "/success.html"
   to = "/success.html"
   status = 200
   force = true
+  conditions = {Country = ["*"]}
 
-# SPA fallback for React app routes
+# SPA fallback for React app routes (only for non-HTML files)
 [[redirects]]
   from = "/*"
   to = "/index.html"

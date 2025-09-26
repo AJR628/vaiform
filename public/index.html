@@ -130,7 +130,9 @@
   <!-- Auto-redirect to Creative Studio -->
   <script>
     // Only redirect if we're on the actual home page, not on other HTML pages
-    if (window.location.pathname === '/' || window.location.pathname === '/index.html') {
+    // Also check if we're already on creative.html to prevent loops
+    if ((window.location.pathname === '/' || window.location.pathname === '/index.html') && 
+        !window.location.pathname.includes('creative.html')) {
       setTimeout(() => {
         window.location.href = '/creative.html';
       }, 2000);
