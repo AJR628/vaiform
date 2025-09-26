@@ -39,7 +39,7 @@ router.post("/caption/preview", express.json(), async (req, res) => {
     const W = 1080; // Standard canvas width
     const H = 1920; // Standard canvas height
 
-    // Map font families to registered fonts
+    // Map font families to registered fonts with fallback
     const fontMap = {
       'DejaVuSans': 'DejaVu-Bold',
       'DejaVu Sans Local': 'DejaVu-Bold',
@@ -47,7 +47,8 @@ router.post("/caption/preview", express.json(), async (req, res) => {
       'DejaVu Serif Bold Local': 'DejaVu Serif Bold'
     };
     
-    const actualFontFamily = fontMap[fontFamily] || 'DejaVu-Bold';
+    // Fallback to system fonts if DejaVu registration failed
+    const actualFontFamily = fontMap[fontFamily] || 'DejaVu Sans Local';
 
     if (typeof text !== "string" || !text.trim()) {
       return res.status(400).json({ success:false, error:"INVALID_INPUT", detail:"text required" });

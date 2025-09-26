@@ -41,6 +41,13 @@ export async function generateCaptionPreview(opts) {
     return;
   }
 
+  // Clear previous caption to force regeneration
+  lastCaptionPNG = null;
+  if (typeof window !== 'undefined') {
+    window.lastCaptionPNG = null;
+    window.__lastCaptionOverlay = null;
+  }
+
   // TASK 1: Clamp fontPx and lineSpacingPx to prevent HTTP 400 errors
   // If fontPx wasn't provided by caller, pull the current slider-mapped px from UI.
   // This preserves SSOT (server still clamps), but avoids the 48px server default.
@@ -74,7 +81,9 @@ export async function generateCaptionPreview(opts) {
       canvasW: 1080,
       canvasH: 1920,
       placement: opts.placement || 'center',
-      yPct: opts.yPct || 0.5
+      yPct: opts.yPct || 0.5,
+      // Add timestamp to force regeneration
+      _cacheBuster: Date.now()
     }
   };
 
@@ -213,6 +222,7 @@ export function createCaptionOverlay(captionData, container, scaling = {}) {
   else if (align === 'right') left -= dispW;
   
   // Use meta.yPct for precise vertical positioning (server-computed)
+  // For placement-based positioning, use the server's computed yPct
   const targetTop = (yPct * finalH) - (scaledTotalTextH / 2);
   let top = Math.max(safeTopMargin, Math.min(targetTop, finalH - safeBottomMargin - scaledTotalTextH));
   

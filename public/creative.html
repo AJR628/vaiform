@@ -943,10 +943,20 @@
                 return;
             }
             
-            // Fix C: Check if canvas has real dimensions, but don't retry infinitely
+            // Fix C: Check if canvas has real dimensions, retry once with requestAnimationFrame
             const canvas = document.getElementById('live-preview-canvas');
             if (!canvas || canvas.clientWidth === 0 || canvas.clientHeight === 0) {
-                console.log('[caption-overlay] Canvas not ready, skipping overlay');
+                console.log('[caption-overlay] Canvas not ready, scheduling retry...');
+                // Retry once on next frame
+                requestAnimationFrame(() => {
+                    const retryCanvas = document.getElementById('live-preview-canvas');
+                    if (retryCanvas && retryCanvas.clientWidth > 0 && retryCanvas.clientHeight > 0) {
+                        console.log('[caption-overlay] Canvas ready on retry, proceeding...');
+                        updateCaptionOverlay(show, text);
+                    } else {
+                        console.warn('[caption-overlay] Canvas still not ready after retry, skipping overlay');
+                    }
+                });
                 return;
             }
             
@@ -974,7 +984,8 @@
             function placementToServerFormat(placement) {
                 switch ((placement || 'bottom').toLowerCase()) {
                     case 'top':    return { placement: 'top' };
-                    case 'middle': return { placement: 'center' };
+                    case 'middle': 
+                    case 'center': return { placement: 'center' };
                     case 'bottom': 
                     default:       return { placement: 'bottom' };
                 }
@@ -1857,9 +1868,19 @@
                 return;
             }
             
-            // Fix C: Check if canvas has real dimensions, but don't retry infinitely
+            // Fix C: Check if canvas has real dimensions, retry once with requestAnimationFrame
             if (!canvas || canvas.clientWidth === 0 || canvas.clientHeight === 0) {
-                console.log('[preview-scaling] Canvas not ready, skipping preview');
+                console.log('[preview-scaling] Canvas not ready, scheduling retry...');
+                // Retry once on next frame
+                requestAnimationFrame(() => {
+                    const retryCanvas = document.getElementById('live-preview-canvas');
+                    if (retryCanvas && retryCanvas.clientWidth > 0 && retryCanvas.clientHeight > 0) {
+                        console.log('[preview-scaling] Canvas ready on retry, proceeding...');
+                        updateLivePreview();
+                    } else {
+                        console.warn('[preview-scaling] Canvas still not ready after retry, skipping preview');
+                    }
+                });
                 return;
             }
             
@@ -2715,6 +2736,25 @@
         // Legacy caption-size handler removed - now handled by initCaptionSizeUI()
         document.getElementById('caption-opacity').oninput = () => { updateCaptionStyleValues(); updateCaptionOverlay((currentQuote?.text||'').trim(), true); };
         document.getElementById('caption-placement').onchange = () => {
+            const newPlacement = document.getElementById('caption-placement').value;
+            console.log('[caption] Placement changed to:', newPlacement);
+            
+            // Clear existing caption overlay to force regeneration
+            const overlay = document.getElementById('caption-overlay');
+            if (overlay) {
+                overlay.innerHTML = '';
+                overlay.style.display = 'none';
+            }
+            
+            // Clear cached caption data
+            if (window.lastCaptionPNG) {
+                window.lastCaptionPNG = null;
+            }
+            if (window.__lastCaptionOverlay) {
+                window.__lastCaptionOverlay = null;
+            }
+            
+            updateCaptionStyleValues();
             updateRenderPreview();
             updateLivePreview();
             updateCaptionOverlay((currentQuote?.text||'').trim(), true);
