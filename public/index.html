@@ -129,13 +129,20 @@
   
   <!-- Auto-redirect to Creative Studio -->
   <script>
-    // Only redirect if we're on the actual home page, not on other HTML pages
-    // Also check if we're already on creative.html to prevent loops
-    if ((window.location.pathname === '/' || window.location.pathname === '/index.html') && 
-        !window.location.pathname.includes('creative.html')) {
+    // Only redirect from the actual home page, never from other pages
+    const currentPath = window.location.pathname;
+    const isHomePage = currentPath === '/' || currentPath === '/index.html';
+    const isNotCreativePage = !currentPath.includes('creative');
+    
+    console.log('Redirect check:', { currentPath, isHomePage, isNotCreativePage });
+    
+    if (isHomePage && isNotCreativePage) {
+      console.log('Redirecting to creative studio...');
       setTimeout(() => {
         window.location.href = '/creative.html';
       }, 2000);
+    } else {
+      console.log('Not redirecting - not on home page or already on creative page');
     }
   </script>
   

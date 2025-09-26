@@ -10,6 +10,13 @@ command = "rm -rf node_modules package-lock.json && npm install && npm run build
   status = 200
   force = true
 
+# Additional override for creative route
+[[redirects]]
+  from = "/creative"
+  to = "/creative.html"
+  status = 200
+  force = true
+
 # proxy to Replit backend
 [[redirects]]
   from = "/api/*"
