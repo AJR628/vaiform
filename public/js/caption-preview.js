@@ -58,33 +58,18 @@ export async function generateCaptionPreview(opts) {
   const fontPx = Math.max(24, Math.min(200, Number(ensureFontPx || opts.sizePx || 48)));
   const lineSpacingPx = Math.max(24, Math.min(200, Math.round(fontPx * Number(opts.lineHeight || 1.1))));
   
+  // Use new payload structure with SSOT-compliant fields
   const payload = {
-    style: {
-      text: opts.text,
-      fontFamily: opts.fontFamily || "DejaVuSans",
-      fontWeight: opts.weight === "bold" ? 700 : 400,
-      fontPx: fontPx,
-      lineSpacingPx: lineSpacingPx,
-      align: "center",
-      textAlpha: Number(opts.opacity ?? 0.85),
-      fill: opts.color || "rgba(255,255,255,1)",
-      strokePx: 3,
-      strokeColor: "rgba(0,0,0,0.85)",
-      shadowX: 0,
-      shadowY: 2,
-      shadowBlur: 4,
-      shadowColor: "rgba(0,0,0,0.55)",
-      boxXPx: 42,
-      boxYPx: opts.placement === "top" ? 230 : opts.placement === "bottom" ? 1500 : 960,
-      boxWPx: 996,
-      boxHPx: 400,
-      canvasW: 1080,
-      canvasH: 1920,
-      placement: opts.placement || 'center',
-      yPct: opts.yPct || 0.5,
-      // Add timestamp to force regeneration
-      _cacheBuster: Date.now()
-    }
+    text: opts.text,
+    fontFamily: opts.fontFamily || "DejaVuSans",
+    weight: opts.weight || "normal",
+    fontPx: fontPx,
+    lineSpacingPx: lineSpacingPx,
+    opacity: Number(opts.opacity ?? 0.85),
+    placement: opts.placement || 'center',
+    yPct: opts.yPct || 0.5,
+    // Add timestamp to force regeneration
+    _cacheBuster: Date.now()
   };
 
   console.log("[caption-overlay] POST /preview/caption with placement:", opts.placement, "yPct:", opts.yPct);

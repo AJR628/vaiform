@@ -951,7 +951,7 @@
             const overlay = document.getElementById('caption-overlay');
             if (!overlay) return;
             
-            // Ensure container is visible and has a size before drawing (one rAF retry)
+            // Ensure container is visible and has a size before drawing
             const container = document.getElementById('live-preview-container');
             if (!container) return;
             container.classList.remove('hidden');
@@ -964,48 +964,43 @@
                 dpr: window.devicePixelRatio 
             });
             
-            const ensureSized = () =>
-                (container.clientWidth > 0 && container.clientHeight > 0) ? true : false;
-            if (!ensureSized()) {
-                await new Promise(requestAnimationFrame);
-            }
-            if (!ensureSized()) {
-                console.warn('[caption-overlay] Container still has no size, skipping overlay');
-                return;
-            }
-            
-            // Fix C: Check if canvas has real dimensions, retry once with requestAnimationFrame
-            const canvas = document.getElementById('live-preview-canvas');
-            if (!canvas || canvas.clientWidth === 0 || canvas.clientHeight === 0) {
-                console.log('[canvas-ready] Canvas not ready, scheduling retry...', {
-                    canvasExists: !!canvas,
-                    clientWidth: canvas?.clientWidth,
-                    clientHeight: canvas?.clientHeight,
-                    canvasWidth: canvas?.width,
-                    canvasHeight: canvas?.height
-                });
-                // Retry once on next frame
-                requestAnimationFrame(() => {
+            // New canvas ready logic with feature flag
+            if (window.__PREVIEW_FIX__) {
+                const canvas = document.getElementById('live-preview-canvas');
+                if (!canvas || !canvasReadyState.ready) {
+                    console.log('[canvas-ready] Canvas not ready, scheduling render');
+                    scheduleRender();
+                    return;
+                }
+            } else {
+                // Legacy logic for fallback
+                const ensureSized = () =>
+                    (container.clientWidth > 0 && container.clientHeight > 0) ? true : false;
+                if (!ensureSized()) {
+                    await new Promise(requestAnimationFrame);
+                }
+                if (!ensureSized()) {
+                    console.warn('[caption-overlay] Container still has no size, skipping overlay');
+                    return;
+                }
+                
+                const canvas = document.getElementById('live-preview-canvas');
+                if (!canvas || canvas.clientWidth === 0 || canvas.clientHeight === 0) {
+                    console.log('[canvas-ready] Canvas not ready, scheduling retry...', {
+                        canvasExists: !!canvas,
+                        clientWidth: canvas?.clientWidth,
+                        clientHeight: canvas?.clientHeight,
+                        canvasWidth: canvas?.width,
+                        canvasHeight: canvas?.height
+                    });
+                    // Two RAF deferral as suggested
+                    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
                     const retryCanvas = document.getElementById('live-preview-canvas');
-                    if (retryCanvas && retryCanvas.clientWidth > 0 && retryCanvas.clientHeight > 0) {
-                        console.log('[retry] Canvas ready on retry, proceeding...', {
-                            retryCount: 1,
-                            clientWidth: retryCanvas.clientWidth,
-                            clientHeight: retryCanvas.clientHeight,
-                            canvasWidth: retryCanvas.width,
-                            canvasHeight: retryCanvas.height
-                        });
-                        updateCaptionOverlay(show, text);
-                    } else {
-                        console.warn('[retry] Canvas still not ready after retry, skipping overlay', {
-                            retryCount: 1,
-                            reason: 'canvas dimensions still zero',
-                            clientWidth: retryCanvas?.clientWidth,
-                            clientHeight: retryCanvas?.clientHeight
-                        });
+                    if (!retryCanvas || retryCanvas.clientWidth === 0 || retryCanvas.clientHeight === 0) {
+                        console.warn('[canvas-ready] Canvas still not ready after deferral, skipping overlay');
+                        return;
                     }
-                });
-                return;
+                }
             }
             
             // Clear existing overlay
@@ -1094,15 +1089,6 @@
             captionDebounceTimer = setTimeout(async () => {
                 try {
                     console.log('[caption-overlay] Generating PNG preview...');
-                    console.log('[caption-overlay] payload:', {
-                        text: captionStyle.text?.substring(0, 50),
-                        fontFamily: captionStyle.fontFamily,
-                        weight: captionStyle.weight,
-                        fontPx: captionStyle.fontPx,
-                        placement: captionStyle.placement,
-                        yPct: captionStyle.yPct,
-                        opacity: captionStyle.opacity
-                    });
                     
                     // Ensure preview container is visible before generating overlay
                     document.getElementById('live-preview-container')?.classList.remove('hidden');
@@ -1110,17 +1096,20 @@
                     // Import the caption preview function
                     const { generateCaptionPreview, getLastCaptionPNG, createCaptionOverlay } = await import('./js/caption-preview.js');
                     
-                    // Generate caption PNG
-                    await generateCaptionPreview(captionStyle);
+                    // Build proper payload with all controls wired
+                    const payload = buildCaptionPayload(text, captionStyle);
+                    
+                    // Generate caption PNG with new payload
+                    await generateCaptionPreview(payload);
                     const result = getLastCaptionPNG();
                     captionOverlayState = result;
                     
                     console.log('[apply-font] Caption style applied:', {
-                        fontFamily: captionStyle.fontFamily,
-                        weight: captionStyle.weight,
-                        fontPx: captionStyle.fontPx,
-                        opacity: captionStyle.opacity,
-                        placement: captionStyle.placement
+                        fontFamily: payload.fontFamily,
+                        weight: payload.weight,
+                        fontPx: payload.fontPx,
+                        opacity: payload.opacity,
+                        placement: payload.placement
                     });
                     
                     console.log('[caption-overlay] meta:', {
@@ -1716,6 +1705,12 @@
             try { updateCaptionOverlay((currentQuote?.text||'').trim(), true); } catch {}
         }
 
+        // Feature flag for preview fixes
+        window.__PREVIEW_FIX__ = true;
+        
+        // Canvas ready state tracking
+        let canvasReadyState = { ready: false, observer: null };
+        
         // Fix B: Set the canvas backing store AFTER CSS size exists
         function sizeCanvasToCSS(canvas) {
             const wCSS = canvas.clientWidth;
@@ -1743,8 +1738,105 @@
             if (canvas.width !== wBS || canvas.height !== hBS) {
                 canvas.width = wBS;
                 canvas.height = hBS;
+                const ctx = canvas.getContext('2d');
+                ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
             }
+            
+            canvasReadyState.ready = true;
             return true;
+        }
+        
+        // ResizeObserver for canvas ready detection
+        function setupCanvasObserver() {
+            if (!window.__PREVIEW_FIX__) return;
+            
+            const container = document.getElementById('live-preview-container');
+            const canvas = document.getElementById('live-preview-canvas');
+            if (!container || !canvas) return;
+            
+            if (canvasReadyState.observer) {
+                canvasReadyState.observer.disconnect();
+            }
+            
+            canvasReadyState.observer = new ResizeObserver(entries => {
+                for (const entry of entries) {
+                    const { width, height } = entry.contentRect;
+                    if (width > 0 && height > 0) {
+                        console.log('[canvas-ready] Container resized, checking canvas:', { width, height });
+                        if (sizeCanvasToCSS(canvas)) {
+                            console.log('[canvas-ready] Canvas ready, triggering render');
+                            scheduleRender();
+                        }
+                    }
+                }
+            });
+            
+            canvasReadyState.observer.observe(container);
+        }
+        
+        // Idempotent render scheduler
+        let renderScheduled = false;
+        function scheduleRender() {
+            if (!window.__PREVIEW_FIX__) return;
+            if (renderScheduled) return;
+            
+            renderScheduled = true;
+            requestAnimationFrame(() => {
+                renderScheduled = false;
+                if (canvasReadyState.ready && currentQuote?.text && selectedAsset) {
+                    console.log('[canvas-ready] Executing scheduled render');
+                    updateLivePreview();
+                    updateCaptionOverlay(currentQuote.text.trim(), true);
+                }
+            });
+        }
+        
+        // Font parity map for client-side consistency
+        const FONT_MAP = { 
+            DejaVuSans: 'DejaVu Sans', 
+            DejaVuSerif: 'DejaVu Serif' 
+        };
+        
+        // Helper function to derive yPct from placement
+        function yPctFromPlacement(placement) {
+            switch (placement) {
+                case 'top': return 0.10;
+                case 'center': return 0.50;
+                case 'bottom': return 0.90;
+                default: return 0.50;
+            }
+        }
+        
+        // Helper function for precise float conversion
+        function preciseFloat0to1(value) {
+            return Math.max(0, Math.min(1, Number(value) / 100));
+        }
+        
+        // Build proper payload with all controls wired
+        function buildCaptionPayload(text, captionStyle) {
+            const placement = captionStyle.placement || 'center';
+            const yPct = captionStyle.yPct ?? yPctFromPlacement(placement);
+            const opacity = preciseFloat0to1(captionStyle.opacity || 80);
+            
+            const payload = {
+                text,
+                fontFamily: captionStyle.fontFamily || 'DejaVuSans',
+                weight: captionStyle.weight || 'normal',
+                fontPx: captionStyle.fontPx || 48,
+                opacity,
+                placement,
+                yPct
+            };
+            
+            console.log('[caption-overlay] payload:', {
+                weight: payload.weight,
+                opacity: payload.opacity,
+                placement: payload.placement,
+                yPct: payload.yPct,
+                fontPx: payload.fontPx
+            });
+            
+            return payload;
         }
 
         // Fix C: Robust "wait for ready" without infinite loop
@@ -3121,6 +3213,19 @@
         window.addEventListener('load', () => {
             console.log('[preview-init] Page loaded, initializing preview');
             initPreviewSystem();
+            
+            // Setup canvas observer for new preview fixes
+            if (window.__PREVIEW_FIX__) {
+                setupCanvasObserver();
+                
+                // Re-run render on visibilitychange when tab becomes visible
+                document.addEventListener('visibilitychange', () => {
+                    if (!document.hidden && canvasReadyState.ready) {
+                        console.log('[preview-init] Tab visible, reinitializing preview');
+                        scheduleRender();
+                    }
+                });
+            }
             
             // Also trigger preview if we already have both quote and asset
             if (currentQuote && selectedAsset) {

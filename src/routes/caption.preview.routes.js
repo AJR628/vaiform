@@ -39,17 +39,6 @@ router.post("/caption/preview", express.json(), async (req, res) => {
     const W = 1080; // Standard canvas width
     const H = 1920; // Standard canvas height
 
-    // Map font families to registered fonts with fallback
-    const fontMap = {
-      'DejaVuSans': 'DejaVu-Bold',
-      'DejaVu Sans Local': 'DejaVu-Bold',
-      'DejaVu Serif Local': 'DejaVu Serif',
-      'DejaVu Serif Bold Local': 'DejaVu Serif Bold'
-    };
-    
-    // Fallback to system fonts if DejaVu registration failed
-    const actualFontFamily = fontMap[fontFamily] || 'DejaVu Sans Local';
-
     if (typeof text !== "string" || !text.trim()) {
       return res.status(400).json({ success:false, error:"INVALID_INPUT", detail:"text required" });
     }
@@ -69,10 +58,13 @@ router.post("/caption/preview", express.json(), async (req, res) => {
 
     const maxW = Math.round(W * Number(maxWidthPct));
     console.log(`[caption] Using maxWidthPct=${maxWidthPct}, maxW=${maxW}`);
-    console.log(`[caption] Font set to: ${actualFontFamily} (weight: ${weightCss})`);
-    ctx.font = `${weightCss} ${clampedFontPx}px "${actualFontFamily}"`;
+    
+    // Apply derived values to canvas
+    const fontString = `${weightUsed} ${clampedFontPx}px "${fontFamilyUsed}"`;
+    console.log(`[caption] Font set to: ${fontString}`);
+    ctx.font = fontString;
     ctx.fillStyle = color;
-    ctx.globalAlpha = Number(opacity);
+    ctx.globalAlpha = opacityUsed;
 
     // word-wrap
     function wrapLines(t) {
@@ -97,33 +89,44 @@ router.post("/caption/preview", express.json(), async (req, res) => {
       return res.status(400).json({ success:false, error:"INVALID_INPUT", detail:"failed to compute text dimensions" });
     }
 
-    // Calculate yPct based on placement and text block height
-    const safeTopMarginPct = 0.10;      // 10% top safe area
-    const safeBottomMarginPct = 0.10;   // 10% bottom safe area
+    // SSOT: Server derives effective values from client intent
+    const resolveYpct = (clientYPct, clientPlacement) => {
+      // If client provided yPct, use it (they know their intent)
+      if (clientYPct !== undefined && clientYPct !== null) {
+        return Math.max(0.1, Math.min(0.9, Number(clientYPct)));
+      }
+      // Otherwise derive from placement
+      switch (clientPlacement) {
+        case 'top': return 0.10;
+        case 'center': return 0.50;
+        case 'bottom': return 0.90;
+        default: return 0.50;
+      }
+    };
+    
+    const resolveFontFamilyUsed = (clientFontFamily) => {
+      const fontMap = {
+        'DejaVuSans': 'DejaVu Sans',
+        'DejaVu Serif Local': 'DejaVu Serif',
+        'DejaVu Serif Bold Local': 'DejaVu Serif Bold'
+      };
+      return fontMap[clientFontFamily] || 'DejaVu Sans';
+    };
+    
+    const clamp01 = (value) => Math.max(0, Math.min(1, Number(value) || 0.85));
+    
+    // Derive effective values
+    const yPctUsed = resolveYpct(yPct, placement);
+    const fontFamilyUsed = resolveFontFamilyUsed(fontFamily);
+    const weightUsed = (weightCss === 'bold' || weightCss === 700) ? 'bold' : 'normal';
+    const opacityUsed = clamp01(opacity);
+    
+    // Calculate text dimensions
     const totalTextH = lines.length * lh;
+    const y = Math.round(H * yPctUsed);
     
-    let calculatedYPct;
-    switch (placement) {
-      case 'top':
-        calculatedYPct = safeTopMarginPct; // top is easy: top pad
-        break;
-      case 'center':
-      case 'middle':
-        calculatedYPct = 0.5; // center the whole block
-        break;
-      case 'bottom':
-        calculatedYPct = 1 - safeBottomMarginPct - (totalTextH / H); // sit above bottom pad
-        calculatedYPct = Math.max(safeTopMarginPct, Math.min(calculatedYPct, 1 - safeBottomMarginPct)); // clamp to safe band
-        break;
-      default:
-        calculatedYPct = 0.5; // default to center
-    }
-    
-    // Use provided yPct or calculated one
-    const finalYPct = yPct !== undefined && yPct !== null ? Number(yPct) : calculatedYPct;
-    const y = Math.round(H * finalYPct);
-    
-    console.log(`[caption] placement=${placement}, fontPx=${clampedFontPx}, totalTextH=${totalTextH}, yPct=${finalYPct}, y=${y}`);
+    console.log(`[caption] placement=${placement}, fontPx=${clampedFontPx}, totalTextH=${totalTextH}, yPct=${yPctUsed}, y=${y}`);
+    console.log(`[caption] effective values: fontFamilyUsed=${fontFamilyUsed}, weightUsed=${weightUsed}, opacityUsed=${opacityUsed}`);
 
     // Add internal padding to the text box to prevent clipping
     const internalPadding = 32; // 32px padding on all sides
@@ -158,18 +161,20 @@ router.post("/caption/preview", express.json(), async (req, res) => {
       fontPx: clampedFontPx, // Use clamped font size
       lineSpacing: lh,
       xPct: 50, // centered
-      yPct: finalYPct, // Use calculated yPct (center of text block)
+      yPct: yPctUsed, // Use derived yPct
       align: "center",
       vAlign: placement === "top" ? "top" : placement === "bottom" ? "bottom" : "center",
       previewHeightPx: H,
-      opacity: Number(opacity),
+      opacityUsed: opacityUsed, // Echo derived opacity
       totalTextH: totalTextH, // Total text height for positioning
       hPx: boxH, // Height of padded text box
       wPx: boxW, // Width of padded text box
       placement: placement, // Include placement for reference
+      fontFamilyUsed: fontFamilyUsed, // Echo derived font family
+      weightUsed: weightUsed, // Echo derived weight
       internalPadding: internalPadding, // Include padding info for frontend
-      safeTopMarginPct: safeTopMarginPct, // Document safe margins
-      safeBottomMarginPct: safeBottomMarginPct
+      safeTopMarginPct: 0.1, // Document safe margins
+      safeBottomMarginPct: 0.1
     };
     
     // Debug logging
@@ -179,6 +184,9 @@ router.post("/caption/preview", express.json(), async (req, res) => {
       xPct: 50,
       yPct: meta.yPct,
       vAlign: meta.vAlign,
+      fontFamilyUsed: meta.fontFamilyUsed,
+      weightUsed: meta.weightUsed,
+      opacityUsed: meta.opacityUsed,
       frame: { W, H },
       safeW: Math.floor(W * 0.92),
       safeH: Math.floor(H * 0.84)
