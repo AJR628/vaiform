@@ -847,12 +847,24 @@
 
         async function _drawBackground(url, canvas, cssW, cssH, who='drawBackground') {
           const my = ++_previewReqId;
+          const startTime = performance.now();
+          console.log('[asset-load] Starting background load:', { url: url.substring(0, 50), who, my });
+          
           const img = new Image();
           img.crossOrigin = 'anonymous';
           img.decoding = 'async';
           img.src = url;
           await img.decode();
           if (my !== _previewReqId) return;
+          
+          const loadTime = performance.now() - startTime;
+          console.log('[asset-load] Background loaded:', { 
+            duration: Math.round(loadTime), 
+            naturalWidth: img.naturalWidth, 
+            naturalHeight: img.naturalHeight,
+            who, my 
+          });
+          
           const ctx = canvas.getContext('2d');
           const iw = img.naturalWidth, ih = img.naturalHeight;
           const scale = Math.max(cssW/iw, cssH/ih);
@@ -860,6 +872,14 @@
           const dx = (cssW - dw)/2, dy = (cssH - dh)/2;
           ctx.clearRect(0,0,cssW,cssH);
           ctx.drawImage(img, dx, dy, dw, dh);
+          
+          console.log('[asset-load] First drawImage completed:', { 
+            duration: Math.round(performance.now() - startTime),
+            canvasSize: `${cssW}x${cssH}`,
+            imageSize: `${iw}x${ih}`,
+            drawSize: `${dw}x${dh}`,
+            who, my 
+          });
           window._currentPreviewUrl = url;
           _tapCanvas(`${who}`);
         }
@@ -926,6 +946,8 @@
         }
         
         async function updateCaptionOverlay(text = '', show = true) {
+            console.log('[preview-init] updateCaptionOverlay called with:', { text: text?.substring(0, 50), show });
+            
             const overlay = document.getElementById('caption-overlay');
             if (!overlay) return;
             
@@ -933,6 +955,15 @@
             const container = document.getElementById('live-preview-container');
             if (!container) return;
             container.classList.remove('hidden');
+            
+            // Log container dimensions
+            const containerRect = container.getBoundingClientRect();
+            console.log('[preview-init] container dimensions:', { 
+                cssW: containerRect.width, 
+                cssH: containerRect.height, 
+                dpr: window.devicePixelRatio 
+            });
+            
             const ensureSized = () =>
                 (container.clientWidth > 0 && container.clientHeight > 0) ? true : false;
             if (!ensureSized()) {
@@ -946,15 +977,32 @@
             // Fix C: Check if canvas has real dimensions, retry once with requestAnimationFrame
             const canvas = document.getElementById('live-preview-canvas');
             if (!canvas || canvas.clientWidth === 0 || canvas.clientHeight === 0) {
-                console.log('[caption-overlay] Canvas not ready, scheduling retry...');
+                console.log('[canvas-ready] Canvas not ready, scheduling retry...', {
+                    canvasExists: !!canvas,
+                    clientWidth: canvas?.clientWidth,
+                    clientHeight: canvas?.clientHeight,
+                    canvasWidth: canvas?.width,
+                    canvasHeight: canvas?.height
+                });
                 // Retry once on next frame
                 requestAnimationFrame(() => {
                     const retryCanvas = document.getElementById('live-preview-canvas');
                     if (retryCanvas && retryCanvas.clientWidth > 0 && retryCanvas.clientHeight > 0) {
-                        console.log('[caption-overlay] Canvas ready on retry, proceeding...');
+                        console.log('[retry] Canvas ready on retry, proceeding...', {
+                            retryCount: 1,
+                            clientWidth: retryCanvas.clientWidth,
+                            clientHeight: retryCanvas.clientHeight,
+                            canvasWidth: retryCanvas.width,
+                            canvasHeight: retryCanvas.height
+                        });
                         updateCaptionOverlay(show, text);
                     } else {
-                        console.warn('[caption-overlay] Canvas still not ready after retry, skipping overlay');
+                        console.warn('[retry] Canvas still not ready after retry, skipping overlay', {
+                            retryCount: 1,
+                            reason: 'canvas dimensions still zero',
+                            clientWidth: retryCanvas?.clientWidth,
+                            clientHeight: retryCanvas?.clientHeight
+                        });
                     }
                 });
                 return;
@@ -1046,6 +1094,15 @@
             captionDebounceTimer = setTimeout(async () => {
                 try {
                     console.log('[caption-overlay] Generating PNG preview...');
+                    console.log('[caption-overlay] payload:', {
+                        text: captionStyle.text?.substring(0, 50),
+                        fontFamily: captionStyle.fontFamily,
+                        weight: captionStyle.weight,
+                        fontPx: captionStyle.fontPx,
+                        placement: captionStyle.placement,
+                        yPct: captionStyle.yPct,
+                        opacity: captionStyle.opacity
+                    });
                     
                     // Ensure preview container is visible before generating overlay
                     document.getElementById('live-preview-container')?.classList.remove('hidden');
@@ -1057,6 +1114,24 @@
                     await generateCaptionPreview(captionStyle);
                     const result = getLastCaptionPNG();
                     captionOverlayState = result;
+                    
+                    console.log('[apply-font] Caption style applied:', {
+                        fontFamily: captionStyle.fontFamily,
+                        weight: captionStyle.weight,
+                        fontPx: captionStyle.fontPx,
+                        opacity: captionStyle.opacity,
+                        placement: captionStyle.placement
+                    });
+                    
+                    console.log('[caption-overlay] meta:', {
+                        fontPx: result?.meta?.fontPx,
+                        lineSpacing: result?.meta?.lineSpacing,
+                        yPct: result?.meta?.yPct,
+                        placement: result?.meta?.placement,
+                        fontFamilyUsed: result?.meta?.fontFamilyUsed,
+                        wPx: result?.meta?.wPx,
+                        hPx: result?.meta?.hPx
+                    });
                     
                     console.log('[caption-overlay] PNG preview generated:', result);
                     
@@ -1645,7 +1720,21 @@
         function sizeCanvasToCSS(canvas) {
             const wCSS = canvas.clientWidth;
             const hCSS = canvas.clientHeight;
-            if (wCSS === 0 || hCSS === 0) return false;
+            
+            console.log('[preview-init] Canvas sizing check:', {
+                cssW: wCSS, cssH: hCSS, dpr: window.devicePixelRatio,
+                canvasw: canvas.width, canvasH: canvas.height,
+                rectWidth: canvas.getBoundingClientRect().width, 
+                rectHeight: canvas.getBoundingClientRect().height
+            });
+            
+            if (wCSS === 0 || hCSS === 0) {
+                console.log('[preview-init] Canvas sized immediately:', {
+                    cssW: wCSS, cssH: hCSS, dpr: window.devicePixelRatio,
+                    canvasw: canvas.width, canvasH: canvas.height
+                });
+                return false;
+            }
 
             const dpr = window.devicePixelRatio || 1;
             const wBS = Math.round(wCSS * dpr);
@@ -2729,15 +2818,22 @@
             updateCaptionOverlay((currentQuote?.text||'').trim(), true);
         };
         document.getElementById('caption-weight').onchange = () => {
+            const newWeight = document.getElementById('caption-weight').value;
+            console.log('[controls] Weight changed to:', newWeight);
             updateRenderPreview();
             updateLivePreview();
             updateCaptionOverlay((currentQuote?.text||'').trim(), true);
         };
         // Legacy caption-size handler removed - now handled by initCaptionSizeUI()
-        document.getElementById('caption-opacity').oninput = () => { updateCaptionStyleValues(); updateCaptionOverlay((currentQuote?.text||'').trim(), true); };
+        document.getElementById('caption-opacity').oninput = () => { 
+            const newOpacity = document.getElementById('caption-opacity').value;
+            console.log('[controls] Opacity changed to:', newOpacity);
+            updateCaptionStyleValues(); 
+            updateCaptionOverlay((currentQuote?.text||'').trim(), true); 
+        };
         document.getElementById('caption-placement').onchange = () => {
             const newPlacement = document.getElementById('caption-placement').value;
-            console.log('[caption] Placement changed to:', newPlacement);
+            console.log('[controls] Placement changed to:', newPlacement);
             
             // Clear existing caption overlay to force regeneration
             const overlay = document.getElementById('caption-overlay');
