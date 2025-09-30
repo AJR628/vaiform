@@ -954,10 +954,15 @@
             const container = document.getElementById('live-preview-container');
             if (!container) return;
             
-            // Fallback gate: Don't proceed if container is effectively hidden
-            if (container.offsetParent === null || container.classList.contains('opacity-0')) {
+            // Fallback gate: Don't proceed if container is effectively hidden (but allow opacity-0 if has dimensions)
+            if (container.offsetParent === null) {
                 console.log('[preview-init] Container not visible, skipping caption overlay');
                 return;
+            }
+            
+            // If container has opacity-0 but has dimensions, proceed (will be made visible)
+            if (container.classList.contains('opacity-0')) {
+                console.log('[preview-init] Container has opacity-0 but has dimensions, proceeding...');
             }
             
             container.classList.remove('opacity-0');
@@ -1097,7 +1102,7 @@
                     console.log('[caption-overlay] Generating PNG preview...');
                     
                     // Ensure preview container is visible before generating overlay
-                    document.getElementById('live-preview-container')?.classList.remove('hidden');
+                    document.getElementById('live-preview-container')?.classList.remove('opacity-0');
                     
                     // Import the caption preview function
                     const { generateCaptionPreview, getLastCaptionPNG, createCaptionOverlay } = await import('./js/caption-preview.js');
@@ -1683,19 +1688,24 @@
                 
                 preview.classList.remove('hidden');
                 renderBtn.classList.remove('hidden');
-                document.getElementById('live-preview-container').classList.remove('hidden');
+                document.getElementById('live-preview-container').classList.remove('opacity-0');
                 
                 // Wait a frame for the container to be visible, then update preview
                 requestAnimationFrame(() => {
+                    // Ensure proper sequence: Container → Canvas → Preview → Caption
+                    console.log('[preview-init] Triggering preview sequence...');
                     updateLivePreview();
                     if (currentQuote) {
-                        updateCaptionOverlay(currentQuote.text.trim(), true);
+                        // Small delay to ensure preview is rendered before caption
+                        setTimeout(() => {
+                            updateCaptionOverlay(currentQuote.text.trim(), true);
+                        }, 100);
                     }
                 });
             } else {
                 preview.classList.add('hidden');
                 renderBtn.classList.add('hidden');
-                document.getElementById('live-preview-container').classList.add('hidden');
+                document.getElementById('live-preview-container').classList.add('opacity-0');
             }
             updateRenderButtonState();
         }
@@ -2083,15 +2093,37 @@
             const container = document.getElementById('live-preview-container');
             const canvas = document.getElementById('live-preview-canvas');
             
-            // Check if container is visible first (using opacity instead of hidden class)
-            if (!container || container.classList.contains('opacity-0') || container.offsetParent === null) {
+            // Check if container is visible first - allow opacity-0 if container has dimensions
+            if (!container || container.offsetParent === null) {
                 console.log('[preview-scaling] Container not visible, skipping preview');
                 return;
             }
             
-            // Fix C: Check if canvas has real dimensions, retry once with requestAnimationFrame
+            // If container has opacity-0 but has dimensions, proceed (will be made visible)
+            if (container.classList.contains('opacity-0')) {
+                console.log('[preview-scaling] Container has opacity-0 but has dimensions, proceeding...');
+            }
+            
+            // Fix C: Check if canvas has real dimensions, with improved retry logic
             if (!canvas || canvas.clientWidth === 0 || canvas.clientHeight === 0) {
                 console.log('[preview-scaling] Canvas not ready, scheduling retry...');
+                // Force canvas sizing if container has dimensions
+                if (container && container.clientWidth > 0 && container.clientHeight > 0) {
+                    console.log('[preview-scaling] Container has dimensions, forcing canvas sizing...');
+                    const wrapper = canvas.parentElement;
+                    if (wrapper) {
+                        canvas.style.width = `${wrapper.clientWidth}px`;
+                        canvas.style.height = `${wrapper.clientHeight}px`;
+                        const dpr = window.devicePixelRatio || 1;
+                        canvas.width = Math.round(wrapper.clientWidth * dpr);
+                        canvas.height = Math.round(wrapper.clientHeight * dpr);
+                        console.log('[preview-scaling] Canvas force-sized:', { 
+                            cssW: canvas.clientWidth, cssH: canvas.clientHeight,
+                            canvasW: canvas.width, canvasH: canvas.height 
+                        });
+                    }
+                }
+                
                 // Retry once on next frame
                 requestAnimationFrame(() => {
                     const retryCanvas = document.getElementById('live-preview-canvas');
