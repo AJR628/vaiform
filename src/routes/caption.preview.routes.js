@@ -233,7 +233,7 @@ router.post("/caption/preview", express.json(), async (req, res) => {
         wPx: W,
         hPx: H,
         xPx: 0,
-        yPx: y,
+        yPx: textStartY, // SSOT: Use server-computed text start position
         meta: meta
       }
     });
