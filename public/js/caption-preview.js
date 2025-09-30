@@ -58,18 +58,20 @@ export async function generateCaptionPreview(opts) {
   const fontPx = Math.max(24, Math.min(200, Number(ensureFontPx || opts.sizePx || 48)));
   const lineSpacingPx = Math.max(24, Math.min(200, Math.round(fontPx * Number(opts.lineHeight || 1.1))));
   
-  // Use new payload structure with SSOT-compliant fields
+  // Use server-compatible payload structure
   const payload = {
-    text: opts.text,
-    fontFamily: opts.fontFamily || "DejaVuSans",
-    weight: opts.weight || "normal",
-    fontPx: fontPx,
-    lineSpacingPx: lineSpacingPx,
-    opacity: Number(opts.opacity ?? 0.85),
-    placement: opts.placement || 'center',
-    yPct: opts.yPct || 0.5,
-    // Add timestamp to force regeneration
-    _cacheBuster: Date.now()
+    style: {
+      text: opts.text,
+      fontFamily: opts.fontFamily || "DejaVuSans",
+      weight: opts.weight || "normal",
+      fontPx: fontPx,
+      lineSpacingPx: lineSpacingPx,
+      opacity: Number(opts.opacity ?? 0.85),
+      placement: opts.placement || 'center',
+      yPct: opts.yPct || 0.5,
+      // Add timestamp to force regeneration
+      _cacheBuster: Date.now()
+    }
   };
 
   console.log("[caption-overlay] POST /preview/caption with placement:", opts.placement, "yPct:", opts.yPct);

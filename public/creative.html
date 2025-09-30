@@ -473,7 +473,6 @@
                     <!-- TASK 4: Fix overlay container to match canvas CSS size -->
                     <img
                       id="caption-overlay"
-                      alt="caption overlay"
                       class="absolute inset-0 pointer-events-none block w-full h-full"
                       style="z-index:2"
                     />
@@ -1809,7 +1808,13 @@
         
         // Helper function for precise float conversion
         function preciseFloat0to1(value) {
-            return Math.max(0, Math.min(1, Number(value) / 100));
+            // Fix: If value is already 0-1 range, don't divide by 100
+            const numValue = Number(value);
+            if (numValue <= 1) {
+                return Math.max(0, Math.min(1, numValue));
+            }
+            // If value is 0-100 range, convert to 0-1
+            return Math.max(0, Math.min(1, numValue / 100));
         }
         
         // Build proper payload with all controls wired

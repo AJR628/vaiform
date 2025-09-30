@@ -52,6 +52,14 @@ router.post("/caption/preview", express.json(), async (req, res) => {
     if (!Number.isFinite(clampedFontPx)) {
       return res.status(400).json({ success:false, error:"INVALID_INPUT", detail:"fontPx must be a valid number" });
     }
+    // Derive effective values FIRST - before any usage
+    const yPctUsed = resolveYpct(yPct, placement);
+    const fontFamilyUsed = resolveFontFamilyUsed(fontFamily);
+    const weightUsed = (weightCss === 'bold' || weightCss === 700) ? 'bold' : 'normal';
+    const opacityUsed = clamp01(opacity);
+    
+    console.log(`[caption] Derived values: yPctUsed=${yPctUsed}, fontFamilyUsed=${fontFamilyUsed}, weightUsed=${weightUsed}, opacityUsed=${opacityUsed}`);
+
     const canvas = createCanvas(W, H);
     const ctx = canvas.getContext("2d");
     ctx.clearRect(0, 0, W, H);
@@ -115,11 +123,7 @@ router.post("/caption/preview", express.json(), async (req, res) => {
     
     const clamp01 = (value) => Math.max(0, Math.min(1, Number(value) || 0.85));
     
-    // Derive effective values
-    const yPctUsed = resolveYpct(yPct, placement);
-    const fontFamilyUsed = resolveFontFamilyUsed(fontFamily);
-    const weightUsed = (weightCss === 'bold' || weightCss === 700) ? 'bold' : 'normal';
-    const opacityUsed = clamp01(opacity);
+    // Variables already defined above
     
     // Calculate text dimensions
     const totalTextH = lines.length * lh;
