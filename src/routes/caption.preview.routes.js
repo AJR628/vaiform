@@ -52,7 +52,37 @@ router.post("/caption/preview", express.json(), async (req, res) => {
     if (!Number.isFinite(clampedFontPx)) {
       return res.status(400).json({ success:false, error:"INVALID_INPUT", detail:"fontPx must be a valid number" });
     }
-    // Derive effective values FIRST - before any usage
+
+    // SSOT: Server derives effective values from client intent
+    // Define helper functions FIRST before using them
+    function resolveYpct(clientYPct, clientPlacement) {
+      // If client provided yPct, use it (they know their intent)
+      if (clientYPct !== undefined && clientYPct !== null) {
+        return Math.max(0.1, Math.min(0.9, Number(clientYPct)));
+      }
+      // Otherwise derive from placement
+      switch (clientPlacement) {
+        case 'top': return 0.10;
+        case 'center': return 0.50;
+        case 'bottom': return 0.90;
+        default: return 0.50;
+      }
+    }
+    
+    function resolveFontFamilyUsed(clientFontFamily) {
+      const fontMap = {
+        'DejaVuSans': 'DejaVu Sans',
+        'DejaVu Serif Local': 'DejaVu Serif',
+        'DejaVu Serif Bold Local': 'DejaVu Serif Bold'
+      };
+      return fontMap[clientFontFamily] || 'DejaVu Sans';
+    }
+    
+    function clamp01(value) {
+      return Math.max(0, Math.min(1, Number(value) || 0.85));
+    }
+
+    // Derive effective values AFTER function definitions
     const yPctUsed = resolveYpct(yPct, placement);
     const fontFamilyUsed = resolveFontFamilyUsed(fontFamily);
     const weightUsed = (weightCss === 'bold' || weightCss === 700) ? 'bold' : 'normal';
@@ -96,32 +126,6 @@ router.post("/caption/preview", express.json(), async (req, res) => {
     if (!lines.length || !Number.isFinite(textH)) {
       return res.status(400).json({ success:false, error:"INVALID_INPUT", detail:"failed to compute text dimensions" });
     }
-
-    // SSOT: Server derives effective values from client intent
-    const resolveYpct = (clientYPct, clientPlacement) => {
-      // If client provided yPct, use it (they know their intent)
-      if (clientYPct !== undefined && clientYPct !== null) {
-        return Math.max(0.1, Math.min(0.9, Number(clientYPct)));
-      }
-      // Otherwise derive from placement
-      switch (clientPlacement) {
-        case 'top': return 0.10;
-        case 'center': return 0.50;
-        case 'bottom': return 0.90;
-        default: return 0.50;
-      }
-    };
-    
-    const resolveFontFamilyUsed = (clientFontFamily) => {
-      const fontMap = {
-        'DejaVuSans': 'DejaVu Sans',
-        'DejaVu Serif Local': 'DejaVu Serif',
-        'DejaVu Serif Bold Local': 'DejaVu Serif Bold'
-      };
-      return fontMap[clientFontFamily] || 'DejaVu Sans';
-    };
-    
-    const clamp01 = (value) => Math.max(0, Math.min(1, Number(value) || 0.85));
     
     // Variables already defined above
     
