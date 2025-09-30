@@ -182,7 +182,7 @@ export function createCaptionOverlay(captionData, container, scaling = {}) {
   const dispW = (captionData.meta?.wPx || 1080) * s;
   const dispH = (captionData.meta?.hPx || 1920) * s;
   
-  // Use server-provided dimensions for accurate positioning
+  // SSOT: Use server-computed positioning directly
   const xPct = captionData.meta?.xPct || 50;
   const yPct = captionData.meta?.yPct || 0.5;
   const totalTextH = captionData.meta?.totalTextH || captionData.meta?.hPx || 0;
@@ -190,6 +190,10 @@ export function createCaptionOverlay(captionData, container, scaling = {}) {
   const vAlign = captionData.meta?.vAlign || 'center';
   const internalPadding = captionData.meta?.internalPadding || 0;
   const lineSpacingPx = captionData.meta?.lineSpacingPx ?? captionData.meta?.lineSpacing ?? 0;
+  
+  // SSOT: Use server-computed anchor positioning if available
+  const serverAnchorY = captionData.meta?.anchorY;
+  const serverTextBlockTop = captionData.meta?.textBlockTop;
   
   // TASK 2: Scale totalTextH with single scale factor
   const scaledTotalTextH = totalTextH * s;
@@ -208,9 +212,16 @@ export function createCaptionOverlay(captionData, container, scaling = {}) {
   if (align === 'center') left -= dispW / 2;
   else if (align === 'right') left -= dispW;
   
-  // Use meta.yPct for precise vertical positioning (server-computed)
-  // For placement-based positioning, use the server's computed yPct
-  const targetTop = (yPct * finalH) - (scaledTotalTextH / 2);
+  // SSOT: Use server-computed positioning directly, or fallback to client calculation
+  let targetTop;
+  if (serverTextBlockTop !== undefined) {
+    // Use server-computed text block top position, scaled to client dimensions
+    targetTop = (serverTextBlockTop / 1920) * finalH;
+  } else {
+    // Fallback: Use client calculation (legacy behavior)
+    targetTop = (yPct * finalH) - (scaledTotalTextH / 2);
+  }
+  
   let top = Math.max(safeTopMargin, Math.min(targetTop, finalH - safeBottomMargin - scaledTotalTextH));
   
   console.log('[preview-overlay] positioning:', {
@@ -237,20 +248,16 @@ export function createCaptionOverlay(captionData, container, scaling = {}) {
   const finalDispW = dispW * finalScale;
   const finalDispH = dispH * finalScale;
   
-  // Recalculate position with final scale using text-aware positioning
+  // SSOT: Use server-computed positioning directly (no double-padding)
   left = anchorX;
-  top = targetTop; // Use computed targetTop instead of undefined anchorY
+  top = targetTop; // Use server-computed targetTop
   
   // Horizontal alignment
   if (align === 'center') left -= finalDispW / 2;
   else if (align === 'right') left -= finalDispW;
   
-  // TASK 2: Vertical alignment using single scale factor
+  // SSOT: Server already computed correct positioning, just apply final scale
   const finalScaledTextH = scaledTotalTextH * finalScale;
-  const scaledPadding = internalPadding * s;
-  const finalScaledPadding = scaledPadding * finalScale;
-  if (vAlign === 'center') top -= (finalScaledTextH / 2) + finalScaledPadding;
-  else if (vAlign === 'bottom') top -= finalScaledTextH + finalScaledPadding;
   
   // TASK 4: Final clamp with safe margins using actual container dimensions
   left = Math.max(0, Math.min(left, finalW - finalDispW));
@@ -261,7 +268,8 @@ export function createCaptionOverlay(captionData, container, scaling = {}) {
     W: finalW, H: finalH, iw: captionData.meta?.wPx, iH: captionData.meta?.hPx,
     dispW: finalDispW, dispH: finalDispH, align, placement, yPct,
     finalScale: s, scaledTotalTextH, totalTextH, left, top, targetTop,
-    safeTopMargin, safeBottomMargin
+    safeTopMargin, safeBottomMargin,
+    serverAnchorY, serverTextBlockTop, 'usingServerPositioning': serverTextBlockTop !== undefined
   });
   
   // Apply calculated position and size

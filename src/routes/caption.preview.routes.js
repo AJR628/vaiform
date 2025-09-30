@@ -131,22 +131,46 @@ router.post("/caption/preview", express.json(), async (req, res) => {
     
     // Calculate text dimensions
     const totalTextH = lines.length * lh;
-    const y = Math.round(H * yPctUsed);
     
-    console.log(`[caption] placement=${placement}, fontPx=${clampedFontPx}, totalTextH=${totalTextH}, yPct=${yPctUsed}, y=${y}`);
-    console.log(`[caption] effective values: fontFamilyUsed=${fontFamilyUsed}, weightUsed=${weightUsed}, opacityUsed=${opacityUsed}`);
-
+    // SSOT: yPct is the anchor point along canvas height
+    // placement: 'top' → anchor is top of text block
+    // placement: 'center' → center of text block  
+    // placement: 'bottom' → bottom of text block
+    const anchorY = Math.round(H * yPctUsed);
+    
     // Add internal padding to the text box to prevent clipping
     const internalPadding = 32; // 32px padding on all sides
     const boxW = maxW + internalPadding * 2;
     const boxH = textH + internalPadding * 2;
     const x = Math.round((W - boxW) / 2);
+    
+    // Calculate text block position based on anchor semantics
+    let textBlockTop;
+    if (placement === 'top') {
+      // Anchor is top of text block
+      textBlockTop = anchorY;
+    } else if (placement === 'center') {
+      // Anchor is center of text block
+      textBlockTop = anchorY - (totalTextH / 2);
+    } else if (placement === 'bottom') {
+      // Anchor is bottom of text block
+      textBlockTop = anchorY - totalTextH;
+    } else {
+      // Default to center
+      textBlockTop = anchorY - (totalTextH / 2);
+    }
+    
+    // Apply padding to get final text start position
+    const textStartY = textBlockTop + internalPadding;
+    
+    console.log(`[caption] placement=${placement}, fontPx=${clampedFontPx}, totalTextH=${totalTextH}, yPct=${yPctUsed}, anchorY=${anchorY}, textBlockTop=${textBlockTop}, textStartY=${textStartY}`);
+    console.log(`[caption] effective values: fontFamilyUsed=${fontFamilyUsed}, weightUsed=${weightUsed}, opacityUsed=${opacityUsed}`);
 
     if (showBox) {
       ctx.save();
       ctx.globalAlpha = 1.0;
       ctx.fillStyle = boxColor;
-      roundRect(ctx, x, y - clampedFontPx - padding, boxW, boxH, borderRadius);
+      roundRect(ctx, x, textBlockTop, boxW, boxH, borderRadius);
       ctx.fill();
       ctx.restore();
     }
@@ -157,7 +181,6 @@ router.post("/caption/preview", express.json(), async (req, res) => {
     else { ctx.shadowColor = "transparent"; }
 
     // Position text within the padded box
-    const textStartY = y + internalPadding;
     let cy = textStartY;
     for (const line of lines) { ctx.fillText(line, W/2, cy); cy += lh; }
 
@@ -169,7 +192,7 @@ router.post("/caption/preview", express.json(), async (req, res) => {
       fontPx: clampedFontPx, // Use clamped font size
       lineSpacing: lh,
       xPct: 50, // centered
-      yPct: yPctUsed, // Use derived yPct
+      yPct: yPctUsed, // Use derived yPct (anchor point)
       align: "center",
       vAlign: placement === "top" ? "top" : placement === "bottom" ? "bottom" : "center",
       previewHeightPx: H,
@@ -182,7 +205,10 @@ router.post("/caption/preview", express.json(), async (req, res) => {
       weightUsed: weightUsed, // Echo derived weight
       internalPadding: internalPadding, // Include padding info for frontend
       safeTopMarginPct: 0.1, // Document safe margins
-      safeBottomMarginPct: 0.1
+      safeBottomMarginPct: 0.1,
+      // SSOT: Include anchor positioning info for client
+      anchorY: anchorY, // Server-computed anchor point
+      textBlockTop: textBlockTop // Server-computed text block top position
     };
     
     // Debug logging
