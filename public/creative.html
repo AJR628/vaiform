@@ -465,7 +465,7 @@
             <h2 class="text-xl font-semibold text-gray-900 dark:text-white">Create Short</h2>
             
             <!-- Live Preview Canvas -->
-            <div id="live-preview-container" class="hidden">
+            <div id="live-preview-container" class="opacity-0 transition-opacity duration-300" style="min-height: 640px; width: 360px;">
                 <div class="text-sm text-gray-400 mb-2">Live Preview:</div>
                 <!-- Fix A: Give the preview wrapper a predictable size -->
                 <div class="relative mx-auto bg-black rounded-lg overflow-hidden" style="width: 360px; aspect-ratio: 9 / 16;">
@@ -953,7 +953,14 @@
             // Ensure container is visible and has a size before drawing
             const container = document.getElementById('live-preview-container');
             if (!container) return;
-            container.classList.remove('hidden');
+            
+            // Fallback gate: Don't proceed if container is effectively hidden
+            if (container.offsetParent === null || container.classList.contains('opacity-0')) {
+                console.log('[preview-init] Container not visible, skipping caption overlay');
+                return;
+            }
+            
+            container.classList.remove('opacity-0');
             
             // Log container dimensions
             const containerRect = container.getBoundingClientRect();
@@ -1473,11 +1480,11 @@
             const pageInfo = document.getElementById('page-info');
             
             if (currentAssetType === 'ai') {
-                container.classList.add('hidden');
+                container.classList.add('opacity-0');
                 return;
             }
             
-            container.classList.remove('hidden');
+            container.classList.remove('opacity-0');
             prevBtn.disabled = currentAssetPage <= 1;
             nextBtn.disabled = !hasMoreAssets;
             pageInfo.textContent = `Page ${currentAssetPage}`;
@@ -1708,7 +1715,7 @@
         window.__PREVIEW_FIX__ = true;
         
         // Canvas ready state tracking
-        let canvasReadyState = { ready: false, observer: null };
+        let canvasReadyState = { ready: false, observer: null, intersectionObserver: null };
         
         // Fix B: Set the canvas backing store AFTER CSS size exists
         function sizeCanvasToCSS(canvas) {
@@ -1745,7 +1752,7 @@
             return true;
         }
         
-        // ResizeObserver for canvas ready detection
+        // IntersectionObserver + ResizeObserver for robust canvas ready detection
         function setupCanvasObserver() {
             if (!window.__PREVIEW_FIX__) return;
             
@@ -1753,10 +1760,28 @@
             const canvas = document.getElementById('live-preview-canvas');
             if (!container || !canvas) return;
             
+            // Clean up existing observers
             if (canvasReadyState.observer) {
                 canvasReadyState.observer.disconnect();
             }
+            if (canvasReadyState.intersectionObserver) {
+                canvasReadyState.intersectionObserver.disconnect();
+            }
             
+            // Use IntersectionObserver to detect when container becomes visible
+            canvasReadyState.intersectionObserver = new IntersectionObserver(entries => {
+                for (const entry of entries) {
+                    if (entry.isIntersecting) {
+                        console.log('[canvas-ready] Container became visible, checking canvas');
+                        if (sizeCanvasToCSS(canvas)) {
+                            console.log('[canvas-ready] Canvas ready, triggering render');
+                            scheduleRender();
+                        }
+                    }
+                }
+            }, { threshold: 0.1 });
+            
+            // Use ResizeObserver for dimension changes
             canvasReadyState.observer = new ResizeObserver(entries => {
                 for (const entry of entries) {
                     const { width, height } = entry.contentRect;
@@ -1770,18 +1795,28 @@
                 }
             });
             
+            // Observe both intersection and resize
+            canvasReadyState.intersectionObserver.observe(container);
             canvasReadyState.observer.observe(container);
         }
         
-        // Idempotent render scheduler
+        // Idempotent render scheduler with RAF cancellation
         let renderScheduled = false;
+        let renderRafId = null;
         function scheduleRender() {
             if (!window.__PREVIEW_FIX__) return;
             if (renderScheduled) return;
             
+            // Cancel any pending RAF to prevent stacking
+            if (renderRafId !== null) {
+                cancelAnimationFrame(renderRafId);
+                renderRafId = null;
+            }
+            
             renderScheduled = true;
-            requestAnimationFrame(() => {
+            renderRafId = requestAnimationFrame(() => {
                 renderScheduled = false;
+                renderRafId = null;
                 if (canvasReadyState.ready && currentQuote?.text && selectedAsset) {
                     console.log('[canvas-ready] Executing scheduled render');
                     updateLivePreview();
@@ -2048,8 +2083,8 @@
             const container = document.getElementById('live-preview-container');
             const canvas = document.getElementById('live-preview-canvas');
             
-            // Check if container is visible first
-            if (!container || container.classList.contains('hidden')) {
+            // Check if container is visible first (using opacity instead of hidden class)
+            if (!container || container.classList.contains('opacity-0') || container.offsetParent === null) {
                 console.log('[preview-scaling] Container not visible, skipping preview');
                 return;
             }
@@ -2070,7 +2105,7 @@
                 return;
             }
             
-            container.classList.remove('hidden');
+            container.classList.remove('opacity-0');
             
             // If a <video> is present for preview, hide overlay to avoid double text
             try {
@@ -3240,19 +3275,7 @@
             }
         });
         
-        document.addEventListener('visibilitychange', () => {
-            if (!document.hidden) {
-                console.log('[preview-init] Tab visible, reinitializing preview');
-                initPreviewSystem();
-                
-                // Also trigger preview if we already have both quote and asset
-                if (currentQuote && selectedAsset) {
-                    console.log('[preview-init] Both quote and asset available, triggering preview');
-                    updateLivePreview();
-                    updateCaptionOverlay(currentQuote.text.trim(), true);
-                }
-            }
-        });
+        // Removed duplicate visibilitychange listener - consolidated into DOMContentLoaded handler above
     </script>
 
 
