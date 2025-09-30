@@ -235,6 +235,10 @@ if (routes?.preview) {
   app.use("/api/preview", routes.preview);
   console.log("✅ Mounted preview at /api/preview");
 }
+if (routes?.tts) {
+  app.use("/api/tts", routes.tts);
+  console.log("✅ Mounted tts at /api/tts");
+}
 
 // Mount caption preview routes
 import captionPreviewRoutes from "./routes/caption.preview.routes.js";

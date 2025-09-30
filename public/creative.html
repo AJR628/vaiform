@@ -457,6 +457,31 @@
                     <audio id="voice-preview-audio" class="hidden" controls></audio>
                 </div>
             </div>
+            
+            <!-- TTS Settings -->
+            <div class="grid grid-cols-2 gap-4 mt-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Stability</label>
+                    <input type="range" id="tts-stability" min="0" max="1" step="0.1" value="0.5" class="w-full">
+                    <div class="text-xs text-gray-500 mt-1">Value: <span id="stability-value">0.5</span></div>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Similarity Boost</label>
+                    <input type="range" id="tts-similarity" min="0" max="1" step="0.1" value="0.75" class="w-full">
+                    <div class="text-xs text-gray-500 mt-1">Value: <span id="similarity-value">0.75</span></div>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Style</label>
+                    <input type="range" id="tts-style" min="0" max="100" step="1" value="0" class="w-full">
+                    <div class="text-xs text-gray-500 mt-1">Value: <span id="style-value">0</span></div>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Speaker Boost</label>
+                    <input type="checkbox" id="tts-speaker-boost" checked class="rounded">
+                    <div class="text-xs text-gray-500 mt-1">Enhance speaker characteristics</div>
+                </div>
+            </div>
+            
             <div id="voice-preview-status" class="text-sm text-gray-400 hidden"></div>
         </div>
 
@@ -1684,7 +1709,11 @@
                 const voiceId = document.getElementById('voiceover-voice').value;
                 const selectedVoice = availableVoices.find(v => v.id === voiceId);
                 const voiceName = selectedVoice ? selectedVoice.name : 'Not selected';
-                document.getElementById('preview-voiceover').textContent = `Voice: ${voiceName}`;
+                const stability = document.getElementById('tts-stability').value;
+                const similarity = document.getElementById('tts-similarity').value;
+                const style = document.getElementById('tts-style').value;
+                const speakerBoost = document.getElementById('tts-speaker-boost').checked;
+                document.getElementById('preview-voiceover').textContent = `Voice: ${voiceName} (Stability: ${stability}, Similarity: ${similarity}, Style: ${style}, Boost: ${speakerBoost ? 'On' : 'Off'})`;
                 
                 preview.classList.remove('hidden');
                 renderBtn.classList.remove('hidden');
@@ -2374,13 +2403,27 @@
             previewBtn.disabled = true;
 
             try {
-                console.log('Voice preview - voiceId:', voiceId);
+                // Get TTS settings from UI
+                const stability = parseFloat(document.getElementById('tts-stability').value);
+                const similarity_boost = parseFloat(document.getElementById('tts-similarity').value);
+                const style = parseInt(document.getElementById('tts-style').value);
+                const use_speaker_boost = document.getElementById('tts-speaker-boost').checked;
+                
+                console.log('Voice preview - voiceId:', voiceId, 'settings:', { stability, similarity_boost, style, use_speaker_boost });
                 const { apiFetch } = await import('./api.mjs');
-                const data = await apiFetch('/voice/preview', {
+                const data = await apiFetch('/tts/preview', {
                     method: 'POST',
                     body: {
+                        text: 'Hello, this is a preview of my voice. How does it sound?',
                         voiceId,
-                        text: 'Hello, this is a preview of my voice. How does it sound?'
+                        modelId: 'eleven_multilingual_v2',
+                        outputFormat: 'mp3_44100_128',
+                        voiceSettings: {
+                            stability,
+                            similarity_boost,
+                            style,
+                            use_speaker_boost
+                        }
                     }
                 });
                 
@@ -2546,6 +2589,16 @@
 
                   // pass voice id only if voiceover is on (string type)
                   voiceId: wantVoiceover && voiceId ? voiceId : undefined,
+                  
+                  // TTS settings for SSOT
+                  modelId: wantVoiceover ? 'eleven_multilingual_v2' : undefined,
+                  outputFormat: wantVoiceover ? 'mp3_44100_128' : undefined,
+                  voiceSettings: wantVoiceover ? {
+                    stability: parseFloat(document.getElementById('tts-stability').value),
+                    similarity_boost: parseFloat(document.getElementById('tts-similarity').value),
+                    style: parseInt(document.getElementById('tts-style').value),
+                    use_speaker_boost: document.getElementById('tts-speaker-boost').checked
+                  } : undefined,
                 };
 
                 // IMPORTANT: caption vs overlay – never send caption as an object
@@ -3033,6 +3086,23 @@
             updateRenderPreview();
         };
         document.getElementById('preview-voice-btn').onclick = previewVoice;
+        
+        // TTS Settings event handlers
+        document.getElementById('tts-stability').oninput = function() {
+            document.getElementById('stability-value').textContent = this.value;
+            updateRenderPreview();
+        };
+        document.getElementById('tts-similarity').oninput = function() {
+            document.getElementById('similarity-value').textContent = this.value;
+            updateRenderPreview();
+        };
+        document.getElementById('tts-style').oninput = function() {
+            document.getElementById('style-value').textContent = this.value;
+            updateRenderPreview();
+        };
+        document.getElementById('tts-speaker-boost').onchange = function() {
+            updateRenderPreview();
+        };
 
         // Remix button event listeners (success-only decrement handled inside)
         try { document.getElementById('regenerate-btn').onclick = () => remixQuote('regenerate'); } catch {}

@@ -116,6 +116,15 @@ const CreateShortSchema = z
     captionImage: z.string().startsWith("data:image/").optional(),
     captionText: z.string().default("").optional(),
     voiceId: z.string().optional(),
+    // TTS settings for SSOT
+    modelId: z.string().optional(),
+    outputFormat: z.string().optional(),
+    voiceSettings: z.object({
+      stability: z.number().min(0).max(1).optional(),
+      similarity_boost: z.number().min(0).max(1).optional(),
+      style: z.number().min(0).max(100).optional(),
+      use_speaker_boost: z.boolean().optional()
+    }).optional(),
   })
   .transform((v) => {
     // permit empty text if captionText is provided
@@ -213,7 +222,7 @@ export async function createShort(req, res) {
     if (!parsed.success) {
       return res.status(400).json({ success: false, error: "INVALID_INPUT", detail: parsed.error.flatten() });
     }
-    const { mode = "quote", text = "", captionText = "", template = "calm", durationSec = 8, voiceover = false, wantAttribution = true, background = { kind: "solid" }, debugAudioPath, captionMode = "static", includeBottomCaption = false, watermark, captionStyle, caption, captionResolved, captionImage, voiceId } = parsed.data;
+    const { mode = "quote", text = "", captionText = "", template = "calm", durationSec = 8, voiceover = false, wantAttribution = true, background = { kind: "solid" }, debugAudioPath, captionMode = "static", includeBottomCaption = false, watermark, captionStyle, caption, captionResolved, captionImage, voiceId, modelId, outputFormat, voiceSettings } = parsed.data;
 
     const ownerUid = req.user?.uid;
     if (!ownerUid) {
@@ -243,7 +252,7 @@ export async function createShort(req, res) {
     // Note: caption is now a number (font size) in v1 schema, not an object
     
     try { console.log("[shorts] incoming caption:", { fontPx: caption, captionText: !!captionText, hasOverlay: !!(captionImage && typeof captionImage === 'string') }); } catch {}
-    const result = await createShortService({ ownerUid, mode, text, template, durationSec, voiceover, wantAttribution, background, debugAudioPath, captionMode, includeBottomCaption, watermark, captionStyle, caption, captionResolved, captionImage, voiceId, overrideQuote });
+    const result = await createShortService({ ownerUid, mode, text, template, durationSec, voiceover, wantAttribution, background, debugAudioPath, captionMode, includeBottomCaption, watermark, captionStyle, caption, captionResolved, captionImage, voiceId, modelId, outputFormat, voiceSettings, overrideQuote });
     
     // Increment daily short count for free users after successful creation
     if (req.incrementShortCount) {

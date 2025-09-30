@@ -2,6 +2,8 @@ import { writeFile, mkdir, access, mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
+import { buildTtsPayload } from "../builders/tts.builder.js";
+import { elevenLabsSynthesize } from "../adapters/elevenlabs.adapter.js";
 
 const TTS_PROVIDER = (process.env.TTS_PROVIDER || "openai").toLowerCase();
 const OPENAI_MODEL = process.env.OPENAI_TTS_MODEL || "gpt-4o-mini-tts";
@@ -114,7 +116,7 @@ async function withRetry(fetchFn, { tries = MAX_TRIES, baseDelay = BASE_DELAY } 
 }
 
 // Always resolves; never throws
-export async function synthVoice({ text, voiceId }){
+export async function synthVoice({ text, voiceId, modelId, outputFormat, voiceSettings }){
   try {
     const t = String(text || "").replace(/\s+/g, ' ').trim();
     try { console.log('[tts] input len/chars', t.length, 'words', t.split(/\s+/).length, 'sample', t.slice(0,200)); } catch {}
@@ -133,9 +135,16 @@ export async function synthVoice({ text, voiceId }){
       return { audioPath: null, durationMs: null };
     }
 
-    const model = isOpenAI ? OPENAI_MODEL : (process.env.ELEVEN_TTS_MODEL || "eleven_flash_v2_5");
-    const voice = isOpenAI ? OPENAI_VOICE : (voiceId || process.env.ELEVEN_VOICE_ID);
-    const key = cacheKey({ provider, model, voice, text: t });
+    // SSOT: Use the same builder for both preview and render
+    const payload = buildTtsPayload({ 
+      text: t, 
+      voiceId: voiceId || process.env.ELEVEN_VOICE_ID,
+      modelId,
+      outputFormat,
+      voiceSettings
+    });
+    
+    const key = cacheKey({ provider, model: payload.modelId, voice: payload.voiceId, text: t });
 
     // In-memory cache
     const hit = ttsMem.get(key);
@@ -151,8 +160,8 @@ export async function synthVoice({ text, voiceId }){
     return await withTtsSlot(async () => {
       try {
         const { buf } = await fetchWithRetry(async () => {
-          if (isOpenAI) return await doOpenAI({ text: t, model, voice });
-          if (isEleven) return await doEleven({ text: t, voiceId: voice });
+          if (isOpenAI) return await doOpenAI({ text: t, model: payload.modelId, voice: payload.voiceId });
+          if (isEleven) return await doElevenSSOT(payload);
           return { res: new Response(null, { status: 503 }), buf: Buffer.alloc(0), headers: new Headers() };
         }, key);
 
@@ -241,6 +250,16 @@ async function doEleven({ text, voiceId }) {
   });
   const ab = await res.arrayBuffer();
   return { res, buf: Buffer.from(ab), headers: res.headers };
+}
+
+// SSOT: Use the same adapter for both preview and render
+async function doElevenSSOT(payload) {
+  const { contentType, buffer } = await elevenLabsSynthesize(payload);
+  return { 
+    res: new Response(buffer, { headers: { "Content-Type": contentType } }), 
+    buf: buffer, 
+    headers: new Headers({ "Content-Type": contentType })
+  };
 }
 
 async function synthOpenAI({ text, k }){

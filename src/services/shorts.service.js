@@ -24,7 +24,7 @@ export function finalizeQuoteText(mode, text) {
   return t;
 }
 
-export async function createShortService({ ownerUid, mode, text, template, durationSec, voiceover = false, wantAttribution = true, background = { kind: "solid" }, debugAudioPath, captionMode = "static", includeBottomCaption = false, watermark, overrideQuote, captionStyle, caption, captionResolved, captionImage, voiceId }) {
+export async function createShortService({ ownerUid, mode, text, template, durationSec, voiceover = false, wantAttribution = true, background = { kind: "solid" }, debugAudioPath, captionMode = "static", includeBottomCaption = false, watermark, overrideQuote, captionStyle, caption, captionResolved, captionImage, voiceId, modelId, outputFormat, voiceSettings }) {
   if (!ownerUid) throw new Error("MISSING_UID");
 
   const jobId = `shorts-${Date.now().toString(36)}-${Math.random().toString(36).slice(2,7)}`;
@@ -79,13 +79,24 @@ export async function createShortService({ ownerUid, mode, text, template, durat
   let v = { audioPath: null };
   if (voiceover) {
     try {
-      // Attempt with requested voice first
-      const primaryOpts = { text: usedQuote.text, ...(voiceId ? { voiceId } : {}) };
+      // SSOT: TTS meta built via buildTtsPayload(); identical for preview and render
+      const primaryOpts = { 
+        text: usedQuote.text, 
+        ...(voiceId ? { voiceId } : {}),
+        ...(modelId ? { modelId } : {}),
+        ...(outputFormat ? { outputFormat } : {}),
+        ...(voiceSettings ? { voiceSettings } : {})
+      };
       v = await synthVoice(primaryOpts);
       if (!v?.audioPath) {
         // Fallback: try again without a specific voice to let provider default
         console.warn("[shorts] TTS primary failed; retrying with default voice");
-        v = await synthVoice({ text: usedQuote.text });
+        v = await synthVoice({ 
+          text: usedQuote.text,
+          ...(modelId ? { modelId } : {}),
+          ...(outputFormat ? { outputFormat } : {}),
+          ...(voiceSettings ? { voiceSettings } : {})
+        });
       }
       if (v?.audioPath) {
         try {
