@@ -70,8 +70,10 @@ router.post("/caption/preview", express.json(), async (req, res) => {
     }
     
     function resolveFontFamilyUsed(clientFontFamily) {
+      // SSOT: Use consistent font family name that matches registration
       const fontMap = {
         'DejaVuSans': 'DejaVu Sans',
+        'DejaVu Sans Local': 'DejaVu Sans',
         'DejaVu Serif Local': 'DejaVu Serif',
         'DejaVu Serif Bold Local': 'DejaVu Serif Bold'
       };
@@ -85,6 +87,7 @@ router.post("/caption/preview", express.json(), async (req, res) => {
     // Derive effective values AFTER function definitions
     const yPctUsed = resolveYpct(yPct, placement);
     const fontFamilyUsed = resolveFontFamilyUsed(fontFamily);
+    // SSOT: Handle weight properly - we only have bold font file, so use bold for bold weight
     const weightUsed = (weightCss === 'bold' || weightCss === 700) ? 'bold' : 'normal';
     const opacityUsed = clamp01(opacity);
     
@@ -98,7 +101,9 @@ router.post("/caption/preview", express.json(), async (req, res) => {
     console.log(`[caption] Using maxWidthPct=${maxWidthPct}, maxW=${maxW}`);
     
     // Apply derived values to canvas
-    const fontString = `${weightUsed} ${clampedFontPx}px "${fontFamilyUsed}"`;
+    // SSOT: Use proper weight handling - since we only have bold font, use bold for bold weight
+    const fontWeight = (weightUsed === 'bold') ? 'bold' : 'normal';
+    const fontString = `${fontWeight} ${clampedFontPx}px "${fontFamilyUsed}"`;
     console.log(`[caption] Font set to: ${fontString}`);
     ctx.font = fontString;
     ctx.fillStyle = color;

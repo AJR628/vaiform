@@ -33,7 +33,8 @@ function safeRegisterFont(file, family, weight = "normal") {
   }
 }
 
-export const HAVE_DEJAVU_BOLD = safeRegisterFont("DejaVuSans-Bold.ttf", "DejaVu-Bold");
+// Register DejaVu fonts with consistent family names
+export const HAVE_DEJAVU_BOLD = safeRegisterFont("DejaVuSans-Bold.ttf", "DejaVu Sans");
 
 // 🔧 Gate A helpers
 import envCheck from "./middleware/envCheck.js";

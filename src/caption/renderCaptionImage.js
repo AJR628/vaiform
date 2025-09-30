@@ -20,22 +20,23 @@ if (fs.existsSync(fontPath)) {
     // TASK 6: Try multiple registration methods for better compatibility
     try {
       // Method 1: Direct path registration
-      GlobalFonts.register(fontPath, 'DejaVu-Bold');
+      GlobalFonts.register(fontPath, 'DejaVu Sans');
       fontRegistered = true;
-      console.log('[caption] Font registered successfully: DejaVu-Bold (path method)');
+      console.log('[caption] Font registered successfully: DejaVu Sans (path method)');
     } catch (pathErr) {
       try {
-        // Method 2: Buffer registration
+        // Method 2: Buffer registration with proper TypedArray conversion
         const fontBuffer = fs.readFileSync(fontPath);
-        GlobalFonts.register(fontBuffer, 'DejaVu-Bold');
+        const fontArray = new Uint8Array(fontBuffer);
+        GlobalFonts.register(fontArray, 'DejaVu Sans');
         fontRegistered = true;
-        console.log('[caption] Font registered successfully: DejaVu-Bold (buffer method)');
+        console.log('[caption] Font registered successfully: DejaVu Sans (buffer method)');
       } catch (bufferErr) {
         // Method 3: Try with different family name
         try {
-          GlobalFonts.register(fontPath, 'DejaVuSans-Bold');
+          GlobalFonts.register(fontPath, 'DejaVu Sans');
           fontRegistered = true;
-          console.log('[caption] Font registered successfully: DejaVuSans-Bold (alt name)');
+          console.log('[caption] Font registered successfully: DejaVu Sans (alt name)');
         } catch (altErr) {
           console.warn('[caption] All font registration methods failed:');
           console.warn('[caption] Path error:', pathErr.message);
@@ -133,7 +134,7 @@ export async function renderCaptionImage(jobId, style) {
   const ctx = canvas.getContext('2d');
 
   // Set font with fallbacks for better compatibility
-  const fontName = fontRegistered ? 'DejaVu-Bold' : 'Arial, sans-serif';
+  const fontName = fontRegistered ? 'DejaVu Sans' : 'Arial, sans-serif';
   ctx.font = `${fontWeight || 700} ${fontPx}px ${fontName}`;
   console.log(`[caption] Font set to: ${ctx.font} (registered: ${fontRegistered})`);
   ctx.textBaseline = 'top';
@@ -356,7 +357,7 @@ export async function renderCaptionImage(jobId, style) {
   const yPct = textCenterY / canvasH;
   
   // Track actual font family used (for fallback detection)
-  const fontFamilyUsed = fontRegistered ? 'DejaVu-Bold' : 'Arial';
+  const fontFamilyUsed = fontRegistered ? 'DejaVu Sans' : 'Arial';
   
   return {
     pngPath,
