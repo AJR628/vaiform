@@ -88,6 +88,7 @@ export async function createShortService({ ownerUid, mode, text, template, durat
         ...(voiceSettings ? { voiceSettings } : {})
       };
       v = await synthVoice(primaryOpts);
+      console.log("[shorts] TTS primary result:", { hasAudioPath: !!v?.audioPath, audioPath: v?.audioPath });
       if (!v?.audioPath) {
         // Fallback: try again without a specific voice to let provider default
         console.warn("[shorts] TTS primary failed; retrying with default voice");
@@ -97,6 +98,7 @@ export async function createShortService({ ownerUid, mode, text, template, durat
           ...(outputFormat ? { outputFormat } : {}),
           ...(voiceSettings ? { voiceSettings } : {})
         });
+        console.log("[shorts] TTS fallback result:", { hasAudioPath: !!v?.audioPath, audioPath: v?.audioPath });
       }
       if (v?.audioPath) {
         try {
@@ -106,6 +108,8 @@ export async function createShortService({ ownerUid, mode, text, template, durat
         } catch (e) {
           console.warn("[shorts] copy TTS audio failed:", e?.message || e);
         }
+      } else {
+        console.warn("[shorts] No TTS audio path available after synthesis");
       }
     } catch (e) {
       // soft-fail
@@ -200,6 +204,8 @@ export async function createShortService({ ownerUid, mode, text, template, durat
           captionResolved,
           captionText: caption?.text,
           caption,
+          // Audio support (SSOT)
+          ttsPath: audioOk ? audioPath : null,
         });
       } catch (e) {
         console.warn("[background] imageUrl fallback:", e?.message || e);
@@ -268,6 +274,8 @@ export async function createShortService({ ownerUid, mode, text, template, durat
             captionResolved,
             captionText: caption?.text,
             caption,
+            // Audio support (SSOT)
+            ttsPath: audioOk ? audioPath : null,
           });
         } catch (e) {
           console.warn("[background] stock image fallback:", e?.message || e);
@@ -321,6 +329,8 @@ export async function createShortService({ ownerUid, mode, text, template, durat
             captionResolved,
             captionText: caption?.text,
             caption,
+            // Audio support (SSOT)
+            ttsPath: audioOk ? audioPath : null,
           });
         } catch (e) {
           console.warn("[background] upload image fallback:", e?.message || e);
@@ -346,6 +356,8 @@ export async function createShortService({ ownerUid, mode, text, template, durat
             captionResolved,
             captionText: caption?.text,
             caption,
+            // Audio support (SSOT)
+            ttsPath: audioOk ? audioPath : null,
           });
         } else {
           // fallback to stock using prompt as query
@@ -368,6 +380,8 @@ export async function createShortService({ ownerUid, mode, text, template, durat
               captionResolved,
               captionText: caption?.text,
               caption,
+              // Audio support (SSOT)
+              ttsPath: audioOk ? audioPath : null,
             });
           } catch (e2) {
             console.warn("[background] ai->stock fallback:", e2?.message || e2);

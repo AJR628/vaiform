@@ -272,6 +272,8 @@ export async function renderImageQuoteVideo({
   captionResolved,
   captionText,
   caption,
+  // Audio support (SSOT)
+  ttsPath,
 }) {
   if (!outPath) throw new Error("outPath is required");
   if (!imagePath) throw new Error("imagePath is required");
@@ -388,30 +390,73 @@ export async function renderImageQuoteVideo({
   // Build filter with optional caption PNG overlay
   let vf;
   if (usingCaptionPng && captionPngPath && fs.existsSync(captionPngPath)) {
-    // Use overlay filter for caption PNG
+    // Use overlay filter for caption PNG with proper positioning
     const baseChain = layers.join(",");
-    const overlayChain = `[0:v][1:v]overlay=(W-w)/2:0:format=auto[vout]`;
+    
+    // Calculate overlay position based on caption meta (SSOT)
+    let overlayX = "(W-w)/2"; // Center horizontally
+    let overlayY = "0"; // Default to top
+    
+    // Use SSOT coordinates for proper positioning
+    if (captionResolved?.yPct !== undefined) {
+      const yPct = Number(captionResolved.yPct);
+      const safeH = captionResolved.safeH || 1612; // From logs: safeH: 1612
+      const bottomSafe = Math.round(height - safeH);
+      const yFromPct = Math.round(yPct * height / 100);
+      
+      // Calculate proper Y position using SSOT logic
+      if (captionResolved.vAlign === 'bottom') {
+        overlayY = `max(${bottomSafe}, min(H-h-${bottomSafe}, ${yFromPct}-h/2))`;
+      } else {
+        overlayY = `${yFromPct}-h`;
+      }
+      
+      console.log(`[caption.overlay] SSOT positioning: yPct=${yPct}, safeH=${safeH}, bottomSafe=${bottomSafe}, yFromPct=${yFromPct}, overlayY=${overlayY}`);
+    } else if (caption?.pos?.yPct !== undefined) {
+      const yPct = Number(caption.pos.yPct);
+      overlayY = `H*${yPct}/100-h`;
+      console.log(`[caption.overlay] fallback positioning: yPct=${yPct}, overlayY=${overlayY}`);
+    } else {
+      // Default to bottom positioning
+      overlayY = "H-h";
+      console.log(`[caption.overlay] default bottom positioning: overlayY=${overlayY}`);
+    }
+    
+    const overlayChain = `[0:v][1:v]overlay=${overlayX}:${overlayY}:format=auto[vout]`;
     vf = `${baseChain};${overlayChain}`;
     console.log(`[renderImageQuoteVideo] Using overlay filter with caption PNG: ${vf}`);
+    console.log(`[renderImageQuoteVideo] Overlay position: x=${overlayX}, y=${overlayY}`);
   } else {
     vf = layers.join(",");
     console.log(`[renderImageQuoteVideo] Filter: ${vf}`);
   }
 
-  // Build args with optional caption PNG overlay
+  // Build args with optional caption PNG overlay and TTS audio
+  const hasTTS = ttsPath && fs.existsSync(ttsPath);
+  const ttsInputIndex = usingCaptionPng ? 2 : 1; // TTS is input 2 if caption PNG is present, otherwise input 1
+  
   const args = [
     "-loop", "1",
     "-t", String(durationSec),
     "-i", imagePath,
     ...(usingCaptionPng && captionPngPath && fs.existsSync(captionPngPath) && fs.statSync(captionPngPath).size > 0 ? ['-i', captionPngPath] : []),
+    ...(hasTTS ? ['-i', ttsPath] : []),
     ...(usingCaptionPng && captionPngPath && fs.existsSync(captionPngPath) ? ['-filter_complex', vf, '-map', '[vout]'] : ['-vf', vf]),
+    ...(hasTTS ? ['-map', `${ttsInputIndex}:a`] : []),
     "-r", String(fps),
     "-c:v", "libx264",
     "-pix_fmt", "yuv420p",
     "-movflags", "+faststart",
-    "-an",  // No audio - will be mixed later
+    ...(hasTTS ? ['-c:a', 'aac', '-b:a', '192k', '-shortest'] : ['-an']),
     outPath,
   ];
+  
+  // Log audio mapping details
+  if (hasTTS) {
+    console.log(`[audio.map] TTS input index: ${ttsInputIndex}, map="[vout]" + "${ttsInputIndex}:a" aac 192k`);
+  } else {
+    console.log(`[audio.map] No TTS audio - using silent video (-an)`);
+  }
 
   console.log(`[renderImageQuoteVideo] FFmpeg args:`, args);
   
