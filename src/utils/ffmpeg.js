@@ -423,9 +423,16 @@ export async function renderImageQuoteVideo({
   // Build filter with optional caption PNG overlay using SSOT scaling and positioning
   let vf;
   if (usingCaptionPng && captionPngPath && fs.existsSync(captionPngPath)) {
-    // Get caption PNG dimensions
-    const capDims = await getImageDimensions(captionPngPath);
-    console.log(`[caption.png] size: ${capDims.width}x${capDims.height}`);
+    // Get caption PNG dimensions with fallback
+    let capDims;
+    try {
+      capDims = await getImageDimensions(captionPngPath);
+      console.log(`[caption.png] size: ${capDims.width}x${capDims.height}`);
+    } catch (error) {
+      console.warn(`[caption.png] Failed to get dimensions, skipping caption: ${error.message}`);
+      usingCaptionPng = false;
+      captionPngPath = null;
+    }
     
     // Calculate SSOT target width
     const W = width, H = height;
@@ -433,42 +440,49 @@ export async function renderImageQuoteVideo({
     const maxWidthPct = 0.8; // From logs: maxWidthPct=0.8
     const capTargetW = Math.round(safeW * maxWidthPct);
     
-    // Calculate overlay position using SSOT coordinates
+    // Use SSOT coordinates directly from caption preview API
     let overlayX = "(W-w)/2"; // Center horizontally
     let overlayY = "0"; // Default to top
     
-    if (captionResolved?.yPct !== undefined) {
+    if (captionResolved?.xPx !== undefined && captionResolved?.yPx !== undefined) {
+      // Use precise SSOT coordinates from caption preview API
+      overlayX = captionResolved.xPx.toString();
+      overlayY = captionResolved.yPx.toString();
+      console.log(`[caption.overlay] Using SSOT coordinates: xPx=${overlayX}, yPx=${overlayY}`);
+    } else if (captionResolved?.yPct !== undefined) {
+      // Fallback to yPct calculation
       const yPct = Number(captionResolved.yPct);
-      const safeH = captionResolved.safeH || 1612; // From logs: safeH: 1612
-      const bottomSafeMin = H - safeH; // 1920 - 1612 = 308
+      const safeH = captionResolved.safeH || 1612;
+      const bottomSafeMin = H - safeH;
       const topSafeMax = H - capDims.height - bottomSafeMin;
       
-      // Calculate Y position from yPct (80% from top)
       const yPx = Math.round(yPct * H / 100 - capDims.height / 2);
       const clampedY = Math.max(bottomSafeMin, Math.min(topSafeMax, yPx));
       
       overlayY = clampedY.toString();
-      
-      console.log(`[caption.overlay] SSOT positioning: yPct=${yPct}, safeH=${safeH}, bottomSafeMin=${bottomSafeMin}, topSafeMax=${topSafeMax}, yPx=${yPx}, clampedY=${clampedY}`);
-    } else if (caption?.pos?.yPct !== undefined) {
-      const yPct = Number(caption.pos.yPct);
-      overlayY = `H*${yPct}/100-h`;
-      console.log(`[caption.overlay] fallback positioning: yPct=${yPct}, overlayY=${overlayY}`);
+      console.log(`[caption.overlay] yPct fallback: yPct=${yPct}, yPx=${yPx}, clampedY=${clampedY}`);
     } else {
       // Default to bottom positioning
       overlayY = "H-h";
       console.log(`[caption.overlay] default bottom positioning: overlayY=${overlayY}`);
     }
     
-    // Build filter with scale2ref for proper caption scaling
-    const baseChain = layers.join(",");
-    const scale2refChain = `[1:v][base]scale2ref=w=${capTargetW}:h=-1[cap][base2]`;
-    const overlayChain = `[base2][cap]overlay=${overlayX}:${overlayY}:format=auto[vout]`;
+    // Build correct filter graph with proper label flow
+    const fps = 24, dur = durationSec, zoomMax = 1.05;
+    const zoom = `1 + (${zoomMax - 1}) * on / (${fps}*${dur})`;
     
-    vf = `${baseChain},format=rgba[base];${scale2refChain};${overlayChain}`;
+    const base = [
+      `scale='if(gt(a,1080/1920),-2,1080)':'if(gt(a,1080/1920),1920,-2)'`,
+      `crop=1080:1920`,
+      `zoompan=z='${zoom}':d=1:s=1080x1920:fps=${fps}`,
+      `format=rgba`
+    ].join(',');
+    
+    // Build filter with proper label flow: [0:v]→[b]→[b2]→[vout]
+    vf = `[0:v]${base}[b];[1:v][b]scale2ref=w=${capTargetW}:h=-1[cap][b2];[b2][cap]overlay=${overlayX}:${overlayY}:format=auto[vout]`;
     
     console.log(`[renderImageQuoteVideo] Using SSOT overlay filter: ${vf}`);
-    console.log(`[caption.overlay] targetW=${capTargetW} x=${overlayX} y=${overlayY} yPct=${captionResolved?.yPct} safeH=${captionResolved?.safeH}`);
+    console.log(`[caption.overlay] png=${capDims.width}x${capDims.height} targetW=${capTargetW} x=${overlayX} y=${overlayY}`);
   } else {
     vf = layers.join(",");
     console.log(`[renderImageQuoteVideo] Filter: ${vf}`);
@@ -501,13 +515,21 @@ export async function renderImageQuoteVideo({
     console.log(`[audio.map] No TTS audio - using silent video (-an)`);
   }
 
-  console.log(`[renderImageQuoteVideo] FFmpeg args:`, args);
+  // Log inputs and filter before spawn
+  console.log(`[render.image] inputs: img=${imagePath} cap=${usingCaptionPng ? captionPngPath : 'none'} tts=${hasTTS ? ttsPath : 'none'}`);
+  console.log(`[render.image] filter_complex: "${vf}"`);
+  console.log(`[audio.map] map="[vout]" + "${hasTTS ? ttsInputIndex : 'none'}:a"`);
   
+  const startTime = Date.now();
   try {
-    await runFFmpeg(args, { timeout: 60000 }); // 60 second timeout
+    await runFFmpeg(args, { timeout: 120000 }); // 2 minute timeout
+    const duration = Date.now() - startTime;
+    console.log(`[render.image] done in ${duration}ms`);
     console.log(`[renderImageQuoteVideo] Successfully rendered: ${outPath}`);
   } catch (error) {
-    console.error(`[renderImageQuoteVideo] Failed to render image video:`, error);
+    const duration = Date.now() - startTime;
+    console.error(`[render.image] ffmpeg failed code=${error.code} after ${duration}ms`);
+    console.error(`[render.image] stderr: ${String(error.stderr || '').slice(0, 2000)}`);
     throw error;
   }
 }
