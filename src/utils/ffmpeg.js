@@ -18,6 +18,39 @@ async function saveDataUrlToTmp(dataUrl, prefix = "caption") {
   return { file, mime };
 }
 
+// Helper function to get image dimensions using ffprobe
+async function getImageDimensions(imagePath) {
+  try {
+    const { spawn } = await import("child_process");
+    const ffprobePath = ffmpegPath.replace("ffmpeg", "ffprobe");
+    
+    return new Promise((resolve, reject) => {
+      const proc = spawn(ffprobePath, [
+        "-v", "error",
+        "-show_entries", "stream=width,height",
+        "-of", "csv=p=0:s=x",
+        imagePath
+      ], { stdio: ["ignore", "pipe", "pipe"] });
+      
+      let stdout = "", stderr = "";
+      proc.stdout.on("data", d => stdout += d.toString());
+      proc.stderr.on("data", d => stderr += d.toString());
+      
+      proc.on("close", (code) => {
+        if (code === 0) {
+          const [width, height] = stdout.trim().split("x").map(Number);
+          resolve({ width, height });
+        } else {
+          reject(new Error(`ffprobe failed: ${stderr}`));
+        }
+      });
+    });
+  } catch (error) {
+    console.warn("[getImageDimensions] ffprobe failed, using defaults:", error.message);
+    return { width: 1080, height: 1920 }; // fallback
+  }
+}
+
 /**
  * Spawn ffmpeg with -y and provided args. Resolves on exit code 0, rejects otherwise.
  * Captures stdout/stderr for diagnostics.
@@ -387,31 +420,36 @@ export async function renderImageQuoteVideo({
     layers.push(wm);
   }
 
-  // Build filter with optional caption PNG overlay
+  // Build filter with optional caption PNG overlay using SSOT scaling and positioning
   let vf;
   if (usingCaptionPng && captionPngPath && fs.existsSync(captionPngPath)) {
-    // Use overlay filter for caption PNG with proper positioning
-    const baseChain = layers.join(",");
+    // Get caption PNG dimensions
+    const capDims = await getImageDimensions(captionPngPath);
+    console.log(`[caption.png] size: ${capDims.width}x${capDims.height}`);
     
-    // Calculate overlay position based on caption meta (SSOT)
+    // Calculate SSOT target width
+    const W = width, H = height;
+    const safeW = captionResolved?.safeW || 993; // From logs: safeW: 993
+    const maxWidthPct = 0.8; // From logs: maxWidthPct=0.8
+    const capTargetW = Math.round(safeW * maxWidthPct);
+    
+    // Calculate overlay position using SSOT coordinates
     let overlayX = "(W-w)/2"; // Center horizontally
     let overlayY = "0"; // Default to top
     
-    // Use SSOT coordinates for proper positioning
     if (captionResolved?.yPct !== undefined) {
       const yPct = Number(captionResolved.yPct);
       const safeH = captionResolved.safeH || 1612; // From logs: safeH: 1612
-      const bottomSafe = Math.round(height - safeH);
-      const yFromPct = Math.round(yPct * height / 100);
+      const bottomSafeMin = H - safeH; // 1920 - 1612 = 308
+      const topSafeMax = H - capDims.height - bottomSafeMin;
       
-      // Calculate proper Y position using SSOT logic
-      if (captionResolved.vAlign === 'bottom') {
-        overlayY = `max(${bottomSafe}, min(H-h-${bottomSafe}, ${yFromPct}-h/2))`;
-      } else {
-        overlayY = `${yFromPct}-h`;
-      }
+      // Calculate Y position from yPct (80% from top)
+      const yPx = Math.round(yPct * H / 100 - capDims.height / 2);
+      const clampedY = Math.max(bottomSafeMin, Math.min(topSafeMax, yPx));
       
-      console.log(`[caption.overlay] SSOT positioning: yPct=${yPct}, safeH=${safeH}, bottomSafe=${bottomSafe}, yFromPct=${yFromPct}, overlayY=${overlayY}`);
+      overlayY = clampedY.toString();
+      
+      console.log(`[caption.overlay] SSOT positioning: yPct=${yPct}, safeH=${safeH}, bottomSafeMin=${bottomSafeMin}, topSafeMax=${topSafeMax}, yPx=${yPx}, clampedY=${clampedY}`);
     } else if (caption?.pos?.yPct !== undefined) {
       const yPct = Number(caption.pos.yPct);
       overlayY = `H*${yPct}/100-h`;
@@ -422,10 +460,15 @@ export async function renderImageQuoteVideo({
       console.log(`[caption.overlay] default bottom positioning: overlayY=${overlayY}`);
     }
     
-    const overlayChain = `[0:v][1:v]overlay=${overlayX}:${overlayY}:format=auto[vout]`;
-    vf = `${baseChain};${overlayChain}`;
-    console.log(`[renderImageQuoteVideo] Using overlay filter with caption PNG: ${vf}`);
-    console.log(`[renderImageQuoteVideo] Overlay position: x=${overlayX}, y=${overlayY}`);
+    // Build filter with scale2ref for proper caption scaling
+    const baseChain = layers.join(",");
+    const scale2refChain = `[1:v][base]scale2ref=w=${capTargetW}:h=-1[cap][base2]`;
+    const overlayChain = `[base2][cap]overlay=${overlayX}:${overlayY}:format=auto[vout]`;
+    
+    vf = `${baseChain},format=rgba[base];${scale2refChain};${overlayChain}`;
+    
+    console.log(`[renderImageQuoteVideo] Using SSOT overlay filter: ${vf}`);
+    console.log(`[caption.overlay] targetW=${capTargetW} x=${overlayX} y=${overlayY} yPct=${captionResolved?.yPct} safeH=${captionResolved?.safeH}`);
   } else {
     vf = layers.join(",");
     console.log(`[renderImageQuoteVideo] Filter: ${vf}`);
