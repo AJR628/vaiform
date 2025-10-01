@@ -46,17 +46,26 @@ async function testTtsPreview() {
     }
     
     const contentType = response.headers.get('content-type');
-    if (!contentType || !contentType.includes('audio/mpeg')) {
-      throw new Error(`Expected audio/mpeg, got ${contentType}`);
+    if (!contentType || !contentType.includes('application/json')) {
+      throw new Error(`Expected application/json, got ${contentType}`);
     }
     
-    const buffer = await response.arrayBuffer();
-    if (buffer.byteLength === 0) {
-      throw new Error('Empty audio response');
+    const data = await response.json();
+    
+    if (!data.success) {
+      throw new Error(`Preview failed: ${data.error || 'Unknown error'}`);
     }
     
-    console.log(`✅ TTS Preview: ${buffer.byteLength} bytes, ${contentType}`);
-    return buffer;
+    if (!data.data?.audio || !data.data.audio.startsWith('data:audio/mpeg;base64,')) {
+      throw new Error('Invalid audio format in response');
+    }
+    
+    // Decode base64 to check size
+    const base64Data = data.data.audio.split(',')[1];
+    const audioSize = Math.ceil((base64Data.length * 3) / 4);
+    
+    console.log(`✅ TTS Preview: ${audioSize} bytes (base64 JSON format), voiceId=${data.data.voiceId}`);
+    return data.data;
   } catch (error) {
     console.error('❌ TTS Preview failed:', error.message);
     throw error;

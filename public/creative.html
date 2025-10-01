@@ -2409,25 +2409,28 @@
                 const style = parseInt(document.getElementById('tts-style').value);
                 const use_speaker_boost = document.getElementById('tts-speaker-boost').checked;
                 
-                console.log('Voice preview - voiceId:', voiceId, 'settings:', { stability, similarity_boost, style, use_speaker_boost });
+                const ttsPayload = {
+                    text: 'Hello, this is a preview of my voice. How does it sound?',
+                    voiceId,
+                    modelId: 'eleven_multilingual_v2',
+                    outputFormat: 'mp3_44100_128',
+                    voiceSettings: {
+                        stability,
+                        similarity_boost,
+                        style,
+                        use_speaker_boost
+                    }
+                };
+                
+                console.log('[tts.preview] POST /api/tts/preview', { voiceId, settings: ttsPayload.voiceSettings });
+                
                 const { apiFetch } = await import('./api.mjs');
                 const data = await apiFetch('/tts/preview', {
                     method: 'POST',
-                    body: {
-                        text: 'Hello, this is a preview of my voice. How does it sound?',
-                        voiceId,
-                        modelId: 'eleven_multilingual_v2',
-                        outputFormat: 'mp3_44100_128',
-                        voiceSettings: {
-                            stability,
-                            similarity_boost,
-                            style,
-                            use_speaker_boost
-                        }
-                    }
+                    body: ttsPayload
                 });
                 
-                console.log('Voice preview response:', data);
+                console.log('[tts.preview] Response received:', { success: data.success, hasAudio: !!data.data?.audio });
 
                 if (data.success) {
                     audioEl.src = data.data.audio;
@@ -2436,13 +2439,16 @@
                     
                     // Auto-play the preview
                     audioEl.play().catch(e => {
-                        console.log('Auto-play prevented:', e);
+                        console.warn('[tts.preview] Autoplay prevented:', e.message);
                         statusEl.textContent = 'Preview ready - click play to listen';
                     });
+                    console.log('[tts.preview] Playing preview audio');
                 } else {
+                    console.error('[tts.preview] Failed:', data.error || 'Unknown error');
                     showError('voice-preview-status', data.error || 'Failed to generate preview');
                 }
             } catch (error) {
+                console.error('[tts.preview] Error:', error);
                 showError('voice-preview-status', error.message || 'Network error');
             } finally {
                 previewBtn.disabled = false;
