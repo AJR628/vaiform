@@ -5,6 +5,19 @@ import os from "os";
 import path from "path";
 import { writeCaptionFile } from "./captionFile.js";
 
+// Helper function to save dataUrl to temporary file
+async function saveDataUrlToTmp(dataUrl, prefix = "caption") {
+  const m = /^data:(.+?);base64,(.*)$/.exec(dataUrl || "");
+  if (!m) throw new Error("BAD_DATA_URL");
+  const [, mime, b64] = m;
+  const buf = Buffer.from(b64, "base64");
+  const ext = mime.includes("png") ? ".png" : ".bin";
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "vaiform-"));
+  const file = path.join(tmpDir, `${prefix}${ext}`);
+  fs.writeFileSync(file, buf);
+  return { file, mime };
+}
+
 /**
  * Spawn ffmpeg with -y and provided args. Resolves on exit code 0, rejects otherwise.
  * Captures stdout/stderr for diagnostics.
@@ -254,6 +267,11 @@ export async function renderImageQuoteVideo({
   watermarkText = process.env.WATERMARK_TEXT || "Vaiform",
   watermarkFontSize = Number(process.env.WATERMARK_FONT_SIZE || 30),
   watermarkPadding = Number(process.env.WATERMARK_PADDING || 42),
+  // Caption overlay support (SSOT)
+  captionImage,
+  captionResolved,
+  captionText,
+  caption,
 }) {
   if (!outPath) throw new Error("outPath is required");
   if (!imagePath) throw new Error("imagePath is required");
@@ -269,12 +287,60 @@ export async function renderImageQuoteVideo({
   // Use basic scaling and cropping without complex Ken Burns
   const cover = `scale='if(gt(a,${width}/${height}),-2,${width})':'if(gt(a,${width}/${height}),${height},-2)',crop=${width}:${height}`;
 
-  // Simplified Ken Burns effect - less complex to avoid hanging
+  // Ken Burns effect using on-based ramp (SSOT)
   let kb = null;
   if (kenBurns) {
-    const zStart = kenBurns === "out" ? 1.05 : 1.0;  // Reduced zoom range
-    const zEnd = kenBurns === "out" ? 1.0 : 1.05;
-    kb = `zoompan=z='${zStart}+(${zEnd}-${zStart})*t/${durationSec}':d=${durationSec}:fps=${fps}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=${width}x${height}`;
+    const fps = 24;
+    const dur = durationSec;
+    const zoomMax = 1.05;
+    const zoomMin = 1.0;
+    const zoomExpr = `${zoomMin} + (${zoomMax - zoomMin}) * on / (${fps} * ${dur})`;
+    kb = `zoompan=z='${zoomExpr}':d=1:s=${width}x${height}:fps=${fps}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'`;
+  }
+
+  // ---- CAPTION OVERLAY BRANCH: if captionImage exists, use overlay path and SKIP drawtext ----
+  let usingCaptionPng = false;
+  let captionPngPath = null;
+  
+  if (captionImage?.dataUrl) {
+    usingCaptionPng = true;
+    try {
+      const { file: pngPath } = await saveDataUrlToTmp(captionImage.dataUrl, "caption");
+      
+      // Verify the PNG file exists and is readable
+      if (fs.existsSync(pngPath) && fs.statSync(pngPath).size > 0) {
+        captionPngPath = pngPath;
+        console.log("[renderImageQuoteVideo] using caption PNG overlay:", pngPath);
+        console.log("[renderImageQuoteVideo] USING OVERLAY - skipping drawtext. Caption PNG:", pngPath);
+      } else {
+        throw new Error("PNG file is empty or doesn't exist");
+      }
+    } catch (error) {
+      console.warn("[renderImageQuoteVideo] failed to save or verify caption PNG, falling back to drawtext:", error.message);
+      usingCaptionPng = false;
+      captionPngPath = null;
+    }
+  }
+  
+  // Guard: Verify caption PNG path exists before using in ffmpeg
+  if (usingCaptionPng && (!captionPngPath || !fs.existsSync(captionPngPath))) {
+    console.warn("[renderImageQuoteVideo] Caption PNG path invalid or missing, falling back to drawtext");
+    console.warn("[renderImageQuoteVideo] PNG path was:", captionPngPath);
+    console.warn("[renderImageQuoteVideo] File exists:", captionPngPath ? fs.existsSync(captionPngPath) : false);
+    usingCaptionPng = false;
+    captionPngPath = null;
+  }
+  
+  // Additional guard: Ensure PNG file is not empty
+  if (usingCaptionPng && captionPngPath && fs.existsSync(captionPngPath)) {
+    const stats = fs.statSync(captionPngPath);
+    if (stats.size === 0) {
+      console.warn("[renderImageQuoteVideo] Caption PNG file is empty, falling back to drawtext");
+      usingCaptionPng = false;
+      captionPngPath = null;
+    } else {
+      console.log(`[renderImageQuoteVideo] Caption PNG verified: ${captionPngPath} (${stats.size} bytes)`);
+    }
   }
 
   const layers = [cover, kb, "format=yuv420p"].filter(Boolean);
@@ -292,11 +358,18 @@ export async function renderImageQuoteVideo({
       const author = `drawtext=text='${safeAuthor}'${fontOpt}:fontcolor=${fontcolor}:fontsize=${authorFontsize}:shadowcolor=${shadowColor}:shadowx=${shadowX}:shadowy=${shadowY}:box=0:x=(w-text_w)/2:y=(h/2)+220`;
       layers.push(author);
     }
-  } else {
-    // Use textfile= to avoid all escaping issues
+  } else if (!usingCaptionPng) {
+    // Use textfile= to avoid all escaping issues (only if not using caption PNG overlay)
     const captionFile = writeCaptionFile(String(text).trim());
     const mainLine = `drawtext=fontfile=${escapeFilterPath(fontPath || '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf')}:textfile=${escapeFilterPath(captionFile)}:reload=0:fontcolor=${fontcolor}:fontsize=${fontsize}:line_spacing=${lineSpacing}:shadowcolor=${shadowColor}:shadowx=${shadowX}:shadowy=${shadowY}:box=${box}:boxcolor=${boxcolor}:boxborderw=${boxborderw}:x=(w-text_w)/2:y=(h-text_h)/2`;
     layers.push(mainLine);
+    if (authorLine && String(authorLine).trim()) {
+      const safeAuthor = escapeDrawtext(String(authorLine).trim());
+      const author = `drawtext=text='${safeAuthor}'${fontOpt}:fontcolor=${fontcolor}:fontsize=${authorFontsize}:shadowcolor=${shadowColor}:shadowx=${shadowX}:shadowy=${shadowY}:box=0:x=(w-text_w)/2:y=(h/2)+220`;
+      layers.push(author);
+    }
+  } else {
+    // Using caption PNG overlay - skip drawtext for main text, but still add author if present
     if (authorLine && String(authorLine).trim()) {
       const safeAuthor = escapeDrawtext(String(authorLine).trim());
       const author = `drawtext=text='${safeAuthor}'${fontOpt}:fontcolor=${fontcolor}:fontsize=${authorFontsize}:shadowcolor=${shadowColor}:shadowx=${shadowX}:shadowy=${shadowY}:box=0:x=(w-text_w)/2:y=(h/2)+220`;
@@ -312,14 +385,26 @@ export async function renderImageQuoteVideo({
     layers.push(wm);
   }
 
-  const vf = layers.join(",");
-  console.log(`[renderImageQuoteVideo] Filter: ${vf}`);
+  // Build filter with optional caption PNG overlay
+  let vf;
+  if (usingCaptionPng && captionPngPath && fs.existsSync(captionPngPath)) {
+    // Use overlay filter for caption PNG
+    const baseChain = layers.join(",");
+    const overlayChain = `[0:v][1:v]overlay=(W-w)/2:0:format=auto[vout]`;
+    vf = `${baseChain};${overlayChain}`;
+    console.log(`[renderImageQuoteVideo] Using overlay filter with caption PNG: ${vf}`);
+  } else {
+    vf = layers.join(",");
+    console.log(`[renderImageQuoteVideo] Filter: ${vf}`);
+  }
 
+  // Build args with optional caption PNG overlay
   const args = [
     "-loop", "1",
     "-t", String(durationSec),
     "-i", imagePath,
-    "-vf", vf,
+    ...(usingCaptionPng && captionPngPath && fs.existsSync(captionPngPath) && fs.statSync(captionPngPath).size > 0 ? ['-i', captionPngPath] : []),
+    ...(usingCaptionPng && captionPngPath && fs.existsSync(captionPngPath) ? ['-filter_complex', vf, '-map', '[vout]'] : ['-vf', vf]),
     "-r", String(fps),
     "-c:v", "libx264",
     "-pix_fmt", "yuv420p",

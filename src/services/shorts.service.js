@@ -195,6 +195,11 @@ export async function createShortService({ ownerUid, mode, text, template, durat
           assPath,
           progressBar: karaokeModeEffective === "progress",
           watermark: watermarkFinal,
+          // Caption overlay support (SSOT)
+          captionImage: captionImageLocal,
+          captionResolved,
+          captionText: caption?.text,
+          caption,
         });
       } catch (e) {
         console.warn("[background] imageUrl fallback:", e?.message || e);
@@ -258,6 +263,11 @@ export async function createShortService({ ownerUid, mode, text, template, durat
             assPath,
             progressBar: karaokeModeEffective === "progress",
             watermark: watermarkFinal,
+            // Caption overlay support (SSOT)
+            captionImage: captionImageLocal,
+            captionResolved,
+            captionText: caption?.text,
+            caption,
           });
         } catch (e) {
           console.warn("[background] stock image fallback:", e?.message || e);
@@ -306,6 +316,11 @@ export async function createShortService({ ownerUid, mode, text, template, durat
             authorLine,
             kenBurns: background.kenBurns,
             assPath,
+            // Caption overlay support (SSOT)
+            captionImage: captionImageLocal,
+            captionResolved,
+            captionText: caption?.text,
+            caption,
           });
         } catch (e) {
           console.warn("[background] upload image fallback:", e?.message || e);
@@ -326,6 +341,11 @@ export async function createShortService({ ownerUid, mode, text, template, durat
             assPath,
             progressBar: karaokeModeEffective === "progress",
             watermark: watermarkFinal,
+            // Caption overlay support (SSOT)
+            captionImage: captionImageLocal,
+            captionResolved,
+            captionText: caption?.text,
+            caption,
           });
         } else {
           // fallback to stock using prompt as query
@@ -343,6 +363,11 @@ export async function createShortService({ ownerUid, mode, text, template, durat
               assPath,
               progressBar: karaokeModeEffective === "progress",
               watermark: watermarkFinal,
+              // Caption overlay support (SSOT)
+              captionImage: captionImageLocal,
+              captionResolved,
+              captionText: caption?.text,
+              caption,
             });
           } catch (e2) {
             console.warn("[background] ai->stock fallback:", e2?.message || e2);
