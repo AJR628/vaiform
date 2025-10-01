@@ -1713,7 +1713,10 @@
                 const similarity = document.getElementById('tts-similarity').value;
                 const style = document.getElementById('tts-style').value;
                 const speakerBoost = document.getElementById('tts-speaker-boost').checked;
-                document.getElementById('preview-voiceover').textContent = `Voice: ${voiceName} (Stability: ${stability}, Similarity: ${similarity}, Style: ${style}, Boost: ${speakerBoost ? 'On' : 'Off'})`;
+                
+                // Show normalized style value (0-1 range) in preview
+                const normalizedStyle = (parseInt(style) / 100).toFixed(2);
+                document.getElementById('preview-voiceover').textContent = `Voice: ${voiceName} (Stability: ${stability}, Similarity: ${similarity}, Style: ${normalizedStyle}, Boost: ${speakerBoost ? 'On' : 'Off'})`;
                 
                 preview.classList.remove('hidden');
                 renderBtn.classList.remove('hidden');
@@ -2403,21 +2406,32 @@
             previewBtn.disabled = true;
 
             try {
-                // Get TTS settings from UI
+                // Get TTS settings from UI and normalize to 0-1 range
                 const stability = parseFloat(document.getElementById('tts-stability').value);
                 const similarity_boost = parseFloat(document.getElementById('tts-similarity').value);
                 const style = parseInt(document.getElementById('tts-style').value);
                 const use_speaker_boost = document.getElementById('tts-speaker-boost').checked;
                 
+                // Normalize style from 0-100 to 0-1 range
+                const normalizedStyle = Math.max(0, Math.min(1, style / 100));
+                
+                // Get caption text for preview if available, otherwise use default
+                const captionText = document.getElementById('quote-text-display')?.textContent?.trim() || 
+                                  document.getElementById('quote-edit')?.value?.trim() || 
+                                  'Hello, this is a preview of my voice. How does it sound?';
+                
+                // Trim caption if too long (max ~240 chars for preview)
+                const previewText = captionText.length > 240 ? captionText.substring(0, 240) + '...' : captionText;
+                
                 const ttsPayload = {
-                    text: 'Hello, this is a preview of my voice. How does it sound?',
+                    text: previewText,
                     voiceId,
                     modelId: 'eleven_multilingual_v2',
                     outputFormat: 'mp3_44100_128',
                     voiceSettings: {
                         stability,
                         similarity_boost,
-                        style,
+                        style: normalizedStyle, // Now 0-1 range
                         use_speaker_boost
                     }
                 };
@@ -2596,13 +2610,13 @@
                   // pass voice id only if voiceover is on (string type)
                   voiceId: wantVoiceover && voiceId ? voiceId : undefined,
                   
-                  // TTS settings for SSOT
+                  // TTS settings for SSOT (normalized to 0-1 range)
                   modelId: wantVoiceover ? 'eleven_multilingual_v2' : undefined,
                   outputFormat: wantVoiceover ? 'mp3_44100_128' : undefined,
                   voiceSettings: wantVoiceover ? {
                     stability: parseFloat(document.getElementById('tts-stability').value),
                     similarity_boost: parseFloat(document.getElementById('tts-similarity').value),
-                    style: parseInt(document.getElementById('tts-style').value),
+                    style: Math.max(0, Math.min(1, parseInt(document.getElementById('tts-style').value) / 100)), // Normalize 0-100 to 0-1
                     use_speaker_boost: document.getElementById('tts-speaker-boost').checked
                   } : undefined,
                 };

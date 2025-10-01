@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { createHash } from "node:crypto";
 import { buildTtsPayload } from "../builders/tts.builder.js";
 import { elevenLabsSynthesize } from "../adapters/elevenlabs.adapter.js";
+import { normalizeVoiceSettings, logNormalizedSettings } from "../utils/voice.normalize.js";
 
 const TTS_PROVIDER = (process.env.TTS_PROVIDER || "openai").toLowerCase();
 const OPENAI_MODEL = process.env.OPENAI_TTS_MODEL || "gpt-4o-mini-tts";
@@ -144,6 +145,12 @@ export async function synthVoice({ text, voiceId, modelId, outputFormat, voiceSe
       voiceSettings
     });
     
+    // SSOT: Normalize voice settings to ensure 0-1 range and snake_case keys
+    const normalizedSettings = normalizeVoiceSettings(payload.voiceSettings);
+    payload.voiceSettings = normalizedSettings;
+    
+    logNormalizedSettings('[tts.render]', voiceSettings, normalizedSettings);
+    
     const key = cacheKey({ provider, model: payload.modelId, voice: payload.voiceId, text: t });
 
     // In-memory cache
@@ -161,7 +168,10 @@ export async function synthVoice({ text, voiceId, modelId, outputFormat, voiceSe
       try {
         const { buf } = await fetchWithRetry(async () => {
           if (isOpenAI) return await doOpenAI({ text: t, model: payload.modelId, voice: payload.voiceId });
-          if (isEleven) return await doElevenSSOT(payload);
+          if (isEleven) {
+            console.log(`[elevenlabs] Render synthesis: ${payload.text.substring(0, 50)}...`);
+            return await doElevenSSOT(payload);
+          }
           return { res: new Response(null, { status: 503 }), buf: Buffer.alloc(0), headers: new Headers() };
         }, key);
 
@@ -176,7 +186,7 @@ export async function synthVoice({ text, voiceId, modelId, outputFormat, voiceSe
           const st = await stat(audioPath);
           const { getDurationMsFromMedia } = await import('../utils/media.duration.js');
           const ms = await getDurationMsFromMedia(audioPath);
-          console.log('[tts] mp3 size(bytes)', st?.size || 0, 'duration(s)', ms ? (ms/1000).toFixed(2) : null);
+          console.log('[elevenlabs] Render synthesis OK:', st?.size || 0, 'bytes, duration:', ms ? (ms/1000).toFixed(2) + 's' : 'unknown');
         } catch {}
         return { audioPath, durationMs: null };
       } catch (err) {
