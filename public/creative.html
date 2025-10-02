@@ -114,6 +114,25 @@
         }
         
         /* --- Caption overlay stacking & sizing --- */
+        /* Preview area with guaranteed 9:16 aspect ratio */
+        .preview-shell {
+            position: relative;
+            width: 100%;
+            max-width: 360px;
+            aspect-ratio: 9 / 16;
+            /* fallback for older browsers */
+            padding-top: 177.78%;
+        }
+        
+        .preview-canvas {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            display: block;
+            background: #000;
+        }
+        
         #live-preview-container { position: relative; }
         #live-preview-canvas { position: relative; z-index: 1; display: block; width: 100%; height: auto; }
         #caption-overlay {
@@ -228,7 +247,7 @@
                 <button id="videos-tab" class="px-4 py-2 rounded bg-gray-600 dark:bg-gray-700 text-white" data-type="videos">
                     Videos
                 </button>
-                <button id="ai-tab" class="px-4 py-2 rounded bg-gray-600 dark:bg-gray-700 text-white hidden" data-type="ai">
+                <button id="ai-tab" class="px-4 py-2 rounded bg-gray-600 dark:bg-gray-700 text-white" data-type="ai">
                     AI Images
                 </button>
             </div>
@@ -490,11 +509,11 @@
             <h2 class="text-xl font-semibold text-gray-900 dark:text-white">Create Short</h2>
             
             <!-- Live Preview Canvas -->
-            <div id="live-preview-container" class="opacity-0 transition-opacity duration-300" style="min-height: 640px; width: 360px;">
+            <div id="live-preview-container" class="opacity-0 transition-opacity duration-300">
                 <div class="text-sm text-gray-400 mb-2">Live Preview:</div>
-                <!-- Fix A: Give the preview wrapper a predictable size -->
-                <div class="relative mx-auto bg-black rounded-lg overflow-hidden" style="width: 360px; aspect-ratio: 9 / 16;">
-                    <canvas id="live-preview-canvas" class="w-full h-full block"></canvas>
+                <!-- Fix A: Use preview-shell class for guaranteed sizing -->
+                <div class="preview-shell mx-auto bg-black rounded-lg overflow-hidden">
+                    <canvas id="live-preview-canvas" class="preview-canvas"></canvas>
                     <!-- TASK 4: Fix overlay container to match canvas CSS size -->
                     <img
                       id="caption-overlay"
@@ -1773,6 +1792,38 @@
         // Canvas ready state tracking
         let canvasReadyState = { ready: false, observer: null, intersectionObserver: null };
         
+        // Robust canvas sizing helper
+        function sizeOkay(el) {
+            const r = el.getBoundingClientRect();
+            return r.width > 0 && r.height > 0;
+        }
+        
+        // Hardened canvas ready detection
+        async function ensureCanvasReady(canvas, { maxWaitMs = 1200 } = {}) {
+            if (sizeOkay(canvas)) return true;
+            
+            // Wait until it's actually laid out/visible
+            const start = performance.now();
+            return new Promise((resolve) => {
+                const ro = new ResizeObserver(() => {
+                    if (sizeOkay(canvas)) {
+                        ro.disconnect();
+                        resolve(true);
+                    }
+                });
+                ro.observe(canvas);
+                
+                // Safety timer (so we don't hang forever)
+                const t = setInterval(() => {
+                    if (sizeOkay(canvas) || performance.now() - start > maxWaitMs) {
+                        ro.disconnect();
+                        clearInterval(t);
+                        resolve(sizeOkay(canvas));
+                    }
+                }, 50);
+            });
+        }
+        
         // Fix B: Set the canvas backing store AFTER CSS size exists
         function sizeCanvasToCSS(canvas) {
             const wCSS = canvas.clientWidth;
@@ -2238,32 +2289,48 @@
             });
         }
 
-        // SSOT: Image loader (image-only) with smart CORS handling
-        function loadImage(url) {
-            return new Promise((resolve, reject) => {
-                const img = new Image();
-                
-                // Only use crossOrigin for external CDN URLs, not Firebase Storage URLs
-                // Firebase Storage signed URLs don't support CORS headers
-                if (url.includes('firebasestorage.googleapis.com') || url.includes('googleapis.com')) {
-                    console.log('[image-loader] Loading Firebase Storage URL without crossOrigin:', url.substring(0, 50));
-                    // Don't set crossOrigin for Firebase Storage URLs
-                } else {
-                    console.log('[image-loader] Loading external URL with crossOrigin:', url.substring(0, 50));
-                    img.crossOrigin = 'anonymous';
-                }
-                
-                img.decoding = 'async';
+        // Defensive image loading with proper error handling
+        function loadImage(src) {
+            const img = new Image();
+            
+            // Only set crossOrigin for known CORS-friendly CDNs
+            const isFirebase = /https:\/\/firebasestorage\.googleapis\.com\/v0\/b\/vaiform\/o\//i.test(src);
+            const isCorsSafeCDN = /^https:\/\/images\.pexels\.com\//i.test(src);
+            
+            if (!isFirebase && isCorsSafeCDN) {
+                img.crossOrigin = "anonymous";
+            }
+            
+            const done = new Promise((resolve, reject) => {
                 img.onload = () => {
-                    console.log('[image-loader] Successfully loaded image:', url.substring(0, 50));
+                    console.log('[image-loader] Successfully loaded image:', src.substring(0, 50));
                     resolve(img);
                 };
-                img.onerror = (e) => {
-                    console.error('[image-loader] Failed to load image:', url.substring(0, 50), e);
-                    reject(new DOMException('Image decode failed', 'EncodingError'));
-                };
-                img.src = url;
+                img.onerror = () => reject(new Error(`Image load failed: ${src}`));
             });
+            
+            const bust = src.includes("?") ? `&cb=${Date.now()}` : `?cb=${Date.now()}`;
+            img.src = src + bust;
+            
+            return done;
+        }
+        
+        // State clearing functions for source switching
+        function setBgNone() {
+            if (!window.state) window.state = {};
+            window.state.background = { kind: "none" };
+            selectedAsset = null;
+        }
+        
+        function clearPreviewState() {
+            setBgNone();
+            // Clear any selection UI state
+            selectedAsset = null;
+            // Clear preview container
+            const container = document.getElementById('live-preview-container');
+            if (container) {
+                container.classList.add('opacity-0');
+            }
         }
 
         // SSOT: Video loader (video-only)
@@ -2423,17 +2490,23 @@
             if (!canvas) return;
             
             // Ensure canvas is ready before drawing
-            if (!(await ensureCanvasReady())) {
+            if (!(await ensureCanvasReady(canvas))) {
                 console.warn('[preview] Canvas not ready, skipping render');
                 return;
             }
             
+            // Now safe to compute pixel buffer sizes
+            const { width, height } = canvas.getBoundingClientRect();
+            const dpr = Math.min(window.devicePixelRatio || 1, 2);
+            canvas.width = Math.floor(width * dpr);
+            canvas.height = Math.floor(height * dpr);
+            
             const ctx = canvas.getContext('2d', { alpha: false });
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
             
             // Get logical canvas dimensions (after DPR scaling)
-            const dpr = Math.min(window.devicePixelRatio || 1, 2);
-            const W = canvas.width / dpr;
-            const H = canvas.height / dpr;
+            const W = width;
+            const H = height;
 
             // 1) Fill back buffer (guard against flicker)
             ctx.fillStyle = '#000';
@@ -3319,29 +3392,44 @@
               
               console.log('[bg.ssot] Preview URL captured:', bgSSOT);
               
-              // Mark selection locally and update preview immediately
-              // Use the preview URL directly as the source of truth
-              selectedAsset = { 
-                id: `ai-${Date.now()}`, 
-                provider: 'ai', 
-                query: (document.getElementById('ai-prompt')?.value||'').trim(), 
-                fileUrl: url, // Use preview URL as SSOT
-                thumbUrl: url, 
-                width: 1080, 
-                height: 1920,
-                bgSSOT: bgSSOT // Store SSOT for backend 
-              };
-              
-              // SSOT: Use unified background setter for AI images
-              const bg = {
-                kind: 'ai',
-                url: url,
-                mediaType: 'image',
-                mime: 'image/png',
-                w: 1080,
-                h: 1920
-              };
-              setPreviewBackground(bg);
+              // Defensive AI image loading with error handling
+              try {
+                // Test load the image first
+                await loadImage(url);
+                
+                // Mark selection locally and update preview immediately
+                // Use the preview URL directly as the source of truth
+                selectedAsset = { 
+                  id: `ai-${Date.now()}`, 
+                  provider: 'ai', 
+                  query: (document.getElementById('ai-prompt')?.value||'').trim(), 
+                  fileUrl: url, // Use preview URL as SSOT
+                  thumbUrl: url, 
+                  width: 1080, 
+                  height: 1920,
+                  bgSSOT: bgSSOT // Store SSOT for backend 
+                };
+                
+                // SSOT: Use unified background setter for AI images
+                const bg = {
+                  kind: 'ai',
+                  url: url,
+                  mediaType: 'image',
+                  mime: 'image/png',
+                  w: 1080,
+                  h: 1920
+                };
+                setPreviewBackground(bg);
+                
+              } catch (error) {
+                console.error('[AI] Image load failed:', error);
+                if (typeof showToast === 'function') {
+                  showToast('AI image failed to load. Please try again.');
+                }
+                // Clear state on failure
+                clearPreviewState();
+                return;
+              }
               updateRenderPreview();
               updateRenderButtonState();
               // Also update dedicated preview nodes if present
@@ -3612,6 +3700,9 @@
         document.querySelectorAll('[data-type]').forEach(tab => {
             tab.onclick = async () => {
                 currentAssetType = tab.dataset.type;
+                
+                // Clear preview state when switching sources
+                clearPreviewState();
                 
                 // Update tab styles
                 document.querySelectorAll('[data-type]').forEach(t => {
