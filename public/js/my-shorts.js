@@ -184,8 +184,8 @@ window.tryNextPoster = async function(img){
       img.src = v + '#t=0.2';
       return;
     }
-    const card = img.closest('.short-card');
-    if (card) card.classList.add('no-thumb');
+    // Don't add no-thumb class - let the image show even if it's a broken image
+    // The user can still see the card and click to open the video
   } catch {}
 }
 
@@ -223,7 +223,8 @@ function loadPoster(img, item){
       retried = true;
       return tryVideoPoster();
     }
-    const card = img.closest('.short-card'); if (card) card.classList.add('no-thumb');
+    // Don't add no-thumb class - let the card show even without a thumbnail
+    // The user can still see the quote text and click to open
   };
 
   if (item.coverImageUrl) setSrc(withCache(item.coverImageUrl, Date.now()));
