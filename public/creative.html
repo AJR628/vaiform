@@ -1529,11 +1529,12 @@
             if (!window.state) window.state = {};
             window.state.selectedAsset = asset;
             
-            // Set background state for SSOT preview
-            window.state.bg = {
+            // SSOT: Use unified background setter
+            const bg = {
                 kind: asset.provider === 'ai' ? 'ai' : (asset.provider === 'uploaded' ? 'upload' : 'stock'),
                 url: asset.fileUrl || asset.url || asset.thumbUrl
             };
+            setPreviewBackground(bg);
             
             // Special handling for Pexels assets - high-quality preview
             if (asset.provider === 'pexels' && asset.src) {
@@ -2109,8 +2110,9 @@
             const hasValidAsset = selectedAsset && (selectedAsset.fileUrl || selectedAsset.url);
             const hasQuote = currentQuote;
             const isLoggedIn = window.auth?.currentUser;
+            const hasBackground = window.state?.background?.url;
             
-            const canRender = hasValidAsset && hasQuote && isLoggedIn;
+            const canRender = hasValidAsset && hasQuote && isLoggedIn && hasBackground;
             renderBtn.disabled = !canRender;
             
             if (!canRender) {
@@ -2118,6 +2120,7 @@
                 if (!isLoggedIn) reason = 'Please log in';
                 else if (!hasQuote) reason = 'Please select a quote';
                 else if (!hasValidAsset) reason = 'Please select a valid asset';
+                else if (!hasBackground) reason = 'Please select a background image';
                 
                 renderBtn.title = reason;
             } else {
@@ -2126,6 +2129,31 @@
         }
 
         // Fix C: Live preview functionality without infinite retry
+        // SSOT: Single background setter for all background types
+        function setPreviewBackground(bg) {
+            if (!window.state) window.state = {};
+            window.state.background = bg;
+            console.log('[preview] Background set:', bg);
+            queuePreviewRender();
+        }
+
+        // SSOT: Unified preview queue
+        function queuePreviewRender() {
+            if (!currentQuote) return;
+            
+            // Debug: Log selected background alongside caption SSOT
+            const bg = window.state?.background;
+            console.log('[preview] Selected background:', bg ? `${bg.kind}: ${bg.url?.substring(0, 50)}...` : 'none');
+            
+            // Use SSOT preview pipeline
+            const state = {
+                bg: bg,
+                captionPreview: captionOverlayState
+            };
+            
+            renderPreviewFromState(state);
+        }
+
         // SSOT Preview Pipeline: background first, then caption overlay
         async function renderPreviewFromState(state) {
             const W = 1080, H = 1920; // SSOT frame
@@ -2143,10 +2171,9 @@
             ctx.fillRect(0, 0, W, H);
 
             // 2) Draw BACKGROUND (must exist)
-            const bgUrl = state?.bg?.url || selectedAsset?.fileUrl || selectedAsset?.url || selectedAsset?.thumbUrl;
+            const bgUrl = state?.bg?.url;
             console.log('[preview] bg=', bgUrl, 'ov=', !!state?.captionPreview?.imageUrl);
             console.log('[preview] state.bg=', state?.bg);
-            console.log('[preview] selectedAsset=', selectedAsset);
             
             if (bgUrl) {
                 try {
@@ -2173,7 +2200,11 @@
                     console.error('[preview] Background load failed:', error);
                 }
             } else {
-                console.log('[preview] MISSING bg url');
+                console.warn('[preview] MISSING bg url - showing caption overlay only');
+                // Show non-blocking toast for missing background
+                if (typeof showToast === 'function') {
+                    showToast('Background not set — showing caption overlay only.');
+                }
             }
 
             // 3) Draw CAPTION OVERLAY from caption preview API (SSOT)
@@ -2196,7 +2227,7 @@
         }
 
         function updateLivePreview() {
-            if (!currentQuote || !selectedAsset) return;
+            if (!currentQuote) return;
             
             const container = document.getElementById('live-preview-container');
             const canvas = document.getElementById('live-preview-canvas');
@@ -2254,16 +2285,8 @@
                 if (ov) ov.style.display = hasVideo ? 'none' : 'block';
             } catch {}
 
-            // Use SSOT preview pipeline
-            const state = {
-                bg: window.state?.bg || { 
-                    kind: selectedAsset.provider === 'ai' ? 'ai' : (selectedAsset.provider === 'uploaded' ? 'upload' : 'stock'),
-                    url: selectedAsset.fileUrl || selectedAsset.url || selectedAsset.thumbUrl
-                },
-                captionPreview: captionOverlayState // This should contain the caption preview data
-            };
-            
-            renderPreviewFromState(state);
+            // Use SSOT preview queue
+            queuePreviewRender();
         }
 
         function drawCaptionOverlay(ctx, canvasWidth, canvasHeight) {
@@ -3042,12 +3065,12 @@
                 bgSSOT: bgSSOT // Store SSOT for backend 
               };
               
-              // Set background state for SSOT preview
-              if (!window.state) window.state = {};
-              window.state.bg = {
+              // SSOT: Use unified background setter for AI images
+              const bg = {
                 kind: 'ai',
                 url: url
               };
+              setPreviewBackground(bg);
               updateRenderPreview();
               updateRenderButtonState();
               // Also update dedicated preview nodes if present
