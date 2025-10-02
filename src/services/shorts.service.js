@@ -14,6 +14,7 @@ import { generateAIImage } from "./ai.image.provider.js";
 import { fetchVideoToTmp } from "../utils/video.fetch.js";
 import { renderVideoQuoteOverlay } from "../utils/ffmpeg.video.js";
 import admin from "../config/firebase.js";
+import { saveImageFromUrl } from "./storage.service.js";
 
 export function finalizeQuoteText(mode, text) {
   const t = (text || "").trim();
@@ -24,7 +25,7 @@ export function finalizeQuoteText(mode, text) {
   return t;
 }
 
-export async function createShortService({ ownerUid, mode, text, template, durationSec, voiceover = false, wantAttribution = true, background = { kind: "solid" }, debugAudioPath, captionMode = "static", includeBottomCaption = false, watermark, overrideQuote, captionStyle, caption, captionResolved, captionImage, voiceId, modelId, outputFormat, voiceSettings }) {
+export async function createShortService({ ownerUid, mode, text, template, durationSec, voiceover = false, wantAttribution = true, background = { kind: "solid" }, debugAudioPath, captionMode = "static", includeBottomCaption = false, watermark, overrideQuote, captionStyle, caption, captionResolved, captionImage, voiceId, modelId, outputFormat, voiceSettings, bgSSOT }) {
   if (!ownerUid) throw new Error("MISSING_UID");
 
   const jobId = `shorts-${Date.now().toString(36)}-${Math.random().toString(36).slice(2,7)}`;
@@ -187,6 +188,43 @@ export async function createShortService({ ownerUid, mode, text, template, durat
   
   // Log background selection for debugging
   console.log(`[shorts.bg] kind=${background?.kind} url=${background?.url}`);
+  
+  // SSOT: Handle background SSOT for AI remix
+  if (bgSSOT && bgSSOT.kind === 'ai' && bgSSOT.url) {
+    console.log(`[bg.ssot] Using SSOT URL for AI background: ${bgSSOT.url}`);
+    console.log(`[bg.ssot] Source: ${bgSSOT.meta?.source}`);
+    
+    // If the SSOT URL is from frontend-* directory, copy it to register-* directory
+    if (bgSSOT.url.includes('/frontend-') && bgSSOT.url.includes('/image_')) {
+      try {
+        console.log(`[bg.ssot] Copying frontend asset to register directory`);
+        const registerResult = await saveImageFromUrl(ownerUid, jobId, bgSSOT.url, { index: 0 });
+        background.url = registerResult.publicUrl;
+        console.log(`[bg.ssot] Copied to register URL: ${background.url}`);
+      } catch (error) {
+        console.error(`[bg.ssot] Failed to copy SSOT asset:`, error);
+        // Fall back to original SSOT URL
+        background.url = bgSSOT.url;
+      }
+    } else {
+      // Use SSOT URL directly
+      background.url = bgSSOT.url;
+    }
+    console.log(`[bg.ssot] Final background URL: ${background.url}`);
+    
+    // Verification: Log both URLs to ensure they reference the same source
+    console.log(`[bg.ssot] Verification - Preview URL: ${bgSSOT.url}`);
+    console.log(`[bg.ssot] Verification - Render URL: ${background.url}`);
+    
+    // Assert that the URLs reference the same source file
+    if (bgSSOT.url.includes('/frontend-') && background.url.includes('/register-')) {
+      console.log(`[bg.ssot] ✅ SSOT working: frontend asset copied to register directory`);
+    } else if (bgSSOT.url === background.url) {
+      console.log(`[bg.ssot] ✅ SSOT working: using exact same URL`);
+    } else {
+      console.warn(`[bg.ssot] ⚠️ SSOT mismatch: preview=${bgSSOT.url}, render=${background.url}`);
+    }
+  }
   
   // Validate AI background URLs - prevent reference URLs in AI mode
   if (background?.kind === 'ai' && background?.url) {
