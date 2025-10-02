@@ -2376,8 +2376,10 @@
             if (!canvas) return;
             
             // Ensure canvas is ready before drawing
-            if (!(await ensureCanvasReady())) {
-                console.warn('[preview] Canvas not ready, skipping render');
+            try {
+                await waitForCanvasReady(canvas);
+            } catch (error) {
+                console.warn('[preview] Canvas not ready, skipping render:', error.message);
                 return;
             }
             
