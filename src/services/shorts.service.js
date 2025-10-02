@@ -339,11 +339,24 @@ export async function createShortService({ ownerUid, mode, text, template, durat
       }
     } else if (background?.kind === "ai" && background?.prompt) {
       try {
-        const ai = await generateAIImage({ prompt: background.prompt, style: background.style });
-        if (ai?.path) {
+        let imagePath = null;
+        
+        // SSOT: If URL is provided, use the previewed AI image directly
+        if (background.url && background.type === "image") {
+          console.log(`[background] Using provided AI image URL for SSOT: ${background.url}`);
+          const img = await fetchImageToTmp(background.url);
+          imagePath = img.path;
+        } else {
+          // Fallback: generate new AI image if no URL provided
+          console.log(`[background] No AI image URL provided, generating new image for prompt: ${background.prompt}`);
+          const ai = await generateAIImage({ prompt: background.prompt, style: background.style });
+          imagePath = ai?.path;
+        }
+        
+        if (imagePath) {
           await renderImageQuoteVideo({
             outPath,
-            imagePath: ai.path,
+            imagePath: imagePath,
             durationSec,
             text: usedQuote.text,
             authorLine,
