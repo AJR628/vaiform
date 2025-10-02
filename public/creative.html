@@ -1789,6 +1789,13 @@
         // Feature flag for preview fixes
         window.__PREVIEW_FIX__ = true;
         
+        // Sanity check to confirm functions are loaded
+        console.info('[init] Canvas helpers ready', {
+            hasEnsure: typeof ensureCanvasReady === 'function',
+            hasLoad: typeof loadImage === 'function',
+            hasSizeOkay: typeof sizeOkay === 'function'
+        });
+        
         // Canvas ready state tracking
         let canvasReadyState = { ready: false, observer: null, intersectionObserver: null };
         
@@ -2434,55 +2441,6 @@
             ctx.drawImage(media, sx, sy, sw, sh, 0, 0, W, H);
         }
 
-        // SSOT: Canvas readiness with proper scaling
-        async function ensureCanvasReady() {
-            const canvas = document.getElementById('live-preview-canvas');
-            if (!canvas) return false;
-            
-            // Get container dimensions for responsive sizing
-            const container = canvas.parentElement;
-            if (!container) return false;
-            
-            const containerRect = container.getBoundingClientRect();
-            if (containerRect.width === 0 || containerRect.height === 0) {
-                console.log('[canvas-ready] Container has no dimensions yet');
-                return false;
-            }
-            
-            // Calculate responsive size while maintaining 9:16 aspect ratio
-            const targetAspect = 9 / 16;
-            let cssW, cssH;
-            
-            if (containerRect.width / containerRect.height > targetAspect) {
-                // Container is wider than target aspect - fit by height
-                cssH = containerRect.height;
-                cssW = cssH * targetAspect;
-            } else {
-                // Container is taller than target aspect - fit by width
-                cssW = containerRect.width;
-                cssH = cssW / targetAspect;
-            }
-            
-            // Cap DPR to 2 for performance
-            const dpr = Math.min(window.devicePixelRatio || 1, 2);
-            
-            // Set canvas backing size (high-res for crisp rendering)
-            canvas.width = Math.round(cssW * dpr);
-            canvas.height = Math.round(cssH * dpr);
-            
-            // Set CSS size (responsive display size)
-            canvas.style.width = `${cssW}px`;
-            canvas.style.height = `${cssH}px`;
-            
-            // Set up context for high-DPI rendering
-            const ctx = canvas.getContext('2d');
-            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-            
-            console.log('[canvas-ready] Canvas sized:', { cssW, cssH, dpr, backingW: canvas.width, backingH: canvas.height });
-            
-            await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
-            return true;
-        }
 
         // SSOT Preview Pipeline: background first, then caption overlay
         async function renderPreviewFromState(state) {
