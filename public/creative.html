@@ -2226,18 +2226,33 @@
         function loadBackgroundImage(bg) {
             return new Promise((res, rej) => {
                 const img = new Image();
-                img.crossOrigin = 'anonymous';
+                
+                // Only use crossOrigin for external CDN URLs, not Firebase Storage URLs
+                if (!bg.url.includes('firebasestorage.googleapis.com') && !bg.url.includes('googleapis.com')) {
+                    img.crossOrigin = 'anonymous';
+                }
+                
                 img.onload = () => res(img);
                 img.onerror = e => rej(new DOMException('Image decode failed', 'EncodingError'));
                 img.src = bg.url;
             });
         }
 
-        // SSOT: Image loader (image-only) with robust CORS handling
+        // SSOT: Image loader (image-only) with smart CORS handling
         function loadImage(url) {
             return new Promise((resolve, reject) => {
                 const img = new Image();
-                img.crossOrigin = 'anonymous';
+                
+                // Only use crossOrigin for external CDN URLs, not Firebase Storage URLs
+                // Firebase Storage signed URLs don't support CORS headers
+                if (url.includes('firebasestorage.googleapis.com') || url.includes('googleapis.com')) {
+                    console.log('[image-loader] Loading Firebase Storage URL without crossOrigin:', url.substring(0, 50));
+                    // Don't set crossOrigin for Firebase Storage URLs
+                } else {
+                    console.log('[image-loader] Loading external URL with crossOrigin:', url.substring(0, 50));
+                    img.crossOrigin = 'anonymous';
+                }
+                
                 img.decoding = 'async';
                 img.onload = () => {
                     console.log('[image-loader] Successfully loaded image:', url.substring(0, 50));
@@ -2285,7 +2300,12 @@
                 }
                 
                 currentVideo = document.createElement('video');
-                currentVideo.crossOrigin = 'anonymous';
+                
+                // Only use crossOrigin for external CDN URLs, not Firebase Storage URLs
+                if (!url.includes('firebasestorage.googleapis.com') && !url.includes('googleapis.com')) {
+                    currentVideo.crossOrigin = 'anonymous';
+                }
+                
                 currentVideo.muted = true;
                 currentVideo.loop = true;
                 currentVideo.playsInline = true;
