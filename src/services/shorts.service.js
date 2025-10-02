@@ -184,6 +184,20 @@ export async function createShortService({ ownerUid, mode, text, template, durat
 
   // Background selection with soft-fallback
   let imageTmpPath = null;
+  
+  // Log background selection for debugging
+  console.log(`[shorts.bg] kind=${background?.kind} url=${background?.url}`);
+  
+  // Validate AI background URLs - prevent reference URLs in AI mode
+  if (background?.kind === 'ai' && background?.url) {
+    if (background.url.includes('/register-') && background.url.includes('/image_')) {
+      const error = new Error("AI remix selected but got a reference image URL; please pass generated image URL");
+      error.code = "INVALID_AI_URL";
+      console.error("[shorts.bg] AI validation failed:", background.url);
+      throw error;
+    }
+  }
+  
   try {
     if (background?.kind === "imageUrl" && background?.imageUrl) {
       try {

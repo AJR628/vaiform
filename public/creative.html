@@ -2512,7 +2512,20 @@
                 const { apiFetch } = await import('./api.mjs');
                 
                 // Prepare the render payload with proper background structure
-                const assetUrl = selectedAsset.fileUrl || selectedAsset.url;
+                // For AI remix, use the original AI-generated URL, not the registered reference URL
+                let assetUrl = selectedAsset.fileUrl || selectedAsset.url;
+                
+                // If this is an AI remix with a registered reference URL, use the original AI URL instead
+                if (selectedAsset.provider === 'ai' && assetUrl && assetUrl.includes('/register-')) {
+                    if (selectedAsset.originalUrl) {
+                        assetUrl = selectedAsset.originalUrl;
+                        console.log('[render] Using original AI URL instead of reference URL:', assetUrl);
+                    } else {
+                        // Show error if we don't have the original URL
+                        alert('Error: AI remix image not properly loaded. Please regenerate the AI image.');
+                        return;
+                    }
+                }
                 
                 // Detect type from URL extension
                 const detectTypeFromUrl = (url) => {
@@ -2948,7 +2961,17 @@
               const reg = await apiFetch('/uploads/register', { method:'POST', body:{ imageUrl: url } });
               const savedUrl = reg?.data?.url || url;
               // Mark selection locally and update preview immediately
-              selectedAsset = { id: `ai-${Date.now()}`, provider: 'ai', query: (document.getElementById('ai-prompt')?.value||'').trim(), fileUrl: savedUrl, thumbUrl: savedUrl, width: 1080, height: 1920 };
+              // Store both the registered URL (for compatibility) and original URL (for rendering)
+              selectedAsset = { 
+                id: `ai-${Date.now()}`, 
+                provider: 'ai', 
+                query: (document.getElementById('ai-prompt')?.value||'').trim(), 
+                fileUrl: savedUrl, 
+                originalUrl: url, // Store original AI-generated URL for rendering
+                thumbUrl: savedUrl, 
+                width: 1080, 
+                height: 1920 
+              };
               updateRenderPreview();
               updateRenderButtonState();
               // Also update dedicated preview nodes if present
