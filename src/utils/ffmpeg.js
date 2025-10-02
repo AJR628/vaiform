@@ -18,7 +18,7 @@ async function saveDataUrlToTmp(dataUrl, prefix = "caption") {
   return { file, mime };
 }
 
-// Helper function to get image dimensions using ffprobe
+// Helper function to get image dimensions using ffprobe (with proper error handling)
 async function getImageDimensions(imagePath) {
   try {
     const { spawn } = await import("child_process");
@@ -36,12 +36,23 @@ async function getImageDimensions(imagePath) {
       proc.stdout.on("data", d => stdout += d.toString());
       proc.stderr.on("data", d => stderr += d.toString());
       
+      proc.on("error", (err) => {
+        console.warn("[getImageDimensions] spawn error:", err.message);
+        resolve({ width: 1080, height: 1920 }); // fallback on spawn error
+      });
+      
       proc.on("close", (code) => {
         if (code === 0) {
           const [width, height] = stdout.trim().split("x").map(Number);
-          resolve({ width, height });
+          if (width && height) {
+            resolve({ width, height });
+          } else {
+            console.warn("[getImageDimensions] invalid dimensions, using defaults");
+            resolve({ width: 1080, height: 1920 });
+          }
         } else {
-          reject(new Error(`ffprobe failed: ${stderr}`));
+          console.warn("[getImageDimensions] ffprobe failed with code:", code, stderr);
+          resolve({ width: 1080, height: 1920 }); // fallback on failure
         }
       });
     });
@@ -420,24 +431,13 @@ export async function renderImageQuoteVideo({
     layers.push(wm);
   }
 
-  // Build filter with optional caption PNG overlay using SSOT scaling and positioning
+  // Build filter with optional caption PNG overlay using SSOT scaling and positioning (PROBE-FREE)
   let vf;
   if (usingCaptionPng && captionPngPath && fs.existsSync(captionPngPath)) {
-    // Get caption PNG dimensions with fallback
-    let capDims;
-    try {
-      capDims = await getImageDimensions(captionPngPath);
-      console.log(`[caption.png] size: ${capDims.width}x${capDims.height}`);
-    } catch (error) {
-      console.warn(`[caption.png] Failed to get dimensions, skipping caption: ${error.message}`);
-      usingCaptionPng = false;
-      captionPngPath = null;
-    }
-    
-    // Calculate SSOT target width
+    // PROBE-FREE: Use SSOT metadata directly without ffprobe
     const W = width, H = height;
-    const safeW = captionResolved?.safeW || 993; // From logs: safeW: 993
-    const maxWidthPct = 0.8; // From logs: maxWidthPct=0.8
+    const safeW = captionResolved?.safeW || 993; // SSOT from caption preview API
+    const maxWidthPct = 0.8; // SSOT from caption preview API
     const capTargetW = Math.round(safeW * maxWidthPct);
     
     // Use SSOT coordinates directly from caption preview API
@@ -450,24 +450,26 @@ export async function renderImageQuoteVideo({
       overlayY = captionResolved.yPx.toString();
       console.log(`[caption.overlay] Using SSOT coordinates: xPx=${overlayX}, yPx=${overlayY}`);
     } else if (captionResolved?.yPct !== undefined) {
-      // Fallback to yPct calculation
+      // Fallback to yPct calculation using SSOT metadata
       const yPct = Number(captionResolved.yPct);
       const safeH = captionResolved.safeH || 1612;
-      const bottomSafeMin = H - safeH;
-      const topSafeMax = H - capDims.height - bottomSafeMin;
+      const totalTextH = captionResolved.totalTextH || 200; // SSOT estimate
       
-      const yPx = Math.round(yPct * H / 100 - capDims.height / 2);
-      const clampedY = Math.max(bottomSafeMin, Math.min(topSafeMax, yPx));
+      // Calculate position using SSOT percentages and safe margins
+      const targetTop = (yPct * H / 100) - (totalTextH / 2);
+      const safeTopMargin = 50; // Safe margin from top
+      const safeBottomMargin = H - safeH; // Safe margin from bottom
+      const clampedY = Math.max(safeTopMargin, Math.min(targetTop, H - safeBottomMargin - totalTextH));
       
       overlayY = clampedY.toString();
-      console.log(`[caption.overlay] yPct fallback: yPct=${yPct}, yPx=${yPx}, clampedY=${clampedY}`);
+      console.log(`[caption.overlay] yPct fallback: yPct=${yPct}, targetTop=${targetTop}, clampedY=${clampedY}`);
     } else {
       // Default to bottom positioning
       overlayY = "H-h";
       console.log(`[caption.overlay] default bottom positioning: overlayY=${overlayY}`);
     }
     
-    // Build correct filter graph with proper label flow
+    // Build correct filter graph with proper label flow (PROBE-FREE)
     const fps = 24, dur = durationSec, zoomMax = 1.05;
     const zoom = `1 + (${zoomMax - 1}) * on / (${fps}*${dur})`;
     
@@ -478,11 +480,12 @@ export async function renderImageQuoteVideo({
       `format=rgba`
     ].join(',');
     
-    // Build filter with proper label flow: [0:v]→[b]→[b2]→[vout]
+    // PROBE-FREE: Use scale2ref to scale caption relative to base video without probing
+    // This eliminates the need for ffprobe dimension checks
     vf = `[0:v]${base}[b];[1:v][b]scale2ref=w=${capTargetW}:h=-1[cap][b2];[b2][cap]overlay=${overlayX}:${overlayY}:format=auto[vout]`;
     
-    console.log(`[renderImageQuoteVideo] Using SSOT overlay filter: ${vf}`);
-    console.log(`[caption.overlay] png=${capDims.width}x${capDims.height} targetW=${capTargetW} x=${overlayX} y=${overlayY}`);
+    console.log(`[renderImageQuoteVideo] Using PROBE-FREE SSOT overlay filter: ${vf}`);
+    console.log(`[caption.overlay] SSOT targetW=${capTargetW} x=${overlayX} y=${overlayY} safeW=${safeW} safeH=${captionResolved?.safeH || 1612}`);
   } else {
     vf = layers.join(",");
     console.log(`[renderImageQuoteVideo] Filter: ${vf}`);
@@ -530,7 +533,16 @@ export async function renderImageQuoteVideo({
     const duration = Date.now() - startTime;
     console.error(`[render.image] ffmpeg failed code=${error.code} after ${duration}ms`);
     console.error(`[render.image] stderr: ${String(error.stderr || '').slice(0, 2000)}`);
-    throw error;
+    console.error(`[render.image] args:`, args);
+    
+    // Enhanced error reporting for debugging
+    const enhancedError = new Error(`Image render failed: ${error.message}`);
+    enhancedError.code = error.code;
+    enhancedError.stderr = error.stderr;
+    enhancedError.args = args;
+    enhancedError.filterComplex = vf;
+    enhancedError.duration = duration;
+    throw enhancedError;
   }
 }
 

@@ -468,7 +468,33 @@ export async function createShortService({ ownerUid, mode, text, template, durat
     }
   } catch (err) {
     // Fail the job on render failure; do not silently continue
-    console.error('[shorts] RENDER_FAILED upstream', { message: err?.message, stack: err?.stack, stderr: String(err?.stderr||'').slice(0,8000) });
+    console.error('[shorts] RENDER_FAILED upstream', { 
+      message: err?.message, 
+      stack: err?.stack, 
+      stderr: String(err?.stderr||'').slice(0,8000),
+      code: err?.code,
+      filterComplex: err?.filterComplex,
+      duration: err?.duration
+    });
+    
+    // Update Firestore with detailed error information
+    try {
+      await shortsRef.update({
+        status: 'error',
+        errorMessage: String(err.message || err).slice(0, 2000),
+        errorDetails: {
+          code: err?.code,
+          stderr: String(err?.stderr || '').slice(0, 1000),
+          filterComplex: err?.filterComplex,
+          duration: err?.duration
+        },
+        failedAt: admin.firestore.FieldValue.serverTimestamp()
+      });
+      console.log(`[shorts] Updated Firestore doc to error: ${jobId}`);
+    } catch (firestoreError) {
+      console.warn(`[shorts] Failed to update Firestore doc on error: ${firestoreError.message}`);
+    }
+    
     throw err;
   }
 

@@ -1510,11 +1510,12 @@
             const pageInfo = document.getElementById('page-info');
             
             if (currentAssetType === 'ai') {
-                container.classList.add('opacity-0');
+                container.classList.add('hidden');
                 return;
             }
             
-            container.classList.remove('opacity-0');
+            // Show pagination for non-AI asset types
+            container.classList.remove('hidden');
             prevBtn.disabled = currentAssetPage <= 1;
             nextBtn.disabled = !hasMoreAssets;
             pageInfo.textContent = `Page ${currentAssetPage}`;
