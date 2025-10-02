@@ -228,7 +228,7 @@
                 <button id="videos-tab" class="px-4 py-2 rounded bg-gray-600 dark:bg-gray-700 text-white" data-type="videos">
                     Videos
                 </button>
-                <button id="ai-tab" class="px-4 py-2 rounded bg-gray-600 dark:bg-gray-700 text-white" data-type="ai">
+                <button id="ai-tab" class="px-4 py-2 rounded bg-gray-600 dark:bg-gray-700 text-white hidden" data-type="ai">
                     AI Images
                 </button>
             </div>
@@ -869,46 +869,43 @@
         let _previewReqId = 0;
         let _currentPexelsPhoto = null; // Track current photo for resize re-rendering
 
-        // Legacy function - now uses SSOT approach
         async function _drawBackground(url, canvas, cssW, cssH, who='drawBackground') {
           const my = ++_previewReqId;
           const startTime = performance.now();
           console.log('[asset-load] Starting background load:', { url: url.substring(0, 50), who, my });
           
-          try {
-            // Use SSOT media detection
-            const media = detectMedia(url);
-            const ctx = canvas.getContext('2d');
-            
-            if (media.kind === 'video') {
-              console.log('[asset-load] Loading video background');
-              await drawVideoBackground(url, ctx, cssW, cssH);
-            } else {
-              console.log('[asset-load] Loading image background');
-              const img = await loadImage(url);
-              drawImageBackground(img, ctx, cssW, cssH);
-            }
-            
-            if (my !== _previewReqId) return;
-            
-            const loadTime = performance.now() - startTime;
-            console.log('[asset-load] Background loaded:', { 
-              duration: Math.round(loadTime),
-              mediaType: media.kind,
-              who, my 
-            });
-            
-            window._currentPreviewUrl = url;
-            _tapCanvas(`${who}`);
-          } catch (error) {
-            console.error('[asset-load] Background load failed:', error);
-            if (my === _previewReqId) {
-              // Only show error for current request
-              if (typeof showToast === 'function') {
-                showToast('Background failed to load — please try another image or video.');
-              }
-            }
-          }
+          const img = new Image();
+          img.crossOrigin = 'anonymous';
+          img.decoding = 'async';
+          img.src = url;
+          await img.decode();
+          if (my !== _previewReqId) return;
+          
+          const loadTime = performance.now() - startTime;
+          console.log('[asset-load] Background loaded:', { 
+            duration: Math.round(loadTime), 
+            naturalWidth: img.naturalWidth, 
+            naturalHeight: img.naturalHeight,
+            who, my 
+          });
+          
+          const ctx = canvas.getContext('2d');
+          const iw = img.naturalWidth, ih = img.naturalHeight;
+          const scale = Math.max(cssW/iw, cssH/ih);
+          const dw = iw*scale, dh = ih*scale;
+          const dx = (cssW - dw)/2, dy = (cssH - dh)/2;
+          ctx.clearRect(0,0,cssW,cssH);
+          ctx.drawImage(img, dx, dy, dw, dh);
+          
+          console.log('[asset-load] First drawImage completed:', { 
+            duration: Math.round(performance.now() - startTime),
+            canvasSize: `${cssW}x${cssH}`,
+            imageSize: `${iw}x${ih}`,
+            drawSize: `${dw}x${dh}`,
+            who, my 
+          });
+          window._currentPreviewUrl = url;
+          _tapCanvas(`${who}`);
         }
 
         // --- Debounced caption overlay refresh (prevents blocking assets) ---
@@ -1532,16 +1529,6 @@
             if (!window.state) window.state = {};
             window.state.selectedAsset = asset;
             
-            // SSOT: Use unified background setter
-            const bg = {
-                kind: asset.provider === 'ai' ? 'ai' : (asset.provider === 'uploaded' ? 'upload' : 'stock'),
-                url: asset.fileUrl || asset.url || asset.thumbUrl,
-                mime: asset.mime,
-                w: asset.width,
-                h: asset.height
-            };
-            setPreviewBackground(bg);
-            
             // Special handling for Pexels assets - high-quality preview
             if (asset.provider === 'pexels' && asset.src) {
                 // Ensure the asset has the photo data for later use
@@ -1772,7 +1759,6 @@
         
         // Canvas ready state tracking
         let canvasReadyState = { ready: false, observer: null, intersectionObserver: null };
-        
         
         // Fix B: Set the canvas backing store AFTER CSS size exists
         function sizeCanvasToCSS(canvas) {
@@ -2117,9 +2103,8 @@
             const hasValidAsset = selectedAsset && (selectedAsset.fileUrl || selectedAsset.url);
             const hasQuote = currentQuote;
             const isLoggedIn = window.auth?.currentUser;
-            const hasBackground = window.state?.background?.url;
             
-            const canRender = hasValidAsset && hasQuote && isLoggedIn && hasBackground;
+            const canRender = hasValidAsset && hasQuote && isLoggedIn;
             renderBtn.disabled = !canRender;
             
             if (!canRender) {
@@ -2127,7 +2112,6 @@
                 if (!isLoggedIn) reason = 'Please log in';
                 else if (!hasQuote) reason = 'Please select a quote';
                 else if (!hasValidAsset) reason = 'Please select a valid asset';
-                else if (!hasBackground) reason = 'Please select a background image';
                 
                 renderBtn.title = reason;
             } else {
@@ -2135,321 +2119,9 @@
             }
         }
 
-        // Robust media type detection with content-type sniffing
-        function detectMedia(url, mime) {
-            if (!url && !mime) return { kind: 'none' };
-            
-            // 1. Check explicit MIME type first (most reliable)
-            if (mime?.startsWith('video/')) return { kind: 'video' };
-            if (mime?.startsWith('image/')) return { kind: 'image' };
-            
-            // 2. Check URL patterns for common video/image services
-            const u = (url || '').toLowerCase();
-            
-            // Video patterns
-            if (u.includes('pexels.com') && (u.includes('.mp4') || u.includes('video'))) return { kind: 'video' };
-            if (u.endsWith('.mp4') || u.endsWith('.webm') || u.endsWith('.mov') || u.endsWith('.avi')) return { kind: 'video' };
-            if (u.includes('youtube.com') || u.includes('vimeo.com') || u.includes('twitch.tv')) return { kind: 'video' };
-            
-            // Image patterns (including Firebase Storage)
-            if (u.includes('firebase') || u.includes('googleapis.com')) return { kind: 'image' };
-            if (u.endsWith('.jpg') || u.endsWith('.jpeg') || u.endsWith('.png') || u.endsWith('.webp') || u.endsWith('.gif')) return { kind: 'image' };
-            if (u.includes('pexels.com') && !u.includes('video')) return { kind: 'image' };
-            
-            // 3. Default to image for unknown URLs (safer fallback)
-            return { kind: 'image' };
-        }
-
-        // Legacy compatibility
-        function inferMediaType(url, mime) {
-            return detectMedia(url, mime).kind;
-        }
-
-        // Global media state for cleanup
-        let currentVideo = null;
-        let previewRafId = 0;
-
-        // Reset media resources when background changes
-        function resetPreviewMedia() {
-            // Stop and release previous <video>
-            if (currentVideo) {
-                try { 
-                    currentVideo.pause(); 
-                    currentVideo.src = ''; 
-                    currentVideo.load?.(); 
-                } catch {}
-                currentVideo = null;
-            }
-            // Cancel RAF / timers tied to previous media
-            if (previewRafId) {
-                cancelAnimationFrame(previewRafId); 
-                previewRafId = 0;
-            }
-        }
-
-        // SSOT: Single background setter for all background types
-        function setPreviewBackground(bg) {
-            if (!window.state) window.state = {};
-            
-            // Store only url+mime (no sticky media type)
-            const normalizedBg = {
-                kind: bg.kind,
-                url: bg.url,
-                mime: bg.mime,
-                w: bg.w,
-                h: bg.h
-            };
-            
-            window.state.background = normalizedBg;
-            resetPreviewMedia(); // Clean up previous media
-            console.log('[preview] bg SSOT', JSON.stringify(normalizedBg));
-            queuePreviewRender();
-        }
-
-        // SSOT: Unified preview queue
-        function queuePreviewRender() {
-            if (!currentQuote) return;
-            
-            // Debug: Log selected background alongside caption SSOT
-            const bg = window.state?.background;
-            console.log('[preview] Selected background:', bg ? `${bg.kind}: ${bg.url?.substring(0, 50)}...` : 'none');
-            
-            // Use SSOT preview pipeline
-            const state = {
-                bg: bg,
-                captionPreview: captionOverlayState
-            };
-            
-            renderPreviewFromState(state);
-        }
-
-        // Image loader (CORS-safe)
-        function loadBackgroundImage(bg) {
-            return new Promise((res, rej) => {
-                const img = new Image();
-                
-                // Only use crossOrigin for external CDN URLs, not Firebase Storage URLs
-                if (!bg.url.includes('firebasestorage.googleapis.com') && !bg.url.includes('googleapis.com')) {
-                    img.crossOrigin = 'anonymous';
-                }
-                
-                img.onload = () => res(img);
-                img.onerror = e => rej(new DOMException('Image decode failed', 'EncodingError'));
-                img.src = bg.url;
-            });
-        }
-
-        // SSOT: Image loader (image-only) with smart CORS handling
-        function loadImage(url) {
-            return new Promise((resolve, reject) => {
-                const img = new Image();
-                
-                // Only use crossOrigin for external CDN URLs, not Firebase Storage URLs
-                // Firebase Storage signed URLs don't support CORS headers
-                if (url.includes('firebasestorage.googleapis.com') || url.includes('googleapis.com')) {
-                    console.log('[image-loader] Loading Firebase Storage URL without crossOrigin:', url.substring(0, 50));
-                    // Don't set crossOrigin for Firebase Storage URLs
-                } else {
-                    console.log('[image-loader] Loading external URL with crossOrigin:', url.substring(0, 50));
-                    img.crossOrigin = 'anonymous';
-                }
-                
-                img.decoding = 'async';
-                img.onload = () => {
-                    console.log('[image-loader] Successfully loaded image:', url.substring(0, 50));
-                    resolve(img);
-                };
-                img.onerror = (e) => {
-                    console.error('[image-loader] Failed to load image:', url.substring(0, 50), e);
-                    reject(new DOMException('Image decode failed', 'EncodingError'));
-                };
-                img.src = url;
-            });
-        }
-        
-
-        // SSOT: Video loader (video-only)
-        function loadBackgroundVideo(bg) {
-            return new Promise((res, rej) => {
-                const v = document.createElement('video');
-                v.crossOrigin = 'anonymous';
-                v.playsInline = true;
-                v.muted = true;
-                v.preload = 'auto';
-                v.src = bg.url;
-                const onCanPlay = async () => {
-                    try {
-                        v.currentTime = 0;
-                        await v.play().catch(()=>{}); // kickstart for frame readiness
-                        res(v);
-                    } catch (e) { rej(e); }
-                };
-                v.addEventListener('canplay', onCanPlay, { once: true });
-                v.onerror = () => rej(new DOMException('Video decode failed', 'EncodingError'));
-            });
-        }
-
-        // SSOT: Video background drawer (still frame by default, no autoplay)
-        async function drawVideoBackground(url, ctx, W, H) {
-            if (!currentVideo || currentVideo.src !== url) {
-                // Clean up previous video
-                if (currentVideo) {
-                    try { 
-                        currentVideo.pause(); 
-                        currentVideo.src = ''; 
-                        currentVideo.load?.(); 
-                    } catch {}
-                }
-                
-                currentVideo = document.createElement('video');
-                
-                // Only use crossOrigin for external CDN URLs, not Firebase Storage URLs
-                if (!url.includes('firebasestorage.googleapis.com') && !url.includes('googleapis.com')) {
-                    currentVideo.crossOrigin = 'anonymous';
-                }
-                
-                currentVideo.muted = true;
-                currentVideo.loop = true;
-                currentVideo.playsInline = true;
-                currentVideo.preload = 'auto';
-                currentVideo.src = url;
-                
-                // Wait for video to be ready (but don't autoplay)
-                await new Promise((resolve, reject) => {
-                    const onLoadedData = () => {
-                        currentVideo.removeEventListener('loadeddata', onLoadedData);
-                        currentVideo.removeEventListener('error', onError);
-                        currentVideo.currentTime = 0; // Show first frame
-                        resolve();
-                    };
-                    const onError = (e) => {
-                        currentVideo.removeEventListener('loadeddata', onLoadedData);
-                        currentVideo.removeEventListener('error', onError);
-                        reject(new Error(`Video load failed for ${url}`));
-                    };
-                    currentVideo.addEventListener('loadeddata', onLoadedData);
-                    currentVideo.addEventListener('error', onError);
-                });
-            }
-
-            // Draw current frame (still frame by default)
-            drawFrame(ctx, currentVideo, W, H);
-            
-            // Only schedule next frame if video is playing (for click-to-play functionality)
-            if (currentVideo && !currentVideo.paused) {
-                if (previewRafId) cancelAnimationFrame(previewRafId);
-                previewRafId = requestAnimationFrame(() => {
-                    drawVideoBackground(url, ctx, W, H);
-                });
-            }
-        }
-
-        // SSOT: Image background drawer (image-only)
-        function drawImageBackground(img, ctx, W, H) {
-            drawFrame(ctx, img, W, H);
-        }
-
-        // Draw frame with cover-fit cropping
-        function drawFrame(ctx, media, W, H) {
-            const arCanvas = W / H;
-            const arMedia = media.videoWidth ? media.videoWidth / media.videoHeight : media.width / media.height;
-            
-            let sx=0, sy=0, sw, sh;
-            if (arMedia > arCanvas) { 
-                sh = media.videoHeight || media.height; 
-                sw = Math.floor(sh * arCanvas);
-                sx = Math.floor(((media.videoWidth || media.width) - sw) / 2); 
-                sy = 0;
-            } else {
-                sw = media.videoWidth || media.width; 
-                sh = Math.floor(sw / arCanvas);
-                sx = 0; 
-                sy = Math.floor(((media.videoHeight || media.height) - sh) / 2);
-            }
-            ctx.drawImage(media, sx, sy, sw, sh, 0, 0, W, H);
-        }
-
-
-        // SSOT Preview Pipeline: background first, then caption overlay
-        async function renderPreviewFromState(state) {
-            const canvas = document.getElementById('live-preview-canvas');
-            if (!canvas) return;
-            
-            // Ensure canvas is ready before drawing
-            try {
-                await waitForCanvasReady(canvas);
-            } catch (error) {
-                console.warn('[preview] Canvas not ready, skipping render:', error.message);
-                return;
-            }
-            
-            const ctx = canvas.getContext('2d', { alpha: false });
-            
-            // Get logical canvas dimensions (after DPR scaling)
-            const dpr = Math.min(window.devicePixelRatio || 1, 2);
-            const W = canvas.width / dpr;
-            const H = canvas.height / dpr;
-
-            // 1) Fill back buffer (guard against flicker)
-            ctx.fillStyle = '#000';
-            ctx.fillRect(0, 0, W, H);
-
-            // 2) Draw BACKGROUND (must exist)
-            const bg = state?.bg;
-            console.log('[preview] bg=', bg?.url, 'ov=', !!state?.captionPreview?.imageUrl);
-            console.log('[preview] state.bg=', bg);
-            
-            if (bg?.url) {
-                try {
-                    // SSOT: Detect media type per render (no sticky state)
-                    const media = detectMedia(bg.url, bg.mime);
-                    console.log('[preview] detected media type:', media.kind, 'for', bg.url?.substring(0, 50));
-                    
-                    if (media.kind === 'video') {
-                        console.log('[preview] drawing video background', bg.url);
-                        await drawVideoBackground(bg.url, ctx, W, H);
-                    } else {
-                        console.log('[preview] drawing image background', bg.url);
-                        const img = await loadImage(bg.url);
-                        drawImageBackground(img, ctx, W, H);
-                    }
-                } catch (error) {
-                    console.error('[preview] Background load failed:', error);
-                    // Don't reset state on failure - allow user to try again or switch to different media
-                    // Just show error and continue with black background
-                    if (typeof showToast === 'function') {
-                        showToast(`Background failed to load: ${error.message || 'Unknown error'}`);
-                    }
-                }
-            } else {
-                console.warn('[preview] MISSING bg url - showing caption overlay only');
-                // Show non-blocking toast for missing background
-                if (typeof showToast === 'function') {
-                    showToast('Background not set — showing caption overlay only.');
-                }
-            }
-
-            // 3) Draw CAPTION OVERLAY from caption preview API (SSOT)
-            const overlayUrl = state?.captionPreview?.imageUrl; // data:image/png;base64,...
-            if (overlayUrl) {
-                try {
-                    const ov = new Image();
-                    ov.decoding = 'async';
-                    ov.src = overlayUrl;
-                    await ov.decode();
-
-                    // SSOT placement: bottom centered (meta.yPct etc. is already baked into the PNG)
-                    const x = Math.floor((W - ov.width) / 2);
-                    const y = H - ov.height;
-                    ctx.drawImage(ov, x, y);
-                } catch (error) {
-                    console.error('[preview] Overlay load failed:', error);
-                }
-            }
-        }
-
+        // Fix C: Live preview functionality without infinite retry
         function updateLivePreview() {
-            if (!currentQuote) return;
+            if (!currentQuote || !selectedAsset) return;
             
             const container = document.getElementById('live-preview-container');
             const canvas = document.getElementById('live-preview-canvas');
@@ -2507,8 +2179,30 @@
                 if (ov) ov.style.display = hasVideo ? 'none' : 'block';
             } catch {}
 
-            // Use SSOT preview queue
-            queuePreviewRender();
+            // 9:16 CSS sizing + HiDPI backing
+            const { cssW, cssH } = layoutPreviewDims();
+            const { ctx } = _setupHiDPICanvas(canvas, cssW, cssH);
+
+            // Choose the background URL from whatever the app thinks it should be
+            let url = selectedAsset?.previewUrl || selectedAsset?.url || selectedAsset?.thumbUrl || selectedAsset?.fileUrl;
+            
+            // >>> Insert this one line to force hi-res for Pexels:
+            url = _ensureHiResPreviewUrl(url, canvas);
+
+            // Load & draw the background
+            const img = new Image();
+            img.crossOrigin = 'anonymous';
+            img.decoding = 'async';
+            img.src = url;
+            
+            img.onload = () => {
+                // COVER draw (no stretching)
+                drawCover(ctx, img, cssW, cssH);
+                
+                // Debug
+                window._currentPreviewUrl = url;
+                _tapCanvas('bg:updateLivePreview');
+            };
         }
 
         function drawCaptionOverlay(ctx, canvasWidth, canvasHeight) {
@@ -2817,13 +2511,8 @@
             try {
                 const { apiFetch } = await import('./api.mjs');
                 
-                // SSOT: Use the exact preview URL as the source of truth
-                let assetUrl = selectedAsset.fileUrl || selectedAsset.url;
-                
-                // Log SSOT information for debugging
-                if (selectedAsset.bgSSOT) {
-                    console.log('[bg.ssot] Using SSOT URL for render:', selectedAsset.bgSSOT);
-                }
+                // Prepare the render payload with proper background structure
+                const assetUrl = selectedAsset.fileUrl || selectedAsset.url;
                 
                 // Detect type from URL extension
                 const detectTypeFromUrl = (url) => {
@@ -2869,12 +2558,6 @@
                     imageUrl: selectedAsset.provider === 'uploaded' ? selectedAsset.fileUrl : undefined,
                     prompt: selectedAsset.provider === 'ai' ? selectedAsset.query : undefined
                 };
-                
-                // SSOT: Include background SSOT information for backend
-                if (selectedAsset.bgSSOT) {
-                    console.log('[bg.ssot] Including SSOT in payload:', selectedAsset.bgSSOT);
-                    payload.bgSSOT = selectedAsset.bgSSOT;
-                }
 
                 // Get caption style settings
                 const captionStyle = {
@@ -3260,43 +2943,12 @@
               const imgEl = document.querySelector('#ai-result-preview img');
               const url = imgEl?.getAttribute('src');
               if (!url) return;
-              
-              // SSOT: Store the exact preview URL as the source of truth
-              const bgSSOT = {
-                kind: 'ai',
-                url: url, // The exact preview image URL shown
-                storageBucket: 'vaiform',
-                meta: { 
-                  source: 'frontend', 
-                  path: url.includes('/artifacts/') ? url.split('/artifacts/')[1] : null 
-                }
-              };
-              
-              console.log('[bg.ssot] Preview URL captured:', bgSSOT);
-              
+              const { apiFetch } = await import('./api.mjs');
+              // Store the image in storage and get a tokenized URL
+              const reg = await apiFetch('/uploads/register', { method:'POST', body:{ imageUrl: url } });
+              const savedUrl = reg?.data?.url || url;
               // Mark selection locally and update preview immediately
-              // Use the preview URL directly as the source of truth
-              selectedAsset = { 
-                id: `ai-${Date.now()}`, 
-                provider: 'ai', 
-                query: (document.getElementById('ai-prompt')?.value||'').trim(), 
-                fileUrl: url, // Use preview URL as SSOT
-                thumbUrl: url, 
-                width: 1080, 
-                height: 1920,
-                bgSSOT: bgSSOT // Store SSOT for backend 
-              };
-              
-              // SSOT: Use unified background setter for AI images
-              const bg = {
-                kind: 'ai',
-                url: url,
-                mediaType: 'image',
-                mime: 'image/png',
-                w: 1080,
-                h: 1920
-              };
-              setPreviewBackground(bg);
+              selectedAsset = { id: `ai-${Date.now()}`, provider: 'ai', query: (document.getElementById('ai-prompt')?.value||'').trim(), fileUrl: savedUrl, thumbUrl: savedUrl, width: 1080, height: 1920 };
               updateRenderPreview();
               updateRenderButtonState();
               // Also update dedicated preview nodes if present
@@ -3624,33 +3276,6 @@
                 localStorage.setItem("theme", isDark ? "dark" : "light");
                 themeToggle.textContent = isDark ? "🌙" : "☀️";
             });
-        }
-
-        // Click-to-play functionality for video backgrounds
-        const canvas = document.getElementById('live-preview-canvas');
-        if (canvas) {
-            canvas.addEventListener('click', () => {
-                if (currentVideo && window.state?.background?.url) {
-                    const media = detectMedia(window.state.background.url, window.state.background.mime);
-                    if (media.kind === 'video') {
-                        if (currentVideo.paused) {
-                            currentVideo.play().catch(e => console.log('Video play failed:', e));
-                            // Restart the animation loop
-                            const canvas = document.getElementById('live-preview-canvas');
-                            if (canvas) {
-                                const ctx = canvas.getContext('2d');
-                                const dpr = Math.min(window.devicePixelRatio || 1, 2);
-                                const W = canvas.width / dpr;
-                                const H = canvas.height / dpr;
-                                drawVideoBackground(window.state.background.url, ctx, W, H);
-                            }
-                        } else {
-                            currentVideo.pause();
-                        }
-                    }
-                }
-            });
-            canvas.style.cursor = 'pointer';
         }
 
         // Initialize authentication using existing system

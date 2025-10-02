@@ -125,16 +125,6 @@ const CreateShortSchema = z
       style: z.number().min(0).max(100).optional(),
       use_speaker_boost: z.boolean().optional()
     }).optional(),
-    // Background SSOT for ensuring preview and render use same asset
-    bgSSOT: z.object({
-      kind: z.enum(["ai", "stock", "upload"]).optional(),
-      url: z.string().url().optional(),
-      storageBucket: z.string().optional(),
-      meta: z.object({
-        source: z.string().optional(),
-        path: z.string().optional()
-      }).optional()
-    }).optional(),
   })
   .transform((v) => {
     // permit empty text if captionText is provided
@@ -232,18 +222,11 @@ export async function createShort(req, res) {
     if (!parsed.success) {
       return res.status(400).json({ success: false, error: "INVALID_INPUT", detail: parsed.error.flatten() });
     }
-    const { mode = "quote", text = "", captionText = "", template = "calm", durationSec = 8, voiceover = false, wantAttribution = true, background = { kind: "solid" }, debugAudioPath, captionMode = "static", includeBottomCaption = false, watermark, captionStyle, caption, captionResolved, captionImage, voiceId, modelId, outputFormat, voiceSettings, bgSSOT } = parsed.data;
+    const { mode = "quote", text = "", captionText = "", template = "calm", durationSec = 8, voiceover = false, wantAttribution = true, background = { kind: "solid" }, debugAudioPath, captionMode = "static", includeBottomCaption = false, watermark, captionStyle, caption, captionResolved, captionImage, voiceId, modelId, outputFormat, voiceSettings } = parsed.data;
 
     const ownerUid = req.user?.uid;
     if (!ownerUid) {
       return res.status(401).json({ success: false, error: "UNAUTHENTICATED", message: "Login required" });
-    }
-
-    // SSOT: Log background SSOT information
-    if (bgSSOT) {
-      console.log(`[bg.ssot] Received SSOT:`, bgSSOT);
-      console.log(`[bg.ssot] Preview URL: ${bgSSOT.url}`);
-      console.log(`[bg.ssot] Source: ${bgSSOT.meta?.source}`);
     }
 
     // Validate asset URL accessibility for non-solid backgrounds
@@ -269,7 +252,7 @@ export async function createShort(req, res) {
     // Note: caption is now a number (font size) in v1 schema, not an object
     
     try { console.log("[shorts] incoming caption:", { fontPx: caption, captionText: !!captionText, hasOverlay: !!(captionImage && typeof captionImage === 'string') }); } catch {}
-    const result = await createShortService({ ownerUid, mode, text, template, durationSec, voiceover, wantAttribution, background, debugAudioPath, captionMode, includeBottomCaption, watermark, captionStyle, caption, captionResolved, captionImage, voiceId, modelId, outputFormat, voiceSettings, overrideQuote, bgSSOT });
+    const result = await createShortService({ ownerUid, mode, text, template, durationSec, voiceover, wantAttribution, background, debugAudioPath, captionMode, includeBottomCaption, watermark, captionStyle, caption, captionResolved, captionImage, voiceId, modelId, outputFormat, voiceSettings, overrideQuote });
     
     // Increment daily short count for free users after successful creation
     if (req.incrementShortCount) {
