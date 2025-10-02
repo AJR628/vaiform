@@ -869,43 +869,46 @@
         let _previewReqId = 0;
         let _currentPexelsPhoto = null; // Track current photo for resize re-rendering
 
+        // Legacy function - now uses SSOT approach
         async function _drawBackground(url, canvas, cssW, cssH, who='drawBackground') {
           const my = ++_previewReqId;
           const startTime = performance.now();
           console.log('[asset-load] Starting background load:', { url: url.substring(0, 50), who, my });
           
-          const img = new Image();
-          img.crossOrigin = 'anonymous';
-          img.decoding = 'async';
-          img.src = url;
-          await img.decode();
-          if (my !== _previewReqId) return;
-          
-          const loadTime = performance.now() - startTime;
-          console.log('[asset-load] Background loaded:', { 
-            duration: Math.round(loadTime), 
-            naturalWidth: img.naturalWidth, 
-            naturalHeight: img.naturalHeight,
-            who, my 
-          });
-          
-          const ctx = canvas.getContext('2d');
-          const iw = img.naturalWidth, ih = img.naturalHeight;
-          const scale = Math.max(cssW/iw, cssH/ih);
-          const dw = iw*scale, dh = ih*scale;
-          const dx = (cssW - dw)/2, dy = (cssH - dh)/2;
-          ctx.clearRect(0,0,cssW,cssH);
-          ctx.drawImage(img, dx, dy, dw, dh);
-          
-          console.log('[asset-load] First drawImage completed:', { 
-            duration: Math.round(performance.now() - startTime),
-            canvasSize: `${cssW}x${cssH}`,
-            imageSize: `${iw}x${ih}`,
-            drawSize: `${dw}x${dh}`,
-            who, my 
-          });
-          window._currentPreviewUrl = url;
-          _tapCanvas(`${who}`);
+          try {
+            // Use SSOT media detection
+            const media = detectMedia(url);
+            const ctx = canvas.getContext('2d');
+            
+            if (media.kind === 'video') {
+              console.log('[asset-load] Loading video background');
+              await drawVideoBackground(url, ctx, cssW, cssH);
+            } else {
+              console.log('[asset-load] Loading image background');
+              const img = await loadImage(url);
+              drawImageBackground(img, ctx, cssW, cssH);
+            }
+            
+            if (my !== _previewReqId) return;
+            
+            const loadTime = performance.now() - startTime;
+            console.log('[asset-load] Background loaded:', { 
+              duration: Math.round(loadTime),
+              mediaType: media.kind,
+              who, my 
+            });
+            
+            window._currentPreviewUrl = url;
+            _tapCanvas(`${who}`);
+          } catch (error) {
+            console.error('[asset-load] Background load failed:', error);
+            if (my === _previewReqId) {
+              // Only show error for current request
+              if (typeof showToast === 'function') {
+                showToast('Background failed to load — please try another image or video.');
+              }
+            }
+          }
         }
 
         // --- Debounced caption overlay refresh (prevents blocking assets) ---
@@ -2132,31 +2135,59 @@
         }
 
         // Fix C: Live preview functionality without infinite retry
-        // SSOT: Infer media type from URL and MIME
+        // SSOT: Detect media type per render (no sticky state)
+        function detectMedia(url, mime) {
+            if (!url && !mime) return { kind: 'none' };
+            if (mime?.startsWith('video/')) return { kind: 'video' };
+            if (mime?.startsWith('image/')) return { kind: 'image' };
+            // Fallback by extension
+            const u = (url || '').toLowerCase();
+            if (u.endsWith('.mp4') || u.endsWith('.webm') || u.endsWith('.mov')) return { kind: 'video' };
+            return { kind: 'image' };
+        }
+
+        // Legacy compatibility
         function inferMediaType(url, mime) {
-            if (mime?.startsWith('video/')) return 'video';
-            if (mime?.startsWith('image/')) return 'image';
-            if (/\.mp4(\?|#|$)/i.test(url)) return 'video';
-            if (/\.(png|jpe?g|webp|gif)(\?|#|$)/i.test(url)) return 'image';
-            return 'image'; // safe default for our UI
+            return detectMedia(url, mime).kind;
+        }
+
+        // Global media state for cleanup
+        let currentVideo = null;
+        let previewRafId = 0;
+
+        // Reset media resources when background changes
+        function resetPreviewMedia() {
+            // Stop and release previous <video>
+            if (currentVideo) {
+                try { 
+                    currentVideo.pause(); 
+                    currentVideo.src = ''; 
+                    currentVideo.load?.(); 
+                } catch {}
+                currentVideo = null;
+            }
+            // Cancel RAF / timers tied to previous media
+            if (previewRafId) {
+                cancelAnimationFrame(previewRafId); 
+                previewRafId = 0;
+            }
         }
 
         // SSOT: Single background setter for all background types
         function setPreviewBackground(bg) {
             if (!window.state) window.state = {};
             
-            // Normalize media type at selection time (SSOT)
-            const mediaType = inferMediaType(bg.url, bg.mime);
+            // Store only url+mime (no sticky media type)
             const normalizedBg = {
                 kind: bg.kind,
                 url: bg.url,
-                mediaType: mediaType,
-                mime: bg.mime || (mediaType === 'video' ? 'video/mp4' : 'image/png'),
+                mime: bg.mime,
                 w: bg.w,
                 h: bg.h
             };
             
             window.state.background = normalizedBg;
+            resetPreviewMedia(); // Clean up previous media
             console.log('[preview] bg SSOT', JSON.stringify(normalizedBg));
             queuePreviewRender();
         }
@@ -2189,7 +2220,18 @@
             });
         }
 
-        // Video loader (first frame grab)
+        // SSOT: Image loader (image-only)
+        function loadImage(url) {
+            return new Promise((resolve, reject) => {
+                const img = new Image();
+                img.crossOrigin = 'anonymous';
+                img.onload = () => resolve(img);
+                img.onerror = (e) => reject(new Error(`Image load failed for ${url}`));
+                img.src = url;
+            });
+        }
+
+        // SSOT: Video loader (video-only)
         function loadBackgroundVideo(bg) {
             return new Promise((res, rej) => {
                 const v = document.createElement('video');
@@ -2208,6 +2250,61 @@
                 v.addEventListener('canplay', onCanPlay, { once: true });
                 v.onerror = () => rej(new DOMException('Video decode failed', 'EncodingError'));
             });
+        }
+
+        // SSOT: Video background drawer (truly video, not image)
+        async function drawVideoBackground(url, ctx, W, H) {
+            if (!currentVideo || currentVideo.src !== url) {
+                // Clean up previous video
+                if (currentVideo) {
+                    try { 
+                        currentVideo.pause(); 
+                        currentVideo.src = ''; 
+                        currentVideo.load?.(); 
+                    } catch {}
+                }
+                
+                currentVideo = document.createElement('video');
+                currentVideo.crossOrigin = 'anonymous';
+                currentVideo.muted = true; // for autoplay
+                currentVideo.loop = true;
+                currentVideo.playsInline = true;
+                currentVideo.src = url;
+                
+                // Wait for video to be ready
+                await new Promise((resolve, reject) => {
+                    const onCanPlay = () => {
+                        currentVideo.removeEventListener('canplay', onCanPlay);
+                        currentVideo.removeEventListener('error', onError);
+                        resolve();
+                    };
+                    const onError = (e) => {
+                        currentVideo.removeEventListener('canplay', onCanPlay);
+                        currentVideo.removeEventListener('error', onError);
+                        reject(new Error(`Video load failed for ${url}`));
+                    };
+                    currentVideo.addEventListener('canplay', onCanPlay);
+                    currentVideo.addEventListener('error', onError);
+                });
+                
+                await currentVideo.play().catch(() => {/* ignore autoplay issues */});
+            }
+
+            // Draw current video frame
+            drawFrame(ctx, currentVideo, W, H);
+            
+            // Schedule next frame
+            if (previewRafId) cancelAnimationFrame(previewRafId);
+            previewRafId = requestAnimationFrame(() => {
+                if (currentVideo && !currentVideo.paused) {
+                    drawVideoBackground(url, ctx, W, H);
+                }
+            });
+        }
+
+        // SSOT: Image background drawer (image-only)
+        function drawImageBackground(img, ctx, W, H) {
+            drawFrame(ctx, img, W, H);
         }
 
         // Draw frame with cover-fit cropping
@@ -2230,17 +2327,38 @@
             ctx.drawImage(media, sx, sy, sw, sh, 0, 0, W, H);
         }
 
+        // SSOT: Canvas readiness (removes Canvas still not ready spam)
+        async function ensureCanvasReady() {
+            const canvas = document.getElementById('live-preview-canvas');
+            if (!canvas) return false;
+            
+            const dpr = window.devicePixelRatio || 1;
+            const w = 1080, h = 1920;      // SSOT: preview frame size
+            canvas.width  = Math.round(w * dpr);
+            canvas.height = Math.round(h * dpr);
+            canvas.style.width  = `${w}px`;
+            canvas.style.height = `${h}px`;
+            
+            const ctx = canvas.getContext('2d');
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+            
+            await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+            return true;
+        }
+
         // SSOT Preview Pipeline: background first, then caption overlay
         async function renderPreviewFromState(state) {
             const W = 1080, H = 1920; // SSOT frame
             const canvas = document.getElementById('live-preview-canvas');
             if (!canvas) return;
             
+            // Ensure canvas is ready before drawing
+            if (!(await ensureCanvasReady())) {
+                console.warn('[preview] Canvas not ready, skipping render');
+                return;
+            }
+            
             const ctx = canvas.getContext('2d', { alpha: false });
-
-            // Ensure pixel dimensions (not just CSS)
-            canvas.width = W; 
-            canvas.height = H;
 
             // 1) Fill back buffer (guard against flicker)
             ctx.fillStyle = '#000';
@@ -2253,24 +2371,18 @@
             
             if (bg?.url) {
                 try {
-                    let media;
-                    if (bg.mediaType === 'video') {
-                        console.log('[preview] loader video', bg.url);
-                        media = await loadBackgroundVideo(bg);
+                    // SSOT: Detect media type per render (no sticky state)
+                    const media = detectMedia(bg.url, bg.mime);
+                    console.log('[preview] detected media type:', media.kind, 'for', bg.url?.substring(0, 50));
+                    
+                    if (media.kind === 'video') {
+                        console.log('[preview] drawing video background', bg.url);
+                        await drawVideoBackground(bg.url, ctx, W, H);
                     } else {
-                        console.log('[preview] loader image', bg.url);
-                        media = await loadBackgroundImage(bg);
+                        console.log('[preview] drawing image background', bg.url);
+                        const img = await loadImage(bg.url);
+                        drawImageBackground(img, ctx, W, H);
                     }
-
-                    console.log('[preview] Background loaded:', { 
-                        width: media.videoWidth || media.width, 
-                        height: media.videoHeight || media.height, 
-                        canvasW: canvas.width, 
-                        canvasH: canvas.height 
-                    });
-
-                    // Draw with cover-fit cropping
-                    drawFrame(ctx, media, W, H);
                 } catch (error) {
                     console.error('[preview] Background load failed:', error);
                     // Reset state on failure to prevent stuck black canvas
