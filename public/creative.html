@@ -2134,15 +2134,28 @@
             }
         }
 
-        // Fix C: Live preview functionality without infinite retry
-        // SSOT: Detect media type per render (no sticky state)
+        // Robust media type detection with content-type sniffing
         function detectMedia(url, mime) {
             if (!url && !mime) return { kind: 'none' };
+            
+            // 1. Check explicit MIME type first (most reliable)
             if (mime?.startsWith('video/')) return { kind: 'video' };
             if (mime?.startsWith('image/')) return { kind: 'image' };
-            // Fallback by extension
+            
+            // 2. Check URL patterns for common video/image services
             const u = (url || '').toLowerCase();
-            if (u.endsWith('.mp4') || u.endsWith('.webm') || u.endsWith('.mov')) return { kind: 'video' };
+            
+            // Video patterns
+            if (u.includes('pexels.com') && (u.includes('.mp4') || u.includes('video'))) return { kind: 'video' };
+            if (u.endsWith('.mp4') || u.endsWith('.webm') || u.endsWith('.mov') || u.endsWith('.avi')) return { kind: 'video' };
+            if (u.includes('youtube.com') || u.includes('vimeo.com') || u.includes('twitch.tv')) return { kind: 'video' };
+            
+            // Image patterns (including Firebase Storage)
+            if (u.includes('firebase') || u.includes('googleapis.com')) return { kind: 'image' };
+            if (u.endsWith('.jpg') || u.endsWith('.jpeg') || u.endsWith('.png') || u.endsWith('.webp') || u.endsWith('.gif')) return { kind: 'image' };
+            if (u.includes('pexels.com') && !u.includes('video')) return { kind: 'image' };
+            
+            // 3. Default to image for unknown URLs (safer fallback)
             return { kind: 'image' };
         }
 
@@ -2220,13 +2233,20 @@
             });
         }
 
-        // SSOT: Image loader (image-only)
+        // SSOT: Image loader (image-only) with robust CORS handling
         function loadImage(url) {
             return new Promise((resolve, reject) => {
                 const img = new Image();
                 img.crossOrigin = 'anonymous';
-                img.onload = () => resolve(img);
-                img.onerror = (e) => reject(new Error(`Image load failed for ${url}`));
+                img.decoding = 'async';
+                img.onload = () => {
+                    console.log('[image-loader] Successfully loaded image:', url.substring(0, 50));
+                    resolve(img);
+                };
+                img.onerror = (e) => {
+                    console.error('[image-loader] Failed to load image:', url.substring(0, 50), e);
+                    reject(new DOMException('Image decode failed', 'EncodingError'));
+                };
                 img.src = url;
             });
         }
@@ -2252,7 +2272,7 @@
             });
         }
 
-        // SSOT: Video background drawer (truly video, not image)
+        // SSOT: Video background drawer (still frame by default, no autoplay)
         async function drawVideoBackground(url, ctx, W, H) {
             if (!currentVideo || currentVideo.src !== url) {
                 // Clean up previous video
@@ -2266,40 +2286,40 @@
                 
                 currentVideo = document.createElement('video');
                 currentVideo.crossOrigin = 'anonymous';
-                currentVideo.muted = true; // for autoplay
+                currentVideo.muted = true;
                 currentVideo.loop = true;
                 currentVideo.playsInline = true;
+                currentVideo.preload = 'auto';
                 currentVideo.src = url;
                 
-                // Wait for video to be ready
+                // Wait for video to be ready (but don't autoplay)
                 await new Promise((resolve, reject) => {
-                    const onCanPlay = () => {
-                        currentVideo.removeEventListener('canplay', onCanPlay);
+                    const onLoadedData = () => {
+                        currentVideo.removeEventListener('loadeddata', onLoadedData);
                         currentVideo.removeEventListener('error', onError);
+                        currentVideo.currentTime = 0; // Show first frame
                         resolve();
                     };
                     const onError = (e) => {
-                        currentVideo.removeEventListener('canplay', onCanPlay);
+                        currentVideo.removeEventListener('loadeddata', onLoadedData);
                         currentVideo.removeEventListener('error', onError);
                         reject(new Error(`Video load failed for ${url}`));
                     };
-                    currentVideo.addEventListener('canplay', onCanPlay);
+                    currentVideo.addEventListener('loadeddata', onLoadedData);
                     currentVideo.addEventListener('error', onError);
                 });
-                
-                await currentVideo.play().catch(() => {/* ignore autoplay issues */});
             }
 
-            // Draw current video frame
+            // Draw current frame (still frame by default)
             drawFrame(ctx, currentVideo, W, H);
             
-            // Schedule next frame
-            if (previewRafId) cancelAnimationFrame(previewRafId);
-            previewRafId = requestAnimationFrame(() => {
-                if (currentVideo && !currentVideo.paused) {
+            // Only schedule next frame if video is playing (for click-to-play functionality)
+            if (currentVideo && !currentVideo.paused) {
+                if (previewRafId) cancelAnimationFrame(previewRafId);
+                previewRafId = requestAnimationFrame(() => {
                     drawVideoBackground(url, ctx, W, H);
-                }
-            });
+                });
+            }
         }
 
         // SSOT: Image background drawer (image-only)
@@ -2327,20 +2347,51 @@
             ctx.drawImage(media, sx, sy, sw, sh, 0, 0, W, H);
         }
 
-        // SSOT: Canvas readiness (removes Canvas still not ready spam)
+        // SSOT: Canvas readiness with proper scaling
         async function ensureCanvasReady() {
             const canvas = document.getElementById('live-preview-canvas');
             if (!canvas) return false;
             
-            const dpr = window.devicePixelRatio || 1;
-            const w = 1080, h = 1920;      // SSOT: preview frame size
-            canvas.width  = Math.round(w * dpr);
-            canvas.height = Math.round(h * dpr);
-            canvas.style.width  = `${w}px`;
-            canvas.style.height = `${h}px`;
+            // Get container dimensions for responsive sizing
+            const container = canvas.parentElement;
+            if (!container) return false;
             
+            const containerRect = container.getBoundingClientRect();
+            if (containerRect.width === 0 || containerRect.height === 0) {
+                console.log('[canvas-ready] Container has no dimensions yet');
+                return false;
+            }
+            
+            // Calculate responsive size while maintaining 9:16 aspect ratio
+            const targetAspect = 9 / 16;
+            let cssW, cssH;
+            
+            if (containerRect.width / containerRect.height > targetAspect) {
+                // Container is wider than target aspect - fit by height
+                cssH = containerRect.height;
+                cssW = cssH * targetAspect;
+            } else {
+                // Container is taller than target aspect - fit by width
+                cssW = containerRect.width;
+                cssH = cssW / targetAspect;
+            }
+            
+            // Cap DPR to 2 for performance
+            const dpr = Math.min(window.devicePixelRatio || 1, 2);
+            
+            // Set canvas backing size (high-res for crisp rendering)
+            canvas.width = Math.round(cssW * dpr);
+            canvas.height = Math.round(cssH * dpr);
+            
+            // Set CSS size (responsive display size)
+            canvas.style.width = `${cssW}px`;
+            canvas.style.height = `${cssH}px`;
+            
+            // Set up context for high-DPI rendering
             const ctx = canvas.getContext('2d');
             ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+            
+            console.log('[canvas-ready] Canvas sized:', { cssW, cssH, dpr, backingW: canvas.width, backingH: canvas.height });
             
             await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
             return true;
@@ -2348,7 +2399,6 @@
 
         // SSOT Preview Pipeline: background first, then caption overlay
         async function renderPreviewFromState(state) {
-            const W = 1080, H = 1920; // SSOT frame
             const canvas = document.getElementById('live-preview-canvas');
             if (!canvas) return;
             
@@ -2359,6 +2409,11 @@
             }
             
             const ctx = canvas.getContext('2d', { alpha: false });
+            
+            // Get logical canvas dimensions (after DPR scaling)
+            const dpr = Math.min(window.devicePixelRatio || 1, 2);
+            const W = canvas.width / dpr;
+            const H = canvas.height / dpr;
 
             // 1) Fill back buffer (guard against flicker)
             ctx.fillStyle = '#000';
@@ -2385,10 +2440,10 @@
                     }
                 } catch (error) {
                     console.error('[preview] Background load failed:', error);
-                    // Reset state on failure to prevent stuck black canvas
-                    window.state.background = undefined;
+                    // Don't reset state on failure - allow user to try again or switch to different media
+                    // Just show error and continue with black background
                     if (typeof showToast === 'function') {
-                        showToast('Background failed to load — please try another image or video.');
+                        showToast(`Background failed to load: ${error.message || 'Unknown error'}`);
                     }
                 }
             } else {
@@ -3594,6 +3649,33 @@
                 localStorage.setItem("theme", isDark ? "dark" : "light");
                 themeToggle.textContent = isDark ? "🌙" : "☀️";
             });
+        }
+
+        // Click-to-play functionality for video backgrounds
+        const canvas = document.getElementById('live-preview-canvas');
+        if (canvas) {
+            canvas.addEventListener('click', () => {
+                if (currentVideo && window.state?.background?.url) {
+                    const media = detectMedia(window.state.background.url, window.state.background.mime);
+                    if (media.kind === 'video') {
+                        if (currentVideo.paused) {
+                            currentVideo.play().catch(e => console.log('Video play failed:', e));
+                            // Restart the animation loop
+                            const canvas = document.getElementById('live-preview-canvas');
+                            if (canvas) {
+                                const ctx = canvas.getContext('2d');
+                                const dpr = Math.min(window.devicePixelRatio || 1, 2);
+                                const W = canvas.width / dpr;
+                                const H = canvas.height / dpr;
+                                drawVideoBackground(window.state.background.url, ctx, W, H);
+                            }
+                        } else {
+                            currentVideo.pause();
+                        }
+                    }
+                }
+            });
+            canvas.style.cursor = 'pointer';
         }
 
         // Initialize authentication using existing system
