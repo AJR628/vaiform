@@ -1532,7 +1532,10 @@
             // SSOT: Use unified background setter
             const bg = {
                 kind: asset.provider === 'ai' ? 'ai' : (asset.provider === 'uploaded' ? 'upload' : 'stock'),
-                url: asset.fileUrl || asset.url || asset.thumbUrl
+                url: asset.fileUrl || asset.url || asset.thumbUrl,
+                mime: asset.mime,
+                w: asset.width,
+                h: asset.height
             };
             setPreviewBackground(bg);
             
@@ -2129,11 +2132,32 @@
         }
 
         // Fix C: Live preview functionality without infinite retry
+        // SSOT: Infer media type from URL and MIME
+        function inferMediaType(url, mime) {
+            if (mime?.startsWith('video/')) return 'video';
+            if (mime?.startsWith('image/')) return 'image';
+            if (/\.mp4(\?|#|$)/i.test(url)) return 'video';
+            if (/\.(png|jpe?g|webp|gif)(\?|#|$)/i.test(url)) return 'image';
+            return 'image'; // safe default for our UI
+        }
+
         // SSOT: Single background setter for all background types
         function setPreviewBackground(bg) {
             if (!window.state) window.state = {};
-            window.state.background = bg;
-            console.log('[preview] Background set:', bg);
+            
+            // Normalize media type at selection time (SSOT)
+            const mediaType = inferMediaType(bg.url, bg.mime);
+            const normalizedBg = {
+                kind: bg.kind,
+                url: bg.url,
+                mediaType: mediaType,
+                mime: bg.mime || (mediaType === 'video' ? 'video/mp4' : 'image/png'),
+                w: bg.w,
+                h: bg.h
+            };
+            
+            window.state.background = normalizedBg;
+            console.log('[preview] bg SSOT', JSON.stringify(normalizedBg));
             queuePreviewRender();
         }
 
@@ -2154,6 +2178,58 @@
             renderPreviewFromState(state);
         }
 
+        // Image loader (CORS-safe)
+        function loadBackgroundImage(bg) {
+            return new Promise((res, rej) => {
+                const img = new Image();
+                img.crossOrigin = 'anonymous';
+                img.onload = () => res(img);
+                img.onerror = e => rej(new DOMException('Image decode failed', 'EncodingError'));
+                img.src = bg.url;
+            });
+        }
+
+        // Video loader (first frame grab)
+        function loadBackgroundVideo(bg) {
+            return new Promise((res, rej) => {
+                const v = document.createElement('video');
+                v.crossOrigin = 'anonymous';
+                v.playsInline = true;
+                v.muted = true;
+                v.preload = 'auto';
+                v.src = bg.url;
+                const onCanPlay = async () => {
+                    try {
+                        v.currentTime = 0;
+                        await v.play().catch(()=>{}); // kickstart for frame readiness
+                        res(v);
+                    } catch (e) { rej(e); }
+                };
+                v.addEventListener('canplay', onCanPlay, { once: true });
+                v.onerror = () => rej(new DOMException('Video decode failed', 'EncodingError'));
+            });
+        }
+
+        // Draw frame with cover-fit cropping
+        function drawFrame(ctx, media, W, H) {
+            const arCanvas = W / H;
+            const arMedia = media.videoWidth ? media.videoWidth / media.videoHeight : media.width / media.height;
+            
+            let sx=0, sy=0, sw, sh;
+            if (arMedia > arCanvas) { 
+                sh = media.videoHeight || media.height; 
+                sw = Math.floor(sh * arCanvas);
+                sx = Math.floor(((media.videoWidth || media.width) - sw) / 2); 
+                sy = 0;
+            } else {
+                sw = media.videoWidth || media.width; 
+                sh = Math.floor(sw / arCanvas);
+                sx = 0; 
+                sy = Math.floor(((media.videoHeight || media.height) - sh) / 2);
+            }
+            ctx.drawImage(media, sx, sy, sw, sh, 0, 0, W, H);
+        }
+
         // SSOT Preview Pipeline: background first, then caption overlay
         async function renderPreviewFromState(state) {
             const W = 1080, H = 1920; // SSOT frame
@@ -2171,33 +2247,37 @@
             ctx.fillRect(0, 0, W, H);
 
             // 2) Draw BACKGROUND (must exist)
-            const bgUrl = state?.bg?.url;
-            console.log('[preview] bg=', bgUrl, 'ov=', !!state?.captionPreview?.imageUrl);
-            console.log('[preview] state.bg=', state?.bg);
+            const bg = state?.bg;
+            console.log('[preview] bg=', bg?.url, 'ov=', !!state?.captionPreview?.imageUrl);
+            console.log('[preview] state.bg=', bg);
             
-            if (bgUrl) {
+            if (bg?.url) {
                 try {
-                    const img = new Image();
-                    img.crossOrigin = 'anonymous';
-                    img.decoding = 'async';
-                    img.src = bgUrl;
-                    await img.decode();
-
-                    console.log('[preview] Background loaded:', { width: img.width, height: img.height, canvasW: canvas.width, canvasH: canvas.height });
-
-                    // cover-fit crop to 1080x1920
-                    const arCanvas = W / H, arImg = img.width / img.height;
-                    let sx=0, sy=0, sw=img.width, sh=img.height;
-                    if (arImg > arCanvas) { 
-                        sh = img.height; sw = Math.floor(sh * arCanvas);
-                        sx = Math.floor((img.width - sw) / 2); sy = 0;
+                    let media;
+                    if (bg.mediaType === 'video') {
+                        console.log('[preview] loader video', bg.url);
+                        media = await loadBackgroundVideo(bg);
                     } else {
-                        sw = img.width; sh = Math.floor(sw / arCanvas);
-                        sx = 0; sy = Math.floor((img.height - sh) / 2);
+                        console.log('[preview] loader image', bg.url);
+                        media = await loadBackgroundImage(bg);
                     }
-                    ctx.drawImage(img, sx, sy, sw, sh, 0, 0, W, H);
+
+                    console.log('[preview] Background loaded:', { 
+                        width: media.videoWidth || media.width, 
+                        height: media.videoHeight || media.height, 
+                        canvasW: canvas.width, 
+                        canvasH: canvas.height 
+                    });
+
+                    // Draw with cover-fit cropping
+                    drawFrame(ctx, media, W, H);
                 } catch (error) {
                     console.error('[preview] Background load failed:', error);
+                    // Reset state on failure to prevent stuck black canvas
+                    window.state.background = undefined;
+                    if (typeof showToast === 'function') {
+                        showToast('Background failed to load — please try another image or video.');
+                    }
                 }
             } else {
                 console.warn('[preview] MISSING bg url - showing caption overlay only');
@@ -3068,7 +3148,11 @@
               // SSOT: Use unified background setter for AI images
               const bg = {
                 kind: 'ai',
-                url: url
+                url: url,
+                mediaType: 'image',
+                mime: 'image/png',
+                w: 1080,
+                h: 1920
               };
               setPreviewBackground(bg);
               updateRenderPreview();
