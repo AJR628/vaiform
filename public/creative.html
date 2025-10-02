@@ -1529,6 +1529,12 @@
             if (!window.state) window.state = {};
             window.state.selectedAsset = asset;
             
+            // Set background state for SSOT preview
+            window.state.bg = {
+                kind: asset.provider === 'ai' ? 'ai' : (asset.provider === 'uploaded' ? 'upload' : 'stock'),
+                url: asset.fileUrl || asset.url || asset.thumbUrl
+            };
+            
             // Special handling for Pexels assets - high-quality preview
             if (asset.provider === 'pexels' && asset.src) {
                 // Ensure the asset has the photo data for later use
@@ -2120,6 +2126,75 @@
         }
 
         // Fix C: Live preview functionality without infinite retry
+        // SSOT Preview Pipeline: background first, then caption overlay
+        async function renderPreviewFromState(state) {
+            const W = 1080, H = 1920; // SSOT frame
+            const canvas = document.getElementById('live-preview-canvas');
+            if (!canvas) return;
+            
+            const ctx = canvas.getContext('2d', { alpha: false });
+
+            // Ensure pixel dimensions (not just CSS)
+            canvas.width = W; 
+            canvas.height = H;
+
+            // 1) Fill back buffer (guard against flicker)
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, W, H);
+
+            // 2) Draw BACKGROUND (must exist)
+            const bgUrl = state?.bg?.url || selectedAsset?.fileUrl || selectedAsset?.url || selectedAsset?.thumbUrl;
+            console.log('[preview] bg=', bgUrl, 'ov=', !!state?.captionPreview?.imageUrl);
+            console.log('[preview] state.bg=', state?.bg);
+            console.log('[preview] selectedAsset=', selectedAsset);
+            
+            if (bgUrl) {
+                try {
+                    const img = new Image();
+                    img.crossOrigin = 'anonymous';
+                    img.decoding = 'async';
+                    img.src = bgUrl;
+                    await img.decode();
+
+                    console.log('[preview] Background loaded:', { width: img.width, height: img.height, canvasW: canvas.width, canvasH: canvas.height });
+
+                    // cover-fit crop to 1080x1920
+                    const arCanvas = W / H, arImg = img.width / img.height;
+                    let sx=0, sy=0, sw=img.width, sh=img.height;
+                    if (arImg > arCanvas) { 
+                        sh = img.height; sw = Math.floor(sh * arCanvas);
+                        sx = Math.floor((img.width - sw) / 2); sy = 0;
+                    } else {
+                        sw = img.width; sh = Math.floor(sw / arCanvas);
+                        sx = 0; sy = Math.floor((img.height - sh) / 2);
+                    }
+                    ctx.drawImage(img, sx, sy, sw, sh, 0, 0, W, H);
+                } catch (error) {
+                    console.error('[preview] Background load failed:', error);
+                }
+            } else {
+                console.log('[preview] MISSING bg url');
+            }
+
+            // 3) Draw CAPTION OVERLAY from caption preview API (SSOT)
+            const overlayUrl = state?.captionPreview?.imageUrl; // data:image/png;base64,...
+            if (overlayUrl) {
+                try {
+                    const ov = new Image();
+                    ov.decoding = 'async';
+                    ov.src = overlayUrl;
+                    await ov.decode();
+
+                    // SSOT placement: bottom centered (meta.yPct etc. is already baked into the PNG)
+                    const x = Math.floor((W - ov.width) / 2);
+                    const y = H - ov.height;
+                    ctx.drawImage(ov, x, y);
+                } catch (error) {
+                    console.error('[preview] Overlay load failed:', error);
+                }
+            }
+        }
+
         function updateLivePreview() {
             if (!currentQuote || !selectedAsset) return;
             
@@ -2179,30 +2254,16 @@
                 if (ov) ov.style.display = hasVideo ? 'none' : 'block';
             } catch {}
 
-            // 9:16 CSS sizing + HiDPI backing
-            const { cssW, cssH } = layoutPreviewDims();
-            const { ctx } = _setupHiDPICanvas(canvas, cssW, cssH);
-
-            // Choose the background URL from whatever the app thinks it should be
-            let url = selectedAsset?.previewUrl || selectedAsset?.url || selectedAsset?.thumbUrl || selectedAsset?.fileUrl;
-            
-            // >>> Insert this one line to force hi-res for Pexels:
-            url = _ensureHiResPreviewUrl(url, canvas);
-
-            // Load & draw the background
-            const img = new Image();
-            img.crossOrigin = 'anonymous';
-            img.decoding = 'async';
-            img.src = url;
-            
-            img.onload = () => {
-                // COVER draw (no stretching)
-                drawCover(ctx, img, cssW, cssH);
-                
-                // Debug
-                window._currentPreviewUrl = url;
-                _tapCanvas('bg:updateLivePreview');
+            // Use SSOT preview pipeline
+            const state = {
+                bg: window.state?.bg || { 
+                    kind: selectedAsset.provider === 'ai' ? 'ai' : (selectedAsset.provider === 'uploaded' ? 'upload' : 'stock'),
+                    url: selectedAsset.fileUrl || selectedAsset.url || selectedAsset.thumbUrl
+                },
+                captionPreview: captionOverlayState // This should contain the caption preview data
             };
+            
+            renderPreviewFromState(state);
         }
 
         function drawCaptionOverlay(ctx, canvasWidth, canvasHeight) {
@@ -2979,6 +3040,13 @@
                 width: 1080, 
                 height: 1920,
                 bgSSOT: bgSSOT // Store SSOT for backend 
+              };
+              
+              // Set background state for SSOT preview
+              if (!window.state) window.state = {};
+              window.state.bg = {
+                kind: 'ai',
+                url: url
               };
               updateRenderPreview();
               updateRenderButtonState();
