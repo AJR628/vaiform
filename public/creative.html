@@ -1254,13 +1254,33 @@
                 // Initialize the overlay system
                 initCaptionOverlay({ stageSel: '#stage', mediaSel: '#previewMedia' });
                 
-                // Set up the preview media source
-                const previewMedia = document.getElementById('previewMedia');
-                const canvas = document.getElementById('live-preview-canvas');
-                if (previewMedia && canvas) {
-                    // Convert canvas to image for the overlay system
-                    const dataUrl = canvas.toDataURL('image/png');
-                    previewMedia.src = dataUrl;
+                // Set up the preview media source - wait for canvas to be ready
+                const setupCanvasBackground = () => {
+                    const previewMedia = document.getElementById('previewMedia');
+                    const canvas = document.getElementById('live-preview-canvas');
+                    
+                    if (previewMedia && canvas && canvas.width > 0 && canvas.height > 0) {
+                        // Convert canvas to image for the overlay system
+                        const dataUrl = canvas.toDataURL('image/png');
+                        previewMedia.src = dataUrl;
+                        console.log('[overlay-system] Canvas background set');
+                        return true;
+                    }
+                    return false;
+                };
+                
+                // Try to set canvas background immediately
+                if (!setupCanvasBackground()) {
+                    // If canvas not ready, wait for it
+                    const checkCanvas = () => {
+                        if (setupCanvasBackground()) {
+                            console.log('[overlay-system] Canvas background set after wait');
+                        } else {
+                            // Retry in 100ms
+                            setTimeout(checkCanvas, 100);
+                        }
+                    };
+                    checkCanvas();
                 }
                 
                 // Set initial quote if available
@@ -1293,6 +1313,11 @@
                 if (!overlaySystemInitialized) {
                     initOverlaySystem();
                 }
+                
+                // Update overlay with current quote if available
+                if (currentQuote?.text) {
+                    updateOverlayCaption(currentQuote.text.trim(), true);
+                }
             } else {
                 // Show legacy overlay system
                 stage.style.display = 'none';
@@ -1314,9 +1339,30 @@
                     setQuote(text);
                 }
                 
+                // Update canvas background if needed
+                updateOverlayCanvasBackground();
+                
                 console.log('[overlay-caption] Updated overlay with text:', text?.substring(0, 50));
             } catch (error) {
                 console.error('[overlay-caption] Failed to update overlay:', error);
+            }
+        }
+        
+        // Update overlay canvas background
+        function updateOverlayCanvasBackground() {
+            if (!useOverlayMode || !overlaySystemInitialized) return;
+            
+            try {
+                const previewMedia = document.getElementById('previewMedia');
+                const canvas = document.getElementById('live-preview-canvas');
+                
+                if (previewMedia && canvas && canvas.width > 0 && canvas.height > 0) {
+                    const dataUrl = canvas.toDataURL('image/png');
+                    previewMedia.src = dataUrl;
+                    console.log('[overlay-canvas] Background updated');
+                }
+            } catch (error) {
+                console.warn('[overlay-canvas] Failed to update background:', error);
             }
         }
         
@@ -1735,6 +1781,10 @@
             if (currentQuote) {
                 updateLivePreview();
                 updateCaptionOverlay(currentQuote.text.trim(), true);
+                // Update overlay background if in overlay mode
+                if (useOverlayMode) {
+                    updateOverlayCanvasBackground();
+                }
             }
             
             // Scroll to render section
@@ -2089,6 +2139,42 @@
         
         // Build proper payload with all controls wired
         function buildCaptionPayload(text, captionStyle) {
+            // SSOT: Check if overlay mode is enabled and use overlay metadata
+            if (useOverlayMode && overlaySystemInitialized) {
+                try {
+                    const { getCaptionMeta } = window;
+                    if (typeof getCaptionMeta === 'function') {
+                        const overlayMeta = getCaptionMeta();
+                        
+                        // Validate overlay meta has required fields
+                        if (overlayMeta && typeof overlayMeta.yPct === 'number' && overlayMeta.text) {
+                            console.log('[overlay-payload] Using overlay metadata:', overlayMeta);
+                            
+                            // Convert overlay meta to SSOT payload format
+                            return {
+                                text: overlayMeta.text || text,
+                                yPct: overlayMeta.yPct,
+                                xPct: overlayMeta.xPct,
+                                wPct: overlayMeta.wPct,
+                                fontFamily: overlayMeta.fontFamily,
+                                weightCss: overlayMeta.weightCss,
+                                sizePx: overlayMeta.fontPx,
+                                color: overlayMeta.color,
+                                opacity: overlayMeta.opacity,
+                                textAlign: overlayMeta.textAlign || 'center',
+                                padding: overlayMeta.paddingPx ?? 12,
+                                placement: 'custom'  // SSOT: signals server to use manual placement
+                            };
+                        } else {
+                            console.warn('[overlay-payload] Overlay meta incomplete, falling back to legacy');
+                        }
+                    }
+                } catch (error) {
+                    console.warn('[overlay-payload] Failed to get overlay metadata, falling back to legacy:', error);
+                }
+            }
+            
+            // Legacy payload format (existing logic)
             const placement = captionStyle.placement || 'center';
             const yPct = captionStyle.yPct ?? yPctFromPlacement(placement);
             const opacity = preciseFloat0to1(captionStyle.opacity || 80);
