@@ -246,6 +246,11 @@ import captionPreviewRoutes from "./routes/caption.preview.routes.js";
 app.use("/api", captionPreviewRoutes);
 console.log("✅ Mounted caption preview at /api/caption/preview");
 
+// Mount caption render routes
+import captionRenderRoutes from "./routes/caption.render.routes.js";
+app.use("/api", captionRenderRoutes);
+console.log("✅ Mounted caption render at /api/caption/render");
+
 // Mount user routes
 import userRoutes from "./routes/user.routes.js";
 app.use("/api/user", userRoutes);

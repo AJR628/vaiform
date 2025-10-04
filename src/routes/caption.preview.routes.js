@@ -1,11 +1,39 @@
 import express from "express";
 import pkg from "@napi-rs/canvas";
+import { CaptionMetaSchema } from '../schemas/caption.schema.js';
 const { createCanvas } = pkg;
 
 const router = express.Router();
 
 router.post("/caption/preview", express.json(), async (req, res) => {
   try {
+    // Check if this is the new overlay format
+    const isOverlayFormat = req.body.placement === 'custom' && req.body.yPct !== undefined;
+    
+    if (isOverlayFormat) {
+      // Handle new draggable overlay format
+      const parsed = CaptionMetaSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ success: false, error: "INVALID_INPUT", detail: parsed.error.flatten() });
+      }
+      
+      const meta = parsed.data;
+      const SAFE_TOP = 0.10, SAFE_BOTTOM = 0.90;
+      
+      // Clamp vertical placement
+      const yPct = Math.min(Math.max(meta.yPct, SAFE_TOP), SAFE_BOTTOM);
+      const payload = { ...meta, yPct };
+      
+      try {
+        const previewUrl = await renderPreviewImage(payload);
+        return res.json({ previewUrl, meta: payload });
+      } catch (e) {
+        console.error('preview failed', e);
+        return res.status(500).json({ success: false, error: 'render_failed' });
+      }
+    }
+    
+    // Legacy format handling
     const b = req.body || {};
     const s = b.style || {};
 
@@ -288,5 +316,85 @@ router.get("/diag/caption-smoke", async (req, res) => {
     });
   }
 });
+
+// New overlay format renderer
+async function renderPreviewImage(meta) {
+  const W = 1080, H = 1920; // Standard canvas dimensions
+  const canvas = createCanvas(W, H);
+  const ctx = canvas.getContext("2d");
+  ctx.clearRect(0, 0, W, H);
+
+  // Extract positioning from meta
+  const x = Math.round((meta.xPct ?? 0.10) * W);
+  const y = Math.round(meta.yPct * H);
+  const maxWidth = Math.round((meta.wPct ?? 0.80) * W);
+  
+  // Font setup
+  const font = `${meta.weightCss || '800'} ${meta.sizePx}px ${pickFont(meta.fontFamily)}`;
+  const color = toRgba(meta.color, meta.opacity ?? 1);
+  
+  ctx.font = font;
+  ctx.fillStyle = color;
+  ctx.textAlign = meta.textAlign || 'center';
+  ctx.textBaseline = 'top';
+  
+  // Text wrapping
+  const words = meta.text.split(/\s+/);
+  const lines = [];
+  let line = "";
+  
+  for (const word of words) {
+    const test = line ? line + " " + word : word;
+    if (ctx.measureText(test).width > maxWidth && line) {
+      lines.push(line);
+      line = word;
+    } else {
+      line = test;
+    }
+  }
+  if (line) lines.push(line);
+  
+  // Calculate text dimensions
+  const lineHeight = meta.sizePx * 1.15;
+  const totalTextH = lines.length * lineHeight;
+  
+  // Position text
+  let textY = y;
+  if (meta.textAlign === 'center') {
+    textY = y - (totalTextH / 2);
+  } else if (meta.textAlign === 'bottom') {
+    textY = y - totalTextH;
+  }
+  
+  // Draw text with shadow
+  ctx.shadowColor = "rgba(0,0,0,0.6)";
+  ctx.shadowBlur = 12;
+  ctx.shadowOffsetY = 2;
+  
+  lines.forEach((line, index) => {
+    const lineY = textY + (index * lineHeight);
+    ctx.fillText(line, x, lineY);
+  });
+  
+  return canvas.toDataURL("image/png");
+}
+
+function pickFont(fontFamily) {
+  const fontMap = {
+    'DejaVuSans': 'DejaVu Sans',
+    'DejaVu Sans Local': 'DejaVu Sans',
+    'DejaVu Serif Local': 'DejaVu Serif',
+    'DejaVu Serif Bold Local': 'DejaVu Serif Bold'
+  };
+  return fontMap[fontFamily] || 'DejaVu Sans';
+}
+
+function toRgba(color, opacity) {
+  // Simple color conversion - in production you'd want a proper color parser
+  if (color.startsWith('rgb')) {
+    return color.replace('rgb', 'rgba').replace(')', `, ${opacity})`);
+  }
+  return `rgba(255, 255, 255, ${opacity})`;
+}
 
 export default router;

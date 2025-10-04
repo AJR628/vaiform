@@ -349,6 +349,26 @@
         <div class="content-box bg-white dark:bg-gray-800 rounded-lg p-6 space-y-4 border border-gray-200 dark:border-gray-600">
             <h2 class="text-xl font-semibold text-gray-900 dark:text-white">Caption Style</h2>
             
+            <!-- Overlay Mode Toggle -->
+            <div class="mb-4">
+                <label class="flex items-center gap-2">
+                    <input type="checkbox" id="overlay-mode-toggle" class="rounded" />
+                    <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Use Draggable Overlay</span>
+                </label>
+            </div>
+            
+            <!-- Overlay Controls (hidden by default) -->
+            <div id="overlay-controls" class="mb-4 hidden">
+                <div class="flex gap-2">
+                    <button id="preview-overlay-btn" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm">
+                        Preview
+                    </button>
+                    <button id="render-overlay-btn" class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded text-sm">
+                        Render
+                    </button>
+                </div>
+            </div>
+            
             <div class="grid grid-cols-2 gap-4">
                 <!-- Font Family -->
                 <div>
@@ -495,12 +515,16 @@
                 <!-- Fix A: Give the preview wrapper a predictable size -->
                 <div class="relative mx-auto bg-black rounded-lg overflow-hidden" style="width: 360px; aspect-ratio: 9 / 16;">
                     <canvas id="live-preview-canvas" class="w-full h-full block"></canvas>
-                    <!-- TASK 4: Fix overlay container to match canvas CSS size -->
+                    <!-- Legacy caption overlay (hidden when using new overlay system) -->
                     <img
                       id="caption-overlay"
                       class="absolute inset-0 pointer-events-none block w-full h-full"
                       style="z-index:2"
                     />
+                    <!-- New draggable caption overlay container -->
+                    <div id="stage" class="absolute inset-0 w-full h-full" style="z-index:3; display:none;">
+                        <img id="previewMedia" class="w-full h-full object-cover" />
+                    </div>
                 </div>
             </div>
             
@@ -952,6 +976,10 @@
         let captionOverlayState = null;
         let captionDebounceTimer = null;
         
+        // New draggable overlay system
+        let overlaySystemInitialized = false;
+        let useOverlayMode = false;
+        
         // Debounced caption preview generator
         function debouncedPreview(delay = 200) {
             clearTimeout(captionDebounceTimer);
@@ -1132,6 +1160,9 @@
                     // Import the caption preview function
                     const { generateCaptionPreview, getLastCaptionPNG, createCaptionOverlay } = await import('./js/caption-preview.js');
                     
+                    // Import the new draggable overlay system
+                    const { initCaptionOverlay, getCaptionMeta, applyCaptionMeta, setQuote } = await import('./js/caption-overlay.js');
+                    
                     // Build proper payload with all controls wired
                     const payload = buildCaptionPayload(text, captionStyle);
                     
@@ -1212,6 +1243,167 @@
                 }
             }, 300); // 300ms debounce
         }
+        
+        // New draggable overlay system functions
+        async function initOverlaySystem() {
+            if (overlaySystemInitialized) return;
+            
+            try {
+                const { initCaptionOverlay, getCaptionMeta, applyCaptionMeta, setQuote } = await import('./js/caption-overlay.js');
+                
+                // Initialize the overlay system
+                initCaptionOverlay({ stageSel: '#stage', mediaSel: '#previewMedia' });
+                
+                // Set up the preview media source
+                const previewMedia = document.getElementById('previewMedia');
+                const canvas = document.getElementById('live-preview-canvas');
+                if (previewMedia && canvas) {
+                    // Convert canvas to image for the overlay system
+                    const dataUrl = canvas.toDataURL('image/png');
+                    previewMedia.src = dataUrl;
+                }
+                
+                // Set initial quote if available
+                if (currentQuote?.text) {
+                    setQuote(currentQuote.text);
+                }
+                
+                overlaySystemInitialized = true;
+                console.log('[overlay-system] Initialized draggable overlay');
+            } catch (error) {
+                console.error('[overlay-system] Failed to initialize:', error);
+            }
+        }
+        
+        function toggleOverlayMode() {
+            const toggle = document.getElementById('overlay-mode-toggle');
+            const stage = document.getElementById('stage');
+            const legacyOverlay = document.getElementById('caption-overlay');
+            const overlayControls = document.getElementById('overlay-controls');
+            
+            useOverlayMode = toggle.checked;
+            
+            if (useOverlayMode) {
+                // Show new overlay system
+                stage.style.display = 'block';
+                legacyOverlay.style.display = 'none';
+                overlayControls.classList.remove('hidden');
+                
+                // Initialize overlay system if not already done
+                if (!overlaySystemInitialized) {
+                    initOverlaySystem();
+                }
+            } else {
+                // Show legacy overlay system
+                stage.style.display = 'none';
+                legacyOverlay.style.display = 'block';
+                overlayControls.classList.add('hidden');
+            }
+            
+            console.log('[overlay-mode] Switched to:', useOverlayMode ? 'draggable overlay' : 'legacy overlay');
+        }
+        
+        // New overlay-based caption update function
+        async function updateOverlayCaption(text = '', show = true) {
+            if (!useOverlayMode || !overlaySystemInitialized) return;
+            
+            try {
+                const { setQuote, getCaptionMeta, applyCaptionMeta } = await import('./js/caption-overlay.js');
+                
+                if (show && text?.trim()) {
+                    setQuote(text);
+                }
+                
+                console.log('[overlay-caption] Updated overlay with text:', text?.substring(0, 50));
+            } catch (error) {
+                console.error('[overlay-caption] Failed to update overlay:', error);
+            }
+        }
+        
+        // Convert overlay meta to SSOT payload
+        function overlayMetaToSSOT(meta) {
+            return {
+                text: meta.text,
+                yPct: meta.yPct,          // SSOT vertical anchor (server clamps to safe margins)
+                xPct: meta.xPct,          // helper; server may ignore
+                wPct: meta.wPct,          // helper; server may compute its own wrap width
+                fontFamily: meta.fontFamily,
+                weightCss: meta.weightCss,
+                sizePx: meta.fontPx,
+                color: meta.color,
+                opacity: meta.opacity,
+                textAlign: meta.textAlign || 'center',
+                padding: meta.paddingPx ?? 12,
+                placement: 'custom',      // signals server to use manual placement
+                maxWidthPct: Math.round((meta.wPct || 0.8) * 100),
+                showBox: false,
+                boxColor: 'transparent'
+            };
+        }
+        
+        // Preview function for overlay system
+        async function previewOverlayCaption() {
+            if (!useOverlayMode || !overlaySystemInitialized) return;
+            
+            try {
+                const { getCaptionMeta } = await import('./js/caption-overlay.js');
+                const meta = getCaptionMeta();
+                const payload = overlayMetaToSSOT(meta);
+                
+                const res = await fetch('/api/caption/preview', {
+                    method: 'POST', 
+                    headers: {'Content-Type': 'application/json'}, 
+                    body: JSON.stringify(payload)
+                });
+                
+                if (!res.ok) {
+                    const error = await res.json();
+                    throw new Error(error.detail || 'Preview failed');
+                }
+                
+                const { previewUrl } = await res.json();
+                const previewMedia = document.getElementById('previewMedia');
+                if (previewMedia) {
+                    previewMedia.src = previewUrl;
+                }
+                
+                console.log('[overlay-preview] Preview generated successfully');
+            } catch (error) {
+                console.error('[overlay-preview] Failed:', error);
+            }
+        }
+        
+        // Render function for overlay system
+        async function renderOverlayCaption() {
+            if (!useOverlayMode || !overlaySystemInitialized) return;
+            
+            try {
+                const { getCaptionMeta } = await import('./js/caption-overlay.js');
+                const meta = getCaptionMeta();
+                const payload = overlayMetaToSSOT(meta);
+                
+                const res = await fetch('/api/caption/render', {
+                    method: 'POST', 
+                    headers: {'Content-Type': 'application/json'}, 
+                    body: JSON.stringify(payload)
+                });
+                
+                if (!res.ok) {
+                    const error = await res.json();
+                    throw new Error(error.detail || 'Render failed');
+                }
+                
+                const { jobId, outputUrl } = await res.json();
+                console.log('[overlay-render] Render job created:', jobId);
+                
+                // Handle job creation / redirect / poll as you already do
+                // This would integrate with your existing render pipeline
+                
+            } catch (error) {
+                console.error('[overlay-render] Failed:', error);
+            }
+        }
+        
         // Regen helpers: only decrement on LLM actions
         window.VAI = window.VAI || {};
         VAI.state = VAI.state || { regensLeft: 10 };
@@ -3049,11 +3241,20 @@
         };
         document.getElementById('render-btn').onclick = renderShort;
         
+        // Overlay mode toggle event listener
+        document.getElementById('overlay-mode-toggle').onchange = toggleOverlayMode;
+        
+        // Overlay control event listeners
+        document.getElementById('preview-overlay-btn').onclick = previewOverlayCaption;
+        document.getElementById('render-overlay-btn').onclick = renderOverlayCaption;
+        
         // Caption style event listeners
         document.getElementById('caption-font').onchange = () => {
             updateRenderPreview();
             updateLivePreview();
             updateCaptionOverlay((currentQuote?.text||'').trim(), true);
+            updateOverlayCaption((currentQuote?.text||'').trim(), true);
+            updateOverlayCaption((currentQuote?.text||'').trim(), true);
         };
         document.getElementById('caption-weight').onchange = () => {
             const newWeight = document.getElementById('caption-weight').value;
@@ -3061,13 +3262,15 @@
             updateRenderPreview();
             updateLivePreview();
             updateCaptionOverlay((currentQuote?.text||'').trim(), true);
+            updateOverlayCaption((currentQuote?.text||'').trim(), true);
         };
         // Legacy caption-size handler removed - now handled by initCaptionSizeUI()
         document.getElementById('caption-opacity').oninput = () => { 
             const newOpacity = document.getElementById('caption-opacity').value;
             console.log('[controls] Opacity changed to:', newOpacity);
             updateCaptionStyleValues(); 
-            updateCaptionOverlay((currentQuote?.text||'').trim(), true); 
+            updateCaptionOverlay((currentQuote?.text||'').trim(), true);
+            updateOverlayCaption((currentQuote?.text||'').trim(), true); 
         };
         document.getElementById('caption-placement').onchange = () => {
             const newPlacement = document.getElementById('caption-placement').value;
@@ -3092,11 +3295,13 @@
             updateRenderPreview();
             updateLivePreview();
             updateCaptionOverlay((currentQuote?.text||'').trim(), true);
+            updateOverlayCaption((currentQuote?.text||'').trim(), true);
         };
         document.getElementById('caption-background').onchange = () => {
             updateRenderPreview();
             updateLivePreview();
             updateCaptionOverlay((currentQuote?.text||'').trim(), true);
+            updateOverlayCaption((currentQuote?.text||'').trim(), true);
         };
         document.getElementById('caption-bg-opacity').oninput = () => { updateCaptionStyleValues(); updateCaptionOverlay((currentQuote?.text||'').trim(), true); };
         
