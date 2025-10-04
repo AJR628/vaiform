@@ -935,6 +935,8 @@
         // --- Debounced caption overlay refresh (prevents blocking assets) ---
         let overlayRefreshTimer = null;
         function queueCaptionOverlayRefresh() {
+          // When draggable overlay mode is active, do not trigger legacy PNG overlay refresh
+          try { if (useOverlayMode) return; } catch {}
           if (overlayRefreshTimer) clearTimeout(overlayRefreshTimer);
           overlayRefreshTimer = setTimeout(() => {
             try {
@@ -982,6 +984,8 @@
         
         // Debounced caption preview generator
         function debouncedPreview(delay = 200) {
+            // Do not run legacy debounced PNG generation while overlay mode is enabled
+            try { if (useOverlayMode) return; } catch {}
             clearTimeout(captionDebounceTimer);
             captionDebounceTimer = setTimeout(() => {
                 if (currentQuote?.text?.trim()) {
@@ -998,6 +1002,8 @@
         }
         
         async function updateCaptionOverlay(text = '', show = true) {
+            // Gate legacy PNG overlay when draggable overlay mode is on
+            try { if (useOverlayMode) return; } catch {}
             console.log('[preview-init] updateCaptionOverlay called with:', { text: text?.substring(0, 50), show });
             
             const overlay = document.getElementById('caption-overlay');
@@ -1212,12 +1218,16 @@
                         fontPx: result.meta?.fontPx
                     });
                     
-                    // Create and position the overlay image with placement
-                    createCaptionOverlay(result, overlay, { 
-                        previewW: geometry.cssW, 
-                        previewH: geometry.cssH,
-                        placement: captionStyle.placement
-                    });
+                    // If overlay mode is inactive, render legacy PNG overlay image
+                    try {
+                        if (!useOverlayMode) {
+                            createCaptionOverlay(result, overlay, { 
+                                previewW: geometry.cssW, 
+                                previewH: geometry.cssH,
+                                placement: captionStyle.placement
+                            });
+                        }
+                    } catch {}
                     
                     // Debug logging
                     console.log('[preview-scaling]', { 

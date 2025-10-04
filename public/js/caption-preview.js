@@ -75,6 +75,7 @@ export async function generateCaptionPreview(opts) {
   };
 
   console.log("[caption-overlay] POST /preview/caption with placement:", opts.placement, "yPct:", opts.yPct);
+  // Always call API-prefixed path to avoid 404 from /caption/preview
   const data = await apiFetch("/caption/preview", {
     method: "POST",
     body: payload
