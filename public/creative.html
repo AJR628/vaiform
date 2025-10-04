@@ -1295,7 +1295,7 @@
             }
         }
         
-        function toggleOverlayMode() {
+        async function toggleOverlayMode() {
             const toggle = document.getElementById('overlay-mode-toggle');
             const stage = document.getElementById('stage');
             const legacyOverlay = document.getElementById('caption-overlay');
@@ -1311,13 +1311,16 @@
                 
                 // Initialize overlay system if not already done
                 if (!overlaySystemInitialized) {
-                    initOverlaySystem();
+                    await initOverlaySystem();
                 }
                 
-                // Update overlay with current quote if available
-                if (currentQuote?.text) {
-                    updateOverlayCaption(currentQuote.text.trim(), true);
-                }
+                // Wait a moment for the overlay to be ready
+                setTimeout(async () => {
+                    // Update overlay with current quote if available
+                    if (currentQuote?.text) {
+                        await updateOverlayCaption(currentQuote.text.trim(), true);
+                    }
+                }, 100);
             } else {
                 // Show legacy overlay system
                 stage.style.display = 'none';
@@ -1389,12 +1392,18 @@
         
         // Preview function for overlay system
         async function previewOverlayCaption() {
-            if (!useOverlayMode || !overlaySystemInitialized) return;
+            if (!useOverlayMode || !overlaySystemInitialized) {
+                console.warn('[overlay-preview] Overlay mode not ready:', { useOverlayMode, overlaySystemInitialized });
+                return;
+            }
             
             try {
                 const { getCaptionMeta } = await import('./js/caption-overlay.js');
                 const meta = getCaptionMeta();
+                console.log('[overlay-preview] Got overlay meta:', meta);
+                
                 const payload = overlayMetaToSSOT(meta);
+                console.log('[overlay-preview] Sending payload:', payload);
                 
                 const res = await fetch('/api/caption/preview', {
                     method: 'POST', 
@@ -1402,20 +1411,29 @@
                     body: JSON.stringify(payload)
                 });
                 
+                console.log('[overlay-preview] Response status:', res.status);
+                
                 if (!res.ok) {
                     const error = await res.json();
-                    throw new Error(error.detail || 'Preview failed');
+                    console.error('[overlay-preview] Server error:', error);
+                    throw new Error(error.detail || `Preview failed: ${res.status}`);
                 }
                 
-                const { previewUrl } = await res.json();
+                const result = await res.json();
+                console.log('[overlay-preview] Server response:', result);
+                
                 const previewMedia = document.getElementById('previewMedia');
-                if (previewMedia) {
-                    previewMedia.src = previewUrl;
+                if (previewMedia && result.previewUrl) {
+                    previewMedia.src = result.previewUrl;
+                    console.log('[overlay-preview] Preview image set');
                 }
                 
                 console.log('[overlay-preview] Preview generated successfully');
             } catch (error) {
                 console.error('[overlay-preview] Failed:', error);
+                // Fallback to legacy system
+                console.log('[overlay-preview] Falling back to legacy system');
+                updateCaptionOverlay((currentQuote?.text||'').trim(), true);
             }
         }
         
@@ -3333,6 +3351,27 @@
         // Overlay control event listeners
         document.getElementById('preview-overlay-btn').onclick = previewOverlayCaption;
         document.getElementById('render-overlay-btn').onclick = renderOverlayCaption;
+        
+        // Debug function to check overlay system status
+        window.debugOverlaySystem = function() {
+            console.log('[debug] Overlay system status:', {
+                useOverlayMode,
+                overlaySystemInitialized,
+                hasGetCaptionMeta: typeof window.getCaptionMeta === 'function',
+                hasSetQuote: typeof window.setQuote === 'function',
+                stageVisible: document.getElementById('stage').style.display !== 'none',
+                legacyOverlayVisible: document.getElementById('caption-overlay').style.display !== 'none'
+            });
+            
+            if (useOverlayMode && overlaySystemInitialized) {
+                try {
+                    const meta = window.getCaptionMeta();
+                    console.log('[debug] Current overlay meta:', meta);
+                } catch (error) {
+                    console.error('[debug] Failed to get overlay meta:', error);
+                }
+            }
+        };
         
         // Caption style event listeners
         document.getElementById('caption-font').onchange = () => {

@@ -25,11 +25,13 @@ router.post("/caption/preview", express.json(), async (req, res) => {
       const payload = { ...meta, yPct };
       
       try {
+        console.log('[overlay-preview] Processing new overlay format:', payload);
         const previewUrl = await renderPreviewImage(payload);
+        console.log('[overlay-preview] Generated preview URL:', previewUrl ? 'success' : 'failed');
         return res.json({ previewUrl, meta: payload });
       } catch (e) {
-        console.error('preview failed', e);
-        return res.status(500).json({ success: false, error: 'render_failed' });
+        console.error('[overlay-preview] Preview failed:', e);
+        return res.status(500).json({ success: false, error: 'render_failed', detail: e.message });
       }
     }
     
