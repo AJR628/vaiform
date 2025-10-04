@@ -357,17 +357,7 @@
                 </label>
             </div>
             
-            <!-- Overlay Controls (hidden by default) -->
-            <div id="overlay-controls" class="mb-4 hidden">
-                <div class="flex gap-2">
-                    <button id="preview-overlay-btn" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm">
-                        Preview
-                    </button>
-                    <button id="render-overlay-btn" class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded text-sm">
-                        Render
-                    </button>
-                </div>
-            </div>
+            
             
             <div class="grid grid-cols-2 gap-4">
                 <!-- Font Family -->
@@ -1339,7 +1329,7 @@
                 // Show new overlay system
                 stage.style.display = 'block';
                 legacyOverlay.style.display = 'none';
-                overlayControls.classList.remove('hidden');
+                try { overlayControls.classList.add('hidden'); } catch {}
                 
                 // Initialize overlay system if not already done
                 if (!overlaySystemInitialized) {
@@ -1357,7 +1347,7 @@
                 // Show legacy overlay system
                 stage.style.display = 'none';
                 legacyOverlay.style.display = 'block';
-                overlayControls.classList.add('hidden');
+                try { overlayControls.classList.add('hidden'); } catch {}
             }
             
             console.log('[overlay-mode] Switched to:', useOverlayMode ? 'draggable overlay' : 'legacy overlay');
@@ -3377,12 +3367,8 @@
         };
         document.getElementById('render-btn').onclick = renderShort;
         
-        // Overlay mode toggle event listener
+        // Overlay mode toggle event listener (auto-initialize overlay; no extra buttons)
         document.getElementById('overlay-mode-toggle').onchange = toggleOverlayMode;
-        
-        // Overlay control event listeners
-        document.getElementById('preview-overlay-btn').onclick = previewOverlayCaption;
-        document.getElementById('render-overlay-btn').onclick = renderOverlayCaption;
         
         // Debug function to check overlay system status
         window.debugOverlaySystem = function() {
