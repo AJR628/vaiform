@@ -1158,6 +1158,28 @@
             clearTimeout(captionDebounceTimer);
             captionDebounceTimer = setTimeout(async () => {
                 try {
+                    // If draggable overlay mode is on, apply styles to overlay and skip legacy PNG path
+                    if (useOverlayMode) {
+                        try {
+                            const { getCaptionMeta, applyCaptionMeta } = await import('./js/caption-overlay.js');
+                            const meta = getCaptionMeta && getCaptionMeta();
+                            if (meta) {
+                                // Update overlay style based on current UI controls
+                                meta.fontPx = captionStyle.fontPx;
+                                meta.fontFamily = captionStyle.fontFamily;
+                                meta.weightCss = captionStyle.weightCss || captionStyle.weight;
+                                meta.color = '#FFFFFF';
+                                meta.opacity = captionStyle.opacity;
+                                applyCaptionMeta && applyCaptionMeta(meta);
+                            }
+                            // Keep the stage background in sync with the canvas
+                            if (typeof updateOverlayCanvasBackground === 'function') updateOverlayCanvasBackground();
+                        } catch (e) {
+                            console.warn('[overlay-style] apply failed; falling back to legacy preview', e);
+                        }
+                        return; // Do not generate PNG while overlay mode is active
+                    }
+
                     console.log('[caption-overlay] Generating PNG preview...');
                     
                     // Ensure preview container is visible before generating overlay
