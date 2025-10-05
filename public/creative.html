@@ -1447,24 +1447,23 @@
         
         // Convert overlay meta to SSOT payload
         function overlayMetaToSSOT(meta) {
-            return {
-                text: meta.text,
-                yPct: meta.yPct,          // SSOT vertical anchor (server clamps to safe margins)
-                xPct: meta.xPct,          // helper; server may ignore
-                wPct: meta.wPct,          // helper; server may compute its own wrap width
-                fontFamily: meta.fontFamily,
-                weightCss: meta.weightCss,
-                sizePx: meta.fontPx,
-                color: meta.color,
-                opacity: meta.opacity,
-                textAlign: meta.textAlign || 'center',
-                padding: meta.paddingPx ?? 12,
-                placement: 'custom',      // signals server to use manual placement
-                maxWidthPct: Math.round((meta.wPct || 0.8) * 100),
-                showBox: meta.showBox ?? true,
-                boxColor: 'transparent',
-                responsiveText: meta.responsiveText ?? true
+            const overlayV2 = (window.__overlayV2 === true);
+            const xPct = Number.isFinite(meta?.xPct) ? Number(meta.xPct) : 0.5;
+            const yPct = Number.isFinite(meta?.yPct) ? Number(meta.yPct) : 0.5;
+            const wPct = Number.isFinite(meta?.wPct) ? Number(meta.wPct) : 0.8;
+            const sizePx = Math.max(32, Math.min(120, Number(meta.fontPx || 48)));
+            const lineSpacingPx = Math.round(sizePx * (Number(meta.lineHeight || 1.15) - 1) * 0.3);
+            const base = {
+                text: String(meta.text || ''),
+                placement: 'custom',
+                xPct, yPct, wPct,
+                sizePx, lineSpacingPx,
+                fontFamily: meta.fontFamily || 'DejaVuSans',
+                weightCss: String(meta.weightCss || 'bold'),
+                color: meta.color || '#FFFFFF',
+                opacity: Number.isFinite(meta.opacity) ? Number(meta.opacity) : 0.85,
             };
+            return overlayV2 ? { ...base, v2: true } : base;
         }
         
         // Preview function for overlay system
@@ -2242,7 +2241,11 @@
                                 opacity: overlayMeta.opacity,
                                 textAlign: overlayMeta.textAlign || 'center',
                                 padding: overlayMeta.paddingPx ?? 12,
-                                placement: 'custom'  // SSOT: signals server to use manual placement
+                                placement: 'custom',      // SSOT: signals server to use manual placement
+                                maxWidthPct: Math.round((meta.wPct || 0.8) * 100),
+                                showBox: meta.showBox ?? true,
+                                boxColor: 'transparent',
+                                responsiveText: meta.responsiveText ?? true
                             };
                         } else {
                             console.warn('[overlay-payload] Overlay meta incomplete, falling back to legacy');

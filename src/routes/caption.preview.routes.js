@@ -18,16 +18,19 @@ router.post("/caption/preview", express.json(), async (req, res) => {
       }
       
       const meta = parsed.data;
+      // Echo v2 flag if provided; normalize unit hints
+      const v2 = !!meta.v2;
       const SAFE_TOP = 0.10, SAFE_BOTTOM = 0.90;
       
       // Clamp vertical placement
       const yPct = Math.min(Math.max(meta.yPct, SAFE_TOP), SAFE_BOTTOM);
-      const payload = { ...meta, yPct };
+      const payload = { ...meta, yPct, v2 };
       
       try {
-        console.log('[overlay-preview] Processing new overlay format:', payload);
+        // Structured one-line log
+        try { console.log(JSON.stringify({ tag:'preview:request', v2, keys: Object.keys(payload||{}).slice(0,12) })); } catch {}
         const previewUrl = await renderPreviewImage(payload);
-        console.log('[overlay-preview] Generated preview URL:', previewUrl ? 'success' : 'failed');
+        try { console.log(JSON.stringify({ tag:'preview:response', v2, ok: !!previewUrl })); } catch {}
         return res.json({ previewUrl, meta: payload });
       } catch (e) {
         console.error('[overlay-preview] Preview failed:', e);

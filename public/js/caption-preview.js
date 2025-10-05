@@ -32,6 +32,21 @@ if (typeof window !== 'undefined') {
  * @param {number} [opts.borderRadius=16] - Border radius
  * @returns {Promise<void>}
  */
+// @test-plan
+// - With overlayV2=1: request payload includes v2:true; preview respects server yPct/totalTextH; no client re-anchoring.
+// - Defaults: xPct/yPct fallback to 0.5; no integer 50 fallback.
+// - Legacy (flag off): behavior unchanged.
+
+function detectOverlayV2() {
+  try {
+    const params = new URLSearchParams(location.search || '');
+    const urlOn = params.get('overlayV2') === '1';
+    const lsOn = (localStorage.getItem('overlayV2') || '') === '1';
+    if (typeof window !== 'undefined') window.__overlayV2 = !!(urlOn || lsOn);
+    return !!(urlOn || lsOn);
+  } catch { return false; }
+}
+
 export async function generateCaptionPreview(opts) {
   // Clear overlay if text is empty
   if (!opts.text || !opts.text.trim()) {
@@ -59,20 +74,36 @@ export async function generateCaptionPreview(opts) {
   const lineSpacingPx = Math.max(24, Math.min(200, Math.round(fontPx * Number(opts.lineHeight || 1.1))));
   
   // Use server-compatible payload structure
-  const payload = {
-    style: {
-      text: opts.text,
-      fontFamily: opts.fontFamily || "DejaVuSans",
-      weight: opts.weight || "normal",
-      fontPx: fontPx,
-      lineSpacingPx: lineSpacingPx,
-      opacity: Number(opts.opacity ?? 0.85),
-      placement: opts.placement || 'center',
-      yPct: opts.yPct || 0.5,
-      // Add timestamp to force regeneration
-      _cacheBuster: Date.now()
-    }
-  };
+  const overlayV2 = detectOverlayV2();
+  const payload = overlayV2
+    ? {
+        // V2 overlay format – schema validated server-side
+        text: opts.text,
+        placement: 'custom',
+        xPct: Number.isFinite(opts?.xPct) ? Number(opts.xPct) : 0.5,
+        yPct: Number.isFinite(opts?.yPct) ? Number(opts.yPct) : 0.5,
+        wPct: Number.isFinite(opts?.wPct) ? Number(opts.wPct) : 0.8,
+        sizePx: Math.max(32, Math.min(120, Number(opts.sizePx || fontPx))),
+        lineSpacingPx: Number.isFinite(opts?.lineSpacingPx) ? Number(opts.lineSpacingPx) : lineSpacingPx,
+        fontFamily: opts.fontFamily || 'DejaVuSans',
+        weightCss: opts.weight || 'normal',
+        color: opts.color || '#FFFFFF',
+        opacity: Number(opts.opacity ?? 0.85),
+        v2: true,
+      }
+    : {
+        style: {
+          text: opts.text,
+          fontFamily: opts.fontFamily || "DejaVuSans",
+          weight: opts.weight || "normal",
+          fontPx: fontPx,
+          lineSpacingPx: lineSpacingPx,
+          opacity: Number(opts.opacity ?? 0.85),
+          placement: opts.placement || 'center',
+          yPct: Number.isFinite(opts?.yPct) ? Number(opts.yPct) : 0.5,
+          _cacheBuster: Date.now()
+        }
+      };
 
   console.log("[caption-overlay] POST /preview/caption with placement:", opts.placement, "yPct:", opts.yPct);
   // Always call API-prefixed path to avoid 404 from /caption/preview
@@ -166,13 +197,12 @@ export function createCaptionOverlay(captionData, container, scaling = {}) {
   const finalW = actualW || previewW;
   const finalH = actualH || previewH;
   
-  // TASK 2: Use one scale everywhere - compute single scale factor from server px to CSS px
-  const serverFrameW = 1080;  // Server frame width in pixels
-  const serverFrameH = Math.round(serverFrameW * (finalH / finalW)); // Server frame height maintaining aspect
-  
+  // Single scale from server frame (1080x1920) to container CSS px
+  const serverFrameW = 1080;
+  const serverFrameH = 1920;
   const sx = finalW / serverFrameW;
   const sy = finalH / serverFrameH;
-  const s = Math.min(sx, sy); // Keep aspect safe; we're full-frame so sx≈sy
+  const s = Math.min(sx, sy);
   
   // Create overlay image element
   const overlay = document.createElement('img');
@@ -184,8 +214,9 @@ export function createCaptionOverlay(captionData, container, scaling = {}) {
   const dispH = (captionData.meta?.hPx || 1920) * s;
   
   // SSOT: Use server-computed positioning directly
-  const xPct = captionData.meta?.xPct || 50;
-  const yPct = captionData.meta?.yPct || 0.5;
+  const overlayV2 = detectOverlayV2();
+  const xPct = Number.isFinite(captionData.meta?.xPct) ? captionData.meta.xPct : 0.5;
+  const yPct = Number.isFinite(captionData.meta?.yPct) ? captionData.meta.yPct : 0.5;
   const totalTextH = captionData.meta?.totalTextH || captionData.meta?.hPx || 0;
   const align = captionData.meta?.align || 'center';
   const vAlign = captionData.meta?.vAlign || 'center';
@@ -215,11 +246,10 @@ export function createCaptionOverlay(captionData, container, scaling = {}) {
   
   // SSOT: Use server-computed positioning directly, or fallback to client calculation
   let targetTop;
-  if (serverTextBlockTop !== undefined) {
-    // Use server-computed text block top position, scaled to client dimensions
-    targetTop = (serverTextBlockTop / 1920) * finalH;
+  if (overlayV2 && serverTextBlockTop !== undefined) {
+    // V2: prefer server-computed block top
+    targetTop = (serverTextBlockTop / serverFrameH) * finalH;
   } else {
-    // Fallback: Use client calculation (legacy behavior)
     targetTop = (yPct * finalH) - (scaledTotalTextH / 2);
   }
   
@@ -240,27 +270,14 @@ export function createCaptionOverlay(captionData, container, scaling = {}) {
   // Clamp horizontal positioning
   left = Math.max(0, Math.min(left, finalW - dispW));
   
-  // TASK 4: Add final visual clamp if overlay is larger than frame
-  let finalScale = 1;
-  if (dispW > finalW || dispH > finalH) {
-    finalScale = Math.min(finalW / dispW, finalH / dispH);
-  }
-  
-  const finalDispW = dispW * finalScale;
-  const finalDispH = dispH * finalScale;
-  
-  // SSOT: Use server-computed positioning directly (no double-padding)
+  // V2: avoid finalScale double-correction; single scale factor only
+  const finalDispW = dispW;
+  const finalDispH = dispH;
   left = anchorX;
-  top = targetTop; // Use server-computed targetTop
-  
-  // Horizontal alignment
+  top = targetTop;
   if (align === 'center') left -= finalDispW / 2;
   else if (align === 'right') left -= finalDispW;
-  
-  // SSOT: Server already computed correct positioning, just apply final scale
-  const finalScaledTextH = scaledTotalTextH * finalScale;
-  
-  // TASK 4: Final clamp with safe margins using actual container dimensions
+  const finalScaledTextH = scaledTotalTextH;
   left = Math.max(0, Math.min(left, finalW - finalDispW));
   top = Math.max(safeTopMargin, Math.min(top, finalH - safeBottomMargin - finalScaledTextH));
   
@@ -285,6 +302,14 @@ export function createCaptionOverlay(captionData, container, scaling = {}) {
     object-fit: contain;
     user-select: none;
   `;
+
+  // Structured log
+  try {
+    if (typeof window !== 'undefined' && window.__overlayV2 && window.__debugOverlay) {
+      const log = { tag: 'preview:apply', v2: true, left, top, finalDispW, finalDispH, s };
+      console.log(JSON.stringify(log));
+    }
+  } catch {}
   
   // Remove any existing caption overlays
   const existingOverlays = container.querySelectorAll('.caption-overlay');

@@ -4,9 +4,30 @@
  * Exposes: initCaptionOverlay, getCaptionMeta, applyCaptionMeta, setQuote
  */
 
+// @test-plan
+// - With overlayV2=1 flag, type and resize: text scales smoothly with the box, no jumps.
+// - Drag/resize tiny→full: font follows box; releasing pointer does not change size.
+// - Toggle edit mode: no vertical shift (handle hidden via opacity only).
+// - overlayV2 off: legacy behavior unchanged.
+
+function detectOverlayV2() {
+  try {
+    const params = new URLSearchParams(location.search || '');
+    const urlOn = params.get('overlayV2') === '1';
+    const lsOn = (localStorage.getItem('overlayV2') || '') === '1';
+    const debugOn = params.get('debugOverlay') === '1' || (localStorage.getItem('debugOverlay') || '') === '1';
+    if (typeof window !== 'undefined') {
+      window.__overlayV2 = !!(urlOn || lsOn);
+      window.__debugOverlay = !!debugOn;
+    }
+    return !!(urlOn || lsOn);
+  } catch { return false; }
+}
+
 export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMedia' } = {}) {
   const stage = document.querySelector(stageSel);
   if (!stage) throw new Error('stage not found');
+  const overlayV2 = detectOverlayV2();
   
   // Ensure stage has aspect ratio consistent with final output
   stage.classList.add('caption-stage');
@@ -49,6 +70,7 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     .caption-box.is-boxless{ background:transparent; outline:none; }
     .caption-box:hover:not(.is-boxless){ outline-style:solid; }
     .caption-box:not(.editing){ outline:none; background:transparent; }
+    /* Legacy: hide chrome by display:none; V2 overrides below to keep layout stable */
     .caption-box:not(.editing) .drag-handle{ display:none; }
     .caption-box:not(.editing) .drag-resize{ display:none; }
     .caption-box .drag-handle{ position:absolute; top:0; left:0; cursor:move; user-select:none; padding:6px 10px; background:rgba(0,0,0,.25);
@@ -58,6 +80,11 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
       font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
     .caption-box .drag-resize{ position:absolute; right:0; bottom:0; width:16px; height:16px;
       cursor:nwse-resize; border-right:2px solid #fff; border-bottom:2px solid #fff; opacity:.7; }
+    /* V2: keep chrome in layout to avoid measurement shifts; hide via opacity/pointer-events */
+    .caption-box.always-handle .drag-handle{ display:block; opacity:0; pointer-events:none; }
+    .caption-box.always-handle.editing .drag-handle{ opacity:1; pointer-events:auto; }
+    .caption-box.always-handle .drag-resize{ display:block; opacity:0; pointer-events:none; }
+    .caption-box.always-handle.editing .drag-resize{ opacity:0.7; pointer-events:auto; }
   `;
   document.head.appendChild(style);
 
@@ -88,10 +115,17 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     clampToStage(); // Ensure box stays within stage
   };
 
-  // Listen on document so moving fast outside handle doesn't break drag
-  document.addEventListener('pointermove', onMove, { passive: true });
-  document.addEventListener('pointerup', ()=> { dragging = false; drag = null; }, { passive: true });
-  document.addEventListener('pointercancel', ()=> { dragging = false; drag = null; }, { passive: true });
+  // Listen on document so moving fast outside handle doesn't break drag (legacy)
+  if (!overlayV2) {
+    document.addEventListener('pointermove', onMove, { passive: true });
+    document.addEventListener('pointerup', ()=> { dragging = false; drag = null; }, { passive: true });
+    document.addEventListener('pointercancel', ()=> { dragging = false; drag = null; }, { passive: true });
+  } else {
+    // V2: keep drag local to handle via capture
+    handle.addEventListener('pointermove', onMove, { passive: true });
+    handle.addEventListener('pointerup', ()=> { dragging = false; drag = null; }, { passive: true });
+    handle.addEventListener('pointercancel', ()=> { dragging = false; drag = null; }, { passive: true });
+  }
 
   // Keep inside frame on resize and clamp to stage
   const clamp = ()=>{
@@ -149,34 +183,31 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
   // Auto-size functionality
   function setTextAutoSize(text) {
     content.textContent = text;
-    
-    // Reset styles for measurement
+    if (overlayV2) {
+      // V2: single binary-search fit only; width stays as-is
+      try { requestAnimationFrame(fitText); } catch {}
+      return;
+    }
+    // Legacy path below
     content.style.width = 'auto';
     content.style.maxWidth = 'unset';
     box.style.width = 'auto';
     box.style.height = 'auto';
-    
     const stageW = stage.clientWidth;
     const maxW = Math.round(0.9 * stageW);
     const minW = Math.round(0.3 * stageW);
-    
-    // Grow width until no vertical overflow (or hit maxW)
     let w = Math.min(Math.max(content.scrollWidth + 24, minW), maxW);
     content.style.maxWidth = w + 'px';
     box.style.width = w + 'px';
-    
-    // If still overflowing vertically, reduce fontPx until fits
     let meta = getCaptionMeta();
     let tries = 0;
     while (content.scrollHeight > stage.clientHeight * 0.8 && meta.fontPx > 22 && tries++ < 20) {
       meta.fontPx = meta.fontPx - 2;
       applyCaptionMeta(meta);
     }
-    
-    // Persist wPct
     meta.wPct = w / stageW;
     applyCaptionMeta(meta);
-    clampToStage(); // Ensure auto-sized box stays within stage
+    clampToStage();
   }
 
   // Auto shrink-to-fit when overflowing
@@ -194,7 +225,11 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
   // Only fit on text input, not during resize; resize uses the rAF fitText flow
   content.addEventListener('input', ()=> {
     clearTimeout(fitTimer);
-    fitTimer = setTimeout(fitText, 0);
+    if (overlayV2) {
+      fitTimer = setTimeout(()=>{ try { requestAnimationFrame(fitText); } catch {} }, 0);
+    } else {
+      fitTimer = setTimeout(fitText, 0);
+    }
   });
   // Remove box resize observer that competes with our custom resize
 
@@ -250,31 +285,44 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
       box.style.width = w + 'px';
       box.style.height = h + 'px';
 
-      // Responsive text grow/shrink in lockstep
-      const responsiveText = document.getElementById('responsive-text-toggle')?.checked ?? true;
-      if (responsiveText) {
-        // Approximate target, final fit happens via binary search
-        const scale = Math.max(w / Math.max(1, start.w), 0.05);
-        const targetPx = Math.max(12, Math.min(200, Math.round(initialFontPx * scale)));
-        content.style.fontSize = targetPx + 'px';
+      // V2: coalesce to a single binary-search fit; avoid tight loops
+      if (overlayV2) {
+        clearTimeout(fitTimer);
+        fitTimer = setTimeout(()=>{ try { requestAnimationFrame(fitText); } catch {} }, 16);
+      } else {
+        // Legacy responsive approximation + final fit
+        const responsiveText = document.getElementById('responsive-text-toggle')?.checked ?? true;
+        if (responsiveText) {
+          const scale = Math.max(w / Math.max(1, start.w), 0.05);
+          const targetPx = Math.max(12, Math.min(200, Math.round(initialFontPx * scale)));
+          content.style.fontSize = targetPx + 'px';
+        }
+        clearTimeout(fitTimer);
+        fitTimer = setTimeout(()=>{ requestAnimationFrame(fitText); }, 16);
       }
-      // Debounced fit to remove overflow and use available space
-      clearTimeout(fitTimer);
-      fitTimer = setTimeout(()=>{ requestAnimationFrame(fitText); }, 16);
     }
     
     function up(ev) {
-      box.releasePointerCapture(ev.pointerId);
-      window.removeEventListener('pointermove', move);
-      window.removeEventListener('pointerup', up);
+      try { box.releasePointerCapture(ev.pointerId); } catch {}
+      if (!overlayV2) {
+        window.removeEventListener('pointermove', move);
+        window.removeEventListener('pointerup', up);
+      } else {
+        resizeHandle.removeEventListener('pointermove', move);
+        resizeHandle.removeEventListener('pointerup', up);
+      }
       // Final persist + preview
       try { fitText(); } catch {}
       const meta = getCaptionMeta();
       applyCaptionMeta(meta);
     }
-    
-    window.addEventListener('pointermove', move);
-    window.addEventListener('pointerup', up);
+    if (!overlayV2) {
+      window.addEventListener('pointermove', move);
+      window.addEventListener('pointerup', up);
+    } else {
+      resizeHandle.addEventListener('pointermove', move);
+      resizeHandle.addEventListener('pointerup', up);
+    }
   });
 
   // Public API on window (simple)
@@ -326,9 +374,11 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
         box.classList.add('is-boxless');
       }
     }
-    
-    if (!options.silentPreview) {
+    // Legacy shrinkToFit only when V2 is off
+    if (!options.silentPreview && !overlayV2) {
       shrinkToFit(content, box);
+    } else if (!options.silentPreview && overlayV2) {
+      try { requestAnimationFrame(fitText); } catch {}
     }
     
     // Update global SSOT meta after applying changes
@@ -340,13 +390,31 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
       setTextAutoSize(text.trim());
     } else {
       content.innerText = text || ''; 
-      shrinkToFit(content, box);
+      if (!overlayV2) shrinkToFit(content, box); else try { requestAnimationFrame(fitText); } catch {}
     }
     try { ensureOverlayTopAndVisible(stageSel); } catch {}
     
     // Update global SSOT meta after setting quote
     window.__overlayMeta = getCaptionMeta();
   };
+
+  // V2: keep chrome allocated to avoid layout shifts
+  if (overlayV2) {
+    try { box.classList.add('always-handle'); } catch {}
+  }
+
+  // V2: ensure fonts are ready before first fit
+  if (overlayV2 && document.fonts && document.fonts.ready) {
+    try { document.fonts.ready.then(()=>{ try { fitText(); } catch {} }); } catch {}
+  }
+
+  // Structured one-line JSON log
+  try {
+    if (window.__overlayV2 && window.__debugOverlay) {
+      const log = { tag: 'overlay:init', v2: true, stageSel, w: stage.clientWidth, h: stage.clientHeight };
+      console.log(JSON.stringify(log));
+    }
+  } catch {}
 }
 
 export function getCaptionMeta(){ return window.getCaptionMeta(); }

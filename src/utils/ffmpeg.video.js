@@ -479,8 +479,8 @@ export async function renderVideoQuoteOverlay({
     console.log(`[render] USING OVERLAY MODE - precise positioning from overlayCaption`);
     
     // Compute absolute geometry in render space
-    const absW = Math.round(overlayCaption.wPct * W);
-    const absH = Math.round(overlayCaption.hPct * H);
+    const absW = Math.round(Number(overlayCaption.wPct || 0.8) * W);
+    const absH = Math.round(Number(overlayCaption.hPct || (overlayCaption.totalTextH ? overlayCaption.totalTextH / 1920 : 0)) * H);
     const cx = overlayCaption.xPct * W;
     const cy = overlayCaption.yPct * H;
     const x = Math.round(cx - absW/2);
@@ -497,11 +497,12 @@ export async function renderVideoQuoteOverlay({
     }
     
     // Use overlay font settings
-    const overlayFontPx = overlayCaption.fontPx || 38;
+    const overlayFontPx = Number(overlayCaption.sizePx || overlayCaption.fontPx || 38);
     const overlayColor = overlayCaption.color || '#ffffff';
     const overlayOpacity = overlayCaption.opacity ?? 1;
-    const overlayLineHeight = overlayCaption.lineHeight || 1.15;
-    const lineSpacingPx = Math.round((overlayLineHeight - 1) * overlayFontPx * 0.3);
+    const explicitLineSpacing = Number.isFinite(overlayCaption.lineSpacingPx) ? Number(overlayCaption.lineSpacingPx) : null;
+    const overlayLineHeight = Number(overlayCaption.lineHeight || 1.15);
+    const lineSpacingPx = explicitLineSpacing ?? Math.round((overlayLineHeight - 1) * overlayFontPx * 0.3);
     
     // Resolve font file
     const fontFile = resolveFontFile(overlayCaption.fontFamily, overlayCaption.weightCss);
@@ -520,7 +521,7 @@ export async function renderVideoQuoteOverlay({
       `box=0`
     ].filter(Boolean).join(':')}`;
     
-    console.log(`[render] Overlay mode drawtext:`, drawCaption);
+    try { console.log(JSON.stringify({ tag:'render:payload', mode:'overlayCaption', fontPx: overlayFontPx, lineSpacingPx })); } catch {}
   } else if (CAPTION_OVERLAY && captionImage) {
     console.log(`[render] USING OVERLAY - skipping drawtext. Caption PNG: ${captionImage.pngPath}`);
     drawCaption = '';

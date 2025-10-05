@@ -12,5 +12,8 @@ export const CaptionMetaSchema = z.object({
   opacity: z.number().min(0).max(1).default(1),
   textAlign: z.enum(['left','center','right']).default('center'),
   padding: z.number().min(0).max(64).default(12),
-  placement: z.literal('custom')
+  placement: z.literal('custom'),
+  // overlayV2 flag passthrough (non-breaking; optional)
+  v2: z.boolean().optional(),
+  lineSpacingPx: z.number().min(0).max(240).optional()
 });
