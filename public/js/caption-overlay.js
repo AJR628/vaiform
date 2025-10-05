@@ -44,19 +44,19 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
   style.textContent = `
     .caption-stage{ position:relative; border-radius:12px; overflow:hidden }
     .caption-stage img,.caption-stage video{ position:absolute; inset:0; width:100%; height:100%; object-fit:cover; pointer-events:none }
-    .caption-box{ position:absolute; resize:both; overflow:hidden; outline:1.5px dashed rgba(255,255,255,.45);
-      border-radius:12px; z-index:9999; touch-action:none; user-select:none; background:rgba(0,0,0,.25); }
+    .caption-box{ position:absolute; resize:none; overflow:hidden; outline:1.5px dashed rgba(255,255,255,.45);
+      border-radius:12px; z-index:9999; touch-action:none; user-select:none; background:rgba(0,0,0,.25); box-sizing:border-box; }
     .caption-box.is-boxless{ background:transparent; outline:none; }
     .caption-box:hover:not(.is-boxless){ outline-style:solid; }
     .caption-box:not(.editing){ outline:none; background:transparent; }
     .caption-box:not(.editing) .drag-handle{ display:none; }
     .caption-box:not(.editing) .drag-resize{ display:none; }
-    .caption-box .drag-handle{ cursor:move; user-select:none; padding:6px 10px; background:rgba(0,0,0,.25);
+    .caption-box .drag-handle{ position:absolute; top:0; left:0; cursor:move; user-select:none; padding:6px 10px; background:rgba(0,0,0,.25);
       border-top-left-radius:12px; border-top-right-radius:12px; font: 12px/1 system-ui; letter-spacing:.08em; text-transform:uppercase; }
-    .caption-box .content{ padding:10px 12px; outline:none; white-space:pre-wrap; word-break:break-word; overflow:hidden;
+    .caption-box .content{ padding:28px 12px 12px 12px; outline:none; white-space:pre-wrap; word-break:break-word; overflow:hidden; box-sizing:border-box;
       color:#fff; text-align:center; font-weight:800; font-size:38px; line-height:1.15; text-shadow:0 2px 12px rgba(0,0,0,.65);
       font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
-    .caption-box .drag-resize{ position:absolute; right:6px; bottom:6px; width:16px; height:16px;
+    .caption-box .drag-resize{ position:absolute; right:0; bottom:0; width:16px; height:16px;
       cursor:nwse-resize; border-right:2px solid #fff; border-bottom:2px solid #fff; opacity:.7; }
   `;
   document.head.appendChild(style);
@@ -191,8 +191,12 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
       px -= 1; el.style.fontSize = px + 'px';
     }
   };
-  content.addEventListener('input', ()=> shrinkToFit(content, box));
-  new ResizeObserver(()=> shrinkToFit(content, box)).observe(box);
+  // Only fit on text input, not during resize; resize uses the rAF fitText flow
+  content.addEventListener('input', ()=> {
+    clearTimeout(fitTimer);
+    fitTimer = setTimeout(fitText, 0);
+  });
+  // Remove box resize observer that competes with our custom resize
 
   // Fit text to the current box (grow and shrink) with safety caps
   let fitTimer = null;
@@ -220,7 +224,7 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
   let resizeStart = null;
   resizeHandle.addEventListener('pointerdown', (e) => {
     e.preventDefault();
-    box.setPointerCapture(e.pointerId);
+    try { resizeHandle.setPointerCapture(e.pointerId); } catch {}
     const start = {x: e.clientX, y: e.clientY, w: box.offsetWidth, h: box.offsetHeight, left: box.offsetLeft, top: box.offsetTop};
     const initialFontPx = parseInt(getComputedStyle(content).fontSize, 10);
     

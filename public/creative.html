@@ -1324,7 +1324,7 @@
                 
                 // Initialize the overlay system
                 initCaptionOverlay({ stageSel: '#stage', mediaSel: '#previewMedia' });
-                try { ensureOverlayTopAndVisible('#stage'); bindCaptionDrag('#stage'); } catch {}
+                try { ensureOverlayTopAndVisible('#stage'); } catch {}
                 
                 // Set up the preview media source - wait for canvas to be ready
                 const setupCanvasBackground = () => {
