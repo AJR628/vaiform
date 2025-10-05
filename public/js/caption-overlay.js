@@ -53,7 +53,7 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     .caption-box:not(.editing) .drag-resize{ display:none; }
     .caption-box .drag-handle{ position:absolute; top:0; left:0; cursor:move; user-select:none; padding:6px 10px; background:rgba(0,0,0,.25);
       border-top-left-radius:12px; border-top-right-radius:12px; font: 12px/1 system-ui; letter-spacing:.08em; text-transform:uppercase; }
-    .caption-box .content{ padding:28px 12px 12px 12px; outline:none; white-space:pre-wrap; word-break:break-word; overflow:hidden; box-sizing:border-box;
+    .caption-box .content{ padding:28px 12px 12px 12px; outline:none; white-space:pre-wrap; word-break:normal; overflow-wrap:normal; hyphens:none; overflow:hidden; box-sizing:border-box;
       color:#fff; text-align:center; font-weight:800; font-size:38px; line-height:1.15; text-shadow:0 2px 12px rgba(0,0,0,.65);
       font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
     .caption-box .drag-resize{ position:absolute; right:0; bottom:0; width:16px; height:16px;
@@ -198,26 +198,33 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
   });
   // Remove box resize observer that competes with our custom resize
 
-  // Fit text to the current box (grow and shrink) with safety caps
+  // Fit text using binary search for smooth, stable scaling (no word splitting)
   let fitTimer = null;
+  const fits = (px) => {
+    content.style.fontSize = px + 'px';
+    // Force reflow measurement against content box
+    const s = getComputedStyle(content);
+    const padX = parseInt(s.paddingLeft,10) + parseInt(s.paddingRight,10);
+    const padY = parseInt(s.paddingTop,10) + parseInt(s.paddingBottom,10);
+    const maxW = Math.max(0, box.clientWidth - padX);
+    const maxH = Math.max(0, box.clientHeight - padY);
+    // scroll sizes reflect laid out text; compare to content box
+    const ok = (content.scrollWidth <= maxW + 0.5) && (content.scrollHeight <= maxH + 0.5);
+    return { ok, maxW, maxH };
+  };
   const fitText = () => {
-    const el = content;
-    const container = box;
-    const s = getComputedStyle(el);
-    const padX = parseInt(s.paddingLeft,10)+parseInt(s.paddingRight,10);
-    const padY = parseInt(s.paddingTop,10)+parseInt(s.paddingBottom,10);
-    const maxW = Math.max(0, container.clientWidth - padX);
-    const maxH = Math.max(0, container.clientHeight - padY);
-    let px = parseInt(s.fontSize,10) || 24;
-    // shrink if overflowing
-    while ((el.scrollHeight > maxH || el.scrollWidth > maxW) && px > 12) {
-      px -= 1; el.style.fontSize = px + 'px';
+    let lo = 12, hi = 200, best = 12;
+    const current = parseInt(getComputedStyle(content).fontSize, 10) || 24;
+    // tighten search window around current to reduce work
+    lo = Math.max(12, Math.floor(current * 0.6));
+    hi = Math.min(220, Math.ceil(current * 1.8));
+    for (let i = 0; i < 12 && lo <= hi; i++) {
+      const mid = Math.floor((lo + hi) / 2);
+      const { ok } = fits(mid);
+      if (ok) { best = mid; lo = mid + 1; }
+      else { hi = mid - 1; }
     }
-    // grow (with headroom of 6px to avoid jitter)
-    while ((el.scrollHeight < maxH - 6 && el.scrollWidth < maxW - 6) && px < 160) {
-      px += 1; el.style.fontSize = px + 'px';
-      if (el.scrollHeight > maxH || el.scrollWidth > maxW) { px -= 1; el.style.fontSize = px + 'px'; break; }
-    }
+    content.style.fontSize = best + 'px';
   };
 
   // Custom resize handle functionality
@@ -246,13 +253,14 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
       // Responsive text grow/shrink in lockstep
       const responsiveText = document.getElementById('responsive-text-toggle')?.checked ?? true;
       if (responsiveText) {
+        // Approximate target, final fit happens via binary search
         const scale = Math.max(w / Math.max(1, start.w), 0.05);
-        const targetPx = Math.max(12, Math.min(160, Math.round(initialFontPx * Math.sqrt(scale))));
+        const targetPx = Math.max(12, Math.min(200, Math.round(initialFontPx * scale)));
         content.style.fontSize = targetPx + 'px';
       }
       // Debounced fit to remove overflow and use available space
       clearTimeout(fitTimer);
-      fitTimer = setTimeout(fitText, 16);
+      fitTimer = setTimeout(()=>{ requestAnimationFrame(fitText); }, 16);
     }
     
     function up(ev) {
