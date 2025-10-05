@@ -970,7 +970,29 @@
         
         // New draggable overlay system
         let overlaySystemInitialized = false;
-        let useOverlayMode = false;
+        let useOverlayMode = false; // will be set true on first init
+
+        // Ensure overlay is active and initialized
+        async function ensureOverlayActive() {
+            try {
+                useOverlayMode = true;
+                const chk = document.getElementById('overlay-mode-toggle');
+                if (chk && !chk.checked) chk.checked = true;
+                if (!overlaySystemInitialized) {
+                    await initOverlaySystem();
+                }
+                // Apply current quote text into overlay and refresh background
+                if (currentQuote?.text) {
+                    try { const { setQuote } = await import('./js/caption-overlay.js'); setQuote(currentQuote.text.trim()); } catch {}
+                }
+                if (typeof updateOverlayCanvasBackground === 'function') updateOverlayCanvasBackground();
+                // Reflect UI: show stage, hide legacy image
+                const stage = document.getElementById('stage');
+                const legacyOverlay = document.getElementById('caption-overlay');
+                if (stage) stage.style.display = 'block';
+                if (legacyOverlay) legacyOverlay.style.display = 'none';
+            } catch (e) { console.warn('[overlay] ensureOverlayActive failed', e); }
+        }
         
         // Debounced caption preview generator
         function debouncedPreview(delay = 200) {
@@ -1426,36 +1448,20 @@
                 
                 const payload = overlayMetaToSSOT(meta);
                 console.log('[overlay-preview] Sending payload:', payload);
-                
-                const res = await fetch('/api/caption/preview', {
-                    method: 'POST', 
-                    headers: {'Content-Type': 'application/json'}, 
-                    body: JSON.stringify(payload)
-                });
-                
-                console.log('[overlay-preview] Response status:', res.status);
-                
-                if (!res.ok) {
-                    const error = await res.json();
-                    console.error('[overlay-preview] Server error:', error);
-                    throw new Error(error.detail || `Preview failed: ${res.status}`);
-                }
-                
-                const result = await res.json();
+                const { apiFetch } = await import('./api.mjs');
+                const result = await apiFetch('/caption/preview', { method: 'POST', body: payload });
                 console.log('[overlay-preview] Server response:', result);
                 
                 const previewMedia = document.getElementById('previewMedia');
-                if (previewMedia && result.previewUrl) {
-                    previewMedia.src = result.previewUrl;
+                if (previewMedia && (result?.previewUrl || result?.data?.imageUrl)) {
+                    previewMedia.src = result.previewUrl || result.data.imageUrl;
                     console.log('[overlay-preview] Preview image set');
                 }
                 
                 console.log('[overlay-preview] Preview generated successfully');
             } catch (error) {
                 console.error('[overlay-preview] Failed:', error);
-                // Fallback to legacy system
-                console.log('[overlay-preview] Falling back to legacy system');
-                updateCaptionOverlay((currentQuote?.text||'').trim(), true);
+                // Do not fall back to legacy while overlay mode is ON (keeps SSOT)
             }
         }
         
@@ -2377,8 +2383,14 @@
             }
           })();
 
-          // Trigger caption preview if we have text and asset
+          // Trigger caption preview if we have text and asset (legacy fallback only)
           safe('caption-preview-init', () => maybeGenerateCaptionPreview());
+
+          // Default to overlay mode as soon as caption exists
+          safe('overlay-default', () => {
+            const hasCaption = !!(currentQuote?.text || document.getElementById('quote-text')?.value);
+            if (hasCaption) ensureOverlayActive();
+          });
 
           // SECONDARY: Initialize caption UI (non-blocking)
           safe('caption-size', () => (typeof initCaptionSizeUI === 'function') && initCaptionSizeUI());
@@ -3392,25 +3404,27 @@
         };
         
         // Caption style event listeners
-        document.getElementById('caption-font').onchange = () => {
+        document.getElementById('caption-font').onchange = async () => {
+            if (useOverlayMode) { try { const { getCaptionMeta, applyCaptionMeta } = await import('./js/caption-overlay.js'); const m = getCaptionMeta(); m.fontFamily = document.getElementById('caption-font').value; applyCaptionMeta(m); } catch(e){ console.warn('[overlay] font apply failed', e);} }
             updateRenderPreview();
             updateLivePreview();
             updateCaptionOverlay((currentQuote?.text||'').trim(), true);
             updateOverlayCaption((currentQuote?.text||'').trim(), true);
-            updateOverlayCaption((currentQuote?.text||'').trim(), true);
         };
-        document.getElementById('caption-weight').onchange = () => {
+        document.getElementById('caption-weight').onchange = async () => {
             const newWeight = document.getElementById('caption-weight').value;
             console.log('[controls] Weight changed to:', newWeight);
+            if (useOverlayMode) { try { const { getCaptionMeta, applyCaptionMeta } = await import('./js/caption-overlay.js'); const m = getCaptionMeta(); m.weightCss = newWeight; applyCaptionMeta(m); } catch(e){ console.warn('[overlay] weight apply failed', e);} }
             updateRenderPreview();
             updateLivePreview();
             updateCaptionOverlay((currentQuote?.text||'').trim(), true);
             updateOverlayCaption((currentQuote?.text||'').trim(), true);
         };
         // Legacy caption-size handler removed - now handled by initCaptionSizeUI()
-        document.getElementById('caption-opacity').oninput = () => { 
+        document.getElementById('caption-opacity').oninput = async () => { 
             const newOpacity = document.getElementById('caption-opacity').value;
             console.log('[controls] Opacity changed to:', newOpacity);
+            if (useOverlayMode) { try { const { getCaptionMeta, applyCaptionMeta } = await import('./js/caption-overlay.js'); const m = getCaptionMeta(); m.opacity = parseInt(newOpacity)/100; applyCaptionMeta(m); } catch(e){ console.warn('[overlay] opacity apply failed', e);} }
             updateCaptionStyleValues(); 
             updateCaptionOverlay((currentQuote?.text||'').trim(), true);
             updateOverlayCaption((currentQuote?.text||'').trim(), true); 
