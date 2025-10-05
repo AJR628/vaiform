@@ -33,6 +33,18 @@ function writeCaptionTxt(text) {
 const CAPTION_FONT_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf";
 const CAPTION_FONT_REG  = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf";
 
+// Font resolution helper
+function resolveFontFile(fontFamily, weightCss) {
+  const isBold = weightCss === 'bold' || weightCss === '800' || weightCss === '900';
+  
+  if (fontFamily === 'DejaVu Sans' || fontFamily === 'DejaVuSans') {
+    return isBold ? CAPTION_FONT_BOLD : CAPTION_FONT_REG;
+  }
+  
+  // Fallback to regular font
+  return CAPTION_FONT_REG;
+}
+
 // Match preview look: slightly higher outline + soft drop shadow
 const CAPTION_ALPHA     = 0.80;   // white text opacity (preview uses ~80%)
 const STROKE_ALPHA      = 0.85;   // dark outline opacity
@@ -330,6 +342,8 @@ export async function renderVideoQuoteOverlay({
   caption,
   captionResolved,
   captionImage,
+  // v2 overlay mode
+  overlayCaption,
   // style bundle
   fontfile, fontcolor = 'white', fontsize = 72, lineSpacing = 12, shadowColor = 'black', shadowX = 2, shadowY = 2,
   box = 1, boxcolor = 'black@0.35', boxborderw = 24,
@@ -460,8 +474,54 @@ export async function renderVideoQuoteOverlay({
   // Optional caption (bottom, safe area, wrapped)
   let drawCaption = '';
   
-  // Skip drawtext caption rendering when using PNG overlay
-  if (CAPTION_OVERLAY && captionImage) {
+  // v2 overlay mode: handle overlayCaption with precise positioning
+  if (overlayCaption && overlayCaption.text) {
+    console.log(`[render] USING OVERLAY MODE - precise positioning from overlayCaption`);
+    
+    // Compute absolute geometry in render space
+    const absW = Math.round(overlayCaption.wPct * W);
+    const absH = Math.round(overlayCaption.hPct * H);
+    const cx = overlayCaption.xPct * W;
+    const cy = overlayCaption.yPct * H;
+    const x = Math.round(cx - absW/2);
+    const y = Math.round(cy - absH/2);
+    
+    // Horizontal alignment inside the box
+    let dx;
+    if (overlayCaption.align === 'center') {
+      dx = `(${x} + (${absW}-text_w)/2)`;
+    } else if (overlayCaption.align === 'right') {
+      dx = `(${x} + (${absW}-text_w))`;
+    } else {
+      dx = `${x}`;
+    }
+    
+    // Use overlay font settings
+    const overlayFontPx = overlayCaption.fontPx || 38;
+    const overlayColor = overlayCaption.color || '#ffffff';
+    const overlayOpacity = overlayCaption.opacity ?? 1;
+    const overlayLineHeight = overlayCaption.lineHeight || 1.15;
+    const lineSpacingPx = Math.round((overlayLineHeight - 1) * overlayFontPx * 0.3);
+    
+    // Resolve font file
+    const fontFile = resolveFontFile(overlayCaption.fontFamily, overlayCaption.weightCss);
+    
+    // Build drawtext filter with overlay settings
+    drawCaption = `drawtext=${[
+      `fontfile='${fontFile}'`,
+      `text='${escapeForDrawtext(overlayCaption.text)}'`,
+      `x=${dx}`,
+      `y=${y}`,
+      `fontsize=${overlayFontPx}`,
+      `fontcolor=${overlayColor}@${overlayOpacity}`,
+      `line_spacing=${lineSpacingPx}`,
+      `borderw=2:bordercolor=black@0.85`,
+      `shadowcolor=black:shadowx=2:shadowy=2`,
+      `box=0`
+    ].filter(Boolean).join(':')}`;
+    
+    console.log(`[render] Overlay mode drawtext:`, drawCaption);
+  } else if (CAPTION_OVERLAY && captionImage) {
     console.log(`[render] USING OVERLAY - skipping drawtext. Caption PNG: ${captionImage.pngPath}`);
     drawCaption = '';
   } else if (caption && String(caption.text || '').trim()) {

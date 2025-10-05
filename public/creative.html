@@ -994,7 +994,7 @@
         
         // New draggable overlay system
         let overlaySystemInitialized = false;
-        let useOverlayMode = false; // will be set true on first init
+        let useOverlayMode = true; // Default to overlay mode as SSOT
 
         // Ensure overlay is active and initialized
         async function ensureOverlayActive() {
@@ -2985,20 +2985,45 @@
                   } : undefined,
                 };
 
-                // IMPORTANT: caption vs overlay – never send caption as an object
-                if (overlayDataUrl) {
-                  payload.captionImage = overlayDataUrl;            // string data URL
-                  // do NOT include payload.caption at all when overlay is present
+                // SSOT: Use overlay mode when available, otherwise fallback to legacy
+                if (useOverlayMode && overlaySystemInitialized && window.__overlayMeta) {
+                  // Overlay mode: send overlay caption data
+                  const meta = window.__overlayMeta;
+                  payload.captionMode = 'overlay';
+                  payload.overlayCaption = {
+                    text: meta.text || '',
+                    xPct: meta.xPct,
+                    yPct: meta.yPct,
+                    wPct: meta.wPct,
+                    hPct: meta.hPct,
+                    fontFamily: meta.fontFamily || 'DejaVu Sans',
+                    weightCss: meta.weightCss || '800',
+                    fontPx: meta.fontPx || 38,
+                    color: meta.color || '#ffffff',
+                    opacity: meta.opacity ?? 1,
+                    align: meta.textAlign || 'center',
+                    lineHeight: meta.lineHeight || 1.15,
+                    showBox: meta.showBox ?? true,
+                    responsiveText: meta.responsiveText ?? true
+                  };
+                  // Remove legacy fields when using overlay
+                  delete payload.caption;
+                  delete payload.captionStyle;
+                } else if (overlayDataUrl) {
+                  // Legacy PNG overlay fallback
+                  payload.captionImage = overlayDataUrl;
+                  delete payload.caption;
+                  delete payload.captionStyle;
                 } else {
-                  payload.caption = sizePx;                  // number (not object)
-                  payload.captionMode = 'static';    // keep if you already send it
-                  // Only include style if your backend expects it when no overlay:
+                  // Legacy drawtext fallback
+                  payload.caption = sizePx;
+                  payload.captionMode = 'static';
                   payload.captionStyle = {
-                    placement: captionStyle.placement || 'bottom',        // e.g. 'top' | 'center' | 'bottom'
-                    align: 'center',                // if you have it
-                    opacity: clamp(captionStyle.opacity || 0.8, 0, 1),            // 0..1 if applicable
-                    weight: captionStyle.weight || 'bold',              // 'normal' | 'bold'
-                    font: captionStyle.font || 'DejaVu Sans Local',                  // 'system' | 'bold' etc if used by API
+                    placement: captionStyle.placement || 'bottom',
+                    align: 'center',
+                    opacity: clamp(captionStyle.opacity || 0.8, 0, 1),
+                    weight: captionStyle.weight || 'bold',
+                    font: captionStyle.font || 'DejaVu Sans Local',
                   };
                 }
 
@@ -3007,6 +3032,8 @@
 
                 // 7) Log minimal, type-focused debug
                 console.debug('[render] payload.types', {
+                  captionMode: payload.captionMode,                   // 'overlay' | 'static' | undefined
+                  overlayCaption: !!payload.overlayCaption,           // boolean for debugging
                   caption_type: typeof payload.caption,               // expect 'number' when no overlay, 'undefined' when overlay
                   captionImage_type: typeof payload.captionImage,     // 'string' when overlay present or 'undefined'
                   text_type: typeof payload.text,                     // 'string'

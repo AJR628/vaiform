@@ -24,7 +24,7 @@ export function finalizeQuoteText(mode, text) {
   return t;
 }
 
-export async function createShortService({ ownerUid, mode, text, template, durationSec, voiceover = false, wantAttribution = true, background = { kind: "solid" }, debugAudioPath, captionMode = "static", includeBottomCaption = false, watermark, overrideQuote, captionStyle, caption, captionResolved, captionImage, voiceId, modelId, outputFormat, voiceSettings }) {
+export async function createShortService({ ownerUid, mode, text, template, durationSec, voiceover = false, wantAttribution = true, background = { kind: "solid" }, debugAudioPath, captionMode = "static", includeBottomCaption = false, watermark, overrideQuote, captionStyle, caption, captionResolved, captionImage, voiceId, modelId, outputFormat, voiceSettings, overlayCaption }) {
   if (!ownerUid) throw new Error("MISSING_UID");
 
   const jobId = `shorts-${Date.now().toString(36)}-${Math.random().toString(36).slice(2,7)}`;
@@ -37,7 +37,7 @@ export async function createShortService({ ownerUid, mode, text, template, durat
   const shortsRef = db.collection('shorts').doc(jobId);
   
   try {
-    try { console.log("[shorts] render opts:", { includeBottomCaption, hasCaption: !!caption, capPos: caption?.position, capAlign: caption?.align, capSize: caption?.fontSizePx }); } catch {}
+    try { console.log("[shorts] render opts:", { includeBottomCaption, hasCaption: !!caption, capPos: caption?.position, capAlign: caption?.align, capSize: caption?.fontSizePx, overlayMode: captionMode === 'overlay', hasOverlayCaption: !!overlayCaption }); } catch {}
     await shortsRef.set({
       ownerId: ownerUid,
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -246,6 +246,7 @@ export async function createShortService({ ownerUid, mode, text, template, durat
             caption: includeBottomCaption === true ? caption : null,
             captionResolved,
             captionImage: captionImageLocal,
+            overlayCaption: captionMode === 'overlay' ? overlayCaption : null,
             watermark: watermarkFinal,
             watermarkText: "Vaiform"
           });
@@ -305,6 +306,7 @@ export async function createShortService({ ownerUid, mode, text, template, durat
             caption: includeBottomCaption === true ? caption : null,
             captionResolved,
             captionImage: captionImageLocal,
+            overlayCaption: captionMode === 'overlay' ? overlayCaption : null,
             watermark: watermarkFinal,
             watermarkText: "Vaiform"
           });
@@ -466,6 +468,7 @@ export async function createShortService({ ownerUid, mode, text, template, durat
           caption: includeBottomCaption === true ? caption : null,
           captionResolved,
           captionImage: captionImageLocal,
+          overlayCaption: captionMode === 'overlay' ? overlayCaption : null,
         });
         // annotate meta via closure var? We'll include via meta build below
         // For parity with others, nothing else here; mux will run later

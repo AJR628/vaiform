@@ -20,7 +20,10 @@ function safeRegisterFont(file, family, weight = "normal") {
     
     // Use GlobalFonts API which is more reliable
     if (GlobalFonts && typeof GlobalFonts.register === 'function') {
-      GlobalFonts.register(p, family);
+      // Fix: Use Buffer.from() to properly handle font data
+      const fontData = fs.readFileSync(p);
+      const buffer = Buffer.from(fontData);
+      GlobalFonts.register(buffer, family);
       console.log(`[font] registered ${file} as ${family}/${weight}`);
       return true;
     } else {
@@ -34,7 +37,8 @@ function safeRegisterFont(file, family, weight = "normal") {
 }
 
 // Register DejaVu fonts with consistent family names
-export const HAVE_DEJAVU_BOLD = safeRegisterFont("DejaVuSans-Bold.ttf", "DejaVu Sans");
+export const HAVE_DEJAVU_REGULAR = safeRegisterFont("DejaVuSans.ttf", "DejaVu Sans");
+export const HAVE_DEJAVU_BOLD = safeRegisterFont("DejaVuSans-Bold.ttf", "DejaVu Sans Bold");
 
 // 🔧 Gate A helpers
 import envCheck from "./middleware/envCheck.js";

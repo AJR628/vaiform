@@ -44,13 +44,16 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
   style.textContent = `
     .caption-stage{ position:relative; border-radius:12px; overflow:hidden }
     .caption-stage img,.caption-stage video{ position:absolute; inset:0; width:100%; height:100%; object-fit:cover; pointer-events:none }
-    .caption-box{ position:absolute; resize:both; overflow:auto; outline:1.5px dashed rgba(255,255,255,.45);
+    .caption-box{ position:absolute; resize:both; overflow:visible; outline:1.5px dashed rgba(255,255,255,.45);
       border-radius:12px; z-index:9999; touch-action:none; user-select:none; background:rgba(0,0,0,.25); }
     .caption-box.is-boxless{ background:transparent; outline:none; }
     .caption-box:hover:not(.is-boxless){ outline-style:solid; }
+    .caption-box:not(.editing){ outline:none; background:transparent; }
+    .caption-box:not(.editing) .drag-handle{ display:none; }
+    .caption-box:not(.editing) .drag-resize{ display:none; }
     .caption-box .drag-handle{ cursor:move; user-select:none; padding:6px 10px; background:rgba(0,0,0,.25);
       border-top-left-radius:12px; border-top-right-radius:12px; font: 12px/1 system-ui; letter-spacing:.08em; text-transform:uppercase; }
-    .caption-box .content{ padding:10px 12px; outline:none; white-space:pre-wrap; word-break:break-word;
+    .caption-box .content{ padding:10px 12px; outline:none; white-space:pre-wrap; word-break:break-word; overflow:visible;
       color:#fff; text-align:center; font-weight:800; font-size:38px; line-height:1.15; text-shadow:0 2px 12px rgba(0,0,0,.65);
       font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
     .caption-box .drag-resize{ position:absolute; right:6px; bottom:6px; width:16px; height:16px;
@@ -81,13 +84,14 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     let y = Math.max(0, Math.min(drag.oy + dy, drag.sh - drag.bh));
     box.style.left = (x / drag.sw * 100) + '%';
     box.style.top  = (y / drag.sh * 100) + '%';
+    clampToStage(); // Ensure box stays within stage
   };
   
   handle.addEventListener('pointermove', onMove);
   handle.addEventListener('pointerup', ()=> drag=null);
   handle.addEventListener('pointercancel', ()=> drag=null);
 
-  // Keep inside frame on resize
+  // Keep inside frame on resize and clamp to stage
   const clamp = ()=>{
     const s = stage.getBoundingClientRect(), b = box.getBoundingClientRect();
     let x = Math.max(0, Math.min(b.left - s.left, s.width - b.width));
@@ -97,8 +101,48 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     box.style.width  = Math.min(b.width,  s.width) + 'px';
     box.style.height = Math.min(b.height, s.height) + 'px';
   };
+  
+  // Clamp box to stage boundaries
+  const clampToStage = () => {
+    const s = stage.getBoundingClientRect();
+    const b = box.getBoundingClientRect();
+    const pad = 8;
+    
+    let x = Math.max(pad, Math.min(b.left - s.left, s.width - b.width - pad));
+    let y = Math.max(pad, Math.min(b.top - s.top, s.height - b.height - pad));
+    
+    box.style.left = (x / s.width * 100) + '%';
+    box.style.top = (y / s.height * 100) + '%';
+  };
+  
   new ResizeObserver(clamp).observe(box);
   window.addEventListener('resize', clamp);
+  
+  // Add editing state management
+  let isEditing = false;
+  
+  const setEditing = (editing) => {
+    isEditing = editing;
+    if (editing) {
+      box.classList.add('editing');
+    } else {
+      box.classList.remove('editing');
+    }
+  };
+  
+  // Click outside to exit editing mode
+  document.addEventListener('click', (e) => {
+    if (!box.contains(e.target)) {
+      setEditing(false);
+    }
+  });
+  
+  // Click on box to enter editing mode
+  box.addEventListener('click', (e) => {
+    if (!isEditing) {
+      setEditing(true);
+    }
+  });
 
   // Auto-size functionality
   function setTextAutoSize(text) {
@@ -130,6 +174,7 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     // Persist wPct
     meta.wPct = w / stageW;
     applyCaptionMeta(meta);
+    clampToStage(); // Ensure auto-sized box stays within stage
   }
 
   // Auto shrink-to-fit when overflowing
@@ -173,6 +218,7 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
       }
       meta.wPct = w / stage.clientWidth;
       applyCaptionMeta(meta, {silentPreview: true});
+      clampToStage(); // Ensure box stays within stage during resize
     }
     
     function up(ev) {
@@ -182,6 +228,7 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
       // Final persist + preview
       const meta = getCaptionMeta();
       applyCaptionMeta(meta);
+      clampToStage(); // Final clamp after resize
     }
     
     window.addEventListener('pointermove', move);
@@ -191,7 +238,7 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
   // Public API on window (simple)
   window.getCaptionMeta = function getCaptionMeta(){
     const s = stage.getBoundingClientRect(), b = box.getBoundingClientRect(), cs = getComputedStyle(content);
-    return {
+    const meta = {
       text: content.innerText.trim(),
       xPct: (b.left - s.left) / s.width,
       yPct: (b.top  - s.top ) / s.height,
@@ -208,6 +255,10 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
       showBox: !box.classList.contains('is-boxless'),
       responsiveText: document.getElementById('responsive-text-toggle')?.checked ?? true
     };
+    
+    // Update global SSOT meta
+    window.__overlayMeta = meta;
+    return meta;
   };
   
   window.applyCaptionMeta = function applyCaptionMeta(meta, options = {}){
@@ -237,6 +288,9 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     if (!options.silentPreview) {
       shrinkToFit(content, box);
     }
+    
+    // Update global SSOT meta after applying changes
+    window.__overlayMeta = getCaptionMeta();
   };
   
   window.setQuote = function setQuote(text){ 
@@ -247,6 +301,9 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
       shrinkToFit(content, box);
     }
     try { ensureOverlayTopAndVisible(stageSel); } catch {}
+    
+    // Update global SSOT meta after setting quote
+    window.__overlayMeta = getCaptionMeta();
   };
 }
 
