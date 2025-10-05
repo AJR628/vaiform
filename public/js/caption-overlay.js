@@ -28,6 +28,16 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
   const stage = document.querySelector(stageSel);
   if (!stage) throw new Error('stage not found');
   const overlayV2 = detectOverlayV2();
+
+  // V2 sticky-bounds fitter state
+  const MIN_PX = 32, MAX_PX = 120;
+  const v2State = {
+    isResizing: false,
+    rafPending: false,
+    lastBoxW: 0,
+    lastBoxH: 0,
+    fitBounds: { lowPx: MIN_PX, highPx: MAX_PX, lastGoodPx: null }
+  };
   
   // Ensure stage has aspect ratio consistent with final output
   stage.classList.add('caption-stage');
@@ -129,6 +139,7 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
 
   // Keep inside frame on resize and clamp to stage
   const clamp = ()=>{
+    if (overlayV2 && v2State.isResizing) return; // observer no-op during V2 resize
     const s = stage.getBoundingClientRect(), b = box.getBoundingClientRect();
     let x = Math.max(0, Math.min(b.left - s.left, s.width - b.width));
     let y = Math.max(0, Math.min(b.top  - s.top,  s.height - b.height));
@@ -183,11 +194,7 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
   // Auto-size functionality
   function setTextAutoSize(text) {
     content.textContent = text;
-    if (overlayV2) {
-      // V2: single binary-search fit only; width stays as-is
-      try { requestAnimationFrame(fitText); } catch {}
-      return;
-    }
+    if (overlayV2) { try { ensureFitNextRAF('setText'); } catch {}; return; }
     // Legacy path below
     content.style.width = 'auto';
     content.style.maxWidth = 'unset';
@@ -225,9 +232,8 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
   // Only fit on text input, not during resize; resize uses the rAF fitText flow
   content.addEventListener('input', ()=> {
     clearTimeout(fitTimer);
-    if (overlayV2) {
-      fitTimer = setTimeout(()=>{ try { requestAnimationFrame(fitText); } catch {} }, 0);
-    } else {
+    if (overlayV2) { fitTimer = setTimeout(()=>{ try { ensureFitNextRAF('input'); } catch {} }, 0); }
+    else {
       fitTimer = setTimeout(fitText, 0);
     }
   });
@@ -262,6 +268,64 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     content.style.fontSize = best + 'px';
   };
 
+  // V2: single rAF pipeline and sticky-bounds binary search fitter
+  function beginResizeSession() {
+    v2State.isResizing = true;
+    const c = parseInt(getComputedStyle(content).fontSize, 10) || MIN_PX;
+    v2State.fitBounds.lowPx = Math.max(MIN_PX, Math.floor(c * 0.6));
+    v2State.fitBounds.highPx = Math.min(MAX_PX, Math.ceil(c * 1.8));
+    v2State.fitBounds.lastGoodPx = Math.max(MIN_PX, Math.min(MAX_PX, c));
+    const b = box.getBoundingClientRect();
+    v2State.lastBoxW = b.width; v2State.lastBoxH = b.height;
+    try { if (window.__overlayV2 && window.__debugOverlay) console.log(JSON.stringify({ tag:'overlay:session', phase:'start', c, lo:v2State.fitBounds.lowPx, hi:v2State.fitBounds.highPx })); } catch {}
+  }
+
+  function endResizeSession() {
+    try { fitTextV2('pointerup'); } catch {}
+    v2State.isResizing = false;
+    v2State.rafPending = false;
+    try { if (window.__overlayV2 && window.__debugOverlay) console.log(JSON.stringify({ tag:'overlay:session', phase:'end', best:v2State.fitBounds.lastGoodPx })); } catch {}
+  }
+
+  function ensureFitNextRAF(reason) {
+    if (!overlayV2) { try { requestAnimationFrame(fitText); } catch {} return; }
+    if (v2State.rafPending) return;
+    v2State.rafPending = true;
+    requestAnimationFrame(() => { v2State.rafPending = false; try { fitTextV2(reason); } catch {} });
+  }
+
+  function fitTextV2(reason) {
+    // Decide direction to adjust bounds
+    const s = getComputedStyle(content);
+    const padX = parseInt(s.paddingLeft,10) + parseInt(s.paddingRight,10);
+    const padY = parseInt(s.paddingTop,10) + parseInt(s.paddingBottom,10);
+    const maxW = Math.max(0, box.clientWidth - padX);
+    const maxH = Math.max(0, box.clientHeight - padY);
+    const b = box.getBoundingClientRect();
+    const expanding = (b.width >= v2State.lastBoxW) && (b.height >= v2State.lastBoxH);
+    const currentPx = parseInt(s.fontSize, 10) || MIN_PX;
+    if (expanding) {
+      v2State.fitBounds.lowPx = Math.max(MIN_PX, currentPx);
+      v2State.fitBounds.highPx = Math.min(MAX_PX, Math.max(v2State.fitBounds.highPx, Math.ceil(currentPx * 2)));
+    } else {
+      v2State.fitBounds.highPx = Math.min(MAX_PX, currentPx);
+      v2State.fitBounds.lowPx = Math.max(MIN_PX, Math.min(v2State.fitBounds.lowPx, Math.floor(currentPx / 2)));
+    }
+    let lo = Math.max(MIN_PX, v2State.fitBounds.lowPx);
+    let hi = Math.min(MAX_PX, v2State.fitBounds.highPx);
+    let best = Math.round(v2State.fitBounds.lastGoodPx || lo);
+    for (let i = 0; i < 8 && lo <= hi; i++) {
+      const mid = (lo + hi) >> 1;
+      content.style.fontSize = mid + 'px';
+      const ok = (content.scrollWidth <= maxW + 0.5) && (content.scrollHeight <= maxH + 0.5);
+      if (ok) { best = mid; lo = mid + 1; } else { hi = mid - 1; }
+    }
+    content.style.fontSize = best + 'px';
+    v2State.fitBounds.lastGoodPx = best;
+    v2State.lastBoxW = b.width; v2State.lastBoxH = b.height;
+    try { if (window.__overlayV2 && window.__debugOverlay) console.log(JSON.stringify({ tag:'overlay:raf', reason, w:b.width, h:b.height, fontPx:best, lo, hi })); } catch {}
+  }
+
   // Custom resize handle functionality
   let resizeStart = null;
   resizeHandle.addEventListener('pointerdown', (e) => {
@@ -269,6 +333,7 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     try { resizeHandle.setPointerCapture(e.pointerId); } catch {}
     const start = {x: e.clientX, y: e.clientY, w: box.offsetWidth, h: box.offsetHeight, left: box.offsetLeft, top: box.offsetTop};
     const initialFontPx = parseInt(getComputedStyle(content).fontSize, 10);
+    if (overlayV2) beginResizeSession();
     
     function move(ev) {
       // delta from pointer movement
@@ -288,7 +353,7 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
       // V2: coalesce to a single binary-search fit; avoid tight loops
       if (overlayV2) {
         clearTimeout(fitTimer);
-        fitTimer = setTimeout(()=>{ try { requestAnimationFrame(fitText); } catch {} }, 16);
+        fitTimer = setTimeout(()=>{ try { ensureFitNextRAF('resize'); } catch {} }, 16);
       } else {
         // Legacy responsive approximation + final fit
         const responsiveText = document.getElementById('responsive-text-toggle')?.checked ?? true;
@@ -312,7 +377,7 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
         resizeHandle.removeEventListener('pointerup', up);
       }
       // Final persist + preview
-      try { fitText(); } catch {}
+      if (overlayV2) { try { endResizeSession(); } catch {} } else { try { fitText(); } catch {} }
       const meta = getCaptionMeta();
       applyCaptionMeta(meta);
     }
@@ -378,7 +443,7 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     if (!options.silentPreview && !overlayV2) {
       shrinkToFit(content, box);
     } else if (!options.silentPreview && overlayV2) {
-      try { requestAnimationFrame(fitText); } catch {}
+      try { ensureFitNextRAF('apply'); } catch {}
     }
     
     // Update global SSOT meta after applying changes
@@ -390,7 +455,7 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
       setTextAutoSize(text.trim());
     } else {
       content.innerText = text || ''; 
-      if (!overlayV2) shrinkToFit(content, box); else try { requestAnimationFrame(fitText); } catch {}
+      if (!overlayV2) shrinkToFit(content, box); else try { ensureFitNextRAF('quote'); } catch {}
     }
     try { ensureOverlayTopAndVisible(stageSel); } catch {}
     
@@ -405,7 +470,7 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
 
   // V2: ensure fonts are ready before first fit
   if (overlayV2 && document.fonts && document.fonts.ready) {
-    try { document.fonts.ready.then(()=>{ try { fitText(); } catch {} }); } catch {}
+    try { document.fonts.ready.then(()=>{ try { ensureFitNextRAF('fonts'); } catch {} }); } catch {}
   }
 
   // Structured one-line JSON log
