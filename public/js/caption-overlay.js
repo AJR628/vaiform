@@ -194,33 +194,61 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
   content.addEventListener('input', ()=> shrinkToFit(content, box));
   new ResizeObserver(()=> shrinkToFit(content, box)).observe(box);
 
+  // Fit text to the current box (grow and shrink) with safety caps
+  let fitTimer = null;
+  const fitText = () => {
+    const el = content;
+    const container = box;
+    const s = getComputedStyle(el);
+    const padX = parseInt(s.paddingLeft,10)+parseInt(s.paddingRight,10);
+    const padY = parseInt(s.paddingTop,10)+parseInt(s.paddingBottom,10);
+    const maxW = Math.max(0, container.clientWidth - padX);
+    const maxH = Math.max(0, container.clientHeight - padY);
+    let px = parseInt(s.fontSize,10) || 24;
+    // shrink if overflowing
+    while ((el.scrollHeight > maxH || el.scrollWidth > maxW) && px > 12) {
+      px -= 1; el.style.fontSize = px + 'px';
+    }
+    // grow (with headroom of 6px to avoid jitter)
+    while ((el.scrollHeight < maxH - 6 && el.scrollWidth < maxW - 6) && px < 160) {
+      px += 1; el.style.fontSize = px + 'px';
+      if (el.scrollHeight > maxH || el.scrollWidth > maxW) { px -= 1; el.style.fontSize = px + 'px'; break; }
+    }
+  };
+
   // Custom resize handle functionality
   let resizeStart = null;
   resizeHandle.addEventListener('pointerdown', (e) => {
     e.preventDefault();
     box.setPointerCapture(e.pointerId);
-    const start = {x: e.clientX, y: e.clientY, w: box.offsetWidth, h: box.offsetHeight};
+    const start = {x: e.clientX, y: e.clientY, w: box.offsetWidth, h: box.offsetHeight, left: box.offsetLeft, top: box.offsetTop};
     const initialFontPx = parseInt(getComputedStyle(content).fontSize, 10);
     
     function move(ev) {
+      // delta from pointer movement
       const dx = ev.clientX - start.x;
       const dy = ev.clientY - start.y;
-      const w = Math.max(start.w + dx, 0.3 * stage.clientWidth);
-      const h = Math.max(start.h + dy, 60);
+      // proposed size
+      let w = start.w + dx;
+      let h = start.h + dy;
+      // clamp size so bottom-right corner stays under pointer and within stage
+      const maxW = stage.clientWidth - start.left;
+      const maxH = stage.clientHeight - start.top;
+      w = Math.max(60, Math.min(w, maxW));
+      h = Math.max(40, Math.min(h, maxH));
       box.style.width = w + 'px';
       box.style.height = h + 'px';
-      
-      const meta = getCaptionMeta();
-      // Check if responsive text is enabled
+
+      // Responsive text grow/shrink in lockstep
       const responsiveText = document.getElementById('responsive-text-toggle')?.checked ?? true;
       if (responsiveText) {
-        const scale = w / start.w;
-        meta.fontPx = Math.max(22, Math.min(140, Math.round(initialFontPx * Math.sqrt(scale))));
-        content.style.fontSize = meta.fontPx + 'px';
+        const scale = Math.max(w / Math.max(1, start.w), 0.05);
+        const targetPx = Math.max(12, Math.min(160, Math.round(initialFontPx * Math.sqrt(scale))));
+        content.style.fontSize = targetPx + 'px';
       }
-      meta.wPct = w / stage.clientWidth;
-      applyCaptionMeta(meta, {silentPreview: true});
-      clampToStage(); // Ensure box stays within stage during resize
+      // Debounced fit to remove overflow and use available space
+      clearTimeout(fitTimer);
+      fitTimer = setTimeout(fitText, 16);
     }
     
     function up(ev) {
@@ -228,9 +256,9 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
       // Final persist + preview
+      try { fitText(); } catch {}
       const meta = getCaptionMeta();
       applyCaptionMeta(meta);
-      clampToStage(); // Final clamp after resize
     }
     
     window.addEventListener('pointermove', move);
