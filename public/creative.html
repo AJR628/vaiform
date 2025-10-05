@@ -934,7 +934,7 @@
         let overlayRefreshTimer = null;
         function queueCaptionOverlayRefresh() {
           // When draggable overlay mode is active, do not trigger legacy PNG overlay refresh
-          try { if (useOverlayMode) return; } catch {}
+          try { if (useOverlayMode) { console.log('[legacy-gate] blocked:', 'queueCaptionOverlayRefresh'); return; } } catch {}
           if (overlayRefreshTimer) clearTimeout(overlayRefreshTimer);
           overlayRefreshTimer = setTimeout(() => {
             try {
@@ -991,7 +991,10 @@
                 }
                 // Apply current quote text into overlay and refresh background
                 if (currentQuote?.text) {
-                    try { const { setQuote } = await import('./js/caption-overlay.js'); setQuote(currentQuote.text.trim()); } catch {}
+                    try { const { setQuote } = await import('./js/caption-overlay.js');
+                      setQuote(currentQuote.text.trim());
+                      console.log('[overlay-caption] set:', currentQuote.text.trim().substring(0,80));
+                    } catch {}
                 }
                 if (typeof updateOverlayCanvasBackground === 'function') updateOverlayCanvasBackground();
                 // Reflect UI: show stage, hide legacy image
@@ -1005,7 +1008,7 @@
         // Debounced caption preview generator
         function debouncedPreview(delay = 200) {
             // Do not run legacy debounced PNG generation while overlay mode is enabled
-            try { if (useOverlayMode) return; } catch {}
+            try { if (useOverlayMode) { console.log('[legacy-gate] blocked:', 'debouncedPreview'); return; } } catch {}
             clearTimeout(captionDebounceTimer);
             captionDebounceTimer = setTimeout(() => {
                 if (currentQuote?.text?.trim()) {
@@ -1023,7 +1026,7 @@
         
         async function updateCaptionOverlay(text = '', show = true) {
             // Gate legacy PNG overlay when draggable overlay mode is on
-            try { if (useOverlayMode) return; } catch {}
+            try { if (useOverlayMode) { console.log('[legacy-gate] blocked:', 'updateCaptionOverlay'); return; } } catch {}
             console.log('[preview-init] updateCaptionOverlay called with:', { text: text?.substring(0, 50), show });
             
             const overlay = document.getElementById('caption-overlay');
@@ -3535,7 +3538,19 @@
             document.getElementById('cancel-quote-btn').classList.add('hidden');
             document.getElementById('edit-quote-btn').classList.remove('hidden');
             updateRenderPreview();
-            updateCaptionOverlay(newText, true);
+            // Prefer overlay path on save
+            try { console.log('[save] caption text:', newText); } catch {}
+            try {
+                await ensureOverlayActive();
+                if (useOverlayMode && overlaySystemInitialized) {
+                    console.log('[overlay-caption] set:', newText.substring(0,80));
+                    await updateOverlayCaption(newText, true);
+                } else {
+                    updateCaptionOverlay(newText, true);
+                }
+            } catch (e) {
+                console.warn('[overlay] save→overlay failed', e);
+            }
 
             // Persist to backend so it can be used in the short without CORS issues
             try {
