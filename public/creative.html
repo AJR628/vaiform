@@ -1411,7 +1411,7 @@
         }
         
         // Update overlay canvas background
-        function updateOverlayCanvasBackground() {
+        async function updateOverlayCanvasBackground() {
             if (!useOverlayMode || !overlaySystemInitialized) return;
             
             try {
@@ -3588,7 +3588,7 @@
         window.addEventListener('resize', () => {
             clearTimeout(resizeTimeout);
             resizeTimeout = setTimeout(() => {
-                try { const { ensureOverlayTopAndVisible } = await import('./js/caption-overlay.js'); ensureOverlayTopAndVisible('#stage'); } catch {}
+                try { import('./js/caption-overlay.js').then(({ ensureOverlayTopAndVisible }) => ensureOverlayTopAndVisible('#stage')); } catch {}
                 if (selectedAsset) {
                     if (_currentPexelsPhoto && selectedAsset?.provider === 'pexels') {
                         // Preserve existing previewUrl when updating selectedAsset
