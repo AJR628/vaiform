@@ -365,6 +365,22 @@
                 </label>
             </div>
             
+            <!-- Overlay Controls (shown when overlay mode is enabled) -->
+            <div id="overlay-controls" class="mb-4 space-y-3" style="display: none;">
+                <div>
+                    <label class="flex items-center gap-2">
+                        <input type="checkbox" id="show-outline-toggle" class="rounded" checked />
+                        <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Show outline</span>
+                    </label>
+                </div>
+                <div>
+                    <label class="flex items-center gap-2">
+                        <input type="checkbox" id="responsive-text-toggle" class="rounded" checked />
+                        <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Responsive text</span>
+                    </label>
+                </div>
+            </div>
+            
             
             
             <div class="grid grid-cols-2 gap-4">
@@ -1365,7 +1381,7 @@
                 // Show new overlay system
                 stage.style.display = 'block';
                 legacyOverlay.style.display = 'none';
-                try { overlayControls.classList.add('hidden'); } catch {}
+                try { overlayControls.style.display = 'block'; } catch {}
                 
                 // Initialize overlay system if not already done
                 if (!overlaySystemInitialized) {
@@ -1383,7 +1399,7 @@
                 // Show legacy overlay system
                 stage.style.display = 'none';
                 legacyOverlay.style.display = 'block';
-                try { overlayControls.classList.add('hidden'); } catch {}
+                try { overlayControls.style.display = 'none'; } catch {}
             }
             
             console.log('[overlay-mode] Switched to:', useOverlayMode ? 'draggable overlay' : 'legacy overlay');
@@ -1445,8 +1461,9 @@
                 padding: meta.paddingPx ?? 12,
                 placement: 'custom',      // signals server to use manual placement
                 maxWidthPct: Math.round((meta.wPct || 0.8) * 100),
-                showBox: false,
-                boxColor: 'transparent'
+                showBox: meta.showBox ?? true,
+                boxColor: 'transparent',
+                responsiveText: meta.responsiveText ?? true
             };
         }
         
@@ -3397,6 +3414,33 @@
         
         // Overlay mode toggle event listener (auto-initialize overlay; no extra buttons)
         document.getElementById('overlay-mode-toggle').onchange = toggleOverlayMode;
+        
+        // Overlay control event listeners
+        document.getElementById('show-outline-toggle').onchange = async () => {
+            if (useOverlayMode && overlaySystemInitialized) {
+                try {
+                    const { getCaptionMeta, applyCaptionMeta } = await import('./js/caption-overlay.js');
+                    const meta = getCaptionMeta();
+                    meta.showBox = document.getElementById('show-outline-toggle').checked;
+                    applyCaptionMeta(meta);
+                } catch (e) {
+                    console.warn('[overlay] outline toggle failed', e);
+                }
+            }
+        };
+        
+        document.getElementById('responsive-text-toggle').onchange = async () => {
+            if (useOverlayMode && overlaySystemInitialized) {
+                try {
+                    const { getCaptionMeta, applyCaptionMeta } = await import('./js/caption-overlay.js');
+                    const meta = getCaptionMeta();
+                    meta.responsiveText = document.getElementById('responsive-text-toggle').checked;
+                    applyCaptionMeta(meta);
+                } catch (e) {
+                    console.warn('[overlay] responsive text toggle failed', e);
+                }
+            }
+        };
         
         // Debug function to check overlay system status
         window.debugOverlaySystem = function() {

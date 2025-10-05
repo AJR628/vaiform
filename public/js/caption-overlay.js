@@ -29,8 +29,14 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
   content.contentEditable = 'true';
   content.textContent = 'Your quote goes here…';
 
+  // Add custom resize handle
+  const resizeHandle = document.createElement('div');
+  resizeHandle.className = 'drag-resize';
+  resizeHandle.innerHTML = '↘';
+
   box.appendChild(handle);
   box.appendChild(content);
+  box.appendChild(resizeHandle);
   stage.appendChild(box);
 
   // Style (inline so we don't require new CSS file)
@@ -39,12 +45,16 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     .caption-stage{ position:relative; border-radius:12px; overflow:hidden }
     .caption-stage img,.caption-stage video{ position:absolute; inset:0; width:100%; height:100%; object-fit:cover; pointer-events:none }
     .caption-box{ position:absolute; resize:both; overflow:auto; outline:1.5px dashed rgba(255,255,255,.45);
-      border-radius:12px; z-index:9999; touch-action:none; }
+      border-radius:12px; z-index:9999; touch-action:none; user-select:none; background:rgba(0,0,0,.25); }
+    .caption-box.is-boxless{ background:transparent; outline:none; }
+    .caption-box:hover:not(.is-boxless){ outline-style:solid; }
     .caption-box .drag-handle{ cursor:move; user-select:none; padding:6px 10px; background:rgba(0,0,0,.25);
       border-top-left-radius:12px; border-top-right-radius:12px; font: 12px/1 system-ui; letter-spacing:.08em; text-transform:uppercase; }
     .caption-box .content{ padding:10px 12px; outline:none; white-space:pre-wrap; word-break:break-word;
       color:#fff; text-align:center; font-weight:800; font-size:38px; line-height:1.15; text-shadow:0 2px 12px rgba(0,0,0,.65);
       font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+    .caption-box .drag-resize{ position:absolute; right:6px; bottom:6px; width:16px; height:16px;
+      cursor:nwse-resize; border-right:2px solid #fff; border-bottom:2px solid #fff; opacity:.7; }
   `;
   document.head.appendChild(style);
 
@@ -90,6 +100,38 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
   new ResizeObserver(clamp).observe(box);
   window.addEventListener('resize', clamp);
 
+  // Auto-size functionality
+  function setTextAutoSize(text) {
+    content.textContent = text;
+    
+    // Reset styles for measurement
+    content.style.width = 'auto';
+    content.style.maxWidth = 'unset';
+    box.style.width = 'auto';
+    box.style.height = 'auto';
+    
+    const stageW = stage.clientWidth;
+    const maxW = Math.round(0.9 * stageW);
+    const minW = Math.round(0.3 * stageW);
+    
+    // Grow width until no vertical overflow (or hit maxW)
+    let w = Math.min(Math.max(content.scrollWidth + 24, minW), maxW);
+    content.style.maxWidth = w + 'px';
+    box.style.width = w + 'px';
+    
+    // If still overflowing vertically, reduce fontPx until fits
+    let meta = getCaptionMeta();
+    let tries = 0;
+    while (content.scrollHeight > stage.clientHeight * 0.8 && meta.fontPx > 22 && tries++ < 20) {
+      meta.fontPx = meta.fontPx - 2;
+      applyCaptionMeta(meta);
+    }
+    
+    // Persist wPct
+    meta.wPct = w / stageW;
+    applyCaptionMeta(meta);
+  }
+
   // Auto shrink-to-fit when overflowing
   const shrinkToFit = (el, container, minPx=18)=>{
     const s = getComputedStyle(el);
@@ -104,6 +146,47 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
   };
   content.addEventListener('input', ()=> shrinkToFit(content, box));
   new ResizeObserver(()=> shrinkToFit(content, box)).observe(box);
+
+  // Custom resize handle functionality
+  let resizeStart = null;
+  resizeHandle.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    box.setPointerCapture(e.pointerId);
+    const start = {x: e.clientX, y: e.clientY, w: box.offsetWidth, h: box.offsetHeight};
+    const initialFontPx = parseInt(getComputedStyle(content).fontSize, 10);
+    
+    function move(ev) {
+      const dx = ev.clientX - start.x;
+      const dy = ev.clientY - start.y;
+      const w = Math.max(start.w + dx, 0.3 * stage.clientWidth);
+      const h = Math.max(start.h + dy, 60);
+      box.style.width = w + 'px';
+      box.style.height = h + 'px';
+      
+      const meta = getCaptionMeta();
+      // Check if responsive text is enabled
+      const responsiveText = document.getElementById('responsive-text-toggle')?.checked ?? true;
+      if (responsiveText) {
+        const scale = w / start.w;
+        meta.fontPx = Math.max(22, Math.min(140, Math.round(initialFontPx * Math.sqrt(scale))));
+        content.style.fontSize = meta.fontPx + 'px';
+      }
+      meta.wPct = w / stage.clientWidth;
+      applyCaptionMeta(meta, {silentPreview: true});
+    }
+    
+    function up(ev) {
+      box.releasePointerCapture(ev.pointerId);
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      // Final persist + preview
+      const meta = getCaptionMeta();
+      applyCaptionMeta(meta);
+    }
+    
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  });
 
   // Public API on window (simple)
   window.getCaptionMeta = function getCaptionMeta(){
@@ -121,11 +204,13 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
       opacity: Number(cs.opacity || 1),
       textAlign: cs.textAlign,
       paddingPx: parseInt(cs.paddingLeft,10),
-      fontFamily: cs.fontFamily
+      fontFamily: cs.fontFamily,
+      showBox: !box.classList.contains('is-boxless'),
+      responsiveText: document.getElementById('responsive-text-toggle')?.checked ?? true
     };
   };
   
-  window.applyCaptionMeta = function applyCaptionMeta(meta){
+  window.applyCaptionMeta = function applyCaptionMeta(meta, options = {}){
     const s = stage.getBoundingClientRect();
     if (typeof meta.text === 'string') content.innerText = meta.text;
     if (typeof meta.xPct === 'number') box.style.left = (meta.xPct * 100) + '%';
@@ -139,12 +224,28 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     if (typeof meta.opacity === 'number') content.style.opacity = String(meta.opacity);
     if (meta.paddingPx != null) content.style.padding = meta.paddingPx + 'px';
     if (meta.fontFamily) content.style.fontFamily = meta.fontFamily;
-    shrinkToFit(content, box);
+    
+    // Handle showBox toggle
+    if (typeof meta.showBox === 'boolean') {
+      if (meta.showBox) {
+        box.classList.remove('is-boxless');
+      } else {
+        box.classList.add('is-boxless');
+      }
+    }
+    
+    if (!options.silentPreview) {
+      shrinkToFit(content, box);
+    }
   };
   
   window.setQuote = function setQuote(text){ 
-    content.innerText = text || ''; 
-    shrinkToFit(content, box); 
+    if (text && text.trim()) {
+      setTextAutoSize(text.trim());
+    } else {
+      content.innerText = text || ''; 
+      shrinkToFit(content, box);
+    }
     try { ensureOverlayTopAndVisible(stageSel); } catch {}
   };
 }
