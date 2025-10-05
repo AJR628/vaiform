@@ -1304,10 +1304,11 @@
             if (overlaySystemInitialized) return;
             
             try {
-                const { initCaptionOverlay, getCaptionMeta, applyCaptionMeta, setQuote } = await import('./js/caption-overlay.js');
+                const { initCaptionOverlay, getCaptionMeta, applyCaptionMeta, setQuote, ensureOverlayTopAndVisible, bindCaptionDrag } = await import('./js/caption-overlay.js');
                 
                 // Initialize the overlay system
                 initCaptionOverlay({ stageSel: '#stage', mediaSel: '#previewMedia' });
+                try { ensureOverlayTopAndVisible('#stage'); bindCaptionDrag('#stage'); } catch {}
                 
                 // Set up the preview media source - wait for canvas to be ready
                 const setupCanvasBackground = () => {
@@ -1330,6 +1331,7 @@
                     const checkCanvas = () => {
                         if (setupCanvasBackground()) {
                             console.log('[overlay-system] Canvas background set after wait');
+                            try { ensureOverlayTopAndVisible('#stage'); } catch {}
                         } else {
                             // Retry in 100ms
                             setTimeout(checkCanvas, 100);
@@ -1341,6 +1343,7 @@
                 // Set initial quote if available
                 if (currentQuote?.text) {
                     setQuote(currentQuote.text);
+                    try { ensureOverlayTopAndVisible('#stage'); } catch {}
                 }
                 
                 overlaySystemInitialized = true;
@@ -1391,7 +1394,7 @@
             if (!useOverlayMode || !overlaySystemInitialized) return;
             
             try {
-                const { setQuote, getCaptionMeta, applyCaptionMeta } = await import('./js/caption-overlay.js');
+                const { setQuote, getCaptionMeta, applyCaptionMeta, ensureOverlayTopAndVisible } = await import('./js/caption-overlay.js');
                 
                 if (show && text?.trim()) {
                     setQuote(text);
@@ -1401,6 +1404,7 @@
                 updateOverlayCanvasBackground();
                 
                 console.log('[overlay-caption] Updated overlay with text:', text?.substring(0, 50));
+                try { ensureOverlayTopAndVisible('#stage'); } catch {}
             } catch (error) {
                 console.error('[overlay-caption] Failed to update overlay:', error);
             }
@@ -1418,6 +1422,7 @@
                     const dataUrl = canvas.toDataURL('image/png');
                     previewMedia.src = dataUrl;
                     console.log('[overlay-canvas] Background updated');
+                    try { const { ensureOverlayTopAndVisible } = await import('./js/caption-overlay.js'); ensureOverlayTopAndVisible('#stage'); } catch {}
                 }
             } catch (error) {
                 console.warn('[overlay-canvas] Failed to update background:', error);
@@ -3583,6 +3588,7 @@
         window.addEventListener('resize', () => {
             clearTimeout(resizeTimeout);
             resizeTimeout = setTimeout(() => {
+                try { const { ensureOverlayTopAndVisible } = await import('./js/caption-overlay.js'); ensureOverlayTopAndVisible('#stage'); } catch {}
                 if (selectedAsset) {
                     if (_currentPexelsPhoto && selectedAsset?.provider === 'pexels') {
                         // Preserve existing previewUrl when updating selectedAsset

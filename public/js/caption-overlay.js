@@ -48,6 +48,9 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
   `;
   document.head.appendChild(style);
 
+  // Snap into view on next frame to avoid off-viewport placement
+  try { requestAnimationFrame(() => { try { ensureOverlayTopAndVisible(stageSel); } catch {} }); } catch {}
+
   // Drag behavior
   let drag = null;
   handle.addEventListener('pointerdown', (e)=>{
@@ -142,9 +145,93 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
   window.setQuote = function setQuote(text){ 
     content.innerText = text || ''; 
     shrinkToFit(content, box); 
+    try { ensureOverlayTopAndVisible(stageSel); } catch {}
   };
 }
 
 export function getCaptionMeta(){ return window.getCaptionMeta(); }
 export function applyCaptionMeta(meta){ return window.applyCaptionMeta(meta); }
 export function setQuote(text){ return window.setQuote(text); }
+
+// Ensure the caption box is on top, hit-testable, and inside the stage viewport
+export function ensureOverlayTopAndVisible(stageSel = '#stage') {
+  const stage = document.querySelector(stageSel);
+  const box = stage?.querySelector('.caption-box');
+  if (!stage || !box) return;
+
+  // Keep on top in the stage stacking context
+  try { stage.appendChild(box); } catch {}
+  box.style.position = 'absolute';
+  box.style.zIndex = '99999';
+  box.style.pointerEvents = 'auto';
+
+  // Neutralize blockers inside stage
+  try {
+    stage.querySelectorAll('canvas,img,video,#previewMedia,.preview-overlay,#previewOverlayCanvas,#previewOverlayImg')
+      .forEach(el => { el.style.pointerEvents = 'none'; el.style.zIndex = '1'; });
+  } catch {}
+
+  // Clamp box inside stage (pixels; SSOT preserved for server metrics)
+  const sW = stage.clientWidth, sH = stage.clientHeight;
+  const bW = box.offsetWidth  || 280;
+  const bH = box.offsetHeight || 100;
+  const pad = 8;
+
+  // Current numeric left/top (accept % or px)
+  const currentLeft = parseFloat(box.style.left);
+  const currentTop  = parseFloat(box.style.top);
+  let left = Number.isFinite(currentLeft) ? currentLeft : (sW - bW) / 2;
+  let top  = Number.isFinite(currentTop)  ? currentTop  : (sH - bH) / 3;
+
+  left = Math.min(Math.max(left, pad), Math.max(0, sW - bW - pad));
+  top  = Math.min(Math.max(top,  pad), Math.max(0, sH - bH - pad));
+
+  box.style.left = /%$/.test(box.style.left) ? `${(left / Math.max(1, sW)) * 100}%` : `${left}px`;
+  box.style.top  = /%$/.test(box.style.top)  ? `${(top  / Math.max(1, sH)) * 100}%`  : `${top}px`;
+
+  // Ensure stage is visible in viewport for hit testing/dragging
+  try { stage.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'instant' }); } catch {}
+  try { console.log('[overlay] snapped caption-box in-view', { left, top, sW, sH, bW, bH }); } catch {}
+}
+
+// Optional: bind drag on the entire box (ignores edits inside .content)
+export function bindCaptionDrag(stageSel = '#stage') {
+  const stage = document.querySelector(stageSel);
+  const box = stage?.querySelector('.caption-box');
+  if (!stage || !box) return;
+  let start = null;
+
+  const onDown = (e) => {
+    // Avoid stealing focus while editing text inside content
+    if (e.target && (e.target.closest?.('.content'))) return;
+    e.preventDefault();
+    try { box.setPointerCapture(e.pointerId); } catch {}
+    const r = box.getBoundingClientRect();
+    const s = stage.getBoundingClientRect();
+    start = {
+      x: e.clientX, y: e.clientY,
+      left: parseFloat(box.style.left) || (r.left - s.left),
+      top:  parseFloat(box.style.top)  || (r.top  - s.top)
+    };
+  };
+
+  const onMove = (e) => {
+    if (!start) return;
+    const dx = e.clientX - start.x;
+    const dy = e.clientY - start.y;
+    const sW = stage.clientWidth, sH = stage.clientHeight;
+    const bW = box.offsetWidth,  bH = box.offsetHeight;
+    const pad = 8;
+    let left = Math.min(Math.max(start.left + dx, pad), Math.max(0, sW - bW - pad));
+    let top  = Math.min(Math.max(start.top  + dy, pad), Math.max(0, sH - bH - pad));
+    box.style.left = `${left}px`;
+    box.style.top  = `${top}px`;
+  };
+
+  const onUp = () => { start = null; };
+
+  box.addEventListener('pointerdown', onDown, { passive:false });
+  box.addEventListener('pointermove', onMove);
+  box.addEventListener('pointerup', onUp);
+  box.addEventListener('pointercancel', onUp);
+}
