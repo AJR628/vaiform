@@ -124,6 +124,14 @@
             pointer-events: none;
             opacity: 1;
         }
+        /* Make sure preview media and any legacy containers never steal pointer events */
+        #stage img, #stage video, #previewMedia, .preview-overlay, #previewOverlayCanvas, #previewOverlayImg {
+            pointer-events: none;
+            z-index: 1;
+        }
+        /* Draggable box must sit on top */
+        .caption-box, .caption-box .drag-handle { touch-action: none; }
+        .caption-box { z-index: 9999; }
     </style>
     <!-- Respect saved theme before paint - default to dark -->
     <script>

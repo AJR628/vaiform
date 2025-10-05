@@ -37,9 +37,9 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
   const style = document.createElement('style');
   style.textContent = `
     .caption-stage{ position:relative; border-radius:12px; overflow:hidden }
-    .caption-stage img,.caption-stage video{ position:absolute; inset:0; width:100%; height:100%; object-fit:cover }
+    .caption-stage img,.caption-stage video{ position:absolute; inset:0; width:100%; height:100%; object-fit:cover; pointer-events:none }
     .caption-box{ position:absolute; resize:both; overflow:auto; outline:1.5px dashed rgba(255,255,255,.45);
-      border-radius:12px; z-index:3; touch-action:none; }
+      border-radius:12px; z-index:9999; touch-action:none; }
     .caption-box .drag-handle{ cursor:move; user-select:none; padding:6px 10px; background:rgba(0,0,0,.25);
       border-top-left-radius:12px; border-top-right-radius:12px; font: 12px/1 system-ui; letter-spacing:.08em; text-transform:uppercase; }
     .caption-box .content{ padding:10px 12px; outline:none; white-space:pre-wrap; word-break:break-word;
@@ -55,6 +55,10 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     const b = box.getBoundingClientRect();
     drag = { startX: e.clientX, startY: e.clientY, ox: b.left - s.left, oy: b.top - s.top, sw: s.width, sh: s.height, bw: b.width, bh: b.height };
     handle.setPointerCapture(e.pointerId);
+    try {
+      const el = document.elementFromPoint(e.clientX, e.clientY);
+      console.log('[overlay] pointerdown at', e.clientX, e.clientY, 'elementUnder', el?.tagName, el?.id || el?.className || '');
+    } catch {}
   });
   
   const onMove = (e)=>{
