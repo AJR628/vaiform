@@ -44,7 +44,7 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
   style.textContent = `
     .caption-stage{ position:relative; border-radius:12px; overflow:hidden }
     .caption-stage img,.caption-stage video{ position:absolute; inset:0; width:100%; height:100%; object-fit:cover; pointer-events:none }
-    .caption-box{ position:absolute; resize:both; overflow:visible; outline:1.5px dashed rgba(255,255,255,.45);
+    .caption-box{ position:absolute; resize:both; overflow:hidden; outline:1.5px dashed rgba(255,255,255,.45);
       border-radius:12px; z-index:9999; touch-action:none; user-select:none; background:rgba(0,0,0,.25); }
     .caption-box.is-boxless{ background:transparent; outline:none; }
     .caption-box:hover:not(.is-boxless){ outline-style:solid; }
@@ -53,7 +53,7 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     .caption-box:not(.editing) .drag-resize{ display:none; }
     .caption-box .drag-handle{ cursor:move; user-select:none; padding:6px 10px; background:rgba(0,0,0,.25);
       border-top-left-radius:12px; border-top-right-radius:12px; font: 12px/1 system-ui; letter-spacing:.08em; text-transform:uppercase; }
-    .caption-box .content{ padding:10px 12px; outline:none; white-space:pre-wrap; word-break:break-word; overflow:visible;
+    .caption-box .content{ padding:10px 12px; outline:none; white-space:pre-wrap; word-break:break-word; overflow:hidden;
       color:#fff; text-align:center; font-weight:800; font-size:38px; line-height:1.15; text-shadow:0 2px 12px rgba(0,0,0,.65);
       font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
     .caption-box .drag-resize{ position:absolute; right:6px; bottom:6px; width:16px; height:16px;
@@ -64,13 +64,14 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
   // Snap into view on next frame to avoid off-viewport placement
   try { requestAnimationFrame(() => { try { ensureOverlayTopAndVisible(stageSel); } catch {} }); } catch {}
 
-  // Drag behavior
-  let drag = null;
+  // Drag behavior (strict: only move while actively dragging)
+  let drag = null; let dragging = false;
   handle.addEventListener('pointerdown', (e)=>{
     const s = stage.getBoundingClientRect();
     const b = box.getBoundingClientRect();
     drag = { startX: e.clientX, startY: e.clientY, ox: b.left - s.left, oy: b.top - s.top, sw: s.width, sh: s.height, bw: b.width, bh: b.height };
     handle.setPointerCapture(e.pointerId);
+    dragging = true;
     try {
       const el = document.elementFromPoint(e.clientX, e.clientY);
       console.log('[overlay] pointerdown at', e.clientX, e.clientY, 'elementUnder', el?.tagName, el?.id || el?.className || '');
@@ -78,7 +79,7 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
   });
   
   const onMove = (e)=>{
-    if(!drag) return;
+    if(!dragging || !drag) return; // stop hover push
     const dx = e.clientX - drag.startX, dy = e.clientY - drag.startY;
     let x = Math.max(0, Math.min(drag.ox + dx, drag.sw - drag.bw));
     let y = Math.max(0, Math.min(drag.oy + dy, drag.sh - drag.bh));
@@ -86,10 +87,11 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     box.style.top  = (y / drag.sh * 100) + '%';
     clampToStage(); // Ensure box stays within stage
   };
-  
-  handle.addEventListener('pointermove', onMove);
-  handle.addEventListener('pointerup', ()=> drag=null);
-  handle.addEventListener('pointercancel', ()=> drag=null);
+
+  // Listen on document so moving fast outside handle doesn't break drag
+  document.addEventListener('pointermove', onMove, { passive: true });
+  document.addEventListener('pointerup', ()=> { dragging = false; drag = null; }, { passive: true });
+  document.addEventListener('pointercancel', ()=> { dragging = false; drag = null; }, { passive: true });
 
   // Keep inside frame on resize and clamp to stage
   const clamp = ()=>{

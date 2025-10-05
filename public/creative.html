@@ -2991,20 +2991,33 @@
                   const meta = window.__overlayMeta;
                   payload.captionMode = 'overlay';
                   payload.overlayCaption = {
-                    text: meta.text || '',
-                    xPct: meta.xPct,
-                    yPct: meta.yPct,
-                    wPct: meta.wPct,
-                    hPct: meta.hPct,
+                    text: String(meta.text || ''),
+                    xPct: Number(meta.xPct),
+                    yPct: Number(meta.yPct),
+                    wPct: Number(meta.wPct),
+                    hPct: Number(meta.hPct),
                     fontFamily: meta.fontFamily || 'DejaVu Sans',
-                    weightCss: meta.weightCss || '800',
-                    fontPx: meta.fontPx || 38,
+                    weightCss: String(meta.weightCss || '800'),
+                    fontPx: Number(meta.fontPx || 38),
                     color: meta.color || '#ffffff',
-                    opacity: meta.opacity ?? 1,
+                    opacity: Number(meta.opacity ?? 1),
                     align: meta.textAlign || 'center',
-                    lineHeight: meta.lineHeight || 1.15,
-                    showBox: meta.showBox ?? true,
-                    responsiveText: meta.responsiveText ?? true
+                    // Normalize CSS line-height (could be like "46px" or number); send numeric ratio
+                    lineHeight: (function(){
+                      const lh = meta.lineHeight;
+                      if (typeof lh === 'number') return lh; // assume ratio
+                      if (typeof lh === 'string') {
+                        const n = parseFloat(lh);
+                        if (!Number.isFinite(n)) return 1.15;
+                        // If px value, convert to ratio vs fontPx
+                        const px = /px$/i.test(lh) ? n : null;
+                        if (px && Number(meta.fontPx)) return Math.max(1, px / Number(meta.fontPx));
+                        return n; // already unitless
+                      }
+                      return 1.15;
+                    })(),
+                    showBox: !!(meta.showBox ?? true),
+                    responsiveText: !!(meta.responsiveText ?? true)
                   };
                   // Remove legacy fields when using overlay
                   delete payload.caption;
