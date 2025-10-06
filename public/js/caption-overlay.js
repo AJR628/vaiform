@@ -14,13 +14,17 @@ function detectOverlayV2() {
   try {
     const params = new URLSearchParams(location.search || '');
     const urlOn = params.get('overlayV2') === '1';
+    const urlOff = params.get('overlayV2') === '0';
     const lsOn = (localStorage.getItem('overlayV2') || '') === '1';
     const debugOn = params.get('debugOverlay') === '1' || (localStorage.getItem('debugOverlay') || '') === '1';
     if (typeof window !== 'undefined') {
-      window.__overlayV2 = !!(urlOn || lsOn);
+      // SSOT: default V2 ON when overlay mode is active; allow explicit opt-out via overlayV2=0
+      const overlayModeIsActive = true; // creative.html always initializes overlay system
+      const v2 = urlOff ? false : (urlOn || lsOn || overlayModeIsActive);
+      window.__overlayV2 = !!v2;
       window.__debugOverlay = !!debugOn;
     }
-    return !!(urlOn || lsOn);
+    return window.__overlayV2 === true;
   } catch { return false; }
 }
 
