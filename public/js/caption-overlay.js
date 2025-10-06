@@ -35,8 +35,8 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
   // Debug counters (printed only when debug flag enabled)
   let __pm = 0, __ro = 0, __raf = 0;
 
-  // V2 sticky-bounds fitter state
-  const MIN_PX = 32, MAX_PX = 120;
+  // V2 sticky-bounds fitter state (align with server clamps)
+  const MIN_PX = 12, MAX_PX = 200;
   const v2State = {
     isResizing: false,
     rafPending: false,
@@ -256,6 +256,8 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     const padY = parseInt(s.paddingTop,10) + parseInt(s.paddingBottom,10);
     const maxW = Math.max(0, box.clientWidth - padX);
     const maxH = Math.max(0, box.clientHeight - padY);
+    // Ensure wrapping respects the available inner width
+    content.style.maxWidth = maxW + 'px';
     // scroll sizes reflect laid out text; compare to content box
     const ok = (content.scrollWidth <= maxW + 0.5) && (content.scrollHeight <= maxH + 0.5);
     return { ok, maxW, maxH };
@@ -309,15 +311,21 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     const maxW = Math.max(0, box.clientWidth - padX);
     const maxH = Math.max(0, box.clientHeight - padY);
     const b = box.getBoundingClientRect();
-    const expanding = (b.width >= v2State.lastBoxW) && (b.height >= v2State.lastBoxH);
+    // Hysteresis: require >2px delta to flip direction on either axis
+    const expandX = b.width  > v2State.lastBoxW + 2;
+    const shrinkX = b.width  < v2State.lastBoxW - 2;
+    const expandY = b.height > v2State.lastBoxH + 2;
+    const shrinkY = b.height < v2State.lastBoxH - 2;
+    const expanding = (expandX || expandY) && !(shrinkX || shrinkY);
     const currentPx = parseInt(s.fontSize, 10) || MIN_PX;
     try { if (window.__overlayV2 && window.__debugOverlay) console.log(JSON.stringify({ tag:'fit:start', reason, lowPx: v2State.fitBounds.lowPx, highPx: v2State.fitBounds.highPx, currentPx })); } catch {}
+    const basis = v2State.fitBounds.lastGoodPx || currentPx;
     if (expanding) {
-      const mid = Math.floor((v2State.fitBounds.lowPx + v2State.fitBounds.highPx) / 2);
-      v2State.fitBounds.lowPx = Math.min(MAX_PX, Math.max(v2State.fitBounds.lowPx, Math.max(currentPx, mid)));
+      v2State.fitBounds.lowPx  = Math.max(v2State.fitBounds.lowPx, basis);
+      v2State.fitBounds.highPx = Math.min(MAX_PX, Math.max(v2State.fitBounds.highPx, Math.ceil(basis * 2)));
     } else {
-      const mid = Math.floor((v2State.fitBounds.lowPx + v2State.fitBounds.highPx) / 2);
-      v2State.fitBounds.highPx = Math.max(MIN_PX, Math.min(v2State.fitBounds.highPx, Math.min(currentPx, mid)));
+      v2State.fitBounds.highPx = Math.min(v2State.fitBounds.highPx, basis);
+      v2State.fitBounds.lowPx  = Math.max(MIN_PX, Math.min(v2State.fitBounds.lowPx, Math.floor(basis / 2)));
     }
     let lo = Math.max(MIN_PX, v2State.fitBounds.lowPx);
     let hi = Math.min(MAX_PX, v2State.fitBounds.highPx);
@@ -325,6 +333,7 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     for (let i = 0; i < 8 && lo <= hi; i++) {
       const mid = (lo + hi) >> 1;
       content.style.fontSize = mid + 'px';
+      content.style.maxWidth = maxW + 'px';
       const ok = (content.scrollWidth <= maxW + 0.5) && (content.scrollHeight <= maxH + 0.5);
       if (ok) { best = mid; lo = mid + 1; } else { hi = mid - 1; }
     }

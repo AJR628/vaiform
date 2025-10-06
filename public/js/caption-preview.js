@@ -41,9 +41,11 @@ function detectOverlayV2() {
   try {
     const params = new URLSearchParams(location.search || '');
     const urlOn = params.get('overlayV2') === '1';
+    const urlOff = params.get('overlayV2') === '0';
     const lsOn = (localStorage.getItem('overlayV2') || '') === '1';
-    if (typeof window !== 'undefined') window.__overlayV2 = !!(urlOn || lsOn);
-    return !!(urlOn || lsOn);
+    const v2 = urlOff ? false : (urlOn || lsOn || true);
+    if (typeof window !== 'undefined') window.__overlayV2 = !!v2;
+    return !!v2;
   } catch { return false; }
 }
 
@@ -70,7 +72,7 @@ export async function generateCaptionPreview(opts) {
     Number.isFinite(opts?.fontPx) ? opts.fontPx
     : (typeof window?.getCaptionPx === 'function' ? Number(window.getCaptionPx()) : undefined);
 
-  const fontPx = Math.max(24, Math.min(200, Number(ensureFontPx || opts.sizePx || 48)));
+  const fontPx = Math.max(24, Math.min(200, Number(ensureFontPx || opts.sizePx || (typeof window?.__overlayMeta?.fontPx === 'number' ? window.__overlayMeta.fontPx : 48))));
   const lineSpacingPx = Math.max(24, Math.min(200, Math.round(fontPx * Number(opts.lineHeight || 1.1))));
   
   // Use server-compatible payload structure
@@ -83,7 +85,7 @@ export async function generateCaptionPreview(opts) {
         xPct: Number.isFinite(opts?.xPct) ? Number(opts.xPct) : 0.5,
         yPct: Number.isFinite(opts?.yPct) ? Number(opts.yPct) : 0.5,
         wPct: Number.isFinite(opts?.wPct) ? Number(opts.wPct) : 0.8,
-        sizePx: Math.max(32, Math.min(120, Number(opts.sizePx || fontPx))),
+        sizePx: Math.max(24, Math.min(200, Number(opts.sizePx || (typeof window?.__overlayMeta?.fontPx === 'number' ? window.__overlayMeta.fontPx : fontPx)))) ,
         lineSpacingPx: Number.isFinite(opts?.lineSpacingPx) ? Number(opts.lineSpacingPx) : lineSpacingPx,
         fontFamily: opts.fontFamily || 'DejaVuSans',
         weightCss: opts.weight || 'normal',
