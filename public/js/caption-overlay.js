@@ -84,9 +84,9 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     toolbar.setAttribute('role', 'toolbar');
     toolbar.dataset.mode = 'inside';
     toolbar.dataset.compact = '0';
-    // Prevent toolbar from starting drags/resizes
-    ['pointerdown','mousedown','click'].forEach(evt => {
-      toolbar.addEventListener(evt, (e)=>{ e.stopPropagation(); }, { capture: true });
+    // Prevent toolbar from starting drags/resizes without blocking button handlers
+    ['pointerdown','mousedown'].forEach(evt => {
+      toolbar.addEventListener(evt, (e)=>{ e.stopPropagation(); }, { capture: false });
     });
 
     // Quick row buttons
