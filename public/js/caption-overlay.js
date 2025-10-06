@@ -28,6 +28,8 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
   const stage = document.querySelector(stageSel);
   if (!stage) throw new Error('stage not found');
   const overlayV2 = detectOverlayV2();
+  // Debug counters (printed only when debug flag enabled)
+  let __pm = 0, __ro = 0, __raf = 0;
 
   // V2 sticky-bounds fitter state
   const MIN_PX = 32, MAX_PX = 120;
@@ -139,6 +141,7 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
 
   // Keep inside frame on resize and clamp to stage
   const clamp = ()=>{
+    if (overlayV2 && window.__debugOverlay) { try { __ro++; } catch {} }
     if (overlayV2 && v2State.isResizing) return; // observer no-op during V2 resize
     const s = stage.getBoundingClientRect(), b = box.getBoundingClientRect();
     let x = Math.max(0, Math.min(b.left - s.left, s.width - b.width));
@@ -232,7 +235,7 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
   // Only fit on text input, not during resize; resize uses the rAF fitText flow
   content.addEventListener('input', ()=> {
     clearTimeout(fitTimer);
-    if (overlayV2) { fitTimer = setTimeout(()=>{ try { ensureFitNextRAF('input'); } catch {} }, 0); }
+    if (overlayV2) { try { ensureFitNextRAF('input'); } catch {} }
     else {
       fitTimer = setTimeout(fitText, 0);
     }
@@ -291,7 +294,7 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     if (!overlayV2) { try { requestAnimationFrame(fitText); } catch {} return; }
     if (v2State.rafPending) return;
     v2State.rafPending = true;
-    requestAnimationFrame(() => { v2State.rafPending = false; try { fitTextV2(reason); } catch {} });
+    requestAnimationFrame(() => { __raf++; v2State.rafPending = false; try { fitTextV2(reason); } catch {} });
   }
 
   function fitTextV2(reason) {
@@ -349,6 +352,7 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     
     function move(ev) {
       // delta from pointer movement
+      if (overlayV2 && window.__debugOverlay) { try { __pm++; } catch {} }
       const dx = ev.clientX - start.x;
       const dy = ev.clientY - start.y;
       // proposed size
@@ -362,11 +366,11 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
       box.style.width = w + 'px';
       box.style.height = h + 'px';
 
-      // V2: coalesce to a single binary-search fit; avoid tight loops
+      // V2: coalesce to a single binary-search fit via one rAF; no timers during drag
       if (overlayV2) {
         clearTimeout(fitTimer);
         try { if (window.__debugOverlay) console.log(JSON.stringify({ tag:'resize', w, h, rafPending: v2State.rafPending, isResizing: v2State.isResizing })); } catch {}
-        fitTimer = setTimeout(()=>{ try { ensureFitNextRAF('resize'); } catch {} }, 16);
+        try { ensureFitNextRAF('resize'); } catch {}
       } else {
         // Legacy responsive approximation + final fit
         const responsiveText = document.getElementById('responsive-text-toggle')?.checked ?? true;
@@ -393,6 +397,7 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
       if (overlayV2) { try { endResizeSession(); } catch {} } else { try { fitText(); } catch {} }
       const meta = getCaptionMeta();
       applyCaptionMeta(meta);
+      if (overlayV2 && window.__debugOverlay) { try { console.log(JSON.stringify({ tag:'overlay:counters', pm:__pm, ro:__ro, raf:__raf })); __pm=__ro=__raf=0; } catch {} }
     }
     if (!overlayV2) {
       window.addEventListener('pointermove', move);
