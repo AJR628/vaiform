@@ -76,6 +76,44 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
   box.appendChild(resizeHandle);
   stage.appendChild(box);
 
+  // V2-only floating toolbar DOM
+  let toolbar = null; let toolbarArrow = null; let toolbarMode = 'inside';
+  if (overlayV2) {
+    toolbar = document.createElement('div');
+    toolbar.className = 'caption-toolbar';
+    toolbar.setAttribute('role', 'toolbar');
+    toolbar.dataset.mode = 'inside';
+    toolbar.dataset.compact = '0';
+    // Prevent toolbar from starting drags/resizes
+    ['pointerdown','mousedown','click'].forEach(evt => {
+      toolbar.addEventListener(evt, (e)=>{ e.stopPropagation(); }, { capture: true });
+    });
+
+    // Quick row buttons
+    const mkBtn = (label, aria, cls='')=>{ const b=document.createElement('button'); b.type='button'; b.className=`ct-btn ${cls}`.trim(); b.textContent=label; b.setAttribute('aria-label', aria); b.tabIndex=0; return b; };
+    const fontBtn   = mkBtn('Font','Font and spacing','ct-font');
+    const decBtn    = mkBtn('A−','Decrease size','ct-size');
+    const incBtn    = mkBtn('A+','Increase size','ct-size');
+    const boldBtn   = mkBtn('B','Bold','ct-bold');
+    const italicBtn = mkBtn('I','Italic','ct-italic');
+    const colorBtn  = mkBtn('◼','Color & stroke','ct-color');
+    const opBtn     = mkBtn('⧗','Opacity','ct-opacity');
+    const alignBtn  = mkBtn('↔','Align & wrap','ct-align');
+    const moreBtn   = mkBtn('•••','More','ct-more');
+    const row = document.createElement('div'); row.className='ct-row';
+    [fontBtn,decBtn,incBtn,boldBtn,italicBtn,colorBtn,opBtn,alignBtn,moreBtn].forEach(b=>row.appendChild(b));
+    toolbar.appendChild(row);
+
+    // Arrow for outside docking
+    toolbarArrow = document.createElement('div'); toolbarArrow.className='ct-arrow'; toolbar.appendChild(toolbarArrow);
+
+    // Attach now (hidden until editing)
+    try { box.appendChild(toolbar); toolbar.style.display='none'; } catch {}
+
+    // Wire controls later after styles load
+    toolbar.__buttons = { fontBtn, decBtn, incBtn, boldBtn, italicBtn, colorBtn, opBtn, alignBtn, moreBtn };
+  }
+
   // Style (inline so we don't require new CSS file)
   const style = document.createElement('style');
   style.textContent = `
@@ -103,6 +141,36 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     .caption-box.always-handle.editing .drag-resize{ opacity:0.7; pointer-events:auto; }
   `;
   document.head.appendChild(style);
+
+  // Toolbar CSS (separate style for minimal diff)
+  if (overlayV2) {
+    const style2 = document.createElement('style');
+    style2.textContent = `
+      .caption-toolbar{ position:absolute; top:6px; left:6px; display:flex; gap:6px; align-items:center; padding:6px 8px;
+        background:rgba(24,24,27,.55); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+        color:#fff; border-radius:10px; box-shadow:0 4px 16px rgba(0,0,0,.35); z-index:100000; pointer-events:auto; }
+      .caption-toolbar .ct-row{ display:flex; gap:6px; align-items:center; }
+      .caption-toolbar .ct-btn{ min-width:0; height:24px; padding:0 8px; border-radius:6px; border:1px solid rgba(255,255,255,.15);
+        background:rgba(255,255,255,.08); color:#fff; font: 12px/1 system-ui; letter-spacing:.02em; cursor:pointer; }
+      .caption-toolbar .ct-btn:hover{ background:rgba(255,255,255,.16); }
+      .caption-toolbar[data-mode="inside"] .ct-arrow{ display:none; }
+      .caption-toolbar[data-mode="outside"] .ct-arrow{ position:absolute; width:10px; height:10px; background:inherit; transform:rotate(45deg); box-shadow:inherit; }
+      .caption-box.always-handle .caption-toolbar{ opacity:0; pointer-events:none; }
+      .caption-box.always-handle.editing .caption-toolbar{ opacity:1; pointer-events:auto; }
+      .caption-toolbar[data-compact="1"] .ct-font,
+      .caption-toolbar[data-compact="1"] .ct-bold,
+      .caption-toolbar[data-compact="1"] .ct-italic,
+      .caption-toolbar[data-compact="1"] .ct-color,
+      .caption-toolbar[data-compact="1"] .ct-opacity,
+      .caption-toolbar[data-compact="2"] .ct-font,
+      .caption-toolbar[data-compact="2"] .ct-bold,
+      .caption-toolbar[data-compact="2"] .ct-italic,
+      .caption-toolbar[data-compact="2"] .ct-color,
+      .caption-toolbar[data-compact="2"] .ct-opacity,
+      .caption-toolbar[data-compact="2"] .ct-align{ display:none; }
+    `;
+    document.head.appendChild(style2);
+  }
 
   // Snap into view on next frame to avoid off-viewport placement
   try { requestAnimationFrame(() => { try { ensureOverlayTopAndVisible(stageSel); } catch {} }); } catch {}
@@ -171,6 +239,40 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
   
   new ResizeObserver(clamp).observe(box);
   window.addEventListener('resize', clamp);
+
+  // Toolbar placement (V2 only)
+  function placeToolbar(){
+    if (!overlayV2 || !toolbar) return;
+    const s = stage.getBoundingClientRect();
+    const b = box.getBoundingClientRect();
+    const insideOk = (b.width >= 220) && (b.height >= 70);
+    const compact = b.width < 120 ? 2 : (b.width < 180 ? 1 : 0);
+    toolbar.dataset.compact = String(compact);
+    const nextMode = insideOk ? 'inside' : 'outside';
+    if (nextMode !== toolbarMode) {
+      toolbarMode = nextMode; toolbar.dataset.mode = toolbarMode;
+      try { if (toolbarMode === 'inside') { if (!box.contains(toolbar)) box.appendChild(toolbar); } else { if (!stage.contains(toolbar)) stage.appendChild(toolbar); } } catch {}
+    }
+    if (toolbarMode === 'inside') {
+      toolbar.style.position = 'absolute'; toolbar.style.left = '6px'; toolbar.style.top = '6px'; toolbar.style.transform = 'none';
+    } else {
+      const pad = 6;
+      let left = b.left - s.left + pad;
+      let top  = b.top  - s.top  - 8 - (toolbar.offsetHeight || 30);
+      let arrowAt = 'down';
+      if (top < 0) { top = b.bottom - s.top + 8; arrowAt = 'up'; }
+      left = Math.max(4, Math.min(left, s.width - (toolbar.offsetWidth || 180) - 4));
+      top  = Math.max(4, Math.min(top,  s.height - (toolbar.offsetHeight || 30) - 4));
+      toolbar.style.position = 'absolute';
+      toolbar.style.left = `${Math.round(left)}px`;
+      toolbar.style.top  = `${Math.round(top)}px`;
+      if (toolbarArrow) {
+        const ax = Math.max(10, Math.min((b.left - s.left + 10) - left, (toolbar.offsetWidth || 180) - 10));
+        if (arrowAt === 'down') { toolbarArrow.style.left = `${Math.round(ax)}px`; toolbarArrow.style.top = `${(toolbar.offsetHeight||30)-5}px`; }
+        else { toolbarArrow.style.left = `${Math.round(ax)}px`; toolbarArrow.style.top = `-5px`; }
+      }
+    }
+  }
   
   // Add editing state management
   let isEditing = false;
@@ -181,6 +283,10 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
       box.classList.add('editing');
     } else {
       box.classList.remove('editing');
+    }
+    if (overlayV2 && toolbar) {
+      try { toolbar.style.display = editing ? 'flex' : 'none'; } catch {}
+      try { requestAnimationFrame(()=>{ placeToolbar(); }); } catch {}
     }
   };
   
@@ -197,6 +303,15 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
       setEditing(true);
     }
   });
+
+  // Re-place toolbar while dragging/resizing V2
+  if (overlayV2 && toolbar) {
+    const placeOnMove = ()=>{ try { requestAnimationFrame(()=>{ placeToolbar(); }); } catch {} };
+    handle.addEventListener('pointermove', placeOnMove, { passive:true });
+    try { new ResizeObserver(placeOnMove).observe(box); } catch {}
+    window.addEventListener('resize', placeOnMove);
+    try { stage.addEventListener('scroll', placeOnMove, { passive:true }); } catch {}
+  }
 
   // Auto-size functionality
   function setTextAutoSize(text) {
@@ -497,6 +612,39 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
   // V2: keep chrome allocated to avoid layout shifts
   if (overlayV2) {
     try { box.classList.add('always-handle'); } catch {}
+    // Keyboard shortcuts when focusing the text content
+    try {
+      content.addEventListener('keydown', (e) => {
+        const isMac = navigator.platform.toUpperCase().indexOf('MAC')>=0;
+        const mod = isMac ? e.metaKey : e.ctrlKey;
+        if (mod && (e.key === 'b' || e.key === 'B')) {
+          e.preventDefault();
+          const w = getComputedStyle(content).fontWeight;
+          content.style.fontWeight = (w === '700' || parseInt(w,10) >= 600) ? '400' : '700';
+          try { ensureFitNextRAF('kb-bold'); } catch {}
+        } else if (mod && (e.key === 'i' || e.key === 'I')) {
+          e.preventDefault();
+          const fs = getComputedStyle(content).fontStyle;
+          content.style.fontStyle = (fs === 'italic') ? 'normal' : 'italic';
+          try { ensureFitNextRAF('kb-italic'); } catch {}
+        } else if (e.altKey && e.key === 'ArrowLeft') {
+          e.preventDefault();
+          const px = Math.max(12, (parseInt(getComputedStyle(content).fontSize,10) || 24) - 2);
+          content.style.fontSize = px + 'px';
+          try { ensureFitNextRAF('kb-size-'); } catch {}
+        } else if (e.altKey && e.key === 'ArrowRight') {
+          e.preventDefault();
+          const px = Math.min(200, (parseInt(getComputedStyle(content).fontSize,10) || 24) + 2);
+          content.style.fontSize = px + 'px';
+          try { ensureFitNextRAF('kb-size+'); } catch {}
+        } else if (e.altKey && (e.key === '1' || e.key === '2' || e.key === '3')) {
+          e.preventDefault();
+          const val = e.key === '1' ? 'left' : (e.key === '2' ? 'center' : 'right');
+          content.style.textAlign = val;
+          try { ensureFitNextRAF('kb-align'); } catch {}
+        }
+      });
+    } catch {}
   }
 
   // V2: ensure fonts are ready before first fit
@@ -511,6 +659,92 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
       console.log(JSON.stringify(log));
     }
   } catch {}
+
+  // Wire toolbar control behaviors (V2)
+  if (overlayV2 && toolbar && toolbar.__buttons) {
+    const { fontBtn, decBtn, incBtn, boldBtn, italicBtn, colorBtn, opBtn, alignBtn, moreBtn } = toolbar.__buttons;
+    const scheduleLayout = ()=>{ try { ensureFitNextRAF('toolbar'); } catch {} };
+    const openPopover = (anchor, build)=>{
+      document.querySelectorAll('.ct-popover').forEach(p=>p.remove());
+      const pop = document.createElement('div');
+      pop.className = 'ct-popover';
+      pop.style.position = 'absolute'; pop.style.zIndex = '100001';
+      pop.style.background = 'rgba(24,24,27,.95)'; pop.style.color = '#fff';
+      pop.style.padding = '8px'; pop.style.borderRadius = '8px';
+      pop.style.boxShadow = '0 8px 24px rgba(0,0,0,.45)';
+      build(pop);
+      const s = stage.getBoundingClientRect();
+      const r = anchor.getBoundingClientRect();
+      let left = r.left - s.left, top = r.bottom - s.top + 6;
+      pop.style.left = `${Math.round(left)}px`; pop.style.top = `${Math.round(top)}px`;
+      const onDoc = (e)=>{ if (!pop.contains(e.target) && e.target !== anchor) { pop.remove(); document.removeEventListener('click', onDoc, true); } };
+      document.addEventListener('click', onDoc, true);
+      stage.appendChild(pop);
+    };
+
+    // Font family + line-height + letter-spacing
+    fontBtn.onclick = (e)=>{
+      openPopover(e.currentTarget, (pop)=>{
+        const fam = document.createElement('select'); fam.style.display='block'; fam.style.marginBottom='6px'; fam.style.color='#111';
+        ['Inter','Roboto','Segoe UI','System UI','DejaVu Sans','Arial','Georgia'].forEach(f=>{ const o=document.createElement('option'); o.value=f; o.textContent=f; fam.appendChild(o); });
+        fam.value = (getComputedStyle(content).fontFamily||'').split(',')[0].replaceAll('"','').trim();
+        fam.onchange = ()=>{ content.style.fontFamily = fam.value + ', system-ui, -apple-system, Segoe UI, Roboto, sans-serif'; scheduleLayout(); };
+        const lhL = document.createElement('div'); lhL.textContent='Line height'; lhL.style.margin='6px 0 2px';
+        const lh = document.createElement('input'); lh.type='range'; lh.min='0.9'; lh.max='2.0'; lh.step='0.05'; lh.value=String(parseFloat(getComputedStyle(content).lineHeight)||1.15);
+        lh.oninput = ()=>{ content.style.lineHeight = String(lh.value); };
+        lh.onchange = ()=>{ scheduleLayout(); };
+        const lsL = document.createElement('div'); lsL.textContent='Letter spacing'; lsL.style.margin='6px 0 2px';
+        const ls = document.createElement('input'); ls.type='range'; ls.min='-1'; ls.max='6'; ls.step='0.5'; ls.value=String(parseFloat(getComputedStyle(content).letterSpacing)||0);
+        ls.oninput = ()=>{ content.style.letterSpacing = `${ls.value}px`; };
+        ls.onchange = ()=>{ scheduleLayout(); };
+        pop.appendChild(fam); pop.appendChild(lhL); pop.appendChild(lh); pop.appendChild(lsL); pop.appendChild(ls);
+      });
+    };
+
+    // Size
+    decBtn.onclick = ()=>{ const v = Math.max(12,(parseInt(getComputedStyle(content).fontSize,10)||24)-2); content.style.fontSize=v+'px'; scheduleLayout(); };
+    incBtn.onclick = ()=>{ const v = Math.min(200,(parseInt(getComputedStyle(content).fontSize,10)||24)+2); content.style.fontSize=v+'px'; scheduleLayout(); };
+
+    // Bold/Italic
+    boldBtn.onclick = ()=>{ const w=getComputedStyle(content).fontWeight; content.style.fontWeight=(w==='700'||parseInt(w,10)>=600)?'400':'700'; scheduleLayout(); };
+    italicBtn.onclick = ()=>{ const fs=getComputedStyle(content).fontStyle; content.style.fontStyle=(fs==='italic')?'normal':'italic'; scheduleLayout(); };
+
+    // Color / stroke / shadow (paint-only)
+    colorBtn.onclick = (e)=>{
+      openPopover(e.currentTarget, (pop)=>{
+        const color = document.createElement('input'); color.type='color'; color.value='#ffffff'; color.style.width='100%'; color.oninput=()=>{ content.style.color=color.value; };
+        const stroke = document.createElement('input'); stroke.type='range'; stroke.min='0'; stroke.max='6'; stroke.step='1'; stroke.value='0'; stroke.style.width='100%';
+        stroke.oninput = ()=>{ const sw=parseInt(stroke.value,10)||0; content.style.webkitTextStroke = sw?`${sw}px #000`:''; };
+        const sh = document.createElement('input'); sh.type='range'; sh.min='0'; sh.max='24'; sh.step='1'; sh.value='12'; sh.style.width='100%';
+        sh.oninput = ()=>{ const n=parseInt(sh.value,10)||0; content.style.textShadow = n?`0 2px ${Math.round(n)}px rgba(0,0,0,.65)`:'none'; };
+        pop.appendChild(color); pop.appendChild(stroke); pop.appendChild(sh);
+      });
+    };
+
+    // Opacity (paint-only)
+    opBtn.onclick = (e)=>{ openPopover(e.currentTarget, (pop)=>{ const op=document.createElement('input'); op.type='range'; op.min='0'; op.max='1'; op.step='0.05'; op.value=String(parseFloat(getComputedStyle(content).opacity)||1); op.oninput=()=>{ content.style.opacity=String(op.value); }; pop.appendChild(op); }); };
+
+    // Align
+    alignBtn.onclick = (e)=>{ openPopover(e.currentTarget, (pop)=>{ const mk=(t,v)=>{ const b=document.createElement('button'); b.textContent=t; b.className='ct-btn'; b.onclick=()=>{ content.style.textAlign=v; scheduleLayout(); }; return b; }; pop.appendChild(mk('L','left')); pop.appendChild(mk('C','center')); pop.appendChild(mk('R','right')); }); };
+
+    // More (padding + duplicate/lock/delete hooks if present)
+    moreBtn.onclick = (e)=>{
+      openPopover(e.currentTarget, (pop)=>{
+        const padL=document.createElement('div'); padL.textContent='Padding'; padL.style.margin='0 0 4px';
+        const pad=document.createElement('input'); pad.type='range'; pad.min='0'; pad.max='48'; pad.step='1'; pad.value=String(parseInt(getComputedStyle(content).paddingLeft,10)||12);
+        pad.oninput=()=>{ const v=parseInt(pad.value,10)||0; content.style.padding=`${v}px`; };
+        pad.onchange=()=>{ scheduleLayout(); };
+        const row=document.createElement('div'); row.style.display='flex'; row.style.gap='6px'; row.style.marginTop='8px';
+        const mk=(t)=>{ const b=document.createElement('button'); b.textContent=t; b.className='ct-btn'; return b; };
+        const dup=mk('Duplicate'), lock=mk('Lock'), del=mk('Delete');
+        dup.onclick=()=>{ try { if (window.duplicateCaption) window.duplicateCaption(box); } catch {} };
+        lock.onclick=()=>{ try { if (window.lockCaption) window.lockCaption(box,true); } catch {} };
+        del.onclick=()=>{ try { if (window.deleteCaption) window.deleteCaption(box); } catch {} };
+        row.appendChild(dup); row.appendChild(lock); row.appendChild(del);
+        pop.appendChild(padL); pop.appendChild(pad); pop.appendChild(row);
+      });
+    };
+  }
 }
 
 export function getCaptionMeta(){ return window.getCaptionMeta(); }
