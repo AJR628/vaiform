@@ -304,6 +304,7 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     const b = box.getBoundingClientRect();
     const expanding = (b.width >= v2State.lastBoxW) && (b.height >= v2State.lastBoxH);
     const currentPx = parseInt(s.fontSize, 10) || MIN_PX;
+    try { if (window.__overlayV2 && window.__debugOverlay) console.log(JSON.stringify({ tag:'fit:start', reason, lowPx: v2State.fitBounds.lowPx, highPx: v2State.fitBounds.highPx, currentPx })); } catch {}
     if (expanding) {
       v2State.fitBounds.lowPx = Math.max(MIN_PX, currentPx);
       v2State.fitBounds.highPx = Math.min(MAX_PX, Math.max(v2State.fitBounds.highPx, Math.ceil(currentPx * 2)));
@@ -323,7 +324,12 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     content.style.fontSize = best + 'px';
     v2State.fitBounds.lastGoodPx = best;
     v2State.lastBoxW = b.width; v2State.lastBoxH = b.height;
-    try { if (window.__overlayV2 && window.__debugOverlay) console.log(JSON.stringify({ tag:'overlay:raf', reason, w:b.width, h:b.height, fontPx:best, lo, hi })); } catch {}
+    try {
+      if (window.__overlayV2 && window.__debugOverlay) {
+        console.log(JSON.stringify({ tag:'fit:ok', bestPx: best }));
+        console.log(JSON.stringify({ tag:'fit:apply', fontPx: best, boxW: box.clientWidth, boxH: box.clientHeight }));
+      }
+    } catch {}
   }
 
   // Custom resize handle functionality
@@ -353,6 +359,7 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
       // V2: coalesce to a single binary-search fit; avoid tight loops
       if (overlayV2) {
         clearTimeout(fitTimer);
+        try { if (window.__debugOverlay) console.log(JSON.stringify({ tag:'resize', w, h, rafPending: v2State.rafPending, isResizing: v2State.isResizing })); } catch {}
         fitTimer = setTimeout(()=>{ try { ensureFitNextRAF('resize'); } catch {} }, 16);
       } else {
         // Legacy responsive approximation + final fit
