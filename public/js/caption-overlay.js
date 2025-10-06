@@ -306,11 +306,11 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     const currentPx = parseInt(s.fontSize, 10) || MIN_PX;
     try { if (window.__overlayV2 && window.__debugOverlay) console.log(JSON.stringify({ tag:'fit:start', reason, lowPx: v2State.fitBounds.lowPx, highPx: v2State.fitBounds.highPx, currentPx })); } catch {}
     if (expanding) {
-      v2State.fitBounds.lowPx = Math.max(MIN_PX, currentPx);
-      v2State.fitBounds.highPx = Math.min(MAX_PX, Math.max(v2State.fitBounds.highPx, Math.ceil(currentPx * 2)));
+      const mid = Math.floor((v2State.fitBounds.lowPx + v2State.fitBounds.highPx) / 2);
+      v2State.fitBounds.lowPx = Math.min(MAX_PX, Math.max(v2State.fitBounds.lowPx, Math.max(currentPx, mid)));
     } else {
-      v2State.fitBounds.highPx = Math.min(MAX_PX, currentPx);
-      v2State.fitBounds.lowPx = Math.max(MIN_PX, Math.min(v2State.fitBounds.lowPx, Math.floor(currentPx / 2)));
+      const mid = Math.floor((v2State.fitBounds.lowPx + v2State.fitBounds.highPx) / 2);
+      v2State.fitBounds.highPx = Math.max(MIN_PX, Math.min(v2State.fitBounds.highPx, Math.min(currentPx, mid)));
     }
     let lo = Math.max(MIN_PX, v2State.fitBounds.lowPx);
     let hi = Math.min(MAX_PX, v2State.fitBounds.highPx);
@@ -321,13 +321,19 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
       const ok = (content.scrollWidth <= maxW + 0.5) && (content.scrollHeight <= maxH + 0.5);
       if (ok) { best = mid; lo = mid + 1; } else { hi = mid - 1; }
     }
-    content.style.fontSize = best + 'px';
-    v2State.fitBounds.lastGoodPx = best;
+    const prev = v2State.fitBounds.lastGoodPx != null ? v2State.fitBounds.lastGoodPx : best;
+    const step = 3;
+    let target = best;
+    if (best > prev) target = Math.min(best, prev + step);
+    else if (best < prev) target = Math.max(best, prev - step);
+    target = Math.max(MIN_PX, Math.min(MAX_PX, target));
+    content.style.fontSize = target + 'px';
+    v2State.fitBounds.lastGoodPx = target;
     v2State.lastBoxW = b.width; v2State.lastBoxH = b.height;
     try {
       if (window.__overlayV2 && window.__debugOverlay) {
-        console.log(JSON.stringify({ tag:'fit:ok', bestPx: best }));
-        console.log(JSON.stringify({ tag:'fit:apply', fontPx: best, boxW: box.clientWidth, boxH: box.clientHeight }));
+        console.log(JSON.stringify({ tag:'fit:ok', bestPx: target }));
+        console.log(JSON.stringify({ tag:'fit:apply', fontPx: target, boxW: box.clientWidth, boxH: box.clientHeight }));
       }
     } catch {}
   }
