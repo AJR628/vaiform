@@ -168,6 +168,26 @@
   box-sizing: border-box;
 }
 
+/* Fix quote section width to match media/voiceover */
+#section-quote {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+/* Constrain quote result area to prevent overflow */
+#quote-result {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+#quote-edit {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
 /* Mobile responsive */
 @media (max-width: 900px) {
   .studio-accordion-layout {
@@ -184,4 +204,14 @@
 /* Render panel styling */
 .render-panel {
   backdrop-filter: saturate(1.2) blur(4px);
+}
+
+/* Reduce preview height when no media is selected */
+#live-preview-container {
+  transition: min-height 0.3s ease;
+}
+
+/* When media is selected, expand preview */
+#live-preview-container.has-media {
+  min-height: 640px;
 }

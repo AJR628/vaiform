@@ -568,7 +568,7 @@
                     <h2 class="text-xl font-semibold text-gray-900 dark:text-white">Live Preview</h2>
             
             <!-- Live Preview Canvas -->
-            <div id="live-preview-container" class="opacity-0 transition-opacity duration-300" style="min-height: 640px; width: 360px;">
+            <div id="live-preview-container" class="opacity-0 transition-opacity duration-300" style="min-height: 400px; width: 360px;">
                 <!-- Fix A: Give the preview wrapper a predictable size -->
                 <div class="relative mx-auto bg-black rounded-lg overflow-hidden" style="width: 360px; aspect-ratio: 9 / 16;">
                     <canvas id="live-preview-canvas" class="w-full h-full block"></canvas>
@@ -4002,6 +4002,30 @@
         
         // Update summaries on load
         setTimeout(updateSummaries, 1000);
+        
+        // Update preview height based on media selection
+        function updatePreviewHeight() {
+          const previewContainer = document.getElementById('live-preview-container');
+          if (previewContainer) {
+            if (window.selectedAsset) {
+              previewContainer.classList.add('has-media');
+            } else {
+              previewContainer.classList.remove('has-media');
+            }
+          }
+        }
+        
+        // Hook into asset selection to update preview height
+        const originalAssetSelection = window.onAssetSelect;
+        if (originalAssetSelection) {
+          window.onAssetSelect = function(asset) {
+            originalAssetSelection(asset);
+            updatePreviewHeight();
+          };
+        }
+        
+        // Update preview height on load
+        setTimeout(updatePreviewHeight, 1000);
       })();
     </script>
 
