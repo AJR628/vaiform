@@ -58,17 +58,119 @@
   font-kerning: normal;
 }
 
-/* --- Creative Studio segmented tabs & layout --- */
-.studio-two-col .studio-layout{display:grid;grid-template-columns:1fr 1fr;gap:1.5rem}
-.studio-tabs .seg-btn{flex:1 1 auto;border-radius:10px;padding:.5rem .75rem;background:#1f2937;color:#fff}
-.studio-tabs .seg-btn.active{background:#2563eb}
-.studio-left{position:relative}
-.studio-right{position:sticky;top:1rem}
-.render-panel{backdrop-filter:saturate(1.2) blur(4px)}
-@media (max-width: 900px){
-  .studio-two-col .studio-layout{grid-template-columns:1fr}
-  .studio-right{position:static}
+/* --- Creative Studio accordion layout --- */
+.studio-accordion-layout {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+  align-items: start;
 }
 
-/* Hide sections when segmented control toggles (JS sets display:none) */
-.seg-btn{cursor:pointer}
+.studio-accordion-left {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.studio-accordion-right {
+  position: sticky;
+  top: 1rem;
+}
+
+/* Accordion sections */
+.accordion-section {
+  border: 1px solid #e5e7eb;
+  border-radius: 0.5rem;
+  overflow: hidden;
+  background: white;
+}
+
+.dark .accordion-section {
+  border-color: #374151;
+  background: #1f2937;
+}
+
+.accordion-header {
+  padding: 1rem;
+  cursor: pointer;
+  background: #f9fafb;
+  border-bottom: 1px solid #e5e7eb;
+  transition: all 0.2s ease;
+}
+
+.dark .accordion-header {
+  background: #374151;
+  border-color: #4b5563;
+}
+
+.accordion-header:hover {
+  background: #f3f4f6;
+}
+
+.dark .accordion-header:hover {
+  background: #4b5563;
+}
+
+.accordion-header.active {
+  background: #dbeafe;
+  border-color: #3b82f6;
+}
+
+.dark .accordion-header.active {
+  background: #1e3a8a;
+  border-color: #3b82f6;
+}
+
+.accordion-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 600;
+  color: #111827;
+}
+
+.dark .accordion-title {
+  color: #f9fafb;
+}
+
+.accordion-icon {
+  font-size: 0.875rem;
+  transition: transform 0.2s ease;
+}
+
+.accordion-summary {
+  font-size: 0.875rem;
+  color: #6b7280;
+  margin-top: 0.25rem;
+}
+
+.dark .accordion-summary {
+  color: #9ca3af;
+}
+
+.accordion-body {
+  display: none;
+  padding: 0;
+}
+
+.accordion-body.active {
+  display: block;
+}
+
+/* Mobile responsive */
+@media (max-width: 900px) {
+  .studio-accordion-layout {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+  
+  .studio-accordion-right {
+    position: static;
+    order: -1;
+  }
+}
+
+/* Render panel styling */
+.render-panel {
+  backdrop-filter: saturate(1.2) blur(4px);
+}

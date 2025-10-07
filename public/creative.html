@@ -147,22 +147,30 @@
     <!-- Unified Header -->
     <div id="unified-header"></div>
 
-    <div class="max-w-6xl mx-auto p-6 space-y-8 studio-two-col">
+    <div class="max-w-6xl mx-auto p-6 space-y-8">
         <!-- Header -->
         <div class="flex items-center justify-between">
             <h1 class="text-3xl font-bold">Creative Studio</h1>
         </div>
 
-        <!-- Segmented control (Quote | Media | Voiceover) -->
-        <div class="studio-tabs bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-600 p-2 flex gap-2">
-            <button id="seg-quote" class="seg-btn active" type="button">Quote</button>
-            <button id="seg-media" class="seg-btn" type="button">Media</button>
-            <button id="seg-voice" class="seg-btn" type="button">Voiceover</button>
-        </div>
+        <!-- Accordion Layout -->
+        <div class="studio-accordion-layout">
+            <!-- Left: Accordion Sections -->
+            <div class="studio-accordion-left">
+                <!-- Quote Section -->
+                <div class="accordion-section">
+                    <div class="accordion-header active" data-section="quote">
+                        <div class="accordion-title">
+                            <span class="accordion-icon">▼</span>
+                            <span class="accordion-label">Quote</span>
+                        </div>
+                        <div class="accordion-summary" id="quote-summary">Enter a prompt to generate quotes</div>
+                    </div>
+                    <div class="accordion-body active" id="quote-body">
 
-        <!-- Quote Generation Section -->
-        <div id="section-quote" class="content-box bg-white dark:bg-gray-800 rounded-lg p-6 space-y-4 border border-gray-200 dark:border-gray-600">
-            <h2 class="text-xl font-semibold text-gray-900 dark:text-white">Generate Quote</h2>
+                        <!-- Quote Generation Section -->
+                        <div id="section-quote" class="content-box bg-white dark:bg-gray-800 rounded-lg p-6 space-y-4 border border-gray-200 dark:border-gray-600">
+                            <h2 class="text-xl font-semibold text-gray-900 dark:text-white">Generate Quote</h2>
             
             <div class="flex gap-4 items-center">
                 <input
@@ -228,12 +236,24 @@
                         Change Tone
                     </button>
                 </div>
-            </div>
-        </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
 
-        <!-- Asset Selection Section -->
-        <div id="section-media" class="content-box bg-white dark:bg-gray-800 rounded-lg p-6 space-y-4 border border-gray-200 dark:border-gray-600">
-            <h2 class="text-xl font-semibold text-gray-900 dark:text-white">Media</h2>
+                <!-- Media Section -->
+                <div class="accordion-section">
+                    <div class="accordion-header" data-section="media">
+                        <div class="accordion-title">
+                            <span class="accordion-icon">▶</span>
+                            <span class="accordion-label">Media</span>
+                        </div>
+                        <div class="accordion-summary" id="media-summary">No media selected</div>
+                    </div>
+                    <div class="accordion-body" id="media-body">
+                        <!-- Asset Selection Section -->
+                        <div id="section-media" class="content-box bg-white dark:bg-gray-800 rounded-lg p-6 space-y-4 border border-gray-200 dark:border-gray-600">
+                            <h2 class="text-xl font-semibold text-gray-900 dark:text-white">Media</h2>
             
             <!-- Asset Type Tabs -->
             <div class="flex gap-2">
@@ -468,12 +488,24 @@
                         </div>
                     </div>
                 </div>
-            </div>
-        </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
 
-        <!-- Voiceover Section -->
-        <div id="section-voice" class="content-box bg-white dark:bg-gray-800 rounded-lg p-6 space-y-4 border border-gray-200 dark:border-gray-600">
-            <h2 class="text-xl font-semibold text-gray-900 dark:text-white">Voiceover</h2>
+                <!-- Voiceover Section -->
+                <div class="accordion-section">
+                    <div class="accordion-header" data-section="voice">
+                        <div class="accordion-title">
+                            <span class="accordion-icon">▶</span>
+                            <span class="accordion-label">Voiceover</span>
+                        </div>
+                        <div class="accordion-summary" id="voice-summary">No voice selected</div>
+                    </div>
+                    <div class="accordion-body" id="voice-body">
+                        <!-- Voiceover Section -->
+                        <div id="section-voice" class="content-box bg-white dark:bg-gray-800 rounded-lg p-6 space-y-4 border border-gray-200 dark:border-gray-600">
+                            <h2 class="text-xl font-semibold text-gray-900 dark:text-white">Voiceover</h2>
             
             <div class="grid grid-cols-2 gap-4">
                 <div>
@@ -523,12 +555,17 @@
                 </div>
             </div>
             
-            <div id="voice-preview-status" class="text-sm text-gray-400 hidden"></div>
-        </div>
+                            <div id="voice-preview-status" class="text-sm text-gray-400 hidden"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
 
-        <!-- Render Section -->
-        <div class="content-box bg-white dark:bg-gray-800 rounded-lg p-6 space-y-4 border border-gray-200 dark:border-gray-600">
-            <h2 class="text-xl font-semibold text-gray-900 dark:text-white">Create Short</h2>
+            <!-- Right: Preview Section -->
+            <div class="studio-accordion-right">
+                <!-- Render Section -->
+                <div class="content-box bg-white dark:bg-gray-800 rounded-lg p-6 space-y-4 border border-gray-200 dark:border-gray-600">
+                    <h2 class="text-xl font-semibold text-gray-900 dark:text-white">Live Preview</h2>
             
             <!-- Live Preview Canvas -->
             <div id="live-preview-container" class="opacity-0 transition-opacity duration-300" style="min-height: 640px; width: 360px;">
@@ -555,15 +592,16 @@
                             Render Short
                         </button>
                     </div>
+                    </div>
                 </div>
-            </div>
-            
-            <div id="render-preview" class="bg-gray-100 dark:bg-gray-800 rounded p-4 hidden border border-gray-200 dark:border-gray-700">
-                <div class="text-sm text-gray-600 dark:text-gray-400 mb-2">Preview:</div>
-                <div id="preview-quote" class="text-lg font-medium mb-2 text-gray-900 dark:text-white"></div>
-                <div id="preview-asset" class="text-sm text-gray-600 dark:text-gray-400"></div>
-                <div id="preview-caption-style" class="text-sm text-gray-600 dark:text-gray-400"></div>
-                <div id="preview-voiceover" class="text-sm text-gray-600 dark:text-gray-400"></div>
+                
+                <div id="render-preview" class="bg-gray-100 dark:bg-gray-800 rounded p-4 hidden border border-gray-200 dark:border-gray-700">
+                    <div class="text-sm text-gray-600 dark:text-gray-400 mb-2">Preview:</div>
+                    <div id="preview-quote" class="text-lg font-medium mb-2 text-gray-900 dark:text-white"></div>
+                    <div id="preview-asset" class="text-sm text-gray-600 dark:text-gray-400"></div>
+                    <div id="preview-caption-style" class="text-sm text-gray-600 dark:text-gray-400"></div>
+                    <div id="preview-voiceover" class="text-sm text-gray-600 dark:text-gray-400"></div>
+                </div>
             </div>
         </div>
     </div>
@@ -3889,33 +3927,82 @@
     </script>
 
     <script>
-      // Lightweight tab logic for segmented control
+      // Accordion behavior - single open section
       (function(){
-        const seg = {
-          quote: document.getElementById('seg-quote'),
-          media: document.getElementById('seg-media'),
-          voice: document.getElementById('seg-voice')
-        };
-        const sections = {
-          quote: document.getElementById('section-quote'),
-          media: document.getElementById('section-media'),
-          voice: document.getElementById('section-voice')
-        };
-        function show(name){
-          Object.keys(sections).forEach(key=>{
-            const el = sections[key]; if (!el) return;
-            // Nearest content-box parent is what we hide/show to avoid rewiring
-            el.style.display = key===name ? '' : 'none';
+        const headers = document.querySelectorAll('.accordion-header');
+        const bodies = document.querySelectorAll('.accordion-body');
+        
+        function toggleSection(targetSection) {
+          // Close all sections
+          headers.forEach(header => {
+            const section = header.dataset.section;
+            const body = document.getElementById(`${section}-body`);
+            const icon = header.querySelector('.accordion-icon');
+            
+            if (section === targetSection) {
+              header.classList.add('active');
+              body?.classList.add('active');
+              icon.textContent = '▼';
+            } else {
+              header.classList.remove('active');
+              body?.classList.remove('active');
+              icon.textContent = '▶';
+            }
           });
-          Object.keys(seg).forEach(key=>{
-            seg[key]?.classList.toggle('active', key===name);
-          })
         }
-        seg.quote?.addEventListener('click', ()=>show('quote'));
-        seg.media?.addEventListener('click', ()=>show('media'));
-        seg.voice?.addEventListener('click', ()=>show('voice'));
-        // Default to Quote
-        show('quote');
+        
+        headers.forEach(header => {
+          header.addEventListener('click', () => {
+            const section = header.dataset.section;
+            toggleSection(section);
+          });
+        });
+        
+        // Update summaries when state changes
+        function updateSummaries() {
+          // Quote summary
+          const quoteSummary = document.getElementById('quote-summary');
+          if (quoteSummary && window.currentQuote?.text) {
+            const text = window.currentQuote.text.substring(0, 50);
+            quoteSummary.textContent = text + (window.currentQuote.text.length > 50 ? '...' : '');
+          }
+          
+          // Media summary
+          const mediaSummary = document.getElementById('media-summary');
+          if (mediaSummary && window.selectedAsset) {
+            const asset = window.selectedAsset;
+            let summary = '';
+            if (asset.provider === 'pexels') {
+              summary = `Pexels • ${asset.query || 'Image'}`;
+            } else if (asset.provider === 'ai') {
+              summary = `AI • ${asset.query || 'Generated'}`;
+            } else if (asset.provider === 'uploaded') {
+              summary = 'Uploaded file';
+            }
+            mediaSummary.textContent = summary;
+          }
+          
+          // Voice summary
+          const voiceSummary = document.getElementById('voice-summary');
+          if (voiceSummary && window.currentVoiceId) {
+            const voiceSelect = document.getElementById('voiceover-voice');
+            const selectedOption = voiceSelect?.selectedOptions[0];
+            const voiceName = selectedOption?.text || window.currentVoiceId;
+            voiceSummary.textContent = voiceName;
+          }
+        }
+        
+        // Hook into existing state updates
+        const originalDisplayQuote = window.displayQuote;
+        if (originalDisplayQuote) {
+          window.displayQuote = function(quote) {
+            originalDisplayQuote(quote);
+            updateSummaries();
+          };
+        }
+        
+        // Update summaries on load
+        setTimeout(updateSummaries, 1000);
       })();
     </script>
 
