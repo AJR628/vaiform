@@ -186,16 +186,6 @@
   width: 100%;
   max-width: 100%;
   box-sizing: border-box;
-  padding-bottom: 40px; /* Space for floating buttons */
-}
-
-/* Position Save/Cancel buttons in textarea */
-#quote-edit + div {
-  pointer-events: none;
-}
-
-#quote-edit + div button {
-  pointer-events: auto;
 }
 
 /* Mobile responsive */
