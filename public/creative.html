@@ -147,14 +147,21 @@
     <!-- Unified Header -->
     <div id="unified-header"></div>
 
-    <div class="max-w-6xl mx-auto p-6 space-y-8">
+    <div class="max-w-6xl mx-auto p-6 space-y-8 studio-two-col">
         <!-- Header -->
         <div class="flex items-center justify-between">
             <h1 class="text-3xl font-bold">Creative Studio</h1>
         </div>
 
+        <!-- Segmented control (Quote | Media | Voiceover) -->
+        <div class="studio-tabs bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-600 p-2 flex gap-2">
+            <button id="seg-quote" class="seg-btn active" type="button">Quote</button>
+            <button id="seg-media" class="seg-btn" type="button">Media</button>
+            <button id="seg-voice" class="seg-btn" type="button">Voiceover</button>
+        </div>
+
         <!-- Quote Generation Section -->
-        <div class="content-box bg-white dark:bg-gray-800 rounded-lg p-6 space-y-4 border border-gray-200 dark:border-gray-600">
+        <div id="section-quote" class="content-box bg-white dark:bg-gray-800 rounded-lg p-6 space-y-4 border border-gray-200 dark:border-gray-600">
             <h2 class="text-xl font-semibold text-gray-900 dark:text-white">Generate Quote</h2>
             
             <div class="flex gap-4 items-center">
@@ -225,8 +232,8 @@
         </div>
 
         <!-- Asset Selection Section -->
-        <div class="content-box bg-white dark:bg-gray-800 rounded-lg p-6 space-y-4 border border-gray-200 dark:border-gray-600">
-            <h2 class="text-xl font-semibold text-gray-900 dark:text-white">Choose Background</h2>
+        <div id="section-media" class="content-box bg-white dark:bg-gray-800 rounded-lg p-6 space-y-4 border border-gray-200 dark:border-gray-600">
+            <h2 class="text-xl font-semibold text-gray-900 dark:text-white">Media</h2>
             
             <!-- Asset Type Tabs -->
             <div class="flex gap-2">
@@ -465,7 +472,7 @@
         </div>
 
         <!-- Voiceover Section -->
-        <div class="content-box bg-white dark:bg-gray-800 rounded-lg p-6 space-y-4 border border-gray-200 dark:border-gray-600">
+        <div id="section-voice" class="content-box bg-white dark:bg-gray-800 rounded-lg p-6 space-y-4 border border-gray-200 dark:border-gray-600">
             <h2 class="text-xl font-semibold text-gray-900 dark:text-white">Voiceover</h2>
             
             <div class="grid grid-cols-2 gap-4">
@@ -539,6 +546,15 @@
                     <div id="stage" class="absolute inset-0 w-full h-full" style="z-index:3; display:none;">
                         <img id="previewMedia" class="w-full h-full object-cover" />
                     </div>
+                    <!-- Floating render panel -->
+                    <div class="absolute bottom-2 right-2 bg-white/90 dark:bg-gray-800/90 border border-gray-300 dark:border-gray-700 rounded shadow px-3 py-2 flex items-center gap-2" style="z-index:4;">
+                        <button
+                            id="render-btn"
+                            class="px-3 py-2 bg-green-600 hover:bg-green-500 rounded text-sm font-medium text-white"
+                        >
+                            Render Short
+                        </button>
+                    </div>
                 </div>
             </div>
             
@@ -549,13 +565,6 @@
                 <div id="preview-caption-style" class="text-sm text-gray-600 dark:text-gray-400"></div>
                 <div id="preview-voiceover" class="text-sm text-gray-600 dark:text-gray-400"></div>
             </div>
-            
-            <button
-                id="render-btn"
-                class="px-6 py-3 bg-green-600 hover:bg-green-500 rounded-lg font-medium hidden"
-            >
-                Render Short
-            </button>
         </div>
     </div>
 
@@ -3877,6 +3886,37 @@
         });
         
         // Removed duplicate visibilitychange listener - consolidated into DOMContentLoaded handler above
+    </script>
+
+    <script>
+      // Lightweight tab logic for segmented control
+      (function(){
+        const seg = {
+          quote: document.getElementById('seg-quote'),
+          media: document.getElementById('seg-media'),
+          voice: document.getElementById('seg-voice')
+        };
+        const sections = {
+          quote: document.getElementById('section-quote'),
+          media: document.getElementById('section-media'),
+          voice: document.getElementById('section-voice')
+        };
+        function show(name){
+          Object.keys(sections).forEach(key=>{
+            const el = sections[key]; if (!el) return;
+            // Nearest content-box parent is what we hide/show to avoid rewiring
+            el.style.display = key===name ? '' : 'none';
+          });
+          Object.keys(seg).forEach(key=>{
+            seg[key]?.classList.toggle('active', key===name);
+          })
+        }
+        seg.quote?.addEventListener('click', ()=>show('quote'));
+        seg.media?.addEventListener('click', ()=>show('media'));
+        seg.voice?.addEventListener('click', ()=>show('voice'));
+        // Default to Quote
+        show('quote');
+      })();
     </script>
 
 
