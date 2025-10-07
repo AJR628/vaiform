@@ -83,6 +83,8 @@
   border-radius: 0.5rem;
   overflow: hidden;
   background: white;
+  width: 100%;
+  max-width: 100%;
 }
 
 .dark .accordion-section {
@@ -151,10 +153,19 @@
 .accordion-body {
   display: none;
   padding: 0;
+  width: 100%;
+  max-width: 100%;
 }
 
 .accordion-body.active {
   display: block;
+}
+
+/* Ensure content boxes inside accordion bodies have consistent width */
+.accordion-body .content-box {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 /* Mobile responsive */

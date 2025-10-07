@@ -380,8 +380,8 @@
             </div>
         </div>
 
-        <!-- Caption Style Section -->
-        <div class="content-box bg-white dark:bg-gray-800 rounded-lg p-6 space-y-4 border border-gray-200 dark:border-gray-600">
+        <!-- Caption Style Section (Hidden during transition) -->
+        <div class="content-box bg-white dark:bg-gray-800 rounded-lg p-6 space-y-4 border border-gray-200 dark:border-gray-600" style="display: none;">
             <h2 class="text-xl font-semibold text-gray-900 dark:text-white">Caption Style</h2>
             
             <!-- Overlay Mode Toggle -->
@@ -569,7 +569,6 @@
             
             <!-- Live Preview Canvas -->
             <div id="live-preview-container" class="opacity-0 transition-opacity duration-300" style="min-height: 640px; width: 360px;">
-                <div class="text-sm text-gray-400 mb-2">Live Preview:</div>
                 <!-- Fix A: Give the preview wrapper a predictable size -->
                 <div class="relative mx-auto bg-black rounded-lg overflow-hidden" style="width: 360px; aspect-ratio: 9 / 16;">
                     <canvas id="live-preview-canvas" class="w-full h-full block"></canvas>
@@ -3933,22 +3932,22 @@
         const bodies = document.querySelectorAll('.accordion-body');
         
         function toggleSection(targetSection) {
-          // Close all sections
-          headers.forEach(header => {
-            const section = header.dataset.section;
-            const body = document.getElementById(`${section}-body`);
-            const icon = header.querySelector('.accordion-icon');
-            
-            if (section === targetSection) {
-              header.classList.add('active');
-              body?.classList.add('active');
-              icon.textContent = '▼';
-            } else {
-              header.classList.remove('active');
-              body?.classList.remove('active');
-              icon.textContent = '▶';
-            }
-          });
+          const targetHeader = document.querySelector(`[data-section="${targetSection}"]`);
+          const targetBody = document.getElementById(`${targetSection}-body`);
+          const targetIcon = targetHeader?.querySelector('.accordion-icon');
+          
+          // Toggle the clicked section
+          if (targetHeader?.classList.contains('active')) {
+            // Close if already open
+            targetHeader.classList.remove('active');
+            targetBody?.classList.remove('active');
+            targetIcon.textContent = '▶';
+          } else {
+            // Open if closed
+            targetHeader.classList.add('active');
+            targetBody?.classList.add('active');
+            targetIcon.textContent = '▼';
+          }
         }
         
         headers.forEach(header => {
