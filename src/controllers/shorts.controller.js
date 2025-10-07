@@ -89,8 +89,8 @@ const CreateShortSchema = z
     wantAttribution: z.boolean().default(true).optional(),
     background: BackgroundSchema.default({ kind: "solid" }).optional(),
     debugAudioPath: z.string().optional(),
-    // Accept legacy 'none' but normalize to 'static'
-    captionMode: z.union([z.enum(["static", "progress", "karaoke"]), z.literal("none")])
+    // Accept legacy 'none' but normalize to 'static'. Include 'overlay' for v2 overlay mode
+    captionMode: z.union([z.enum(["static", "progress", "karaoke", "overlay"]), z.literal("none")])
       .transform(v => (v === "none" ? "static" : v))
       .default("static")
       .optional(),

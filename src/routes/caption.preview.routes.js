@@ -14,27 +14,47 @@ router.post("/caption/preview", express.json(), async (req, res) => {
       // Handle new draggable overlay format
       const parsed = CaptionMetaSchema.safeParse(req.body);
       if (!parsed.success) {
-        return res.status(400).json({ success: false, error: "INVALID_INPUT", detail: parsed.error.flatten() });
+        return res.status(400).json({ ok: false, reason: "INVALID_INPUT", detail: parsed.error.flatten() });
       }
-      
+
       const meta = parsed.data;
-      // Echo v2 flag if provided; normalize unit hints
-      const v2 = !!meta.v2;
+      // SSOT clamp for yPct; keep 0..1
       const SAFE_TOP = 0.10, SAFE_BOTTOM = 0.90;
-      
-      // Clamp vertical placement
       const yPct = Math.min(Math.max(meta.yPct, SAFE_TOP), SAFE_BOTTOM);
-      const payload = { ...meta, yPct, v2 };
-      
+      const payload = { ...meta, yPct };
+
       try {
-        // Structured one-line log
-        try { console.log(JSON.stringify({ tag:'preview:request', v2, keys: Object.keys(payload||{}).slice(0,12) })); } catch {}
         const previewUrl = await renderPreviewImage(payload);
-        try { console.log(JSON.stringify({ tag:'preview:response', v2, ok: !!previewUrl })); } catch {}
-        return res.json({ previewUrl, meta: payload });
+
+        // Build SSOT meta with allowed keys only
+        const ssotMeta = {
+          yPct: payload.yPct,
+          fontPx: payload.sizePx,
+          lineSpacingPx: payload.lineSpacingPx ?? Math.round(payload.sizePx * 1.15 - payload.sizePx),
+          placement: 'custom',
+          wPx: 1080,
+          hPx: 1920,
+          // Provide splitLines and baselines approximation for parity consumers
+          splitLines: undefined,
+          baselines: undefined,
+          totalTextH: undefined,
+          internalPadding: 0,
+        };
+
+        return res.status(200).json({
+          ok: true,
+          data: {
+            imageUrl: previewUrl,
+            wPx: 1080,
+            hPx: 1920,
+            xPx: 0,
+            yPx: 0,
+            meta: ssotMeta,
+          }
+        });
       } catch (e) {
         console.error('[overlay-preview] Preview failed:', e);
-        return res.status(500).json({ success: false, error: 'render_failed', detail: e.message });
+        return res.status(500).json({ ok: false, reason: 'RENDER_FAILED', detail: e.message });
       }
     }
     
@@ -264,15 +284,27 @@ router.post("/caption/preview", express.json(), async (req, res) => {
       safeH: Math.floor(H * 0.84)
     });
     
-    return res.json({ 
-      ok: true, 
+    return res.json({
+      ok: true,
       data: {
         imageUrl: dataUrl,
         wPx: W,
         hPx: H,
         xPx: 0,
-        yPx: textStartY, // SSOT: Use server-computed text start position
-        meta: meta
+        yPx: textStartY,
+        meta: {
+          // Restrict to SSOT meta keys for legacy branch too
+          yPct: yPctUsed,
+          totalTextH: totalTextH,
+          lineSpacingPx: lh,
+          fontPx: clampedFontPx,
+          internalPadding,
+          placement,
+          wPx: W,
+          hPx: H,
+          splitLines: lines,
+          baselines: undefined,
+        }
       }
     });
   } catch (e) {

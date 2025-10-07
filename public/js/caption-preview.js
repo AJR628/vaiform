@@ -119,16 +119,23 @@ export async function generateCaptionPreview(opts) {
   const imageUrl = data.data?.imageUrl;
   if (!imageUrl) throw new Error("No image URL in response");
 
+  // SSOT: store only the allowed meta keys as-is
+  const meta = data.data?.meta || {};
   lastCaptionPNG = { 
     dataUrl: imageUrl, 
     width: data.data?.wPx || 1080, 
     height: data.data?.hPx || 1920,
     meta: {
-      xPx: data.data?.xPx || 0,
-      yPx: data.data?.yPx || 0,
+      yPct: meta.yPct,
+      totalTextH: meta.totalTextH,
+      lineSpacingPx: meta.lineSpacingPx ?? meta.lineSpacing,
+      fontPx: meta.fontPx,
+      internalPadding: meta.internalPadding,
+      placement: meta.placement,
       wPx: data.data?.wPx || 1080,
       hPx: data.data?.hPx || 1920,
-      ...data.data?.meta
+      splitLines: meta.splitLines,
+      baselines: meta.baselines
     }
   };
   
@@ -140,7 +147,7 @@ export async function generateCaptionPreview(opts) {
       dataUrl: imageUrl,
       width: data.data?.wPx || 1080,
       height: data.data?.hPx || 1920,
-      meta: data.data?.meta || {}
+      meta: lastCaptionPNG.meta
     };
   }
 
@@ -217,81 +224,49 @@ export function createCaptionOverlay(captionData, container, scaling = {}) {
   
   // SSOT: Use server-computed positioning directly
   const overlayV2 = detectOverlayV2();
-  const xPct = Number.isFinite(captionData.meta?.xPct) ? captionData.meta.xPct : 0.5;
+  const xPct = 0.5; // center horizontally for preview image
   const yPct = Number.isFinite(captionData.meta?.yPct) ? captionData.meta.yPct : 0.5;
-  const totalTextH = captionData.meta?.totalTextH || captionData.meta?.hPx || 0;
-  const align = captionData.meta?.align || 'center';
-  const vAlign = captionData.meta?.vAlign || 'center';
+  const totalTextH = captionData.meta?.totalTextH || 0;
+  const align = 'center';
   const internalPadding = captionData.meta?.internalPadding || 0;
-  const lineSpacingPx = captionData.meta?.lineSpacingPx ?? captionData.meta?.lineSpacing ?? 0;
-  
-  // SSOT: Use server-computed anchor positioning if available
-  const serverAnchorY = captionData.meta?.anchorY;
-  const serverTextBlockTop = captionData.meta?.textBlockTop;
-  
+  const lineSpacingPx = captionData.meta?.lineSpacingPx ?? 0;
+
   // TASK 2: Scale totalTextH with single scale factor
   const scaledTotalTextH = totalTextH * s;
-  
+
   // Define safe margins to prevent clipping (5% top, 8% bottom)
   const safeTopMargin = previewH * 0.05;
   const safeBottomMargin = previewH * 0.08;
-  
-  // Calculate anchor points using server-computed positioning
-  const anchorX = (xPct / 100) * finalW;
-  
+
+  // Calculate anchor points
+  const anchorX = (xPct) * finalW;
+
   // Calculate position based on alignment - use text-aware positioning
   let left = anchorX;
-  
+
   // Horizontal alignment
   if (align === 'center') left -= dispW / 2;
   else if (align === 'right') left -= dispW;
-  
-  // SSOT: Use server-computed positioning directly, or fallback to client calculation
-  let targetTop;
-  if (overlayV2 && serverTextBlockTop !== undefined) {
-    // V2: prefer server-computed block top
-    targetTop = (serverTextBlockTop / serverFrameH) * finalH;
-  } else {
-    targetTop = (yPct * finalH) - (scaledTotalTextH / 2);
-  }
-  
+
+  // SSOT clamp formula based solely on yPct
+  const targetTop = (yPct * finalH) - (scaledTotalTextH / 2);
   let top = Math.max(safeTopMargin, Math.min(targetTop, finalH - safeBottomMargin - scaledTotalTextH));
-  
-  console.log('[preview-overlay] positioning:', {
-    W: finalW, H: finalH, iw: captionData.meta?.wPx, iH: captionData.meta?.hPx,
-    dispw: dispW, dispH: dispH, align, placement, yPct,
-    finalscale: s, scaledTotalTextH, totalTextH,
-    left: left, top: top, targetTop, safeTopMargin, safeBottomMargin
-  });
-  
-  // TASK 3: Clamp with padding to prevent off-screen positioning
-  const minTop = safeTopMargin;
-  const maxTop = finalH - safeBottomMargin - scaledTotalTextH;
-  top = Math.max(minTop, Math.min(targetTop, maxTop));
-  
+
   // Clamp horizontal positioning
   left = Math.max(0, Math.min(left, finalW - dispW));
-  
-  // V2: avoid finalScale double-correction; single scale factor only
+
   const finalDispW = dispW;
   const finalDispH = dispH;
-  left = anchorX;
-  top = targetTop;
-  if (align === 'center') left -= finalDispW / 2;
-  else if (align === 'right') left -= finalDispW;
   const finalScaledTextH = scaledTotalTextH;
-  left = Math.max(0, Math.min(left, finalW - finalDispW));
-  top = Math.max(safeTopMargin, Math.min(top, finalH - safeBottomMargin - finalScaledTextH));
-  
+
   // TASK 4: Debug logging with actual container dimensions
   console.log('[preview-overlay] positioning:', {
     W: finalW, H: finalH, iw: captionData.meta?.wPx, iH: captionData.meta?.hPx,
-    dispW: finalDispW, dispH: finalDispH, align, placement, yPct,
+    dispW: finalDispW, dispH: finalDispH, align, yPct,
     finalScale: s, scaledTotalTextH, totalTextH, left, top, targetTop,
-    safeTopMargin, safeBottomMargin,
-    serverAnchorY, serverTextBlockTop, 'usingServerPositioning': serverTextBlockTop !== undefined
+    safeTopMargin, safeBottomMargin
   });
-  
+
   // Apply calculated position and size
   overlay.style.cssText = `
     position: absolute;
