@@ -44,38 +44,36 @@ const ACTIONS = {
   
   saveQuote: () => {
     console.log('[ui-actions] saveQuote triggered');
-    const saveBtn = document.getElementById('save-quote-btn');
-    if (saveBtn && typeof saveBtn.onclick === 'function') {
-      saveBtn.onclick();
+    if (typeof window.saveQuote === 'function') {
+      window.saveQuote();
     } else {
-      console.error('[ui-actions] saveQuote handler not found');
+      console.error('[ui-actions] saveQuote function not found');
     }
   },
   
   cancelEdit: () => {
     console.log('[ui-actions] cancelEdit triggered');
-    const cancelBtn = document.getElementById('cancel-quote-btn');
-    if (cancelBtn && typeof cancelBtn.onclick === 'function') {
-      cancelBtn.onclick();
+    if (typeof window.cancelEdit === 'function') {
+      window.cancelEdit();
     } else {
-      console.error('[ui-actions] cancelEdit handler not found');
+      console.error('[ui-actions] cancelEdit function not found');
     }
   },
   
   editQuote: () => {
     console.log('[ui-actions] editQuote triggered');
-    const editBtn = document.getElementById('edit-quote-btn');
-    if (editBtn && typeof editBtn.onclick === 'function') {
-      editBtn.onclick();
+    if (typeof window.editQuote === 'function') {
+      window.editQuote();
     } else {
-      console.error('[ui-actions] editQuote handler not found');
+      console.error('[ui-actions] editQuote function not found');
     }
   },
   
   // Media actions
   setMediaTab: (event) => {
-    const kind = event.target.dataset.kind;
-    console.log('[ui-actions] setMediaTab triggered for kind:', kind);
+    // SSOT: read from data-type (matches getActiveAssetType() and DOM)
+    const kind = event.target.dataset.type;
+    console.log('[ui-actions] setMediaTab triggered for type:', kind);
     
     // Update current asset type
     if (typeof window !== 'undefined') {
@@ -86,11 +84,21 @@ const ACTIONS = {
     const tabs = document.querySelectorAll('[data-type]');
     tabs.forEach(tab => {
       if (tab.dataset.type === kind) {
-        tab.className = tab.className.replace(/bg-gray-\d+|bg-blue-\d+/, 'bg-blue-600');
+        // Active tab
+        tab.classList.remove('bg-gray-600', 'dark:bg-gray-700');
+        tab.classList.add('bg-blue-600');
       } else {
-        tab.className = tab.className.replace(/bg-gray-\d+|bg-blue-\d+/, 'bg-gray-600 dark:bg-gray-700');
+        // Inactive tab
+        tab.classList.remove('bg-blue-600');
+        tab.classList.add('bg-gray-600', 'dark:bg-gray-700');
       }
     });
+    
+    // Clear grid before loading new assets
+    const grid = document.getElementById('asset-grid');
+    if (grid) {
+      grid.innerHTML = '';
+    }
     
     // Load assets for the selected type
     if (typeof window.loadAssets === 'function') {
