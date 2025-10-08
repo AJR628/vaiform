@@ -76,7 +76,8 @@ export async function getAssetsOptions(req, res) {
     return res.json({ 
       ok: true, 
       data: { 
-        ...result, 
+        ...result,
+        meta: { type, query, page: startPage }, // Debug: show what was requested
         plan: isPro ? 'pro' : 'free',
         limits: { maxPerPage, currentPerPage: actualPerPage }
       } 

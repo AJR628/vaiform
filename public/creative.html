@@ -1024,7 +1024,8 @@
         let currentLimits = null;
         let currentQuote = null;
         let selectedAsset = null;
-        let currentAssetType = 'images';
+        // SSOT: Use window scope so ui-actions.js can update it
+        window.currentAssetType = window.currentAssetType || 'images';
         let currentAssetPage = 1;
         let hasMoreAssets = false;
         let currentCredits = 0;
@@ -1757,6 +1758,8 @@
                 const query = document.getElementById('asset-query').value;
                 const cacheKey = `${currentAssetType}-${query}-${page}`;
                 
+                console.log('[assets] loadAssets called:', { type: currentAssetType, query, page });
+                
                 // Check cache first
                 if (assetCache.has(cacheKey)) {
                     const cachedData = assetCache.get(cacheKey);
@@ -1765,6 +1768,7 @@
                     currentAssetPage = page;
                     updatePagination();
                     setLoading('search-assets-btn', false);
+                    console.log('[assets] Loaded from cache:', cacheKey);
                     return;
                 }
                 
@@ -1779,6 +1783,11 @@
                 });
                 
                 if (data.ok) {
+                    console.log('[assets] Response received:', { 
+                        meta: data.data.meta, 
+                        count: data.data.items?.length 
+                    });
+                    
                     // Cache the results
                     assetCache.set(cacheKey, {
                         items: data.data.items,
@@ -2506,35 +2515,7 @@
           safe('caption-size', () => (typeof initCaptionSizeUI === 'function') && initCaptionSizeUI());
 
           // Asset browser setup is now handled above in priority section
-
-          // Re-load when switching tabs if nothing is shown yet
-          safe('assets-tab-wiring', () => {
-            const tabs = document.querySelectorAll('[data-type]');
-            tabs.forEach(tab => {
-              tab.addEventListener('click', () => {
-                setTimeout(() => { // Small delay to let tab switching complete
-                  const kind = tab.dataset.type; // 'images' | 'videos' | 'ai'
-                  const grid = document.getElementById(`${kind}-grid`) ||
-                               document.querySelector(`[data-grid="${kind}"]`) ||
-                               document.getElementById('assets-grid');
-                  const qEl  = document.getElementById('asset-query') ||
-                               document.querySelector('[data-asset-query]') ||
-                               document.querySelector('input[placeholder*="nature"]');
-                  const query = (qEl?.value || 'nature').trim();
-
-                  console.log('[assets] Tab clicked:', { kind, gridEmpty: grid?.childElementCount === 0, query });
-
-                  if (grid && grid.childElementCount === 0) {
-                    console.log('[assets] Loading assets for tab', kind);
-                    if (typeof loadAssets === 'function') {
-                      currentAssetType = kind; // Set the global state
-                      loadAssets(1);
-                    }
-                  }
-                }, 100);
-              }, { passive: true });
-            });
-          });
+          // Tab switching is now handled by the delegated router in ui-actions.js
         });
 
         // Update render button state based on validation
@@ -3796,53 +3777,8 @@
             }, 150); // Debounce resize events
         });
 
-        // Tab switching - attach when media section is visible
-        function attachTabListeners() {
-            document.querySelectorAll('[data-type]').forEach(tab => {
-                if (!tab.onclick) { // Only attach if not already attached
-                    tab.onclick = async () => {
-                        currentAssetType = tab.dataset.type;
-                        
-                        // Update tab styles
-                        document.querySelectorAll('[data-type]').forEach(t => {
-                            t.className = 'px-4 py-2 rounded bg-gray-700';
-                        });
-                        tab.className = 'px-4 py-2 rounded bg-blue-600';
-                        
-                        // Show/hide controls
-                        const searchControls = document.getElementById('search-controls');
-                        const aiControls = document.getElementById('ai-controls');
-                        
-                        if (currentAssetType === 'ai') {
-                            try { searchControls.classList.add('hidden'); } catch {}
-                            try { aiControls && aiControls.classList.remove('hidden'); } catch {}
-                        } else {
-                            try { searchControls.classList.remove('hidden'); } catch {}
-                            try { aiControls && aiControls.classList.add('hidden'); } catch {}
-                        }
-                        
-                        // Clear cache and reset pagination for new type
-                        assetCache.clear();
-                        currentAssetPage = 1;
-                        
-                        // Load assets for new type with auth check
-                        if (currentAssetType !== 'ai') {
-                            const ok = await ensureLoggedInOrWarn();
-                            if (ok) {
-                                try { 
-                                    await loadAssets(1); 
-                                } catch (e) { 
-                                    console.warn('[assets] tab load failed', e); 
-                                }
-                            }
-                        }
-                    };
-                }
-            });
-        }
-        
-        // Attach immediately for any visible tabs
-        attachTabListeners();
+        // Tab switching is now handled by the delegated router in ui-actions.js
+        // No duplicate onclick handlers needed
         
 
         // Theme toggle functionality
