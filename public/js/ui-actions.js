@@ -94,18 +94,13 @@ const ACTIONS = {
       }
     });
     
-    // Clear grid before loading new assets
+    // Clear grid when switching tabs (user must click Search to load new assets)
     const grid = document.getElementById('asset-grid');
     if (grid) {
       grid.innerHTML = '';
     }
     
-    // Load assets for the selected type
-    if (typeof window.loadAssets === 'function') {
-      window.loadAssets(1);
-    } else {
-      console.error('[ui-actions] loadAssets function not found');
-    }
+    // Do NOT auto-search; user must click Search button
   },
   
   searchAssets: () => {
