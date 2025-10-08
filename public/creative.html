@@ -3450,7 +3450,9 @@
         });
 
         // Event listeners - generateQuote now handled by ui-actions.js
-        document.getElementById('use-text-btn').onclick = () => {
+        const useTextBtn = document.getElementById('use-text-btn');
+        if (useTextBtn) {
+          useTextBtn.onclick = () => {
             const input = document.getElementById('quote-text').value.trim();
             if (!input) return;
             currentQuote = { text: input };
@@ -3481,26 +3483,42 @@
             } catch (e) {
                 console.warn('[caption-overlay] auto-preview failed (non-fatal)', e);
             }
-        };
+          };
+        }
         // search-assets-btn now handled by ui-actions.js
-        document.getElementById('prev-page-btn').onclick = () => loadAssets(currentAssetPage - 1);
-        document.getElementById('next-page-btn').onclick = () => loadAssets(currentAssetPage + 1);
-        try { document.getElementById('generate-ai-btn').onclick = generateAiImage; } catch {}
-        document.getElementById('upload-asset-btn').onclick = () => {
-            document.getElementById('asset-upload-input').click();
+        const prevPageBtn = document.getElementById('prev-page-btn');
+        if (prevPageBtn) prevPageBtn.onclick = () => loadAssets(currentAssetPage - 1);
+        
+        const nextPageBtn = document.getElementById('next-page-btn');
+        if (nextPageBtn) nextPageBtn.onclick = () => loadAssets(currentAssetPage + 1);
+        
+        const generateAiBtn = document.getElementById('generate-ai-btn');
+        if (generateAiBtn) generateAiBtn.onclick = generateAiImage;
+        
+        const uploadAssetBtn = document.getElementById('upload-asset-btn');
+        if (uploadAssetBtn) uploadAssetBtn.onclick = () => {
+            const uploadInput = document.getElementById('asset-upload-input');
+            if (uploadInput) uploadInput.click();
         };
-        document.getElementById('asset-upload-input').onchange = (e) => handleFileUpload(e.target.files);
-        document.getElementById('clear-remix-btn').onclick = () => {
+        const assetUploadInput = document.getElementById('asset-upload-input');
+        if (assetUploadInput) assetUploadInput.onchange = (e) => handleFileUpload(e.target.files);
+        
+        const clearRemixBtn = document.getElementById('clear-remix-btn');
+        if (clearRemixBtn) clearRemixBtn.onclick = () => {
             remixAssets = [];
             updateRemixArea();
         };
-        document.getElementById('render-btn').onclick = renderShort;
+        
+        const renderBtn = document.getElementById('render-btn');
+        if (renderBtn) renderBtn.onclick = renderShort;
         
         // Overlay mode toggle event listener (auto-initialize overlay; no extra buttons)
-        document.getElementById('overlay-mode-toggle').onchange = toggleOverlayMode;
+        const overlayModeToggle = document.getElementById('overlay-mode-toggle');
+        if (overlayModeToggle) overlayModeToggle.onchange = toggleOverlayMode;
         
         // Overlay control event listeners
-        document.getElementById('show-outline-toggle').onchange = async () => {
+        const showOutlineToggle = document.getElementById('show-outline-toggle');
+        if (showOutlineToggle) showOutlineToggle.onchange = async () => {
             if (useOverlayMode && overlaySystemInitialized) {
                 try {
                     const { getCaptionMeta, applyCaptionMeta } = await import('./js/caption-overlay.js');
@@ -3513,7 +3531,8 @@
             }
         };
         
-        document.getElementById('responsive-text-toggle').onchange = async () => {
+        const responsiveTextToggle = document.getElementById('responsive-text-toggle');
+        if (responsiveTextToggle) responsiveTextToggle.onchange = async () => {
             if (useOverlayMode && overlaySystemInitialized) {
                 try {
                     const { getCaptionMeta, applyCaptionMeta } = await import('./js/caption-overlay.js');
@@ -3548,14 +3567,16 @@
         };
         
         // Caption style event listeners
-        document.getElementById('caption-font').onchange = async () => {
+        const captionFont = document.getElementById('caption-font');
+        if (captionFont) captionFont.onchange = async () => {
             if (useOverlayMode) { try { const { getCaptionMeta, applyCaptionMeta } = await import('./js/caption-overlay.js'); const m = getCaptionMeta(); m.fontFamily = document.getElementById('caption-font').value; applyCaptionMeta(m); } catch(e){ console.warn('[overlay] font apply failed', e);} }
             updateRenderPreview();
             updateLivePreview();
             updateCaptionOverlay((currentQuote?.text||'').trim(), true);
             updateOverlayCaption((currentQuote?.text||'').trim(), true);
         };
-        document.getElementById('caption-weight').onchange = async () => {
+        const captionWeight = document.getElementById('caption-weight');
+        if (captionWeight) captionWeight.onchange = async () => {
             const newWeight = document.getElementById('caption-weight').value;
             console.log('[controls] Weight changed to:', newWeight);
             if (useOverlayMode) { try { const { getCaptionMeta, applyCaptionMeta } = await import('./js/caption-overlay.js'); const m = getCaptionMeta(); m.weightCss = newWeight; applyCaptionMeta(m); } catch(e){ console.warn('[overlay] weight apply failed', e);} }
@@ -3573,7 +3594,8 @@
             updateCaptionOverlay((currentQuote?.text||'').trim(), true);
             updateOverlayCaption((currentQuote?.text||'').trim(), true); 
         };
-        document.getElementById('caption-placement').onchange = () => {
+        const captionPlacement = document.getElementById('caption-placement');
+        if (captionPlacement) captionPlacement.onchange = () => {
             const newPlacement = document.getElementById('caption-placement').value;
             console.log('[controls] Placement changed to:', newPlacement);
             
@@ -3598,7 +3620,8 @@
             updateCaptionOverlay((currentQuote?.text||'').trim(), true);
             updateOverlayCaption((currentQuote?.text||'').trim(), true);
         };
-        document.getElementById('caption-background').onchange = () => {
+        const captionBackground = document.getElementById('caption-background');
+        if (captionBackground) captionBackground.onchange = () => {
             updateRenderPreview();
             updateLivePreview();
             updateCaptionOverlay((currentQuote?.text||'').trim(), true);
@@ -3607,12 +3630,14 @@
         document.getElementById('caption-bg-opacity').oninput = () => { updateCaptionStyleValues(); updateCaptionOverlay((currentQuote?.text||'').trim(), true); };
         
         // Voiceover event listeners
-        document.getElementById('voiceover-voice').onchange = () => {
+        const voiceoverVoice = document.getElementById('voiceover-voice');
+        if (voiceoverVoice) voiceoverVoice.onchange = () => {
             const voiceSelect = document.getElementById('voiceover-voice');
             currentVoiceId = voiceSelect.value || null;
             updateRenderPreview();
         };
-        document.getElementById('preview-voice-btn').onclick = previewVoice;
+        const previewVoiceBtn = document.getElementById('preview-voice-btn');
+        if (previewVoiceBtn) previewVoiceBtn.onclick = previewVoice;
         
         // TTS Settings event handlers
         document.getElementById('tts-stability').oninput = function() {
@@ -3627,7 +3652,8 @@
             document.getElementById('style-value').textContent = this.value;
             updateRenderPreview();
         };
-        document.getElementById('tts-speaker-boost').onchange = function() {
+        const ttsSpeakerBoost = document.getElementById('tts-speaker-boost');
+        if (ttsSpeakerBoost) ttsSpeakerBoost.onchange = function() {
             updateRenderPreview();
         };
 
