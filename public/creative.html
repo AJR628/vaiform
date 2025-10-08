@@ -191,6 +191,8 @@
                 </select>
                 <button
                     id="generate-quote-btn"
+                    data-action="generateQuote"
+                    type="button"
                     class="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-600 rounded"
                 >
                     Generate Quote
@@ -205,14 +207,14 @@
                         <div id="quote-text-display" class="text-lg font-medium text-gray-900 dark:text-white hidden"></div>
                         <textarea id="quote-edit" class="w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded px-3 py-2 text-sm text-gray-900 dark:text-white" style="min-height: 100px;" placeholder="Enter your quote here or generate one above..."></textarea>
                         <div class="flex gap-2 mt-2">
-                            <button id="save-quote-btn" class="px-3 py-1 bg-green-600 hover:bg-green-500 rounded text-sm text-white">Save</button>
-                            <button id="cancel-quote-btn" class="px-3 py-1 bg-gray-600 dark:bg-gray-700 hover:bg-gray-700 dark:hover:bg-gray-600 rounded text-sm text-white hidden">Cancel</button>
+                            <button id="save-quote-btn" data-action="saveQuote" type="button" class="px-3 py-1 bg-green-600 hover:bg-green-500 rounded text-sm text-white">Save</button>
+                            <button id="cancel-quote-btn" data-action="cancelEdit" type="button" class="px-3 py-1 bg-gray-600 dark:bg-gray-700 hover:bg-gray-700 dark:hover:bg-gray-600 rounded text-sm text-white hidden">Cancel</button>
                         </div>
                     </div>
                     <div class="flex flex-col gap-2 items-end">
                         <div id="regen-info" class="text-xs text-gray-400">Regens left: 10</div>
                         <div class="flex gap-2">
-                            <button id="edit-quote-btn" class="px-3 py-1 bg-gray-600 dark:bg-neutral-700 hover:bg-gray-700 dark:hover:bg-neutral-600 rounded text-sm text-white hidden">Edit</button>
+                            <button id="edit-quote-btn" data-action="editQuote" type="button" class="px-3 py-1 bg-gray-600 dark:bg-neutral-700 hover:bg-gray-700 dark:hover:bg-neutral-600 rounded text-sm text-white hidden">Edit</button>
                         </div>
                     </div>
                 </div>
@@ -221,13 +223,13 @@
                 
                 <!-- Remix buttons (Pro only) -->
                 <div id="remix-buttons" class="flex gap-2">
-                    <button id="regenerate-btn" class="px-3 py-1 bg-purple-600 hover:bg-purple-500 disabled:bg-gray-600 rounded text-sm">
+                    <button id="regenerate-btn" data-action="regenerateQuote" type="button" class="px-3 py-1 bg-purple-600 hover:bg-purple-500 disabled:bg-gray-600 rounded text-sm">
                         Regenerate
                     </button>
-                    <button id="rephrase-btn" class="px-3 py-1 bg-purple-600 hover:bg-purple-500 disabled:bg-gray-600 rounded text-sm">
+                    <button id="rephrase-btn" data-action="rephraseQuote" type="button" class="px-3 py-1 bg-purple-600 hover:bg-purple-500 disabled:bg-gray-600 rounded text-sm">
                         Rephrase
                     </button>
-                    <button id="tone-shift-btn" class="px-3 py-1 bg-purple-600 hover:bg-purple-500 disabled:bg-gray-600 rounded text-sm">
+                    <button id="tone-shift-btn" data-action="changeTone" type="button" class="px-3 py-1 bg-purple-600 hover:bg-purple-500 disabled:bg-gray-600 rounded text-sm">
                         Change Tone
                     </button>
                 </div>
@@ -252,10 +254,10 @@
             
             <!-- Asset Type Tabs -->
             <div class="flex gap-2">
-                <button id="images-tab" class="px-4 py-2 rounded bg-blue-600 text-white" data-type="images">
+                <button id="images-tab" data-action="setMediaTab" data-kind="images" type="button" class="px-4 py-2 rounded bg-blue-600 text-white" data-type="images">
                     Images
                 </button>
-                <button id="videos-tab" class="px-4 py-2 rounded bg-gray-600 dark:bg-gray-700 text-white" data-type="videos">
+                <button id="videos-tab" data-action="setMediaTab" data-kind="videos" type="button" class="px-4 py-2 rounded bg-gray-600 dark:bg-gray-700 text-white" data-type="videos">
                     Videos
                 </button>
                 <button id="ai-tab" class="px-4 py-2 rounded bg-gray-600 dark:bg-gray-700 text-white hidden" data-type="ai">
@@ -322,6 +324,8 @@
                 />
                 <button
                     id="search-assets-btn"
+                    data-action="searchAssets"
+                    type="button"
                     class="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-600 rounded text-white"
                 >
                     Search
@@ -3445,8 +3449,7 @@
             }
         });
 
-        // Event listeners
-        document.getElementById('generate-quote-btn').onclick = generateQuote;
+        // Event listeners - generateQuote now handled by ui-actions.js
         document.getElementById('use-text-btn').onclick = () => {
             const input = document.getElementById('quote-text').value.trim();
             if (!input) return;
@@ -3479,10 +3482,7 @@
                 console.warn('[caption-overlay] auto-preview failed (non-fatal)', e);
             }
         };
-        document.getElementById('search-assets-btn').onclick = () => {
-            assetCache.clear(); // Clear cache on new search
-            loadAssets(1);
-        };
+        // search-assets-btn now handled by ui-actions.js
         document.getElementById('prev-page-btn').onclick = () => loadAssets(currentAssetPage - 1);
         document.getElementById('next-page-btn').onclick = () => loadAssets(currentAssetPage + 1);
         try { document.getElementById('generate-ai-btn').onclick = generateAiImage; } catch {}
@@ -3631,10 +3631,7 @@
             updateRenderPreview();
         };
 
-        // Remix button event listeners (success-only decrement handled inside)
-        try { document.getElementById('regenerate-btn').onclick = () => remixQuote('regenerate'); } catch {}
-        try { document.getElementById('rephrase-btn').onclick = () => remixQuote('rephrase'); } catch {}
-        try { document.getElementById('tone-shift-btn').onclick = () => remixQuote('tone_shift'); } catch {}
+        // Remix button event listeners now handled by ui-actions.js
 
         // Inline edit handlers
         try { document.getElementById('edit-quote-btn').onclick = () => {
@@ -3954,9 +3951,16 @@
         }
         
         headers.forEach(header => {
-          header.addEventListener('click', () => {
-            const section = header.dataset.section;
-            toggleSection(section);
+          header.addEventListener('click', (event) => {
+            // Only toggle if clicking the header itself, not buttons inside
+            if (event.target === header || event.target.closest('.accordion-header') === header) {
+              // Don't toggle if clicking on action buttons
+              if (event.target.dataset && event.target.dataset.action) {
+                return;
+              }
+              const section = header.dataset.section;
+              toggleSection(section);
+            }
           });
         });
         
@@ -4030,22 +4034,7 @@
         // Update preview height on load
         setTimeout(updatePreviewHeight, 1000);
         
-        // Ensure media buttons work when media section is opened (SSOT: minimal change)
-        document.addEventListener('click', (e) => {
-          if (e.target.closest('[data-section="media"]')) {
-            // Re-attach media button listeners when media section opens
-            setTimeout(() => {
-              attachTabListeners(); // Re-attach tab listeners
-              const searchBtn = document.getElementById('search-assets-btn');
-              if (searchBtn && !searchBtn.onclick) {
-                searchBtn.onclick = () => {
-                  assetCache.clear();
-                  loadAssets(1);
-                };
-              }
-            }, 50);
-          }
-        });
+        // Media buttons are now handled by ui-actions.js delegated event system
       })();
     </script>
 

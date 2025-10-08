@@ -17,6 +17,20 @@
 }
 #caption-overlay {
   z-index: 2;
+  pointer-events: none;
+}
+
+/* Ensure action buttons are always clickable */
+[data-action] {
+  pointer-events: auto;
+  position: relative;
+  z-index: 1;
+}
+
+/* Prevent non-interactive elements from blocking button clicks */
+.accordion-summary,
+.accordion-icon {
+  pointer-events: none;
 }
 
 
