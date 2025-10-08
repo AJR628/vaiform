@@ -1397,6 +1397,37 @@
                 
                 // Initialize the overlay system
                 initCaptionOverlay({ stageSel: '#stage', mediaSel: '#previewMedia' });
+                
+                // Set default caption box geometry if not already set
+                if (!window.__overlayMeta || !window.__overlayMeta.wPct) {
+                    const stage = document.querySelector('#stage');
+                    const w = stage?.clientWidth || 360;
+                    const h = stage?.clientHeight || 640;
+                    
+                    // Default box ~88% width, readable font, centered near top
+                    const defaultMeta = {
+                        text: (currentQuote?.text || '').trim(),
+                        xPct: 6,                 // 6% left margin
+                        yPct: 10,                // 10% from top
+                        wPct: 88,                // 88% of stage width
+                        fontFamily: 'Inter, system-ui, sans-serif',
+                        weightCss: '700',
+                        fontPx: Math.max(24, Math.min(64, Math.round(w * 0.09))),
+                        color: '#FFFFFF',
+                        opacity: 1,
+                        textAlign: 'center',
+                        paddingPx: 12,
+                    };
+                    
+                    try {
+                        applyCaptionMeta(defaultMeta);
+                        window.__overlayMeta = { ...defaultMeta, ...getCaptionMeta() };
+                        console.log('[overlay-system] Applied default caption meta:', { fontPx: defaultMeta.fontPx, wPct: defaultMeta.wPct });
+                    } catch (e) {
+                        console.warn('[overlay-system] Failed to apply default meta:', e);
+                    }
+                }
+                
                 try { ensureOverlayTopAndVisible('#stage'); } catch {}
                 
                 // Set up the preview media source - wait for canvas to be ready
@@ -1938,14 +1969,36 @@
             updateRenderPreview();
             updateRenderButtonState();
             
-            // Trigger preview when asset is used
-            if (currentQuote) {
+            // Show media + caption immediately in overlay (seamless flow)
+            try {
+                await ensureOverlayActive();
+                
+                // Update overlay background with new media
+                if (useOverlayMode && overlaySystemInitialized) {
+                    await updateOverlayCanvasBackground();
+                    console.log('[useAsset] Updated overlay background');
+                }
+                
+                // If we have a saved quote, show it on the new media
+                const txt = (currentQuote?.text || '').trim();
+                if (txt && useOverlayMode && overlaySystemInitialized) {
+                    await updateOverlayCaption(txt, true);
+                    console.log('[useAsset] Updated overlay caption');
+                }
+                
+                // Ensure overlay is visible on top
+                try {
+                    const { ensureOverlayTopAndVisible } = await import('./js/caption-overlay.js');
+                    ensureOverlayTopAndVisible('#stage');
+                } catch {}
+            } catch (e) {
+                console.warn('[useAsset] overlay update failed', e);
+            }
+            
+            // Legacy flow fallback
+            if (currentQuote && !useOverlayMode) {
                 updateLivePreview();
                 updateCaptionOverlay(currentQuote.text.trim(), true);
-                // Update overlay background if in overlay mode
-                if (useOverlayMode) {
-                    updateOverlayCanvasBackground();
-                }
             }
             
             // Scroll to render section
@@ -3709,13 +3762,28 @@
             document.getElementById('cancel-quote-btn').classList.add('hidden');
             document.getElementById('edit-quote-btn').classList.remove('hidden');
             updateRenderPreview();
-            // Prefer overlay path on save
-            try { console.log('[save] caption text:', newText); } catch {}
+            
+            // Always show caption after save (even with no media)
             try {
+                console.log('[save] caption text:', newText);
                 await ensureOverlayActive();
+                
                 if (useOverlayMode && overlaySystemInitialized) {
                     console.log('[overlay-caption] set:', newText.substring(0,80));
                     await updateOverlayCaption(newText, true);
+                    
+                    // If no media selected yet, ensure stage has visible black background
+                    const stage = document.getElementById('stage');
+                    if (stage && !selectedAsset) {
+                        stage.style.background = '#000';
+                        console.log('[save] No media yet - set black background');
+                    }
+                    
+                    // Ensure overlay is visible on top
+                    try {
+                        const { ensureOverlayTopAndVisible } = await import('./js/caption-overlay.js');
+                        ensureOverlayTopAndVisible('#stage');
+                    } catch {}
                 } else {
                     updateCaptionOverlay(newText, true);
                 }
