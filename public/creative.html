@@ -32,6 +32,8 @@
         window.fetchAndUpdateCredits = fetchAndUpdateCredits;
     </script>
     <script type="module" src="./frontend.js"></script>
+    <!-- Delegated event system for action buttons -->
+    <script src="./js/ui-actions.js"></script>
     <link rel="stylesheet" href="/creative.css" />
     <!-- Caption rendering now uses server-side PNG overlay - no fonts needed -->
     <style>
@@ -3689,8 +3691,8 @@
 
         // Remix button event listeners now handled by ui-actions.js
 
-        // Inline edit handlers
-        try { document.getElementById('edit-quote-btn').onclick = () => {
+        // Inline edit handlers - converted to named functions for ui-actions.js
+        function editQuote() {
             const disp = document.getElementById('quote-text-display');
             const ta = document.getElementById('quote-edit');
             ta.value = (currentQuote?.text || '').trim();
@@ -3701,16 +3703,18 @@
             document.getElementById('edit-quote-btn').classList.add('hidden');
             // While editing, hide caption overlay
             updateCaptionOverlay('', false);
-        }; } catch {}
-        try { document.getElementById('cancel-quote-btn').onclick = () => {
+        }
+
+        function cancelEdit() {
             const disp = document.getElementById('quote-text-display');
             const ta = document.getElementById('quote-edit');
             // remain in edit mode but clear contents
             ta.value = '';
             updateCaptionOverlay('', false);
             // do not change regen counter
-        }; } catch {}
-        document.getElementById('save-quote-btn').onclick = async () => {
+        }
+
+        async function saveQuote() {
             const ta = document.getElementById('quote-edit');
             const newText = ta.value.trim().slice(0, 200);
             if (!newText) return;
@@ -3746,7 +3750,12 @@
             } catch (e) {
               console.warn('Quote save failed (non-fatal):', e?.message || e);
             }
-        };
+        }
+
+        // Expose to window scope for ui-actions.js
+        window.editQuote = editQuote;
+        window.cancelEdit = cancelEdit;
+        window.saveQuote = saveQuote;
 
         // Character counter for input
         document.getElementById('quote-text').addEventListener('input', (e) => {
@@ -3982,6 +3991,18 @@
     </script>
 
     <script>
+      // ========================================
+      // AUDIT NOTES (Phase 0 findings):
+      // - Router: Single delegated click router in ui-actions.js using [data-action]
+      // - Router style: Calls window.* functions (generateQuote, remixQuote, loadAssets, etc.)
+      // - DOM selectors: Already correct (#quote-text, #quote-tone, #quote-result, #asset-query, #asset-grid)
+      // - Functions exposed: window.generateQuote (line ~1706), window.loadAssets (~1801), window.remixQuote (~3236)
+      // - Now also exposed: window.editQuote, window.cancelEdit, window.saveQuote (~3754-3756)
+      // - No legacy-gate blocks found
+      // - SSOT: One router (ui-actions.js), one set of controllers, one overlay update path
+      // - Safe `must()` helper already exists at line ~1046
+      // ========================================
+
       // Accordion behavior - single open section
       (function(){
         const headers = document.querySelectorAll('.accordion-header');
