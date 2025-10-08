@@ -994,8 +994,7 @@
         // --- Debounced caption overlay refresh (prevents blocking assets) ---
         let overlayRefreshTimer = null;
         function queueCaptionOverlayRefresh() {
-          // When draggable overlay mode is active, do not trigger legacy PNG overlay refresh
-          try { if (useOverlayMode) { console.log('[legacy-gate] blocked:', 'queueCaptionOverlayRefresh'); return; } } catch {}
+          // Legacy function - no longer used in overlay mode
           if (overlayRefreshTimer) clearTimeout(overlayRefreshTimer);
           overlayRefreshTimer = setTimeout(() => {
             try {
@@ -1041,6 +1040,34 @@
         let overlaySystemInitialized = false;
         let useOverlayMode = true; // Default to overlay mode as SSOT
 
+        // Helper functions for overlay management
+        const must = (sel) => {
+            const el = typeof sel === 'string' ? document.querySelector(sel) : sel;
+            if (!el) throw new Error('MISSING_EL: ' + sel);
+            return el;
+        };
+
+        const canOverlay = () => useOverlayMode && overlaySystemInitialized;
+
+        function setQuoteUI(text) {
+            const out = document.querySelector('#quote-result');
+            if (out) out.textContent = text;
+        }
+
+        async function maybeUpdateOverlay(text, force = true) {
+            try {
+                await ensureOverlayActive();
+                if (canOverlay()) {
+                    await updateOverlayCaption(text.trim(), force);
+                } else {
+                    setQuoteUI(text);
+                }
+            } catch (e) {
+                console.warn('[overlay] fallback to text-only UI', e);
+                setQuoteUI(text);
+            }
+        }
+
         // Ensure overlay is active and initialized
         async function ensureOverlayActive() {
             try {
@@ -1068,8 +1095,7 @@
         
         // Debounced caption preview generator
         function debouncedPreview(delay = 200) {
-            // Do not run legacy debounced PNG generation while overlay mode is enabled
-            try { if (useOverlayMode) { console.log('[legacy-gate] blocked:', 'debouncedPreview'); return; } } catch {}
+            // Legacy function - no longer used in overlay mode
             clearTimeout(captionDebounceTimer);
             captionDebounceTimer = setTimeout(() => {
                 if (currentQuote?.text?.trim()) {
@@ -1086,8 +1112,7 @@
         }
         
         async function updateCaptionOverlay(text = '', show = true) {
-            // Gate legacy PNG overlay when draggable overlay mode is on
-            try { if (useOverlayMode) { console.log('[legacy-gate] blocked:', 'updateCaptionOverlay'); return; } } catch {}
+            // Legacy function - use maybeUpdateOverlay instead for new overlay system
             console.log('[preview-init] updateCaptionOverlay called with:', { text: text?.substring(0, 50), show });
             
             const overlay = document.getElementById('caption-overlay');
@@ -1662,15 +1687,11 @@
                 
                 if (data.ok) {
                     currentQuote = data.data.quote;
-                    displayQuote(currentQuote); // keep textarea visible (no toggle)
+                    await displayQuote(currentQuote); // keep textarea visible (no toggle)
                     decRegens();
                     
                     // Trigger caption preview immediately after quote generation
-                    try {
-                        updateCaptionOverlay(currentQuote.text.trim(), true);
-                    } catch (e) {
-                        console.warn('[caption-overlay] auto-preview failed (non-fatal)', e);
-                    }
+                    await maybeUpdateOverlay(currentQuote.text.trim(), true);
                 } else {
                     showError('quote-error', data.reason || 'Failed to generate quote');
                 }
@@ -1681,7 +1702,10 @@
             }
         }
 
-        function displayQuote(quote) {
+        // Expose to window scope for ui-actions.js
+        window.generateQuote = generateQuote;
+
+        async function displayQuote(quote) {
             document.getElementById('quote-text-display').textContent = quote.text;
             const editEl = document.getElementById('quote-edit');
             editEl.value = quote.text;
@@ -1695,7 +1719,7 @@
             // Trigger preview when quote is available
             if (selectedAsset) {
                 updateLivePreview();
-                updateCaptionOverlay(quote.text.trim(), true);
+                await maybeUpdateOverlay(quote.text.trim(), true);
             }
             
             // Update char counter from textarea content
@@ -1772,6 +1796,9 @@
                 setLoading('search-assets-btn', false);
             }
         }
+
+        // Expose to window scope for ui-actions.js
+        window.loadAssets = loadAssets;
 
         function displayAssets(assets) {
             const grid = document.getElementById('asset-grid');
@@ -3185,7 +3212,7 @@
                 
                 if (data.ok) {
                     currentQuote = data.data.quote;
-                    displayQuote(currentQuote);
+                    await displayQuote(currentQuote);
                     decRegens();
                     // Keep the editor visible with new text
                     try {
@@ -3204,6 +3231,9 @@
                 setLoading('generate-quote-btn', false);
             }
         }
+
+        // Expose to window scope for ui-actions.js
+        window.remixQuote = remixQuote;
 
         // AI Image generation
         async function generateAiImage() {
