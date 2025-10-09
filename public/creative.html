@@ -1721,11 +1721,10 @@
                 
                 if (data.ok) {
                     currentQuote = data.data.quote;
-                    await displayQuote(currentQuote); // keep textarea visible (no toggle)
+                    await displayQuote(currentQuote, { skipPreview: true }); // keep textarea visible, skip preview update
                     decRegens();
                     
-                    // Trigger caption preview immediately after quote generation
-                    await maybeUpdateOverlay(currentQuote.text.trim(), true);
+                    // Preview update removed - will only happen on Save
                 } else {
                     showError('quote-error', data.reason || 'Failed to generate quote');
                 }
@@ -1739,7 +1738,7 @@
         // Expose to window scope for ui-actions.js
         window.generateQuote = generateQuote;
 
-        async function displayQuote(quote) {
+        async function displayQuote(quote, options = {}) {
             document.getElementById('quote-text-display').textContent = quote.text;
             const editEl = document.getElementById('quote-edit');
             editEl.value = quote.text;
@@ -1750,8 +1749,8 @@
             document.getElementById('cancel-quote-btn').classList.remove('hidden');
             document.getElementById('edit-quote-btn').classList.add('hidden');
             
-            // Trigger preview when quote is available
-            if (selectedAsset) {
+            // Only trigger preview if explicitly requested (not during generation)
+            if (!options.skipPreview && selectedAsset) {
                 updateLivePreview();
                 await maybeUpdateOverlay(quote.text.trim(), true);
             }
@@ -3253,7 +3252,7 @@
                 
                 if (data.ok) {
                     currentQuote = data.data.quote;
-                    await displayQuote(currentQuote);
+                    await displayQuote(currentQuote, { skipPreview: true }); // Skip preview during remix
                     decRegens();
                     // Keep the editor visible with new text
                     try {
