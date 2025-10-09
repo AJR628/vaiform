@@ -1404,15 +1404,15 @@
                     const w = stage?.clientWidth || 360;
                     const h = stage?.clientHeight || 640;
                     
-                    // Default box ~88% width, readable font, centered near top
+                    // Default box ~92% width, readable font, near top (SSOT: decimal fractions 0-1)
                     const defaultMeta = {
                         text: (currentQuote?.text || '').trim(),
-                        xPct: 6,                 // 6% left margin
-                        yPct: 10,                // 10% from top
-                        wPct: 88,                // 88% of stage width
+                        xPct: 0.04,              // 4% left margin (decimal)
+                        yPct: 0.08,              // 8% from top (decimal)
+                        wPct: 0.92,              // 92% of stage width (decimal)
                         fontFamily: 'Inter, system-ui, sans-serif',
                         weightCss: '700',
-                        fontPx: Math.max(24, Math.min(64, Math.round(w * 0.09))),
+                        fontPx: Math.max(28, Math.min(64, Math.round(w * 0.085))),
                         color: '#FFFFFF',
                         opacity: 1,
                         textAlign: 'center',
@@ -1422,7 +1422,7 @@
                     try {
                         applyCaptionMeta(defaultMeta);
                         window.__overlayMeta = { ...defaultMeta, ...getCaptionMeta() };
-                        console.log('[overlay-system] Applied default caption meta:', { fontPx: defaultMeta.fontPx, wPct: defaultMeta.wPct });
+                        console.log('[overlay-default] applied:', { wPct: defaultMeta.wPct, xPct: defaultMeta.xPct, yPct: defaultMeta.yPct, fontPx: defaultMeta.fontPx });
                     } catch (e) {
                         console.warn('[overlay-system] Failed to apply default meta:', e);
                     }
@@ -1969,14 +1969,19 @@
             updateRenderPreview();
             updateRenderButtonState();
             
-            // Show media + caption immediately in overlay (seamless flow)
+            // Show media + caption immediately in overlay (seamless flow with sync guarantee)
             try {
                 await ensureOverlayActive();
                 
-                // Update overlay background with new media
+                // Update overlay background with new media (wait for completion)
                 if (useOverlayMode && overlaySystemInitialized) {
                     await updateOverlayCanvasBackground();
-                    console.log('[useAsset] Updated overlay background');
+                    
+                    // Wait one frame to ensure canvas/media has painted
+                    await new Promise(resolve => requestAnimationFrame(resolve));
+                    
+                    const hasText = !!(currentQuote?.text || '').trim();
+                    console.log('[overlay-media] bg updated; hasText:', hasText);
                 }
                 
                 // If we have a saved quote, show it on the new media
@@ -1986,7 +1991,7 @@
                     console.log('[useAsset] Updated overlay caption');
                 }
                 
-                // Ensure overlay is visible on top
+                // Ensure overlay is visible on top (final positioning)
                 try {
                     const { ensureOverlayTopAndVisible } = await import('./js/caption-overlay.js');
                     ensureOverlayTopAndVisible('#stage');
@@ -3772,14 +3777,26 @@
                     console.log('[overlay-caption] set:', newText.substring(0,80));
                     await updateOverlayCaption(newText, true);
                     
-                    // If no media selected yet, fill #previewMedia with black data URL
+                    // If no media selected yet, ensure stage stays visible with black background
                     if (!selectedAsset) {
+                        const stage = document.getElementById('stage');
                         const previewMedia = document.getElementById('previewMedia');
+                        
+                        // Ensure stage has minimum dimensions (prevent collapse)
+                        if (stage) {
+                            stage.style.display = 'block';
+                            stage.style.minHeight = '400px';
+                            stage.style.backgroundColor = '#000';
+                        }
+                        
                         if (previewMedia) {
                             // 1x1 black pixel data URL (more deterministic than CSS background)
                             previewMedia.src = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
-                            console.log('[save] No media yet - set black background via previewMedia');
+                            previewMedia.style.display = 'block';
+                            console.log('[overlay-save] text: "' + newText.substring(0, 40) + '...", hasMedia: false');
                         }
+                    } else {
+                        console.log('[overlay-save] text: "' + newText.substring(0, 40) + '...", hasMedia: true');
                     }
                     
                     // Ensure overlay is visible on top

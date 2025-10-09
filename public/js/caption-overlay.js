@@ -134,10 +134,10 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
       font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
     .caption-box .drag-resize{ position:absolute; right:0; bottom:0; width:16px; height:16px;
       cursor:nwse-resize; border-right:2px solid #fff; border-bottom:2px solid #fff; opacity:.7; }
-    /* V2: keep chrome in layout to avoid measurement shifts; hide via opacity/pointer-events */
-    .caption-box.always-handle .drag-handle{ display:block; opacity:0; pointer-events:none; }
+    /* V2: keep chrome in layout to avoid measurement shifts; always show handle for immediate interaction */
+    .caption-box.always-handle .drag-handle{ display:block; opacity:0.5; pointer-events:auto; }
     .caption-box.always-handle.editing .drag-handle{ opacity:1; pointer-events:auto; }
-    .caption-box.always-handle .drag-resize{ display:block; opacity:0; pointer-events:none; }
+    .caption-box.always-handle .drag-resize{ display:block; opacity:0.4; pointer-events:auto; }
     .caption-box.always-handle.editing .drag-resize{ opacity:0.7; pointer-events:auto; }
   `;
   document.head.appendChild(style);
