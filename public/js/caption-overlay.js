@@ -175,31 +175,6 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
   // Snap into view on next frame to avoid off-viewport placement
   try { requestAnimationFrame(() => { try { ensureOverlayTopAndVisible(stageSel); } catch {} }); } catch {}
 
-  // Apply default meta if none exists (SSOT)
-  if (!window.__overlayMeta || !window.__overlayMeta.wPct) {
-    const s = stage.getBoundingClientRect();
-    const defaultMeta = {
-      text: content.textContent || '',
-      xPct: 0.04,
-      yPct: 0.10,
-      wPct: 0.92,
-      fontPx: Math.max(28, Math.min(64, Math.round(s.height * 0.09))),
-      fontFamily: 'Inter, system-ui, sans-serif',
-      weightCss: '700',
-      color: '#FFFFFF',
-      opacity: 1,
-      textAlign: 'center',
-      paddingPx: 12
-    };
-    applyCaptionMeta(defaultMeta);
-    window.__overlayMeta = getCaptionMeta();
-    console.log('[caption-overlay] default meta applied:', { 
-      fontPx: defaultMeta.fontPx, 
-      wPct: defaultMeta.wPct, 
-      stageH: s.height 
-    });
-  }
-
   // Drag behavior (strict: only move while actively dragging)
   let drag = null; let dragging = false;
   handle.addEventListener('pointerdown', (e)=>{
@@ -770,14 +745,6 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
       });
     };
   }
-
-  // Expose APIs to window for runtime access
-  if (typeof window !== 'undefined') {
-    window.getCaptionMeta = getCaptionMeta;
-    window.applyCaptionMeta = applyCaptionMeta;
-    window.setQuote = setQuote;
-    window.ensureOverlayTopAndVisible = () => ensureOverlayTopAndVisible(stageSel);
-  }
 }
 
 export function getCaptionMeta(){ return window.getCaptionMeta(); }
@@ -866,6 +833,3 @@ export function bindCaptionDrag(stageSel = '#stage') {
   box.addEventListener('pointerup', onUp);
   box.addEventListener('pointercancel', onUp);
 }
-
-// Confirm script loaded
-console.log('[caption-overlay] script loaded, APIs exported to window');
