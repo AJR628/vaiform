@@ -128,18 +128,17 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     .caption-box:not(.editing) .drag-handle{ display:none; }
     .caption-box:not(.editing) .drag-resize{ display:none; }
     .caption-box .drag-handle{ position:absolute; top:0; left:0; cursor:move; user-select:none; padding:6px 10px; background:rgba(0,0,0,.25);
-      border-top-left-radius:12px; border-top-right-radius:12px; font: 12px/1 system-ui; letter-spacing:.08em; text-transform:uppercase; color:#fff; }
+      border-top-left-radius:12px; border-top-right-radius:12px; font: 12px/1 system-ui; letter-spacing:.08em; text-transform:uppercase; }
     .caption-box .content{ padding:28px 12px 12px 12px; outline:none; white-space:pre-wrap; word-break:normal; overflow-wrap:normal; hyphens:none; overflow:hidden; box-sizing:border-box;
       color:#fff; text-align:center; font-weight:800; font-size:38px; line-height:1.15; text-shadow:0 2px 12px rgba(0,0,0,.65);
       font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
     .caption-box .drag-resize{ position:absolute; right:0; bottom:0; width:16px; height:16px;
       cursor:nwse-resize; border-right:2px solid #fff; border-bottom:2px solid #fff; opacity:.7; }
     /* V2: keep chrome in layout to avoid measurement shifts; always show handle for immediate interaction */
-    .caption-box.always-handle .drag-handle{ display:block !important; opacity:0.6; pointer-events:auto; }
-    .caption-box.always-handle.editing .drag-handle{ opacity:1; }
-    .caption-box.always-handle:not(.editing) .drag-handle{ opacity:0; pointer-events:none; }
+    .caption-box.always-handle .drag-handle{ display:block; opacity:0.5; pointer-events:auto; }
+    .caption-box.always-handle.editing .drag-handle{ opacity:1; pointer-events:auto; }
     .caption-box.always-handle .drag-resize{ display:block; opacity:0.4; pointer-events:auto; }
-    .caption-box.always-handle.editing .drag-resize{ opacity:0.7; }
+    .caption-box.always-handle.editing .drag-resize{ opacity:0.7; pointer-events:auto; }
   `;
   document.head.appendChild(style);
 
@@ -281,8 +280,8 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     }
   }
   
-  // Add editing state management (V2: default to editing=true for immediate drag access)
-  let isEditing = overlayV2 ? true : false;
+  // Add editing state management
+  let isEditing = false;
   
   const setEditing = (editing) => {
     isEditing = editing;
@@ -295,25 +294,17 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
       try { toolbar.style.display = editing ? 'flex' : 'none'; } catch {}
       try { requestAnimationFrame(()=>{ placeToolbar(); }); } catch {}
     }
-  };
-  
-  // Set initial editing state for V2
-  if (overlayV2) {
-    setEditing(true);
   }
   
-  // Click on stage (but outside box) to exit editing mode (clean preview)
-  // Only trigger clean preview when clicking the preview area, not other UI elements
-  stage.addEventListener('click', (e) => {
-    // Only hide controls if clicking stage itself or previewMedia, not the caption box
-    if (!box.contains(e.target) && e.target !== box) {
+  // Click outside to exit editing mode (clean preview)
+  document.addEventListener('click', (e) => {
+    if (!box.contains(e.target)) {
       setEditing(false);
     }
   });
   
   // Click on box to enter editing mode
   box.addEventListener('click', (e) => {
-    e.stopPropagation(); // Prevent stage click handler from firing
     if (!isEditing) {
       setEditing(true);
     }
