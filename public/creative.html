@@ -1091,8 +1091,21 @@
                 // Reflect UI: show stage, hide legacy image
                 const stage = document.getElementById('stage');
                 const legacyOverlay = document.getElementById('caption-overlay');
-                if (stage) stage.style.display = 'block';
+                if (stage) {
+                    stage.style.display = 'block';
+                    // Ensure stage has minimum height and black background when no media
+                    if (!selectedAsset) {
+                        stage.style.minHeight = '400px';
+                        stage.style.backgroundColor = '#000';
+                        const previewMedia = document.getElementById('previewMedia');
+                        if (previewMedia) {
+                            previewMedia.src = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+                            previewMedia.style.display = 'block';
+                        }
+                    }
+                }
                 if (legacyOverlay) legacyOverlay.style.display = 'none';
+                console.log('[overlay] ensureOverlayActive: stage visible, hasMedia:', !!selectedAsset);
             } catch (e) { console.warn('[overlay] ensureOverlayActive failed', e); }
         }
         
@@ -1749,12 +1762,6 @@
             document.getElementById('cancel-quote-btn').classList.remove('hidden');
             document.getElementById('edit-quote-btn').classList.add('hidden');
             
-            // Only trigger preview if explicitly requested (not during generation)
-            if (!options.skipPreview && selectedAsset) {
-                updateLivePreview();
-                await maybeUpdateOverlay(quote.text.trim(), true);
-            }
-            
             // Update char counter from textarea content
             try {
               const cc = document.getElementById('quote-char-count');
@@ -1769,6 +1776,8 @@
             const remix = document.getElementById('remix-buttons');
             if (remix) remix.classList.remove('hidden');
             updateRenderPreview();
+            
+            // Preview is handled by updateRenderPreview() which now shows container even without asset
         }
 
         // Asset loading with pagination and caching
@@ -2150,10 +2159,17 @@
             const preview = document.getElementById('render-preview');
             const renderBtn = document.getElementById('render-btn');
             
-            if (currentQuote && selectedAsset) {
+            // Show preview container if we have a quote, regardless of asset
+            if (currentQuote) {
                 document.getElementById('preview-quote').textContent = currentQuote.text;
-                document.getElementById('preview-asset').textContent = 
-                    `Background: ${selectedAsset.provider === 'ai' ? 'AI Image' : selectedAsset.provider === 'uploaded' ? 'Uploaded' : `${currentAssetType} - ${selectedAsset.query}`}`;
+                
+                // Show asset info if available
+                if (selectedAsset) {
+                    document.getElementById('preview-asset').textContent = 
+                        `Background: ${selectedAsset.provider === 'ai' ? 'AI Image' : selectedAsset.provider === 'uploaded' ? 'Uploaded' : `${currentAssetType} - ${selectedAsset.query}`}`;
+                } else {
+                    document.getElementById('preview-asset').textContent = 'Background: None (black)';
+                }
                 
                 // Update caption style preview
                 const font = document.getElementById('caption-font').value;
@@ -2180,14 +2196,22 @@
                 document.getElementById('preview-voiceover').textContent = `Voice: ${voiceName} (Stability: ${stability}, Similarity: ${similarity}, Style: ${normalizedStyle}, Boost: ${speakerBoost ? 'On' : 'Off'})`;
                 
                 preview.classList.remove('hidden');
-                renderBtn.classList.remove('hidden');
+                // Only show render button if we have both quote and asset
+                if (selectedAsset) {
+                    renderBtn.classList.remove('hidden');
+                } else {
+                    renderBtn.classList.add('hidden');
+                }
+                // Always show preview container when we have a quote
                 document.getElementById('live-preview-container').classList.remove('opacity-0');
                 
                 // Wait a frame for the container to be visible, then update preview
                 requestAnimationFrame(() => {
                     // Ensure proper sequence: Container → Canvas → Preview → Caption
                     console.log('[preview-init] Triggering preview sequence...');
-                    updateLivePreview();
+                    if (selectedAsset) {
+                        updateLivePreview();
+                    }
                     if (currentQuote) {
                         // Small delay to ensure preview is rendered before caption
                         setTimeout(() => {
@@ -2196,6 +2220,7 @@
                     }
                 });
             } else {
+                // No quote - hide everything
                 preview.classList.add('hidden');
                 renderBtn.classList.add('hidden');
                 document.getElementById('live-preview-container').classList.add('opacity-0');
