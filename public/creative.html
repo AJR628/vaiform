@@ -3772,11 +3772,14 @@
                     console.log('[overlay-caption] set:', newText.substring(0,80));
                     await updateOverlayCaption(newText, true);
                     
-                    // If no media selected yet, ensure stage has visible black background
-                    const stage = document.getElementById('stage');
-                    if (stage && !selectedAsset) {
-                        stage.style.background = '#000';
-                        console.log('[save] No media yet - set black background');
+                    // If no media selected yet, fill #previewMedia with black data URL
+                    if (!selectedAsset) {
+                        const previewMedia = document.getElementById('previewMedia');
+                        if (previewMedia) {
+                            // 1x1 black pixel data URL (more deterministic than CSS background)
+                            previewMedia.src = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+                            console.log('[save] No media yet - set black background via previewMedia');
+                        }
                     }
                     
                     // Ensure overlay is visible on top
