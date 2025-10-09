@@ -1404,15 +1404,15 @@
                     const w = stage?.clientWidth || 360;
                     const h = stage?.clientHeight || 640;
                     
-                    // Default box ~92% width, readable font, near top (SSOT: decimal fractions 0-1)
+                    // Default box ~88% width, readable font, near top (SSOT: decimal fractions 0-1)
                     const defaultMeta = {
                         text: (currentQuote?.text || '').trim(),
                         xPct: 0.04,              // 4% left margin (decimal)
-                        yPct: 0.08,              // 8% from top (decimal)
-                        wPct: 0.92,              // 92% of stage width (decimal)
+                        yPct: 0.10,              // 10% from top (decimal)
+                        wPct: 0.88,              // 88% of stage width (decimal)
                         fontFamily: 'Inter, system-ui, sans-serif',
                         weightCss: '700',
-                        fontPx: Math.max(28, Math.min(64, Math.round(w * 0.085))),
+                        fontPx: Math.max(28, Math.min(96, Math.round(h * 0.08))),
                         color: '#FFFFFF',
                         opacity: 1,
                         textAlign: 'center',

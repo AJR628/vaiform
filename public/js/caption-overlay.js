@@ -175,6 +175,11 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
   // Snap into view on next frame to avoid off-viewport placement
   try { requestAnimationFrame(() => { try { ensureOverlayTopAndVisible(stageSel); } catch {} }); } catch {}
 
+  // Ensure content.maxWidth defaults to 100% (prevents narrow pixel constraints)
+  if (overlayV2) {
+    content.style.maxWidth = '100%';
+  }
+
   // Drag behavior (strict: only move while actively dragging)
   let drag = null; let dragging = false;
   handle.addEventListener('pointerdown', (e)=>{
@@ -213,6 +218,7 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
 
   // Keep inside frame on resize and clamp to stage
   const clamp = ()=>{
+    if (overlayV2) return; // V2 mode uses percentage-based positioning via applyCaptionMeta
     if (overlayV2 && window.__debugOverlay) { try { __ro++; } catch {} }
     if (overlayV2 && v2State.isResizing) return; // observer no-op during V2 resize
     const s = stage.getBoundingClientRect(), b = box.getBoundingClientRect();
@@ -567,8 +573,8 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     if (typeof meta.text === 'string') content.innerText = meta.text;
     if (typeof meta.xPct === 'number') box.style.left = (meta.xPct * 100) + '%';
     if (typeof meta.yPct === 'number') box.style.top  = (meta.yPct * 100) + '%';
-    if (typeof meta.wPct === 'number') box.style.width  = (meta.wPct * s.width) + 'px';
-    if (typeof meta.hPct === 'number') box.style.height = (meta.hPct * s.height) + 'px';
+    if (typeof meta.wPct === 'number') box.style.width  = (meta.wPct * 100) + '%';
+    if (typeof meta.hPct === 'number') box.style.height = (meta.hPct * 100) + '%';
     if (meta.fontPx) content.style.fontSize = meta.fontPx + 'px';
     if (meta.weightCss) content.style.fontWeight = meta.weightCss;
     if (meta.textAlign) content.style.textAlign = meta.textAlign;
