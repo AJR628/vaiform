@@ -302,15 +302,18 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     setEditing(true);
   }
   
-  // Click outside to exit editing mode (clean preview)
-  document.addEventListener('click', (e) => {
-    if (!box.contains(e.target)) {
+  // Click on stage (but outside box) to exit editing mode (clean preview)
+  // Only trigger clean preview when clicking the preview area, not other UI elements
+  stage.addEventListener('click', (e) => {
+    // Only hide controls if clicking stage itself or previewMedia, not the caption box
+    if (!box.contains(e.target) && e.target !== box) {
       setEditing(false);
     }
   });
   
   // Click on box to enter editing mode
   box.addEventListener('click', (e) => {
+    e.stopPropagation(); // Prevent stage click handler from firing
     if (!isEditing) {
       setEditing(true);
     }

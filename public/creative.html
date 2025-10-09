@@ -2587,10 +2587,15 @@
           // Trigger caption preview if we have text and asset (legacy fallback only)
           safe('caption-preview-init', () => maybeGenerateCaptionPreview());
 
-          // Default to overlay mode as soon as caption exists
-          safe('overlay-default', () => {
-            const hasCaption = !!(currentQuote?.text || document.getElementById('quote-text')?.value);
-            if (hasCaption) ensureOverlayActive();
+          // Initialize overlay system on page load (V2 mode default)
+          safe('overlay-init', async () => {
+            try {
+              // Always initialize overlay system for immediate drag access
+              await initOverlaySystem();
+              console.log('[init] Overlay system initialized on page load');
+            } catch (e) {
+              console.warn('[init] Overlay system initialization failed:', e);
+            }
           });
 
           // SECONDARY: Initialize caption UI (non-blocking)
