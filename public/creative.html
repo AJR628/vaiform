@@ -2159,9 +2159,14 @@
             const preview = document.getElementById('render-preview');
             const renderBtn = document.getElementById('render-btn');
             
-            // Show preview container if we have a quote, regardless of asset
-            if (currentQuote) {
-                document.getElementById('preview-quote').textContent = currentQuote.text;
+            // Show preview container if we have any feature selected
+            if (currentQuote || selectedAsset || currentVoiceId) {
+                // Handle quote display
+                if (currentQuote) {
+                    document.getElementById('preview-quote').textContent = currentQuote.text;
+                } else {
+                    document.getElementById('preview-quote').textContent = 'Quote: None';
+                }
                 
                 // Show asset info if available
                 if (selectedAsset) {
@@ -2196,13 +2201,9 @@
                 document.getElementById('preview-voiceover').textContent = `Voice: ${voiceName} (Stability: ${stability}, Similarity: ${similarity}, Style: ${normalizedStyle}, Boost: ${speakerBoost ? 'On' : 'Off'})`;
                 
                 preview.classList.remove('hidden');
-                // Only show render button if we have both quote and asset
-                if (selectedAsset) {
-                    renderBtn.classList.remove('hidden');
-                } else {
-                    renderBtn.classList.add('hidden');
-                }
-                // Always show preview container when we have a quote
+                // Always show render button when we have any feature
+                renderBtn.classList.remove('hidden');
+                // Always show preview container when we have any feature
                 document.getElementById('live-preview-container').classList.remove('opacity-0');
                 
                 // Wait a frame for the container to be visible, then update preview
@@ -2220,9 +2221,9 @@
                     }
                 });
             } else {
-                // No quote - hide everything
+                // No features selected - hide preview but keep button visible
                 preview.classList.add('hidden');
-                renderBtn.classList.add('hidden');
+                renderBtn.classList.remove('hidden'); // Keep button visible
                 document.getElementById('live-preview-container').classList.add('opacity-0');
             }
             updateRenderButtonState();
@@ -2605,16 +2606,17 @@
             const renderBtn = document.getElementById('render-btn');
             const hasValidAsset = selectedAsset && (selectedAsset.fileUrl || selectedAsset.url);
             const hasQuote = currentQuote;
+            const hasVoiceover = !!currentVoiceId;
             const isLoggedIn = window.auth?.currentUser;
             
-            const canRender = hasValidAsset && hasQuote && isLoggedIn;
+            // Render is enabled if user has at least one feature selected
+            const canRender = (hasQuote || hasValidAsset || hasVoiceover) && isLoggedIn;
             renderBtn.disabled = !canRender;
             
             if (!canRender) {
                 let reason = '';
                 if (!isLoggedIn) reason = 'Please log in';
-                else if (!hasQuote) reason = 'Please select a quote';
-                else if (!hasValidAsset) reason = 'Please select a valid asset';
+                else if (!hasQuote && !hasValidAsset && !hasVoiceover) reason = 'Please add a quote, select media, or choose a voiceover';
                 
                 renderBtn.title = reason;
             } else {
@@ -2995,8 +2997,9 @@
 
         // Render short function
         async function renderShort() {
-            if (!currentQuote || !selectedAsset) {
-                alert('Please select a quote and an asset first');
+            // Require at least one feature (quote, asset, or voiceover)
+            if (!currentQuote && !selectedAsset && !currentVoiceId) {
+                alert('Please add a quote, select media, or choose a voiceover first');
                 return;
             }
 
@@ -3014,53 +3017,59 @@
             try {
                 const { apiFetch } = await import('./api.mjs');
                 
-                // Prepare the render payload with proper background structure
-                const assetUrl = selectedAsset.fileUrl || selectedAsset.url;
+                // Prepare the render payload with proper background structure (optional)
+                let background = null;
                 
-                // Detect type from URL extension
-                const detectTypeFromUrl = (url) => {
-                    if (!url) return 'image'; // Default fallback
+                if (selectedAsset) {
+                    const assetUrl = selectedAsset.fileUrl || selectedAsset.url;
                     
-                    try {
-                        // Handle URLs with query parameters or fragments
-                        const cleanUrl = url.split('?')[0].split('#')[0];
-                        const ext = cleanUrl.toLowerCase().split('.').pop();
+                    // Detect type from URL extension
+                    const detectTypeFromUrl = (url) => {
+                        if (!url) return 'image'; // Default fallback
                         
-                        console.log(`[typeDetection] URL: ${url}`);
-                        console.log(`[typeDetection] Clean URL: ${cleanUrl}`);
-                        console.log(`[typeDetection] Extension: ${ext}`);
-                        
-                        if (['mp4', 'mov', 'avi', 'mkv', 'webm', 'm4v', '3gp', 'flv'].includes(ext)) {
-                            return 'video';
-                        }
-                        if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg', 'tiff'].includes(ext)) {
+                        try {
+                            // Handle URLs with query parameters or fragments
+                            const cleanUrl = url.split('?')[0].split('#')[0];
+                            const ext = cleanUrl.toLowerCase().split('.').pop();
+                            
+                            console.log(`[typeDetection] URL: ${url}`);
+                            console.log(`[typeDetection] Clean URL: ${cleanUrl}`);
+                            console.log(`[typeDetection] Extension: ${ext}`);
+                            
+                            if (['mp4', 'mov', 'avi', 'mkv', 'webm', 'm4v', '3gp', 'flv'].includes(ext)) {
+                                return 'video';
+                            }
+                            if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg', 'tiff'].includes(ext)) {
+                                return 'image';
+                            }
+                            
+                            // Default fallback
+                            console.log(`[typeDetection] Unknown extension: ${ext}, defaulting to image`);
                             return 'image';
+                        } catch (error) {
+                            console.error(`[typeDetection] Error parsing URL: ${error.message}`);
+                            return 'image'; // Safe fallback
                         }
-                        
-                        // Default fallback
-                        console.log(`[typeDetection] Unknown extension: ${ext}, defaulting to image`);
-                        return 'image';
-                    } catch (error) {
-                        console.error(`[typeDetection] Error parsing URL: ${error.message}`);
-                        return 'image'; // Safe fallback
-                    }
-                };
-                
-                const detectedType = detectTypeFromUrl(assetUrl);
-                
-                console.log(`[render] Asset URL: ${assetUrl}`);
-                console.log(`[render] Detected type: ${detectedType}`);
-                
-                const background = {
-                    kind: selectedAsset.provider === 'ai' ? 'ai' : 
-                          selectedAsset.provider === 'uploaded' ? 'upload' : 'stock',
-                    type: detectedType, // Use detected type from URL
-                    url: assetUrl, // Required URL
-                    query: selectedAsset.query,
-                    // Legacy fields for backward compatibility
-                    imageUrl: selectedAsset.provider === 'uploaded' ? selectedAsset.fileUrl : undefined,
-                    prompt: selectedAsset.provider === 'ai' ? selectedAsset.query : undefined
-                };
+                    };
+                    
+                    const detectedType = detectTypeFromUrl(assetUrl);
+                    
+                    console.log(`[render] Asset URL: ${assetUrl}`);
+                    console.log(`[render] Detected type: ${detectedType}`);
+                    
+                    background = {
+                        kind: selectedAsset.provider === 'ai' ? 'ai' : 
+                              selectedAsset.provider === 'uploaded' ? 'upload' : 'stock',
+                        type: detectedType, // Use detected type from URL
+                        url: assetUrl, // Required URL
+                        query: selectedAsset.query,
+                        // Legacy fields for backward compatibility
+                        imageUrl: selectedAsset.provider === 'uploaded' ? selectedAsset.fileUrl : undefined,
+                        prompt: selectedAsset.provider === 'ai' ? selectedAsset.query : undefined
+                    };
+                } else {
+                    console.log('[render] No asset selected - will render with black background');
+                }
 
                 // Get caption style settings
                 const captionStyle = {
