@@ -583,16 +583,17 @@
                     <div id="stage" class="absolute inset-0 w-full h-full" style="z-index:3; display:none;">
                         <img id="previewMedia" class="w-full h-full object-cover" />
                     </div>
-                    <!-- Floating render panel -->
-                    <div class="absolute bottom-2 right-2 bg-white/90 dark:bg-gray-800/90 border border-gray-300 dark:border-gray-700 rounded shadow px-3 py-2 flex items-center gap-2" style="z-index:4;">
-                        <button
-                            id="render-btn"
-                            class="px-3 py-2 bg-green-600 hover:bg-green-500 rounded text-sm font-medium text-white"
-                        >
-                            Render Short
-                        </button>
                     </div>
-                    </div>
+                </div>
+                
+                <!-- Render button below preview -->
+                <div class="mt-4 flex justify-center">
+                    <button
+                        id="render-btn"
+                        class="px-6 py-3 bg-green-600 hover:bg-green-500 disabled:bg-gray-400 disabled:cursor-not-allowed rounded-lg text-base font-semibold text-white shadow-md transition-colors"
+                    >
+                        Render
+                    </button>
                 </div>
                 
                 <div id="render-preview" class="bg-gray-100 dark:bg-gray-800 rounded p-4 hidden border border-gray-200 dark:border-gray-700">
