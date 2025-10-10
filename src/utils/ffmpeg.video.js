@@ -101,6 +101,27 @@ function escapeForDrawtext(s = '') {
     .replace(/'/g, "\\'")
     .replace(/\r?\n/g, '\\n');
 }
+
+// Normalize color to hex format for FFmpeg (avoids comma escaping in rgb())
+function normalizeColorForFFmpeg(color) {
+  if (!color) return 'white';
+  const c = String(color).trim();
+  
+  // Already hex format
+  if (c.startsWith('#')) return c;
+  
+  // Parse rgb(R, G, B) or rgba(R, G, B, A)
+  const m = /rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/.exec(c);
+  if (m) {
+    const r = parseInt(m[1], 10);
+    const g = parseInt(m[2], 10);
+    const b = parseInt(m[3], 10);
+    return `#${r.toString(16).padStart(2,'0')}${g.toString(16).padStart(2,'0')}${b.toString(16).padStart(2,'0')}`;
+  }
+  
+  // Named colors or other formats - pass through (ffmpeg supports named colors)
+  return c;
+}
 export function sanitizeFilter(graph) {
   const s = String(graph);
   // Protect quoted substrings so we don't touch spaces/newlines inside drawtext text='...'
@@ -503,7 +524,8 @@ export async function renderVideoQuoteOverlay({
     
     // Use overlay font settings
     const overlayFontPx = Number(overlayCaption.sizePx || overlayCaption.fontPx || 38);
-    const overlayColor = overlayCaption.color || '#ffffff';
+    const overlayColorRaw = overlayCaption.color || '#ffffff';
+    const overlayColor = normalizeColorForFFmpeg(overlayColorRaw);
     const overlayOpacity = overlayCaption.opacity ?? 1;
     const explicitLineSpacing = Number.isFinite(overlayCaption.lineSpacingPx) ? Number(overlayCaption.lineSpacingPx) : null;
     const overlayLineHeight = Number(overlayCaption.lineHeight || 1.15);
