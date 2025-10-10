@@ -4,10 +4,13 @@ import os from "node:os";
 import path from "node:path";
 import fs from "node:fs";
 import fsp from "node:fs/promises";
+import pkg from "@napi-rs/canvas";
 import { renderImageQuoteVideo } from "./ffmpeg.js";
 import { getDurationMsFromMedia } from "./media.duration.js";
 import { CAPTION_OVERLAY } from "../config/env.js";
 import { hasLineSpacingOption } from "./ffmpeg.capabilities.js";
+
+const { createCanvas } = pkg;
 
 // Helper function to save dataUrl to temporary file
 export async function saveDataUrlToTmp(dataUrl, prefix = "caption") {
@@ -542,10 +545,41 @@ export async function renderVideoQuoteOverlay({
     // Resolve font file
     const fontFile = resolveFontFile(overlayCaption.fontFamily, overlayCaption.weightCss);
     
+    // CRITICAL: Word-wrap text if no line breaks present
+    let textToRender = overlayCaption.text;
+    const hasLineBreaks = textToRender.includes('\n');
+    
+    if (!hasLineBreaks && textToRender.trim()) {
+      // Create temporary canvas for text measurement
+      const tempCanvas = createCanvas(W, H);
+      const tempCtx = tempCanvas.getContext("2d");
+      const fontString = `${overlayCaption.weightCss || '800'} ${overlayFontPx}px ${resolveFontFile(overlayCaption.fontFamily, overlayCaption.weightCss).split('/').pop().replace('.ttf', '')}`;
+      tempCtx.font = fontString;
+      
+      // Word-wrap using same logic as legacy caption path
+      const words = textToRender.split(/\s+/);
+      const lines = [];
+      let line = "";
+      
+      for (const word of words) {
+        const test = line ? line + " " + word : word;
+        if (tempCtx.measureText(test).width > absW && line) {
+          lines.push(line);
+          line = word;
+        } else {
+          line = test;
+        }
+      }
+      if (line) lines.push(line);
+      
+      textToRender = lines.join('\n');
+      console.log(`[render] word-wrapped text: ${lines.length} lines, original="${overlayCaption.text.substring(0, 50)}..."`);
+    }
+    
     // Build drawtext filter with overlay settings
     drawCaption = `drawtext=${[
       `fontfile='${fontFile}'`,
-      `text='${escapeForDrawtext(overlayCaption.text)}'`,
+      `text='${escapeForDrawtext(textToRender)}'`,
       `x=${dx}`,
       `y=${y}`,
       `fontsize=${overlayFontPx}`,
@@ -556,7 +590,7 @@ export async function renderVideoQuoteOverlay({
       `box=0`
     ].filter(Boolean).join(':')}`;
     
-    try { console.log(JSON.stringify({ tag:'render:payload', mode:'overlayCaption', fontPx: overlayFontPx, lineSpacingPx, totalTextH, y, supportsLineSpacing })); } catch {}
+    try { console.log(JSON.stringify({ tag:'render:payload', mode:'overlayCaption', fontPx: overlayFontPx, lineSpacingPx, totalTextH, y, supportsLineSpacing, hasLineBreaks: hasLineBreaks, textLength: textToRender.length })); } catch {}
   } else if (CAPTION_OVERLAY && captionImage) {
     console.log(`[render] USING OVERLAY - skipping drawtext. Caption PNG: ${captionImage.pngPath}`);
     drawCaption = '';

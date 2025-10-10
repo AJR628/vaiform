@@ -546,8 +546,74 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
   // Public API on window (simple)
   window.getCaptionMeta = function getCaptionMeta(){
     const s = stage.getBoundingClientRect(), b = box.getBoundingClientRect(), cs = getComputedStyle(content);
+    
+    // Extract wrapped text with actual line breaks from DOM
+    const extractWrappedText = () => {
+      const text = content.innerText.trim();
+      if (!text) return '';
+      
+      // Create a temporary range to measure actual line breaks
+      const range = document.createRange();
+      const walker = document.createTreeWalker(
+        content,
+        NodeFilter.SHOW_TEXT,
+        null,
+        false
+      );
+      
+      let wrappedLines = [];
+      let currentLine = '';
+      let node;
+      
+      while (node = walker.nextNode()) {
+        const nodeText = node.textContent || '';
+        
+        // Split by actual line breaks in the DOM
+        if (nodeText.includes('\n')) {
+          const lines = nodeText.split('\n');
+          for (let i = 0; i < lines.length; i++) {
+            if (i === 0) {
+              currentLine += lines[i];
+            } else {
+              if (currentLine.trim()) wrappedLines.push(currentLine.trim());
+              currentLine = lines[i];
+            }
+          }
+        } else {
+          currentLine += nodeText;
+        }
+      }
+      
+      if (currentLine.trim()) wrappedLines.push(currentLine.trim());
+      
+      // If we couldn't detect line breaks from DOM, measure by width
+      if (wrappedLines.length <= 1 && text.length > 0) {
+        const words = text.split(/\s+/);
+        const maxWidth = content.clientWidth - parseInt(cs.paddingLeft, 10) - parseInt(cs.paddingRight, 10);
+        const testCanvas = document.createElement('canvas');
+        const ctx = testCanvas.getContext('2d');
+        ctx.font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+        
+        wrappedLines = [];
+        let line = '';
+        
+        for (const word of words) {
+          const testLine = line ? line + ' ' + word : word;
+          if (ctx.measureText(testLine).width > maxWidth && line) {
+            wrappedLines.push(line);
+            line = word;
+          } else {
+            line = testLine;
+          }
+        }
+        if (line) wrappedLines.push(line);
+      }
+      
+      return wrappedLines.join('\n');
+    };
+    
     const meta = {
-      text: content.innerText.trim(),
+      text: extractWrappedText(),
       xPct: (b.left - s.left) / s.width,
       yPct: (b.top  - s.top ) / s.height,
       wPct: b.width / s.width,

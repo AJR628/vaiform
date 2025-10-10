@@ -26,20 +26,52 @@ router.post("/caption/preview", express.json(), async (req, res) => {
       try {
         const previewUrl = await renderPreviewImage(payload);
 
-        // Build SSOT meta with allowed keys only
+        // Compute real text dimensions for SSOT meta
+        const W = 1080, H = 1920;
+        const canvas = createCanvas(W, H);
+        const ctx = canvas.getContext("2d");
+        
+        // Setup font for measurement (match renderPreviewImage)
+        const font = `${meta.weightCss || '800'} ${meta.sizePx}px ${pickFont(meta.fontFamily)}`;
+        ctx.font = font;
+        
+        // Measure text wrapping using same width as preview
+        const maxWidth = Math.round((meta.wPct ?? 0.80) * W);
+        const words = meta.text.split(/\s+/);
+        const lines = [];
+        let line = "";
+        
+        for (const word of words) {
+          const test = line ? line + " " + word : word;
+          if (ctx.measureText(test).width > maxWidth && line) {
+            lines.push(line);
+            line = word;
+          } else {
+            line = test;
+          }
+        }
+        if (line) lines.push(line);
+        
+        // Calculate metrics
+        const lineHeight = meta.sizePx * 1.15;
+        const totalTextH = lines.length * lineHeight;
+        const lineSpacingPx = Math.round(lineHeight - meta.sizePx);
+
+        // Build SSOT meta with real computed values
         const ssotMeta = {
           yPct: payload.yPct,
           fontPx: payload.sizePx,
-          lineSpacingPx: payload.lineSpacingPx ?? Math.round(payload.sizePx * 1.15 - payload.sizePx),
+          lineSpacingPx: lineSpacingPx,
           placement: 'custom',
           wPx: 1080,
           hPx: 1920,
-          // Provide splitLines and baselines approximation for parity consumers
-          splitLines: undefined,
+          splitLines: lines,
           baselines: undefined,
-          totalTextH: undefined,
+          totalTextH: totalTextH,
           internalPadding: 0,
         };
+
+        console.log(`[caption-preview] V2 overlay computed: lines=${lines.length}, totalTextH=${totalTextH}, lineSpacingPx=${lineSpacingPx}`);
 
         return res.status(200).json({
           ok: true,

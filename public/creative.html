@@ -3222,12 +3222,23 @@
                 console.log('[render] Final payload:', payload);
                 // SSOT validation: Log overlay caption meta to verify positioning data
                 if (payload.overlayCaption) {
-                  console.log('[render] overlayCaption meta:', {
+                  const textPreview = payload.overlayCaption.text || '';
+                  const hasNewlines = textPreview.includes('\n');
+                  const lineCount = hasNewlines ? textPreview.split('\n').length : 1;
+                  
+                  console.log('[render] overlayCaption contract verification:', {
                     yPct: payload.overlayCaption.yPct,
                     totalTextH: payload.overlayCaption.totalTextH,
                     lineSpacingPx: payload.overlayCaption.lineSpacingPx,
                     fontPx: payload.overlayCaption.fontPx,
-                    text: payload.overlayCaption.text?.substring(0, 50)
+                    wPct: payload.overlayCaption.wPct,
+                    xPct: payload.overlayCaption.xPct,
+                    textLength: textPreview.length,
+                    hasNewlines: hasNewlines,
+                    lineCount: lineCount,
+                    textPreview: textPreview.substring(0, 80) + (textPreview.length > 80 ? '...' : ''),
+                    color: payload.overlayCaption.color,
+                    opacity: payload.overlayCaption.opacity
                   });
                 }
                 console.log('[render] Background object:', background);
