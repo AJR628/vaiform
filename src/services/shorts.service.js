@@ -495,15 +495,18 @@ export async function createShortService({ ownerUid, mode, text, template, durat
     
     // Update Firestore with detailed error information
     try {
+      // Build errorDetails with only truthy fields to avoid writing undefined
+      const errorDetails = {};
+      if (err?.code) errorDetails.code = err.code;
+      if (err?.stderr) errorDetails.stderr = String(err.stderr).slice(0, 1000);
+      if (err?.filter) errorDetails.filter = String(err.filter).slice(0, 2000);
+      if (err?.filterComplex) errorDetails.filterComplex = String(err.filterComplex).slice(0, 2000);
+      if (err?.duration !== undefined) errorDetails.duration = err.duration;
+      
       await shortsRef.update({
         status: 'error',
         errorMessage: String(err.message || err).slice(0, 2000),
-        errorDetails: {
-          code: err?.code,
-          stderr: String(err?.stderr || '').slice(0, 1000),
-          filterComplex: err?.filterComplex,
-          duration: err?.duration
-        },
+        errorDetails,
         failedAt: admin.firestore.FieldValue.serverTimestamp()
       });
       console.log(`[shorts] Updated Firestore doc to error: ${jobId}`);

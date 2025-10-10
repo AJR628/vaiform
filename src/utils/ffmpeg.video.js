@@ -7,6 +7,7 @@ import fsp from "node:fs/promises";
 import { renderImageQuoteVideo } from "./ffmpeg.js";
 import { getDurationMsFromMedia } from "./media.duration.js";
 import { CAPTION_OVERLAY } from "../config/env.js";
+import { hasLineSpacingOption } from "./ffmpeg.capabilities.js";
 
 // Helper function to save dataUrl to temporary file
 export async function saveDataUrlToTmp(dataUrl, prefix = "caption") {
@@ -428,6 +429,10 @@ export async function renderVideoQuoteOverlay({
   const tmpBase = fs.mkdtempSync(path.join(os.tmpdir(), 'vaiform-txt-'));
   const quoteTxtPath = path.join(tmpBase, 'quote.txt');
   const authorTxtPath = path.join(tmpBase, 'author.txt');
+  
+  // Check line_spacing support once per render
+  const supportsLineSpacing = await hasLineSpacingOption();
+  
   let drawMain = '';
   try {
     const rawMain = String(text ?? '').trim();
@@ -444,7 +449,7 @@ export async function renderVideoQuoteOverlay({
           `fontcolor=${fontcolor}`,
           `shadowcolor=${shadowColor}`,`shadowx=${shadowX}`,`shadowy=${shadowY}`,
           `borderw=2`,`bordercolor=black@0.85`,
-          `line_spacing=${effLineSpacing}`,
+          supportsLineSpacing ? `line_spacing=${effLineSpacing}` : null,
           `box=0`
         ].filter(Boolean).join(':')}`;
       }
@@ -515,13 +520,13 @@ export async function renderVideoQuoteOverlay({
       `y=${y}`,
       `fontsize=${overlayFontPx}`,
       `fontcolor=${overlayColor}@${overlayOpacity}`,
-      `line_spacing=${lineSpacingPx}`,
+      supportsLineSpacing ? `line_spacing=${lineSpacingPx}` : null,
       `borderw=2:bordercolor=black@0.85`,
       `shadowcolor=black:shadowx=2:shadowy=2`,
       `box=0`
     ].filter(Boolean).join(':')}`;
     
-    try { console.log(JSON.stringify({ tag:'render:payload', mode:'overlayCaption', fontPx: overlayFontPx, lineSpacingPx })); } catch {}
+    try { console.log(JSON.stringify({ tag:'render:payload', mode:'overlayCaption', fontPx: overlayFontPx, lineSpacingPx, supportsLineSpacing })); } catch {}
   } else if (CAPTION_OVERLAY && captionImage) {
     console.log(`[render] USING OVERLAY - skipping drawtext. Caption PNG: ${captionImage.pngPath}`);
     drawCaption = '';
@@ -722,7 +727,7 @@ export async function renderVideoQuoteOverlay({
         `:x='${xExpr}'` +
         `:y='${yExpr}'` +
         `:fontsize=${fontPx}` +
-        `:line_spacing=${_lineSp}` +
+        (supportsLineSpacing ? `:line_spacing=${_lineSp}` : '') +
         `:fontcolor=black@${(usingResolved ? (captionResolved?.shadowAlpha ?? 0.35) : 0.35).toFixed(2)}:borderw=0:shadowx=${shadowX}:shadowy=${shadowY}` +
         `:fix_bounds=1:text_shaping=1:box=0`
       );
@@ -734,7 +739,7 @@ export async function renderVideoQuoteOverlay({
         `:x='${xExpr}'` +
         `:y='${yExpr}'` +
         `:fontsize=${fontPx}` +
-        `:line_spacing=${_lineSp}` +
+        (supportsLineSpacing ? `:line_spacing=${_lineSp}` : '') +
         `:fontcolor=black@0.25:borderw=0:shadowx=${shadowX + 1}:shadowy=${shadowY + 1}` +
         `:fix_bounds=1:text_shaping=1:box=0`
       );
@@ -746,7 +751,7 @@ export async function renderVideoQuoteOverlay({
         `:x='${xExpr}'` +
         `:y='${yExpr}'` +
         `:fontsize=${fontPx}` +
-        `:line_spacing=${_lineSp}` +
+        (supportsLineSpacing ? `:line_spacing=${_lineSp}` : '') +
         `:fontcolor=white@${textAlpha.toFixed(2)}` +
         `:borderw=${strokeW}:bordercolor=black@${(usingResolved ? (captionResolved?.strokeAlpha ?? 0.85) : 0.85).toFixed(2)}` +
         `:shadowx=0:shadowy=0` +
@@ -768,7 +773,7 @@ export async function renderVideoQuoteOverlay({
       `y=${cap.yExpr}`,
       `fontsize=${cap.fontsize}`,
       `fontcolor=white`,
-      `line_spacing=${cap.lineSpacing}`,
+      supportsLineSpacing ? `line_spacing=${cap.lineSpacing}` : null,
       `borderw=2:bordercolor=black@0.85`,
       `shadowcolor=black:shadowx=2:shadowy=2`,
       `box=0`
@@ -1068,6 +1073,9 @@ export async function exportSocialImage({
   const quoteTxt = escText(fit.text);
   const effLineSpacing = Math.max(2, Number.isFinite(lineSpacing) ? lineSpacing : fit.lineSpacing);
 
+  // Check line_spacing support for social image export
+  const supportsLineSpacing = await hasLineSpacingOption();
+
   const drawMain = `drawtext=${[
     `text='${quoteTxt}'`,
     fontfile ? `fontfile='${fontfile}'` : null,
@@ -1077,7 +1085,8 @@ export async function exportSocialImage({
     `fontcolor=${fontcolor}`,
     `shadowcolor=${shadowColor}`,`shadowx=${shadowX}`,`shadowy=${shadowY}`,
     `box=${box}`,`boxcolor=${boxcolor}`,`boxborderw=${boxborderw}`,
-    `line_spacing=${effLineSpacing}`,'borderw=0'
+    supportsLineSpacing ? `line_spacing=${effLineSpacing}` : null,
+    'borderw=0'
   ].filter(Boolean).join(':')}`;
   
   // Debug: Log the filter construction
