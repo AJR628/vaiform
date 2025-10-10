@@ -124,18 +124,18 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     .caption-box:not(.editing) .drag-handle{ display:none; }
     .caption-box:not(.editing) .drag-resize{ display:none; }
     .caption-box .drag-handle{ position:absolute; top:0; left:0; width:28px; height:28px; display:grid; place-items:center;
-      cursor:grab; user-select:none; background:rgba(255,255,255,.15); border-top-left-radius:12px; 
-      font-size:16px; line-height:1; color:#fff; }
+      cursor:grab; user-select:none; touch-action:none; 
+      font-size:18px; line-height:1; color:rgba(255,255,255,.6); }
     .caption-box .content{ padding:28px 12px 12px 12px; outline:none; white-space:pre-wrap; word-break:normal; overflow-wrap:normal; hyphens:none; overflow:hidden; box-sizing:border-box;
       color:#fff; text-align:center; font-weight:800; font-size:38px; line-height:1.15; text-shadow:0 2px 12px rgba(0,0,0,.65);
       font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
     .caption-box .drag-resize{ position:absolute; right:0; bottom:0; width:16px; height:16px;
       cursor:nwse-resize; border-right:2px solid #fff; border-bottom:2px solid #fff; opacity:.7; }
     /* V2: keep chrome in layout to avoid measurement shifts; always show handle for immediate interaction */
-    .caption-box.always-handle .drag-handle{ display:block; opacity:0.5; pointer-events:auto; }
-    .caption-box.always-handle.editing .drag-handle{ opacity:1; pointer-events:auto; }
-    .caption-box.always-handle .drag-handle:hover,
-    .caption-box.always-handle .drag-handle:active { opacity:1; background:rgba(255,255,255,.25); }
+    .caption-box.always-handle .drag-handle{ display:none; pointer-events:none; }
+    .caption-box.always-handle.editing .drag-handle{ display:grid; opacity:1; pointer-events:auto; color:rgba(255,255,255,.8); }
+    .caption-box.always-handle.editing .drag-handle:hover,
+    .caption-box.always-handle.editing .drag-handle:active { opacity:1; color:#fff; }
     .caption-box.always-handle .drag-resize{ display:block; opacity:0.4; pointer-events:auto; }
     .caption-box.always-handle.editing .drag-resize{ opacity:0.7; pointer-events:auto; }
     .caption-box.is-dragging .drag-handle { cursor:grabbing; }
@@ -146,7 +146,7 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
   if (overlayV2) {
     const style2 = document.createElement('style');
     style2.textContent = `
-      .caption-toolbar{ position:absolute; top:6px; left:36px; display:flex; gap:6px; align-items:center; padding:6px 8px;
+      .caption-toolbar{ position:absolute; top:6px; left:32px; display:flex; gap:6px; align-items:center; padding:6px 8px;
         background:rgba(24,24,27,.55); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
         color:#fff; border-radius:10px; box-shadow:0 4px 16px rgba(0,0,0,.35); z-index:100000; pointer-events:auto; }
       .caption-toolbar .ct-row{ display:flex; gap:6px; align-items:center; }
@@ -261,7 +261,7 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
       try { if (toolbarMode === 'inside') { if (!box.contains(toolbar)) box.appendChild(toolbar); } else { if (!stage.contains(toolbar)) stage.appendChild(toolbar); } } catch {}
     }
     if (toolbarMode === 'inside') {
-      toolbar.style.position = 'absolute'; toolbar.style.left = '36px'; toolbar.style.top = '6px'; toolbar.style.transform = 'none';
+      toolbar.style.position = 'absolute'; toolbar.style.left = '32px'; toolbar.style.top = '6px'; toolbar.style.transform = 'none';
     } else {
       const pad = 6;
       let left = b.left - s.left + pad;
