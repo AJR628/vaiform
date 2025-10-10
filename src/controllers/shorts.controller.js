@@ -122,16 +122,22 @@ const CreateShortSchema = z
       xPct: z.coerce.number().min(0).max(1).optional(),
       yPct: z.coerce.number().min(0).max(1).optional(),
       wPct: z.coerce.number().min(0).max(1).optional(),
-      hPct: z.coerce.number().min(0).max(1).optional(),
       fontFamily: z.string().optional(),
       weightCss: z.string().optional(),
       fontPx: z.coerce.number().min(10).max(200).optional(),
+      sizePx: z.coerce.number().min(10).max(200).optional(),
       color: z.string().optional(),
       opacity: z.coerce.number().min(0).max(1).optional(),
       align: z.enum(['left','center','right']).optional(),
       lineHeight: z.coerce.number().optional(),
       showBox: z.boolean().optional(),
-      responsiveText: z.boolean().optional()
+      responsiveText: z.boolean().optional(),
+      // Server-computed positioning meta (SSOT from preview)
+      totalTextH: z.coerce.number().optional(),
+      lineSpacingPx: z.coerce.number().optional(),
+      internalPadding: z.coerce.number().optional(),
+      splitLines: z.array(z.string()).optional(),
+      baselines: z.array(z.number()).optional()
     }).optional(),
     // TTS settings for SSOT
     modelId: z.string().optional(),

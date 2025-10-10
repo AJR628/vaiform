@@ -504,13 +504,21 @@ export async function renderVideoQuoteOverlay({
   if (overlayCaption && overlayCaption.text) {
     console.log(`[render] USING OVERLAY MODE - precise positioning from overlayCaption`);
     
+    // SSOT: Use server-computed totalTextH from preview (not hPct which is box height)
+    const totalTextH = Number(overlayCaption.totalTextH || 0);
+    const internalPadding = Number(overlayCaption.internalPadding || 0);
+    
     // Compute absolute geometry in render space
     const absW = Math.round(Number(overlayCaption.wPct || 0.8) * W);
-    const absH = Math.round(Number(overlayCaption.hPct || (overlayCaption.totalTextH ? overlayCaption.totalTextH / 1920 : 0)) * H);
     const cx = overlayCaption.xPct * W;
     const cy = overlayCaption.yPct * H;
+    
+    // Position box: x is left edge, y is top edge
     const x = Math.round(cx - absW/2);
-    const y = Math.round(cy - absH/2);
+    // CRITICAL: Use totalTextH (actual rendered text height) to center at yPct
+    const y = Math.round(cy - totalTextH/2);
+    
+    console.log(`[render] overlay positioning: yPct=${overlayCaption.yPct}, cy=${cy}, totalTextH=${totalTextH}, y=${y}`);
     
     // Horizontal alignment inside the box
     let dx;
@@ -548,7 +556,7 @@ export async function renderVideoQuoteOverlay({
       `box=0`
     ].filter(Boolean).join(':')}`;
     
-    try { console.log(JSON.stringify({ tag:'render:payload', mode:'overlayCaption', fontPx: overlayFontPx, lineSpacingPx, supportsLineSpacing })); } catch {}
+    try { console.log(JSON.stringify({ tag:'render:payload', mode:'overlayCaption', fontPx: overlayFontPx, lineSpacingPx, totalTextH, y, supportsLineSpacing })); } catch {}
   } else if (CAPTION_OVERLAY && captionImage) {
     console.log(`[render] USING OVERLAY - skipping drawtext. Caption PNG: ${captionImage.pngPath}`);
     drawCaption = '';

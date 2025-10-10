@@ -3139,13 +3139,17 @@
                 if (useOverlayMode && overlaySystemInitialized && window.__overlayMeta) {
                   // Overlay mode: send overlay caption data
                   const meta = window.__overlayMeta;
+                  
+                  // CRITICAL: Merge server-computed meta from preview for SSOT positioning
+                  const serverMeta = window.__lastCaptionOverlay?.meta || {};
+                  
                   payload.captionMode = 'overlay';
                   payload.overlayCaption = {
                     text: String(meta.text || ''),
                     xPct: Number(meta.xPct),
                     yPct: Number(meta.yPct),
                     wPct: Number(meta.wPct),
-                    hPct: Number(meta.hPct),
+                    // DON'T send hPct (box height) - use server totalTextH instead
                     fontFamily: meta.fontFamily || 'DejaVu Sans',
                     weightCss: String(meta.weightCss || '800'),
                     fontPx: Number(meta.fontPx || 38),
@@ -3167,7 +3171,13 @@
                       return 1.15;
                     })(),
                     showBox: !!(meta.showBox ?? true),
-                    responsiveText: !!(meta.responsiveText ?? true)
+                    responsiveText: !!(meta.responsiveText ?? true),
+                    // SSOT: Pass server-computed positioning meta for exact match
+                    totalTextH: Number(serverMeta.totalTextH || 0),
+                    lineSpacingPx: Number(serverMeta.lineSpacingPx ?? 0),
+                    internalPadding: Number(serverMeta.internalPadding || 0),
+                    splitLines: serverMeta.splitLines || [],
+                    baselines: serverMeta.baselines || []
                   };
                   // Remove legacy fields when using overlay
                   delete payload.caption;
@@ -3210,6 +3220,16 @@
                 // --- END strictly-typed payload construction ---
 
                 console.log('[render] Final payload:', payload);
+                // SSOT validation: Log overlay caption meta to verify positioning data
+                if (payload.overlayCaption) {
+                  console.log('[render] overlayCaption meta:', {
+                    yPct: payload.overlayCaption.yPct,
+                    totalTextH: payload.overlayCaption.totalTextH,
+                    lineSpacingPx: payload.overlayCaption.lineSpacingPx,
+                    fontPx: payload.overlayCaption.fontPx,
+                    text: payload.overlayCaption.text?.substring(0, 50)
+                  });
+                }
                 console.log('[render] Background object:', background);
                 console.log('[render] Current voice ID:', currentVoiceId);
 
