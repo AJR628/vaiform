@@ -473,7 +473,7 @@ export async function renderVideoQuoteOverlay({
           `fontcolor=${fontcolor}`,
           `shadowcolor=${shadowColor}`,`shadowx=${shadowX}`,`shadowy=${shadowY}`,
           `borderw=2`,`bordercolor=black@0.85`,
-          supportsLineSpacing ? `line_spacing=${effLineSpacing}` : null,
+          supportsLineSpacing && effLineSpacing > 0 ? `line_spacing=${effLineSpacing}` : null,
           `box=0`
         ].filter(Boolean).join(':')}`;
       }
@@ -584,7 +584,7 @@ export async function renderVideoQuoteOverlay({
       `y=${y}`,
       `fontsize=${overlayFontPx}`,
       `fontcolor=${overlayColor}@${overlayOpacity}`,
-      supportsLineSpacing ? `line_spacing=${lineSpacingPx}` : null,
+      supportsLineSpacing && lineSpacingPx > 0 ? `line_spacing=${lineSpacingPx}` : null,
       `borderw=2:bordercolor=black@0.85`,
       `shadowcolor=black:shadowx=2:shadowy=2`,
       `box=0`
@@ -791,7 +791,7 @@ export async function renderVideoQuoteOverlay({
         `:x='${xExpr}'` +
         `:y='${yExpr}'` +
         `:fontsize=${fontPx}` +
-        (supportsLineSpacing ? `:line_spacing=${_lineSp}` : '') +
+        (supportsLineSpacing && _lineSp > 0 ? `:line_spacing=${_lineSp}` : '') +
         `:fontcolor=black@${(usingResolved ? (captionResolved?.shadowAlpha ?? 0.35) : 0.35).toFixed(2)}:borderw=0:shadowx=${shadowX}:shadowy=${shadowY}` +
         `:fix_bounds=1:text_shaping=1:box=0`
       );
@@ -803,7 +803,7 @@ export async function renderVideoQuoteOverlay({
         `:x='${xExpr}'` +
         `:y='${yExpr}'` +
         `:fontsize=${fontPx}` +
-        (supportsLineSpacing ? `:line_spacing=${_lineSp}` : '') +
+        (supportsLineSpacing && _lineSp > 0 ? `:line_spacing=${_lineSp}` : '') +
         `:fontcolor=black@0.25:borderw=0:shadowx=${shadowX + 1}:shadowy=${shadowY + 1}` +
         `:fix_bounds=1:text_shaping=1:box=0`
       );
@@ -815,7 +815,7 @@ export async function renderVideoQuoteOverlay({
         `:x='${xExpr}'` +
         `:y='${yExpr}'` +
         `:fontsize=${fontPx}` +
-        (supportsLineSpacing ? `:line_spacing=${_lineSp}` : '') +
+        (supportsLineSpacing && _lineSp > 0 ? `:line_spacing=${_lineSp}` : '') +
         `:fontcolor=white@${textAlpha.toFixed(2)}` +
         `:borderw=${strokeW}:bordercolor=black@${(usingResolved ? (captionResolved?.strokeAlpha ?? 0.85) : 0.85).toFixed(2)}` +
         `:shadowx=0:shadowy=0` +
@@ -837,7 +837,7 @@ export async function renderVideoQuoteOverlay({
       `y=${cap.yExpr}`,
       `fontsize=${cap.fontsize}`,
       `fontcolor=white`,
-      supportsLineSpacing ? `line_spacing=${cap.lineSpacing}` : null,
+      supportsLineSpacing && cap.lineSpacing > 0 ? `line_spacing=${cap.lineSpacing}` : null,
       `borderw=2:bordercolor=black@0.85`,
       `shadowcolor=black:shadowx=2:shadowy=2`,
       `box=0`
@@ -1149,7 +1149,7 @@ export async function exportSocialImage({
     `fontcolor=${fontcolor}`,
     `shadowcolor=${shadowColor}`,`shadowx=${shadowX}`,`shadowy=${shadowY}`,
     `box=${box}`,`boxcolor=${boxcolor}`,`boxborderw=${boxborderw}`,
-    supportsLineSpacing ? `line_spacing=${effLineSpacing}` : null,
+    supportsLineSpacing && effLineSpacing > 0 ? `line_spacing=${effLineSpacing}` : null,
     'borderw=0'
   ].filter(Boolean).join(':')}`;
   
