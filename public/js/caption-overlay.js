@@ -59,7 +59,7 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
 
   const handle = document.createElement('div');
   handle.className = 'drag-handle';
-  handle.textContent = '✥ drag';
+  handle.textContent = '✥';
   
   const content = document.createElement('div');
   content.className = 'content';
@@ -84,13 +84,9 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     toolbar.setAttribute('role', 'toolbar');
     toolbar.dataset.mode = 'inside';
     toolbar.dataset.compact = '0';
-    // Prevent toolbar from starting drags/resizes without blocking button handlers
-    ['pointerdown','mousedown'].forEach(evt => {
-      toolbar.addEventListener(evt, (e)=>{ e.stopPropagation(); }, { capture: false });
-    });
 
     // Quick row buttons
-    const mkBtn = (label, aria, cls='')=>{ const b=document.createElement('button'); b.type='button'; b.className=`ct-btn ${cls}`.trim(); b.textContent=label; b.setAttribute('aria-label', aria); b.tabIndex=0; return b; };
+    const mkBtn = (label, aria, cls='')=>{ const b=document.createElement('button'); b.type='button'; b.className=`ct-btn ${cls}`.trim(); b.textContent=label; b.setAttribute('aria-label', aria); b.tabIndex=0; b.addEventListener('pointerdown', (e)=>e.stopPropagation()); return b; };
     const fontBtn   = mkBtn('Font','Font and spacing','ct-font');
     const decBtn    = mkBtn('A−','Decrease size','ct-size');
     const incBtn    = mkBtn('A+','Increase size','ct-size');
@@ -127,8 +123,9 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     /* Legacy: hide chrome by display:none; V2 overrides below to keep layout stable */
     .caption-box:not(.editing) .drag-handle{ display:none; }
     .caption-box:not(.editing) .drag-resize{ display:none; }
-    .caption-box .drag-handle{ position:absolute; top:0; left:0; cursor:move; user-select:none; padding:6px 10px; background:rgba(0,0,0,.25);
-      border-top-left-radius:12px; border-top-right-radius:12px; font: 12px/1 system-ui; letter-spacing:.08em; text-transform:uppercase; }
+    .caption-box .drag-handle{ position:absolute; top:0; left:0; width:28px; height:28px; display:grid; place-items:center;
+      cursor:grab; user-select:none; background:rgba(255,255,255,.15); border-top-left-radius:12px; 
+      font-size:16px; line-height:1; color:#fff; }
     .caption-box .content{ padding:28px 12px 12px 12px; outline:none; white-space:pre-wrap; word-break:normal; overflow-wrap:normal; hyphens:none; overflow:hidden; box-sizing:border-box;
       color:#fff; text-align:center; font-weight:800; font-size:38px; line-height:1.15; text-shadow:0 2px 12px rgba(0,0,0,.65);
       font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
@@ -137,8 +134,11 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     /* V2: keep chrome in layout to avoid measurement shifts; always show handle for immediate interaction */
     .caption-box.always-handle .drag-handle{ display:block; opacity:0.5; pointer-events:auto; }
     .caption-box.always-handle.editing .drag-handle{ opacity:1; pointer-events:auto; }
+    .caption-box.always-handle .drag-handle:hover,
+    .caption-box.always-handle .drag-handle:active { opacity:1; background:rgba(255,255,255,.25); }
     .caption-box.always-handle .drag-resize{ display:block; opacity:0.4; pointer-events:auto; }
     .caption-box.always-handle.editing .drag-resize{ opacity:0.7; pointer-events:auto; }
+    .caption-box.is-dragging .drag-handle { cursor:grabbing; }
   `;
   document.head.appendChild(style);
 
@@ -146,7 +146,7 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
   if (overlayV2) {
     const style2 = document.createElement('style');
     style2.textContent = `
-      .caption-toolbar{ position:absolute; top:6px; left:6px; display:flex; gap:6px; align-items:center; padding:6px 8px;
+      .caption-toolbar{ position:absolute; top:6px; left:36px; display:flex; gap:6px; align-items:center; padding:6px 8px;
         background:rgba(24,24,27,.55); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
         color:#fff; border-radius:10px; box-shadow:0 4px 16px rgba(0,0,0,.35); z-index:100000; pointer-events:auto; }
       .caption-toolbar .ct-row{ display:flex; gap:6px; align-items:center; }
@@ -188,6 +188,7 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     drag = { startX: e.clientX, startY: e.clientY, ox: b.left - s.left, oy: b.top - s.top, sw: s.width, sh: s.height, bw: b.width, bh: b.height };
     handle.setPointerCapture(e.pointerId);
     dragging = true;
+    box.classList.add('is-dragging');
     try {
       const el = document.elementFromPoint(e.clientX, e.clientY);
       console.log('[overlay] pointerdown at', e.clientX, e.clientY, 'elementUnder', el?.tagName, el?.id || el?.className || '');
@@ -212,8 +213,8 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
   } else {
     // V2: keep drag local to handle via capture
     handle.addEventListener('pointermove', onMove, { passive: true });
-    handle.addEventListener('pointerup', ()=> { dragging = false; drag = null; }, { passive: true });
-    handle.addEventListener('pointercancel', ()=> { dragging = false; drag = null; }, { passive: true });
+    handle.addEventListener('pointerup', ()=> { dragging = false; drag = null; box.classList.remove('is-dragging'); }, { passive: true });
+    handle.addEventListener('pointercancel', ()=> { dragging = false; drag = null; box.classList.remove('is-dragging'); }, { passive: true });
   }
 
   // Keep inside frame on resize and clamp to stage
@@ -260,7 +261,7 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
       try { if (toolbarMode === 'inside') { if (!box.contains(toolbar)) box.appendChild(toolbar); } else { if (!stage.contains(toolbar)) stage.appendChild(toolbar); } } catch {}
     }
     if (toolbarMode === 'inside') {
-      toolbar.style.position = 'absolute'; toolbar.style.left = '6px'; toolbar.style.top = '6px'; toolbar.style.transform = 'none';
+      toolbar.style.position = 'absolute'; toolbar.style.left = '36px'; toolbar.style.top = '6px'; toolbar.style.transform = 'none';
     } else {
       const pad = 6;
       let left = b.left - s.left + pad;
