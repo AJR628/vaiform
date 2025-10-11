@@ -501,6 +501,9 @@ export async function renderVideoQuoteOverlay({
   if (overlayCaption && overlayCaption.text) {
     console.log(`[render] USING OVERLAY MODE - precise positioning from overlayCaption`);
     
+    // CRITICAL: Declare textToRender early to avoid temporal dead zone
+    let textToRender = overlayCaption.text;
+    
     // SSOT: Use server-computed totalTextH from preview (not hPct which is box height)
     let totalTextH = Number(overlayCaption.totalTextH || 0);
     const internalPadding = Number(overlayCaption.internalPadding || 0);
@@ -551,7 +554,6 @@ export async function renderVideoQuoteOverlay({
     const fontFile = resolveFontFile(overlayCaption.fontFamily, overlayCaption.weightCss);
     
     // CRITICAL: Word-wrap text if no line breaks present
-    let textToRender = overlayCaption.text;
     const hasLineBreaks = textToRender.includes('\n');
     
     if (!hasLineBreaks && textToRender.trim()) {
