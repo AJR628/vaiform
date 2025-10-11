@@ -1570,28 +1570,37 @@
                 try {
                     const captionContent = document.querySelector('.caption-box .content');
                     if (captionContent) {
+                        // Debounce the reset to avoid triggering on every keystroke
+                        let resetDebounceTimer = null;
                         captionContent.addEventListener('input', () => {
-                            if (window.markPreviewUnsaved) {
-                                window.markPreviewUnsaved();
-                                updateRenderButtonState();
-                            }
+                            clearTimeout(resetDebounceTimer);
+                            resetDebounceTimer = setTimeout(() => {
+                                // Only reset if preview was previously saved
+                                if (window._previewSavedForCurrentText) {
+                                    resetPreviewSavedState();
+                                }
+                            }, 500); // Wait 500ms after user stops typing
                         });
-                        console.log('[overlay-system] Added unsaved changes listener');
+                        console.log('[overlay-system] Added caption change listener for preview state');
                     }
                     
                     // Also listen to quote edit textarea for unsaved changes
                     const quoteEdit = document.getElementById('quote-edit');
                     if (quoteEdit) {
+                        let resetDebounceTimer2 = null;
                         quoteEdit.addEventListener('input', () => {
-                            if (window.markPreviewUnsaved) {
-                                window.markPreviewUnsaved();
-                                updateRenderButtonState();
-                            }
+                            clearTimeout(resetDebounceTimer2);
+                            resetDebounceTimer2 = setTimeout(() => {
+                                // Only reset if preview was previously saved
+                                if (window._previewSavedForCurrentText) {
+                                    resetPreviewSavedState();
+                                }
+                            }, 500);
                         });
-                        console.log('[overlay-system] Added quote edit unsaved changes listener');
+                        console.log('[overlay-system] Added quote edit change listener for preview state');
                     }
                 } catch (e) {
-                    console.warn('[overlay-system] Failed to add unsaved changes listener:', e);
+                    console.warn('[overlay-system] Failed to add change listeners:', e);
                 }
             } catch (error) {
                 console.error('[overlay-system] Failed to initialize:', error);
@@ -2732,8 +2741,28 @@
             const hasVoiceover = !!currentVoiceId;
             const isLoggedIn = window.auth?.currentUser;
             
-            // NEW: Check if preview is saved (SSOT workflow)
-            const hasSavedPreview = !!(window.getSavedOverlayMeta && window.getSavedOverlayMeta());
+            // NEW: Check if preview is saved AND current text matches saved text (SSOT workflow)
+            let hasSavedPreview = false;
+            if (window.getSavedOverlayMeta && window.getCaptionMeta && window._previewSavedForCurrentText) {
+                const savedMeta = window.getSavedOverlayMeta();
+                if (savedMeta) {
+                    try {
+                        const currentMeta = window.getCaptionMeta();
+                        // Normalize text for comparison (trim whitespace)
+                        const savedText = (savedMeta.text || '').trim();
+                        const currentText = (currentMeta.text || '').trim();
+                        // Preview is valid if flag is set AND text matches
+                        hasSavedPreview = (savedText === currentText);
+                        
+                        if (!hasSavedPreview && savedText && currentText && savedText !== currentText) {
+                            console.log('[preview-state] Text mismatch - saved:', savedText.substring(0, 50), 'current:', currentText.substring(0, 50));
+                        }
+                    } catch (err) {
+                        console.warn('[preview-state] Error comparing caption text:', err);
+                        hasSavedPreview = false;
+                    }
+                }
+            }
             
             // Render requires: features + logged in + saved preview
             const canRender = (hasQuote || hasValidAsset || hasVoiceover) && isLoggedIn && hasSavedPreview;
@@ -3122,6 +3151,31 @@
             return Object.fromEntries(Object.entries(obj).filter(([, v]) => v !== undefined));
         }
 
+        // Reset preview saved state when caption text changes
+        function resetPreviewSavedState() {
+            console.log('[preview-state] Resetting preview saved state - caption changed');
+            
+            // Show Save Preview button
+            const saveBtn = document.getElementById('save-preview-btn');
+            if (saveBtn) {
+                saveBtn.style.display = '';
+                saveBtn.disabled = false;
+            }
+            
+            // Hide Preview Saved status indicator
+            const statusContainer = document.querySelector('#preview-status');
+            if (statusContainer) {
+                statusContainer.innerHTML = '';
+                statusContainer.classList.add('hidden');
+            }
+            
+            // Mark saved preview as stale (don't clear localStorage, just invalidate flag)
+            window._previewSavedForCurrentText = false;
+            
+            // Update render button state (will disable it since preview is no longer saved)
+            updateRenderButtonState();
+        }
+
         // Save Preview function (SSOT workflow)
         async function savePreview() {
             if (!window.auth?.currentUser) {
@@ -3217,6 +3271,10 @@
                 } catch (err) {
                     console.warn('[savePreview] Failed to save to localStorage:', err.message);
                 }
+
+                // Set flag indicating preview is saved for current text
+                window._previewSavedForCurrentText = true;
+                console.log('[preview-state] Preview saved successfully for current caption text');
 
                 // Hide Save Preview button and show success indicator
                 saveBtn.style.display = 'none';
