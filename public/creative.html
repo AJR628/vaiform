@@ -2735,37 +2735,94 @@
 
         // Update render button state based on validation
         function updateRenderButtonState() {
+            console.log('[render-validate] updateRenderButtonState called from:', new Error().stack?.split('\n')[2]?.trim() || 'unknown');
+            
             const renderBtn = document.getElementById('render-btn');
             const hasValidAsset = selectedAsset && (selectedAsset.fileUrl || selectedAsset.url);
             const hasQuote = currentQuote;
             const hasVoiceover = !!currentVoiceId;
             const isLoggedIn = window.auth?.currentUser;
             
+            console.log('[render-validate] Basic conditions:', {
+                hasValidAsset,
+                hasQuote,
+                hasVoiceover,
+                isLoggedIn: !!isLoggedIn,
+                selectedAsset: selectedAsset?.url || selectedAsset?.fileUrl || 'none'
+            });
+            
             // NEW: Check if preview is saved AND current text matches saved text (SSOT workflow)
             let hasSavedPreview = false;
+            
+            // Debug: Log all validation conditions
+            console.log('[render-validate] Checking preview state:', {
+                hasGetSavedMeta: !!window.getSavedOverlayMeta,
+                hasGetCaptionMeta: !!window.getCaptionMeta,
+                flagSet: window._previewSavedForCurrentText,
+                flagType: typeof window._previewSavedForCurrentText
+            });
+            
             if (window.getSavedOverlayMeta && window.getCaptionMeta && window._previewSavedForCurrentText) {
+                console.log('[render-validate] All conditions met, checking meta...');
+                
                 const savedMeta = window.getSavedOverlayMeta();
+                console.log('[render-validate] Saved meta exists:', !!savedMeta);
+                
                 if (savedMeta) {
                     try {
                         const currentMeta = window.getCaptionMeta();
+                        console.log('[render-validate] Current meta exists:', !!currentMeta);
+                        
                         // Normalize text for comparison (trim whitespace)
                         const savedText = (savedMeta.text || '').trim();
                         const currentText = (currentMeta.text || '').trim();
+                        
+                        console.log('[render-validate] Text comparison:', {
+                            savedLength: savedText.length,
+                            currentLength: currentText.length,
+                            match: savedText === currentText,
+                            saved: savedText.substring(0, 100),
+                            current: currentText.substring(0, 100),
+                            savedFull: savedText,
+                            currentFull: currentText
+                        });
+                        
                         // Preview is valid if flag is set AND text matches
                         hasSavedPreview = (savedText === currentText);
                         
                         if (!hasSavedPreview && savedText && currentText && savedText !== currentText) {
-                            console.log('[preview-state] Text mismatch - saved:', savedText.substring(0, 50), 'current:', currentText.substring(0, 50));
+                            console.log('[preview-state] Text mismatch detected - saved vs current differ');
                         }
                     } catch (err) {
                         console.warn('[preview-state] Error comparing caption text:', err);
                         hasSavedPreview = false;
                     }
+                } else {
+                    console.log('[render-validate] No saved meta found');
                 }
+            } else {
+                console.log('[render-validate] Prerequisites not met:', {
+                    getSavedOverlayMeta: !!window.getSavedOverlayMeta,
+                    getCaptionMeta: !!window.getCaptionMeta,
+                    previewSavedFlag: window._previewSavedForCurrentText
+                });
             }
+            
+            console.log('[render-validate] Final hasSavedPreview:', hasSavedPreview);
             
             // Render requires: features + logged in + saved preview
             const canRender = (hasQuote || hasValidAsset || hasVoiceover) && isLoggedIn && hasSavedPreview;
+            
+            console.log('[render-validate] Final render decision:', {
+                hasQuote,
+                hasValidAsset,
+                hasVoiceover,
+                isLoggedIn: !!isLoggedIn,
+                hasSavedPreview,
+                canRender,
+                buttonWillBeDisabled: !canRender
+            });
+            
             renderBtn.disabled = !canRender;
             
             if (!canRender) {
@@ -2774,8 +2831,10 @@
                 else if (!hasQuote && !hasValidAsset && !hasVoiceover) reason = 'Please add a quote, select media, or choose a voiceover';
                 else if (!hasSavedPreview) reason = 'Save preview first';
                 
+                console.log('[render-validate] Button disabled, reason:', reason);
                 renderBtn.title = reason;
             } else {
+                console.log('[render-validate] Button ENABLED - ready to render!');
                 renderBtn.title = 'Ready to render with saved preview';
             }
         }
@@ -3275,6 +3334,22 @@
                 // Set flag indicating preview is saved for current text
                 window._previewSavedForCurrentText = true;
                 console.log('[preview-state] Preview saved successfully for current caption text');
+                
+                // Debug: Log what was saved
+                console.log('[savePreview] Saved meta details:', {
+                    text: normalizedMeta.text,
+                    textLength: normalizedMeta.text?.length,
+                    xPct: normalizedMeta.xPct,
+                    yPct: normalizedMeta.yPct,
+                    fontPx: normalizedMeta.fontPx
+                });
+                
+                // Debug: Verify functions are available
+                console.log('[savePreview] Function availability after save:', {
+                    getSavedOverlayMeta: !!window.getSavedOverlayMeta,
+                    getCaptionMeta: !!window.getCaptionMeta,
+                    previewSavedFlag: window._previewSavedForCurrentText
+                });
 
                 // Hide Save Preview button and show success indicator
                 saveBtn.style.display = 'none';
