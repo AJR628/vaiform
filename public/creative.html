@@ -31,6 +31,23 @@
         window.updateCreditsDisplay = updateCreditsDisplay;
         window.fetchAndUpdateCredits = fetchAndUpdateCredits;
     </script>
+    <script type="module">
+        // Import render payload helper functions for SSOT preview workflow
+        import { 
+            getSavedOverlayMeta, 
+            validateOverlayCaption,
+            validateBeforeRender,
+            showPreviewSavedIndicator,
+            markPreviewUnsaved
+        } from '/js/render-payload-helper.js';
+        
+        // Make globally available
+        window.getSavedOverlayMeta = getSavedOverlayMeta;
+        window.validateOverlayCaption = validateOverlayCaption;
+        window.validateBeforeRender = validateBeforeRender;
+        window.showPreviewSavedIndicator = showPreviewSavedIndicator;
+        window.markPreviewUnsaved = markPreviewUnsaved;
+    </script>
     <script type="module" src="./frontend.js"></script>
     <!-- Delegated event system for action buttons -->
     <script src="./js/ui-actions.js"></script>
@@ -586,14 +603,31 @@
                     </div>
                 </div>
                 
-                <!-- Render button below preview -->
-                <div class="mt-4 flex justify-center">
-                    <button
-                        id="render-btn"
-                        class="px-6 py-3 bg-green-600 hover:bg-green-500 disabled:bg-gray-400 disabled:cursor-not-allowed rounded-lg text-base font-semibold text-white shadow-md transition-colors"
-                    >
-                        Render
-                    </button>
+                <!-- Render buttons below preview -->
+                <div class="mt-4 flex flex-col items-center gap-3">
+                    <!-- Preview Status Indicator -->
+                    <div id="preview-status" class="hidden"></div>
+                    
+                    <!-- Action Buttons -->
+                    <div class="flex gap-3">
+                        <!-- Save Preview Button -->
+                        <button
+                            id="save-preview-btn"
+                            class="px-6 py-3 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-400 disabled:cursor-not-allowed rounded-lg text-base font-semibold text-white shadow-md transition-colors"
+                        >
+                            Save Preview
+                        </button>
+                        
+                        <!-- Render Button (disabled until preview saved) -->
+                        <button
+                            id="render-btn"
+                            class="px-6 py-3 bg-green-600 hover:bg-green-500 disabled:bg-gray-400 disabled:cursor-not-allowed rounded-lg text-base font-semibold text-white shadow-md transition-colors"
+                            disabled
+                            title="Save preview first"
+                        >
+                            Render
+                        </button>
+                    </div>
                 </div>
                 
                 <div id="render-preview" class="bg-gray-100 dark:bg-gray-800 rounded p-4 hidden border border-gray-200 dark:border-gray-700">
@@ -1482,6 +1516,22 @@
                 
                 overlaySystemInitialized = true;
                 console.log('[overlay-system] Initialized draggable overlay');
+                
+                // Mark preview as unsaved when caption text changes (SSOT workflow)
+                try {
+                    const captionContent = document.querySelector('.caption-box .content');
+                    if (captionContent) {
+                        captionContent.addEventListener('input', () => {
+                            if (window.markPreviewUnsaved) {
+                                window.markPreviewUnsaved();
+                                updateRenderButtonState();
+                            }
+                        });
+                        console.log('[overlay-system] Added unsaved changes listener');
+                    }
+                } catch (e) {
+                    console.warn('[overlay-system] Failed to add unsaved changes listener:', e);
+                }
             } catch (error) {
                 console.error('[overlay-system] Failed to initialize:', error);
             }
@@ -2621,18 +2671,22 @@
             const hasVoiceover = !!currentVoiceId;
             const isLoggedIn = window.auth?.currentUser;
             
-            // Render is enabled if user has at least one feature selected
-            const canRender = (hasQuote || hasValidAsset || hasVoiceover) && isLoggedIn;
+            // NEW: Check if preview is saved (SSOT workflow)
+            const hasSavedPreview = !!(window.getSavedOverlayMeta && window.getSavedOverlayMeta());
+            
+            // Render requires: features + logged in + saved preview
+            const canRender = (hasQuote || hasValidAsset || hasVoiceover) && isLoggedIn && hasSavedPreview;
             renderBtn.disabled = !canRender;
             
             if (!canRender) {
                 let reason = '';
                 if (!isLoggedIn) reason = 'Please log in';
                 else if (!hasQuote && !hasValidAsset && !hasVoiceover) reason = 'Please add a quote, select media, or choose a voiceover';
+                else if (!hasSavedPreview) reason = 'Save preview first';
                 
                 renderBtn.title = reason;
             } else {
-                renderBtn.title = 'Ready to render';
+                renderBtn.title = 'Ready to render with saved preview';
             }
         }
 
@@ -3007,6 +3061,78 @@
             return Object.fromEntries(Object.entries(obj).filter(([, v]) => v !== undefined));
         }
 
+        // Save Preview function (SSOT workflow)
+        async function savePreview() {
+            if (!window.auth?.currentUser) {
+                alert('Please log in to save preview');
+                return;
+            }
+
+            const saveBtn = document.getElementById('save-preview-btn');
+            const originalText = saveBtn.textContent;
+            
+            saveBtn.disabled = true;
+            saveBtn.textContent = 'Saving...';
+
+            try {
+                // Get current caption meta from overlay system
+                const meta = window.getCaptionMeta();
+                
+                if (!meta || !meta.text || !meta.text.trim()) {
+                    alert('Please add caption text first');
+                    return;
+                }
+
+                // Build preview payload (v2 format with percentages)
+                const payload = {
+                    v2: true,
+                    text: meta.text,
+                    xPct: meta.xPct,
+                    yPct: meta.yPct,
+                    wPct: meta.wPct,
+                    hPct: meta.hPct,
+                    fontPx: meta.fontPx,
+                    lineHeight: typeof meta.lineHeight === 'string' ? parseFloat(meta.lineHeight) : (meta.lineHeight || 1.15),
+                    lineSpacingPx: 0, // Will be computed by server
+                    align: meta.textAlign || 'center',
+                    color: meta.color || '#ffffff',
+                    opacity: meta.opacity ?? 1.0,
+                    fontFamily: meta.fontFamily || 'DejaVuSans',
+                    weightCss: meta.weightCss || 'normal'
+                };
+
+                console.log('[savePreview] Sending payload:', payload);
+
+                // Call preview API
+                const { apiFetch } = await import('./api.mjs');
+                const data = await apiFetch('/caption/preview', {
+                    method: 'POST',
+                    body: payload
+                });
+
+                if (!data?.ok) {
+                    throw new Error(data?.detail || data?.reason || 'Preview generation failed');
+                }
+
+                console.log('[savePreview] Preview saved successfully:', data.data.meta);
+
+                // Show success indicator
+                window.showPreviewSavedIndicator('#preview-status');
+                
+                // Enable render button
+                updateRenderButtonState();
+                
+                alert('Preview saved! You can now render the video.');
+
+            } catch (error) {
+                console.error('[savePreview] Error:', error);
+                alert(`Save preview failed: ${error.message}`);
+            } finally {
+                saveBtn.disabled = false;
+                saveBtn.textContent = originalText;
+            }
+        }
+
         // Render short function
         async function renderShort() {
             // Require at least one feature (quote, asset, or voiceover)
@@ -3146,58 +3272,34 @@
                   } : undefined,
                 };
 
-                // SSOT: Use overlay mode when available, otherwise fallback to legacy
-                if (useOverlayMode && overlaySystemInitialized && window.__overlayMeta) {
-                  // Overlay mode: send overlay caption data
-                  const meta = window.__overlayMeta;
+                // SSOT: Use saved overlay meta from preview
+                if (useOverlayMode && overlaySystemInitialized) {
+                  // Validate saved preview before rendering
+                  const validation = window.validateBeforeRender ? window.validateBeforeRender() : { valid: false, errors: ['Preview not saved'] };
                   
-                  // CRITICAL: Merge server-computed meta from preview for SSOT positioning
-                  const serverMeta = window.__lastCaptionOverlay?.meta || {};
+                  if (!validation.valid) {
+                    alert(`Cannot render: ${validation.errors.join(', ')}`);
+                    renderBtn.disabled = false;
+                    renderBtn.textContent = originalText;
+                    return;
+                  }
+                  
+                  const savedMeta = validation.meta;
                   
                   payload.captionMode = 'overlay';
-                  // Use server meta for SSOT positioning, client meta for visual styling
-                  const serverText = serverMeta.splitLines && serverMeta.splitLines.length > 0 
-                    ? serverMeta.splitLines.join('\n') 
-                    : String(meta.text || '');
+                  payload.overlayCaption = savedMeta; // Use saved meta directly (already normalized by server)
                   
-                  payload.overlayCaption = {
-                    text: serverText,
-                    xPct: Number(meta.xPct),
-                    yPct: Number(serverMeta.yPct ?? meta.yPct),
-                    wPct: Number(meta.wPct),
-                    // DON'T send hPct (box height) - use server totalTextH instead
-                    fontFamily: meta.fontFamily || 'DejaVu Sans',
-                    weightCss: String(meta.weightCss || '800'),
-                    fontPx: Number(serverMeta.fontPx ?? meta.fontPx ?? 38),
-                    color: meta.color || '#ffffff',
-                    opacity: Number(meta.opacity ?? 1),
-                    align: meta.textAlign || 'center',
-                    // Normalize CSS line-height (could be like "46px" or number); send numeric ratio
-                    lineHeight: (function(){
-                      const lh = meta.lineHeight;
-                      if (typeof lh === 'number') return lh; // assume ratio
-                      if (typeof lh === 'string') {
-                        const n = parseFloat(lh);
-                        if (!Number.isFinite(n)) return 1.15;
-                        // If px value, convert to ratio vs fontPx
-                        const px = /px$/i.test(lh) ? n : null;
-                        if (px && Number(meta.fontPx)) return Math.max(1, px / Number(meta.fontPx));
-                        return n; // already unitless
-                      }
-                      return 1.15;
-                    })(),
-                    showBox: !!(meta.showBox ?? true),
-                    responsiveText: !!(meta.responsiveText ?? true),
-                    // SSOT: Pass server-computed positioning meta for exact match
-                    totalTextH: Number(serverMeta.totalTextH || 0),
-                    lineSpacingPx: Number(serverMeta.lineSpacingPx ?? 0),
-                    internalPadding: Number(serverMeta.internalPadding || 0),
-                    splitLines: serverMeta.splitLines || [],
-                    baselines: serverMeta.baselines || []
-                  };
+                  console.log('[render] Using saved preview meta:', {
+                    xPct: savedMeta.xPct,
+                    yPct: savedMeta.yPct,
+                    fontPx: savedMeta.fontPx,
+                    totalTextH: savedMeta.totalTextH
+                  });
+                  
                   // Remove legacy fields when using overlay
                   delete payload.caption;
                   delete payload.captionStyle;
+                  delete payload.captionImage;
                 } else if (overlayDataUrl) {
                   // Legacy PNG overlay fallback
                   payload.captionImage = overlayDataUrl;
@@ -3663,6 +3765,10 @@
         
         const renderBtn = document.getElementById('render-btn');
         if (renderBtn) renderBtn.onclick = renderShort;
+        
+        // Wire Save Preview button (SSOT workflow)
+        const savePreviewBtn = document.getElementById('save-preview-btn');
+        if (savePreviewBtn) savePreviewBtn.onclick = savePreview;
         
         // Overlay mode toggle event listener (auto-initialize overlay; no extra buttons)
         const overlayModeToggle = document.getElementById('overlay-mode-toggle');

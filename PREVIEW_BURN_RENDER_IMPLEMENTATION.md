@@ -79,21 +79,26 @@ validateOverlayCaption(overlay)  // Returns {valid, errors}
 ```
 
 ### 4. Client Creative UI
-**Status:** ⚠️ Pending
+**Status:** ✅ Complete
 
-**Next Steps:**
-- Update render button handler to use `getSavedOverlayMeta()` for payload
-- Add "Preview Saved" indicator in UI
-- Show "Unsaved Changes" warning if overlay edited after preview
-- Validate overlay before POST using `validateOverlayCaption()`
+**Implementation:**
+- Added "Save Preview" button alongside Render button
+- Render button disabled by default until preview is saved
+- Added `savePreview()` function that calls `/api/caption/preview` with v2 format
+- Updated `updateRenderButtonState()` to check for saved preview
+- Updated `renderShort()` to validate and use saved meta
+- Added listener to mark preview unsaved when caption text changes
+- Status indicator shows "Preview saved ✓" or "Save preview first ⚠"
 
-**Expected Flow:**
-1. User positions caption → Clicks "Preview"
-2. Server generates preview PNG with normalized meta
-3. Client saves meta to localStorage
-4. User clicks "Render"
-5. Client sends `overlayCaption: getSavedOverlayMeta()` to `/api/shorts/create`
-6. Server uses same placement helper → Perfect match
+**User Flow:**
+1. User positions caption → Caption overlay visible in editor
+2. User clicks "Save Preview" → Server burns caption, returns normalized meta
+3. Meta saved to localStorage, status shows "Preview saved ✓"
+4. Render button becomes enabled
+5. User clicks "Render" → Client validates saved meta exists
+6. Client sends `overlayCaption: getSavedOverlayMeta()` to `/api/shorts/create`
+7. Server uses same placement helper → **Perfect match!**
+8. If user edits caption → Preview marked unsaved, render disabled again
 
 ### 5. Shorts Service Integration (`src/services/shorts.service.js`)
 **Status:** ✅ Complete
@@ -199,9 +204,16 @@ Checks:
 - Render logs matching details
 - Easy to compare preview vs render positioning
 
-⚠️ **UI Integration** (Pending)
-- Need to update creative UI to use saved meta for render
-- Need to show "Preview Saved" / "Unsaved Changes" indicators
+✅ **UI Integration**
+- "Save Preview" button burns caption before render
+- Render button disabled until preview saved
+- Shows "Preview Saved ✓" / "Save preview first ⚠" indicators
+- Marks preview unsaved on caption edits
+
+✅ **Explicit Save Workflow**
+- User must explicitly save preview before rendering
+- Forces verification that caption looks correct
+- Eliminates drift by using exact saved meta for render
 
 ## Testing Recommendations
 
@@ -228,34 +240,77 @@ Checks:
    - Verify saved meta still available (within 1 hour)
    - Verify stale meta (>1 hour) is cleared
 
-## Next Steps
+## Implementation Complete! 🎉
 
-1. **Update Creative UI:**
-   - Find finalize/render button handler
-   - Add `overlayCaption: getSavedOverlayMeta()` to payload
-   - Add contract validation before POST
-   - Show UI indicators for saved/unsaved state
+All components of the SSOT preview → render workflow are now implemented:
 
-2. **Testing:**
-   - Smoke test preview → render workflow
-   - Verify pixel-perfect matching
-   - Test edge cases
+### What Was Built
 
-3. **Documentation:**
-   - Update API docs with new response format
-   - Document client-side workflow
-   - Add troubleshooting guide
+1. **Shared Placement Helper** (`src/render/overlay.helpers.js`)
+   - Single function used by both preview and render
+   - Normalizes overlay caption to SSOT format
+   - Validates contract before rendering
+
+2. **Normalized Preview API** (`src/routes/preview.routes.js`)
+   - Accepts v2 format with percentages (0..1)
+   - Returns normalized SSOT meta
+   - Logs placement for verification
+
+3. **Client Persistence** (`public/js/caption-preview.js`)
+   - Saves preview meta to localStorage
+   - 1-hour expiry to prevent stale data
+   - Provides getSavedOverlayMeta()
+
+4. **Explicit Save Workflow** (`public/creative.html`)
+   - "Save Preview" button burns caption
+   - Render button disabled until preview saved
+   - Status indicators show saved/unsaved state
+   - Marks unsaved on caption edits
+
+5. **Render Integration** (`src/utils/ffmpeg.video.js`)
+   - Uses saved meta from localStorage
+   - Validates before rendering
+   - Same placement helper as preview
+
+### Testing Checklist
+
+- [ ] Position caption with overlay editor
+- [ ] Click "Save Preview" → Verify status shows "Preview saved ✓"
+- [ ] Check console logs for placement values (xPct, yPct, fontPx, totalTextH)
+- [ ] Verify Render button becomes enabled
+- [ ] Click "Render" → Video renders
+- [ ] Compare final video caption to preview image
+- [ ] Edit caption after save → Verify "unsaved" state, render disabled
+- [ ] Save new preview → Render again with updated position
+
+### Troubleshooting
+
+**Render button stays disabled:**
+- Check console for getSavedOverlayMeta() return value
+- Verify preview was saved (check localStorage: `overlayMeta`)
+- Try clicking "Save Preview" again
+
+**Caption position doesn't match:**
+- Compare console logs: `[preview] Placement computed` vs `[render] SSOT placement computed`
+- Verify same xPct, yPct, fontPx, totalTextH values
+- Check that saved meta hasn't expired (>1 hour old)
+
+**Preview save fails:**
+- Check network tab for `/api/caption/preview` request
+- Verify payload has v2: true and percentage values
+- Check server logs for validation errors
 
 ## Files Modified
 
 ### Server-Side
-- ✅ `src/render/overlay.helpers.js` (NEW)
-- ✅ `src/routes/preview.routes.js`
-- ✅ `src/utils/ffmpeg.video.js`
+- ✅ `src/render/overlay.helpers.js` (NEW - 281 lines)
+- ✅ `src/routes/preview.routes.js` (updated for v2 SSOT format)
+- ✅ `src/utils/ffmpeg.video.js` (uses shared placement helper)
 
 ### Client-Side
-- ✅ `public/js/caption-preview.js`
-- ⚠️ Creative UI integration (pending)
+- ✅ `public/js/caption-preview.js` (saves meta to localStorage)
+- ✅ `public/js/render-payload-helper.js` (NEW - 185 lines)
+- ✅ `public/creative.html` (Save Preview button, validation, state management)
 
 ## Migration Notes
 
