@@ -59,15 +59,13 @@ const SHADOW_Y          = 2;      // slight vertical softness
 const BOX_BG_ALPHA      = 0.00;   // keep disabled unless user checks "Show box"
 
 // text/path helpers
-const esc = s => String(s).replace(/\\/g,'\\\\').replace(/:/g,'\\:').replace(/,/g,'\\,').replace(/;/g,'\\;').replace(/\[/g,'\\[').replace(/\]/g,'\\]').replace(/'/g,"\\'");
+const esc = s => String(s).replace(/\\/g,'\\\\').replace(/:/g,'\\:').replace(/\[/g,'\\[').replace(/\]/g,'\\]').replace(/'/g,"\\'");
 function escText(s) {
-  // Escape EVERYTHING ffmpeg might interpret inside drawtext text=...
+  // Escape characters that break drawtext text=... parsing
   return String(s)
     .replace(/\\/g, '\\\\')   // backslash first
     .replace(/'/g, "\\'")     // apostrophe
     .replace(/:/g, '\\:')     // option separator
-    .replace(/,/g, '\\,')     // filter separator
-    .replace(/;/g, '\\;')     // filterchain separator
     .replace(/\[/g, '\\[')    // label delimiters
     .replace(/\]/g, '\\]')
     .replace(/\(/g, '\\(')    // expression args
@@ -81,8 +79,6 @@ function escFF(text) {
   return String(text)
     .replace(/\\/g, '\\\\')
     .replace(/:/g, '\\:')
-    .replace(/,/g, '\\,')
-    .replace(/;/g, '\\;')
     .replace(/'/g, "\\'")
     .replace(/\[/g, '\\[')
     .replace(/\]/g, '\\]');
@@ -95,8 +91,6 @@ function escapeForDrawtext(s = '') {
     .replace(/\\/g, '\\\\')
     // characters that break option parsing in drawtext:
     .replace(/:/g, '\\:')
-    .replace(/,/g, '\\,')
-    .replace(/;/g, '\\;')
     .replace(/\[/g, '\\[')
     .replace(/\]/g, '\\]')
     .replace(/%/g, '\\%')
