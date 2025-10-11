@@ -33,20 +33,69 @@
     </script>
     <script type="module">
         // Import render payload helper functions for SSOT preview workflow
-        import { 
-            getSavedOverlayMeta, 
-            validateOverlayCaption,
-            validateBeforeRender,
-            showPreviewSavedIndicator,
-            markPreviewUnsaved
-        } from '/js/render-payload-helper.js';
-        
-        // Make globally available
-        window.getSavedOverlayMeta = getSavedOverlayMeta;
-        window.validateOverlayCaption = validateOverlayCaption;
-        window.validateBeforeRender = validateBeforeRender;
-        window.showPreviewSavedIndicator = showPreviewSavedIndicator;
-        window.markPreviewUnsaved = markPreviewUnsaved;
+        try {
+            const { 
+                getSavedOverlayMeta, 
+                validateOverlayCaption,
+                validateBeforeRender,
+                showPreviewSavedIndicator,
+                markPreviewUnsaved
+            } = await import('/js/render-payload-helper.js');
+            
+            // Make globally available
+            window.getSavedOverlayMeta = getSavedOverlayMeta;
+            window.validateOverlayCaption = validateOverlayCaption;
+            window.validateBeforeRender = validateBeforeRender;
+            window.showPreviewSavedIndicator = showPreviewSavedIndicator;
+            window.markPreviewUnsaved = markPreviewUnsaved;
+            
+            console.log('[module] render-payload-helper functions loaded successfully');
+        } catch (error) {
+            console.error('[module] Failed to load render-payload-helper:', error);
+            // Set up fallback functions
+            window.showPreviewSavedIndicator = function(containerSelector = '#preview-status') {
+                const container = document.querySelector(containerSelector);
+                if (!container) return;
+                
+                const meta = window.getSavedOverlayMeta ? window.getSavedOverlayMeta() : null;
+                
+                if (meta) {
+                    container.innerHTML = `
+                        <div class="flex items-center gap-2 px-3 py-2 bg-green-600 text-white rounded text-sm">
+                            <span>✓</span>
+                            <span>Preview saved - ready to render</span>
+                        </div>
+                    `;
+                } else {
+                    container.innerHTML = `
+                        <div class="flex items-center gap-2 px-3 py-2 bg-yellow-600 text-white rounded text-sm">
+                            <span>⚠</span>
+                            <span>No preview saved - generate preview before rendering</span>
+                        </div>
+                    `;
+                }
+                container.classList.remove('hidden');
+            };
+            
+            window.getSavedOverlayMeta = function() {
+                if (window._overlayMeta) return window._overlayMeta;
+                try {
+                    const stored = localStorage.getItem('overlayMeta');
+                    if (stored) {
+                        const meta = JSON.parse(stored);
+                        const timestamp = parseInt(localStorage.getItem('overlayMetaTimestamp') || '0', 10);
+                        const age = Date.now() - timestamp;
+                        if (age < 3600000) { // 1 hour
+                            window._overlayMeta = meta;
+                            return meta;
+                        }
+                    }
+                } catch (err) {
+                    console.warn('[fallback] Failed to load from localStorage:', err.message);
+                }
+                return null;
+            };
+        }
     </script>
     <script type="module" src="./frontend.js"></script>
     <!-- Delegated event system for action buttons -->
@@ -3116,8 +3165,64 @@
 
                 console.log('[savePreview] Preview saved successfully:', data.data.meta);
 
+                // SSOT: Save the returned meta to localStorage for render workflow
+                const normalizedMeta = {
+                    text: data.data.meta?.text || meta.text,
+                    xPct: data.data.meta?.xPct ?? meta.xPct,
+                    yPct: data.data.meta?.yPct ?? meta.yPct,
+                    wPct: data.data.meta?.wPct ?? meta.wPct,
+                    hPct: data.data.meta?.hPct ?? meta.hPct,
+                    fontPx: data.data.meta?.fontPx || meta.fontPx,
+                    lineHeight: data.data.meta?.lineHeight ?? 1.15,
+                    lineSpacingPx: data.data.meta?.lineSpacingPx ?? 0,
+                    align: data.data.meta?.align || meta.textAlign || 'center',
+                    color: data.data.meta?.color || meta.color || '#ffffff',
+                    opacity: data.data.meta?.opacity ?? meta.opacity ?? 1.0,
+                    fontFamily: data.data.meta?.fontFamily || meta.fontFamily || 'DejaVuSans',
+                    weightCss: data.data.meta?.weightCss || meta.weightCss || 'normal',
+                    // Server-computed positioning data (SSOT)
+                    totalTextH: data.data.meta?.totalTextH,
+                    splitLines: data.data.meta?.splitLines,
+                    baselines: data.data.meta?.baselines,
+                    internalPadding: data.data.meta?.internalPadding
+                };
+
+                // Store normalized overlay meta for render (SSOT)
+                window._overlayMeta = normalizedMeta;
+                window.lastCaptionPNG = {
+                    dataUrl: data.data?.imageUrl,
+                    width: data.data?.wPx || 1080,
+                    height: data.data?.hPx || 1920,
+                    meta: normalizedMeta
+                };
+                window.__lastCaptionOverlay = window.lastCaptionPNG;
+
+                // Persist to localStorage for "Save Preview" workflow
+                try {
+                    localStorage.setItem('overlayMeta', JSON.stringify(normalizedMeta));
+                    localStorage.setItem('overlayMetaTimestamp', Date.now().toString());
+                    console.log('[savePreview] Saved overlay meta to localStorage');
+                } catch (err) {
+                    console.warn('[savePreview] Failed to save to localStorage:', err.message);
+                }
+
                 // Show success indicator
-                window.showPreviewSavedIndicator('#preview-status');
+                if (typeof window.showPreviewSavedIndicator === 'function') {
+                    window.showPreviewSavedIndicator('#preview-status');
+                } else {
+                    // Fallback: directly update the preview status container
+                    const container = document.querySelector('#preview-status');
+                    if (container) {
+                        container.innerHTML = `
+                            <div class="flex items-center gap-2 px-3 py-2 bg-green-600 text-white rounded text-sm">
+                                <span>✓</span>
+                                <span>Preview saved - ready to render</span>
+                            </div>
+                        `;
+                        container.classList.remove('hidden');
+                    }
+                    console.warn('[savePreview] showPreviewSavedIndicator not available, using fallback');
+                }
                 
                 // Enable render button
                 updateRenderButtonState();
