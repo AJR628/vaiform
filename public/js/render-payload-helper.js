@@ -174,16 +174,20 @@ export function markPreviewUnsaved() {
     }
   }
   
-  // Update UI
+  // Hide preview status and show Save Preview button
   const container = document.querySelector('#preview-status');
   if (container) {
-    container.innerHTML = `
-      <div class="flex items-center gap-2 px-3 py-2 bg-orange-600 text-white rounded text-sm">
-        <span>⚠</span>
-        <span>Unsaved changes - generate new preview before rendering</span>
-      </div>
-    `;
-    container.classList.remove('hidden');
+    container.classList.add('hidden');
+  }
+  
+  const saveBtn = document.querySelector('#save-preview-btn');
+  if (saveBtn) {
+    saveBtn.style.display = 'block';
+  }
+  
+  // Update render button state (disable since no saved preview)
+  if (typeof window !== 'undefined' && window.updateRenderButtonState) {
+    window.updateRenderButtonState();
   }
 }
 

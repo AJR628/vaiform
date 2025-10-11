@@ -1578,6 +1578,18 @@
                         });
                         console.log('[overlay-system] Added unsaved changes listener');
                     }
+                    
+                    // Also listen to quote edit textarea for unsaved changes
+                    const quoteEdit = document.getElementById('quote-edit');
+                    if (quoteEdit) {
+                        quoteEdit.addEventListener('input', () => {
+                            if (window.markPreviewUnsaved) {
+                                window.markPreviewUnsaved();
+                                updateRenderButtonState();
+                            }
+                        });
+                        console.log('[overlay-system] Added quote edit unsaved changes listener');
+                    }
                 } catch (e) {
                     console.warn('[overlay-system] Failed to add unsaved changes listener:', e);
                 }
@@ -3206,6 +3218,9 @@
                     console.warn('[savePreview] Failed to save to localStorage:', err.message);
                 }
 
+                // Hide Save Preview button and show success indicator
+                saveBtn.style.display = 'none';
+                
                 // Show success indicator
                 if (typeof window.showPreviewSavedIndicator === 'function') {
                     window.showPreviewSavedIndicator('#preview-status');
@@ -3224,7 +3239,7 @@
                     console.warn('[savePreview] showPreviewSavedIndicator not available, using fallback');
                 }
                 
-                // Enable render button
+                // Enable render button (after localStorage save is complete)
                 updateRenderButtonState();
                 
                 alert('Preview saved! You can now render the video.');
@@ -4045,7 +4060,7 @@
             // do not change regen counter
         }
 
-        async function saveQuote() {
+        async         function saveQuote() {
             const ta = document.getElementById('quote-edit');
             const newText = ta.value.trim().slice(0, 200);
             if (!newText) return;
@@ -4053,6 +4068,12 @@
             document.getElementById('quote-text-display').textContent = newText;
             // do not reset regen counter on save
             // switch to locked/solid view after save
+            
+            // Invalidate saved preview since quote text changed
+            if (window.markPreviewUnsaved) {
+                window.markPreviewUnsaved();
+                updateRenderButtonState();
+            }
             ta.classList.add('hidden');
             document.getElementById('quote-text-display').classList.remove('hidden');
             document.getElementById('save-quote-btn').classList.add('hidden');
