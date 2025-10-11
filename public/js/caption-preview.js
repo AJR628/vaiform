@@ -119,36 +119,60 @@ export async function generateCaptionPreview(opts) {
   const imageUrl = data.data?.imageUrl;
   if (!imageUrl) throw new Error("No image URL in response");
 
-  // SSOT: store only the allowed meta keys as-is
+  // SSOT: store only the allowed meta keys as-is (now normalized by server)
   const meta = data.data?.meta || {};
+  
+  // Normalize meta to SSOT format with all required fields
+  const normalizedMeta = {
+    text: meta.text || opts.text,
+    xPct: meta.xPct ?? 0.5,
+    yPct: meta.yPct ?? 0.5,
+    wPct: meta.wPct ?? 0.8,
+    hPct: meta.hPct ?? 0.3,
+    fontPx: meta.fontPx || opts.fontPx || opts.sizePx || 48,
+    lineHeight: meta.lineHeight ?? 1.15,
+    lineSpacingPx: meta.lineSpacingPx ?? meta.lineSpacing ?? 0,
+    align: meta.align || 'center',
+    color: meta.color || opts.color || '#ffffff',
+    opacity: meta.opacity ?? opts.opacity ?? 1.0,
+    fontFamily: meta.fontFamily || opts.fontFamily || 'DejaVuSans',
+    weightCss: meta.weightCss || opts.weightCss || 'normal',
+    // Computed placement data
+    totalTextH: meta.totalTextH,
+    splitLines: meta.splitLines,
+    baselines: meta.baselines
+  };
+  
   lastCaptionPNG = { 
     dataUrl: imageUrl, 
     width: data.data?.wPx || 1080, 
     height: data.data?.hPx || 1920,
-    meta: {
-      yPct: meta.yPct,
-      totalTextH: meta.totalTextH,
-      lineSpacingPx: meta.lineSpacingPx ?? meta.lineSpacing,
-      fontPx: meta.fontPx,
-      internalPadding: meta.internalPadding,
-      placement: meta.placement,
-      wPx: data.data?.wPx || 1080,
-      hPx: data.data?.hPx || 1920,
-      splitLines: meta.splitLines,
-      baselines: meta.baselines
-    }
+    meta: normalizedMeta
   };
   
-  // Update global reference
+  // Update global references (SSOT)
   if (typeof window !== 'undefined') {
     window.lastCaptionPNG = lastCaptionPNG;
-    // Store as the new overlay format for render payload
+    
+    // Store normalized overlay meta for render (SSOT)
+    window._overlayMeta = normalizedMeta;
+    
+    // Also keep legacy reference for backward compatibility
     window.__lastCaptionOverlay = {
       dataUrl: imageUrl,
       width: data.data?.wPx || 1080,
       height: data.data?.hPx || 1920,
-      meta: lastCaptionPNG.meta
+      meta: normalizedMeta
     };
+    
+    // Persist to localStorage for "Save Preview" workflow
+    try {
+      localStorage.setItem('overlayMeta', JSON.stringify(normalizedMeta));
+      localStorage.setItem('overlayMetaTimestamp', Date.now().toString());
+      console.log('[caption-preview] Saved overlay meta to localStorage');
+    } catch (err) {
+      console.warn('[caption-preview] Failed to save to localStorage:', err.message);
+    }
   }
 
   const el = document.getElementById("caption-overlay");
@@ -179,6 +203,82 @@ export async function generateCaptionPreview(opts) {
 }
 
 export function getLastCaptionPNG(){ return lastCaptionPNG; }
+
+/**
+ * Get saved overlay meta (from memory or localStorage)
+ * @returns {Object|null} Saved overlay meta or null if none exists
+ */
+export function getSavedOverlayMeta() {
+  if (typeof window === 'undefined') return null;
+  
+  // Try memory first
+  if (window._overlayMeta) {
+    return window._overlayMeta;
+  }
+  
+  // Fall back to localStorage
+  try {
+    const stored = localStorage.getItem('overlayMeta');
+    if (stored) {
+      const meta = JSON.parse(stored);
+      const timestamp = parseInt(localStorage.getItem('overlayMetaTimestamp') || '0', 10);
+      const age = Date.now() - timestamp;
+      
+      // Only use if saved within last hour (prevent stale data)
+      if (age < 3600000) {
+        window._overlayMeta = meta;
+        return meta;
+      } else {
+        console.log('[caption-preview] Saved meta is stale, clearing');
+        localStorage.removeItem('overlayMeta');
+        localStorage.removeItem('overlayMetaTimestamp');
+      }
+    }
+  } catch (err) {
+    console.warn('[caption-preview] Failed to load from localStorage:', err.message);
+  }
+  
+  return null;
+}
+
+/**
+ * Validate overlay caption contract (client-side pre-POST check)
+ * @param {Object} overlay - Overlay object to validate
+ * @returns {Object} { valid: boolean, errors: string[] }
+ */
+export function validateOverlayCaption(overlay) {
+  const errors = [];
+  
+  if (!overlay || typeof overlay !== 'object') {
+    return { valid: false, errors: ['Overlay must be an object'] };
+  }
+  
+  // Required fields
+  if (!overlay.text || typeof overlay.text !== 'string' || !overlay.text.trim()) {
+    errors.push('text is required and must be non-empty');
+  }
+  
+  // Validate percentages (0..1)
+  ['xPct', 'yPct', 'wPct', 'hPct'].forEach(key => {
+    const val = overlay[key];
+    if (typeof val === 'number') {
+      if (val < 0 || val > 1) {
+        errors.push(`${key} must be between 0 and 1 (got ${val})`);
+      }
+    }
+  });
+  
+  // Validate fontPx
+  const fontPx = overlay.fontPx || overlay.sizePx;
+  if (typeof fontPx === 'number' && (fontPx <= 0 || fontPx > 200)) {
+    errors.push(`fontPx must be between 1 and 200 (got ${fontPx})`);
+  }
+  
+  return {
+    valid: errors.length === 0,
+    errors
+  };
+}
 
 /**
  * Create a caption overlay element for preview (legacy compatibility)
@@ -326,4 +426,6 @@ if (typeof window !== 'undefined') {
   window.generateCaptionPreview = generateCaptionPreview;
   window.createCaptionOverlay = createCaptionOverlay;
   window.createDebouncedCaptionPreview = createDebouncedCaptionPreview;
+  window.getSavedOverlayMeta = getSavedOverlayMeta;
+  window.validateOverlayCaption = validateOverlayCaption;
 }

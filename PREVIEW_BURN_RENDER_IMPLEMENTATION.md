@@ -1,0 +1,274 @@
+# Preview Burn → Render SSOT Implementation
+
+## Summary
+Implemented a Single Source of Truth (SSOT) system for overlay captions where preview and final render use identical positioning logic. This ensures pixel-perfect matching between the preview image and the final rendered video.
+
+## Changes Made
+
+### 1. Shared Overlay Placement Helper (`src/render/overlay.helpers.js`)
+**Status:** ✅ Complete
+
+Created a new shared module that provides:
+- `computeOverlayPlacement(overlay, W, H)` - Computes positioning for both preview and render
+- `normalizeOverlayCaption(overlay)` - Ensures all overlay fields are in correct format/range
+- `validateOverlayCaption(overlay)` - Client-side contract validation
+- `splitIntoLines(text)` - Consistent text splitting logic
+
+**Key Features:**
+- Uses percentage-based coordinates (0..1) for xPct, yPct, wPct, hPct (top-left box)
+- Computes totalTextH based on font size and line count
+- Applies safe margins (5% top, 8% bottom) to prevent clipping
+- Returns FFmpeg-compatible expressions for alignment
+
+### 2. Preview Route Normalization (`src/routes/preview.routes.js`)
+**Status:** ✅ Complete
+
+Updated `/api/preview/caption` to:
+- Accept both v1 (legacy pixel-based) and v2 (percentage-based SSOT) formats
+- Use `normalizeOverlayCaption` to ensure consistent field formats
+- Use `computeOverlayPlacement` to calculate positioning
+- Return normalized SSOT response with percentages as 0..1
+
+**Response Format:**
+```json
+{
+  "ok": true,
+  "data": {
+    "imageUrl": "...",
+    "wPx": 1080,
+    "hPx": 1920,
+    "meta": {
+      "text": "...",
+      "xPct": 0.5,
+      "yPct": 0.5,
+      "wPct": 0.8,
+      "hPct": 0.3,
+      "fontPx": 48,
+      "lineHeight": 1.15,
+      "lineSpacingPx": 10,
+      "align": "center",
+      "color": "#ffffff",
+      "opacity": 1.0,
+      "fontFamily": "DejaVuSans",
+      "weightCss": "normal",
+      "totalTextH": 120,
+      "splitLines": [...],
+      "baselines": [...]
+    }
+  }
+}
+```
+
+**Logging:** 
+- Logs placement details for verification: xPct, yPct, wPct, hPct, fontPx, totalTextH, computedY
+
+### 3. Client Caption Preview (`public/js/caption-preview.js`)
+**Status:** ✅ Complete
+
+Enhanced client-side preview handling:
+- Normalizes server response to SSOT format
+- Saves overlay meta to `window._overlayMeta` and `localStorage.overlayMeta`
+- Adds timestamp to prevent stale data (1-hour expiry)
+- Provides `getSavedOverlayMeta()` to retrieve saved preview meta
+- Provides `validateOverlayCaption()` for client-side contract validation
+
+**Functions Added:**
+```javascript
+getSavedOverlayMeta()  // Returns saved meta or null
+validateOverlayCaption(overlay)  // Returns {valid, errors}
+```
+
+### 4. Client Creative UI
+**Status:** ⚠️ Pending
+
+**Next Steps:**
+- Update render button handler to use `getSavedOverlayMeta()` for payload
+- Add "Preview Saved" indicator in UI
+- Show "Unsaved Changes" warning if overlay edited after preview
+- Validate overlay before POST using `validateOverlayCaption()`
+
+**Expected Flow:**
+1. User positions caption → Clicks "Preview"
+2. Server generates preview PNG with normalized meta
+3. Client saves meta to localStorage
+4. User clicks "Render"
+5. Client sends `overlayCaption: getSavedOverlayMeta()` to `/api/shorts/create`
+6. Server uses same placement helper → Perfect match
+
+### 5. Shorts Service Integration (`src/services/shorts.service.js`)
+**Status:** ✅ Complete
+
+The shorts service already passes `overlayCaption` to `renderVideoQuoteOverlay` when `captionMode === 'overlay'`. No changes needed.
+
+### 6. FFmpeg Video Rendering (`src/utils/ffmpeg.video.js`)
+**Status:** ✅ Complete
+
+Updated overlay caption rendering to use shared SSOT helper:
+- Import `normalizeOverlayCaption` and `computeOverlayPlacement`
+- Replace inline positioning logic with `computeOverlayPlacement()`
+- Use computed `xExpr` and `y` values for drawtext
+- Log placement details matching preview format for verification
+
+**Before:**
+```javascript
+// Inline computation with potential drift
+const absW = Math.round(wPct * W);
+const cx = xPct * W;
+const cy = yPct * H;
+const x = Math.round(cx - absW/2);
+const y = Math.round(cy - totalTextH/2);
+let dx = overlay.align === 'center' ? `(${x} + (${absW}-text_w)/2)` : ...
+```
+
+**After:**
+```javascript
+// Shared SSOT helper
+const normalized = normalizeOverlayCaption(overlayCaption);
+const placement = computeOverlayPlacement(normalized, W, H);
+const { xExpr, y, fontPx, lineSpacingPx, totalTextH } = placement;
+// Use xExpr and y directly in drawtext
+```
+
+**Logging:**
+- Logs SSOT placement for verification (matches preview format)
+- Includes xPct, yPct, wPct, hPct, fontPx, totalTextH, computedY
+
+## Contract & Validation
+
+### SSOT Fields (Overlay Meta)
+All coordinates are percentages (0..1), not pixels:
+
+```javascript
+{
+  text: string,           // Caption text with explicit \n for line breaks
+  xPct: number,          // Box left (0..1)
+  yPct: number,          // Box top (0..1)
+  wPct: number,          // Box width (0..1)
+  hPct: number,          // Box height (0..1)
+  fontPx: number,        // Font size in pixels (16-200)
+  lineHeight: number,    // Line height multiplier (0.9-2.0)
+  lineSpacingPx: number, // Line spacing in pixels (0-200)
+  align: string,         // 'left'|'center'|'right'
+  color: string,         // Hex or rgba color
+  opacity: number,       // 0..1
+  fontFamily: string,    // e.g., 'DejaVuSans'
+  weightCss: string,     // 'normal'|'bold'
+  // Computed fields (returned by server)
+  totalTextH: number,    // Total text height in pixels
+  splitLines: string[],  // Array of wrapped lines
+  baselines: number[]    // Y positions of each line
+}
+```
+
+### Client-Side Validation
+Before sending to `/api/shorts/create`:
+```javascript
+const validation = validateOverlayCaption(overlayMeta);
+if (!validation.valid) {
+  console.error('Invalid overlay:', validation.errors);
+  return;
+}
+```
+
+Checks:
+- `text` is non-empty string
+- `xPct, yPct, wPct, hPct` are between 0 and 1
+- `fontPx` is between 1 and 200
+
+### Server-Side Canvas
+- Preview and render both use 1080×1920 canvas
+- Placement helper computes positions in this coordinate system
+- Client scales preview display but uses same underlying meta
+
+## Acceptance Criteria
+
+✅ **Single Source of Truth**
+- Both preview and render use `computeOverlayPlacement()`
+- No duplicate positioning logic
+
+✅ **Normalized Response**
+- `/api/preview/caption` returns percentages as 0..1
+- Meta includes all SSOT fields
+
+✅ **Client Persistence**
+- Preview meta saved to localStorage
+- Meta retrievable for render payload
+
+✅ **Logging for Verification**
+- Preview route logs placement details
+- Render logs matching details
+- Easy to compare preview vs render positioning
+
+⚠️ **UI Integration** (Pending)
+- Need to update creative UI to use saved meta for render
+- Need to show "Preview Saved" / "Unsaved Changes" indicators
+
+## Testing Recommendations
+
+1. **Preview → Render Match:**
+   - Generate preview with custom positioning
+   - Check console logs for placement values
+   - Render video with saved meta
+   - Compare video caption position to preview image
+
+2. **Edge Cases:**
+   - Very long text (wrapping)
+   - Small font sizes
+   - Edge positions (top/bottom)
+   - Different alignments (left/center/right)
+
+3. **Contract Validation:**
+   - Send invalid percentages (outside 0..1)
+   - Send invalid fontPx
+   - Verify 400 errors with helpful messages
+
+4. **Persistence:**
+   - Generate preview
+   - Refresh page
+   - Verify saved meta still available (within 1 hour)
+   - Verify stale meta (>1 hour) is cleared
+
+## Next Steps
+
+1. **Update Creative UI:**
+   - Find finalize/render button handler
+   - Add `overlayCaption: getSavedOverlayMeta()` to payload
+   - Add contract validation before POST
+   - Show UI indicators for saved/unsaved state
+
+2. **Testing:**
+   - Smoke test preview → render workflow
+   - Verify pixel-perfect matching
+   - Test edge cases
+
+3. **Documentation:**
+   - Update API docs with new response format
+   - Document client-side workflow
+   - Add troubleshooting guide
+
+## Files Modified
+
+### Server-Side
+- ✅ `src/render/overlay.helpers.js` (NEW)
+- ✅ `src/routes/preview.routes.js`
+- ✅ `src/utils/ffmpeg.video.js`
+
+### Client-Side
+- ✅ `public/js/caption-preview.js`
+- ⚠️ Creative UI integration (pending)
+
+## Migration Notes
+
+**Backward Compatibility:**
+- Preview route accepts both v1 (pixel-based) and v2 (percentage-based) formats
+- Converts v1 to v2 internally for SSOT response
+- Legacy caption rendering paths remain unchanged
+- Only affects `captionMode === 'overlay'` workflow
+
+**Breaking Changes:**
+- None (v1 format still supported)
+
+**Deprecation Plan:**
+- v1 format should be phased out after UI fully migrated to v2
+- Consider removing v1 support in next major version
+

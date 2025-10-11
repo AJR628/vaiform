@@ -9,6 +9,7 @@ import { renderImageQuoteVideo } from "./ffmpeg.js";
 import { getDurationMsFromMedia } from "./media.duration.js";
 import { CAPTION_OVERLAY } from "../config/env.js";
 import { hasLineSpacingOption } from "./ffmpeg.capabilities.js";
+import { normalizeOverlayCaption, computeOverlayPlacement } from "../render/overlay.helpers.js";
 
 const { createCanvas } = pkg;
 
@@ -497,61 +498,41 @@ export async function renderVideoQuoteOverlay({
   // Optional caption (bottom, safe area, wrapped)
   let drawCaption = '';
   
-  // v2 overlay mode: handle overlayCaption with precise positioning
+  // v2 overlay mode: handle overlayCaption with precise positioning using shared SSOT helper
   if (overlayCaption && overlayCaption.text) {
-    console.log(`[render] USING OVERLAY MODE - precise positioning from overlayCaption`);
+    console.log(`[render] USING OVERLAY MODE - SSOT positioning from computeOverlayPlacement`);
     
-    // CRITICAL: Declare textToRender early to avoid temporal dead zone
-    let textToRender = overlayCaption.text;
+    // Normalize overlay caption to ensure all fields are present
+    const normalized = normalizeOverlayCaption(overlayCaption);
     
-    // SSOT: Use server-computed totalTextH from preview (not hPct which is box height)
-    let totalTextH = Number(overlayCaption.totalTextH || 0);
-    const internalPadding = Number(overlayCaption.internalPadding || 0);
+    // Compute placement using shared SSOT helper (same math as preview)
+    const placement = computeOverlayPlacement(normalized, W, H);
     
-    // Compute absolute geometry in render space
-    const absW = Math.round(Number(overlayCaption.wPct || 0.8) * W);
-    const cx = overlayCaption.xPct * W;
-    const cy = overlayCaption.yPct * H;
+    // Extract computed values
+    const { xExpr, y, fontPx: overlayFontPx, lineSpacingPx, totalTextH, boxW: absW } = placement;
     
-    // Position box: x is left edge, y is top edge
-    const x = Math.round(cx - absW/2);
-    
-    // Fallback calculation if totalTextH is missing/zero to prevent top-clamping
-    if (totalTextH <= 0) {
-      const overlayFontPx = Number(overlayCaption.sizePx || overlayCaption.fontPx || 38);
-      const overlayLineHeight = Number(overlayCaption.lineHeight || 1.15);
-      const numLines = textToRender.split('\n').length;
-      const fallbackTotalTextH = numLines * (overlayFontPx * overlayLineHeight);
-      totalTextH = fallbackTotalTextH;
-      console.log(`[render] Using fallback totalTextH: ${totalTextH} (${numLines} lines × ${overlayFontPx}px × ${overlayLineHeight})`);
-    }
-    
-    // CRITICAL: Use totalTextH (actual rendered text height) to center at yPct
-    const y = Math.round(cy - totalTextH/2);
-    
-    console.log(`[render] overlay positioning: yPct=${overlayCaption.yPct}, cy=${cy}, totalTextH=${totalTextH}, y=${y}`);
-    
-    // Horizontal alignment inside the box
-    let dx;
-    if (overlayCaption.align === 'center') {
-      dx = `(${x} + (${absW}-text_w)/2)`;
-    } else if (overlayCaption.align === 'right') {
-      dx = `(${x} + (${absW}-text_w))`;
-    } else {
-      dx = `${x}`;
-    }
+    // Log placement for verification (match preview logging format)
+    console.log(`[render] SSOT placement computed:`, {
+      xPct: normalized.xPct.toFixed(3),
+      yPct: normalized.yPct.toFixed(3),
+      wPct: normalized.wPct.toFixed(3),
+      hPct: normalized.hPct.toFixed(3),
+      fontPx: overlayFontPx,
+      totalTextH,
+      computedY: y,
+      lineSpacingPx
+    });
     
     // Use overlay font settings
-    const overlayFontPx = Number(overlayCaption.sizePx || overlayCaption.fontPx || 38);
-    const overlayColorRaw = overlayCaption.color || '#ffffff';
+    const overlayColorRaw = normalized.color || '#ffffff';
     const overlayColor = normalizeColorForFFmpeg(overlayColorRaw);
-    const overlayOpacity = overlayCaption.opacity ?? 1;
-    const explicitLineSpacing = Number.isFinite(overlayCaption.lineSpacingPx) ? Number(overlayCaption.lineSpacingPx) : null;
-    const overlayLineHeight = Number(overlayCaption.lineHeight || 1.15);
-    const lineSpacingPx = explicitLineSpacing ?? Math.round((overlayLineHeight - 1) * overlayFontPx * 0.3);
+    const overlayOpacity = normalized.opacity;
     
     // Resolve font file
-    const fontFile = resolveFontFile(overlayCaption.fontFamily, overlayCaption.weightCss);
+    const fontFile = resolveFontFile(normalized.fontFamily, normalized.weightCss);
+    
+    // Text to render (use original from normalized)
+    let textToRender = normalized.text;
     
     // CRITICAL: Word-wrap text if no line breaks present
     const hasLineBreaks = textToRender.includes('\n');
@@ -583,11 +564,11 @@ export async function renderVideoQuoteOverlay({
       console.log(`[render] word-wrapped text: ${lines.length} lines, original="${overlayCaption.text.substring(0, 50)}..."`);
     }
     
-    // Build drawtext filter with overlay settings
+    // Build drawtext filter with SSOT placement
     drawCaption = `drawtext=${[
       `fontfile='${fontFile}'`,
       `text='${escapeForDrawtext(textToRender)}'`,
-      `x=${dx}`,
+      `x=${xExpr}`, // Use computed expression from placement helper
       `y=${y}`,
       `fontsize=${overlayFontPx}`,
       `fontcolor=${overlayColor}@${overlayOpacity}`,
