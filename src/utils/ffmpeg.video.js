@@ -502,7 +502,7 @@ export async function renderVideoQuoteOverlay({
     console.log(`[render] USING OVERLAY MODE - precise positioning from overlayCaption`);
     
     // SSOT: Use server-computed totalTextH from preview (not hPct which is box height)
-    const totalTextH = Number(overlayCaption.totalTextH || 0);
+    let totalTextH = Number(overlayCaption.totalTextH || 0);
     const internalPadding = Number(overlayCaption.internalPadding || 0);
     
     // Compute absolute geometry in render space
@@ -512,6 +512,17 @@ export async function renderVideoQuoteOverlay({
     
     // Position box: x is left edge, y is top edge
     const x = Math.round(cx - absW/2);
+    
+    // Fallback calculation if totalTextH is missing/zero to prevent top-clamping
+    if (totalTextH <= 0) {
+      const overlayFontPx = Number(overlayCaption.sizePx || overlayCaption.fontPx || 38);
+      const overlayLineHeight = Number(overlayCaption.lineHeight || 1.15);
+      const numLines = textToRender.split('\n').length;
+      const fallbackTotalTextH = numLines * (overlayFontPx * overlayLineHeight);
+      totalTextH = fallbackTotalTextH;
+      console.log(`[render] Using fallback totalTextH: ${totalTextH} (${numLines} lines × ${overlayFontPx}px × ${overlayLineHeight})`);
+    }
+    
     // CRITICAL: Use totalTextH (actual rendered text height) to center at yPct
     const y = Math.round(cy - totalTextH/2);
     

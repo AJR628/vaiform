@@ -1602,6 +1602,17 @@
                 const result = await apiFetch('/caption/preview', { method: 'POST', body: payload });
                 console.log('[overlay-preview] Server response:', result);
                 
+                // Store overlay preview meta to window.__lastCaptionOverlay for SSOT render payload
+                if (result?.ok && result?.data) {
+                    window.__lastCaptionOverlay = {
+                        dataUrl: result.data.imageUrl,
+                        width: result.data.wPx || 1080,
+                        height: result.data.hPx || 1920,
+                        meta: result.data.meta || {}
+                    };
+                    console.log('[overlay-preview] Stored server meta:', window.__lastCaptionOverlay.meta);
+                }
+                
                 const previewMedia = document.getElementById('previewMedia');
                 if (previewMedia && (result?.previewUrl || result?.data?.imageUrl)) {
                     previewMedia.src = result.previewUrl || result.data.imageUrl;
@@ -3144,15 +3155,20 @@
                   const serverMeta = window.__lastCaptionOverlay?.meta || {};
                   
                   payload.captionMode = 'overlay';
+                  // Use server meta for SSOT positioning, client meta for visual styling
+                  const serverText = serverMeta.splitLines && serverMeta.splitLines.length > 0 
+                    ? serverMeta.splitLines.join('\n') 
+                    : String(meta.text || '');
+                  
                   payload.overlayCaption = {
-                    text: String(meta.text || ''),
+                    text: serverText,
                     xPct: Number(meta.xPct),
-                    yPct: Number(meta.yPct),
+                    yPct: Number(serverMeta.yPct ?? meta.yPct),
                     wPct: Number(meta.wPct),
                     // DON'T send hPct (box height) - use server totalTextH instead
                     fontFamily: meta.fontFamily || 'DejaVu Sans',
                     weightCss: String(meta.weightCss || '800'),
-                    fontPx: Number(meta.fontPx || 38),
+                    fontPx: Number(serverMeta.fontPx ?? meta.fontPx ?? 38),
                     color: meta.color || '#ffffff',
                     opacity: Number(meta.opacity ?? 1),
                     align: meta.textAlign || 'center',
