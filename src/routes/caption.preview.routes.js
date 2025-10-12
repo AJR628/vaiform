@@ -52,17 +52,26 @@ router.post("/caption/preview", express.json(), async (req, res) => {
         }
         if (line) lines.push(line);
         
+        // BEFORE calculations - log inputs
+        console.log('[caption-preview-input] meta.sizePx:', meta.sizePx, 'payload.sizePx:', payload.sizePx, 'lines.length:', lines.length);
+        
         // Calculate metrics
-        const lineHeight = meta.sizePx * 1.15;
+        const fontPx = Number(meta.sizePx);
+        const lineHeightMultiplier = 1.15;
+        const lineHeight = Math.round(fontPx * lineHeightMultiplier);
         const totalTextH = lines.length * lineHeight;
         
         // Per-line spacing (gap between baselines minus font height)
         // Consistency guard: single line has no spacing
-        const lineSpacingPx = lines.length === 1 ? 0 : Math.round(lineHeight - meta.sizePx);
+        const lineSpacingPx = lines.length === 1 ? 0 : Math.round(lineHeight - fontPx);
+        
+        console.log('[caption-preview-calc] fontPx:', fontPx, 'lineHeight:', lineHeight, 'totalTextH:', totalTextH, 'lineSpacingPx:', lineSpacingPx);
 
         // Compute block-center positioning with clamping
         const anchorY = Math.round(payload.yPct * H);
         let yPxFirstLine = Math.round(anchorY - (totalTextH / 2));
+        
+        console.log('[caption-preview-pos] anchorY:', anchorY, 'yPxFirstLine:', yPxFirstLine, 'textY (drawY_topOfFirstLine):', yPxFirstLine);
         
         // Apply safe margins (same as legacy path)
         const SAFE_TOP = Math.max(50, H * 0.05);
@@ -70,10 +79,13 @@ router.post("/caption/preview", express.json(), async (req, res) => {
         
         // Clamp to safe area
         if (yPxFirstLine < SAFE_TOP) {
+          console.log('[caption-preview-clamp] clamping yPxFirstLine from', yPxFirstLine, 'to SAFE_TOP:', SAFE_TOP);
           yPxFirstLine = SAFE_TOP;
         }
         if (yPxFirstLine + totalTextH > H - SAFE_BOTTOM) {
-          yPxFirstLine = H - SAFE_BOTTOM - totalTextH;
+          const newY = H - SAFE_BOTTOM - totalTextH;
+          console.log('[caption-preview-clamp] clamping yPxFirstLine from', yPxFirstLine, 'to bottom-safe:', newY);
+          yPxFirstLine = newY;
         }
 
         // Build SSOT meta with real computed values
@@ -84,13 +96,16 @@ router.post("/caption/preview", express.json(), async (req, res) => {
           placement: 'custom',
           internalPadding: 32, // Standard padding
           splitLines: lines,
-          fontPx: payload.sizePx,
+          fontPx: fontPx, // Use computed fontPx, not payload
           lineSpacingPx: lineSpacingPx, // per-line spacing
-          totalTextHPx: totalTextH, // block height
+          totalTextH: totalTextH, // Changed from totalTextHPx for consistency
+          totalTextHPx: totalTextH, // Keep both for compatibility
           yPxFirstLine: yPxFirstLine, // first-line baseline after centering + clamp
           wPx: 1080,
           hPx: 1920,
         };
+        
+        console.log('[caption-preview] SSOT meta:', JSON.stringify(ssotMeta));
 
         console.log(`[caption-preview] V2 overlay computed: lines=${lines.length}, totalTextH=${totalTextH}, lineSpacingPx=${lineSpacingPx}, yPxFirstLine=${yPxFirstLine}, anchorY=${anchorY}`);
         console.log(`[caption-preview] V2 SSOT: fontPx=${meta.sizePx}, lineHeight=${lineHeight.toFixed(1)}, totalTextH=${totalTextH}, lineSpacingPx=${lineSpacingPx}, yPxFirstLine=${yPxFirstLine}, anchorY=${anchorY}`);

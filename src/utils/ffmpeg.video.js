@@ -595,15 +595,26 @@ export async function renderVideoQuoteOverlay({
       }
     }
     
+    // Verify SSOT values before using them in drawtext
+    console.log('[ffmpeg] overlayCaption SSOT values:', {
+      fontPx: overlayFontPx,
+      lineSpacingPx: lineSpacingPx,
+      totalTextH: totalTextH,
+      y: y,
+      splitLines: splitLines?.length,
+      xExpr: xExpr,
+      supportsLineSpacing: supportsLineSpacing
+    });
+    
     // Build drawtext filter with SSOT placement
     drawCaption = `drawtext=${[
       `fontfile='${fontFile}'`,
       `text='${escapeForDrawtext(textToRender)}'`,
       `x=${xExpr}`, // Use computed expression from placement helper
-      `y=${y}`,
-      `fontsize=${overlayFontPx}`,
+      `y=${y}`, // Should be ~130 for yPct=0.1, not -3129
+      `fontsize=${overlayFontPx}`, // Should be 54
       `fontcolor=${overlayColor}@${overlayOpacity}`,
-      supportsLineSpacing && lineSpacingPx > 0 ? `line_spacing=${lineSpacingPx}` : null,
+      supportsLineSpacing && lineSpacingPx > 0 ? `line_spacing=${lineSpacingPx}` : null, // Should be ~8
       `borderw=2:bordercolor=black@0.85`,
       `shadowcolor=black:shadowx=2:shadowy=2`,
       `box=0`
