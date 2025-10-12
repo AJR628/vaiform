@@ -43,18 +43,18 @@ export function computeOverlayPlacement(overlay, W, H) {
   // Flexible schema detection - accepts either V2 or legacy format
   const num = v => (v == null ? undefined : (typeof v === 'string' ? Number(v) : v));
 
-  const totalTextH = num(overlay?.totalTextH ?? overlay?.totalTextHPx);
-  const yPxFirstLine = num(overlay?.yPxFirstLine);
+  const totalTextHVal = num(overlay?.totalTextH ?? overlay?.totalTextHPx);
+  const yPxFirstLineVal = num(overlay?.yPxFirstLine);
   const splitLines = overlay?.splitLines;
 
-  const hasFirst = Number.isFinite(yPxFirstLine);
-  const hasBlock = Number.isFinite(totalTextH) && Array.isArray(splitLines) && splitLines.length > 0;
+  const hasFirst = Number.isFinite(yPxFirstLineVal);
+  const hasBlock = Number.isFinite(totalTextHVal) && Array.isArray(splitLines) && splitLines.length > 0;
 
   console.log('[overlay] SSOT field detection:', {
     keys: Object.keys(overlay || {}),
-    totalTextH,
+    totalTextH: totalTextHVal,
     totalTextHPx: num(overlay?.totalTextHPx),
-    yPxFirstLine,
+    yPxFirstLine: yPxFirstLineVal,
     lineSpacingPx: num(overlay?.lineSpacingPx),
     splitLines: Array.isArray(splitLines) ? splitLines.length : 0,
     hasFirst,
@@ -74,8 +74,8 @@ export function computeOverlayPlacement(overlay, W, H) {
     
     // Use saved first-line baseline if provided, otherwise derive it
     const y = hasFirst 
-      ? Math.round(yPxFirstLine)
-      : Math.round(yPct * Hpx - totalTextH / 2);
+      ? Math.round(yPxFirstLineVal)
+      : Math.round(yPct * Hpx - totalTextHVal / 2);
     
     const fontPx = num(overlay?.fontPx);
     let lineSpacingPx = num(overlay?.lineSpacingPx) ?? 0;
@@ -111,7 +111,7 @@ export function computeOverlayPlacement(overlay, W, H) {
       internalPadding,
       fontPx,
       lineSpacingPx,
-      totalTextH,
+      totalTextH: totalTextHVal,
       splitLines: splitLines,
       yPx: y,
       y,
