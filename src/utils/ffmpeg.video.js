@@ -509,18 +509,22 @@ export async function renderVideoQuoteOverlay({
     const placement = computeOverlayPlacement(normalized, W, H);
     
     // Extract computed values
-    const { xExpr, y, fontPx: overlayFontPx, lineSpacingPx, totalTextH, boxW: absW } = placement;
+    const { 
+      xExpr, y, fontPx: overlayFontPx, lineSpacingPx, totalTextH, 
+      fromSavedPreview, splitLines, leftPx, windowW 
+    } = placement;
     
     // Log placement for verification (match preview logging format)
     console.log(`[render] SSOT placement computed:`, {
-      xPct: normalized.xPct.toFixed(3),
-      yPct: normalized.yPct.toFixed(3),
-      wPct: normalized.wPct.toFixed(3),
-      hPct: normalized.hPct.toFixed(3),
+      fromSavedPreview,
+      xPct: normalized.xPct?.toFixed(3),
+      yPct: normalized.yPct?.toFixed(3),
+      wPct: normalized.wPct?.toFixed(3),
       fontPx: overlayFontPx,
       totalTextH,
       computedY: y,
-      lineSpacingPx
+      lineSpacingPx,
+      lines: splitLines?.length || 'unknown'
     });
     
     // Use overlay font settings
@@ -531,37 +535,43 @@ export async function renderVideoQuoteOverlay({
     // Resolve font file
     const fontFile = resolveFontFile(normalized.fontFamily, normalized.weightCss);
     
-    // Text to render (use original from normalized)
-    let textToRender = normalized.text;
-    
-    // CRITICAL: Word-wrap text if no line breaks present
-    const hasLineBreaks = textToRender.includes('\n');
-    
-    if (!hasLineBreaks && textToRender.trim()) {
-      // Create temporary canvas for text measurement
-      const tempCanvas = createCanvas(W, H);
-      const tempCtx = tempCanvas.getContext("2d");
-      const fontString = `${overlayCaption.weightCss || '800'} ${overlayFontPx}px ${resolveFontFile(overlayCaption.fontFamily, overlayCaption.weightCss).split('/').pop().replace('.ttf', '')}`;
-      tempCtx.font = fontString;
+    // Text to render: use saved splitLines if available, otherwise fallback to word-wrap
+    let textToRender;
+    if (fromSavedPreview && splitLines && splitLines.length > 0) {
+      // Use exact text from saved preview (SSOT)
+      textToRender = splitLines.join('\n');
+      console.log(`[render] Using saved preview text: ${splitLines.length} lines`);
+    } else {
+      // Fallback: word-wrap text if no line breaks present
+      textToRender = normalized.text;
+      const hasLineBreaks = textToRender.includes('\n');
       
-      // Word-wrap using same logic as legacy caption path
-      const words = textToRender.split(/\s+/);
-      const lines = [];
-      let line = "";
-      
-      for (const word of words) {
-        const test = line ? line + " " + word : word;
-        if (tempCtx.measureText(test).width > absW && line) {
-          lines.push(line);
-          line = word;
-        } else {
-          line = test;
+      if (!hasLineBreaks && textToRender.trim()) {
+        // Create temporary canvas for text measurement
+        const tempCanvas = createCanvas(W, H);
+        const tempCtx = tempCanvas.getContext("2d");
+        const fontString = `${overlayCaption.weightCss || '800'} ${overlayFontPx}px ${resolveFontFile(overlayCaption.fontFamily, overlayCaption.weightCss).split('/').pop().replace('.ttf', '')}`;
+        tempCtx.font = fontString;
+        
+        // Word-wrap using same logic as legacy caption path
+        const words = textToRender.split(/\s+/);
+        const lines = [];
+        let line = "";
+        
+        for (const word of words) {
+          const test = line ? line + " " + word : word;
+          if (tempCtx.measureText(test).width > windowW && line) {
+            lines.push(line);
+            line = word;
+          } else {
+            line = test;
+          }
         }
+        if (line) lines.push(line);
+        
+        textToRender = lines.join('\n');
+        console.log(`[render] word-wrapped text: ${lines.length} lines, original="${overlayCaption.text.substring(0, 50)}..."`);
       }
-      if (line) lines.push(line);
-      
-      textToRender = lines.join('\n');
-      console.log(`[render] word-wrapped text: ${lines.length} lines, original="${overlayCaption.text.substring(0, 50)}..."`);
     }
     
     // Build drawtext filter with SSOT placement
@@ -578,7 +588,21 @@ export async function renderVideoQuoteOverlay({
       `box=0`
     ].filter(Boolean).join(':')}`;
     
-    try { console.log(JSON.stringify({ tag:'render:payload', mode:'overlayCaption', fontPx: overlayFontPx, lineSpacingPx, totalTextH, y, supportsLineSpacing, hasLineBreaks: hasLineBreaks, textLength: textToRender.length })); } catch {}
+    // Enhanced diagnostic logging
+    try { 
+      console.log(JSON.stringify({ 
+        tag:'render:payload', 
+        mode:'overlayCaption', 
+        fromSavedPreview,
+        fontPx: overlayFontPx, 
+        lineSpacingPx, 
+        totalTextH, 
+        y, 
+        supportsLineSpacing, 
+        textLength: textToRender.length,
+        lines: splitLines?.length || 'unknown'
+      })); 
+    } catch {}
   } else if (CAPTION_OVERLAY && captionImage) {
     console.log(`[render] USING OVERLAY - skipping drawtext. Caption PNG: ${captionImage.pngPath}`);
     drawCaption = '';

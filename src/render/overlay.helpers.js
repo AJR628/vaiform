@@ -40,6 +40,70 @@ export function computeOverlayPlacement(overlay, W, H) {
     throw new Error('Invalid overlay object');
   }
   
+  // Check if this is saved preview meta (SSOT) - use it verbatim
+  if (overlay.yPxFirstLine !== undefined && overlay.totalTextHPx !== undefined) {
+    console.log('[render] USING SAVED PREVIEW - SSOT mode, no recompute');
+    
+    const {
+      xPct, yPct, wPct, placement = 'custom', internalPadding = 32,
+      splitLines, fontPx, lineSpacingPx, totalTextHPx, yPxFirstLine
+    } = overlay;
+    
+    // Consistency guards and validation
+    if (!splitLines || !Array.isArray(splitLines) || splitLines.length === 0) {
+      throw new Error('Saved preview meta missing or invalid splitLines');
+    }
+    
+    if (typeof fontPx !== 'number' || fontPx <= 0) {
+      throw new Error('Saved preview meta missing or invalid fontPx');
+    }
+    
+    if (typeof lineSpacingPx !== 'number' || lineSpacingPx < 0) {
+      throw new Error('Saved preview meta missing or invalid lineSpacingPx');
+    }
+    
+    // Single-line consistency guard
+    if (splitLines.length === 1 && lineSpacingPx !== 0) {
+      console.warn('[render] Single-line text should have lineSpacingPx=0, correcting');
+      overlay.lineSpacingPx = 0;
+    }
+    
+    // Clamp validation
+    const stageH = H ?? 1920;
+    const expectedAnchorY = Math.round(yPct * stageH);
+    const expectedY = Math.round(expectedAnchorY - totalTextHPx / 2);
+    
+    if (Math.abs(yPxFirstLine - expectedY) > 10) {
+      console.warn(`[render] yPxFirstLine mismatch: saved=${yPxFirstLine}, expected=${expectedY}, diff=${Math.abs(yPxFirstLine - expectedY)}`);
+    }
+    
+    // Block bounds validation
+    if (yPxFirstLine + totalTextHPx > stageH) {
+      console.warn(`[render] Text block would overflow bottom: yPxFirstLine=${yPxFirstLine}, totalTextHPx=${totalTextHPx}, stageH=${stageH}`);
+    }
+    
+    const stageW = W ?? 1080;
+    
+    // Horizontal window from preview
+    const safeLeft = Math.round((1 - wPct) * stageW / 2);
+    const windowW = Math.round(wPct * stageW) - internalPadding * 2;
+    const leftPx = safeLeft + internalPadding;
+    
+    // Use saved first-line baseline directly
+    const yPx = Math.round(yPxFirstLine);
+    
+    return {
+      fromSavedPreview: true,
+      leftPx, windowW, xPct, yPct, wPct, placement, internalPadding,
+      fontPx, lineSpacingPx, totalTextH: totalTextHPx, splitLines, yPx,
+      xExpr: `${leftPx} + (${windowW} - text_w)/2`, // center in window
+      lines: splitLines.length,
+      safeTopMargin: Math.round(stageH * 0.05),
+      safeBottomMargin: Math.round(stageH * 0.08)
+    };
+  }
+  
+  // Legacy path: recompute from scratch
   const {
     text = '',
     xPct = 0.5,

@@ -55,23 +55,44 @@ router.post("/caption/preview", express.json(), async (req, res) => {
         // Calculate metrics
         const lineHeight = meta.sizePx * 1.15;
         const totalTextH = lines.length * lineHeight;
-        const lineSpacingPx = Math.round(lineHeight - meta.sizePx);
+        
+        // Per-line spacing (gap between baselines minus font height)
+        // Consistency guard: single line has no spacing
+        const lineSpacingPx = lines.length === 1 ? 0 : Math.round(lineHeight - meta.sizePx);
+
+        // Compute block-center positioning with clamping
+        const anchorY = Math.round(payload.yPct * H);
+        let yPxFirstLine = Math.round(anchorY - (totalTextH / 2));
+        
+        // Apply safe margins (same as legacy path)
+        const SAFE_TOP = Math.max(50, H * 0.05);
+        const SAFE_BOTTOM = Math.max(50, H * 0.08);
+        
+        // Clamp to safe area
+        if (yPxFirstLine < SAFE_TOP) {
+          yPxFirstLine = SAFE_TOP;
+        }
+        if (yPxFirstLine + totalTextH > H - SAFE_BOTTOM) {
+          yPxFirstLine = H - SAFE_BOTTOM - totalTextH;
+        }
 
         // Build SSOT meta with real computed values
         const ssotMeta = {
+          xPct: payload.xPct,
           yPct: payload.yPct,
-          fontPx: payload.sizePx,
-          lineSpacingPx: lineSpacingPx,
+          wPct: payload.wPct,
           placement: 'custom',
+          internalPadding: 32, // Standard padding
+          splitLines: lines,
+          fontPx: payload.sizePx,
+          lineSpacingPx: lineSpacingPx, // per-line spacing
+          totalTextHPx: totalTextH, // block height
+          yPxFirstLine: yPxFirstLine, // first-line baseline after centering + clamp
           wPx: 1080,
           hPx: 1920,
-          splitLines: lines,
-          baselines: undefined,
-          totalTextH: totalTextH,
-          internalPadding: 0,
         };
 
-        console.log(`[caption-preview] V2 overlay computed: lines=${lines.length}, totalTextH=${totalTextH}, lineSpacingPx=${lineSpacingPx}`);
+        console.log(`[caption-preview] V2 overlay computed: lines=${lines.length}, totalTextH=${totalTextH}, lineSpacingPx=${lineSpacingPx}, yPxFirstLine=${yPxFirstLine}, anchorY=${anchorY}`);
 
         return res.status(200).json({
           ok: true,
