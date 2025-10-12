@@ -599,10 +599,20 @@ export async function renderVideoQuoteOverlay({
         totalTextH, 
         y, 
         supportsLineSpacing, 
-        textLength: textToRender.length,
+        textLength: textToRender.length, 
         lines: splitLines?.length || 'unknown'
       })); 
     } catch {}
+    
+    // CRITICAL: Log exact values being used in FFmpeg
+    console.log('[ffmpeg] USING VALUES', {
+      fromSavedPreview,
+      fontPx: overlayFontPx,
+      y,
+      lineSpacingPx,
+      text: textToRender.substring(0, 50).replace(/\n/g, '\\n'),
+      splitLines: splitLines?.length || 'unknown'
+    });
   } else if (CAPTION_OVERLAY && captionImage) {
     console.log(`[render] USING OVERLAY - skipping drawtext. Caption PNG: ${captionImage.pngPath}`);
     drawCaption = '';

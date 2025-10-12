@@ -40,16 +40,38 @@ export function computeOverlayPlacement(overlay, W, H) {
     throw new Error('Invalid overlay object');
   }
   
-  // Check if this is saved preview meta (SSOT) - use it verbatim
-  if (overlay.yPxFirstLine !== undefined && overlay.totalTextHPx !== undefined) {
-    console.log('[render] USING SAVED PREVIEW - SSOT mode, no recompute');
+  // Flexible schema detection - accepts either V2 or legacy format
+  const num = v => (typeof v === 'string' ? Number(v) : v);
+
+  const hasFirst = Number.isFinite(num(overlay?.yPxFirstLine));
+  const hasBlock = Number.isFinite(num(overlay?.totalTextH ?? overlay?.totalTextHPx)) &&
+                   Array.isArray(overlay?.splitLines);
+
+  if (hasFirst || hasBlock) {
+    console.log('[overlay] incoming keys:', Object.keys(overlay || {}));
+    console.log('[overlay] USING SAVED PREVIEW - SSOT mode, no recompute');
+    console.log('[overlay] detection:', { hasFirst, hasBlock });
     
-    const {
-      xPct, yPct, wPct, placement = 'custom', internalPadding = 32,
-      splitLines, fontPx, lineSpacingPx, totalTextHPx, yPxFirstLine
-    } = overlay;
+    const Hpx = H ?? 1920;
+    const Wpx = W ?? 1080;
+    const yPct = num(overlay?.yPct) ?? 0.1;
+    const xPct = num(overlay?.xPct) ?? 0.022;
+    const wPct = num(overlay?.wPct) ?? 0.956;
+    const internalPadding = num(overlay?.internalPadding) ?? 32;
     
-    // Consistency guards and validation
+    // Accept both totalTextH and totalTextHPx
+    const totalTextH = num(overlay?.totalTextH ?? overlay?.totalTextHPx);
+    
+    // Use saved first-line baseline if provided, otherwise derive it
+    const y = hasFirst 
+      ? Math.round(num(overlay.yPxFirstLine))
+      : Math.round(yPct * Hpx - totalTextH / 2);
+    
+    const splitLines = overlay.splitLines;
+    const fontPx = num(overlay?.fontPx);
+    let lineSpacingPx = num(overlay?.lineSpacingPx) ?? 0;
+    
+    // Validate and guard
     if (!splitLines || !Array.isArray(splitLines) || splitLines.length === 0) {
       throw new Error('Saved preview meta missing or invalid splitLines');
     }
@@ -58,49 +80,40 @@ export function computeOverlayPlacement(overlay, W, H) {
       throw new Error('Saved preview meta missing or invalid fontPx');
     }
     
-    if (typeof lineSpacingPx !== 'number' || lineSpacingPx < 0) {
-      throw new Error('Saved preview meta missing or invalid lineSpacingPx');
-    }
-    
     // Single-line consistency guard
     if (splitLines.length === 1 && lineSpacingPx !== 0) {
       console.warn('[render] Single-line text should have lineSpacingPx=0, correcting');
-      overlay.lineSpacingPx = 0;
+      lineSpacingPx = 0;
     }
-    
-    // Clamp validation
-    const stageH = H ?? 1920;
-    const expectedAnchorY = Math.round(yPct * stageH);
-    const expectedY = Math.round(expectedAnchorY - totalTextHPx / 2);
-    
-    if (Math.abs(yPxFirstLine - expectedY) > 10) {
-      console.warn(`[render] yPxFirstLine mismatch: saved=${yPxFirstLine}, expected=${expectedY}, diff=${Math.abs(yPxFirstLine - expectedY)}`);
-    }
-    
-    // Block bounds validation
-    if (yPxFirstLine + totalTextHPx > stageH) {
-      console.warn(`[render] Text block would overflow bottom: yPxFirstLine=${yPxFirstLine}, totalTextHPx=${totalTextHPx}, stageH=${stageH}`);
-    }
-    
-    const stageW = W ?? 1080;
     
     // Horizontal window from preview
-    const safeLeft = Math.round((1 - wPct) * stageW / 2);
-    const windowW = Math.round(wPct * stageW) - internalPadding * 2;
+    const safeLeft = Math.round((1 - wPct) * Wpx / 2);
+    const windowW = Math.round(wPct * Wpx) - internalPadding * 2;
     const leftPx = safeLeft + internalPadding;
     
-    // Use saved first-line baseline directly
-    const yPx = Math.round(yPxFirstLine);
-    
-    return {
+    const out = {
       fromSavedPreview: true,
-      leftPx, windowW, xPct, yPct, wPct, placement, internalPadding,
-      fontPx, lineSpacingPx, totalTextH: totalTextHPx, splitLines, yPx,
-      xExpr: `${leftPx} + (${windowW} - text_w)/2`, // center in window
-      lines: splitLines.length,
-      safeTopMargin: Math.round(stageH * 0.05),
-      safeBottomMargin: Math.round(stageH * 0.08)
+      leftPx, 
+      windowW, 
+      xPct: String(xPct), 
+      yPct: String(yPct), 
+      wPct: String(wPct),
+      placement: overlay?.placement || 'custom',
+      internalPadding,
+      fontPx,
+      lineSpacingPx,
+      totalTextH,
+      splitLines: overlay.splitLines,
+      yPx: y,  // Use computed/saved baseline
+      y,       // FFmpeg uses this
+      xExpr: `${leftPx} + (${windowW} - text_w)/2`,
+      lines: overlay.splitLines.length,
+      safeTopMargin: Math.round(Hpx * 0.05),
+      safeBottomMargin: Math.round(Hpx * 0.08)
     };
+    
+    console.log('[overlay] USING SAVED PREVIEW META ->', out);
+    return out;
   }
   
   // Legacy path: recompute from scratch

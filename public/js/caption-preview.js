@@ -122,25 +122,24 @@ export async function generateCaptionPreview(opts) {
   // SSOT: store only the allowed meta keys as-is (now normalized by server)
   const meta = data.data?.meta || {};
   
-  // Normalize meta to SSOT format with all required fields
+  // SSOT: preserve server field names exactly (no renames)
   const normalizedMeta = {
     text: meta.text || opts.text,
     xPct: meta.xPct ?? 0.5,
     yPct: meta.yPct ?? 0.5,
     wPct: meta.wPct ?? 0.8,
-    hPct: meta.hPct ?? 0.3,
     fontPx: meta.fontPx || opts.fontPx || opts.sizePx || 48,
-    lineHeight: meta.lineHeight ?? 1.15,
-    lineSpacingPx: meta.lineSpacingPx ?? meta.lineSpacing ?? 0,
-    align: meta.align || 'center',
+    lineSpacingPx: meta.lineSpacingPx ?? 0,
     color: meta.color || opts.color || '#ffffff',
     opacity: meta.opacity ?? opts.opacity ?? 1.0,
     fontFamily: meta.fontFamily || opts.fontFamily || 'DejaVuSans',
     weightCss: meta.weightCss || opts.weightCss || 'normal',
-    // Computed placement data
-    totalTextH: meta.totalTextH,
-    splitLines: meta.splitLines,
-    baselines: meta.baselines
+    placement: meta.placement || 'custom',
+    internalPadding: meta.internalPadding ?? 32,
+    // SSOT fields - preserve server names exactly:
+    totalTextHPx: meta.totalTextHPx,        // ✅ correct name (not totalTextH)
+    yPxFirstLine: meta.yPxFirstLine,        // ✅ include this (was missing)
+    splitLines: meta.splitLines
   };
   
   lastCaptionPNG = { 

@@ -3290,26 +3290,24 @@
 
                 console.log('[savePreview] Preview saved successfully:', data.data.meta);
 
-                // SSOT: Save the returned meta to localStorage for render workflow
+                // SSOT: preserve server field names exactly (no renames)
                 const normalizedMeta = {
                     text: data.data.meta?.text || meta.text,
-                    xPct: data.data.meta?.xPct ?? meta.xPct,
-                    yPct: data.data.meta?.yPct ?? meta.yPct,
-                    wPct: data.data.meta?.wPct ?? meta.wPct,
-                    hPct: data.data.meta?.hPct ?? meta.hPct,
-                    fontPx: data.data.meta?.fontPx || meta.fontPx,
-                    lineHeight: data.data.meta?.lineHeight ?? 1.15,
+                    xPct: data.data.meta?.xPct ?? meta.xPct ?? 0.5,
+                    yPct: data.data.meta?.yPct ?? meta.yPct ?? 0.5,
+                    wPct: data.data.meta?.wPct ?? meta.wPct ?? 0.8,
+                    fontPx: data.data.meta?.fontPx || meta.fontPx || 48,
                     lineSpacingPx: data.data.meta?.lineSpacingPx ?? 0,
-                    align: data.data.meta?.align || meta.textAlign || 'center',
                     color: data.data.meta?.color || meta.color || '#ffffff',
-                    opacity: data.data.meta?.opacity ?? meta.opacity ?? 1.0,
-                    fontFamily: data.data.meta?.fontFamily || meta.fontFamily || 'DejaVuSans',
-                    weightCss: data.data.meta?.weightCss || meta.weightCss || 'normal',
-                    // Server-computed positioning data (SSOT)
-                    totalTextH: data.data.meta?.totalTextH,
-                    splitLines: data.data.meta?.splitLines,
-                    baselines: data.data.meta?.baselines,
-                    internalPadding: data.data.meta?.internalPadding
+                    opacity: data.data.meta?.opacity ?? 1.0,
+                    fontFamily: data.data.meta?.fontFamily || 'DejaVuSans',
+                    weightCss: data.data.meta?.weightCss || 'normal',
+                    placement: data.data.meta?.placement || 'custom',
+                    internalPadding: data.data.meta?.internalPadding ?? 32,
+                    // SSOT fields - preserve server names exactly:
+                    totalTextHPx: data.data.meta?.totalTextHPx,   // ✅ correct name (not totalTextH)
+                    yPxFirstLine: data.data.meta?.yPxFirstLine,   // ✅ include this (was missing)
+                    splitLines: data.data.meta?.splitLines
                 };
 
                 // Store normalized overlay meta for render (SSOT)
@@ -3589,6 +3587,23 @@
                 });
 
                 // --- END strictly-typed payload construction ---
+
+                // CRITICAL: Verify overlayCaption payload before sending
+                if (payload.overlayCaption) {
+                  console.log('[render-CRITICAL] overlayCaption keys being sent:', Object.keys(payload.overlayCaption));
+                  console.log('[render-CRITICAL] overlayCaption sample:', {
+                    yPxFirstLine: payload.overlayCaption?.yPxFirstLine,
+                    totalTextHPx: payload.overlayCaption?.totalTextHPx,
+                    totalTextH: payload.overlayCaption?.totalTextH,
+                    lineSpacingPx: payload.overlayCaption?.lineSpacingPx,
+                    splitLines: payload.overlayCaption?.splitLines?.length,
+                    fontPx: payload.overlayCaption?.fontPx,
+                    xPct: payload.overlayCaption?.xPct,
+                    yPct: payload.overlayCaption?.yPct,
+                    wPct: payload.overlayCaption?.wPct,
+                    internalPadding: payload.overlayCaption?.internalPadding
+                  });
+                }
 
                 console.log('[render] Final payload:', payload);
                 // SSOT validation: Log overlay caption meta to verify positioning data

@@ -275,6 +275,19 @@ export async function createShort(req, res) {
     // Note: caption is now a number (font size) in v1 schema, not an object
     
     try { console.log("[shorts] incoming caption:", { fontPx: caption, captionText: !!captionText, hasOverlay: !!(captionImage && typeof captionImage === 'string'), overlayMode: captionMode === 'overlay', hasOverlayCaption: !!overlayCaption }); } catch {}
+    
+    // CRITICAL: Log overlayCaption keys and detection
+    if (overlayCaption) {
+      console.log('[shorts] incoming overlayCaption keys:', Object.keys(overlayCaption));
+      console.log('[shorts] overlayCaption sample:', {
+        yPxFirstLine: overlayCaption?.yPxFirstLine,
+        totalTextHPx: overlayCaption?.totalTextHPx,
+        totalTextH: overlayCaption?.totalTextH,
+        lineSpacingPx: overlayCaption?.lineSpacingPx,
+        splitLines: overlayCaption?.splitLines?.length,
+        fontPx: overlayCaption?.fontPx
+      });
+    }
     const result = await createShortService({ ownerUid, mode, text, template, durationSec, voiceover, wantAttribution, background, debugAudioPath, captionMode, includeBottomCaption, watermark, captionStyle, caption, captionResolved, captionImage, voiceId, modelId, outputFormat, voiceSettings, overrideQuote, overlayCaption });
     
     // Increment daily short count for free users after successful creation
