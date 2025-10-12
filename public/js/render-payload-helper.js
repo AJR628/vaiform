@@ -31,6 +31,9 @@
 
 import { getSavedOverlayMeta, validateOverlayCaption } from './caption-preview.js';
 
+// Re-export for creative.html import chain
+export { getSavedOverlayMeta, validateOverlayCaption } from './caption-preview.js';
+
 /**
  * Validate overlay meta before rendering
  * @returns {Object} { valid: boolean, errors: string[], meta: Object|null }
