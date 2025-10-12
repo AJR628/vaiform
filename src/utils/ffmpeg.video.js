@@ -525,6 +525,16 @@ export async function renderVideoQuoteOverlay({
       fromSavedPreview, splitLines, leftPx, windowW 
     } = placement;
     
+    // Log SSOT values before drawtext
+    console.log('[ffmpeg] Pre-drawtext SSOT:', {
+      fontPx: overlayFontPx,
+      lineSpacingPx,
+      totalTextH,
+      y,
+      yPxFirstLine: normalized.yPxFirstLine,
+      lines: splitLines?.length
+    });
+    
     // Log placement for verification (match preview logging format)
     console.log(`[render] SSOT placement computed:`, {
       fromSavedPreview,

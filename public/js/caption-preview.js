@@ -73,7 +73,11 @@ export async function generateCaptionPreview(opts) {
     : (typeof window?.getCaptionPx === 'function' ? Number(window.getCaptionPx()) : undefined);
 
   const fontPx = Math.max(24, Math.min(200, Number(ensureFontPx || opts.sizePx || (typeof window?.__overlayMeta?.fontPx === 'number' ? window.__overlayMeta.fontPx : 48))));
-  const lineSpacingPx = Math.max(24, Math.min(200, Math.round(fontPx * Number(opts.lineHeight || 1.1))));
+  
+  // Line spacing calculation - lineHeight is a multiplier (e.g., 1.15), not pixels
+  const lineHeightMul = Number(opts.lineHeight || 1.15);     // multiplier (1.15)
+  const lineHeightPx = Math.round(fontPx * lineHeightMul);   // baseline-to-baseline (62px)
+  const lineSpacingPx = Math.max(0, Math.round(lineHeightPx - fontPx)); // gap (8px)
   
   // Use server-compatible payload structure
   const overlayV2 = detectOverlayV2();

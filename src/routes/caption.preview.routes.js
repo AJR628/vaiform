@@ -93,6 +93,7 @@ router.post("/caption/preview", express.json(), async (req, res) => {
         };
 
         console.log(`[caption-preview] V2 overlay computed: lines=${lines.length}, totalTextH=${totalTextH}, lineSpacingPx=${lineSpacingPx}, yPxFirstLine=${yPxFirstLine}, anchorY=${anchorY}`);
+        console.log(`[caption-preview] V2 SSOT: fontPx=${meta.sizePx}, lineHeight=${lineHeight.toFixed(1)}, totalTextH=${totalTextH}, lineSpacingPx=${lineSpacingPx}, yPxFirstLine=${yPxFirstLine}, anchorY=${anchorY}`);
 
         return res.status(200).json({
           ok: true,

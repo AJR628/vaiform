@@ -251,9 +251,9 @@ export function normalizeOverlayCaption(overlay) {
     hPct: clamp01(hPct),
     fontPx: Math.max(10, Math.min(200, Math.round(finalFontPx))),
     lineHeight: Math.max(0.9, Math.min(2.0, Number(lineHeight) || 1.15)),
-    // 🔑 CRITICAL: NO UPPER CLAMP - preserve preview's lineSpacingPx (e.g. 3479)
+    // Sanity clamp: lineSpacing should never exceed 3x typical font size
     lineSpacingPx: Number.isFinite(toNum(lineSpacingPx))
-      ? Math.max(0, Math.round(toNum(lineSpacingPx)))
+      ? Math.max(0, Math.min(Math.round(toNum(lineSpacingPx)), 300))
       : 0,
     align: ['left', 'center', 'right'].includes(align) ? align : 'center',
     color: String(color),
