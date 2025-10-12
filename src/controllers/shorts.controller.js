@@ -132,13 +132,16 @@ const CreateShortSchema = z
       lineHeight: z.coerce.number().optional(),
       showBox: z.boolean().optional(),
       responsiveText: z.boolean().optional(),
-      // Server-computed positioning meta (SSOT from preview)
-      totalTextH: z.coerce.number().optional(),
-      lineSpacingPx: z.coerce.number().optional(),
+      placement: z.enum(["custom","center","top","bottom"]).optional(),
       internalPadding: z.coerce.number().optional(),
+      lineSpacingPx: z.coerce.number().optional(),
       splitLines: z.array(z.string()).optional(),
-      baselines: z.array(z.number()).optional()
-    }).optional(),
+      baselines: z.array(z.number()).optional(),
+      // 🔑 SSOT from preview (critical positioning data)
+      totalTextH: z.coerce.number().optional(),
+      totalTextHPx: z.coerce.number().optional(),
+      yPxFirstLine: z.coerce.number().optional()
+    }).passthrough().optional(),
     // TTS settings for SSOT
     modelId: z.string().optional(),
     outputFormat: z.string().optional(),
