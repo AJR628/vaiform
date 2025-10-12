@@ -505,6 +505,17 @@ export async function renderVideoQuoteOverlay({
     // Normalize overlay caption to ensure all fields are present
     const normalized = normalizeOverlayCaption(overlayCaption);
     
+    console.log('[render] Normalized overlayCaption (post-normalize):', {
+      keys: Object.keys(normalized),
+      totalTextH: normalized.totalTextH,
+      totalTextHPx: normalized.totalTextHPx,
+      yPxFirstLine: normalized.yPxFirstLine,
+      splitLines: Array.isArray(normalized.splitLines) ? normalized.splitLines.length : 0,
+      internalPadding: normalized.internalPadding,
+      placement: normalized.placement,
+      lineSpacingPx: normalized.lineSpacingPx  // 🔑 Must show 3479, not 200
+    });
+    
     // Compute placement using shared SSOT helper (same math as preview)
     const placement = computeOverlayPlacement(normalized, W, H);
     

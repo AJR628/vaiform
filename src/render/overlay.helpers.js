@@ -239,7 +239,11 @@ export function normalizeOverlayCaption(overlay) {
   // Use sizePx if fontPx not provided
   const finalFontPx = fontPx || sizePx || 48;
   
-  return {
+  // Helper to safely coerce to number
+  const toNum = v => (v == null ? undefined : Number(v));
+  
+  // Base normalized fields (safe for legacy compute path)
+  const base = {
     text: String(text || '').trim(),
     xPct: clamp01(xPct),
     yPct: clamp01(yPct),
@@ -247,14 +251,35 @@ export function normalizeOverlayCaption(overlay) {
     hPct: clamp01(hPct),
     fontPx: Math.max(10, Math.min(200, Math.round(finalFontPx))),
     lineHeight: Math.max(0.9, Math.min(2.0, Number(lineHeight) || 1.15)),
-    lineSpacingPx: Math.max(0, Math.min(200, Math.round(lineSpacingPx || 0))),
+    // 🔑 CRITICAL: NO UPPER CLAMP - preserve preview's lineSpacingPx (e.g. 3479)
+    lineSpacingPx: Number.isFinite(toNum(lineSpacingPx))
+      ? Math.max(0, Math.round(toNum(lineSpacingPx)))
+      : 0,
     align: ['left', 'center', 'right'].includes(align) ? align : 'center',
     color: String(color),
     opacity: clamp01(opacity),
     fontFamily: String(fontFamily || 'DejaVuSans'),
     weightCss: String(weightCss || 'normal'),
-    showBox: Boolean(showBox)
+    showBox: Boolean(showBox),
+    placement: overlay?.placement,
+    internalPadding: overlay?.internalPadding
   };
+  
+  // Detect SSOT fields from preview
+  const hasFirst = overlay?.yPxFirstLine != null;
+  const hasBlock = (overlay?.totalTextH != null || overlay?.totalTextHPx != null)
+    && Array.isArray(overlay?.splitLines) && overlay.splitLines.length > 0;
+  
+  // If SSOT fields present, pass through verbatim (coerce to numbers)
+  return (hasFirst || hasBlock)
+    ? {
+        ...base,
+        totalTextH: toNum(overlay.totalTextH ?? overlay.totalTextHPx),
+        totalTextHPx: toNum(overlay.totalTextHPx ?? overlay.totalTextH),
+        yPxFirstLine: toNum(overlay.yPxFirstLine),
+        splitLines: Array.isArray(overlay.splitLines) ? overlay.splitLines : []
+      }
+    : base;
 }
 
 /**
