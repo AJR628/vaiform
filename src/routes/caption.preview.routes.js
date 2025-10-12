@@ -101,7 +101,7 @@ router.post("/caption/preview", express.json(), async (req, res) => {
             wPx: 1080,
             hPx: 1920,
             xPx: 0,
-            yPx: 0,
+            yPx: yPxFirstLine,  // ← FIX: actual first-line baseline
             meta: ssotMeta,
           }
         });
@@ -349,6 +349,7 @@ router.post("/caption/preview", express.json(), async (req, res) => {
           // Restrict to SSOT meta keys for legacy branch too
           yPct: yPctUsed,
           totalTextH: totalTextH,
+          totalTextHPx: totalTextH,  // ← ADD: duplicate for client compatibility
           lineSpacingPx: lh,
           fontPx: clampedFontPx,
           internalPadding,

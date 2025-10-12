@@ -41,16 +41,29 @@ export function computeOverlayPlacement(overlay, W, H) {
   }
   
   // Flexible schema detection - accepts either V2 or legacy format
-  const num = v => (typeof v === 'string' ? Number(v) : v);
+  const num = v => (v == null ? undefined : (typeof v === 'string' ? Number(v) : v));
 
-  const hasFirst = Number.isFinite(num(overlay?.yPxFirstLine));
-  const hasBlock = Number.isFinite(num(overlay?.totalTextH ?? overlay?.totalTextHPx)) &&
-                   Array.isArray(overlay?.splitLines);
+  const totalTextH = num(overlay?.totalTextH ?? overlay?.totalTextHPx);
+  const yPxFirstLine = num(overlay?.yPxFirstLine);
+  const splitLines = overlay?.splitLines;
+
+  const hasFirst = Number.isFinite(yPxFirstLine);
+  const hasBlock = Number.isFinite(totalTextH) && Array.isArray(splitLines) && splitLines.length > 0;
+
+  console.log('[overlay] SSOT field detection:', {
+    keys: Object.keys(overlay || {}),
+    totalTextH,
+    totalTextHPx: num(overlay?.totalTextHPx),
+    yPxFirstLine,
+    lineSpacingPx: num(overlay?.lineSpacingPx),
+    splitLines: Array.isArray(splitLines) ? splitLines.length : 0,
+    hasFirst,
+    hasBlock,
+    willUseSSOT: hasFirst || hasBlock
+  });
 
   if (hasFirst || hasBlock) {
-    console.log('[overlay] incoming keys:', Object.keys(overlay || {}));
     console.log('[overlay] USING SAVED PREVIEW - SSOT mode, no recompute');
-    console.log('[overlay] detection:', { hasFirst, hasBlock });
     
     const Hpx = H ?? 1920;
     const Wpx = W ?? 1080;
@@ -59,19 +72,15 @@ export function computeOverlayPlacement(overlay, W, H) {
     const wPct = num(overlay?.wPct) ?? 0.956;
     const internalPadding = num(overlay?.internalPadding) ?? 32;
     
-    // Accept both totalTextH and totalTextHPx
-    const totalTextH = num(overlay?.totalTextH ?? overlay?.totalTextHPx);
-    
     // Use saved first-line baseline if provided, otherwise derive it
     const y = hasFirst 
-      ? Math.round(num(overlay.yPxFirstLine))
+      ? Math.round(yPxFirstLine)
       : Math.round(yPct * Hpx - totalTextH / 2);
     
-    const splitLines = overlay.splitLines;
     const fontPx = num(overlay?.fontPx);
     let lineSpacingPx = num(overlay?.lineSpacingPx) ?? 0;
     
-    // Validate and guard
+    // Validate required fields
     if (!splitLines || !Array.isArray(splitLines) || splitLines.length === 0) {
       throw new Error('Saved preview meta missing or invalid splitLines');
     }
@@ -91,7 +100,7 @@ export function computeOverlayPlacement(overlay, W, H) {
     const windowW = Math.round(wPct * Wpx) - internalPadding * 2;
     const leftPx = safeLeft + internalPadding;
     
-    const out = {
+    const result = {
       fromSavedPreview: true,
       leftPx, 
       windowW, 
@@ -103,17 +112,16 @@ export function computeOverlayPlacement(overlay, W, H) {
       fontPx,
       lineSpacingPx,
       totalTextH,
-      splitLines: overlay.splitLines,
-      yPx: y,  // Use computed/saved baseline
-      y,       // FFmpeg uses this
+      splitLines: splitLines,
+      yPx: y,
+      y,
       xExpr: `${leftPx} + (${windowW} - text_w)/2`,
-      lines: overlay.splitLines.length,
-      safeTopMargin: Math.round(Hpx * 0.05),
-      safeBottomMargin: Math.round(Hpx * 0.08)
+      lines: splitLines.length,
+      computedY: y  // for logging
     };
     
-    console.log('[overlay] USING SAVED PREVIEW META ->', out);
-    return out;
+    console.log('[overlay] USING SAVED PREVIEW META ->', result);
+    return result;
   }
   
   // Legacy path: recompute from scratch

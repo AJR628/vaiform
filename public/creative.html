@@ -3290,24 +3290,49 @@
 
                 console.log('[savePreview] Preview saved successfully:', data.data.meta);
 
-                // SSOT: preserve server field names exactly (no renames)
+                // CRITICAL: Read from correct locations
+                const resp = data?.data || {};
+                const m = resp.meta || {};
+
+                // Accept both field names from server (coerce to numbers)
+                const totalTextH = Number(m.totalTextH ?? m.totalTextHPx);
+                const yPxFirstLine = Number(resp.yPx);  // ← FIX: top-level, NOT meta
+                const lineSpacingPx = Number(m.lineSpacingPx ?? 0);
+                const splitLines = Array.isArray(m.splitLines) ? m.splitLines : [];
+
+                // Verify we got real values before saving
+                console.log('[savePreview] SSOT fields extracted:', {
+                    totalTextH,
+                    yPxFirstLine,
+                    lineSpacingPx,
+                    splitLines: splitLines.length,
+                    source: {
+                        'data.yPx': resp.yPx,
+                        'meta.totalTextH': m.totalTextH,
+                        'meta.totalTextHPx': m.totalTextHPx,
+                        'meta.splitLines': m.splitLines?.length
+                    }
+                });
+
                 const normalizedMeta = {
-                    text: data.data.meta?.text || meta.text,
-                    xPct: data.data.meta?.xPct ?? meta.xPct ?? 0.5,
-                    yPct: data.data.meta?.yPct ?? meta.yPct ?? 0.5,
-                    wPct: data.data.meta?.wPct ?? meta.wPct ?? 0.8,
-                    fontPx: data.data.meta?.fontPx || meta.fontPx || 48,
-                    lineSpacingPx: data.data.meta?.lineSpacingPx ?? 0,
-                    color: data.data.meta?.color || meta.color || '#ffffff',
-                    opacity: data.data.meta?.opacity ?? 1.0,
-                    fontFamily: data.data.meta?.fontFamily || 'DejaVuSans',
-                    weightCss: data.data.meta?.weightCss || 'normal',
-                    placement: data.data.meta?.placement || 'custom',
-                    internalPadding: data.data.meta?.internalPadding ?? 32,
-                    // SSOT fields - preserve server names exactly:
-                    totalTextHPx: data.data.meta?.totalTextHPx,   // ✅ correct name (not totalTextH)
-                    yPxFirstLine: data.data.meta?.yPxFirstLine,   // ✅ include this (was missing)
-                    splitLines: data.data.meta?.splitLines
+                    text: m.text || meta.text,
+                    xPct: Number(m.xPct ?? meta.xPct ?? 0.5),
+                    yPct: Number(m.yPct ?? meta.yPct ?? 0.5),
+                    wPct: Number(m.wPct ?? meta.wPct ?? 0.8),
+                    fontPx: Number(m.fontPx || meta.fontPx || 48),
+                    lineSpacingPx: lineSpacingPx,
+                    color: m.color || meta.color || '#ffffff',
+                    opacity: Number(m.opacity ?? meta.opacity ?? 1.0),
+                    fontFamily: m.fontFamily || meta.fontFamily || 'DejaVuSans',
+                    weightCss: m.weightCss || meta.weightCss || 'normal',
+                    placement: m.placement || 'custom',
+                    internalPadding: Number(m.internalPadding ?? 32),
+                    
+                    // SSOT fields - store both names for compatibility
+                    totalTextH: totalTextH,
+                    totalTextHPx: totalTextH,
+                    yPxFirstLine: yPxFirstLine,
+                    splitLines: splitLines
                 };
 
                 // Store normalized overlay meta for render (SSOT)
@@ -3536,6 +3561,32 @@
                   }
                   
                   const savedMeta = validation.meta;
+                  
+                  // CRITICAL: Verify we're sending real numeric values, not undefined
+                  console.log('[render-CRITICAL] overlayCaption being sent:', {
+                    keys: Object.keys(savedMeta || {}),
+                    totalTextH: savedMeta?.totalTextH,
+                    totalTextHPx: savedMeta?.totalTextHPx,
+                    yPxFirstLine: savedMeta?.yPxFirstLine,
+                    lineSpacingPx: savedMeta?.lineSpacingPx,
+                    splitLines: Array.isArray(savedMeta?.splitLines) ? savedMeta.splitLines.length : 0
+                  });
+
+                  // Guard: fail fast if critical SSOT fields are missing/invalid
+                  if (!Number.isFinite(savedMeta?.totalTextH)) {
+                    alert('Preview data incomplete (totalTextH missing). Please generate and save preview again.');
+                    throw new Error('Missing SSOT field: totalTextH');
+                  }
+
+                  if (!Number.isFinite(savedMeta?.yPxFirstLine)) {
+                    alert('Preview data incomplete (yPxFirstLine missing). Please generate and save preview again.');
+                    throw new Error('Missing SSOT field: yPxFirstLine');
+                  }
+
+                  if (!Array.isArray(savedMeta?.splitLines) || savedMeta.splitLines.length === 0) {
+                    alert('Preview data incomplete (splitLines missing). Please generate and save preview again.');
+                    throw new Error('Missing SSOT field: splitLines');
+                  }
                   
                   payload.captionMode = 'overlay';
                   payload.overlayCaption = savedMeta; // Use saved meta directly (already normalized by server)

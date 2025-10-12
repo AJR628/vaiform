@@ -119,27 +119,32 @@ export async function generateCaptionPreview(opts) {
   const imageUrl = data.data?.imageUrl;
   if (!imageUrl) throw new Error("No image URL in response");
 
-  // SSOT: store only the allowed meta keys as-is (now normalized by server)
-  const meta = data.data?.meta || {};
-  
-  // SSOT: preserve server field names exactly (no renames)
+  // CRITICAL: Read from correct locations
+  const resp = data?.data || {};
+  const meta = resp.meta || {};
+
+  const totalTextH = Number(meta.totalTextH ?? meta.totalTextHPx);
+  const yPxFirstLine = Number(resp.yPx);  // ← top-level!
+
   const normalizedMeta = {
     text: meta.text || opts.text,
-    xPct: meta.xPct ?? 0.5,
-    yPct: meta.yPct ?? 0.5,
-    wPct: meta.wPct ?? 0.8,
-    fontPx: meta.fontPx || opts.fontPx || opts.sizePx || 48,
-    lineSpacingPx: meta.lineSpacingPx ?? 0,
+    xPct: Number(meta.xPct ?? 0.5),
+    yPct: Number(meta.yPct ?? 0.5),
+    wPct: Number(meta.wPct ?? 0.8),
+    fontPx: Number(meta.fontPx || opts.fontPx || opts.sizePx || 48),
+    lineSpacingPx: Number(meta.lineSpacingPx ?? 0),
     color: meta.color || opts.color || '#ffffff',
-    opacity: meta.opacity ?? opts.opacity ?? 1.0,
+    opacity: Number(meta.opacity ?? opts.opacity ?? 1.0),
     fontFamily: meta.fontFamily || opts.fontFamily || 'DejaVuSans',
     weightCss: meta.weightCss || opts.weightCss || 'normal',
     placement: meta.placement || 'custom',
-    internalPadding: meta.internalPadding ?? 32,
-    // SSOT fields - preserve server names exactly:
-    totalTextHPx: meta.totalTextHPx,        // ✅ correct name (not totalTextH)
-    yPxFirstLine: meta.yPxFirstLine,        // ✅ include this (was missing)
-    splitLines: meta.splitLines
+    internalPadding: Number(meta.internalPadding ?? 32),
+    
+    // SSOT fields - duplicate names for compatibility
+    totalTextH: totalTextH,
+    totalTextHPx: totalTextH,
+    yPxFirstLine: yPxFirstLine,
+    splitLines: Array.isArray(meta.splitLines) ? meta.splitLines : []
   };
   
   lastCaptionPNG = { 
