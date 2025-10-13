@@ -116,8 +116,23 @@ export function computeOverlayPlacement(overlay, W, H) {
       throw new Error('SSOT yPxFirstLine invalid - regenerate preview');
     }
     
+    // SSOT invariant check
+    const expectedTotalTextH = (splitLines.length * fontPx) + ((splitLines.length - 1) * lineSpacingPx);
+    if (Math.abs(totalTextH - expectedTotalTextH) > 0.5) {
+      console.error('[ssot/v2:render:INVARIANT] mismatch', {
+        totalTextH, expectedTotalTextH, splitLines: splitLines.length, fontPx, lineSpacingPx
+      });
+      throw new Error(`[ssot/v2:render:INVARIANT] totalTextH=${totalTextH} != expected=${expectedTotalTextH}`);
+    }
+
     console.log('[overlay-SSOT] Using server values verbatim:', {
       fontPx, lineSpacingPx, totalTextH, y, splitLines: splitLines.length
+    });
+
+    console.log('[ssot/v2:render:IN]', {
+      fontPx, lineSpacingPx, totalTextH, y: yPxFirstLineVal,
+      lines: splitLines.length, useSSOT: true,
+      formula: `${splitLines.length}*${fontPx} + ${splitLines.length-1}*${lineSpacingPx} = ${totalTextH}`
     });
     
     // Horizontal window from preview

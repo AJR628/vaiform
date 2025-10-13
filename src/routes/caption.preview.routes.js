@@ -88,7 +88,9 @@ router.post("/caption/preview", express.json(), async (req, res) => {
 
       try {
         const previewUrl = await renderPreviewImage({
-          text, xPct, yPct: yPctClamped, wPct, sizePx: fontPx,
+          text, 
+          splitLines: lines,  // ← ADD: pass pre-wrapped lines
+          xPct, yPct: yPctClamped, wPct, sizePx: fontPx,
           fontFamily, weightCss, color, opacity, textAlign: 'center'
         });
         
@@ -96,6 +98,12 @@ router.post("/caption/preview", express.json(), async (req, res) => {
         const lineHeight = Math.round(fontPx * lineHeightMultiplier);
         const lineSpacingPx = lines.length === 1 ? 0 : Math.round(lineHeight - fontPx);
         const totalTextH = lines.length * fontPx + (lines.length - 1) * lineSpacingPx;  // ✅ CORRECT
+        
+        // SSOT formula enforcement
+        const expectedTotalTextH = (lines.length * fontPx) + ((lines.length - 1) * lineSpacingPx);
+        if (Math.abs(totalTextH - expectedTotalTextH) > 0.5) {
+          throw new Error(`[ssot/v2:INVARIANT] totalTextH=${totalTextH} != expected=${expectedTotalTextH}`);
+        }
         
         // STEP 4: Guard against absurd metrics (before they can propagate)
         if (totalTextH > lines.length * fontPx * 3 || lineSpacingPx > fontPx * 2) {
@@ -134,6 +142,19 @@ router.post("/caption/preview", express.json(), async (req, res) => {
           const newY = H - SAFE_BOTTOM_PX - totalTextH;
           console.log('[caption-preview-clamp] yPxFirstLine', yPxFirstLine, '→', newY);
           yPxFirstLine = newY;
+        }
+
+        // Checkpoint log before response
+        console.log('[ssot/v2:preview:FINAL]', {
+          fontPx, lineSpacingPx, totalTextH, yPxFirstLine,
+          lines: lines.length, yPct: yPctClamped, H: 1920,
+          formula: `${lines.length}*${fontPx} + ${lines.length-1}*${lineSpacingPx} = ${totalTextH}`
+        });
+
+        // Finite number validation
+        if (!Number.isFinite(fontPx) || !Number.isFinite(lineSpacingPx) || 
+            !Number.isFinite(totalTextH) || !Number.isFinite(yPxFirstLine)) {
+          throw new Error('[ssot/v2:preview:INVALID_NUM]');
         }
 
         // STEP 6: Build SSOT meta WITHOUT spreading (explicit fields only)
@@ -504,36 +525,39 @@ async function renderPreviewImage(meta) {
   ctx.textAlign = meta.textAlign || 'center';
   ctx.textBaseline = 'top';
   
-  // Text wrapping - preserve explicit \n
-  const segments = meta.text.split('\n');
-  const lines = [];
+  // Use pre-wrapped lines if provided (SSOT path)
+  const lines = meta.splitLines || (() => {
+    // Fallback: wrap text (legacy path)
+    const segments = meta.text.split('\n');
+    const wrappedLines = [];
 
-  for (const segment of segments) {
-    const words = segment.trim().split(/\s+/);
-    let line = "";
-    
-    for (const word of words) {
-      const test = line ? line + " " + word : word;
-      if (ctx.measureText(test).width > maxWidth && line) {
-        lines.push(line);
-        line = word;
-      } else {
-        line = test;
+    for (const segment of segments) {
+      const words = segment.trim().split(/\s+/);
+      let line = "";
+      
+      for (const word of words) {
+        const test = line ? line + " " + word : word;
+        if (ctx.measureText(test).width > maxWidth && line) {
+          wrappedLines.push(line);
+          line = word;
+        } else {
+          line = test;
+        }
       }
+      if (line) wrappedLines.push(line);
     }
-    if (line) lines.push(line);
-  }
+    return wrappedLines;
+  })();
   
-  // Calculate text dimensions
+  // Calculate line height for drawing
   const lineHeight = meta.sizePx * 1.15;
-  const totalTextH = lines.length * lineHeight;
   
-  // Position text
-  let textY = y;
+  // Position text using provided yPct (already computed by caller)
+  let textY = Math.round(meta.yPct * 1920);  // Use provided anchor
   if (meta.textAlign === 'center') {
-    textY = y - (totalTextH / 2);
+    textY = textY - Math.round((lines.length * lineHeight) / 2);
   } else if (meta.textAlign === 'bottom') {
-    textY = y - totalTextH;
+    textY = textY - Math.round(lines.length * lineHeight);
   }
   
   // Draw text with shadow

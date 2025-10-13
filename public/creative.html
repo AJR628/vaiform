@@ -3644,6 +3644,17 @@
                   payload.captionMode = 'overlay';
                   payload.overlayCaption = savedMeta; // Use saved meta directly (already normalized by server)
                   
+                  // SSOT checkpoint before POST
+                  console.log('[ssot/v2:client:POST]', {
+                    ssotVersion: savedMeta.ssotVersion,
+                    fontPx: savedMeta.fontPx,
+                    lineSpacingPx: savedMeta.lineSpacingPx,
+                    totalTextH: savedMeta.totalTextH,
+                    yPxFirstLine: savedMeta.yPxFirstLine,
+                    splitLines: savedMeta.splitLines?.length,
+                    formula: `${savedMeta.splitLines?.length}*${savedMeta.fontPx} + ${(savedMeta.splitLines?.length-1)}*${savedMeta.lineSpacingPx} = ${savedMeta.totalTextH}`
+                  });
+                  
                   // SSOT v2 logging
                   console.log('[render] outgoing overlayCaption:', { 
                     ssotVersion: savedMeta.ssotVersion, 
