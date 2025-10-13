@@ -204,6 +204,8 @@ export async function createShortService({ ownerUid, mode, text, template, durat
           captionResolved,
           captionText: caption?.text,
           caption,
+          // SSOT v2 overlay caption support
+          overlayCaption: captionMode === 'overlay' ? overlayCaption : null,
           // Audio support (SSOT)
           ttsPath: audioOk ? audioPath : null,
         });
@@ -275,6 +277,8 @@ export async function createShortService({ ownerUid, mode, text, template, durat
             captionResolved,
             captionText: caption?.text,
             caption,
+            // SSOT v2 overlay caption support
+            overlayCaption: captionMode === 'overlay' ? overlayCaption : null,
             // Audio support (SSOT)
             ttsPath: audioOk ? audioPath : null,
           });
@@ -331,6 +335,8 @@ export async function createShortService({ ownerUid, mode, text, template, durat
             captionResolved,
             captionText: caption?.text,
             caption,
+            // SSOT v2 overlay caption support
+            overlayCaption: captionMode === 'overlay' ? overlayCaption : null,
             // Audio support (SSOT)
             ttsPath: audioOk ? audioPath : null,
           });
@@ -371,6 +377,8 @@ export async function createShortService({ ownerUid, mode, text, template, durat
             captionResolved,
             captionText: caption?.text,
             caption,
+            // SSOT v2 overlay caption support
+            overlayCaption: captionMode === 'overlay' ? overlayCaption : null,
             // Audio support (SSOT)
             ttsPath: audioOk ? audioPath : null,
           });
@@ -395,6 +403,8 @@ export async function createShortService({ ownerUid, mode, text, template, durat
               captionResolved,
               captionText: caption?.text,
               caption,
+              // SSOT v2 overlay caption support
+              overlayCaption: captionMode === 'overlay' ? overlayCaption : null,
               // Audio support (SSOT)
               ttsPath: audioOk ? audioPath : null,
             });

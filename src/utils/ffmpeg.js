@@ -316,6 +316,8 @@ export async function renderImageQuoteVideo({
   captionResolved,
   captionText,
   caption,
+  // SSOT v2 overlay caption support
+  overlayCaption,
   // Audio support (SSOT)
   ttsPath,
 }) {
@@ -325,7 +327,46 @@ export async function renderImageQuoteVideo({
 
   console.log(`[renderImageQuoteVideo] Starting image video render: ${imagePath} -> ${outPath}`);
   
-  const safeText = escapeDrawtext(String(text).trim());
+  // SSOT v2: Extract overlay caption values if available
+  let effectiveFontSize = fontsize;
+  let effectiveLineSpacing = lineSpacing;
+  let effectiveFontColor = fontcolor;
+  let effectiveText = text;
+  let usingSSOT = false;
+  
+  if (overlayCaption && overlayCaption.ssotVersion === 2) {
+    console.log('[renderImageQuoteVideo] Using SSOT v2 overlayCaption');
+    console.log('[renderImageQuoteVideo] SSOT values:', {
+      fontPx: overlayCaption.fontPx,
+      lineSpacingPx: overlayCaption.lineSpacingPx,
+      totalTextH: overlayCaption.totalTextH,
+      yPxFirstLine: overlayCaption.yPxFirstLine,
+      xPct: overlayCaption.xPct,
+      yPct: overlayCaption.yPct,
+      color: overlayCaption.color,
+      opacity: overlayCaption.opacity,
+      fontFamily: overlayCaption.fontFamily,
+      weightCss: overlayCaption.weightCss,
+      splitLines: overlayCaption.splitLines?.length || 0
+    });
+    
+    // Use SSOT values instead of defaults
+    if (Number.isFinite(overlayCaption.fontPx)) {
+      effectiveFontSize = overlayCaption.fontPx;
+    }
+    if (Number.isFinite(overlayCaption.lineSpacingPx)) {
+      effectiveLineSpacing = overlayCaption.lineSpacingPx;
+    }
+    if (overlayCaption.color) {
+      effectiveFontColor = overlayCaption.color;
+    }
+    if (overlayCaption.text) {
+      effectiveText = overlayCaption.text;
+    }
+    usingSSOT = true;
+  }
+  
+  const safeText = escapeDrawtext(String(effectiveText).trim());
   const fontPath = fontfile || resolveFont();
   const fontOpt = fontPath ? `:fontfile=${escapeFilterPath(fontPath)}` : "";
 
@@ -406,12 +447,30 @@ export async function renderImageQuoteVideo({
     }
   } else if (!usingCaptionPng) {
     // Use textfile= to avoid all escaping issues (only if not using caption PNG overlay)
-    const captionFile = writeCaptionFile(String(text).trim());
-    const mainLine = `drawtext=fontfile=${escapeFilterPath(fontPath || '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf')}:textfile=${escapeFilterPath(captionFile)}:reload=0:fontcolor=${fontcolor}:fontsize=${fontsize}:line_spacing=${lineSpacing}:shadowcolor=${shadowColor}:shadowx=${shadowX}:shadowy=${shadowY}:box=${box}:boxcolor=${boxcolor}:boxborderw=${boxborderw}:x=(w-text_w)/2:y=(h-text_h)/2`;
+    const captionFile = writeCaptionFile(String(effectiveText).trim());
+    
+    // SSOT v2: Use effective values for positioning and styling
+    let yPosition = "(h-text_h)/2"; // Default center
+    if (usingSSOT && overlayCaption) {
+      if (Number.isFinite(overlayCaption.yPxFirstLine)) {
+        // Use exact yPxFirstLine from SSOT
+        yPosition = `${overlayCaption.yPxFirstLine}`;
+        console.log('[renderImageQuoteVideo] Using SSOT yPxFirstLine:', yPosition);
+      } else if (Number.isFinite(overlayCaption.yPct) && Number.isFinite(overlayCaption.totalTextH)) {
+        // Calculate from yPct and totalTextH
+        const yPct = overlayCaption.yPct;
+        const totalTextH = overlayCaption.totalTextH;
+        const targetTop = (yPct * height) - (totalTextH / 2);
+        yPosition = Math.max(50, Math.min(targetTop, height - 200 - totalTextH)).toString();
+        console.log('[renderImageQuoteVideo] Calculated from SSOT yPct:', { yPct, totalTextH, targetTop, yPosition });
+      }
+    }
+    
+    const mainLine = `drawtext=fontfile=${escapeFilterPath(fontPath || '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf')}:textfile=${escapeFilterPath(captionFile)}:reload=0:fontcolor=${effectiveFontColor}:fontsize=${effectiveFontSize}:line_spacing=${effectiveLineSpacing}:shadowcolor=${shadowColor}:shadowx=${shadowX}:shadowy=${shadowY}:box=${box}:boxcolor=${boxcolor}:boxborderw=${boxborderw}:x=(w-text_w)/2:y=${yPosition}`;
     layers.push(mainLine);
     if (authorLine && String(authorLine).trim()) {
       const safeAuthor = escapeDrawtext(String(authorLine).trim());
-      const author = `drawtext=text='${safeAuthor}'${fontOpt}:fontcolor=${fontcolor}:fontsize=${authorFontsize}:shadowcolor=${shadowColor}:shadowx=${shadowX}:shadowy=${shadowY}:box=0:x=(w-text_w)/2:y=(h/2)+220`;
+      const author = `drawtext=text='${safeAuthor}'${fontOpt}:fontcolor=${effectiveFontColor}:fontsize=${authorFontsize}:shadowcolor=${shadowColor}:shadowx=${shadowX}:shadowy=${shadowY}:box=0:x=(w-text_w)/2:y=(h/2)+220`;
       layers.push(author);
     }
   } else {
@@ -440,17 +499,35 @@ export async function renderImageQuoteVideo({
     const maxWidthPct = 0.8; // SSOT from caption preview API
     const capTargetW = Math.round(safeW * maxWidthPct);
     
-    // Use SSOT coordinates directly from caption preview API
+    // Use SSOT coordinates directly from overlayCaption (v2) or captionResolved (legacy)
     let overlayX = "(W-w)/2"; // Center horizontally
     let overlayY = "0"; // Default to top
     
-    if (captionResolved?.xPx !== undefined && captionResolved?.yPx !== undefined) {
-      // Use precise SSOT coordinates from caption preview API
+    // SSOT v2: Prefer overlayCaption over captionResolved
+    if (usingSSOT && overlayCaption) {
+      if (Number.isFinite(overlayCaption.yPxFirstLine)) {
+        // Use exact yPxFirstLine from SSOT v2
+        overlayY = overlayCaption.yPxFirstLine.toString();
+        console.log(`[caption.overlay] Using SSOT v2 yPxFirstLine: ${overlayY}`);
+      } else if (Number.isFinite(overlayCaption.yPct) && Number.isFinite(overlayCaption.totalTextH)) {
+        // Calculate from SSOT v2 yPct and totalTextH
+        const yPct = overlayCaption.yPct;
+        const totalTextH = overlayCaption.totalTextH;
+        const targetTop = (yPct * H) - (totalTextH / 2);
+        const safeTopMargin = 50;
+        const safeBottomMargin = H * 0.08;
+        const clampedY = Math.max(safeTopMargin, Math.min(targetTop, H - safeBottomMargin - totalTextH));
+        
+        overlayY = clampedY.toString();
+        console.log(`[caption.overlay] SSOT v2 yPct calculation: yPct=${yPct}, totalTextH=${totalTextH}, targetTop=${targetTop}, clampedY=${clampedY}`);
+      }
+    } else if (captionResolved?.xPx !== undefined && captionResolved?.yPx !== undefined) {
+      // Use precise SSOT coordinates from caption preview API (legacy)
       overlayX = captionResolved.xPx.toString();
       overlayY = captionResolved.yPx.toString();
-      console.log(`[caption.overlay] Using SSOT coordinates: xPx=${overlayX}, yPx=${overlayY}`);
+      console.log(`[caption.overlay] Using legacy SSOT coordinates: xPx=${overlayX}, yPx=${overlayY}`);
     } else if (captionResolved?.yPct !== undefined) {
-      // Fallback to yPct calculation using SSOT metadata
+      // Fallback to yPct calculation using SSOT metadata (legacy)
       const yPct = Number(captionResolved.yPct);
       const safeH = captionResolved.safeH || 1612;
       const totalTextH = captionResolved.totalTextH || 200; // SSOT estimate
@@ -462,7 +539,7 @@ export async function renderImageQuoteVideo({
       const clampedY = Math.max(safeTopMargin, Math.min(targetTop, H - safeBottomMargin - totalTextH));
       
       overlayY = clampedY.toString();
-      console.log(`[caption.overlay] yPct fallback: yPct=${yPct}, targetTop=${targetTop}, clampedY=${clampedY}`);
+      console.log(`[caption.overlay] legacy yPct fallback: yPct=${yPct}, targetTop=${targetTop}, clampedY=${clampedY}`);
     } else {
       // Default to bottom positioning
       overlayY = "H-h";
