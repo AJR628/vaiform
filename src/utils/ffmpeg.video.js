@@ -519,8 +519,8 @@ export async function renderVideoQuoteOverlay({
     // Compute placement using shared SSOT helper (same math as preview)
     const placement = computeOverlayPlacement(normalized, W, H);
     
-    // Extract computed values
-    const { 
+    // Extract computed values (let for reassignment in sanity checks)
+    let { 
       xExpr, y, fontPx: overlayFontPx, lineSpacingPx, totalTextH, 
       fromSavedPreview, splitLines, leftPx, windowW 
     } = placement;
