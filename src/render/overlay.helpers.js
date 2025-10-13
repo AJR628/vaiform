@@ -48,22 +48,21 @@ export function computeOverlayPlacement(overlay, W, H) {
   
   // Check all required V2 SSOT fields
   const requiredFields = ['xPct', 'yPct', 'wPct', 'fontPx', 'lineSpacingPx', 'totalTextH', 'yPxFirstLine'];
-  const v2Ready = hasV2 && requiredFields.every(k => {
-    if (k === 'splitLines') return Array.isArray(overlay.splitLines) && overlay.splitLines.length > 0;
+  const hasReq = requiredFields.every(k => {
     const val = num(overlay[k]);
     return Number.isFinite(val);
   });
   
   // Also check splitLines separately
   const splitLines = overlay?.splitLines;
-  const hasSplitLines = Array.isArray(splitLines) && splitLines.length > 0;
+  const hasSplit = Array.isArray(splitLines) && splitLines.length > 0;
   
   const totalTextHVal = num(overlay?.totalTextH ?? overlay?.totalTextHPx);
   const yPxFirstLineVal = num(overlay?.yPxFirstLine);
   
-  let useSSOT = v2Ready && hasSplitLines;
+  const willUseSSOT = !!(hasV2 && hasReq && hasSplit);
   
-  if (hasV2 && !useSSOT) {
+  if (hasV2 && !willUseSSOT) {
     console.warn(`[overlay] Ignoring saved preview with ssotVersion=2 but missing required fields. Has: ${Object.keys(overlay || {}).join(', ')}`);
   } else if (!hasV2 && (ssotVersion !== undefined)) {
     console.warn(`[overlay] Ignoring saved preview with old ssotVersion: ${ssotVersion}`);
@@ -72,18 +71,18 @@ export function computeOverlayPlacement(overlay, W, H) {
   console.log('[overlay] SSOT field detection:', {
     ssotVersion,
     hasV2,
-    v2Ready,
-    hasSplitLines,
+    hasReq,
+    hasSplit,
     keys: Object.keys(overlay || {}),
     totalTextH: totalTextHVal,
     totalTextHPx: num(overlay?.totalTextHPx),
     yPxFirstLine: yPxFirstLineVal,
     lineSpacingPx: num(overlay?.lineSpacingPx),
     splitLines: Array.isArray(splitLines) ? splitLines.length : 0,
-    willUseSSOT: useSSOT
+    willUseSSOT
   });
 
-  if (useSSOT) {
+  if (willUseSSOT) {
     console.log('[overlay] USING SAVED PREVIEW - SSOT mode, no recompute');
     
     const Hpx = H ?? 1920;
@@ -156,7 +155,7 @@ export function computeOverlayPlacement(overlay, W, H) {
       splitLines: splitLines,
       totalTextH: totalTextHVal,
       y: y,  // First line Y from preview
-      xExpr: `(W - text_w)/2`,  // Center using frame width, not ad-hoc constants
+      xExpr: '(W - text_w)/2',  // Center using frame width, not ad-hoc constants
       lines: splitLines.length,
       leftPx, 
       windowW, 

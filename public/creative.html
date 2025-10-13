@@ -3591,6 +3591,12 @@
                   payload.captionMode = 'overlay';
                   payload.overlayCaption = savedMeta; // Use saved meta directly (already normalized by server)
                   
+                  // SSOT v2 logging
+                  console.log('[render] outgoing overlayCaption:', { 
+                    ssotVersion: savedMeta.ssotVersion, 
+                    keys: Object.keys(savedMeta) 
+                  });
+                  
                   console.log('[render] Using saved preview meta:', {
                     xPct: savedMeta.xPct,
                     yPct: savedMeta.yPct,

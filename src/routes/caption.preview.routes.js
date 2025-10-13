@@ -66,8 +66,6 @@ router.post("/caption/preview", express.json(), async (req, res) => {
         const totalTextH = lines.length * lineHeight;
         const lineSpacingPx = lines.length === 1 ? 0 : Math.round(lineHeight - fontPx);
         
-        console.log('[caption-preview-calc] fontPx:', fontPx, 'lineHeight:', lineHeight, 'totalTextH:', totalTextH, 'lineSpacingPx:', lineSpacingPx);
-        
         // Sanity check before returning
         if (lineSpacingPx > 2 * fontPx || totalTextH > lines.length * fontPx * 3) {
           console.error('[caption-preview-ERROR] Computed insane values - aborting');
@@ -78,6 +76,7 @@ router.post("/caption/preview", express.json(), async (req, res) => {
         const anchorY = Math.round(payload.yPct * H);
         let yPxFirstLine = Math.round(anchorY - (totalTextH / 2));
         
+        console.log('[caption-preview-calc]', { fontPx, lineHeight, lineSpacingPx, totalTextH, yPxFirstLine, lines: lines.length });
         console.log('[caption-preview-pos] anchorY:', anchorY, 'yPxFirstLine:', yPxFirstLine, 'textY (drawY_topOfFirstLine):', yPxFirstLine);
         
         // Apply safe margins (same as legacy path)

@@ -542,7 +542,7 @@ export async function renderVideoQuoteOverlay({
     // ===== SANITY CHECKS - Only apply to fallback values, not SSOT =====
     if (useSSOT) {
       // Trust SSOT values completely when willUseSSOT is true
-      console.log('[ffmpeg] Using SSOT values verbatim (no sanity corrections)');
+      console.log('[ffmpeg] Using SSOT values verbatim');
     } else {
       // Apply sanity checks for fallback/legacy values
       if (!Number.isFinite(overlayFontPx) || overlayFontPx < 8 || overlayFontPx > 400) {

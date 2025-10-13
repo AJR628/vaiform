@@ -51,7 +51,7 @@ function detectOverlayV2() {
       if (stored) {
         const parsed = JSON.parse(stored);
         if (!parsed.ssotVersion || parsed.ssotVersion < 2) {
-          console.log('[caption-preview] Clearing old overlayMeta (no ssotVersion)');
+          console.log('[caption-preview] Clearing old overlayMeta (no/old ssotVersion)');
           localStorage.removeItem('overlayMeta');
           localStorage.removeItem('overlayMetaTimestamp');
         }
@@ -143,30 +143,39 @@ export async function generateCaptionPreview(opts) {
   const resp = data?.data || {};
   const meta = resp.meta || {};
 
-  const totalTextH = Number(meta.totalTextH ?? meta.totalTextHPx);
-  const yPxFirstLine = Number(resp.yPx);  // ← top-level!
+  // SSOT v2: Use server response verbatim when ssotVersion is present
+  let normalizedMeta;
+  if (meta.ssotVersion === 2) {
+    // Use server response directly - it's the single source of truth
+    normalizedMeta = { ...meta };
+    console.log('[caption-preview] Using server SSOT v2 response verbatim');
+  } else {
+    // Legacy fallback for non-v2 responses
+    const totalTextH = Number(meta.totalTextH ?? meta.totalTextHPx);
+    const yPxFirstLine = Number(resp.yPx);  // ← top-level!
 
-  const normalizedMeta = {
-    ssotVersion: 2,  // ← Version flag MUST be first
-    text: meta.text || opts.text,
-    xPct: Number(meta.xPct ?? 0.5),
-    yPct: Number(meta.yPct ?? 0.5),
-    wPct: Number(meta.wPct ?? 0.8),
-    fontPx: Number(meta.fontPx || opts.fontPx || opts.sizePx || 48),
-    lineSpacingPx: Number(meta.lineSpacingPx ?? 0),
-    color: meta.color || opts.color || '#ffffff',
-    opacity: Number(meta.opacity ?? opts.opacity ?? 1.0),
-    fontFamily: meta.fontFamily || opts.fontFamily || 'DejaVuSans',
-    weightCss: meta.weightCss || opts.weight || opts.weightCss || 'normal',
-    placement: meta.placement || 'custom',
-    internalPadding: Number(meta.internalPadding ?? 32),
-    
-    // SSOT fields - must match server response
-    splitLines: Array.isArray(meta.splitLines) ? meta.splitLines : [],
-    totalTextH: totalTextH,
-    totalTextHPx: totalTextH,
-    yPxFirstLine: yPxFirstLine
-  };
+    normalizedMeta = {
+      ssotVersion: 2,  // ← Version flag MUST be first
+      text: meta.text || opts.text,
+      xPct: Number(meta.xPct ?? 0.5),
+      yPct: Number(meta.yPct ?? 0.5),
+      wPct: Number(meta.wPct ?? 0.8),
+      fontPx: Number(meta.fontPx || opts.fontPx || opts.sizePx || 48),
+      lineSpacingPx: Number(meta.lineSpacingPx ?? 0),
+      color: meta.color || opts.color || '#ffffff',
+      opacity: Number(meta.opacity ?? opts.opacity ?? 1.0),
+      fontFamily: meta.fontFamily || opts.fontFamily || 'DejaVuSans',
+      weightCss: meta.weightCss || opts.weight || opts.weightCss || 'normal',
+      placement: meta.placement || 'custom',
+      internalPadding: Number(meta.internalPadding ?? 32),
+      
+      // SSOT fields - must match server response
+      splitLines: Array.isArray(meta.splitLines) ? meta.splitLines : [],
+      totalTextH: totalTextH,
+      totalTextHPx: totalTextH,
+      yPxFirstLine: yPxFirstLine
+    };
+  }
   
   lastCaptionPNG = { 
     dataUrl: imageUrl, 
