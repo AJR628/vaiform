@@ -44,6 +44,20 @@ function detectOverlayV2() {
     const urlOff = params.get('overlayV2') === '0';
     const lsOn = (localStorage.getItem('overlayV2') || '') === '1';
     const v2 = urlOff ? false : (urlOn || lsOn || true);
+    
+    // Clear old overlayMeta without ssotVersion to break stale-data loop
+    try {
+      const stored = localStorage.getItem('overlayMeta');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (!parsed.ssotVersion || parsed.ssotVersion < 2) {
+          console.log('[caption-preview] Clearing old overlayMeta (no ssotVersion)');
+          localStorage.removeItem('overlayMeta');
+          localStorage.removeItem('overlayMetaTimestamp');
+        }
+      }
+    } catch {}
+    
     if (typeof window !== 'undefined') window.__overlayV2 = !!v2;
     return !!v2;
   } catch { return false; }
@@ -75,7 +89,7 @@ export async function generateCaptionPreview(opts) {
   const fontPx = Math.max(24, Math.min(200, Number(ensureFontPx || opts.sizePx || (typeof window?.__overlayMeta?.fontPx === 'number' ? window.__overlayMeta.fontPx : 48))));
   
   // Line spacing calculation - lineHeight is a multiplier (e.g., 1.15), not pixels
-  const lineHeightMul = Number(opts.lineHeight || 1.15);     // multiplier (1.15)
+  const lineHeightMul = 1.15;  // FIXED multiplier, ignore opts.lineHeight
   const lineHeightPx = Math.round(fontPx * lineHeightMul);   // baseline-to-baseline (62px)
   const lineSpacingPx = Math.max(0, Math.round(lineHeightPx - fontPx)); // gap (8px)
   
@@ -89,8 +103,9 @@ export async function generateCaptionPreview(opts) {
         xPct: Number.isFinite(opts?.xPct) ? Number(opts.xPct) : 0.5,
         yPct: Number.isFinite(opts?.yPct) ? Number(opts.yPct) : 0.5,
         wPct: Number.isFinite(opts?.wPct) ? Number(opts.wPct) : 0.8,
-        sizePx: Math.max(24, Math.min(200, Number(opts.sizePx || (typeof window?.__overlayMeta?.fontPx === 'number' ? window.__overlayMeta.fontPx : fontPx)))) ,
-        lineSpacingPx: Number.isFinite(opts?.lineSpacingPx) ? Number(opts.lineSpacingPx) : lineSpacingPx,
+        sizePx: fontPx,  // ← Use computed fontPx, not opts
+        lineSpacingPx: lineSpacingPx,  // ← REMOVE conditional, always use fresh computed
+        ssotVersion: 2,  // ← ADD version flag
         fontFamily: opts.fontFamily || 'DejaVuSans',
         weightCss: opts.weight || 'normal',
         color: opts.color || '#FFFFFF',
@@ -107,6 +122,7 @@ export async function generateCaptionPreview(opts) {
           opacity: Number(opts.opacity ?? 0.85),
           placement: opts.placement || 'center',
           yPct: Number.isFinite(opts?.yPct) ? Number(opts.yPct) : 0.5,
+          ssotVersion: 2,  // ← ADD version flag here too
           _cacheBuster: Date.now()
         }
       };
@@ -132,6 +148,7 @@ export async function generateCaptionPreview(opts) {
 
   const normalizedMeta = {
     text: meta.text || opts.text,
+    ssotVersion: 2,  // ← ADD at top
     xPct: Number(meta.xPct ?? 0.5),
     yPct: Number(meta.yPct ?? 0.5),
     wPct: Number(meta.wPct ?? 0.8),

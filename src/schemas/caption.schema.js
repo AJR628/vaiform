@@ -15,5 +15,8 @@ export const CaptionMetaSchema = z.object({
   placement: z.literal('custom'),
   // overlayV2 flag passthrough (non-breaking; optional)
   v2: z.boolean().optional(),
-  lineSpacingPx: z.number().min(0).max(240).optional()
+  // Read-only display artifacts - server ignores these and recomputes from fontPx
+  lineSpacingPx: z.number().min(0).max(240).optional(),
+  totalTextH: z.number().min(0).optional(),
+  ssotVersion: z.number().optional()
 });

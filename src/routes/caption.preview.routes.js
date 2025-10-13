@@ -53,19 +53,26 @@ router.post("/caption/preview", express.json(), async (req, res) => {
         if (line) lines.push(line);
         
         // BEFORE calculations - log inputs
-        console.log('[caption-preview-input] meta.sizePx:', meta.sizePx, 'payload.sizePx:', payload.sizePx, 'lines.length:', lines.length);
+        console.log('[caption-preview-input] meta.sizePx:', meta.sizePx, 'incoming lineSpacingPx:', meta.lineSpacingPx, 'lines.length:', lines.length);
         
-        // Calculate metrics
+        // Calculate metrics - IGNORE incoming lineSpacingPx, totalTextH
         const fontPx = Number(meta.sizePx);
-        const lineHeightMultiplier = 1.15;
+        if (!Number.isFinite(fontPx) || fontPx < 24 || fontPx > 200) {
+          return res.status(400).json({ ok: false, reason: "INVALID_INPUT", detail: "sizePx must be 24-200" });
+        }
+        
+        const lineHeightMultiplier = 1.15;  // Fixed
         const lineHeight = Math.round(fontPx * lineHeightMultiplier);
         const totalTextH = lines.length * lineHeight;
-        
-        // Per-line spacing (gap between baselines minus font height)
-        // Consistency guard: single line has no spacing
         const lineSpacingPx = lines.length === 1 ? 0 : Math.round(lineHeight - fontPx);
         
         console.log('[caption-preview-calc] fontPx:', fontPx, 'lineHeight:', lineHeight, 'totalTextH:', totalTextH, 'lineSpacingPx:', lineSpacingPx);
+        
+        // Sanity check before returning
+        if (lineSpacingPx > 2 * fontPx || totalTextH > lines.length * fontPx * 3) {
+          console.error('[caption-preview-ERROR] Computed insane values - aborting');
+          return res.status(500).json({ ok: false, reason: "COMPUTATION_ERROR", detail: "lineSpacing or totalTextH out of range" });
+        }
 
         // Compute block-center positioning with clamping
         const anchorY = Math.round(payload.yPct * H);
@@ -90,16 +97,17 @@ router.post("/caption/preview", express.json(), async (req, res) => {
 
         // Build SSOT meta with real computed values
         const ssotMeta = {
+          ssotVersion: 2,  // ← ADD first
           xPct: payload.xPct,
           yPct: payload.yPct,
           wPct: payload.wPct,
           placement: 'custom',
           internalPadding: 32, // Standard padding
           splitLines: lines,
-          fontPx: fontPx, // Use computed fontPx, not payload
-          lineSpacingPx: lineSpacingPx, // per-line spacing
-          totalTextH: totalTextH, // Changed from totalTextHPx for consistency
-          totalTextHPx: totalTextH, // Keep both for compatibility
+          fontPx: fontPx,  // Use computed, not payload
+          lineSpacingPx: lineSpacingPx,  // Use computed, not payload
+          totalTextH: totalTextH,  // Use computed
+          totalTextHPx: totalTextH,  // Keep for back-compat but do not read it anywhere
           yPxFirstLine: yPxFirstLine, // first-line baseline after centering + clamp
           wPx: 1080,
           hPx: 1920,

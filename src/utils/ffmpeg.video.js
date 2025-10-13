@@ -535,6 +535,43 @@ export async function renderVideoQuoteOverlay({
       lines: splitLines?.length
     });
     
+    // ===== CRITICAL SANITY CHECK =====
+    let correctedLineSpacing = lineSpacingPx;
+    let correctedY = y;
+    let correctedTotalTextH = totalTextH;
+    
+    if (lineSpacingPx > 2 * overlayFontPx) {
+      console.warn(`[ffmpeg-sanity] Rejecting lineSpacingPx=${lineSpacingPx} for fontPx=${overlayFontPx}, recomputing`);
+      const lineHeightPx = Math.round(overlayFontPx * 1.15);
+      correctedLineSpacing = Math.max(0, lineHeightPx - overlayFontPx);
+      
+      // Recompute totalTextH too
+      const lines = splitLines?.length || 2;
+      correctedTotalTextH = lines * lineHeightPx;
+    }
+    
+    if (y < -H || y > 2*H) {
+      console.warn(`[ffmpeg-sanity] Rejecting y=${y} for H=${H}, recomputing from yPct`);
+      const yPct = normalized.yPct ?? 0.1;
+      const anchorY = Math.round(yPct * H);
+      correctedY = Math.round(anchorY - (correctedTotalTextH / 2));
+    }
+    
+    // Final clamp and reassign
+    correctedLineSpacing = Math.max(0, Math.min(300, correctedLineSpacing));
+    
+    console.log('[ffmpeg-sanity] Final values:', {
+      fontPx: overlayFontPx,
+      lineSpacingPx: correctedLineSpacing,
+      totalTextH: correctedTotalTextH,
+      y: correctedY
+    });
+    
+    // Use corrected values in subsequent code
+    lineSpacingPx = correctedLineSpacing;
+    y = correctedY;
+    totalTextH = correctedTotalTextH;
+    
     // Log placement for verification (match preview logging format)
     console.log(`[render] SSOT placement computed:`, {
       fromSavedPreview,

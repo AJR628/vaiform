@@ -50,6 +50,14 @@ export function computeOverlayPlacement(overlay, W, H) {
   const hasFirst = Number.isFinite(yPxFirstLineVal);
   const hasBlock = Number.isFinite(totalTextHVal) && Array.isArray(splitLines) && splitLines.length > 0;
 
+  // Version gate: reject old/missing ssotVersion
+  const ssotVersion = overlay?.ssotVersion;
+  let useSSOT = hasFirst || hasBlock;
+  if (useSSOT && ssotVersion !== 2) {
+    console.warn(`[overlay] Ignoring saved preview with old/missing ssotVersion: ${ssotVersion}`);
+    useSSOT = false; // Force recompute by falling through to legacy path
+  }
+
   console.log('[overlay] SSOT field detection:', {
     keys: Object.keys(overlay || {}),
     totalTextH: totalTextHVal,
@@ -59,10 +67,10 @@ export function computeOverlayPlacement(overlay, W, H) {
     splitLines: Array.isArray(splitLines) ? splitLines.length : 0,
     hasFirst,
     hasBlock,
-    willUseSSOT: hasFirst || hasBlock
+    willUseSSOT: useSSOT
   });
 
-  if (hasFirst || hasBlock) {
+  if (useSSOT) {
     console.log('[overlay] USING SAVED PREVIEW - SSOT mode, no recompute');
     
     const Hpx = H ?? 1920;
@@ -72,22 +80,50 @@ export function computeOverlayPlacement(overlay, W, H) {
     const wPct = num(overlay?.wPct) ?? 0.956;
     const internalPadding = num(overlay?.internalPadding) ?? 32;
     
-    // Use saved first-line baseline if provided, otherwise derive it
-    const y = hasFirst 
-      ? Math.round(yPxFirstLineVal)
-      : Math.round(yPct * Hpx - totalTextHVal / 2);
-    
-    const fontPx = num(overlay?.fontPx);
+    let fontPx = num(overlay?.fontPx);
     let lineSpacingPx = num(overlay?.lineSpacingPx) ?? 0;
+    let totalTextH = totalTextHVal;
+    let y = hasFirst 
+      ? Math.round(yPxFirstLineVal)
+      : Math.round(yPct * Hpx - totalTextH / 2);
     
     // Validate required fields
     if (!splitLines || !Array.isArray(splitLines) || splitLines.length === 0) {
       throw new Error('Saved preview meta missing or invalid splitLines');
     }
     
-    if (typeof fontPx !== 'number' || fontPx <= 0) {
-      throw new Error('Saved preview meta missing or invalid fontPx');
+    // ===== SANITY GUARDS =====
+    // Guard 1: fontPx range
+    if (!Number.isFinite(fontPx) || fontPx < 24 || fontPx > 200) {
+      console.warn(`[overlay-sanity] Invalid fontPx=${fontPx}, defaulting to 48`);
+      fontPx = 48;
     }
+    
+    // Guard 2: lineSpacingPx should be 0.1-0.3 of fontPx (for 1.15 line height)
+    if (lineSpacingPx > 2 * fontPx) {
+      console.warn(`[overlay-sanity] Rejecting lineSpacingPx=${lineSpacingPx} (>${2*fontPx}), recomputing`);
+      const lineHeightPx = Math.round(fontPx * 1.15);
+      lineSpacingPx = Math.max(0, lineHeightPx - fontPx);
+    }
+    
+    // Guard 3: totalTextH sanity (should be ~lines * fontPx * 1.15)
+    const lines = splitLines?.length || 2;
+    const expectedMaxTextH = lines * fontPx * 2;  // conservative upper bound
+    if (totalTextH > expectedMaxTextH) {
+      console.warn(`[overlay-sanity] Rejecting totalTextH=${totalTextH} (>${expectedMaxTextH}), recomputing`);
+      const lineHeightPx = Math.round(fontPx * 1.15);
+      totalTextH = lines * lineHeightPx;
+    }
+    
+    // Guard 4: y position must be within reasonable frame bounds
+    if (y < -Hpx || y > 2*Hpx) {
+      console.warn(`[overlay-sanity] Rejecting y=${y} (out of bounds), recomputing from yPct`);
+      const anchorY = Math.round(yPct * Hpx);
+      y = Math.round(anchorY - (totalTextH / 2));
+    }
+    
+    // Final clamp
+    lineSpacingPx = Math.max(0, Math.min(300, lineSpacingPx));
     
     // Single-line consistency guard
     if (splitLines.length === 1 && lineSpacingPx !== 0) {
