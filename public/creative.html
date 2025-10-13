@@ -3315,6 +3315,7 @@
                 });
 
                 const normalizedMeta = {
+                    ssotVersion: 2,  // ← ADD THIS FIRST
                     text: m.text || meta.text,
                     xPct: Number(m.xPct ?? meta.xPct ?? 0.5),
                     yPct: Number(m.yPct ?? meta.yPct ?? 0.5),
@@ -3561,6 +3562,27 @@
                   }
                   
                   const savedMeta = validation.meta;
+                  
+                  // Validate ssotVersion
+                  if (savedMeta?.ssotVersion !== 2) {
+                      console.error('[render-ERROR] Invalid or missing ssotVersion:', savedMeta?.ssotVersion);
+                      alert('Preview data is outdated or invalid. Please generate and save preview again.');
+                      renderBtn.disabled = false;
+                      renderBtn.textContent = originalText;
+                      return;
+                  }
+
+                  // Validate computed metrics are reasonable
+                  if (savedMeta.totalTextH > 2000 || savedMeta.lineSpacingPx > 500) {
+                      console.error('[render-ERROR] Preview metrics out of bounds:', {
+                          totalTextH: savedMeta.totalTextH,
+                          lineSpacingPx: savedMeta.lineSpacingPx
+                      });
+                      alert('Preview data has invalid metrics. Please clear cache and try again.');
+                      renderBtn.disabled = false;
+                      renderBtn.textContent = originalText;
+                      return;
+                  }
                   
                   // CRITICAL: Verify we're sending real numeric values, not undefined
                   console.log('[render-CRITICAL] overlayCaption being sent:', {

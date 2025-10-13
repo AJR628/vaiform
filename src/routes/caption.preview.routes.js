@@ -35,22 +35,28 @@ router.post("/caption/preview", express.json(), async (req, res) => {
         const font = `${meta.weightCss || '800'} ${meta.sizePx}px ${pickFont(meta.fontFamily)}`;
         ctx.font = font;
         
-        // Measure text wrapping using same width as preview
+        // Measure text wrapping - preserve explicit \n as line breaks
         const maxWidth = Math.round((meta.wPct ?? 0.80) * W);
-        const words = meta.text.split(/\s+/);
+        const segments = meta.text.split('\n');  // Split on explicit newlines first
         const lines = [];
-        let line = "";
-        
-        for (const word of words) {
-          const test = line ? line + " " + word : word;
-          if (ctx.measureText(test).width > maxWidth && line) {
-            lines.push(line);
-            line = word;
-          } else {
-            line = test;
+
+        for (const segment of segments) {
+          const words = segment.trim().split(/\s+/);
+          let line = "";
+          
+          for (const word of words) {
+            const test = line ? line + " " + word : word;
+            if (ctx.measureText(test).width > maxWidth && line) {
+              lines.push(line);
+              line = word;
+            } else {
+              line = test;
+            }
           }
+          if (line) lines.push(line);
         }
-        if (line) lines.push(line);
+
+        console.log('[caption-preview-wrap] Wrapped into lines:', lines.length, 'from segments:', segments.length);
         
         // BEFORE calculations - log inputs
         console.log('[caption-preview-input] meta.sizePx:', meta.sizePx, 'incoming lineSpacingPx:', meta.lineSpacingPx, 'lines.length:', lines.length);
@@ -66,10 +72,21 @@ router.post("/caption/preview", express.json(), async (req, res) => {
         const totalTextH = lines.length * lineHeight;
         const lineSpacingPx = lines.length === 1 ? 0 : Math.round(lineHeight - fontPx);
         
+        // Guard: totalTextH should be reasonable relative to fontPx and line count
+        if (totalTextH > lines.length * fontPx * 3) {
+          console.error('[caption-preview-ERROR] totalTextH too large:', {totalTextH, lines: lines.length, fontPx, lineHeight});
+          return res.status(500).json({ ok: false, reason: "COMPUTATION_ERROR", detail: `totalTextH=${totalTextH} exceeds bounds` });
+        }
+
+        if (lines.length > 50) {
+          console.error('[caption-preview-ERROR] Too many lines:', lines.length);
+          return res.status(400).json({ ok: false, reason: "TEXT_TOO_LONG", detail: `Text wrapped into ${lines.length} lines` });
+        }
+        
         // Sanity check before returning
-        if (lineSpacingPx > 2 * fontPx || totalTextH > lines.length * fontPx * 3) {
-          console.error('[caption-preview-ERROR] Computed insane values - aborting');
-          return res.status(500).json({ ok: false, reason: "COMPUTATION_ERROR", detail: "lineSpacing or totalTextH out of range" });
+        if (lineSpacingPx > 2 * fontPx) {
+          console.error('[caption-preview-ERROR] Computed insane lineSpacingPx - aborting');
+          return res.status(500).json({ ok: false, reason: "COMPUTATION_ERROR", detail: "lineSpacing out of range" });
         }
 
         // Compute block-center positioning with clamping
@@ -457,21 +474,25 @@ async function renderPreviewImage(meta) {
   ctx.textAlign = meta.textAlign || 'center';
   ctx.textBaseline = 'top';
   
-  // Text wrapping
-  const words = meta.text.split(/\s+/);
+  // Text wrapping - preserve explicit \n
+  const segments = meta.text.split('\n');
   const lines = [];
-  let line = "";
-  
-  for (const word of words) {
-    const test = line ? line + " " + word : word;
-    if (ctx.measureText(test).width > maxWidth && line) {
-      lines.push(line);
-      line = word;
-    } else {
-      line = test;
+
+  for (const segment of segments) {
+    const words = segment.trim().split(/\s+/);
+    let line = "";
+    
+    for (const word of words) {
+      const test = line ? line + " " + word : word;
+      if (ctx.measureText(test).width > maxWidth && line) {
+        lines.push(line);
+        line = word;
+      } else {
+        line = test;
+      }
     }
+    if (line) lines.push(line);
   }
-  if (line) lines.push(line);
   
   // Calculate text dimensions
   const lineHeight = meta.sizePx * 1.15;
