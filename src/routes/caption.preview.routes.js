@@ -11,142 +11,166 @@ router.post("/caption/preview", express.json(), async (req, res) => {
     const isOverlayFormat = req.body.placement === 'custom' && req.body.yPct !== undefined;
     
     if (isOverlayFormat) {
+      // STEP 0: Sanitize inputs - strip computed fields that should NEVER come from client
+      const COMPUTED_FIELDS = [
+        "lineSpacingPx", "totalTextH", "totalTextHPx", "yPxFirstLine", "lineHeight",
+        "hpct", "hPct", "hPx", "v2", "ssotVersion", "splitLines", "baselines"
+      ];
+      COMPUTED_FIELDS.forEach(k => {
+        if (req.body && k in req.body) {
+          console.log(`[caption-preview-sanitize] Removing computed field from request: ${k}=${req.body[k]}`);
+          delete req.body[k];
+        }
+      });
+      
       // Handle new draggable overlay format
       const parsed = CaptionMetaSchema.safeParse(req.body);
       if (!parsed.success) {
         return res.status(400).json({ ok: false, reason: "INVALID_INPUT", detail: parsed.error.flatten() });
       }
 
-      const meta = parsed.data;
+      // STEP 1: Extract ONLY safe input fields (no spreading)
+      const text = String(parsed.data.text || "").trim();
+      const xPct = Number(parsed.data.xPct ?? 0.5);
+      const yPct = Number(parsed.data.yPct ?? 0.5);
+      const wPct = Number(parsed.data.wPct ?? 0.8);
+      const fontPx = Number(parsed.data.sizePx || parsed.data.fontPx || 54);
+      const fontFamily = String(parsed.data.fontFamily || 'DejaVuSans');
+      const weightCss = String(parsed.data.weightCss || 'normal');
+      const color = String(parsed.data.color || 'rgb(255, 255, 255)');
+      const opacity = Number(parsed.data.opacity ?? 0.8);
+      const placement = 'custom';
+      const internalPadding = 32;
+      
       // SSOT clamp for yPct; keep 0..1
       const SAFE_TOP = 0.10, SAFE_BOTTOM = 0.90;
-      const yPct = Math.min(Math.max(meta.yPct, SAFE_TOP), SAFE_BOTTOM);
-      const payload = { ...meta, yPct };
+      const yPctClamped = Math.min(Math.max(yPct, SAFE_TOP), SAFE_BOTTOM);
+
+      // STEP 2: Wrap text preserving explicit \n (using canvas ctx for measurement)
+      if (!text || text.length === 0) {
+        return res.status(400).json({ ok: false, reason: "INVALID_INPUT", detail: "text required" });
+      }
+      
+      const W = 1080, H = 1920;
+      const canvas = createCanvas(W, H);
+      const ctx = canvas.getContext("2d");
+      
+      // Setup font for measurement
+      const font = `${weightCss} ${fontPx}px ${pickFont(fontFamily)}`;
+      ctx.font = font;
+      
+      const maxWidth = Math.round(wPct * W);
+      const segments = text.split('\n');  // Split on explicit newlines first
+      const lines = [];
+
+      for (const segment of segments) {
+        const words = segment.trim().split(/\s+/).filter(Boolean);
+        let line = "";
+        
+        for (const word of words) {
+          const test = line ? line + " " + word : word;
+          if (ctx.measureText(test).width > maxWidth && line) {
+            lines.push(line);
+            line = word;
+          } else {
+            line = test;
+          }
+        }
+        if (line) lines.push(line);
+      }
+
+      console.log('[caption-preview-wrap] Wrapped into lines:', lines.length, 'from segments:', segments.length);
+      
+      // STEP 3: Compute metrics from scratch - NEVER use incoming computed values
+      if (!Number.isFinite(fontPx) || fontPx < 24 || fontPx > 200) {
+        return res.status(400).json({ ok: false, reason: "INVALID_INPUT", detail: "fontPx must be 24-200" });
+      }
 
       try {
-        const previewUrl = await renderPreviewImage(payload);
-
-        // Compute real text dimensions for SSOT meta
-        const W = 1080, H = 1920;
-        const canvas = createCanvas(W, H);
-        const ctx = canvas.getContext("2d");
-        
-        // Setup font for measurement (match renderPreviewImage)
-        const font = `${meta.weightCss || '800'} ${meta.sizePx}px ${pickFont(meta.fontFamily)}`;
-        ctx.font = font;
-        
-        // Measure text wrapping - preserve explicit \n as line breaks
-        const maxWidth = Math.round((meta.wPct ?? 0.80) * W);
-        const segments = meta.text.split('\n');  // Split on explicit newlines first
-        const lines = [];
-
-        for (const segment of segments) {
-          const words = segment.trim().split(/\s+/);
-          let line = "";
-          
-          for (const word of words) {
-            const test = line ? line + " " + word : word;
-            if (ctx.measureText(test).width > maxWidth && line) {
-              lines.push(line);
-              line = word;
-            } else {
-              line = test;
-            }
-          }
-          if (line) lines.push(line);
-        }
-
-        console.log('[caption-preview-wrap] Wrapped into lines:', lines.length, 'from segments:', segments.length);
-        
-        // BEFORE calculations - log inputs
-        console.log('[caption-preview-input] meta.sizePx:', meta.sizePx, 'incoming lineSpacingPx:', meta.lineSpacingPx, 'lines.length:', lines.length);
-        
-        // Calculate metrics - IGNORE incoming lineSpacingPx, totalTextH
-        const fontPx = Number(meta.sizePx);
-        if (!Number.isFinite(fontPx) || fontPx < 24 || fontPx > 200) {
-          return res.status(400).json({ ok: false, reason: "INVALID_INPUT", detail: "sizePx must be 24-200" });
-        }
+        const previewUrl = await renderPreviewImage({
+          text, xPct, yPct: yPctClamped, wPct, sizePx: fontPx,
+          fontFamily, weightCss, color, opacity, textAlign: 'center'
+        });
         
         const lineHeightMultiplier = 1.15;  // Fixed
         const lineHeight = Math.round(fontPx * lineHeightMultiplier);
         const totalTextH = lines.length * lineHeight;
         const lineSpacingPx = lines.length === 1 ? 0 : Math.round(lineHeight - fontPx);
         
-        // Guard: totalTextH should be reasonable relative to fontPx and line count
-        if (totalTextH > lines.length * fontPx * 3) {
-          console.error('[caption-preview-ERROR] totalTextH too large:', {totalTextH, lines: lines.length, fontPx, lineHeight});
-          return res.status(500).json({ ok: false, reason: "COMPUTATION_ERROR", detail: `totalTextH=${totalTextH} exceeds bounds` });
+        // STEP 4: Guard against absurd metrics (before they can propagate)
+        if (totalTextH > lines.length * fontPx * 3 || lineSpacingPx > fontPx * 2) {
+          console.error('[caption-preview-ERROR] bad metrics', { 
+            lineHeight, lineSpacingPx, totalTextH, lines: lines.length, fontPx 
+          });
+          return res.status(500).json({ 
+            ok: false, 
+            reason: 'COMPUTATION_ERROR',
+            detail: `Metric out of bounds: totalTextH=${totalTextH}, lineSpacingPx=${lineSpacingPx}`
+          });
         }
 
         if (lines.length > 50) {
           console.error('[caption-preview-ERROR] Too many lines:', lines.length);
-          return res.status(400).json({ ok: false, reason: "TEXT_TOO_LONG", detail: `Text wrapped into ${lines.length} lines` });
-        }
-        
-        // Sanity check before returning
-        if (lineSpacingPx > 2 * fontPx) {
-          console.error('[caption-preview-ERROR] Computed insane lineSpacingPx - aborting');
-          return res.status(500).json({ ok: false, reason: "COMPUTATION_ERROR", detail: "lineSpacing out of range" });
+          return res.status(400).json({ 
+            ok: false, 
+            reason: "TEXT_TOO_LONG", 
+            detail: `Text wrapped into ${lines.length} lines` 
+          });
         }
 
-        // Compute block-center positioning with clamping
-        const anchorY = Math.round(payload.yPct * H);
+        // STEP 5: Compute positioning (no client values)
+        const anchorY = Math.round(yPctClamped * H);
         let yPxFirstLine = Math.round(anchorY - (totalTextH / 2));
         
-        console.log('[caption-preview-calc]', { fontPx, lineHeight, lineSpacingPx, totalTextH, yPxFirstLine, lines: lines.length });
-        console.log('[caption-preview-pos] anchorY:', anchorY, 'yPxFirstLine:', yPxFirstLine, 'textY (drawY_topOfFirstLine):', yPxFirstLine);
+        // Apply safe margins
+        const SAFE_TOP_PX = Math.max(50, H * 0.05);
+        const SAFE_BOTTOM_PX = Math.max(50, H * 0.08);
         
-        // Apply safe margins (same as legacy path)
-        const SAFE_TOP = Math.max(50, H * 0.05);
-        const SAFE_BOTTOM = Math.max(50, H * 0.08);
-        
-        // Clamp to safe area
-        if (yPxFirstLine < SAFE_TOP) {
-          console.log('[caption-preview-clamp] clamping yPxFirstLine from', yPxFirstLine, 'to SAFE_TOP:', SAFE_TOP);
-          yPxFirstLine = SAFE_TOP;
+        if (yPxFirstLine < SAFE_TOP_PX) {
+          console.log('[caption-preview-clamp] yPxFirstLine', yPxFirstLine, '→', SAFE_TOP_PX);
+          yPxFirstLine = SAFE_TOP_PX;
         }
-        if (yPxFirstLine + totalTextH > H - SAFE_BOTTOM) {
-          const newY = H - SAFE_BOTTOM - totalTextH;
-          console.log('[caption-preview-clamp] clamping yPxFirstLine from', yPxFirstLine, 'to bottom-safe:', newY);
+        if (yPxFirstLine + totalTextH > H - SAFE_BOTTOM_PX) {
+          const newY = H - SAFE_BOTTOM_PX - totalTextH;
+          console.log('[caption-preview-clamp] yPxFirstLine', yPxFirstLine, '→', newY);
           yPxFirstLine = newY;
         }
 
-        // Build SSOT meta with real computed values
+        // STEP 6: Build SSOT meta WITHOUT spreading (explicit fields only)
         const ssotMeta = {
-          ssotVersion: 2,  // ← Version flag MUST be first
-          text: meta.text,
-          xPct: payload.xPct,
-          yPct: payload.yPct,
-          wPct: payload.wPct,
-          placement: 'custom',
-          internalPadding: 32, // Standard padding
-          fontFamily: meta.fontFamily || 'DejaVuSans',
-          weightCss: meta.weightCss || 'normal',
-          color: meta.color || '#FFFFFF',
-          opacity: Number(meta.opacity ?? 0.8),
+          ssotVersion: 2,
+          text,
+          xPct,
+          yPct: yPctClamped,
+          wPct,
+          fontPx,
+          fontFamily,
+          weightCss,
+          color,
+          opacity,
+          placement,
+          internalPadding,
           splitLines: lines,
-          fontPx: fontPx,  // Use computed, not payload
-          lineSpacingPx: lineSpacingPx,  // Use computed, not payload
-          totalTextH: totalTextH,  // Use computed
-          totalTextHPx: totalTextH,  // Keep for back-compat but do not read it anywhere
-          yPxFirstLine: yPxFirstLine, // first-line baseline after centering + clamp
-          wPx: 1080,
-          hPx: 1920,
+          lineSpacingPx,
+          totalTextH,
+          totalTextHPx: totalTextH,  // duplicate for compatibility
+          yPxFirstLine,
+          wPx: W,
+          hPx: H,
         };
         
-        console.log('[caption-preview] SSOT meta:', JSON.stringify(ssotMeta));
-
-        console.log(`[caption-preview] V2 overlay computed: lines=${lines.length}, totalTextH=${totalTextH}, lineSpacingPx=${lineSpacingPx}, yPxFirstLine=${yPxFirstLine}, anchorY=${anchorY}`);
-        console.log(`[caption-preview] V2 SSOT: fontPx=${meta.sizePx}, lineHeight=${lineHeight.toFixed(1)}, totalTextH=${totalTextH}, lineSpacingPx=${lineSpacingPx}, yPxFirstLine=${yPxFirstLine}, anchorY=${anchorY}`);
+        console.log('[caption-preview-calc]', { 
+          fontPx, lineHeight, lineSpacingPx, totalTextH, yPxFirstLine, lines: lines.length 
+        });
 
         return res.status(200).json({
           ok: true,
           data: {
             imageUrl: previewUrl,
-            wPx: 1080,
-            hPx: 1920,
+            wPx: W,
+            hPx: H,
             xPx: 0,
-            yPx: yPxFirstLine,  // ← FIX: actual first-line baseline
+            yPx: yPxFirstLine,
             meta: ssotMeta,
           }
         });

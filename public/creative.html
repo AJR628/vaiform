@@ -3561,7 +3561,7 @@
                     return;
                   }
                   
-                  const savedMeta = validation.meta;
+                  let savedMeta = validation.meta;
                   
                   // Validate ssotVersion
                   if (savedMeta?.ssotVersion !== 2) {
@@ -3572,13 +3572,44 @@
                       return;
                   }
 
-                  // Validate computed metrics are reasonable
+                  // TEMPORARY SAFETY NET: Fix absurd metrics if present
+                  // (Remove this once server values are consistently sane)
+                  function fixMetaIfAbsurd(m) {
+                    if (!m?.ssotVersion) return m;
+                    const H = 1920;
+                    const lines = Array.isArray(m.splitLines) ? m.splitLines : String(m.text || "").split('\n');
+                    const lineHeight = Math.round(m.fontPx * 1.15);
+                    const expectedTotal = lines.length * lineHeight;
+                    const expectedSpacing = lines.length === 1 ? 0 : Math.max(0, Math.round(lineHeight - m.fontPx));
+                    const anchorY = Math.round((m.yPct ?? 0.1) * H);
+                    const yFirst = Math.round(anchorY - (expectedTotal / 2));
+                    const absurd = (m.totalTextH > expectedTotal * 3) || (m.lineSpacingPx > m.fontPx * 2);
+                    
+                    if (absurd) {
+                      console.warn('[render-safety-net] Fixing absurd metrics:', {
+                        old: { totalTextH: m.totalTextH, lineSpacingPx: m.lineSpacingPx, yPxFirstLine: m.yPxFirstLine },
+                        new: { totalTextH: expectedTotal, lineSpacingPx: expectedSpacing, yPxFirstLine: yFirst }
+                      });
+                    }
+                    
+                    return absurd ? { 
+                      ...m, 
+                      totalTextH: expectedTotal, 
+                      totalTextHPx: expectedTotal, 
+                      lineSpacingPx: expectedSpacing, 
+                      yPxFirstLine: yFirst 
+                    } : m;
+                  }
+                  
+                  savedMeta = fixMetaIfAbsurd(savedMeta);
+                  
+                  // Validate computed metrics are reasonable (after safety net)
                   if (savedMeta.totalTextH > 2000 || savedMeta.lineSpacingPx > 500) {
-                      console.error('[render-ERROR] Preview metrics out of bounds:', {
+                      console.error('[render-ERROR] Preview metrics STILL out of bounds after safety net:', {
                           totalTextH: savedMeta.totalTextH,
                           lineSpacingPx: savedMeta.lineSpacingPx
                       });
-                      alert('Preview data has invalid metrics. Please clear cache and try again.');
+                      alert('Preview data has invalid metrics. Please clear cache and regenerate preview.');
                       renderBtn.disabled = false;
                       renderBtn.textContent = originalText;
                       return;

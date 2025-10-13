@@ -143,12 +143,19 @@ export async function generateCaptionPreview(opts) {
   const resp = data?.data || {};
   const meta = resp.meta || {};
 
-  // SSOT v2: Use server response verbatim when ssotVersion is present
+  // SSOT v2: Use server response VERBATIM when ssotVersion=2 (no rebuilding!)
   let normalizedMeta;
   if (meta.ssotVersion === 2) {
-    // Use server response directly - it's the single source of truth
-    normalizedMeta = { ...meta };
-    console.log('[caption-preview] Using server SSOT v2 response verbatim');
+    // Server is SSOT - use its response verbatim, no modifications
+    normalizedMeta = meta;
+    console.log('[caption-preview] Using server SSOT v2 response verbatim (no client rebuild)');
+    console.log('[caption-preview] Server provided:', {
+      fontPx: meta.fontPx,
+      lineSpacingPx: meta.lineSpacingPx,
+      totalTextH: meta.totalTextH,
+      yPxFirstLine: meta.yPxFirstLine,
+      splitLines: Array.isArray(meta.splitLines) ? meta.splitLines.length : 0
+    });
   } else {
     // Legacy fallback for non-v2 responses
     const totalTextH = Number(meta.totalTextH ?? meta.totalTextHPx);

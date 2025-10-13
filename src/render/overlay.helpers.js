@@ -92,49 +92,33 @@ export function computeOverlayPlacement(overlay, W, H) {
     const wPct = num(overlay?.wPct) ?? 0.96;
     const internalPadding = num(overlay?.internalPadding) ?? 32;
     
-    let fontPx = num(overlay?.fontPx);
-    let lineSpacingPx = num(overlay?.lineSpacingPx) ?? 0;
-    let totalTextH = totalTextHVal;
-    let y = yPxFirstLineVal; // Use exact first-line Y from preview
+    const fontPx = num(overlay?.fontPx);
+    const lineSpacingPx = num(overlay?.lineSpacingPx) ?? 0;
+    const totalTextH = totalTextHVal;
+    const y = yPxFirstLineVal; // Use exact first-line Y from preview
     
-    // ===== SANITY GUARDS =====
-    // Guard 1: fontPx range
-    if (!Number.isFinite(fontPx) || fontPx < 24 || fontPx > 200) {
-      console.warn(`[overlay-sanity] Invalid fontPx=${fontPx}, defaulting to 48`);
-      fontPx = 48;
+    // SSOT v2: Trust server values verbatim (no recomputation)
+    // Only validate that values are finite numbers to prevent crashes
+    if (!Number.isFinite(fontPx)) {
+      console.error('[overlay-SSOT-ERROR] fontPx is not finite:', fontPx);
+      throw new Error('SSOT fontPx invalid - regenerate preview');
+    }
+    if (!Number.isFinite(lineSpacingPx)) {
+      console.error('[overlay-SSOT-ERROR] lineSpacingPx is not finite:', lineSpacingPx);
+      throw new Error('SSOT lineSpacingPx invalid - regenerate preview');
+    }
+    if (!Number.isFinite(totalTextH)) {
+      console.error('[overlay-SSOT-ERROR] totalTextH is not finite:', totalTextH);
+      throw new Error('SSOT totalTextH invalid - regenerate preview');
+    }
+    if (!Number.isFinite(y)) {
+      console.error('[overlay-SSOT-ERROR] yPxFirstLine is not finite:', y);
+      throw new Error('SSOT yPxFirstLine invalid - regenerate preview');
     }
     
-    // Guard 2: lineSpacingPx should be 0.1-0.3 of fontPx (for 1.15 line height)
-    if (lineSpacingPx > 2 * fontPx) {
-      console.warn(`[overlay-sanity] Rejecting lineSpacingPx=${lineSpacingPx} (>${2*fontPx}), recomputing`);
-      const lineHeightPx = Math.round(fontPx * 1.15);
-      lineSpacingPx = Math.max(0, lineHeightPx - fontPx);
-    }
-    
-    // Guard 3: totalTextH sanity (should be ~lines * fontPx * 1.15)
-    const lines = splitLines?.length || 2;
-    const expectedMaxTextH = lines * fontPx * 2;  // conservative upper bound
-    if (totalTextH > expectedMaxTextH) {
-      console.warn(`[overlay-sanity] Rejecting totalTextH=${totalTextH} (>${expectedMaxTextH}), recomputing`);
-      const lineHeightPx = Math.round(fontPx * 1.15);
-      totalTextH = lines * lineHeightPx;
-    }
-    
-    // Guard 4: y position must be within reasonable frame bounds
-    if (y < -Hpx || y > 2*Hpx) {
-      console.warn(`[overlay-sanity] Rejecting y=${y} (out of bounds), recomputing from yPct`);
-      const anchorY = Math.round(yPct * Hpx);
-      y = Math.round(anchorY - (totalTextH / 2));
-    }
-    
-    // Final clamp
-    lineSpacingPx = Math.max(0, Math.min(300, lineSpacingPx));
-    
-    // Single-line consistency guard
-    if (splitLines.length === 1 && lineSpacingPx !== 0) {
-      console.warn('[render] Single-line text should have lineSpacingPx=0, correcting');
-      lineSpacingPx = 0;
-    }
+    console.log('[overlay-SSOT] Using server values verbatim:', {
+      fontPx, lineSpacingPx, totalTextH, y, splitLines: splitLines.length
+    });
     
     // Horizontal window from preview
     const safeLeft = Math.round((1 - wPct) * Wpx / 2);
