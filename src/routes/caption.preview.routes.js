@@ -94,8 +94,8 @@ router.post("/caption/preview", express.json(), async (req, res) => {
         
         const lineHeightMultiplier = 1.15;  // Fixed
         const lineHeight = Math.round(fontPx * lineHeightMultiplier);
-        const totalTextH = lines.length * lineHeight;
         const lineSpacingPx = lines.length === 1 ? 0 : Math.round(lineHeight - fontPx);
+        const totalTextH = lines.length * fontPx + (lines.length - 1) * lineSpacingPx;  // ✅ CORRECT
         
         // STEP 4: Guard against absurd metrics (before they can propagate)
         if (totalTextH > lines.length * fontPx * 3 || lineSpacingPx > fontPx * 2) {
@@ -161,6 +161,12 @@ router.post("/caption/preview", express.json(), async (req, res) => {
         
         console.log('[caption-preview-calc]', { 
           fontPx, lineHeight, lineSpacingPx, totalTextH, yPxFirstLine, lines: lines.length 
+        });
+        
+        // SSOT validation logging
+        console.log('[SSOT-preview] Computed meta:', {
+          fontPx, lineHeight, lineSpacingPx, totalTextH,
+          formula: `${lines.length} * ${fontPx} + ${lines.length - 1} * ${lineSpacingPx} = ${totalTextH}`
         });
 
         return res.status(200).json({

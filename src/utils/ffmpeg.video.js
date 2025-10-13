@@ -95,9 +95,9 @@ function escapeForDrawtext(s = '') {
     .replace(/\[/g, '\\[')
     .replace(/\]/g, '\\]')
     .replace(/%/g, '\\%')
-    // quotes & newlines
-    .replace(/'/g, "\\'")
-    .replace(/\r?\n/g, '\\n');
+    // quotes
+    .replace(/'/g, "\\'");
+    // ❌ REMOVED: .replace(/\r?\n/g, '\\n');  // This causes double-escaping
 }
 
 // Normalize color to hex format for FFmpeg (avoids comma escaping in rgb())
@@ -180,7 +180,7 @@ function wrapCaption(raw, w, h, opts = {}) {
 
     if (lines.length <= maxLines) {
       return {
-        text: lines.join('\n'),
+        text: lines.join('\\n'),  // Pre-escaped for FFmpeg
         fontsize: fz,
         lineSpacing: Math.round(fz * lineSpacingFactor),
         // bottom-anchored, inside safe area, accounting for text height
@@ -267,7 +267,7 @@ function fitQuoteToBox({ text, boxWidthPx, baseFontSize = 72 }) {
       fz = Math.max(16, adj);
     }
   } catch {}
-  return { text: lines.join('\n'), fontsize: fz, lineSpacing };
+  return { text: lines.join('\\n'), fontsize: fz, lineSpacing };  // Pre-escaped for FFmpeg
 }
 
 function buildVideoChain({ width, height, videoVignette, drawLayers, captionImage, usingCaptionPng, captionPngPath }){
@@ -598,11 +598,11 @@ export async function renderVideoQuoteOverlay({
     let textToRender;
     if (useSSOT && splitLines && splitLines.length > 0) {
       // Use exact text from saved preview (SSOT) - don't rewrap!
-      textToRender = splitLines.join('\n');
+      textToRender = splitLines.join('\\n');  // Pre-escaped for FFmpeg
       console.log(`[render] Using SSOT splitLines: ${splitLines.length} lines`);
     } else if (Array.isArray(splitLines) && splitLines.length > 0) {
       // Have splitLines but not SSOT mode (legacy path with saved lines)
-      textToRender = splitLines.join('\n');
+      textToRender = splitLines.join('\\n');  // Pre-escaped for FFmpeg
       console.log(`[render] Using saved splitLines (legacy): ${splitLines.length} lines`);
     } else {
       // Fallback: word-wrap text
@@ -633,7 +633,7 @@ export async function renderVideoQuoteOverlay({
         }
         if (line) lines.push(line);
         
-        textToRender = lines.join('\n');
+        textToRender = lines.join('\\n');  // Pre-escaped for FFmpeg
         console.log(`[render] word-wrapped text: ${lines.length} lines`);
       }
     }
@@ -647,6 +647,16 @@ export async function renderVideoQuoteOverlay({
       splitLines: splitLines?.length,
       xExpr: xExpr,
       supportsLineSpacing: supportsLineSpacing
+    });
+    
+    // SSOT validation logging
+    console.log('[SSOT-render] Drawing with:', {
+      fontPx: overlayFontPx, 
+      lineSpacingPx, 
+      y,
+      text: textToRender.substring(0, 40),
+      hasLiteralBackslashN: textToRender.includes('\\n'),
+      hasActualNewline: textToRender.includes('\n')
     });
     
     // Build drawtext filter with SSOT placement
@@ -767,7 +777,7 @@ export async function renderVideoQuoteOverlay({
         if (next.length <= maxChars) cur = next; else { if (cur) lines.push(cur); cur = w2; }
       }
       if (cur) lines.push(cur);
-      capText = lines.join('\n');
+      capText = lines.join('\\n');  // Pre-escaped for FFmpeg
     }
 
     // This section is now handled by the pure painter approach above
