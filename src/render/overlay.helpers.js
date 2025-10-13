@@ -43,30 +43,43 @@ export function computeOverlayPlacement(overlay, W, H) {
   // Flexible schema detection - accepts either V2 or legacy format
   const num = v => (v == null ? undefined : (typeof v === 'string' ? Number(v) : v));
 
+  const ssotVersion = overlay?.ssotVersion;
+  const hasV2 = ssotVersion === 2;
+  
+  // Check all required V2 SSOT fields
+  const requiredFields = ['xPct', 'yPct', 'wPct', 'fontPx', 'lineSpacingPx', 'totalTextH', 'yPxFirstLine'];
+  const v2Ready = hasV2 && requiredFields.every(k => {
+    if (k === 'splitLines') return Array.isArray(overlay.splitLines) && overlay.splitLines.length > 0;
+    const val = num(overlay[k]);
+    return Number.isFinite(val);
+  });
+  
+  // Also check splitLines separately
+  const splitLines = overlay?.splitLines;
+  const hasSplitLines = Array.isArray(splitLines) && splitLines.length > 0;
+  
   const totalTextHVal = num(overlay?.totalTextH ?? overlay?.totalTextHPx);
   const yPxFirstLineVal = num(overlay?.yPxFirstLine);
-  const splitLines = overlay?.splitLines;
-
-  const hasFirst = Number.isFinite(yPxFirstLineVal);
-  const hasBlock = Number.isFinite(totalTextHVal) && Array.isArray(splitLines) && splitLines.length > 0;
-
-  // Version gate: reject old/missing ssotVersion
-  const ssotVersion = overlay?.ssotVersion;
-  let useSSOT = hasFirst || hasBlock;
-  if (useSSOT && ssotVersion !== 2) {
-    console.warn(`[overlay] Ignoring saved preview with old/missing ssotVersion: ${ssotVersion}`);
-    useSSOT = false; // Force recompute by falling through to legacy path
+  
+  let useSSOT = v2Ready && hasSplitLines;
+  
+  if (hasV2 && !useSSOT) {
+    console.warn(`[overlay] Ignoring saved preview with ssotVersion=2 but missing required fields. Has: ${Object.keys(overlay || {}).join(', ')}`);
+  } else if (!hasV2 && (ssotVersion !== undefined)) {
+    console.warn(`[overlay] Ignoring saved preview with old ssotVersion: ${ssotVersion}`);
   }
 
   console.log('[overlay] SSOT field detection:', {
+    ssotVersion,
+    hasV2,
+    v2Ready,
+    hasSplitLines,
     keys: Object.keys(overlay || {}),
     totalTextH: totalTextHVal,
     totalTextHPx: num(overlay?.totalTextHPx),
     yPxFirstLine: yPxFirstLineVal,
     lineSpacingPx: num(overlay?.lineSpacingPx),
     splitLines: Array.isArray(splitLines) ? splitLines.length : 0,
-    hasFirst,
-    hasBlock,
     willUseSSOT: useSSOT
   });
 
@@ -76,21 +89,14 @@ export function computeOverlayPlacement(overlay, W, H) {
     const Hpx = H ?? 1920;
     const Wpx = W ?? 1080;
     const yPct = num(overlay?.yPct) ?? 0.1;
-    const xPct = num(overlay?.xPct) ?? 0.022;
-    const wPct = num(overlay?.wPct) ?? 0.956;
+    const xPct = num(overlay?.xPct) ?? 0.5;
+    const wPct = num(overlay?.wPct) ?? 0.96;
     const internalPadding = num(overlay?.internalPadding) ?? 32;
     
     let fontPx = num(overlay?.fontPx);
     let lineSpacingPx = num(overlay?.lineSpacingPx) ?? 0;
     let totalTextH = totalTextHVal;
-    let y = hasFirst 
-      ? Math.round(yPxFirstLineVal)
-      : Math.round(yPct * Hpx - totalTextH / 2);
-    
-    // Validate required fields
-    if (!splitLines || !Array.isArray(splitLines) || splitLines.length === 0) {
-      throw new Error('Saved preview meta missing or invalid splitLines');
-    }
+    let y = yPxFirstLineVal; // Use exact first-line Y from preview
     
     // ===== SANITY GUARDS =====
     // Guard 1: fontPx range
@@ -137,22 +143,24 @@ export function computeOverlayPlacement(overlay, W, H) {
     const leftPx = safeLeft + internalPadding;
     
     const result = {
+      mode: 'ssot',
+      willUseSSOT: true,
       fromSavedPreview: true,
-      leftPx, 
-      windowW, 
-      xPct: String(xPct), 
-      yPct: String(yPct), 
-      wPct: String(wPct),
+      xPct,
+      yPct,
+      wPct,
       placement: overlay?.placement || 'custom',
       internalPadding,
       fontPx,
       lineSpacingPx,
-      totalTextH: totalTextHVal,
       splitLines: splitLines,
-      yPx: y,
-      y,
-      xExpr: `${leftPx} + (${windowW} - text_w)/2`,
+      totalTextH: totalTextHVal,
+      y: y,  // First line Y from preview
+      xExpr: `(W - text_w)/2`,  // Center using frame width, not ad-hoc constants
       lines: splitLines.length,
+      leftPx, 
+      windowW, 
+      yPx: y,
       computedY: y  // for logging
     };
     
@@ -302,14 +310,16 @@ export function normalizeOverlayCaption(overlay) {
   };
   
   // Detect SSOT fields from preview
+  const hasV2 = overlay?.ssotVersion === 2;
   const hasFirst = overlay?.yPxFirstLine != null;
   const hasBlock = (overlay?.totalTextH != null || overlay?.totalTextHPx != null)
     && Array.isArray(overlay?.splitLines) && overlay.splitLines.length > 0;
   
-  // If SSOT fields present, pass through verbatim (coerce to numbers)
-  return (hasFirst || hasBlock)
+  // If SSOT V2 fields present, pass through verbatim (coerce to numbers)
+  return (hasV2 || hasFirst || hasBlock)
     ? {
         ...base,
+        ssotVersion: overlay.ssotVersion,  // Pass through version
         totalTextH: toNum(overlay.totalTextH ?? overlay.totalTextHPx),
         totalTextHPx: toNum(overlay.totalTextHPx ?? overlay.totalTextH),
         yPxFirstLine: toNum(overlay.yPxFirstLine),

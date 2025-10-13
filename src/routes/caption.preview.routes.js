@@ -97,12 +97,17 @@ router.post("/caption/preview", express.json(), async (req, res) => {
 
         // Build SSOT meta with real computed values
         const ssotMeta = {
-          ssotVersion: 2,  // ← ADD first
+          ssotVersion: 2,  // ← Version flag MUST be first
+          text: meta.text,
           xPct: payload.xPct,
           yPct: payload.yPct,
           wPct: payload.wPct,
           placement: 'custom',
           internalPadding: 32, // Standard padding
+          fontFamily: meta.fontFamily || 'DejaVuSans',
+          weightCss: meta.weightCss || 'normal',
+          color: meta.color || '#FFFFFF',
+          opacity: Number(meta.opacity ?? 0.8),
           splitLines: lines,
           fontPx: fontPx,  // Use computed, not payload
           lineSpacingPx: lineSpacingPx,  // Use computed, not payload

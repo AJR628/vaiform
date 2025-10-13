@@ -506,6 +506,7 @@ export async function renderVideoQuoteOverlay({
     const normalized = normalizeOverlayCaption(overlayCaption);
     
     console.log('[render] Normalized overlayCaption (post-normalize):', {
+      ssotVersion: normalized.ssotVersion,
       keys: Object.keys(normalized),
       totalTextH: normalized.totalTextH,
       totalTextHPx: normalized.totalTextHPx,
@@ -513,13 +514,14 @@ export async function renderVideoQuoteOverlay({
       splitLines: Array.isArray(normalized.splitLines) ? normalized.splitLines.length : 0,
       internalPadding: normalized.internalPadding,
       placement: normalized.placement,
-      lineSpacingPx: normalized.lineSpacingPx  // 🔑 Must show 3479, not 200
+      lineSpacingPx: normalized.lineSpacingPx
     });
     
     // Compute placement using shared SSOT helper (same math as preview)
     const placement = computeOverlayPlacement(normalized, W, H);
     
     // Extract computed values (let for reassignment in sanity checks)
+    const useSSOT = placement?.willUseSSOT === true;
     let { 
       xExpr, y, fontPx: overlayFontPx, lineSpacingPx, totalTextH, 
       fromSavedPreview, splitLines, leftPx, windowW 
@@ -527,54 +529,52 @@ export async function renderVideoQuoteOverlay({
     
     // Log SSOT values before drawtext
     console.log('[ffmpeg] Pre-drawtext SSOT:', {
+      useSSOT,
+      willUseSSOT: placement?.willUseSSOT,
       fontPx: overlayFontPx,
       lineSpacingPx,
       totalTextH,
       y,
       yPxFirstLine: normalized.yPxFirstLine,
-      lines: splitLines?.length
+      splitLines: splitLines?.length
     });
     
-    // ===== CRITICAL SANITY CHECK =====
-    let correctedLineSpacing = lineSpacingPx;
-    let correctedY = y;
-    let correctedTotalTextH = totalTextH;
-    
-    if (lineSpacingPx > 2 * overlayFontPx) {
-      console.warn(`[ffmpeg-sanity] Rejecting lineSpacingPx=${lineSpacingPx} for fontPx=${overlayFontPx}, recomputing`);
-      const lineHeightPx = Math.round(overlayFontPx * 1.15);
-      correctedLineSpacing = Math.max(0, lineHeightPx - overlayFontPx);
+    // ===== SANITY CHECKS - Only apply to fallback values, not SSOT =====
+    if (useSSOT) {
+      // Trust SSOT values completely when willUseSSOT is true
+      console.log('[ffmpeg] Using SSOT values verbatim (no sanity corrections)');
+    } else {
+      // Apply sanity checks for fallback/legacy values
+      if (!Number.isFinite(overlayFontPx) || overlayFontPx < 8 || overlayFontPx > 400) {
+        console.warn(`[ffmpeg-sanity] Invalid fontPx=${overlayFontPx}, defaulting to 56`);
+        overlayFontPx = 56;
+      }
       
-      // Recompute totalTextH too
-      const lines = splitLines?.length || 2;
-      correctedTotalTextH = lines * lineHeightPx;
+      if (!Number.isFinite(lineSpacingPx) || lineSpacingPx < 0 || lineSpacingPx > overlayFontPx * 3) {
+        console.warn(`[ffmpeg-sanity] Invalid lineSpacingPx=${lineSpacingPx}, recomputing`);
+        const lh = Math.round(overlayFontPx * 1.15);
+        lineSpacingPx = Math.max(0, lh - overlayFontPx);
+      }
+      
+      if (!Number.isFinite(totalTextH) || totalTextH <= 0) {
+        console.warn(`[ffmpeg-sanity] Invalid totalTextH=${totalTextH}, recomputing`);
+        const lines = (splitLines && splitLines.length) || 1;
+        totalTextH = lines * Math.round(overlayFontPx * 1.15);
+      }
+      
+      if (!Number.isFinite(y)) {
+        console.warn(`[ffmpeg-sanity] Invalid y=${y}, recomputing from yPct`);
+        const anchorY = Math.round((normalized.yPct ?? 0.1) * H);
+        y = Math.round(anchorY - (totalTextH / 2));
+      }
     }
-    
-    if (y < -H || y > 2*H) {
-      console.warn(`[ffmpeg-sanity] Rejecting y=${y} for H=${H}, recomputing from yPct`);
-      const yPct = normalized.yPct ?? 0.1;
-      const anchorY = Math.round(yPct * H);
-      correctedY = Math.round(anchorY - (correctedTotalTextH / 2));
-    }
-    
-    // Final clamp and reassign
-    correctedLineSpacing = Math.max(0, Math.min(300, correctedLineSpacing));
-    
-    console.log('[ffmpeg-sanity] Final values:', {
-      fontPx: overlayFontPx,
-      lineSpacingPx: correctedLineSpacing,
-      totalTextH: correctedTotalTextH,
-      y: correctedY
-    });
-    
-    // Use corrected values in subsequent code
-    lineSpacingPx = correctedLineSpacing;
-    y = correctedY;
-    totalTextH = correctedTotalTextH;
     
     // Log placement for verification (match preview logging format)
     console.log(`[render] SSOT placement computed:`, {
+      useSSOT,
+      willUseSSOT: placement?.willUseSSOT,
       fromSavedPreview,
+      mode: placement?.mode,
       xPct: normalized.xPct?.toFixed(3),
       yPct: normalized.yPct?.toFixed(3),
       wPct: normalized.wPct?.toFixed(3),
@@ -582,7 +582,8 @@ export async function renderVideoQuoteOverlay({
       totalTextH,
       computedY: y,
       lineSpacingPx,
-      lines: splitLines?.length || 'unknown'
+      xExpr,
+      splitLines: splitLines?.length || 'unknown'
     });
     
     // Use overlay font settings
@@ -595,30 +596,35 @@ export async function renderVideoQuoteOverlay({
     
     // Text to render: use saved splitLines if available, otherwise fallback to word-wrap
     let textToRender;
-    if (fromSavedPreview && splitLines && splitLines.length > 0) {
-      // Use exact text from saved preview (SSOT)
+    if (useSSOT && splitLines && splitLines.length > 0) {
+      // Use exact text from saved preview (SSOT) - don't rewrap!
       textToRender = splitLines.join('\n');
-      console.log(`[render] Using saved preview text: ${splitLines.length} lines`);
+      console.log(`[render] Using SSOT splitLines: ${splitLines.length} lines`);
+    } else if (Array.isArray(splitLines) && splitLines.length > 0) {
+      // Have splitLines but not SSOT mode (legacy path with saved lines)
+      textToRender = splitLines.join('\n');
+      console.log(`[render] Using saved splitLines (legacy): ${splitLines.length} lines`);
     } else {
-      // Fallback: word-wrap text if no line breaks present
-      textToRender = normalized.text;
+      // Fallback: word-wrap text
+      textToRender = (normalized.text || '').replace(/\r\n/g, '\n');
       const hasLineBreaks = textToRender.includes('\n');
       
       if (!hasLineBreaks && textToRender.trim()) {
         // Create temporary canvas for text measurement
         const tempCanvas = createCanvas(W, H);
         const tempCtx = tempCanvas.getContext("2d");
-        const fontString = `${overlayCaption.weightCss || '800'} ${overlayFontPx}px ${resolveFontFile(overlayCaption.fontFamily, overlayCaption.weightCss).split('/').pop().replace('.ttf', '')}`;
+        const fontString = `${normalized.weightCss || 'normal'} ${overlayFontPx}px DejaVuSans`;
         tempCtx.font = fontString;
         
         // Word-wrap using same logic as legacy caption path
+        const maxWidth = windowW || Math.round(W * 0.92);
         const words = textToRender.split(/\s+/);
         const lines = [];
         let line = "";
         
         for (const word of words) {
           const test = line ? line + " " + word : word;
-          if (tempCtx.measureText(test).width > windowW && line) {
+          if (tempCtx.measureText(test).width > maxWidth && line) {
             lines.push(line);
             line = word;
           } else {
@@ -628,7 +634,7 @@ export async function renderVideoQuoteOverlay({
         if (line) lines.push(line);
         
         textToRender = lines.join('\n');
-        console.log(`[render] word-wrapped text: ${lines.length} lines, original="${overlayCaption.text.substring(0, 50)}..."`);
+        console.log(`[render] word-wrapped text: ${lines.length} lines`);
       }
     }
     
@@ -675,12 +681,16 @@ export async function renderVideoQuoteOverlay({
     
     // CRITICAL: Log exact values being used in FFmpeg
     console.log('[ffmpeg] USING VALUES', {
+      useSSOT,
+      willUseSSOT: placement?.willUseSSOT,
       fromSavedPreview,
       fontPx: overlayFontPx,
       y,
       lineSpacingPx,
+      xExpr,
       text: textToRender.substring(0, 50).replace(/\n/g, '\\n'),
-      splitLines: splitLines?.length || 'unknown'
+      splitLines: splitLines?.length || 'unknown',
+      lines: textToRender.split('\n').length
     });
   } else if (CAPTION_OVERLAY && captionImage) {
     console.log(`[render] USING OVERLAY - skipping drawtext. Caption PNG: ${captionImage.pngPath}`);
