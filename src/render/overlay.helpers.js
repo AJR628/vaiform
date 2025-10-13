@@ -44,9 +44,9 @@ export function computeOverlayPlacement(overlay, W, H) {
   const num = v => (v == null ? undefined : (typeof v === 'string' ? Number(v) : v));
 
   const ssotVersion = overlay?.ssotVersion;
-  const hasV2 = ssotVersion === 2;
+  const hasV3 = ssotVersion === 3;
   
-  // Check all required V2 SSOT fields
+  // Check all required V3 SSOT fields
   const requiredFields = ['xPct', 'yPct', 'wPct', 'fontPx', 'lineSpacingPx', 'totalTextH', 'yPxFirstLine'];
   const hasReq = requiredFields.every(k => {
     const val = num(overlay[k]);
@@ -60,17 +60,17 @@ export function computeOverlayPlacement(overlay, W, H) {
   const totalTextHVal = num(overlay?.totalTextH ?? overlay?.totalTextHPx);
   const yPxFirstLineVal = num(overlay?.yPxFirstLine);
   
-  const willUseSSOT = !!(hasV2 && hasReq && hasSplit);
+  const willUseSSOT = !!(hasV3 && hasReq && hasSplit);
   
-  if (hasV2 && !willUseSSOT) {
-    console.warn(`[overlay] Ignoring saved preview with ssotVersion=2 but missing required fields. Has: ${Object.keys(overlay || {}).join(', ')}`);
-  } else if (!hasV2 && (ssotVersion !== undefined)) {
+  if (hasV3 && !willUseSSOT) {
+    console.warn(`[overlay] Ignoring saved preview with ssotVersion=3 but missing required fields. Has: ${Object.keys(overlay || {}).join(', ')}`);
+  } else if (!hasV3 && (ssotVersion !== undefined)) {
     console.warn(`[overlay] Ignoring saved preview with old ssotVersion: ${ssotVersion}`);
   }
 
   console.log('[overlay] SSOT field detection:', {
     ssotVersion,
-    hasV2,
+    hasV3,
     hasReq,
     hasSplit,
     keys: Object.keys(overlay || {}),

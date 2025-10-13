@@ -3724,6 +3724,25 @@
                     wPct: payload.overlayCaption?.wPct,
                     internalPadding: payload.overlayCaption?.internalPadding
                   });
+                  
+                  // SSOT invariant validation before render
+                  const { fontPx, lineSpacingPx, totalTextH, splitLines } = payload.overlayCaption;
+                  if (Number.isFinite(fontPx) && Number.isFinite(lineSpacingPx) && 
+                      Number.isFinite(totalTextH) && Array.isArray(splitLines) && splitLines.length > 0) {
+                    const expectedTotalTextH = (splitLines.length * fontPx) + ((splitLines.length - 1) * lineSpacingPx);
+                    if (Math.abs(totalTextH - expectedTotalTextH) > 0.5) {
+                      console.error('[render-INVARIANT] Client totalTextH mismatch - forcing preview regeneration:', {
+                        actual: totalTextH,
+                        expected: expectedTotalTextH,
+                        formula: `${splitLines.length}*${fontPx} + ${splitLines.length-1}*${lineSpacingPx}`,
+                        splitLines: splitLines.length,
+                        fontPx,
+                        lineSpacingPx
+                      });
+                      throw new Error(`SSOT invariant violation: totalTextH=${totalTextH} != expected=${expectedTotalTextH}. Please regenerate preview.`);
+                    }
+                    console.log('[render-INVARIANT] ✅ Client totalTextH validation passed:', { totalTextH, expectedTotalTextH });
+                  }
                 }
 
                 console.log('[render] Final payload:', payload);

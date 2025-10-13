@@ -45,22 +45,72 @@ function detectOverlayV2() {
     const lsOn = (localStorage.getItem('overlayV2') || '') === '1';
     const v2 = urlOff ? false : (urlOn || lsOn || true);
     
-    // Clear old overlayMeta without ssotVersion to break stale-data loop
+    // Clear old overlayMeta without ssotVersion or with incorrect totalTextH formula
     try {
       const stored = localStorage.getItem('overlayMeta');
       if (stored) {
         const parsed = JSON.parse(stored);
-        if (!parsed.ssotVersion || parsed.ssotVersion < 2) {
-          console.log('[caption-preview] Clearing old overlayMeta (no/old ssotVersion)');
+        
+        // Clear old versions
+        if (!parsed.ssotVersion || parsed.ssotVersion < 3) {
+          console.log('[caption-preview] Clearing old overlayMeta (ssotVersion < 3)');
+          localStorage.removeItem('overlayMeta');
+          localStorage.removeItem('overlayMetaTimestamp');
+          return !!v2;
+        }
+        
+        // Validate totalTextH formula for v3 data
+        if (parsed.ssotVersion === 3 && validateTotalTextHFormula(parsed)) {
+          console.log('[caption-preview] Validating totalTextH formula - keeping valid data');
+        } else if (parsed.ssotVersion === 3) {
+          console.log('[caption-preview] Clearing overlayMeta with invalid totalTextH formula');
           localStorage.removeItem('overlayMeta');
           localStorage.removeItem('overlayMetaTimestamp');
         }
       }
-    } catch {}
+    } catch (err) {
+      console.warn('[caption-preview] Error validating localStorage data:', err);
+      localStorage.removeItem('overlayMeta');
+      localStorage.removeItem('overlayMetaTimestamp');
+    }
     
     if (typeof window !== 'undefined') window.__overlayV2 = !!v2;
     return !!v2;
   } catch { return false; }
+}
+
+/**
+ * Validate that totalTextH matches the correct SSOT formula
+ * @param {Object} meta - Overlay meta object to validate
+ * @returns {boolean} true if formula is correct, false if invalid
+ */
+function validateTotalTextHFormula(meta) {
+  if (!meta || typeof meta !== 'object') return false;
+  
+  const { fontPx, lineSpacingPx, totalTextH, splitLines } = meta;
+  
+  // Must have all required fields
+  if (!Number.isFinite(fontPx) || !Number.isFinite(lineSpacingPx) || 
+      !Number.isFinite(totalTextH) || !Array.isArray(splitLines) || splitLines.length === 0) {
+    return false;
+  }
+  
+  // Validate formula: totalTextH = lines * fontPx + (lines-1) * lineSpacingPx
+  const expectedTotalTextH = (splitLines.length * fontPx) + ((splitLines.length - 1) * lineSpacingPx);
+  const isValid = Math.abs(totalTextH - expectedTotalTextH) <= 0.5;
+  
+  if (!isValid) {
+    console.warn('[caption-preview] Invalid totalTextH formula:', {
+      actual: totalTextH,
+      expected: expectedTotalTextH,
+      formula: `${splitLines.length}*${fontPx} + ${splitLines.length-1}*${lineSpacingPx}`,
+      splitLines: splitLines.length,
+      fontPx,
+      lineSpacingPx
+    });
+  }
+  
+  return isValid;
 }
 
 export async function generateCaptionPreview(opts) {
@@ -97,8 +147,8 @@ export async function generateCaptionPreview(opts) {
   const overlayV2 = detectOverlayV2();
   const payload = overlayV2
     ? {
-        // V2 overlay format – schema validated server-side
-        ssotVersion: 2,  // ← Version flag MUST be first
+        // V3 overlay format – schema validated server-side with invariant validation
+        ssotVersion: 3,  // ← Bumped version to invalidate stale data
         text: opts.text,
         placement: 'custom',
         xPct: Number.isFinite(opts?.xPct) ? Number(opts.xPct) : 0.5,
@@ -122,7 +172,7 @@ export async function generateCaptionPreview(opts) {
           opacity: Number(opts.opacity ?? 0.85),
           placement: opts.placement || 'center',
           yPct: Number.isFinite(opts?.yPct) ? Number(opts.yPct) : 0.5,
-          ssotVersion: 2,  // ← ADD version flag here too
+          ssotVersion: 3,  // ← Bumped version to invalidate stale data
           _cacheBuster: Date.now()
         }
       };
@@ -143,12 +193,12 @@ export async function generateCaptionPreview(opts) {
   const resp = data?.data || {};
   const meta = resp.meta || {};
 
-  // SSOT v2: Use server response VERBATIM when ssotVersion=2 (no rebuilding!)
+  // SSOT v3: Use server response VERBATIM when ssotVersion=3 (no rebuilding!)
   let normalizedMeta;
-  if (meta.ssotVersion === 2) {
+  if (meta.ssotVersion === 3) {
     // Server is SSOT - use its response verbatim, no modifications
     normalizedMeta = meta;
-    console.log('[caption-preview] Using server SSOT v2 response verbatim (no client rebuild)');
+    console.log('[caption-preview] Using server SSOT v3 response verbatim (no client rebuild)');
     console.log('[caption-preview] Server provided:', {
       fontPx: meta.fontPx,
       lineSpacingPx: meta.lineSpacingPx,
@@ -156,13 +206,19 @@ export async function generateCaptionPreview(opts) {
       yPxFirstLine: meta.yPxFirstLine,
       splitLines: Array.isArray(meta.splitLines) ? meta.splitLines.length : 0
     });
+    
+    // Validate server response before using
+    if (!validateTotalTextHFormula(meta)) {
+      console.error('[caption-preview] Server returned invalid totalTextH formula - regenerating preview');
+      throw new Error('Server returned invalid totalTextH - please regenerate preview');
+    }
   } else {
     // Legacy fallback for non-v2 responses
     const totalTextH = Number(meta.totalTextH ?? meta.totalTextHPx);
     const yPxFirstLine = Number(resp.yPx);  // ← top-level!
 
     normalizedMeta = {
-      ssotVersion: 2,  // ← Version flag MUST be first
+      ssotVersion: 3,  // ← Bumped version to invalidate stale data
       text: meta.text || opts.text,
       xPct: Number(meta.xPct ?? 0.5),
       yPct: Number(meta.yPct ?? 0.5),

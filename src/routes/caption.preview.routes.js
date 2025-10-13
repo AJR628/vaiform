@@ -159,7 +159,7 @@ router.post("/caption/preview", express.json(), async (req, res) => {
 
         // STEP 6: Build SSOT meta WITHOUT spreading (explicit fields only)
         const ssotMeta = {
-          ssotVersion: 2,
+          ssotVersion: 3,  // Bumped version to invalidate stale localStorage data
           text,
           xPct,
           yPct: yPctClamped,
