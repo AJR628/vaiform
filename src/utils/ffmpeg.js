@@ -334,8 +334,8 @@ export async function renderImageQuoteVideo({
   let effectiveText = text;
   let usingSSOT = false;
   
-  if (overlayCaption && overlayCaption.ssotVersion === 2) {
-    console.log('[renderImageQuoteVideo] Using SSOT v2 overlayCaption');
+  if (overlayCaption && (overlayCaption.ssotVersion === 2 || overlayCaption.ssotVersion === 3)) {
+    console.log('[renderImageQuoteVideo] Using SSOT v' + overlayCaption.ssotVersion + ' overlayCaption');
     console.log('[renderImageQuoteVideo] SSOT values:', {
       fontPx: overlayCaption.fontPx,
       lineSpacingPx: overlayCaption.lineSpacingPx,
