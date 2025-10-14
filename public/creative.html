@@ -3259,20 +3259,18 @@
 
                 // Build preview payload (v2 format with percentages)
                 const payload = {
-                    v2: true,
+                    ssotVersion: 3,
+                    placement: 'custom',  // ← ADD: Required for v2 path detection
                     text: meta.text,
                     xPct: meta.xPct,
                     yPct: meta.yPct,
                     wPct: meta.wPct,
-                    hPct: meta.hPct,
-                    fontPx: meta.fontPx,
-                    lineHeight: typeof meta.lineHeight === 'string' ? parseFloat(meta.lineHeight) : (meta.lineHeight || 1.15),
-                    lineSpacingPx: 0, // Will be computed by server
-                    align: meta.textAlign || 'center',
-                    color: meta.color || '#ffffff',
-                    opacity: meta.opacity ?? 1.0,
+                    sizePx: meta.fontPx,
                     fontFamily: meta.fontFamily || 'DejaVuSans',
-                    weightCss: meta.weightCss || 'normal'
+                    weightCss: meta.weightCss || 'normal',
+                    color: meta.color || 'rgb(255, 255, 255)',
+                    opacity: meta.opacity ?? 0.8,
+                    v2: true
                 };
 
                 console.log('[savePreview] Sending payload:', payload);
@@ -3564,9 +3562,9 @@
                   let savedMeta = validation.meta;
                   
                   // Validate ssotVersion
-                  if (savedMeta?.ssotVersion !== 2) {
-                      console.error('[render-ERROR] Invalid or missing ssotVersion:', savedMeta?.ssotVersion);
-                      alert('Preview data is outdated or invalid. Please generate and save preview again.');
+                  if (savedMeta?.ssotVersion !== 3) {
+                      console.error('[render-ERROR] Invalid ssotVersion, expected 3, got:', savedMeta?.ssotVersion);
+                      alert('Preview data is outdated (wrong version). Please regenerate preview.');
                       renderBtn.disabled = false;
                       renderBtn.textContent = originalText;
                       return;
@@ -3575,12 +3573,10 @@
                   // SSOT: Server is single source of truth - no client corrections
                   // Use saved meta exactly as provided by server
                   
-                  // Validate server metrics are reasonable
-                  if (savedMeta.totalTextH > 2000 || savedMeta.lineSpacingPx > 500) {
-                      console.error('[render-ERROR] Server metrics out of bounds:', {
-                          totalTextH: savedMeta.totalTextH,
-                          lineSpacingPx: savedMeta.lineSpacingPx
-                      });
+                  // Server validates metrics properly - no need for overly restrictive client bounds
+                  // Only check for clearly invalid values (NaN, negative, etc.)
+                  if (!Number.isFinite(savedMeta.totalTextH) || savedMeta.totalTextH <= 0) {
+                      console.error('[render-ERROR] Invalid totalTextH:', savedMeta.totalTextH);
                       alert('Preview data has invalid metrics. Please regenerate preview.');
                       renderBtn.disabled = false;
                       renderBtn.textContent = originalText;

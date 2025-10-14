@@ -8,9 +8,13 @@ const router = express.Router();
 router.post("/caption/preview", express.json(), async (req, res) => {
   try {
     // Check if this is the new overlay format
-    const isOverlayFormat = req.body.placement === 'custom' && req.body.yPct !== undefined;
+    const isOverlayFormat = (
+        req.body.placement === 'custom' && 
+        req.body.yPct !== undefined
+    ) || req.body.v2 === true || req.body.ssotVersion === 3;
     
     if (isOverlayFormat) {
+      console.log('[caption-preview] Using V2 OVERLAY path');
       // STEP 0: Sanitize inputs - strip computed fields that should NEVER come from client
       const COMPUTED_FIELDS = [
         "lineSpacingPx", "totalTextH", "totalTextHPx", "yPxFirstLine", "lineHeight",
@@ -205,6 +209,8 @@ router.post("/caption/preview", express.json(), async (req, res) => {
         console.error('[overlay-preview] Preview failed:', e);
         return res.status(500).json({ ok: false, reason: 'RENDER_FAILED', detail: e.message });
       }
+    } else {
+      console.log('[caption-preview] Using LEGACY path (placement:', req.body.placement, ', yPct:', req.body.yPct, ', v2:', req.body.v2, ', ssotVersion:', req.body.ssotVersion, ')');
     }
     
     // Legacy format handling
