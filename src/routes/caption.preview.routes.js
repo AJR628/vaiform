@@ -222,6 +222,19 @@ router.post("/caption/preview", express.json(), async (req, res) => {
           yPx: rasterResult.yPx,
           urlLength: rasterResult.rasterUrl?.length
         });
+        
+        // V3 logging for debugging
+        console.log('[v3:preview:FINAL]', {
+          ssotVersion: ssotMeta.ssotVersion,
+          mode: ssotMeta.mode,
+          fontPx,
+          lineSpacingPx,
+          totalTextH,
+          yPxFirstLine,
+          lines: lines.length,
+          rasterW: rasterResult.rasterW,
+          rasterH: rasterResult.rasterH
+        });
 
         return res.status(200).json({
           ok: true,

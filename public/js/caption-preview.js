@@ -14,6 +14,48 @@ if (typeof window !== 'undefined') {
 }
 
 /**
+ * V3 Migration: Clear legacy storage keys and ensure only v3 data persists
+ * Run this immediately on module load before any other code accesses localStorage
+ */
+(function migrateOverlayMetaToV3() {
+  const V3_KEY = 'overlayMetaV3';
+  const LEGACY_KEYS = ['overlayMeta', 'overlayMetaV2', 'overlayMetaSaved', 'captionMeta', 'overlayMetaTimestamp', '_previewSavedForCurrentText'];
+  
+  try {
+    // Check if we already have valid v3 data
+    const v3Str = localStorage.getItem(V3_KEY);
+    if (v3Str) {
+      const v3 = JSON.parse(v3Str);
+      if (v3?.ssotVersion === 3) {
+        console.log('[v3:migration] Valid v3 data exists - keeping it');
+        // Clear legacy keys anyway to avoid confusion
+        for (const k of LEGACY_KEYS) {
+          if (localStorage.getItem(k)) {
+            console.log('[v3:migration] Removing legacy key:', k);
+            localStorage.removeItem(k);
+          }
+        }
+        return;
+      }
+    }
+    
+    // No valid v3 data - nuke everything legacy or v2
+    console.log('[v3:migration] No valid v3 data found - clearing all legacy keys');
+    for (const k of LEGACY_KEYS) {
+      localStorage.removeItem(k);
+    }
+    localStorage.removeItem(V3_KEY); // Clear invalid v3 data too
+  } catch (e) {
+    console.warn('[v3:migration] Error during migration:', e);
+    // On error, nuke everything to be safe
+    for (const k of LEGACY_KEYS) {
+      localStorage.removeItem(k);
+    }
+    localStorage.removeItem(V3_KEY);
+  }
+})();
+
+/**
  * Generate a caption preview PNG using the new JSON API
  * @param {Object} opts - Caption style options
  * @param {string} opts.text - Caption text
@@ -45,52 +87,7 @@ function detectOverlayV2() {
     const lsOn = (localStorage.getItem('overlayV2') || '') === '1';
     const v2 = urlOff ? false : (urlOn || lsOn || true);
     
-    // Clear old overlayMeta without ssotVersion or with incorrect format
-    try {
-      const stored = localStorage.getItem('overlayMeta');
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        
-        // Clear old versions - force clear on any version mismatch
-        if (!parsed.ssotVersion || parsed.ssotVersion < 3) {
-          console.log('[caption-preview] Clearing old overlayMeta (ssotVersion < 3)');
-          localStorage.removeItem('overlayMeta');
-          localStorage.removeItem('overlayMetaTimestamp');
-          localStorage.removeItem('_previewSavedForCurrentText');
-          return !!v2;
-        }
-        
-        // Validate based on mode
-        if (parsed.ssotVersion === 3) {
-          if (parsed.mode === 'raster') {
-            // Raster mode: validate raster fields
-            if (parsed.rasterUrl && parsed.rasterW > 0 && parsed.rasterH > 0) {
-              console.log('[caption-preview] Valid v3 raster data - keeping');
-            } else {
-              console.log('[caption-preview] Clearing overlayMeta with invalid raster fields');
-              localStorage.removeItem('overlayMeta');
-              localStorage.removeItem('overlayMetaTimestamp');
-              localStorage.removeItem('_previewSavedForCurrentText');
-            }
-          } else {
-            // Drawtext mode: validate totalTextH formula
-            if (validateTotalTextHFormula(parsed)) {
-              console.log('[caption-preview] Valid v3 drawtext data - keeping');
-            } else {
-              console.log('[caption-preview] Clearing overlayMeta with invalid totalTextH formula');
-              localStorage.removeItem('overlayMeta');
-              localStorage.removeItem('overlayMetaTimestamp');
-              localStorage.removeItem('_previewSavedForCurrentText');
-            }
-          }
-        }
-      }
-    } catch (err) {
-      console.warn('[caption-preview] Error validating localStorage data:', err);
-      localStorage.removeItem('overlayMeta');
-      localStorage.removeItem('overlayMetaTimestamp');
-      localStorage.removeItem('_previewSavedForCurrentText');
-    }
+    // V3 migration handles clearing legacy keys - no need to check here anymore
     
     if (typeof window !== 'undefined') window.__overlayV2 = !!v2;
     return !!v2;
@@ -249,6 +246,7 @@ export async function generateCaptionPreview(opts) {
 
     normalizedMeta = {
       ssotVersion: 3,  // ← Bumped version to invalidate stale data
+      mode: 'raster',  // ← V3 always uses raster mode
       text: meta.text || opts.text,
       xPct: Number(meta.xPct ?? 0.5),
       yPct: Number(meta.yPct ?? 0.5),
@@ -266,7 +264,16 @@ export async function generateCaptionPreview(opts) {
       splitLines: Array.isArray(meta.splitLines) ? meta.splitLines : [],
       totalTextH: totalTextH,
       totalTextHPx: totalTextH,
-      yPxFirstLine: yPxFirstLine
+      yPxFirstLine: yPxFirstLine,
+      
+      // Raster fields for v3
+      rasterUrl: imageUrl,
+      rasterDataUrl: imageUrl,
+      rasterPng: imageUrl,
+      rasterW: data.data?.wPx || 1080,
+      rasterH: data.data?.hPx || 1920,
+      xExpr: '(W-overlay_w)/2',
+      yPx: yPxFirstLine
     };
   }
   
@@ -292,11 +299,15 @@ export async function generateCaptionPreview(opts) {
       meta: normalizedMeta
     };
     
-    // Persist to localStorage for "Save Preview" workflow
+    // Persist to localStorage for "Save Preview" workflow (V3 storage key)
     try {
-      localStorage.setItem('overlayMeta', JSON.stringify(normalizedMeta));
-      localStorage.setItem('overlayMetaTimestamp', Date.now().toString());
-      console.log('[caption-preview] Saved overlay meta to localStorage');
+      localStorage.setItem('overlayMetaV3', JSON.stringify(normalizedMeta));
+      console.log('[v3:savePreview] saved', { 
+        v: normalizedMeta.ssotVersion, 
+        mode: normalizedMeta.mode,
+        keys: Object.keys(normalizedMeta),
+        hasRaster: !!normalizedMeta.rasterUrl || !!normalizedMeta.rasterDataUrl
+      });
     } catch (err) {
       console.warn('[caption-preview] Failed to save to localStorage:', err.message);
     }
@@ -343,23 +354,21 @@ export function getSavedOverlayMeta() {
     return window._overlayMeta;
   }
   
-  // Fall back to localStorage
+  // Fall back to localStorage (V3 storage key only)
   try {
-    const stored = localStorage.getItem('overlayMeta');
+    const stored = localStorage.getItem('overlayMetaV3');
     if (stored) {
       const meta = JSON.parse(stored);
-      const timestamp = parseInt(localStorage.getItem('overlayMetaTimestamp') || '0', 10);
-      const age = Date.now() - timestamp;
       
-      // Only use if saved within last hour (prevent stale data)
-      if (age < 3600000) {
-        window._overlayMeta = meta;
-        return meta;
-      } else {
-        console.log('[caption-preview] Saved meta is stale, clearing');
-        localStorage.removeItem('overlayMeta');
-        localStorage.removeItem('overlayMetaTimestamp');
+      // Validate ssotVersion === 3
+      if (meta.ssotVersion !== 3) {
+        console.warn('[caption-preview] Ignoring saved meta with wrong ssotVersion:', meta.ssotVersion);
+        localStorage.removeItem('overlayMetaV3');
+        return null;
       }
+      
+      window._overlayMeta = meta;
+      return meta;
     }
   } catch (err) {
     console.warn('[caption-preview] Failed to load from localStorage:', err.message);
@@ -556,12 +565,11 @@ export function forceClearPreviewCache() {
   if (typeof window === 'undefined') return;
   
   try {
-    localStorage.removeItem('overlayMeta');
-    localStorage.removeItem('overlayMetaTimestamp');
+    localStorage.removeItem('overlayMetaV3');
     localStorage.removeItem('_previewSavedForCurrentText');
     window._overlayMeta = null;
     window._previewSavedForCurrentText = false;
-    console.log('[caption-preview] Force cleared all preview cache');
+    console.log('[caption-preview] Force cleared all preview cache (v3)');
   } catch (err) {
     console.warn('[caption-preview] Failed to clear cache:', err.message);
   }

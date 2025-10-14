@@ -166,12 +166,11 @@ export function showPreviewSavedIndicator(containerSelector = '#preview-status')
  * Call this when user edits caption after preview
  */
 export function markPreviewUnsaved() {
-  // Clear saved meta
+  // Clear saved meta (V3 storage key)
   if (typeof window !== 'undefined') {
     window._overlayMeta = null;
     try {
-      localStorage.removeItem('overlayMeta');
-      localStorage.removeItem('overlayMetaTimestamp');
+      localStorage.removeItem('overlayMetaV3');
     } catch (err) {
       console.warn('[render-helper] Failed to clear localStorage:', err.message);
     }

@@ -80,15 +80,17 @@
             window.getSavedOverlayMeta = function() {
                 if (window._overlayMeta) return window._overlayMeta;
                 try {
-                    const stored = localStorage.getItem('overlayMeta');
+                    const stored = localStorage.getItem('overlayMetaV3');
                     if (stored) {
                         const meta = JSON.parse(stored);
-                        const timestamp = parseInt(localStorage.getItem('overlayMetaTimestamp') || '0', 10);
-                        const age = Date.now() - timestamp;
-                        if (age < 3600000) { // 1 hour
-                            window._overlayMeta = meta;
-                            return meta;
+                        // Validate ssotVersion === 3
+                        if (meta.ssotVersion !== 3) {
+                            console.warn('[fallback] Ignoring saved meta with wrong ssotVersion:', meta.ssotVersion);
+                            localStorage.removeItem('overlayMetaV3');
+                            return null;
                         }
+                        window._overlayMeta = meta;
+                        return meta;
                     }
                 } catch (err) {
                     console.warn('[fallback] Failed to load from localStorage:', err.message);
@@ -1701,7 +1703,7 @@
                 color: meta.color || '#FFFFFF',
                 opacity: Number.isFinite(meta.opacity) ? Number(meta.opacity) : 0.85,
             };
-            return overlayV2 ? { ...base, v2: true } : base;
+            return base;  // No v2 flag - always use v3 with ssotVersion: 3
         }
         
         // Preview function for overlay system
@@ -3257,10 +3259,10 @@
                     return;
                 }
 
-                // Build preview payload (v2 format with percentages)
+                // Build preview payload (v3 format - no v2 flag!)
                 const payload = {
                     ssotVersion: 3,
-                    placement: 'custom',  // ← ADD: Required for v2 path detection
+                    placement: 'custom',
                     text: meta.text,
                     xPct: meta.xPct,
                     yPct: meta.yPct,
@@ -3269,8 +3271,7 @@
                     fontFamily: meta.fontFamily || 'DejaVuSans',
                     weightCss: meta.weightCss || 'normal',
                     color: meta.color || 'rgb(255, 255, 255)',
-                    opacity: meta.opacity ?? 0.8,
-                    v2: true
+                    opacity: meta.opacity ?? 0.8
                 };
 
                 console.log('[savePreview] Sending payload:', payload);
@@ -3314,6 +3315,7 @@
 
                 const normalizedMeta = {
                     ssotVersion: 3,  // ← Updated to version 3
+                    mode: 'raster',  // ← V3 always uses raster mode
                     text: m.text || meta.text,
                     xPct: Number(m.xPct ?? meta.xPct ?? 0.5),
                     yPct: Number(m.yPct ?? meta.yPct ?? 0.5),
@@ -3331,7 +3333,16 @@
                     totalTextH: totalTextH,
                     totalTextHPx: totalTextH,
                     yPxFirstLine: yPxFirstLine,
-                    splitLines: splitLines
+                    splitLines: splitLines,
+                    
+                    // Raster fields for v3
+                    rasterUrl: data.data?.imageUrl,
+                    rasterDataUrl: data.data?.imageUrl,
+                    rasterPng: data.data?.imageUrl,
+                    rasterW: data.data?.wPx || 1080,
+                    rasterH: data.data?.hPx || 1920,
+                    xExpr: '(W-overlay_w)/2',
+                    yPx: yPxFirstLine
                 };
 
                 // Store normalized overlay meta for render (SSOT)
@@ -3344,11 +3355,15 @@
                 };
                 window.__lastCaptionOverlay = window.lastCaptionPNG;
 
-                // Persist to localStorage for "Save Preview" workflow
+                // Persist to localStorage for "Save Preview" workflow (V3 storage key)
                 try {
-                    localStorage.setItem('overlayMeta', JSON.stringify(normalizedMeta));
-                    localStorage.setItem('overlayMetaTimestamp', Date.now().toString());
-                    console.log('[savePreview] Saved overlay meta to localStorage');
+                    localStorage.setItem('overlayMetaV3', JSON.stringify(normalizedMeta));
+                    console.log('[v3:savePreview] saved', { 
+                        v: normalizedMeta.ssotVersion, 
+                        mode: normalizedMeta.mode,
+                        keys: Object.keys(normalizedMeta),
+                        hasRaster: !!normalizedMeta.rasterUrl || !!normalizedMeta.rasterDataUrl
+                    });
                 } catch (err) {
                     console.warn('[savePreview] Failed to save to localStorage:', err.message);
                 }
@@ -3561,14 +3576,30 @@
                   
                   let savedMeta = validation.meta;
                   
-                  // Validate ssotVersion
+                  // Validate ssotVersion and mode for v3 raster
+                  const isRaster = savedMeta?.mode === 'raster';
                   if (savedMeta?.ssotVersion !== 3) {
                       console.error('[render-ERROR] Invalid ssotVersion, expected 3, got:', savedMeta?.ssotVersion);
-                      alert('Preview data is outdated (wrong version). Please regenerate preview.');
+                      alert('Preview data is outdated (wrong version). Please Save Preview again (v3).');
                       renderBtn.disabled = false;
                       renderBtn.textContent = originalText;
                       return;
                   }
+                  
+                  // V3 raster mode requires raster fields
+                  if (isRaster && !savedMeta?.rasterUrl && !savedMeta?.rasterDataUrl) {
+                      console.error('[render-ERROR] Raster mode requires rasterUrl, got:', savedMeta);
+                      alert('Raster preview incomplete. Please Save Preview again (v3).');
+                      renderBtn.disabled = false;
+                      renderBtn.textContent = originalText;
+                      return;
+                  }
+                  
+                  console.log('[v3:client:POST]', {
+                      ssotVersion: savedMeta.ssotVersion,
+                      mode: savedMeta.mode,
+                      hasRaster: !!savedMeta.rasterPng || !!savedMeta.rasterDataUrl || !!savedMeta.rasterUrl
+                  });
 
                   // SSOT: Server is single source of truth - no client corrections
                   // Use saved meta exactly as provided by server

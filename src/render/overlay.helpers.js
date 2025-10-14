@@ -69,7 +69,8 @@ export function computeOverlayPlacement(overlay, W, H) {
       throw new Error('SSOT v3 raster mode requires valid yPx');
     }
     
-    console.log('[overlay] Raster details:', {
+    console.log('[overlay] mode=raster v3', {
+      hasRaster: !!overlay.rasterDataUrl || !!overlay.rasterUrl || !!overlay.rasterPng,
       rasterW,
       rasterH,
       yPx,
