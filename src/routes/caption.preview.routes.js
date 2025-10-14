@@ -15,11 +15,13 @@ router.post("/caption/preview", express.json(), async (req, res) => {
     ) || req.body.v2 === true || req.body.ssotVersion === 3;
     
     if (isOverlayFormat) {
-      console.log('[caption-preview] Using V2 OVERLAY path');
+      // Check if this is v3 raster mode
+      const isV3Raster = req.body.ssotVersion === 3;
+      console.log('[caption-preview] Using', isV3Raster ? 'V3 RASTER' : 'V2 OVERLAY', 'path');
       // STEP 0: Sanitize inputs - strip computed fields that should NEVER come from client
       const COMPUTED_FIELDS = [
         "lineSpacingPx", "totalTextH", "totalTextHPx", "yPxFirstLine", "lineHeight",
-        "hpct", "hPct", "hPx", "v2", "ssotVersion", "splitLines", "baselines"
+        "hpct", "hPct", "hPx", "v2", "splitLines", "baselines"
       ];
       COMPUTED_FIELDS.forEach(k => {
         if (req.body && k in req.body) {
@@ -208,7 +210,7 @@ router.post("/caption/preview", express.json(), async (req, res) => {
           xExpr: '(W - overlay_w)/2',  // Center horizontally
           yPx: rasterResult.yPx,        // Top-left Y position
           
-          // Keep for debugging
+          // Keep for debugging (but these are NOT used in v3 raster mode)
           splitLines: lines,
           lineSpacingPx,
           totalTextH,

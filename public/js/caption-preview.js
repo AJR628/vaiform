@@ -178,7 +178,6 @@ export async function generateCaptionPreview(opts) {
         weightCss: opts.weight || 'normal',
         color: opts.color || '#FFFFFF',
         opacity: Number(opts.opacity ?? 0.85),
-        v2: true,
       }
     : {
         style: {
