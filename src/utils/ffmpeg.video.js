@@ -10,6 +10,7 @@ import { getDurationMsFromMedia } from "./media.duration.js";
 import { CAPTION_OVERLAY } from "../config/env.js";
 import { hasLineSpacingOption } from "./ffmpeg.capabilities.js";
 import { normalizeOverlayCaption, computeOverlayPlacement } from "../render/overlay.helpers.js";
+import { fetchToTmp, cleanupTmp } from "./tmp.js";
 
 const { createCanvas } = pkg;
 
@@ -270,11 +271,11 @@ function fitQuoteToBox({ text, boxWidthPx, baseFontSize = 72 }) {
   return { text: lines.join('\n'), fontsize: fz, lineSpacing };  // Use actual newlines, escapeForDrawtext will handle escaping
 }
 
-function buildVideoChain({ width, height, videoVignette, drawLayers, captionImage, usingCaptionPng, captionPngPath }){
+function buildVideoChain({ width, height, videoVignette, drawLayers, captionImage, usingCaptionPng, captionPngPath, rasterPlacement }){
   const W = Math.max(4, Number(width)||1080);
   const H = Math.max(4, Number(height)||1920);
   
-  // If using PNG overlay for captions, use the new overlay format
+  // If using PNG overlay for captions (SSOT v3 raster mode)
   if (usingCaptionPng && captionPngPath && fs.existsSync(captionPngPath)) {
     console.log(`[render] USING PNG OVERLAY from: ${captionPngPath}`);
     // Build filter graph: scale -> crop -> format -> [vmain], then overlay PNG
@@ -283,10 +284,23 @@ function buildVideoChain({ width, height, videoVignette, drawLayers, captionImag
     const core = [ scale, crop, (videoVignette ? 'vignette=PI/4:0.5' : null), 'format=rgba' ].filter(Boolean);
     const baseChain = makeChain('0:v', core, 'vmain');
     
-    // Overlay PNG with placement-aware Y positioning
-    // The PNG is 1080×1920 with caption positioned correctly, so we overlay it 1:1
-    const overlayChain = `[vmain][1:v]overlay=(W-w)/2:0:format=auto[vout]`;
-    return `${baseChain};${overlayChain}`;
+    // Prepare PNG input with transparency
+    const pngFormat = `[1:v]format=rgba[ovr]`;
+    
+    // Overlay PNG with exact placement
+    let overlayExpr;
+    if (rasterPlacement && rasterPlacement.mode === 'raster') {
+      // Use exact placement from SSOT v3
+      const xExpr = rasterPlacement.xExpr || '(W-overlay_w)/2';
+      const y = rasterPlacement.y || 0;
+      overlayExpr = `[vmain][ovr]overlay=${xExpr}:${y}:format=auto[vout]`;
+      console.log('[raster] overlay filter:', overlayExpr);
+    } else {
+      // Fallback: center horizontally, top vertically
+      overlayExpr = `[vmain][ovr]overlay=(W-w)/2:0:format=auto[vout]`;
+    }
+    
+    return `${baseChain};${pngFormat};${overlayExpr}`;
   } else if (CAPTION_OVERLAY && captionImage) {
     // Legacy overlay format (keep for backward compatibility)
     // Verify the overlay file exists before using it
@@ -507,6 +521,7 @@ export async function renderVideoQuoteOverlay({
     
     console.log('[render] Normalized overlayCaption (post-normalize):', {
       ssotVersion: normalized.ssotVersion,
+      mode: normalized.mode,
       keys: Object.keys(normalized),
       totalTextH: normalized.totalTextH,
       totalTextHPx: normalized.totalTextHPx,
@@ -520,12 +535,63 @@ export async function renderVideoQuoteOverlay({
     // Compute placement using shared SSOT helper (same math as preview)
     const placement = computeOverlayPlacement(normalized, W, H);
     
-    // Extract computed values (let for reassignment in sanity checks)
-    const useSSOT = placement?.willUseSSOT === true;
-    let { 
-      xExpr, y, fontPx: overlayFontPx, lineSpacingPx, totalTextH, 
-      fromSavedPreview, splitLines, leftPx, windowW 
-    } = placement;
+    // SSOT V3 RASTER MODE: Use PNG overlay instead of drawtext
+    if (placement?.mode === 'raster' && placement.rasterUrl) {
+      console.log('[raster] Using PNG overlay instead of drawtext');
+      
+      // Download/materialize the raster PNG to a temp file
+      let rasterTmpPath = null;
+      try {
+        rasterTmpPath = await fetchToTmp(placement.rasterUrl, '.png');
+        
+        if (!fs.existsSync(rasterTmpPath) || fs.statSync(rasterTmpPath).size === 0) {
+          throw new Error('Raster PNG file is empty or missing');
+        }
+        
+        console.log('[raster] Materialized PNG overlay:', {
+          path: rasterTmpPath,
+          size: fs.statSync(rasterTmpPath).size,
+          rasterW: placement.rasterW,
+          rasterH: placement.rasterH,
+          y: placement.y
+        });
+        
+        // Store raster details for buildVideoChain
+        usingCaptionPng = true;
+        captionPngPath = rasterTmpPath;
+        
+        // Store placement details for overlay filter
+        const rasterPlacement = {
+          mode: 'raster',
+          rasterW: placement.rasterW,
+          rasterH: placement.rasterH,
+          xExpr: placement.xExpr,
+          y: placement.y
+        };
+        
+        // Skip drawtext - we'll use overlay filter instead
+        drawCaption = '';
+        
+        console.log('[raster] overlay: x=' + rasterPlacement.xExpr + ', y=' + rasterPlacement.y + 
+                    ', rasterW/H=' + rasterPlacement.rasterW + '×' + rasterPlacement.rasterH);
+        
+        // Proceed to buildVideoChain which will handle the overlay filter
+        // (we'll need to modify buildVideoChain to accept raster placement)
+        
+      } catch (error) {
+        console.error('[raster] Failed to materialize PNG overlay:', error.message);
+        throw new Error(`Raster overlay failed: ${error.message}. Please regenerate preview.`);
+      }
+      
+      // Skip the rest of the drawtext logic
+      // Jump directly to buildVideoChain
+    } else {
+      // Extract computed values (let for reassignment in sanity checks)
+      const useSSOT = placement?.willUseSSOT === true;
+      let { 
+        xExpr, y, fontPx: overlayFontPx, lineSpacingPx, totalTextH, 
+        fromSavedPreview, splitLines, leftPx, windowW 
+      } = placement;
     
     // Log SSOT values before drawtext
     console.log('[ffmpeg] Pre-drawtext SSOT:', {
@@ -702,6 +768,7 @@ export async function renderVideoQuoteOverlay({
       splitLines: splitLines?.length || 'unknown',
       lines: textToRender.split('\n').length
     });
+    }  // End of else block for non-raster mode
   } else if (CAPTION_OVERLAY && captionImage) {
     console.log(`[render] USING OVERLAY - skipping drawtext. Caption PNG: ${captionImage.pngPath}`);
     drawCaption = '';
@@ -974,7 +1041,14 @@ export async function renderVideoQuoteOverlay({
     drawLayers: usingCaptionPng ? [drawMain, drawAuthor, drawWatermark].filter(Boolean) : [drawMain, drawAuthor, drawWatermark, drawCaption].filter(Boolean),
     captionImage: CAPTION_OVERLAY ? captionImage : null,
     usingCaptionPng,
-    captionPngPath
+    captionPngPath,
+    rasterPlacement: overlayCaption?.mode === 'raster' ? {
+      mode: 'raster',
+      rasterW: overlayCaption.rasterW,
+      rasterH: overlayCaption.rasterH,
+      xExpr: overlayCaption.xExpr || '(W-overlay_w)/2',
+      y: overlayCaption.yPx
+    } : null
   });
   // If includeBottomCaption flag is passed via captionStyle, honor it
 

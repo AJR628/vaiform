@@ -1,6 +1,7 @@
 import express from "express";
 import pkg from "@napi-rs/canvas";
 import { CaptionMetaSchema } from '../schemas/caption.schema.js';
+import { bufferToTmp } from '../utils/tmp.js';
 const { createCanvas } = pkg;
 
 const router = express.Router();
@@ -91,13 +92,7 @@ router.post("/caption/preview", express.json(), async (req, res) => {
       }
 
       try {
-        const previewUrl = await renderPreviewImage({
-          text, 
-          splitLines: lines,  // ← ADD: pass pre-wrapped lines
-          xPct, yPct: yPctClamped, wPct, sizePx: fontPx,
-          fontFamily, weightCss, color, opacity, textAlign: 'center'
-        });
-        
+        // SSOT V3: Render caption as PNG at final render scale
         const lineHeightMultiplier = 1.15;  // Fixed
         const lineHeight = Math.round(fontPx * lineHeightMultiplier);
         const lineSpacingPx = lines.length === 1 ? 0 : Math.round(lineHeight - fontPx);
@@ -106,7 +101,7 @@ router.post("/caption/preview", express.json(), async (req, res) => {
         // SSOT formula enforcement
         const expectedTotalTextH = (lines.length * fontPx) + ((lines.length - 1) * lineSpacingPx);
         if (Math.abs(totalTextH - expectedTotalTextH) > 0.5) {
-          throw new Error(`[ssot/v2:INVARIANT] totalTextH=${totalTextH} != expected=${expectedTotalTextH}`);
+          throw new Error(`[ssot/v3:INVARIANT] totalTextH=${totalTextH} != expected=${expectedTotalTextH}`);
         }
         
         // STEP 4: Guard against absurd metrics (before they can propagate)
@@ -149,7 +144,7 @@ router.post("/caption/preview", express.json(), async (req, res) => {
         }
 
         // Checkpoint log before response
-        console.log('[ssot/v2:preview:FINAL]', {
+        console.log('[ssot/v3:preview:FINAL]', {
           fontPx, lineSpacingPx, totalTextH, yPxFirstLine,
           lines: lines.length, yPct: yPctClamped, H: 1920,
           formula: `${lines.length}*${fontPx} + ${lines.length-1}*${lineSpacingPx} = ${totalTextH}`
@@ -158,13 +153,13 @@ router.post("/caption/preview", express.json(), async (req, res) => {
         // Finite number validation
         if (!Number.isFinite(fontPx) || !Number.isFinite(lineSpacingPx) || 
             !Number.isFinite(totalTextH) || !Number.isFinite(yPxFirstLine)) {
-          throw new Error('[ssot/v2:preview:INVALID_NUM]');
+          throw new Error('[ssot/v3:preview:INVALID_NUM]');
         }
 
-        // STEP 6: Build SSOT meta WITHOUT spreading (explicit fields only)
-        const ssotMeta = {
-          ssotVersion: 3,  // Bumped version to invalidate stale localStorage data
+        // SSOT V3: Render caption to transparent PNG at final render scale
+        const rasterResult = await renderCaptionRaster({
           text,
+          splitLines: lines,
           xPct,
           yPct: yPctClamped,
           wPct,
@@ -173,25 +168,57 @@ router.post("/caption/preview", express.json(), async (req, res) => {
           weightCss,
           color,
           opacity,
-          placement,
-          internalPadding,
+          lineSpacingPx,
+          totalTextH,
+          yPxFirstLine,
+          W,
+          H
+        });
+
+        // Render preview image for display
+        const previewUrl = await renderPreviewImage({
+          text, 
+          splitLines: lines,
+          xPct, yPct: yPctClamped, wPct, sizePx: fontPx,
+          fontFamily, weightCss, color, opacity, textAlign: 'center'
+        });
+        
+        // STEP 6: Build SSOT V3 meta (raster mode)
+        const ssotMeta = {
+          ssotVersion: 3,
+          mode: 'raster',
+          
+          // Placement inputs
+          text,
+          xPct,
+          yPct: yPctClamped,
+          wPct,
+          
+          // Style (for reference/debug)
+          fontPx,
+          fontFamily,
+          weightCss,
+          color,
+          opacity,
+          
+          // Exact PNG details
+          rasterUrl: rasterResult.rasterUrl,
+          rasterW: rasterResult.rasterW,
+          rasterH: rasterResult.rasterH,
+          xExpr: '(W - overlay_w)/2',  // Center horizontally
+          yPx: rasterResult.yPx,        // Top-left Y position
+          
+          // Keep for debugging
           splitLines: lines,
           lineSpacingPx,
           totalTextH,
-          totalTextHPx: totalTextH,  // duplicate for compatibility
-          yPxFirstLine,
-          wPx: W,
-          hPx: H,
         };
         
-        console.log('[caption-preview-calc]', { 
-          fontPx, lineHeight, lineSpacingPx, totalTextH, yPxFirstLine, lines: lines.length 
-        });
-        
-        // SSOT validation logging
-        console.log('[SSOT-preview] Computed meta:', {
-          fontPx, lineHeight, lineSpacingPx, totalTextH,
-          formula: `${lines.length} * ${fontPx} + ${lines.length - 1} * ${lineSpacingPx} = ${totalTextH}`
+        console.log('[raster] Rendered caption PNG:', {
+          rasterW: rasterResult.rasterW,
+          rasterH: rasterResult.rasterH,
+          yPx: rasterResult.yPx,
+          urlLength: rasterResult.rasterUrl?.length
         });
 
         return res.status(200).json({
@@ -509,6 +536,81 @@ router.get("/diag/caption-smoke", async (req, res) => {
     });
   }
 });
+
+// SSOT V3: Render caption to transparent PNG at final render scale
+async function renderCaptionRaster(meta) {
+  const W = meta.W || 1080;
+  const H = meta.H || 1920;
+  
+  // Measure text to get exact raster dimensions
+  const tempCanvas = createCanvas(W, H);
+  const tempCtx = tempCanvas.getContext("2d");
+  const font = `${meta.weightCss || 'normal'} ${meta.fontPx}px ${pickFont(meta.fontFamily)}`;
+  tempCtx.font = font;
+  
+  // Measure each line to get max width
+  const lines = meta.splitLines || [];
+  let maxLineWidth = 0;
+  for (const line of lines) {
+    const metrics = tempCtx.measureText(line);
+    maxLineWidth = Math.max(maxLineWidth, metrics.width);
+  }
+  
+  // Add padding for shadow/stroke (12px shadow blur + 3px stroke = ~20px padding)
+  const padding = 24;
+  const rasterW = Math.ceil(maxLineWidth) + (padding * 2);
+  const rasterH = Math.ceil(meta.totalTextH) + (padding * 2);
+  
+  // Create transparent canvas for caption only
+  const rasterCanvas = createCanvas(rasterW, rasterH);
+  const ctx = rasterCanvas.getContext("2d");
+  ctx.clearRect(0, 0, rasterW, rasterH);
+  
+  // Setup font and styling (match preview exactly)
+  ctx.font = font;
+  const color = toRgba(meta.color, meta.opacity ?? 1);
+  ctx.fillStyle = color;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  
+  // Draw shadow
+  ctx.shadowColor = "rgba(0,0,0,0.6)";
+  ctx.shadowBlur = 12;
+  ctx.shadowOffsetY = 2;
+  
+  // Draw each line centered in the raster
+  const xCenter = rasterW / 2;
+  let currentY = padding;  // Start after top padding
+  
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    ctx.fillText(line, xCenter, currentY);
+    currentY += meta.fontPx + (i < lines.length - 1 ? meta.lineSpacingPx : 0);
+  }
+  
+  // Convert to data URL
+  const rasterDataUrl = rasterCanvas.toDataURL("image/png");
+  
+  // Calculate Y position: yPxFirstLine is where the text starts
+  // But the raster includes padding, so we need to adjust
+  const yPx = meta.yPxFirstLine - padding;
+  
+  console.log('[raster] Drew caption PNG:', {
+    rasterW,
+    rasterH,
+    yPx,
+    padding,
+    lines: lines.length,
+    maxLineWidth
+  });
+  
+  return {
+    rasterUrl: rasterDataUrl,
+    rasterW,
+    rasterH,
+    yPx
+  };
+}
 
 // New overlay format renderer
 async function renderPreviewImage(meta) {

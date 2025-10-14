@@ -45,7 +45,7 @@ function detectOverlayV2() {
     const lsOn = (localStorage.getItem('overlayV2') || '') === '1';
     const v2 = urlOff ? false : (urlOn || lsOn || true);
     
-    // Clear old overlayMeta without ssotVersion or with incorrect totalTextH formula
+    // Clear old overlayMeta without ssotVersion or with incorrect format
     try {
       const stored = localStorage.getItem('overlayMeta');
       if (stored) {
@@ -60,14 +60,29 @@ function detectOverlayV2() {
           return !!v2;
         }
         
-        // Validate totalTextH formula for v3 data
-        if (parsed.ssotVersion === 3 && validateTotalTextHFormula(parsed)) {
-          console.log('[caption-preview] Validating totalTextH formula - keeping valid data');
-        } else if (parsed.ssotVersion === 3) {
-          console.log('[caption-preview] Clearing overlayMeta with invalid totalTextH formula');
-          localStorage.removeItem('overlayMeta');
-          localStorage.removeItem('overlayMetaTimestamp');
-          localStorage.removeItem('_previewSavedForCurrentText');
+        // Validate based on mode
+        if (parsed.ssotVersion === 3) {
+          if (parsed.mode === 'raster') {
+            // Raster mode: validate raster fields
+            if (parsed.rasterUrl && parsed.rasterW > 0 && parsed.rasterH > 0) {
+              console.log('[caption-preview] Valid v3 raster data - keeping');
+            } else {
+              console.log('[caption-preview] Clearing overlayMeta with invalid raster fields');
+              localStorage.removeItem('overlayMeta');
+              localStorage.removeItem('overlayMetaTimestamp');
+              localStorage.removeItem('_previewSavedForCurrentText');
+            }
+          } else {
+            // Drawtext mode: validate totalTextH formula
+            if (validateTotalTextHFormula(parsed)) {
+              console.log('[caption-preview] Valid v3 drawtext data - keeping');
+            } else {
+              console.log('[caption-preview] Clearing overlayMeta with invalid totalTextH formula');
+              localStorage.removeItem('overlayMeta');
+              localStorage.removeItem('overlayMetaTimestamp');
+              localStorage.removeItem('_previewSavedForCurrentText');
+            }
+          }
         }
       }
     } catch (err) {
@@ -202,18 +217,31 @@ export async function generateCaptionPreview(opts) {
     // Server is SSOT - use its response verbatim, no modifications
     normalizedMeta = meta;
     console.log('[caption-preview] Using server SSOT v3 response verbatim (no client rebuild)');
-    console.log('[caption-preview] Server provided:', {
-      fontPx: meta.fontPx,
-      lineSpacingPx: meta.lineSpacingPx,
-      totalTextH: meta.totalTextH,
-      yPxFirstLine: meta.yPxFirstLine,
-      splitLines: Array.isArray(meta.splitLines) ? meta.splitLines.length : 0
-    });
     
-    // Validate server response before using
-    if (!validateTotalTextHFormula(meta)) {
-      console.error('[caption-preview] Server returned invalid totalTextH formula - regenerating preview');
-      throw new Error('Server returned invalid totalTextH - please regenerate preview');
+    // Log differently based on mode
+    if (meta.mode === 'raster') {
+      console.log('[caption-preview] RASTER mode - PNG overlay:', {
+        mode: meta.mode,
+        rasterW: meta.rasterW,
+        rasterH: meta.rasterH,
+        yPx: meta.yPx,
+        urlType: meta.rasterUrl?.startsWith('data:') ? 'data URL' : 'http(s)',
+        urlLength: meta.rasterUrl?.length
+      });
+    } else {
+      console.log('[caption-preview] DRAWTEXT mode - Server provided:', {
+        fontPx: meta.fontPx,
+        lineSpacingPx: meta.lineSpacingPx,
+        totalTextH: meta.totalTextH,
+        yPxFirstLine: meta.yPxFirstLine,
+        splitLines: Array.isArray(meta.splitLines) ? meta.splitLines.length : 0
+      });
+      
+      // Only validate totalTextH formula for drawtext mode
+      if (!validateTotalTextHFormula(meta)) {
+        console.error('[caption-preview] Server returned invalid totalTextH formula - regenerating preview');
+        throw new Error('Server returned invalid totalTextH - please regenerate preview');
+      }
     }
   } else {
     // Legacy fallback for non-v2 responses

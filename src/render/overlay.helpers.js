@@ -45,8 +45,50 @@ export function computeOverlayPlacement(overlay, W, H) {
 
   const ssotVersion = overlay?.ssotVersion;
   const hasV3 = ssotVersion === 3;
+  const mode = overlay?.mode;
   
-  // Check all required V3 SSOT fields
+  // Check for SSOT V3 raster mode
+  if (hasV3 && mode === 'raster' && overlay.rasterUrl) {
+    console.log('[overlay] USING RASTER MODE - PNG overlay from preview');
+    
+    const rasterW = num(overlay.rasterW);
+    const rasterH = num(overlay.rasterH);
+    const yPx = num(overlay.yPx);
+    
+    // Validate raster fields
+    if (!overlay.rasterUrl || typeof overlay.rasterUrl !== 'string') {
+      throw new Error('SSOT v3 raster mode requires valid rasterUrl');
+    }
+    if (!Number.isFinite(rasterW) || rasterW <= 0) {
+      throw new Error('SSOT v3 raster mode requires valid rasterW > 0');
+    }
+    if (!Number.isFinite(rasterH) || rasterH <= 0) {
+      throw new Error('SSOT v3 raster mode requires valid rasterH > 0');
+    }
+    if (!Number.isFinite(yPx)) {
+      throw new Error('SSOT v3 raster mode requires valid yPx');
+    }
+    
+    console.log('[overlay] Raster details:', {
+      rasterW,
+      rasterH,
+      yPx,
+      xExpr: overlay.xExpr || '(W - overlay_w)/2',
+      urlType: overlay.rasterUrl.startsWith('data:') ? 'data URL' : 'http(s)'
+    });
+    
+    return {
+      willUseSSOT: true,
+      mode: 'raster',
+      rasterUrl: overlay.rasterUrl,
+      rasterW,
+      rasterH,
+      xExpr: overlay.xExpr || '(W - overlay_w)/2',
+      y: Math.round(yPx),
+    };
+  }
+  
+  // Check all required V3 SSOT fields (drawtext mode)
   const requiredFields = ['xPct', 'yPct', 'wPct', 'fontPx', 'lineSpacingPx', 'totalTextH', 'yPxFirstLine'];
   const hasReq = requiredFields.every(k => {
     const val = num(overlay[k]);
@@ -62,7 +104,7 @@ export function computeOverlayPlacement(overlay, W, H) {
   
   const willUseSSOT = !!(hasV3 && hasReq && hasSplit);
   
-  if (hasV3 && !willUseSSOT) {
+  if (hasV3 && !willUseSSOT && mode !== 'raster') {
     console.warn(`[overlay] Ignoring saved preview with ssotVersion=3 but missing required fields. Has: ${Object.keys(overlay || {}).join(', ')}`);
   } else if (!hasV3 && (ssotVersion !== undefined)) {
     console.warn(`[overlay] Ignoring saved preview with old ssotVersion: ${ssotVersion}`);
@@ -71,6 +113,7 @@ export function computeOverlayPlacement(overlay, W, H) {
   console.log('[overlay] SSOT field detection:', {
     ssotVersion,
     hasV3,
+    mode,
     hasReq,
     hasSplit,
     keys: Object.keys(overlay || {}),
@@ -309,15 +352,36 @@ export function normalizeOverlayCaption(overlay) {
   
   // Detect SSOT fields from preview
   const hasV2 = overlay?.ssotVersion === 2;
+  const hasV3 = overlay?.ssotVersion === 3;
+  const hasRaster = hasV3 && overlay?.mode === 'raster';
   const hasFirst = overlay?.yPxFirstLine != null;
   const hasBlock = (overlay?.totalTextH != null || overlay?.totalTextHPx != null)
     && Array.isArray(overlay?.splitLines) && overlay.splitLines.length > 0;
   
-  // If SSOT V2 fields present, pass through verbatim (coerce to numbers)
-  return (hasV2 || hasFirst || hasBlock)
+  // If SSOT V3 raster mode, pass through all raster fields verbatim
+  if (hasRaster) {
+    return {
+      ...base,
+      ssotVersion: 3,
+      mode: 'raster',
+      rasterUrl: overlay.rasterUrl,
+      rasterW: toNum(overlay.rasterW),
+      rasterH: toNum(overlay.rasterH),
+      xExpr: overlay.xExpr,
+      yPx: toNum(overlay.yPx),
+      // Keep debug fields
+      totalTextH: toNum(overlay.totalTextH),
+      lineSpacingPx: toNum(overlay.lineSpacingPx),
+      splitLines: Array.isArray(overlay.splitLines) ? overlay.splitLines : []
+    };
+  }
+  
+  // If SSOT V2/V3 drawtext fields present, pass through verbatim (coerce to numbers)
+  return (hasV2 || hasV3 || hasFirst || hasBlock)
     ? {
         ...base,
         ssotVersion: overlay.ssotVersion,  // Pass through version
+        mode: overlay.mode,  // Pass through mode
         totalTextH: toNum(overlay.totalTextH ?? overlay.totalTextHPx),
         totalTextHPx: toNum(overlay.totalTextHPx ?? overlay.totalTextH),
         yPxFirstLine: toNum(overlay.yPxFirstLine),
