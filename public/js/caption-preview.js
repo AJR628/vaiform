@@ -51,11 +51,12 @@ function detectOverlayV2() {
       if (stored) {
         const parsed = JSON.parse(stored);
         
-        // Clear old versions
+        // Clear old versions - force clear on any version mismatch
         if (!parsed.ssotVersion || parsed.ssotVersion < 3) {
           console.log('[caption-preview] Clearing old overlayMeta (ssotVersion < 3)');
           localStorage.removeItem('overlayMeta');
           localStorage.removeItem('overlayMetaTimestamp');
+          localStorage.removeItem('_previewSavedForCurrentText');
           return !!v2;
         }
         
@@ -66,12 +67,14 @@ function detectOverlayV2() {
           console.log('[caption-preview] Clearing overlayMeta with invalid totalTextH formula');
           localStorage.removeItem('overlayMeta');
           localStorage.removeItem('overlayMetaTimestamp');
+          localStorage.removeItem('_previewSavedForCurrentText');
         }
       }
     } catch (err) {
       console.warn('[caption-preview] Error validating localStorage data:', err);
       localStorage.removeItem('overlayMeta');
       localStorage.removeItem('overlayMetaTimestamp');
+      localStorage.removeItem('_previewSavedForCurrentText');
     }
     
     if (typeof window !== 'undefined') window.__overlayV2 = !!v2;
@@ -518,6 +521,25 @@ export function createDebouncedCaptionPreview(callback, delay = 300) {
   };
 }
 
+/**
+ * Force clear all preview-related localStorage data
+ * Call this when you need to ensure clean state
+ */
+export function forceClearPreviewCache() {
+  if (typeof window === 'undefined') return;
+  
+  try {
+    localStorage.removeItem('overlayMeta');
+    localStorage.removeItem('overlayMetaTimestamp');
+    localStorage.removeItem('_previewSavedForCurrentText');
+    window._overlayMeta = null;
+    window._previewSavedForCurrentText = false;
+    console.log('[caption-preview] Force cleared all preview cache');
+  } catch (err) {
+    console.warn('[caption-preview] Failed to clear cache:', err.message);
+  }
+}
+
 // Make functions globally available for legacy compatibility
 if (typeof window !== 'undefined') {
   window.generateCaptionPreview = generateCaptionPreview;
@@ -525,4 +547,5 @@ if (typeof window !== 'undefined') {
   window.createDebouncedCaptionPreview = createDebouncedCaptionPreview;
   window.getSavedOverlayMeta = getSavedOverlayMeta;
   window.validateOverlayCaption = validateOverlayCaption;
+  window.forceClearPreviewCache = forceClearPreviewCache;
 }
