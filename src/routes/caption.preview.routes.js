@@ -196,12 +196,14 @@ router.post("/caption/preview", express.json(), async (req, res) => {
           yPct: yPctClamped,
           wPct,
           
-          // Style (for reference/debug)
+          // ALL toolbar settings (for reference/debug and consistency)
           fontPx,
           fontFamily,
           weightCss,
           color,
           opacity,
+          placement,
+          internalPadding,
           
           // Exact PNG details
           rasterUrl: rasterResult.rasterUrl,

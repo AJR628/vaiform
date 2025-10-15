@@ -55,6 +55,17 @@ export function computeOverlayPlacement(overlay, W, H) {
     const rasterH = num(overlay.rasterH);
     const yPx = num(overlay.yPx);
     
+    // CRITICAL: Log input dimensions to detect mutation
+    console.log('[v3:placement:IN]', {
+      inputRasterW: overlay.rasterW,
+      parsedRasterW: rasterW,
+      inputRasterH: overlay.rasterH,
+      parsedRasterH: rasterH,
+      inputYPx: overlay.yPx,
+      parsedYPx: yPx,
+      inputXExpr: overlay.xExpr
+    });
+    
     // Validate raster fields
     if (!overlay.rasterUrl || typeof overlay.rasterUrl !== 'string') {
       throw new Error('SSOT v3 raster mode requires valid rasterUrl');
@@ -78,7 +89,7 @@ export function computeOverlayPlacement(overlay, W, H) {
       urlType: overlay.rasterUrl.startsWith('data:') ? 'data URL' : 'http(s)'
     });
     
-    return {
+    const result = {
       willUseSSOT: true,
       mode: 'raster',
       rasterUrl: overlay.rasterUrl,
@@ -87,6 +98,16 @@ export function computeOverlayPlacement(overlay, W, H) {
       xExpr: overlay.xExpr || '(W - overlay_w)/2',
       y: Math.round(yPx),
     };
+    
+    // CRITICAL: Log output to ensure no mutation
+    console.log('[v3:placement:OUT]', {
+      outputRasterW: result.rasterW,
+      outputRasterH: result.rasterH,
+      outputY: result.y,
+      outputXExpr: result.xExpr
+    });
+    
+    return result;
   }
   
   // Check all required V3 SSOT fields (drawtext mode)
@@ -304,6 +325,17 @@ export function normalizeOverlayCaption(overlay) {
     return null;
   }
   
+  // CRITICAL: Log input to detect any mutation at source
+  console.log('[v3:normalize:IN]', {
+    ssotVersion: overlay?.ssotVersion,
+    mode: overlay?.mode,
+    rasterW: overlay?.rasterW,
+    rasterH: overlay?.rasterH,
+    yPx: overlay?.yPx,
+    xExpr: overlay?.xExpr,
+    hasRasterUrl: !!overlay?.rasterUrl
+  });
+  
   const {
     text = '',
     xPct = 0.5,
@@ -361,7 +393,7 @@ export function normalizeOverlayCaption(overlay) {
   
   // If SSOT V3 raster mode, pass through all raster fields verbatim
   if (hasRaster) {
-    return {
+    const normalized = {
       ...base,
       ssotVersion: 3,
       mode: 'raster',
@@ -375,6 +407,20 @@ export function normalizeOverlayCaption(overlay) {
       lineSpacingPx: toNum(overlay.lineSpacingPx),
       splitLines: Array.isArray(overlay.splitLines) ? overlay.splitLines : []
     };
+    
+    // CRITICAL: Log raster dimensions to detect any mutation
+    console.log('[v3:normalize:OUT]', {
+      inputRasterW: overlay.rasterW,
+      outputRasterW: normalized.rasterW,
+      inputRasterH: overlay.rasterH,
+      outputRasterH: normalized.rasterH,
+      inputYPx: overlay.yPx,
+      outputYPx: normalized.yPx,
+      inputXExpr: overlay.xExpr,
+      outputXExpr: normalized.xExpr
+    });
+    
+    return normalized;
   }
   
   // If SSOT V2/V3 drawtext fields present, pass through verbatim (coerce to numbers)

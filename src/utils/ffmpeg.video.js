@@ -295,6 +295,15 @@ function buildVideoChain({ width, height, videoVignette, drawLayers, captionImag
       const y = rasterPlacement.y || 0;
       overlayExpr = `[vmain][ovr]overlay=${xExpr}:${y}:format=auto[vout]`;
       console.log('[raster] overlay filter:', overlayExpr);
+      
+      // CRITICAL: Log final overlay expression with exact dimensions
+      console.log('[v3:ffmpeg:FINAL]', {
+        overlayExpr,
+        rasterW: rasterPlacement.rasterW,
+        rasterH: rasterPlacement.rasterH,
+        y: y,
+        xExpr: xExpr
+      });
     } else {
       // Fallback: center horizontally, top vertically
       overlayExpr = `[vmain][ovr]overlay=(W-w)/2:0:format=auto[vout]`;
@@ -539,6 +548,15 @@ export async function renderVideoQuoteOverlay({
     if (placement?.mode === 'raster' && placement.rasterUrl) {
       console.log('[raster] Using PNG overlay instead of drawtext');
       
+      // CRITICAL: Log placement before materialization
+      console.log('[v3:materialize:BEFORE]', {
+        rasterUrl: placement.rasterUrl.substring(0, 50) + '...',
+        rasterW: placement.rasterW,
+        rasterH: placement.rasterH,
+        y: placement.y,
+        xExpr: placement.xExpr
+      });
+      
       // Download/materialize the raster PNG to a temp file
       let rasterTmpPath = null;
       try {
@@ -548,23 +566,39 @@ export async function renderVideoQuoteOverlay({
           throw new Error('Raster PNG file is empty or missing');
         }
         
+        // CRITICAL: Log after materialization to verify file integrity
+        const fileStats = fs.statSync(rasterTmpPath);
+        console.log('[v3:materialize:AFTER]', {
+          path: rasterTmpPath,
+          fileSize: fileStats.size,
+          expectedRasterW: placement.rasterW,
+          expectedRasterH: placement.rasterH,
+          expectedY: placement.y,
+          xExpr: placement.xExpr
+        });
+        
         console.log('[raster] Materialized PNG overlay:', {
           path: rasterTmpPath,
-          size: fs.statSync(rasterTmpPath).size,
+          size: fileStats.size,
           rasterW: placement.rasterW,
           rasterH: placement.rasterH,
           y: placement.y
         });
         
+        // CRITICAL: Validate that dimensions match preview expectations
+        if (placement.rasterW !== normalized.rasterW || placement.rasterH !== normalized.rasterH) {
+          throw new Error(`Raster dimensions mismatch: expected ${normalized.rasterW}×${normalized.rasterH}, got ${placement.rasterW}×${placement.rasterH}`);
+        }
+        
         // Store raster details for buildVideoChain
         usingCaptionPng = true;
         captionPngPath = rasterTmpPath;
         
-        // Store placement details for overlay filter
+        // Store placement details for overlay filter - EXACT preview dimensions
         const rasterPlacement = {
           mode: 'raster',
-          rasterW: placement.rasterW,
-          rasterH: placement.rasterH,
+          rasterW: placement.rasterW,  // Use exact preview dimensions
+          rasterH: placement.rasterH,  // Use exact preview dimensions
           xExpr: placement.xExpr,
           y: placement.y
         };
@@ -1034,6 +1068,27 @@ export async function renderVideoQuoteOverlay({
   console.log('[ffmpeg] DEBUG - text param:', text);
   console.log('[ffmpeg] DEBUG - captionText param:', captionText);
 
+  // CRITICAL: Log raster placement before passing to buildVideoChain
+  const rasterPlacement = overlayCaption?.mode === 'raster' ? {
+    mode: 'raster',
+    rasterW: overlayCaption.rasterW,
+    rasterH: overlayCaption.rasterH,
+    xExpr: overlayCaption.xExpr || '(W-overlay_w)/2',
+    y: overlayCaption.yPx
+  } : null;
+  
+  console.log('[v3:buildChain:IN]', {
+    usingCaptionPng,
+    captionPngPath: captionPngPath ? 'present' : 'null',
+    rasterPlacement: rasterPlacement ? {
+      mode: rasterPlacement.mode,
+      rasterW: rasterPlacement.rasterW,
+      rasterH: rasterPlacement.rasterH,
+      y: rasterPlacement.y,
+      xExpr: rasterPlacement.xExpr
+    } : null
+  });
+
   const vchain = buildVideoChain({ 
     width: W, 
     height: H, 
@@ -1042,13 +1097,7 @@ export async function renderVideoQuoteOverlay({
     captionImage: CAPTION_OVERLAY ? captionImage : null,
     usingCaptionPng,
     captionPngPath,
-    rasterPlacement: overlayCaption?.mode === 'raster' ? {
-      mode: 'raster',
-      rasterW: overlayCaption.rasterW,
-      rasterH: overlayCaption.rasterH,
-      xExpr: overlayCaption.xExpr || '(W-overlay_w)/2',
-      y: overlayCaption.yPx
-    } : null
+    rasterPlacement
   });
   // If includeBottomCaption flag is passed via captionStyle, honor it
 
