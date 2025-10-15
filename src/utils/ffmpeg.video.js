@@ -287,21 +287,20 @@ function buildVideoChain({ width, height, videoVignette, drawLayers, captionImag
     // Constants for PNG scaling
     const CANVAS_W = 1080;
     
-    // Compute target width and decide if scaling is needed
-    const targetOverlayW = Math.min(
-      Math.round((rasterPlacement?.wPct ?? 1) * CANVAS_W),
-      CANVAS_W
-    );
+    // Read wPct from rasterPlacement with safe fallback to prevent "undefined"
+    const effectiveWPct =
+      rasterPlacement?.wPct ??
+      (rasterPlacement?.rasterW ? rasterPlacement.rasterW / 1080 : 1);
     
-    // Scale if target differs by >1px (allow both upscale and downscale)
-    const needScale = rasterPlacement &&
-      Math.abs(targetOverlayW - rasterPlacement.rasterW) > 1;
+    // Compute target width and decide if scaling is needed
+    const targetOverlayW = Math.min(Math.round(effectiveWPct * CANVAS_W), CANVAS_W);
+    const needScale = rasterPlacement && Math.abs(targetOverlayW - rasterPlacement.rasterW) > 1;
     
     console.log('[v3:scale]', {
       rasterW: rasterPlacement?.rasterW,
       targetOverlayW,
       needScale,
-      wPct: rasterPlacement?.wPct
+      wPct: effectiveWPct
     });
     
     // Build PNG preparation chain (RGBA before scale)
@@ -632,7 +631,7 @@ export async function renderVideoQuoteOverlay({
           rasterH: placement.rasterH,  // Use exact preview dimensions
           xExpr: placement.xExpr,
           y: placement.y,  // top of raster (yPx), already integer
-          wPct: normalized.wPct ?? placement.wPct ?? 1  // Pass wPct for scaling
+          wPct: placement.wPct ?? normalized.wPct ?? 1  // Pass wPct for scaling - prioritize placement.wPct
         };
         
         // Skip drawtext - we'll use overlay filter instead

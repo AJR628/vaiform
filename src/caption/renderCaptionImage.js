@@ -4,7 +4,8 @@ import path from 'node:path';
 import os from 'node:os';
 
 // TASK 6: Improved font registration with @napi-rs/canvas
-const fontPath = path.resolve('assets/fonts/DejaVuSans-Bold.ttf');
+// Register all DejaVu font variants with proper style/weight metadata
+const FONTS = path.resolve('assets/fonts');
 let fontRegistered = false;
 
 // Check available fonts first
@@ -15,45 +16,49 @@ try {
   console.log('[caption] Could not list system fonts');
 }
 
-if (fs.existsSync(fontPath)) {
-  try {
-    // TASK 6: Try multiple registration methods for better compatibility
+// Register DejaVu Sans variants with same family name
+const sansFonts = [
+  { file: 'DejaVuSans.ttf', family: 'DejaVu Sans', style: 'normal', weight: '400' },
+  { file: 'DejaVuSans-Oblique.ttf', family: 'DejaVu Sans', style: 'italic', weight: '400' },
+  { file: 'DejaVuSans-Bold.ttf', family: 'DejaVu Sans', style: 'normal', weight: '700' },
+  { file: 'DejaVuSans-BoldOblique.ttf', family: 'DejaVu Sans', style: 'italic', weight: '700' }
+];
+
+// Register DejaVu Serif variants (optional)
+const serifFonts = [
+  { file: 'DejaVuSerif.ttf', family: 'DejaVu Serif', style: 'normal', weight: '400' },
+  { file: 'DejaVuSerif-Italic.ttf', family: 'DejaVu Serif', style: 'italic', weight: '400' },
+  { file: 'DejaVuSerif-Bold.ttf', family: 'DejaVu Serif', style: 'normal', weight: '700' },
+  { file: 'DejaVuSerif-BoldItalic.ttf', family: 'DejaVu Serif', style: 'italic', weight: '700' }
+];
+
+const allFonts = [...sansFonts, ...serifFonts];
+
+for (const font of allFonts) {
+  const fontPath = path.join(FONTS, font.file);
+  if (fs.existsSync(fontPath)) {
     try {
-      // Method 1: Direct path registration
-      GlobalFonts.register(fontPath, 'DejaVu Sans');
+      GlobalFonts.register(fontPath, font);
+      console.log(`[caption] Font registered: ${font.family} (${font.style}, ${font.weight})`);
       fontRegistered = true;
-      console.log('[caption] Font registered successfully: DejaVu Sans (path method)');
-    } catch (pathErr) {
-      try {
-        // Method 2: Buffer registration with proper TypedArray conversion
-        const fontBuffer = fs.readFileSync(fontPath);
-        const fontArray = new Uint8Array(fontBuffer);
-        GlobalFonts.register(fontArray, 'DejaVu Sans');
-        fontRegistered = true;
-        console.log('[caption] Font registered successfully: DejaVu Sans (buffer method)');
-      } catch (bufferErr) {
-        // Method 3: Try with different family name
-        try {
-          GlobalFonts.register(fontPath, 'DejaVu Sans');
-          fontRegistered = true;
-          console.log('[caption] Font registered successfully: DejaVu Sans (alt name)');
-        } catch (altErr) {
-          console.warn('[caption] All font registration methods failed:');
-          console.warn('[caption] Path error:', pathErr.message);
-          console.warn('[caption] Buffer error:', bufferErr.message);
-          console.warn('[caption] Alt name error:', altErr.message);
-        }
-      }
+    } catch (err) {
+      console.warn(`[caption] Failed to register ${font.file}:`, err.message);
     }
-  } catch (err) {
-    console.warn('[caption] Font registration setup failed:', err.message);
+  } else {
+    console.log(`[caption] Font file not found: ${font.file} (skipping - will fall back to faux italic)`);
   }
-} else {
-  console.warn('[caption] Font file not found:', fontPath);
+}
+
+// Log available font faces for debugging
+try {
+  const availableFonts = GlobalFonts.families;
+  console.log('[caption] Available registered fonts:', availableFonts);
+} catch (err) {
+  console.log('[caption] Could not list registered fonts');
 }
 
 if (!fontRegistered) {
-  console.warn('[caption] Using system font fallback - DejaVu-Bold will not be available');
+  console.warn('[caption] Using system font fallback - DejaVu fonts will not be available');
 }
 
 /**

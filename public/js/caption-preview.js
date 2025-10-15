@@ -191,7 +191,7 @@ export async function generateCaptionPreview(opts) {
     const stroke = parseStroke(cs.webkitTextStroke || cs.textStroke);
     const shadow = parseShadow(cs.textShadow);
     
-    return {
+    const extractedStyles = {
       fontStyle: cs.fontStyle === 'italic' ? 'italic' : 'normal',
       textAlign: cs.textAlign || 'center',
       letterSpacingPx: parseFloat(cs.letterSpacing) || 0,
@@ -202,6 +202,15 @@ export async function generateCaptionPreview(opts) {
       shadowOffsetX: shadow.x,
       shadowOffsetY: shadow.y,
     };
+    
+    // Log fontStyle extraction for debugging
+    console.log('[caption-preview] DOM styles extracted:', {
+      fontStyle: extractedStyles.fontStyle,
+      webkitFontStyle: cs.fontStyle,
+      fontFamily: cs.fontFamily
+    });
+    
+    return extractedStyles;
   };
   
   const domStyles = extractDOMStyles();
@@ -243,6 +252,14 @@ export async function generateCaptionPreview(opts) {
 
   console.log("[caption-overlay] POST /preview/caption with placement:", opts.placement, "yPct:", opts.yPct);
   console.log("[caption-overlay] payload:", payload); // Log full payload for debugging
+  
+  // Specifically log fontStyle for debugging
+  if (payload.fontStyle !== undefined) {
+    console.log("[caption-overlay] fontStyle in payload:", payload.fontStyle);
+  }
+  if (payload.style?.fontStyle !== undefined) {
+    console.log("[caption-overlay] fontStyle in payload.style:", payload.style.fontStyle);
+  }
   
   // Always call API-prefixed path to avoid 404 from /caption/preview
   const data = await apiFetch("/caption/preview", {
