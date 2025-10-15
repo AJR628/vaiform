@@ -42,10 +42,29 @@ router.post("/caption/preview", express.json(), async (req, res) => {
       const yPct = Number(parsed.data.yPct ?? 0.5);
       const wPct = Number(parsed.data.wPct ?? 0.8);
       const fontPx = Number(parsed.data.sizePx || parsed.data.fontPx || 54);
+      
+      // Typography
       const fontFamily = String(parsed.data.fontFamily || 'DejaVuSans');
       const weightCss = String(parsed.data.weightCss || 'normal');
+      const fontStyle = parsed.data.fontStyle || 'normal';
+      const textAlign = parsed.data.textAlign || 'center';
+      const letterSpacingPx = Number(parsed.data.letterSpacingPx ?? 0);
+      const textTransform = parsed.data.textTransform || 'none';
+      
+      // Color & effects
       const color = String(parsed.data.color || 'rgb(255, 255, 255)');
       const opacity = Number(parsed.data.opacity ?? 0.8);
+      
+      // Stroke (outline)
+      const strokePx = Number(parsed.data.strokePx ?? 0);
+      const strokeColor = String(parsed.data.strokeColor || 'rgba(0,0,0,0.85)');
+      
+      // Shadow
+      const shadowColor = String(parsed.data.shadowColor || 'rgba(0,0,0,0.6)');
+      const shadowBlur = Number(parsed.data.shadowBlur ?? 12);
+      const shadowOffsetX = Number(parsed.data.shadowOffsetX ?? 0);
+      const shadowOffsetY = Number(parsed.data.shadowOffsetY ?? 2);
+      
       const placement = 'custom';
       const internalPadding = 32;
       
@@ -168,8 +187,18 @@ router.post("/caption/preview", express.json(), async (req, res) => {
           fontPx,
           fontFamily,
           weightCss,
+          fontStyle,
+          textAlign,
+          letterSpacingPx,
+          textTransform,
           color,
           opacity,
+          strokePx,
+          strokeColor,
+          shadowColor,
+          shadowBlur,
+          shadowOffsetX,
+          shadowOffsetY,
           lineSpacingPx,
           totalTextH,
           yPxFirstLine,
@@ -196,12 +225,30 @@ router.post("/caption/preview", express.json(), async (req, res) => {
           yPct: yPctClamped,
           wPct,
           
-          // ALL toolbar settings (for reference/debug and consistency)
+          // Typography
           fontPx,
           fontFamily,
           weightCss,
+          fontStyle,
+          textAlign,
+          letterSpacingPx,
+          textTransform,
+          
+          // Color & effects
           color,
           opacity,
+          
+          // Stroke
+          strokePx,
+          strokeColor,
+          
+          // Shadow
+          shadowColor,
+          shadowBlur,
+          shadowOffsetX,
+          shadowOffsetY,
+          
+          // Layout
           placement,
           internalPadding,
           
@@ -236,6 +283,16 @@ router.post("/caption/preview", express.json(), async (req, res) => {
           lines: lines.length,
           rasterW: rasterResult.rasterW,
           rasterH: rasterResult.rasterH
+        });
+        
+        // Assertion checks for v3 raster mode
+        console.log('[v3:assert]', {
+          rasterW: rasterResult.rasterW,
+          rasterH: rasterResult.rasterH,
+          y: rasterResult.yPx,
+          pngIsSmall: rasterResult.rasterW < 600 && rasterResult.rasterH < 600,
+          hasStyles: Boolean(color) && Boolean(fontFamily) && Boolean(weightCss),
+          hasAdvancedStyles: Boolean(fontStyle !== 'normal' || letterSpacingPx !== 0 || strokePx > 0 || shadowBlur > 0)
         });
 
         return res.status(200).json({
@@ -559,22 +616,79 @@ async function renderCaptionRaster(meta) {
   const W = meta.W || 1080;
   const H = meta.H || 1920;
   
+  // Extract all styling fields
+  const weight = String(meta.weightCss ?? '400');
+  const fontStyle = meta.fontStyle ?? 'normal'; // 'italic'|'normal'|'oblique'
+  const family = pickFont(meta.fontFamily);
+  const fontPx = meta.fontPx;
+  const lines = meta.splitLines || [];
+  const textAlign = meta.textAlign ?? 'center';
+  const letterSpacingPx = meta.letterSpacingPx ?? 0;
+  
+  // Color & opacity
+  const opacity = meta.opacity ?? 1.0;
+  const color = toRgba(meta.color, opacity);
+  
+  // Stroke (outline)
+  const strokePx = meta.strokePx ?? 0;
+  const strokeColor = meta.strokeColor ?? 'rgba(0,0,0,0.85)';
+  
+  // Shadow
+  const shadowColor = meta.shadowColor ?? 'rgba(0,0,0,0.6)';
+  const shadowBlur = meta.shadowBlur ?? 12;
+  const shadowOffsetX = meta.shadowOffsetX ?? 0;
+  const shadowOffsetY = meta.shadowOffsetY ?? 2;
+  
+  // Text transform
+  const applyTransform = (text) => {
+    const transform = meta.textTransform ?? 'none';
+    switch (transform) {
+      case 'uppercase': return text.toUpperCase();
+      case 'lowercase': return text.toLowerCase();
+      case 'capitalize': return text.replace(/\b\w/g, l => l.toUpperCase());
+      default: return text;
+    }
+  };
+  
   // Measure text to get exact raster dimensions
   const tempCanvas = createCanvas(W, H);
   const tempCtx = tempCanvas.getContext("2d");
-  const font = `${meta.weightCss || 'normal'} ${meta.fontPx}px ${pickFont(meta.fontFamily)}`;
+  
+  // IMPORTANT: Build font string with weight and style
+  const font = `${fontStyle} ${weight} ${fontPx}px "${family}"`;
   tempCtx.font = font;
   
-  // Measure each line to get max width
-  const lines = meta.splitLines || [];
+  console.log('[raster] Font set to:', font, '| registered family:', family);
+  
+  // Helper to measure text width accounting for letter spacing
+  const measureTextWidth = (ctx, text, letterSpacing) => {
+    if (!letterSpacing || letterSpacing === 0) {
+      return ctx.measureText(text).width;
+    }
+    let totalWidth = 0;
+    for (let i = 0; i < text.length; i++) {
+      totalWidth += ctx.measureText(text[i]).width;
+      if (i < text.length - 1) totalWidth += letterSpacing;
+    }
+    return totalWidth;
+  };
+  
+  // Measure each line to get max width (accounting for letter spacing)
   let maxLineWidth = 0;
   for (const line of lines) {
-    const metrics = tempCtx.measureText(line);
-    maxLineWidth = Math.max(maxLineWidth, metrics.width);
+    const transformedLine = applyTransform(line);
+    const width = measureTextWidth(tempCtx, transformedLine, letterSpacingPx);
+    maxLineWidth = Math.max(maxLineWidth, width);
   }
   
-  // Add padding for shadow/stroke (12px shadow blur + 3px stroke = ~20px padding)
-  const padding = 24;
+  // Calculate padding based on shadow/stroke
+  const maxShadowExtent = Math.max(
+    Math.abs(shadowOffsetX) + shadowBlur,
+    Math.abs(shadowOffsetY) + shadowBlur,
+    strokePx
+  );
+  const padding = Math.ceil(Math.max(24, maxShadowExtent * 1.5));
+  
   const rasterW = Math.ceil(maxLineWidth) + (padding * 2);
   const rasterH = Math.ceil(meta.totalTextH) + (padding * 2);
   
@@ -583,26 +697,101 @@ async function renderCaptionRaster(meta) {
   const ctx = rasterCanvas.getContext("2d");
   ctx.clearRect(0, 0, rasterW, rasterH);
   
-  // Setup font and styling (match preview exactly)
+  // Setup font
   ctx.font = font;
-  const color = toRgba(meta.color, meta.opacity ?? 1);
-  ctx.fillStyle = color;
-  ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
   
-  // Draw shadow
-  ctx.shadowColor = "rgba(0,0,0,0.6)";
-  ctx.shadowBlur = 12;
-  ctx.shadowOffsetY = 2;
+  // Helper to draw text with letter spacing
+  const drawTextWithLetterSpacing = (ctx, text, x, y, letterSpacing, method = 'fill') => {
+    if (!letterSpacing || letterSpacing === 0) {
+      if (method === 'stroke') {
+        ctx.strokeText(text, x, y);
+      } else {
+        ctx.fillText(text, x, y);
+      }
+      return;
+    }
+    
+    // Manual glyph-by-glyph rendering for letter spacing
+    let currX = x;
+    for (const ch of text) {
+      const w = ctx.measureText(ch).width;
+      if (method === 'stroke') {
+        ctx.strokeText(ch, currX, y);
+      } else {
+        ctx.fillText(ch, currX, y);
+      }
+      currX += w + letterSpacing;
+    }
+  };
   
-  // Draw each line centered in the raster
-  const xCenter = rasterW / 2;
+  // Draw each line
   let currentY = padding;  // Start after top padding
   
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    ctx.fillText(line, xCenter, currentY);
-    currentY += meta.fontPx + (i < lines.length - 1 ? meta.lineSpacingPx : 0);
+    const line = applyTransform(lines[i]);
+    
+    // Calculate X position based on alignment
+    const lineWidth = measureTextWidth(ctx, line, letterSpacingPx);
+    let x;
+    switch (textAlign) {
+      case 'left':
+        x = padding;
+        break;
+      case 'right':
+        x = rasterW - padding - lineWidth;
+        break;
+      case 'center':
+      default:
+        x = (rasterW - lineWidth) / 2;
+        break;
+    }
+    
+    // For letter-spaced text, we need to start from the left edge
+    if (letterSpacingPx && letterSpacingPx !== 0 && textAlign === 'center') {
+      x = (rasterW - lineWidth) / 2;
+    }
+    
+    // Render shadow (if enabled)
+    if (shadowBlur > 0 || shadowOffsetX !== 0 || shadowOffsetY !== 0) {
+      ctx.save();
+      ctx.globalAlpha = opacity;
+      ctx.shadowColor = shadowColor;
+      ctx.shadowBlur = shadowBlur;
+      ctx.shadowOffsetX = shadowOffsetX;
+      ctx.shadowOffsetY = shadowOffsetY;
+      ctx.fillStyle = color;
+      drawTextWithLetterSpacing(ctx, line, x, currentY, letterSpacingPx, 'fill');
+      ctx.restore();
+      
+      // Reset shadow for stroke/fill
+      ctx.shadowColor = 'transparent';
+      ctx.shadowBlur = 0;
+      ctx.shadowOffsetX = 0;
+      ctx.shadowOffsetY = 0;
+    }
+    
+    // Render stroke (if enabled)
+    if (strokePx > 0) {
+      ctx.save();
+      ctx.globalAlpha = opacity;
+      ctx.strokeStyle = strokeColor;
+      ctx.lineWidth = strokePx;
+      ctx.lineJoin = 'round';
+      ctx.lineCap = 'round';
+      ctx.miterLimit = 2;
+      drawTextWithLetterSpacing(ctx, line, x, currentY, letterSpacingPx, 'stroke');
+      ctx.restore();
+    }
+    
+    // Render fill text
+    ctx.save();
+    ctx.globalAlpha = opacity;
+    ctx.fillStyle = color;
+    drawTextWithLetterSpacing(ctx, line, x, currentY, letterSpacingPx, 'fill');
+    ctx.restore();
+    
+    currentY += fontPx + (i < lines.length - 1 ? meta.lineSpacingPx : 0);
   }
   
   // Convert to data URL
@@ -612,20 +801,42 @@ async function renderCaptionRaster(meta) {
   // But the raster includes padding, so we need to adjust
   const yPx = meta.yPxFirstLine - padding;
   
-  console.log('[raster] Drew caption PNG:', {
+  console.log('[raster] Drew caption PNG with styles:', {
     rasterW,
     rasterH,
     yPx,
     padding,
     lines: lines.length,
-    maxLineWidth
+    maxLineWidth,
+    fontStyle,
+    weight,
+    letterSpacingPx,
+    strokePx,
+    shadowBlur,
+    textAlign
   });
   
   return {
     rasterUrl: rasterDataUrl,
     rasterW,
     rasterH,
-    yPx
+    yPx,
+    // Echo back all styles used (helps debugging)
+    fontPx,
+    lineSpacingPx: meta.lineSpacingPx,
+    fontFamily: family,
+    weightCss: weight,
+    fontStyle,
+    color,
+    opacity,
+    textAlign,
+    letterSpacingPx,
+    strokePx,
+    strokeColor,
+    shadowColor,
+    shadowBlur,
+    shadowOffsetX,
+    shadowOffsetY
   };
 }
 

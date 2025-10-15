@@ -107,6 +107,29 @@ export function computeOverlayPlacement(overlay, W, H) {
       outputXExpr: result.xExpr
     });
     
+    // Assertion checks before ffmpeg
+    console.log('[v3:assert]', {
+      rasterW,
+      rasterH,
+      y: result.y,
+      pngIsSmall: rasterW < 600 && rasterH < 600,
+      hasStyles: Boolean(overlay.color) && Boolean(overlay.fontFamily) && Boolean(overlay.weightCss),
+      hasAdvancedStyles: Boolean(
+        overlay.fontStyle !== 'normal' || 
+        overlay.letterSpacingPx !== 0 || 
+        overlay.strokePx > 0 || 
+        overlay.shadowBlur > 0
+      )
+    });
+    
+    // Assert raster dimensions are sane
+    if (!Number.isFinite(rasterW) || !Number.isFinite(rasterH) || rasterW <= 0 || rasterH <= 0) {
+      throw new Error(`[v3:assert] Invalid raster dimensions: ${rasterW}x${rasterH}`);
+    }
+    if (rasterW > 1920 || rasterH > 1920) {
+      console.warn(`[v3:assert] Suspiciously large raster: ${rasterW}x${rasterH} - expected tight PNG`);
+    }
+    
     return result;
   }
   

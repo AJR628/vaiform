@@ -158,6 +158,54 @@ export async function generateCaptionPreview(opts) {
   const lineHeightPx = Math.round(fontPx * lineHeightMul);   // baseline-to-baseline (62px)
   const lineSpacingPx = Math.max(0, Math.round(lineHeightPx - fontPx)); // gap (8px)
   
+  // Extract style fields from DOM if content element exists
+  const extractDOMStyles = () => {
+    if (typeof window === 'undefined') return {};
+    
+    const content = document.getElementById('caption-content');
+    if (!content) return {};
+    
+    const cs = getComputedStyle(content);
+    
+    // Helper to parse webkitTextStroke: "3px rgb(0, 0, 0)" → {px: 3, color: "rgb(0,0,0)"}
+    const parseStroke = (str) => {
+      if (!str || str === 'none' || str === '0px') return { px: 0, color: 'rgba(0,0,0,0.85)' };
+      const match = str.match(/^([\d.]+)px\s+(.+)$/);
+      if (!match) return { px: 0, color: 'rgba(0,0,0,0.85)' };
+      return { px: parseFloat(match[1]), color: match[2] };
+    };
+    
+    // Helper to parse textShadow: "0px 2px 12px rgba(0,0,0,0.65)" → {x,y,blur,color}
+    const parseShadow = (str) => {
+      if (!str || str === 'none') return { x: 0, y: 2, blur: 12, color: 'rgba(0,0,0,0.6)' };
+      const match = str.match(/([-\d.]+)px\s+([-\d.]+)px\s+([-\d.]+)px\s+(.+)/);
+      if (!match) return { x: 0, y: 2, blur: 12, color: 'rgba(0,0,0,0.6)' };
+      return {
+        x: parseFloat(match[1]),
+        y: parseFloat(match[2]),
+        blur: parseFloat(match[3]),
+        color: match[4]
+      };
+    };
+    
+    const stroke = parseStroke(cs.webkitTextStroke || cs.textStroke);
+    const shadow = parseShadow(cs.textShadow);
+    
+    return {
+      fontStyle: cs.fontStyle === 'italic' ? 'italic' : 'normal',
+      textAlign: cs.textAlign || 'center',
+      letterSpacingPx: parseFloat(cs.letterSpacing) || 0,
+      strokePx: stroke.px,
+      strokeColor: stroke.color,
+      shadowColor: shadow.color,
+      shadowBlur: shadow.blur,
+      shadowOffsetX: shadow.x,
+      shadowOffsetY: shadow.y,
+    };
+  };
+  
+  const domStyles = extractDOMStyles();
+  
   // Use server-compatible payload structure
   const overlayV2 = detectOverlayV2();
   const payload = overlayV2
@@ -175,6 +223,8 @@ export async function generateCaptionPreview(opts) {
         weightCss: opts.weight || 'normal',
         color: opts.color || '#FFFFFF',
         opacity: Number(opts.opacity ?? 0.85),
+        // Additional style fields from DOM
+        ...domStyles
       }
     : {
         style: {
@@ -192,6 +242,8 @@ export async function generateCaptionPreview(opts) {
       };
 
   console.log("[caption-overlay] POST /preview/caption with placement:", opts.placement, "yPct:", opts.yPct);
+  console.log("[caption-overlay] payload:", payload); // Log full payload for debugging
+  
   // Always call API-prefixed path to avoid 404 from /caption/preview
   const data = await apiFetch("/caption/preview", {
     method: "POST",
@@ -224,6 +276,26 @@ export async function generateCaptionPreview(opts) {
         urlType: meta.rasterUrl?.startsWith('data:') ? 'data URL' : 'http(s)',
         urlLength: meta.rasterUrl?.length
       });
+      
+      // CLIENT ASSERTION: Check for missing style keys
+      const keysWeCareAbout = [
+        'fontPx','lineSpacingPx','color','opacity','fontFamily','weightCss',
+        'textAlign','letterSpacingPx','strokePx','shadowBlur',
+        'fontStyle','strokeColor','shadowColor'
+      ];
+      const missing = keysWeCareAbout.filter(k => !(k in meta));
+      if (missing.length > 0) {
+        console.warn('[preview-meta] missing style keys:', missing);
+      }
+      
+      // Additional assertions for raster geometry
+      if (meta.rasterW >= 1080 || meta.rasterH >= 1920) {
+        console.warn('[preview-meta] raster dimensions suspiciously large:', {
+          rasterW: meta.rasterW,
+          rasterH: meta.rasterH,
+          expected: 'tight PNG < 600px'
+        });
+      }
     } else {
       console.log('[caption-preview] DRAWTEXT mode - Server provided:', {
         fontPx: meta.fontPx,
