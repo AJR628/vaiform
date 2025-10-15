@@ -296,6 +296,35 @@ export async function generateCaptionPreview(opts) {
           expected: 'tight PNG < 600px'
         });
       }
+      
+      // Comprehensive diagnostic log for render parity debugging
+      console.log('[preview:raster:FINAL]', {
+        boxW: Math.round((meta.wPct ?? 0.8) * 1080),
+        rasterW: meta.rasterW,
+        rasterH: meta.rasterH,
+        yPx: meta.yPx,
+        wPct: meta.wPct,
+        // Typography
+        fontFamily: meta.fontFamily,
+        fontStyle: meta.fontStyle,
+        weightCss: meta.weightCss,
+        textAlign: meta.textAlign,
+        letterSpacingPx: meta.letterSpacingPx,
+        textTransform: meta.textTransform,
+        // Effects
+        strokePx: meta.strokePx,
+        strokeColor: meta.strokeColor,
+        shadowBlur: meta.shadowBlur,
+        shadowColor: meta.shadowColor,
+        shadowOffsetX: meta.shadowOffsetX,
+        shadowOffsetY: meta.shadowOffsetY,
+        // Color
+        color: meta.color,
+        opacity: meta.opacity,
+        // Layout
+        internalPadding: meta.internalPadding,
+        lineSpacingPx: meta.lineSpacingPx
+      });
     } else {
       console.log('[caption-preview] DRAWTEXT mode - Server provided:', {
         fontPx: meta.fontPx,

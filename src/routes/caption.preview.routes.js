@@ -85,7 +85,11 @@ router.post("/caption/preview", express.json(), async (req, res) => {
       const font = `${weightCss} ${fontPx}px ${pickFont(fontFamily)}`;
       ctx.font = font;
       
-      const maxWidth = Math.round(wPct * W);
+      // Compute maxWidth accounting for internal padding (match UI box exactly)
+      const CANVAS_W = 1080;
+      const boxW = Math.round(wPct * CANVAS_W);
+      const maxWidth = Math.max(0, boxW - 2 * internalPadding);
+      
       const segments = text.split('\n');  // Split on explicit newlines first
       const lines = [];
 

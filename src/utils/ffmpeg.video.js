@@ -284,32 +284,49 @@ function buildVideoChain({ width, height, videoVignette, drawLayers, captionImag
     const core = [ scale, crop, (videoVignette ? 'vignette=PI/4:0.5' : null), 'format=rgba' ].filter(Boolean);
     const baseChain = makeChain('0:v', core, 'vmain');
     
-    // Prepare PNG input with transparency
-    const pngFormat = `[1:v]format=rgba[ovr]`;
+    // Constants for PNG scaling
+    const CANVAS_W = 1080;
     
-    // Overlay PNG with exact placement
-    let overlayExpr;
-    if (rasterPlacement && rasterPlacement.mode === 'raster') {
-      // Use exact placement from SSOT v3
-      const xExpr = rasterPlacement.xExpr || '(W-overlay_w)/2';
-      const y = rasterPlacement.y || 0;
-      overlayExpr = `[vmain][ovr]overlay=${xExpr}:${y}:format=auto[vout]`;
-      console.log('[raster] overlay filter:', overlayExpr);
-      
-      // CRITICAL: Log final overlay expression with exact dimensions
-      console.log('[v3:ffmpeg:FINAL]', {
-        overlayExpr,
-        rasterW: rasterPlacement.rasterW,
-        rasterH: rasterPlacement.rasterH,
-        y: y,
-        xExpr: xExpr
-      });
-    } else {
-      // Fallback: center horizontally, top vertically
-      overlayExpr = `[vmain][ovr]overlay=(W-w)/2:0:format=auto[vout]`;
-    }
+    // Compute target width and decide if scaling is needed
+    const targetOverlayW = Math.min(
+      Math.round((rasterPlacement?.wPct ?? 1) * CANVAS_W),
+      CANVAS_W
+    );
     
-    return `${baseChain};${pngFormat};${overlayExpr}`;
+    // Scale if target differs by >1px (allow both upscale and downscale)
+    const needScale = rasterPlacement &&
+      Math.abs(targetOverlayW - rasterPlacement.rasterW) > 1;
+    
+    console.log('[v3:scale]', {
+      rasterW: rasterPlacement?.rasterW,
+      targetOverlayW,
+      needScale,
+      wPct: rasterPlacement?.wPct
+    });
+    
+    // Build PNG preparation chain (RGBA before scale)
+    const pngPrep = needScale
+      ? `[1:v]format=rgba[ovrin];[ovrin]scale=${targetOverlayW}:-1:flags=lanczos[ovr]`
+      : `[1:v]format=rgba[ovr]`;
+    
+    // Overlay with format=auto to preserve alpha
+    const xExpr = rasterPlacement?.xExpr || '(W-overlay_w)/2';
+    const y = Math.round(rasterPlacement?.y ?? 0);
+    const overlayExpr = `[vmain][ovr]overlay=${xExpr}:${y}:format=auto[vout]`;
+    
+    // CRITICAL: Log final overlay configuration
+    console.log('[render:raster:FFMPEG]', {
+      needScale,
+      targetOverlayW,
+      actualRasterW: rasterPlacement?.rasterW,
+      wPct: rasterPlacement?.wPct,
+      xExpr,
+      y
+    });
+    
+    const filter = `${baseChain};${pngPrep};${overlayExpr}`;
+    
+    return filter;
   } else if (CAPTION_OVERLAY && captionImage) {
     // Legacy overlay format (keep for backward compatibility)
     // Verify the overlay file exists before using it
@@ -548,6 +565,15 @@ export async function renderVideoQuoteOverlay({
     if (placement?.mode === 'raster' && placement.rasterUrl) {
       console.log('[raster] Using PNG overlay instead of drawtext');
       
+      // CRITICAL: Log raster inputs for debugging
+      console.log('[render:raster:IN]', {
+        rasterW: placement.rasterW,
+        rasterH: placement.rasterH,
+        y: placement.y,
+        wPct: normalized.wPct ?? placement.wPct ?? 1,
+        xExpr: placement.xExpr
+      });
+      
       // CRITICAL: Log placement before materialization
       console.log('[v3:materialize:BEFORE]', {
         rasterUrl: placement.rasterUrl.substring(0, 50) + '...',
@@ -594,13 +620,19 @@ export async function renderVideoQuoteOverlay({
         usingCaptionPng = true;
         captionPngPath = rasterTmpPath;
         
+        // Warn if wPct is missing in normalized overlay
+        if (!('wPct' in normalized)) {
+          console.warn('[render] wPct missing; defaulting to 1');
+        }
+        
         // Store placement details for overlay filter - EXACT preview dimensions
         const rasterPlacement = {
           mode: 'raster',
           rasterW: placement.rasterW,  // Use exact preview dimensions
           rasterH: placement.rasterH,  // Use exact preview dimensions
           xExpr: placement.xExpr,
-          y: placement.y
+          y: placement.y,  // top of raster (yPx), already integer
+          wPct: normalized.wPct ?? placement.wPct ?? 1  // Pass wPct for scaling
         };
         
         // Skip drawtext - we'll use overlay filter instead

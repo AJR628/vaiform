@@ -80,6 +80,17 @@ export function computeOverlayPlacement(overlay, W, H) {
       throw new Error('SSOT v3 raster mode requires valid yPx');
     }
     
+    // Reject full-canvas rasters (likely an error)
+    if (rasterW >= 1080 || rasterH >= 1920) {
+      console.error('[overlay] Raster dimensions suspiciously large:', { rasterW, rasterH });
+      throw new Error('Raster PNG should be tight (not full canvas). Regenerate preview.');
+    }
+    
+    // Warn if wPct is missing
+    if (!overlay.wPct) {
+      console.warn('[overlay] wPct missing, defaulting to 1.0');
+    }
+    
     console.log('[overlay] mode=raster v3', {
       hasRaster: !!overlay.rasterDataUrl || !!overlay.rasterUrl || !!overlay.rasterPng,
       rasterW,
@@ -97,6 +108,7 @@ export function computeOverlayPlacement(overlay, W, H) {
       rasterH,
       xExpr: overlay.xExpr || '(W - overlay_w)/2',
       y: Math.round(yPx),
+      wPct: overlay.wPct ?? 1  // Pass wPct for scaling in render
     };
     
     // CRITICAL: Log output to ensure no mutation
