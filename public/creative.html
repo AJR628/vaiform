@@ -3335,15 +3335,23 @@
                     yPxFirstLine: yPxFirstLine,
                     splitLines: splitLines,
                     
-                    // Raster fields for v3
-                    rasterUrl: data.data?.imageUrl,
-                    rasterDataUrl: data.data?.imageUrl,
-                    rasterPng: data.data?.imageUrl,
-                    rasterW: data.data?.wPx || 1080,
-                    rasterH: data.data?.hPx || 1920,
+                    // Raster fields for v3 - use values returned in meta
+                    rasterUrl: data.data?.meta?.rasterUrl,
+                    rasterDataUrl: data.data?.meta?.rasterUrl,
+                    rasterPng: data.data?.meta?.rasterUrl,
+                    rasterW: data.data?.meta?.rasterW,
+                    rasterH: data.data?.meta?.rasterH,
                     xExpr: '(W-overlay_w)/2',
-                    yPx: yPxFirstLine
+                    // IMPORTANT: use top-of-raster Y (already yPxFirstLine - padding)
+                    yPx: data.data?.meta?.yPx
                 };
+
+                // Client-side guard: warn if raster dimensions look like full canvas
+                if (normalizedMeta.mode === 'raster' &&
+                    normalizedMeta.rasterW === 1080 &&
+                    normalizedMeta.rasterH === 1920) {
+                    console.warn('[client-guard] Raster size looks like full canvas. Preview meta not wired correctly.');
+                }
 
                 // Store normalized overlay meta for render (SSOT)
                 window._overlayMeta = normalizedMeta;
