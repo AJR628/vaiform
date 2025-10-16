@@ -1,5 +1,6 @@
 import express from "express";
 import pkg from "@napi-rs/canvas";
+import crypto from "node:crypto";
 import { CaptionMetaSchema } from '../schemas/caption.schema.js';
 import { bufferToTmp } from '../utils/tmp.js';
 import { canvasFontString, normalizeWeight, normalizeFontStyle } from '../utils/font.registry.js';
@@ -226,6 +227,12 @@ router.post("/caption/preview", express.json(), async (req, res) => {
           ssotVersion: 3,
           mode: 'raster',
           
+          // 🔒 GEOMETRY LOCK - ensures render uses same target dimensions
+          frameW: 1080,
+          frameH: 1920,
+          bgScaleExpr: "scale='if(gt(a,1080/1920),-2,1080)':'if(gt(a,1080/1920),1920,-2)'",
+          bgCropExpr: "crop=1080:1920",
+          
           // Placement inputs
           text,
           xPct,
@@ -271,6 +278,11 @@ router.post("/caption/preview", express.json(), async (req, res) => {
           lineSpacingPx,
           totalTextH,
         };
+        
+        // Add PNG hash for integrity validation
+        const pngBuffer = Buffer.from(rasterResult.rasterUrl.split(',')[1], 'base64');
+        const rasterHash = crypto.createHash('sha256').update(pngBuffer).digest('hex').slice(0, 16);
+        ssotMeta.rasterHash = rasterHash;
         
         console.log('[raster] Rendered caption PNG:', {
           rasterW: rasterResult.rasterW,

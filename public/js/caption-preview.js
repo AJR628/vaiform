@@ -424,6 +424,9 @@ export async function generateCaptionPreview(opts) {
       console.log('[v3:savePreview] saved', { 
         v: normalizedMeta.ssotVersion, 
         mode: normalizedMeta.mode,
+        frameW: normalizedMeta.frameW,
+        frameH: normalizedMeta.frameH,
+        rasterHash: normalizedMeta.rasterHash?.slice(0, 8) + '...',
         keys: Object.keys(normalizedMeta),
         hasRaster: !!normalizedMeta.rasterUrl || !!normalizedMeta.rasterDataUrl
       });

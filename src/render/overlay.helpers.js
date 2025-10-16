@@ -51,6 +51,14 @@ export function computeOverlayPlacement(overlay, W, H) {
   if (hasV3 && mode === 'raster' && overlay.rasterUrl) {
     console.log('[overlay] USING RASTER MODE - PNG overlay from preview');
     
+    // 🔒 GEOMETRY LOCK VALIDATION - ensure preview was made for same target
+    if (overlay.frameW && overlay.frameW !== W) {
+      throw new Error(`Preview frameW mismatch: ${overlay.frameW} != ${W}. Regenerate preview.`);
+    }
+    if (overlay.frameH && overlay.frameH !== H) {
+      throw new Error(`Preview frameH mismatch: ${overlay.frameH} != ${H}. Regenerate preview.`);
+    }
+    
     const rasterW = num(overlay.rasterW);
     const rasterH = num(overlay.rasterH);
     const yPx = num(overlay.yPx);
@@ -63,7 +71,9 @@ export function computeOverlayPlacement(overlay, W, H) {
       parsedRasterH: rasterH,
       inputYPx: overlay.yPx,
       parsedYPx: yPx,
-      inputXExpr: overlay.xExpr
+      inputXExpr: overlay.xExpr,
+      frameW: overlay.frameW,
+      frameH: overlay.frameH
     });
     
     // Validate raster fields - fail fast on missing PNG
@@ -113,7 +123,14 @@ export function computeOverlayPlacement(overlay, W, H) {
       rasterH,
       xExpr: overlay.xExpr || '(W - overlay_w)/2',
       y: Math.round(yPx),
-      wPct: overlay.wPct ?? 1  // Pass wPct for scaling in render
+      wPct: overlay.wPct ?? 1,  // Pass wPct for scaling in render
+      
+      // 🔒 Pass through geometry lock fields for validation
+      frameW: overlay.frameW,
+      frameH: overlay.frameH,
+      bgScaleExpr: overlay.bgScaleExpr,
+      bgCropExpr: overlay.bgCropExpr,
+      rasterHash: overlay.rasterHash
     };
     
     // CRITICAL: Log output to ensure no mutation
@@ -442,6 +459,14 @@ export function normalizeOverlayCaption(overlay) {
       rasterH: toNum(overlay.rasterH),
       xExpr: overlay.xExpr,
       yPx: toNum(overlay.yPx),
+      
+      // 🔒 Add geometry lock fields
+      frameW: toNum(overlay.frameW),
+      frameH: toNum(overlay.frameH),
+      bgScaleExpr: overlay.bgScaleExpr,
+      bgCropExpr: overlay.bgCropExpr,
+      rasterHash: overlay.rasterHash,
+      
       // Keep debug fields
       totalTextH: toNum(overlay.totalTextH),
       lineSpacingPx: toNum(overlay.lineSpacingPx),
@@ -457,7 +482,10 @@ export function normalizeOverlayCaption(overlay) {
       inputYPx: overlay.yPx,
       outputYPx: normalized.yPx,
       inputXExpr: overlay.xExpr,
-      outputXExpr: normalized.xExpr
+      outputXExpr: normalized.xExpr,
+      frameW: normalized.frameW,
+      frameH: normalized.frameH,
+      hasHash: !!normalized.rasterHash
     });
     
     return normalized;

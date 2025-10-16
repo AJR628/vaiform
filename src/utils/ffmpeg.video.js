@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import fs from "node:fs";
 import fsp from "node:fs/promises";
+import crypto from "node:crypto";
 import pkg from "@napi-rs/canvas";
 import { renderImageQuoteVideo } from "./ffmpeg.js";
 import { getDurationMsFromMedia } from "./media.duration.js";
@@ -278,27 +279,15 @@ function buildVideoChain({ width, height, videoVignette, drawLayers, captionImag
     const core = [ scale, crop, (videoVignette ? 'vignette=PI/4:0.5' : null), 'format=rgba' ].filter(Boolean);
     const baseChain = makeChain('0:v', core, 'vmain');
     
-    // Constants for PNG scaling
-    const CANVAS_W = 1080;
+    // 🔒 NO SCALING - use preview dimensions verbatim for perfect parity
+    const pngPrep = `[1:v]format=rgba[ovr]`;
     
-    // Read wPct from rasterPlacement with safe fallback to prevent "undefined"
-    const wPct = rasterPlacement?.wPct ?? 1;
-    
-    // Compute target width and decide if scaling is needed
-    const targetOverlayW = Math.min(Math.round(wPct * CANVAS_W), CANVAS_W);
-    const needScale = rasterPlacement && Math.abs(targetOverlayW - rasterPlacement.rasterW) > 1;
-    
-    console.log('[v3:scale]', {
+    console.log('[v3:parity] Using preview dimensions verbatim:', {
       rasterW: rasterPlacement?.rasterW,
-      targetOverlayW,
-      needScale,
-      wPct: wPct
+      rasterH: rasterPlacement?.rasterH,
+      yPx: rasterPlacement?.y,
+      xExpr: rasterPlacement?.xExpr
     });
-    
-    // Build PNG preparation chain (RGBA before scale)
-    const pngPrep = needScale
-      ? `[1:v]format=rgba[ovrin];[ovrin]scale=${targetOverlayW}:-1:flags=lanczos[ovr]`
-      : `[1:v]format=rgba[ovr]`;
     
     // Overlay with format=auto to preserve alpha
     const xExpr = rasterPlacement?.xExpr || '(W-overlay_w)/2';
@@ -307,10 +296,9 @@ function buildVideoChain({ width, height, videoVignette, drawLayers, captionImag
     
     // CRITICAL: Log final overlay configuration
     console.log('[render:raster:FFMPEG]', {
-      needScale,
-      targetOverlayW,
+      noScaling: true,
       actualRasterW: rasterPlacement?.rasterW,
-      wPct: rasterPlacement?.wPct,
+      actualRasterH: rasterPlacement?.rasterH,
       xExpr,
       y
     });
@@ -596,6 +584,31 @@ export async function renderVideoQuoteOverlay({
           expectedY: placement.y,
           xExpr: placement.xExpr
         });
+        
+        // 🔒 VALIDATION GUARDS - fail fast on mismatches
+        
+        // GEOMETRY LOCK - fail if preview was made for different target dimensions
+        if (placement.frameW && placement.frameW !== W) {
+          throw new Error(`Preview was for ${placement.frameW}×${placement.frameH}, got ${W}×${H}. Regenerate preview.`);
+        }
+        if (placement.frameH && placement.frameH !== H) {
+          throw new Error(`Preview was for ${placement.frameW}×${placement.frameH}, got ${W}×${H}. Regenerate preview.`);
+        }
+        
+        // OVERLAY IDENTITY - verify PNG hash matches preview
+        if (placement.rasterHash) {
+          const pngBuffer = fs.readFileSync(rasterTmpPath);
+          const actualHash = crypto.createHash('sha256').update(pngBuffer).digest('hex').slice(0, 16);
+          if (actualHash !== placement.rasterHash) {
+            throw new Error(`Overlay differs from preview (hash mismatch: ${actualHash} vs ${placement.rasterHash}). Regenerate preview.`);
+          }
+          console.log('[v3:hash] PNG integrity verified:', actualHash);
+        }
+        
+        // MODE LOCK - only raster mode allowed for v3
+        if (placement.mode !== 'raster') {
+          throw new Error(`Expected mode='raster', got '${placement.mode}'. Regenerate preview.`);
+        }
         
         console.log('[raster] Materialized PNG overlay:', {
           path: rasterTmpPath,
