@@ -2,7 +2,7 @@ import express from "express";
 import pkg from "@napi-rs/canvas";
 import { CaptionMetaSchema } from '../schemas/caption.schema.js';
 import { bufferToTmp } from '../utils/tmp.js';
-import { canvasFontString } from '../utils/font.registry.js';
+import { canvasFontString, normalizeWeight, normalizeFontStyle } from '../utils/font.registry.js';
 const { createCanvas } = pkg;
 
 const router = express.Router();
@@ -820,6 +820,10 @@ async function renderCaptionRaster(meta) {
   // But the raster includes padding, so we need to adjust
   const yPx = meta.yPxFirstLine - padding;
   
+  // Compute debug tokens for cleaner output
+  const weightToken = normalizeWeight(fontWeight) >= 700 ? 'bold' : 'normal';
+  const styleToken = normalizeFontStyle(fontStyle) === 'italic' ? 'italic' : 'normal';
+  
   console.log('[raster] Drew caption PNG with styles:', {
     rasterW,
     rasterH,
@@ -827,8 +831,8 @@ async function renderCaptionRaster(meta) {
     padding,
     lines: lines.length,
     maxLineWidth,
-    fontStyle,
-    weight,
+    fontStyle: styleToken,
+    fontWeight: weightToken,
     letterSpacingPx,
     strokePx,
     shadowBlur,

@@ -13,7 +13,13 @@ import "./config/firebase.js"; // ensure Firebase Admin is initialized
 import pkg from "@napi-rs/canvas";
 const { GlobalFonts } = pkg;
 
+const USE_FONT_REGISTRATION = process.env.USE_FONT_REGISTRATION === 'true';
+
 function safeRegisterFont(file, family, weight = "normal") {
+  if (!USE_FONT_REGISTRATION) {
+    return false; // Silent skip - system fonts are available
+  }
+  
   try {
     const p = path.join(process.cwd(), "assets", "fonts", file);
     if (!fs.existsSync(p)) throw new Error("missing");

@@ -48,6 +48,20 @@ export function resolveFontFile(weightCss, fontStyle) {
 }
 
 /**
+ * Font resolution test matrix:
+ * - resolveFontFile('400', 'normal')  → /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf
+ * - resolveFontFile('700', 'normal')  → DejaVuSans-Bold.ttf
+ * - resolveFontFile('400', 'italic')  → DejaVuSans-Oblique.ttf
+ * - resolveFontFile('700', 'italic')  → DejaVuSans-BoldOblique.ttf
+ * 
+ * Canvas usage (preview):
+ * - canvasFontString('700', 'italic', 57) → "italic bold 57px \"DejaVu Sans\""
+ * 
+ * FFmpeg usage (render):
+ * - escapeFontPath(resolveFontFile('700', 'italic')) → fontfile=/usr/share/.../DejaVuSans-BoldOblique.ttf
+ */
+
+/**
  * Build canvas font string for @napi-rs/canvas
  * @param {string|number} weightCss - Font weight
  * @param {string} fontStyle - Font style

@@ -37,6 +37,9 @@ function writeCaptionTxt(text) {
 }
 
 // --- Caption render parity with preview ---
+// DEPRECATED: These constants are superseded by resolveFontFile() in font.registry.js
+// They remain for reference only. All render paths should use:
+//   resolveFontFile(weightCss, fontStyle) → correct .ttf path
 const CAPTION_FONT_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf";
 const CAPTION_FONT_REG  = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf";
 

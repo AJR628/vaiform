@@ -37,6 +37,10 @@ const allFonts = [...sansFonts, ...serifFonts];
 
 function registerFontsOnce() {
   if (fontRegistered) return;
+  if (!process.env.USE_FONT_REGISTRATION) {
+    console.log('[caption] Font registration disabled - using system fonts');
+    return;
+  }
   
   // Try system fonts first, then local fonts
   const fontPaths = [SYSTEM_FONTS, LOCAL_FONTS];
