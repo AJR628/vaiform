@@ -11,6 +11,7 @@ import { CAPTION_OVERLAY } from "../config/env.js";
 import { hasLineSpacingOption } from "./ffmpeg.capabilities.js";
 import { normalizeOverlayCaption, computeOverlayPlacement } from "../render/overlay.helpers.js";
 import { fetchToTmp, cleanupTmp } from "./tmp.js";
+import { resolveFontFile, assertFontExists, escapeFontPath } from "./font.registry.js";
 
 const { createCanvas } = pkg;
 
@@ -39,17 +40,7 @@ function writeCaptionTxt(text) {
 const CAPTION_FONT_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf";
 const CAPTION_FONT_REG  = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf";
 
-// Font resolution helper
-function resolveFontFile(fontFamily, weightCss) {
-  const isBold = weightCss === 'bold' || weightCss === '800' || weightCss === '900';
-  
-  if (fontFamily === 'DejaVu Sans' || fontFamily === 'DejaVuSans') {
-    return isBold ? CAPTION_FONT_BOLD : CAPTION_FONT_REG;
-  }
-  
-  // Fallback to regular font
-  return CAPTION_FONT_REG;
-}
+// Font resolution now handled by SSOT font.registry.js
 
 // Match preview look: slightly higher outline + soft drop shadow
 const CAPTION_ALPHA     = 0.80;   // white text opacity (preview uses ~80%)
@@ -288,19 +279,17 @@ function buildVideoChain({ width, height, videoVignette, drawLayers, captionImag
     const CANVAS_W = 1080;
     
     // Read wPct from rasterPlacement with safe fallback to prevent "undefined"
-    const effectiveWPct =
-      rasterPlacement?.wPct ??
-      (rasterPlacement?.rasterW ? rasterPlacement.rasterW / 1080 : 1);
+    const wPct = rasterPlacement?.wPct ?? 1;
     
     // Compute target width and decide if scaling is needed
-    const targetOverlayW = Math.min(Math.round(effectiveWPct * CANVAS_W), CANVAS_W);
+    const targetOverlayW = Math.min(Math.round(wPct * CANVAS_W), CANVAS_W);
     const needScale = rasterPlacement && Math.abs(targetOverlayW - rasterPlacement.rasterW) > 1;
     
     console.log('[v3:scale]', {
       rasterW: rasterPlacement?.rasterW,
       targetOverlayW,
       needScale,
-      wPct: effectiveWPct
+      wPct: wPct
     });
     
     // Build PNG preparation chain (RGBA before scale)
@@ -526,13 +515,16 @@ export async function renderVideoQuoteOverlay({
       'box=0','borderw=0'
     ].filter(Boolean).join(':')}`;
   })() : '';
-  const drawWatermark = watermark ? `drawtext=${[
-    `fontfile='${effFont.replace(/\\/g,'/').replace(/^([A-Za-z]):\//, "$1\\:/")}'`,
-    `text='${escapeForDrawtext(watermarkText || 'Vaiform')}'`,
-    `x=w-tw-${watermarkPadding}`, `y=h-th-${watermarkPadding}`,
-    `fontsize=${watermarkFontSize}`, 'fontcolor=white',
-    'shadowcolor=black','shadowx=2','shadowy=2','borderw=2','bordercolor=black@0.85','box=0'
-  ].filter(Boolean).join(':')}` : '';
+  const drawWatermark = watermark ? (() => {
+    const watermarkFontFile = escapeFontPath(assertFontExists(resolveFontFile('normal', 'normal')));
+    return `drawtext=${[
+      `fontfile=${watermarkFontFile}`,
+      `text='${escapeForDrawtext(watermarkText || 'Vaiform')}'`,
+      `x=w-tw-${watermarkPadding}`, `y=h-th-${watermarkPadding}`,
+      `fontsize=${watermarkFontSize}`, 'fontcolor=white',
+      'shadowcolor=black','shadowx=2','shadowy=2','borderw=2','bordercolor=black@0.85','box=0'
+    ].filter(Boolean).join(':')}`;
+  })() : '';
 
   // Optional caption (bottom, safe area, wrapped)
   let drawCaption = '';
@@ -722,8 +714,18 @@ export async function renderVideoQuoteOverlay({
     const overlayColor = normalizeColorForFFmpeg(overlayColorRaw);
     const overlayOpacity = normalized.opacity;
     
-    // Resolve font file
-    const fontFile = resolveFontFile(normalized.fontFamily, normalized.weightCss);
+    // Resolve font file using SSOT registry
+    const fontFile = assertFontExists(resolveFontFile(
+      normalized.weightCss, 
+      normalized.fontStyle || 'normal'
+    ));
+    
+    // Log resolved font for debugging
+    console.log('[render] SSOT font resolved:', {
+      weightCss: normalized.weightCss,
+      fontStyle: normalized.fontStyle,
+      fontFile: fontFile
+    });
     
     // Text to render: use saved splitLines if available, otherwise fallback to word-wrap
     let textToRender;
@@ -790,9 +792,10 @@ export async function renderVideoQuoteOverlay({
       hasActualNewline: textToRender.includes('\n')
     });
     
-    // Build drawtext filter with SSOT placement
+    // Build drawtext filter with SSOT placement and escaped font path
+    const fontfileArg = `fontfile=${escapeFontPath(fontFile)}`;
     drawCaption = `drawtext=${[
-      `fontfile='${fontFile}'`,
+      fontfileArg,
       `text='${escapeForDrawtext(textToRender)}'`,
       `x=${xExpr}`, // Use computed expression from placement helper
       `y=${y}`, // Should be ~130 for yPct=0.1, not -3129
@@ -849,16 +852,11 @@ export async function renderVideoQuoteOverlay({
     }
     const oldFontPx = scaleFontPx(caption.fontSizePx, caption.previewHeightPx);
 
-    // font file (bold vs regular) - match preview weight detection exactly
-    const fontFileRegular = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf";
-    const fontFileBold    = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf";
-    const wantBold =
-      String(caption.fontWeight || '').toLowerCase() === 'bold' ||
-      Number(caption.fontWeight) >= 600 ||
-      /bold/i.test(String(caption.fontFamily || '')) ||
-      String(caption.weight || '').toLowerCase() === 'bold' ||  // Add support for weight field
-      Number(caption.weight) >= 600;
-    const originalFontFile = wantBold ? fontFileBold : fontFileRegular;
+    // font file - use SSOT registry for consistent bold/italic detection
+    const originalFontFile = assertFontExists(resolveFontFile(
+      previewResolved?.weightCss || caption.fontWeight || caption.weight || 'normal',
+      previewResolved?.fontStyle || 'normal'
+    ));
 
     // opacity + line spacing - match preview exactly (size * 1.2 - size = size * 0.2)
     const op = Math.max(0, Math.min(1, Number(caption.opacity ?? 0.8)));
@@ -885,11 +883,11 @@ export async function renderVideoQuoteOverlay({
     const shadowAlpha = clamp01(previewResolved?.shadowAlpha ?? 0.55);
     const oldShadowX     = num(previewResolved?.shadowX, 0);
     const oldShadowY     = num(previewResolved?.shadowY, 2);
-    const fontFile    = previewResolved?.fontFile
-      ? `/usr/share/fonts/truetype/dejavu/${previewResolved.fontFile}`
-      : (wantBold
-          ? "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
-          : "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf");
+    // Use SSOT font resolution for final font file
+    const fontFile = assertFontExists(resolveFontFile(
+      previewResolved?.weightCss || caption.fontWeight || caption.weight || 'normal',
+      previewResolved?.fontStyle || 'normal'
+    ));
     
     // (optional but handy) one-time log so we can verify parity
     console.log('[preflight]', { fontPx: finalFontPx, lineSpacing: oldLineSpacing, textAlpha: oldTextAlpha, strokeW: oldStrokeW, strokeAlpha, shadowAlpha, shadowX: oldShadowX, shadowY: oldShadowY, fontFile });
@@ -1028,9 +1026,13 @@ export async function renderVideoQuoteOverlay({
       const lineTxtFile = writeCaptionTxt(line);
 
       // pass A — subtle blur-ish base (no stroke)
+      const lineFontFile = escapeFontPath(assertFontExists(resolveFontFile(
+        captionResolved?.weightCss || 'bold',
+        captionResolved?.fontStyle || 'normal'
+      )));
       capDraws.push(
         `drawtext=textfile='${lineTxtFile}'` +
-        `:fontfile='${CAPTION_FONT_BOLD}'` +
+        `:fontfile=${lineFontFile}` +
         `:x='${xExpr}'` +
         `:y='${yExpr}'` +
         `:fontsize=${fontPx}` +
@@ -1042,7 +1044,7 @@ export async function renderVideoQuoteOverlay({
       // pass B — second soften pass (no stroke)
       capDraws.push(
         `drawtext=textfile='${lineTxtFile}'` +
-        `:fontfile='${CAPTION_FONT_BOLD}'` +
+        `:fontfile=${lineFontFile}` +
         `:x='${xExpr}'` +
         `:y='${yExpr}'` +
         `:fontsize=${fontPx}` +
@@ -1054,7 +1056,7 @@ export async function renderVideoQuoteOverlay({
       // pass C — main text last (so stroke isn't dimmed)
       capDraws.push(
         `drawtext=textfile='${lineTxtFile}'` +
-        `:fontfile='${CAPTION_FONT_BOLD}'` +
+        `:fontfile=${lineFontFile}` +
         `:x='${xExpr}'` +
         `:y='${yExpr}'` +
         `:fontsize=${fontPx}` +
@@ -1430,13 +1432,16 @@ export async function exportSocialImage({
     `shadowcolor=${shadowColor}`,`shadowx=${shadowX}`,`shadowy=${shadowY}`,
     'box=0','borderw=0'
   ].filter(Boolean).join(':')}` : '';
-  const drawWatermark = watermark ? `drawtext=${[
-    fontfile ? `fontfile='${fontfile}'` : null,
-    `text='${escText(watermarkText || 'Vaiform')}'`,
-    `x=w-tw-${watermarkPadding}`, `y=h-th-${watermarkPadding}`,
-    `fontsize=${watermarkFontSize}`, 'fontcolor=white',
-    'shadowcolor=black','shadowx=2','shadowy=2','box=1','boxcolor=black@0.25','boxborderw=12','borderw=0'
-  ].filter(Boolean).join(':')}` : '';
+  const drawWatermark = watermark ? (() => {
+    const watermarkFontFile = escapeFontPath(assertFontExists(resolveFontFile('normal', 'normal')));
+    return `drawtext=${[
+      `fontfile=${watermarkFontFile}`,
+      `text='${escText(watermarkText || 'Vaiform')}'`,
+      `x=w-tw-${watermarkPadding}`, `y=h-th-${watermarkPadding}`,
+      `fontsize=${watermarkFontSize}`, 'fontcolor=white',
+      'shadowcolor=black','shadowx=2','shadowy=2','box=1','boxcolor=black@0.25','boxborderw=12','borderw=0'
+    ].filter(Boolean).join(':')}`;
+  })() : '';
 
   const scale = `scale='min(iw*${H}/ih\,${W})':'min(ih*${W}/iw\,${H})':force_original_aspect_ratio=decrease`;
   const pad = `pad=${W}:${H}:ceil((${W}-iw)/2):ceil((${H}-ih)/2)`;

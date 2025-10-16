@@ -66,9 +66,14 @@ export function computeOverlayPlacement(overlay, W, H) {
       inputXExpr: overlay.xExpr
     });
     
-    // Validate raster fields
+    // Validate raster fields - fail fast on missing PNG
     if (!overlay.rasterUrl || typeof overlay.rasterUrl !== 'string') {
-      throw new Error('SSOT v3 raster mode requires valid rasterUrl');
+      throw new Error('SSOT v3 raster mode requires valid rasterUrl - PNG overlay missing');
+    }
+    
+    // Additional validation for data URLs vs file paths
+    if (!overlay.rasterUrl.startsWith('data:') && !overlay.rasterUrl.startsWith('http')) {
+      throw new Error('SSOT v3 raster mode requires valid data URL or HTTP URL for PNG overlay');
     }
     if (!Number.isFinite(rasterW) || rasterW <= 0) {
       throw new Error('SSOT v3 raster mode requires valid rasterW > 0');

@@ -2,6 +2,7 @@ import express from "express";
 import pkg from "@napi-rs/canvas";
 import { CaptionMetaSchema } from '../schemas/caption.schema.js';
 import { bufferToTmp } from '../utils/tmp.js';
+import { canvasFontString } from '../utils/font.registry.js';
 const { createCanvas } = pkg;
 
 const router = express.Router();
@@ -81,11 +82,9 @@ router.post("/caption/preview", express.json(), async (req, res) => {
       const canvas = createCanvas(W, H);
       const ctx = canvas.getContext("2d");
       
-      // Setup font for measurement - use proper style and weight
-      const family = pickFont(fontFamily);
-      const style = fontStyle || 'normal';
-      const weight = weightCss || '400';
-      const font = `${style} ${weight} ${fontPx}px "${family}"`;
+      // Setup font for measurement - use SSOT font registry
+      const family = pickFamily(fontFamily);
+      const font = canvasFontString(weightCss, fontStyle, fontPx);
       ctx.font = font;
       
       // Compute maxWidth accounting for internal padding (match UI box exactly)
@@ -627,7 +626,7 @@ async function renderCaptionRaster(meta) {
   // Extract all styling fields
   const fontWeight = String(meta.weightCss ?? '400');
   const fontStyle = meta.fontStyle ?? 'normal'; // 'italic'|'normal'|'oblique'
-  const fontFamilyName = pickFont(meta.fontFamily);
+  const fontFamilyName = pickFamily(meta.fontFamily);
   const fontPx = meta.fontPx;
   const lines = meta.splitLines || [];
   const textAlign = meta.textAlign ?? 'center';
@@ -662,10 +661,8 @@ async function renderCaptionRaster(meta) {
   const tempCanvas = createCanvas(W, H);
   const tempCtx = tempCanvas.getContext("2d");
   
-  // IMPORTANT: Build font string with style and weight - let canvas select the registered face
-  const style  = meta.fontStyle || "normal"; // "normal" | "italic"
-  const weight = meta.weightCss || "400";    // "400" | "700" | "bold"
-  const font = `${style} ${weight} ${fontPx}px "${fontFamilyName}"`;
+  // IMPORTANT: Build font string with SSOT registry - let canvas select the registered face
+  const font = canvasFontString(meta.weightCss, meta.fontStyle, fontPx);
   tempCtx.font = font;
   
   console.log('[raster] Font set to:', font, '| registered family:', fontFamilyName);
@@ -874,11 +871,9 @@ async function renderPreviewImage(meta) {
   const y = Math.round(meta.yPct * H);
   const maxWidth = Math.round((meta.wPct ?? 0.80) * W);
   
-  // Font setup - use proper style and weight
-  const family = pickFont(meta.fontFamily);
-  const style = meta.fontStyle || 'normal';
-  const weight = meta.weightCss || '400';
-  const font = `${style} ${weight} ${meta.sizePx}px "${family}"`;
+  // Font setup - use SSOT font registry
+  const family = pickFamily(meta.fontFamily);
+  const font = canvasFontString(meta.weightCss, meta.fontStyle, meta.sizePx);
   const color = toRgba(meta.color, meta.opacity ?? 1);
   
   ctx.font = font;
@@ -934,14 +929,9 @@ async function renderPreviewImage(meta) {
   return canvas.toDataURL("image/png");
 }
 
-function pickFont(fontFamily) {
-  const fontMap = {
-    'DejaVuSans': 'DejaVu Sans',
-    'DejaVu Sans Local': 'DejaVu Sans',
-    'DejaVu Serif Local': 'DejaVu Serif',
-    'DejaVu Serif Bold Local': 'DejaVu Serif'
-  };
-  return fontMap[fontFamily] || 'DejaVu Sans';
+function pickFamily(input) {
+  // map UI to canonical family names used during registration
+  return input?.includes('Serif') ? 'DejaVu Serif' : 'DejaVu Sans';
 }
 
 function toRgba(color, opacity) {

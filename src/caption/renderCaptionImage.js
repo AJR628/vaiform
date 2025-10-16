@@ -5,7 +5,8 @@ import os from 'node:os';
 
 // TASK 6: Improved font registration with @napi-rs/canvas
 // Register all DejaVu font variants with proper style/weight metadata
-const FONTS = path.resolve('assets/fonts');
+const SYSTEM_FONTS = '/usr/share/fonts/truetype/dejavu';
+const LOCAL_FONTS = path.resolve('assets/fonts');
 let fontRegistered = false;
 
 // Check available fonts first
@@ -34,20 +35,38 @@ const serifFonts = [
 
 const allFonts = [...sansFonts, ...serifFonts];
 
-for (const font of allFonts) {
-  const fontPath = path.join(FONTS, font.file);
-  if (fs.existsSync(fontPath)) {
-    try {
-      GlobalFonts.register(fontPath, font);
-      console.log(`[caption] Font registered: ${font.family} (${font.style}, ${font.weight})`);
-      fontRegistered = true;
-    } catch (err) {
-      console.warn(`[caption] Failed to register ${font.file}:`, err.message);
+function registerFontsOnce() {
+  if (fontRegistered) return;
+  
+  // Try system fonts first, then local fonts
+  const fontPaths = [SYSTEM_FONTS, LOCAL_FONTS];
+  
+  for (const font of allFonts) {
+    let registered = false;
+    
+    for (const fontDir of fontPaths) {
+      const fontPath = path.join(fontDir, font.file);
+      if (fs.existsSync(fontPath)) {
+        try {
+          GlobalFonts.register(fontPath, font);
+          console.log(`[caption] Font registered: ${font.family} (${font.style}, ${font.weight}) from ${fontDir}`);
+          fontRegistered = true;
+          registered = true;
+          break;
+        } catch (err) {
+          console.warn(`[caption] Failed to register ${font.file}:`, err.message);
+        }
+      }
     }
-  } else {
-    console.log(`[caption] Font file not found: ${font.file} (skipping - will fall back to faux italic)`);
+    
+    if (!registered) {
+      console.log(`[caption] Font file not found: ${font.file} (skipping - will fall back to faux italic)`);
+    }
   }
 }
+
+// Call this once before any raster work
+registerFontsOnce();
 
 // Log available font faces for debugging
 try {
@@ -138,9 +157,12 @@ export async function renderCaptionImage(jobId, style) {
   const canvas = createCanvas(canvasW, canvasH);
   const ctx = canvas.getContext('2d');
 
-  // Set font with fallbacks for better compatibility
-  const fontName = fontRegistered ? 'DejaVu Sans' : 'Arial, sans-serif';
-  ctx.font = `${fontWeight || 700} ${fontPx}px ${fontName}`;
+  // Set font with proper style and weight selection
+  const fontFamily = fontRegistered ? 'DejaVu Sans' : 'Arial, sans-serif';
+  const fontStyle = style.fontStyle || 'normal';
+  const weightCss = style.weightCss || fontWeight || '700';
+  const font = `${fontStyle} ${weightCss} ${fontPx}px "${fontFamily}"`;
+  ctx.font = font;
   console.log(`[caption] Font set to: ${ctx.font} (registered: ${fontRegistered})`);
   ctx.textBaseline = 'top';
 

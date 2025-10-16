@@ -23,7 +23,7 @@ function safeRegisterFont(file, family, weight = "normal") {
       // Fix: Use Buffer.from() to properly handle font data
       const fontData = fs.readFileSync(p);
       const buffer = Buffer.from(fontData);
-      GlobalFonts.register(buffer, family);
+      GlobalFonts.register(buffer, { family });
       console.log(`[font] registered ${file} as ${family}/${weight}`);
       return true;
     } else {

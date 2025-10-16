@@ -230,6 +230,7 @@ export async function generateCaptionPreview(opts) {
         lineSpacingPx: lineSpacingPx,  // ← Always use fresh computed (server will recompute anyway)
         fontFamily: opts.fontFamily || 'DejaVuSans',
         weightCss: opts.weight || 'normal',
+        fontStyle: domStyles.fontStyle || 'normal',  // Ensure fontStyle is explicitly included
         color: opts.color || '#FFFFFF',
         opacity: Number(opts.opacity ?? 0.85),
         // Additional style fields from DOM
