@@ -37,6 +37,61 @@ function writeCaptionTxt(text) {
   return file;
 }
 
+/**
+ * Assert raster mode parity constraints - fail fast on any deviation
+ */
+function assertRasterParity(overlayCaption, captionPngPath, finalFilter) {
+  if (!overlayCaption || overlayCaption.mode !== 'raster') return;
+  
+  console.log('[assertRasterParity] Validating raster mode SSOT...');
+  
+  const errors = [];
+  
+  // Required fields
+  if (!overlayCaption.rasterUrl) errors.push('rasterUrl missing');
+  if (!overlayCaption.rasterW || overlayCaption.rasterW <= 0) errors.push('invalid rasterW');
+  if (!overlayCaption.rasterH || overlayCaption.rasterH <= 0) errors.push('invalid rasterH');
+  if (overlayCaption.yPx_png == null || !Number.isFinite(overlayCaption.yPx_png)) errors.push('invalid yPx_png');
+  if (!overlayCaption.rasterPadding) errors.push('rasterPadding missing (vertical shift risk)');
+  if (!overlayCaption.frameW || !overlayCaption.frameH) errors.push('frameW/frameH missing');
+  if (!overlayCaption.bgScaleExpr || !overlayCaption.bgCropExpr) errors.push('bgScaleExpr/bgCropExpr missing');
+  if (!overlayCaption.rasterHash) errors.push('rasterHash missing (cannot verify PNG integrity)');
+  if (!overlayCaption.previewFontString) errors.push('previewFontString missing');
+  
+  // PNG file must exist
+  if (!captionPngPath || !fs.existsSync(captionPngPath)) {
+    errors.push('PNG file missing at ' + captionPngPath);
+  }
+  
+  // Forbidden fields (indicate wrong mode)
+  if (overlayCaption.yPxFirstLine != null) {
+    console.warn('[assertRasterParity] yPxFirstLine present (should use yPx_png only)');
+  }
+  if (overlayCaption.yPct != null) {
+    console.warn('[assertRasterParity] yPct present (raster uses absolute yPx_png)');
+  }
+  
+  // Filter must have ≤1 drawtext (watermark only)
+  if (finalFilter) {
+    const drawtextMatches = finalFilter.match(/drawtext=/g) || [];
+    if (drawtextMatches.length > 1) {
+      errors.push(`Multiple drawtext nodes (${drawtextMatches.length}) - expected 1 watermark only`);
+    }
+    
+    // Forbidden: overlay scaling in raster mode
+    if (finalFilter.includes('[1:v]scale')) {
+      errors.push('[1:v]scale detected - overlay must NOT be scaled in raster mode (Design A)');
+    }
+  }
+  
+  if (errors.length > 0) {
+    console.error('[assertRasterParity] FAILED:', errors);
+    throw new Error('RASTER_PARITY violations: ' + errors.join('; '));
+  }
+  
+  console.log('[assertRasterParity] ✅ All constraints validated');
+}
+
 // --- Caption render parity with preview ---
 // DEPRECATED: These constants are superseded by resolveFontFile() in font.registry.js
 // They remain for reference only. All render paths should use:
@@ -274,8 +329,21 @@ function buildVideoChain({ width, height, videoVignette, drawLayers, captionImag
   if (usingCaptionPng && captionPngPath && fs.existsSync(captionPngPath)) {
     console.log(`[render] USING PNG OVERLAY from: ${captionPngPath}`);
     // Build filter graph: scale -> crop -> format -> [vmain], then overlay PNG
-    const scale = `scale='if(gt(a,${W}/${H}),-2,${W})':'if(gt(a,${W}/${H}),${H},-2)'`;
-    const crop = `crop=${W}:${H}`;
+    // CRITICAL: Use persisted geometry from preview for exact parity
+    let scale, crop;
+    if (rasterPlacement?.bgScaleExpr && rasterPlacement?.bgCropExpr) {
+      // Use EXACT expressions from preview
+      scale = rasterPlacement.bgScaleExpr;
+      crop = rasterPlacement.bgCropExpr;
+      console.log('[buildVideoChain] Using preview geometry:', { scale, crop });
+    } else {
+      // Fallback (should not happen in strict raster mode)
+      scale = `scale='if(gt(a,${W}/${H}),-2,${W})':'if(gt(a,${W}/${H}),${H},-2)'`;
+      crop = `crop=${W}:${H}`;
+      if (usingCaptionPng) {
+        console.warn('[buildVideoChain] Missing bgScaleExpr/bgCropExpr in raster mode!');
+      }
+    }
     const core = [ scale, crop, (videoVignette ? 'vignette=PI/4:0.5' : null), 'format=rgba' ].filter(Boolean);
     const baseChain = makeChain('0:v', core, 'vmain');
     
@@ -520,8 +588,11 @@ export async function renderVideoQuoteOverlay({
   // Optional caption (bottom, safe area, wrapped)
   let drawCaption = '';
   
-  // v2 overlay mode: handle overlayCaption with precise positioning using shared SSOT helper
-  if (overlayCaption && overlayCaption.text) {
+  // CRITICAL: Early raster mode guard - skip ALL caption drawtext paths
+  if (overlayCaption?.mode === 'raster') {
+    console.log('[render] RASTER MODE detected - skipping ALL caption drawtext paths');
+    drawCaption = '';
+  } else if (overlayCaption && overlayCaption.text) {
     console.log(`[render] USING OVERLAY MODE - SSOT positioning from computeOverlayPlacement`);
     
     // Normalize overlay caption to ensure all fields are present
@@ -856,7 +927,7 @@ export async function renderVideoQuoteOverlay({
   } else if (CAPTION_OVERLAY && captionImage) {
     console.log(`[render] USING OVERLAY - skipping drawtext. Caption PNG: ${captionImage.pngPath}`);
     drawCaption = '';
-  } else if (caption && String(caption.text || '').trim()) {
+  } else if (!usingCaptionPng && caption && String(caption.text || '').trim()) {
     // Inputs
     const capTextRaw = String(caption.text || '').trim();
     const fittedFromPreview = (caption.fittedText && String(caption.fittedText).trim()) ? String(caption.fittedText).trim() : null;
@@ -1086,7 +1157,7 @@ export async function renderVideoQuoteOverlay({
 
       drawCaption = capDraws.join(',');
     }
-  } else if (captionText && String(captionText).trim()) {
+  } else if (!usingCaptionPng && captionText && String(captionText).trim()) {
     // Back-compat: simple bottom caption with safe wrapping
     const CANVAS_W = W;
     const CANVAS_H = H;
@@ -1138,6 +1209,27 @@ export async function renderVideoQuoteOverlay({
     } : null
   });
 
+  // Runtime parity checklist for raster mode
+  if (usingCaptionPng && rasterPlacement) {
+    const checklist = {
+      mode: 'raster',
+      frameW: rasterPlacement.frameW,
+      frameH: rasterPlacement.frameH,
+      rasterW: rasterPlacement.rasterW,
+      rasterH: rasterPlacement.rasterH,
+      xExpr_png: rasterPlacement.xExpr,
+      yPx_png: rasterPlacement.y,
+      rasterPadding: rasterPlacement.rasterPadding,
+      previewFontString: rasterPlacement.previewFontString,
+      previewFontHash: rasterPlacement.previewFontHash,
+      rasterHash: rasterPlacement.rasterHash,
+      bgScaleExpr: rasterPlacement.bgScaleExpr,
+      bgCropExpr: rasterPlacement.bgCropExpr,
+      willScaleOverlay: false  // Design A enforced
+    };
+    console.log('[PARITY_CHECKLIST]', JSON.stringify(checklist, null, 2));
+  }
+
   const vchain = buildVideoChain({ 
     width: W, 
     height: H, 
@@ -1179,6 +1271,11 @@ export async function renderVideoQuoteOverlay({
   const finalFilter = (process.env.BYPASS_SANITIZE === '1') ? rawFilter : sanitizeFilter(rawFilter);
   console.log('[ffmpeg] RAW   -filter_complex:', rawFilter);
   console.log('[ffmpeg] FINAL -filter_complex:', finalFilter);
+
+  // Assert raster parity constraints before spawning ffmpeg
+  if (overlayCaption?.mode === 'raster') {
+    assertRasterParity(overlayCaption, captionPngPath, finalFilter);
+  }
   try {
     const scaleDesc = `scale='if(gt(a,${W}/${H}),-2,${W})':'if(gt(a,${W}/${H}),${H},-2)'`;
     const cropDesc = `crop=${W}:${H}`;

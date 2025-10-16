@@ -235,9 +235,7 @@ router.post("/caption/preview", express.json(), async (req, res) => {
           
           // Placement inputs
           text,
-          xPct,
-          yPct: yPctClamped,
-          wPct,
+          // Note: xPct, yPct, wPct removed from raster mode - use absolute coordinates
           
           // Typography
           fontPx,
@@ -270,8 +268,11 @@ router.post("/caption/preview", express.json(), async (req, res) => {
           rasterUrl: rasterResult.rasterUrl,
           rasterW: rasterResult.rasterW,
           rasterH: rasterResult.rasterH,
-          xExpr: '(W - overlay_w)/2',  // Center horizontally
-          yPx: rasterResult.yPx,        // Top-left Y position
+          rasterPadding: rasterResult.padding,  // CRITICAL: actual padding used in PNG
+          xExpr_png: '(W - overlay_w)/2',  // Center horizontally
+          yPx_png: rasterResult.yPx,        // PNG top-left anchor (NOT text baseline)
+          previewFontString: rasterResult.previewFontString,
+          previewFontHash: rasterResult.previewFontHash,
           
           // Keep for debugging (but these are NOT used in v3 raster mode)
           splitLines: lines,
@@ -732,6 +733,11 @@ async function renderCaptionRaster(meta) {
   ctx.font = font;
   ctx.textBaseline = 'top';
   
+  // Freeze typography for forensic parity debugging
+  const previewFontString = ctx.font;
+  const previewFontHash = crypto.createHash('sha256').update(previewFontString).digest('hex').slice(0, 16);
+  console.log('[raster] Frozen font:', { previewFontString, previewFontHash });
+  
   // Helper to draw text with letter spacing
   const drawTextWithLetterSpacing = (ctx, text, x, y, letterSpacing, method = 'fill') => {
     if (!letterSpacing || letterSpacing === 0) {
@@ -825,6 +831,19 @@ async function renderCaptionRaster(meta) {
     currentY += fontPx + (i < lines.length - 1 ? meta.lineSpacingPx : 0);
   }
   
+  // TEMPORARY: Visual debug markers (remove after verification)
+  if (process.env.DEBUG_RASTER_BORDER === '1') {
+    ctx.strokeStyle = 'red';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(1, 1, rasterW - 2, rasterH - 2);
+    
+    // Magenta origin dot
+    ctx.fillStyle = 'magenta';
+    ctx.fillRect(0, 0, 10, 10);
+    
+    console.log('[DEBUG] Visual markers added to PNG');
+  }
+  
   // Convert to data URL
   const rasterDataUrl = rasterCanvas.toDataURL("image/png");
   
@@ -856,6 +875,9 @@ async function renderCaptionRaster(meta) {
     rasterW,
     rasterH,
     yPx,
+    padding,  // CRITICAL: actual padding used (for parity verification)
+    previewFontString,
+    previewFontHash,
     // Echo back all styles used (helps debugging)
     fontPx,
     lineSpacingPx: meta.lineSpacingPx,

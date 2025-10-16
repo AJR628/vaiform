@@ -121,16 +121,20 @@ export function computeOverlayPlacement(overlay, W, H) {
       rasterUrl: overlay.rasterUrl,
       rasterW,
       rasterH,
-      xExpr: overlay.xExpr || '(W - overlay_w)/2',
-      y: Math.round(yPx),
-      wPct: overlay.wPct ?? 1,  // Pass wPct for scaling in render
+      xExpr_png: overlay.xExpr_png || '(W - overlay_w)/2',
+      yPx_png: Math.round(overlay.yPx_png),
+      rasterPadding: overlay.rasterPadding,
       
-      // 🔒 Pass through geometry lock fields for validation
+      // Geometry lock
       frameW: overlay.frameW,
       frameH: overlay.frameH,
       bgScaleExpr: overlay.bgScaleExpr,
       bgCropExpr: overlay.bgCropExpr,
-      rasterHash: overlay.rasterHash
+      
+      // Integrity & typography freeze
+      rasterHash: overlay.rasterHash,
+      previewFontString: overlay.previewFontString,
+      previewFontHash: overlay.previewFontHash
     };
     
     // CRITICAL: Log output to ensure no mutation
@@ -388,8 +392,8 @@ export function normalizeOverlayCaption(overlay) {
     mode: overlay?.mode,
     rasterW: overlay?.rasterW,
     rasterH: overlay?.rasterH,
-    yPx: overlay?.yPx,
-    xExpr: overlay?.xExpr,
+    yPx_png: overlay?.yPx_png,
+    xExpr_png: overlay?.xExpr_png,
     hasRasterUrl: !!overlay?.rasterUrl
   });
   
@@ -457,17 +461,22 @@ export function normalizeOverlayCaption(overlay) {
       rasterUrl: overlay.rasterUrl,
       rasterW: toNum(overlay.rasterW),
       rasterH: toNum(overlay.rasterH),
-      xExpr: overlay.xExpr,
-      yPx: toNum(overlay.yPx),
+      xExpr_png: overlay.xExpr_png,
+      yPx_png: toNum(overlay.yPx_png),
+      rasterPadding: overlay.rasterPadding,
       
-      // 🔒 Add geometry lock fields
+      // Geometry lock
       frameW: toNum(overlay.frameW),
       frameH: toNum(overlay.frameH),
       bgScaleExpr: overlay.bgScaleExpr,
       bgCropExpr: overlay.bgCropExpr,
-      rasterHash: overlay.rasterHash,
       
-      // Keep debug fields
+      // Integrity & typography freeze
+      rasterHash: overlay.rasterHash,
+      previewFontString: overlay.previewFontString,
+      previewFontHash: overlay.previewFontHash,
+      
+      // Keep debug fields (but NOT used in raster mode)
       totalTextH: toNum(overlay.totalTextH),
       lineSpacingPx: toNum(overlay.lineSpacingPx),
       splitLines: Array.isArray(overlay.splitLines) ? overlay.splitLines : []
@@ -479,13 +488,14 @@ export function normalizeOverlayCaption(overlay) {
       outputRasterW: normalized.rasterW,
       inputRasterH: overlay.rasterH,
       outputRasterH: normalized.rasterH,
-      inputYPx: overlay.yPx,
-      outputYPx: normalized.yPx,
-      inputXExpr: overlay.xExpr,
-      outputXExpr: normalized.xExpr,
+      inputYPx_png: overlay.yPx_png,
+      outputYPx_png: normalized.yPx_png,
+      inputXExpr_png: overlay.xExpr_png,
+      outputXExpr_png: normalized.xExpr_png,
       frameW: normalized.frameW,
       frameH: normalized.frameH,
-      hasHash: !!normalized.rasterHash
+      hasHash: !!normalized.rasterHash,
+      hasFontString: !!normalized.previewFontString
     });
     
     return normalized;
