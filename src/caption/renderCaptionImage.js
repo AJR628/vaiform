@@ -158,10 +158,10 @@ export async function renderCaptionImage(jobId, style) {
   const ctx = canvas.getContext('2d');
 
   // Set font with proper style and weight selection
-  const fontFamily = fontRegistered ? 'DejaVu Sans' : 'Arial, sans-serif';
+  const actualFontFamily = fontRegistered ? 'DejaVu Sans' : 'Arial, sans-serif';
   const fontStyle = style.fontStyle || 'normal';
   const weightCss = style.weightCss || fontWeight || '700';
-  const font = `${fontStyle} ${weightCss} ${fontPx}px "${fontFamily}"`;
+  const font = `${fontStyle} ${weightCss} ${fontPx}px "${actualFontFamily}"`;
   ctx.font = font;
   console.log(`[caption] Font set to: ${ctx.font} (registered: ${fontRegistered})`);
   ctx.textBaseline = 'top';
@@ -224,7 +224,7 @@ export async function renderCaptionImage(jobId, style) {
     finalLineSpacing = Math.round(lineSpacingPx * scaleFactor);
     
     // Re-wrap with smaller font
-    ctx.font = `${fontWeight || 700} ${finalFontPx}px ${fontName}`;
+    ctx.font = `${fontWeight || 700} ${finalFontPx}px "${actualFontFamily}"`;
     const newLines = [];
     let currentLine = '';
     
