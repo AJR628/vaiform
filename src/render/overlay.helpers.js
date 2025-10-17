@@ -119,9 +119,11 @@ export function computeOverlayPlacement(overlay, W, H) {
       willUseSSOT: true,
       mode: 'raster',
       rasterUrl: overlay.rasterUrl,
+      rasterDataUrl: overlay.rasterDataUrl,
+      rasterPng: overlay.rasterPng,
       rasterW,
       rasterH,
-      xExpr_png: overlay.xExpr_png || '(W - overlay_w)/2',
+      xExpr_png: (overlay.xExpr_png || '(W-overlay_w)/2').replace(/\s+/g, ''),
       yPx_png: Math.round(overlay.yPx_png),
       rasterPadding: overlay.rasterPadding,
       
@@ -134,7 +136,11 @@ export function computeOverlayPlacement(overlay, W, H) {
       // Integrity & typography freeze
       rasterHash: overlay.rasterHash,
       previewFontString: overlay.previewFontString,
-      previewFontHash: overlay.previewFontHash
+      previewFontHash: overlay.previewFontHash,
+      
+      // Backward compatibility: also set y and xExpr for legacy paths
+      y: Math.round(overlay.yPx_png),
+      xExpr: (overlay.xExpr_png || '(W-overlay_w)/2').replace(/\s+/g, '')
     };
     
     // CRITICAL: Log output to ensure no mutation
@@ -454,11 +460,20 @@ export function normalizeOverlayCaption(overlay) {
   
   // If SSOT V3 raster mode, pass through all raster fields verbatim
   if (hasRaster) {
+    // Explicit priority order for field mapping (future-proof)
+    const y = Number.isFinite(overlay.yPx_png) ? overlay.yPx_png
+            : Number.isFinite(overlay.yPx) ? overlay.yPx
+            : undefined;
+
+    const xExpr = (overlay.xExpr_png ?? overlay.xExpr ?? '(W-overlay_w)/2').replace(/\s+/g, '');
+
     const normalized = {
       ...base,
       ssotVersion: 3,
       mode: 'raster',
       rasterUrl: overlay.rasterUrl,
+      rasterDataUrl: overlay.rasterDataUrl,
+      rasterPng: overlay.rasterPng,
       rasterW: toNum(overlay.rasterW),
       rasterH: toNum(overlay.rasterH),
       xExpr_png: overlay.xExpr_png,
@@ -475,6 +490,10 @@ export function normalizeOverlayCaption(overlay) {
       rasterHash: overlay.rasterHash,
       previewFontString: overlay.previewFontString,
       previewFontHash: overlay.previewFontHash,
+      
+      // Backward compatibility: also set y and xExpr for legacy paths
+      y,
+      xExpr,
       
       // Keep debug fields (but NOT used in raster mode)
       totalTextH: toNum(overlay.totalTextH),

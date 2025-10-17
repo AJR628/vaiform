@@ -483,7 +483,39 @@ export async function renderVideoQuoteOverlay({
   let usingCaptionPng = false;
   let captionPngPath = null;
   
-  if (captionImage?.dataUrl) {
+  // 🔒 EARLY PNG MATERIALIZATION - read directly from overlayCaption for raster mode
+  if (overlayCaption?.mode === 'raster') {
+    const dataUrl = overlayCaption.rasterUrl || overlayCaption.rasterDataUrl || overlayCaption.rasterPng;
+    
+    console.log('[v3:materialize:CHECK]', {
+      hasRasterUrl: Boolean(overlayCaption.rasterUrl),
+      hasRasterDataUrl: Boolean(overlayCaption.rasterDataUrl),
+      rasterUrlLen: dataUrl?.length || 0
+    });
+    
+    if (!dataUrl) {
+      throw new Error('RASTER: missing rasterDataUrl/rasterUrl');
+    }
+    
+    try {
+      usingCaptionPng = true;
+      captionPngPath = await fetchToTmp(dataUrl, '.png');
+      
+      // Verify PNG file
+      if (!fs.existsSync(captionPngPath) || fs.statSync(captionPngPath).size === 0) {
+        throw new Error('RASTER: PNG file is empty or missing');
+      }
+      
+      console.log('[v3:materialize:AFTER]', {
+        path: captionPngPath,
+        fileSize: fs.statSync(captionPngPath).size
+      });
+    } catch (error) {
+      console.error('[raster] Failed to materialize PNG overlay:', error.message);
+      throw new Error(`Raster overlay failed: ${error.message}. Please regenerate preview.`);
+    }
+  } else if (captionImage?.dataUrl) {
+    // Legacy v1 captionImage path
     usingCaptionPng = true;
     try {
       const { file: pngPath } = await saveDataUrlToTmp(captionImage.dataUrl, "caption");
@@ -591,7 +623,19 @@ export async function renderVideoQuoteOverlay({
   // CRITICAL: Early raster mode guard - skip ALL caption drawtext paths
   if (overlayCaption?.mode === 'raster') {
     console.log('[render] RASTER MODE detected - skipping ALL caption drawtext paths');
+    
+    // 🔒 RASTER MODE ASSERTION - fail fast if PNG missing
+    if (!(overlayCaption.rasterUrl || overlayCaption.rasterDataUrl)) {
+      throw new Error('RASTER: overlayCaption missing rasterUrl/rasterDataUrl at ffmpeg entry');
+    }
+    
+    // Disable all caption drawtext in pure raster mode
     drawCaption = '';
+    
+    // Force disable bottom caption for raster mode
+    if (includeBottomCaption) {
+      console.log('[render] Disabling includeBottomCaption for raster mode');
+    }
   } else if (overlayCaption && overlayCaption.text) {
     console.log(`[render] USING OVERLAY MODE - SSOT positioning from computeOverlayPlacement`);
     
@@ -636,96 +680,52 @@ export async function renderVideoQuoteOverlay({
         xExpr: placement.xExpr
       });
       
-      // Download/materialize the raster PNG to a temp file
-      let rasterTmpPath = null;
-      try {
-        rasterTmpPath = await fetchToTmp(placement.rasterUrl, '.png');
-        
-        if (!fs.existsSync(rasterTmpPath) || fs.statSync(rasterTmpPath).size === 0) {
-          throw new Error('Raster PNG file is empty or missing');
-        }
-        
-        // CRITICAL: Log after materialization to verify file integrity
-        const fileStats = fs.statSync(rasterTmpPath);
-        console.log('[v3:materialize:AFTER]', {
-          path: rasterTmpPath,
-          fileSize: fileStats.size,
-          expectedRasterW: placement.rasterW,
-          expectedRasterH: placement.rasterH,
-          expectedY: placement.y,
-          xExpr: placement.xExpr
-        });
-        
-        // 🔒 VALIDATION GUARDS - fail fast on mismatches
-        
-        // GEOMETRY LOCK - fail if preview was made for different target dimensions
-        if (placement.frameW && placement.frameW !== W) {
-          throw new Error(`Preview was for ${placement.frameW}×${placement.frameH}, got ${W}×${H}. Regenerate preview.`);
-        }
-        if (placement.frameH && placement.frameH !== H) {
-          throw new Error(`Preview was for ${placement.frameW}×${placement.frameH}, got ${W}×${H}. Regenerate preview.`);
-        }
-        
-        // OVERLAY IDENTITY - verify PNG hash matches preview
-        if (placement.rasterHash) {
-          const pngBuffer = fs.readFileSync(rasterTmpPath);
-          const actualHash = crypto.createHash('sha256').update(pngBuffer).digest('hex').slice(0, 16);
-          if (actualHash !== placement.rasterHash) {
-            throw new Error(`Overlay differs from preview (hash mismatch: ${actualHash} vs ${placement.rasterHash}). Regenerate preview.`);
-          }
-          console.log('[v3:hash] PNG integrity verified:', actualHash);
-        }
-        
-        // MODE LOCK - only raster mode allowed for v3
-        if (placement.mode !== 'raster') {
-          throw new Error(`Expected mode='raster', got '${placement.mode}'. Regenerate preview.`);
-        }
-        
-        console.log('[raster] Materialized PNG overlay:', {
-          path: rasterTmpPath,
-          size: fileStats.size,
-          rasterW: placement.rasterW,
-          rasterH: placement.rasterH,
-          y: placement.y
-        });
-        
-        // CRITICAL: Validate that dimensions match preview expectations
-        if (placement.rasterW !== normalized.rasterW || placement.rasterH !== normalized.rasterH) {
-          throw new Error(`Raster dimensions mismatch: expected ${normalized.rasterW}×${normalized.rasterH}, got ${placement.rasterW}×${placement.rasterH}`);
-        }
-        
-        // Store raster details for buildVideoChain
-        usingCaptionPng = true;
-        captionPngPath = rasterTmpPath;
-        
-        // Warn if wPct is missing in normalized overlay
-        if (!('wPct' in normalized)) {
-          console.warn('[render] wPct missing; defaulting to 1');
-        }
-        
-        // Store placement details for overlay filter - EXACT preview dimensions
-        const rasterPlacement = {
-          mode: 'raster',
-          rasterW: placement.rasterW,  // Use exact preview dimensions
-          rasterH: placement.rasterH,  // Use exact preview dimensions
-          xExpr: placement.xExpr,
-          y: placement.y,  // top of raster (yPx), already integer
-          wPct: placement.wPct ?? normalized.wPct ?? 1  // Pass wPct for scaling - prioritize placement.wPct
-        };
-        
-        // Skip drawtext - we'll use overlay filter instead
-        drawCaption = '';
-        
-        console.log('[raster] overlay: x=' + rasterPlacement.xExpr + ', y=' + rasterPlacement.y + 
-                    ', rasterW/H=' + rasterPlacement.rasterW + '×' + rasterPlacement.rasterH);
-        
-        // Proceed to buildVideoChain which will handle the overlay filter
-        // (we'll need to modify buildVideoChain to accept raster placement)
-        
-      } catch (error) {
-        console.error('[raster] Failed to materialize PNG overlay:', error.message);
-        throw new Error(`Raster overlay failed: ${error.message}. Please regenerate preview.`);
+      // PNG already materialized earlier - just validate dimensions and skip drawtext
+      console.log('[raster] Using pre-materialized PNG overlay');
+      
+      // 🔒 VALIDATION GUARDS - fail fast on mismatches
+      
+      // GEOMETRY LOCK - fail if preview was made for different target dimensions
+      if (placement.frameW && placement.frameW !== W) {
+        throw new Error(`Preview was for ${placement.frameW}×${placement.frameH}, got ${W}×${H}. Regenerate preview.`);
       }
+      if (placement.frameH && placement.frameH !== H) {
+        throw new Error(`Preview was for ${placement.frameW}×${placement.frameH}, got ${W}×${H}. Regenerate preview.`);
+      }
+      
+      // OVERLAY IDENTITY - verify PNG hash matches preview
+      if (placement.rasterHash && captionPngPath) {
+        const pngBuffer = fs.readFileSync(captionPngPath);
+        const actualHash = crypto.createHash('sha256').update(pngBuffer).digest('hex').slice(0, 16);
+        if (actualHash !== placement.rasterHash) {
+          throw new Error(`Overlay differs from preview (hash mismatch: ${actualHash} vs ${placement.rasterHash}). Regenerate preview.`);
+        }
+        console.log('[v3:hash] PNG integrity verified:', actualHash);
+      }
+      
+      // MODE LOCK - only raster mode allowed for v3
+      if (placement.mode !== 'raster') {
+        throw new Error(`Expected mode='raster', got '${placement.mode}'. Regenerate preview.`);
+      }
+      
+      console.log('[raster] Using pre-materialized PNG overlay:', {
+        path: captionPngPath,
+        size: captionPngPath ? fs.statSync(captionPngPath).size : 0,
+        rasterW: placement.rasterW,
+        rasterH: placement.rasterH,
+        y: placement.y
+      });
+      
+      // CRITICAL: Validate that dimensions match preview expectations
+      if (placement.rasterW !== normalized.rasterW || placement.rasterH !== normalized.rasterH) {
+        throw new Error(`Raster dimensions mismatch: expected ${normalized.rasterW}×${normalized.rasterH}, got ${placement.rasterW}×${placement.rasterH}`);
+      }
+      
+      // Skip drawtext - we'll use overlay filter instead
+      drawCaption = '';
+      
+      console.log('[raster] overlay: x=' + placement.xExpr + ', y=' + placement.y + 
+                  ', rasterW/H=' + placement.rasterW + '×' + placement.rasterH);
       
       // Skip the rest of the drawtext logic
       // Jump directly to buildVideoChain
@@ -927,7 +927,7 @@ export async function renderVideoQuoteOverlay({
   } else if (CAPTION_OVERLAY && captionImage) {
     console.log(`[render] USING OVERLAY - skipping drawtext. Caption PNG: ${captionImage.pngPath}`);
     drawCaption = '';
-  } else if (!usingCaptionPng && caption && String(caption.text || '').trim()) {
+  } else if (!usingCaptionPng && overlayCaption?.mode !== 'raster' && caption && String(caption.text || '').trim()) {
     // Inputs
     const capTextRaw = String(caption.text || '').trim();
     const fittedFromPreview = (caption.fittedText && String(caption.fittedText).trim()) ? String(caption.fittedText).trim() : null;
@@ -1157,7 +1157,7 @@ export async function renderVideoQuoteOverlay({
 
       drawCaption = capDraws.join(',');
     }
-  } else if (!usingCaptionPng && captionText && String(captionText).trim()) {
+  } else if (!usingCaptionPng && overlayCaption?.mode !== 'raster' && captionText && String(captionText).trim()) {
     // Back-compat: simple bottom caption with safe wrapping
     const CANVAS_W = W;
     const CANVAS_H = H;
@@ -1191,10 +1191,22 @@ export async function renderVideoQuoteOverlay({
   // CRITICAL: Log raster placement before passing to buildVideoChain
   const rasterPlacement = overlayCaption?.mode === 'raster' ? {
     mode: 'raster',
+    rasterUrl: overlayCaption.rasterUrl || overlayCaption.rasterDataUrl || overlayCaption.rasterPng,
     rasterW: overlayCaption.rasterW,
     rasterH: overlayCaption.rasterH,
-    xExpr: overlayCaption.xExpr || '(W-overlay_w)/2',
-    y: overlayCaption.yPx
+    xExpr: (overlayCaption.xExpr_png || overlayCaption.xExpr || '(W-overlay_w)/2').replace(/\s+/g, ''),
+    y: overlayCaption.yPx_png ?? overlayCaption.yPx,  // Use PNG anchor, not drawtext anchor
+    wPct: overlayCaption.wPct ?? 1,
+    // Geometry lock fields
+    frameW: overlayCaption.frameW,
+    frameH: overlayCaption.frameH,
+    bgScaleExpr: overlayCaption.bgScaleExpr,
+    bgCropExpr: overlayCaption.bgCropExpr,
+    // Integrity fields
+    rasterHash: overlayCaption.rasterHash,
+    previewFontString: overlayCaption.previewFontString,
+    previewFontHash: overlayCaption.previewFontHash,
+    rasterPadding: overlayCaption.rasterPadding
   } : null;
   
   console.log('[v3:buildChain:IN]', {

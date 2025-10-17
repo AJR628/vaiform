@@ -140,7 +140,25 @@ const CreateShortSchema = z
       // 🔑 SSOT from preview (critical positioning data)
       totalTextH: z.coerce.number().optional(),
       totalTextHPx: z.coerce.number().optional(),
-      yPxFirstLine: z.coerce.number().optional()
+      yPxFirstLine: z.coerce.number().optional(),
+      // V3 RASTER MODE FIELDS - critical for PNG overlay parity
+      mode: z.enum(['raster', 'drawtext', 'ssot']).optional(),
+      ssotVersion: z.number().optional(),
+      rasterUrl: z.string().optional(),        // PNG data URL or HTTP URL
+      rasterDataUrl: z.string().optional(),    // Alias for rasterUrl
+      rasterPng: z.string().optional(),        // Another alias
+      rasterW: z.coerce.number().optional(),   // PNG width in pixels
+      rasterH: z.coerce.number().optional(),   // PNG height in pixels
+      yPx_png: z.coerce.number().optional(),   // PNG top-left Y position
+      xExpr_png: z.string().optional(),        // PNG horizontal expression
+      rasterPadding: z.coerce.number().optional(),
+      frameW: z.coerce.number().optional(),    // Target frame width (1080)
+      frameH: z.coerce.number().optional(),    // Target frame height (1920)
+      bgScaleExpr: z.string().optional(),      // Background scaling expression
+      bgCropExpr: z.string().optional(),       // Background crop expression
+      rasterHash: z.string().optional(),       // PNG integrity hash
+      previewFontString: z.string().optional(),
+      previewFontHash: z.string().optional()
     }).passthrough().optional(),
     // TTS settings for SSOT
     modelId: z.string().optional(),
@@ -290,6 +308,22 @@ export async function createShort(req, res) {
         splitLines: overlayCaption?.splitLines?.length,
         fontPx: overlayCaption?.fontPx
       });
+    }
+
+    // 🔒 CONTROLLER BOUNDARY GUARD - detect field loss before service call
+    const oc = payload.overlayCaption || {};
+    console.log('[render:controller:overlay]', {
+      hasRasterUrl: !!oc.rasterUrl,
+      hasRasterDataUrl: !!oc.rasterDataUrl,
+      len: (oc.rasterUrl || oc.rasterDataUrl || '').length,
+      yPx_png: oc.yPx_png,
+      xExpr_png: oc.xExpr_png,
+      mode: oc.mode,
+      ssotVersion: oc.ssotVersion
+    });
+    
+    if (oc.mode === 'raster' && !(oc.rasterUrl || oc.rasterDataUrl)) {
+      throw new Error('RASTER: missing rasterDataUrl/rasterUrl at controller');
     }
     const result = await createShortService({ ownerUid, mode, text, template, durationSec, voiceover, wantAttribution, background, debugAudioPath, captionMode, includeBottomCaption, watermark, captionStyle, caption, captionResolved, captionImage, voiceId, modelId, outputFormat, voiceSettings, overrideQuote, overlayCaption });
     
