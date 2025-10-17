@@ -3314,37 +3314,100 @@
                 });
 
                 const normalizedMeta = {
-                    ssotVersion: 3,  // ← Updated to version 3
-                    mode: 'raster',  // ← V3 always uses raster mode
+                    ssotVersion: 3,
+                    mode: 'raster',
+                    
+                    // Pass through ALL server SSOT fields verbatim
                     text: m.text || meta.text,
-                    xPct: Number(m.xPct ?? meta.xPct ?? 0.5),
-                    yPct: Number(m.yPct ?? meta.yPct ?? 0.5),
-                    wPct: Number(m.wPct ?? meta.wPct ?? 0.8),
+                    
+                    // Geometry lock (render frame dimensions)
+                    frameW: m.frameW,
+                    frameH: m.frameH,
+                    bgScaleExpr: m.bgScaleExpr,
+                    bgCropExpr: m.bgCropExpr,
+                    
+                    // PNG raster data
+                    rasterUrl: m.rasterUrl,
+                    rasterW: m.rasterW,
+                    rasterH: m.rasterH,
+                    rasterPadding: m.rasterPadding,  // CRITICAL
+                    
+                    // PNG placement (absolute coordinates)
+                    xExpr_png: m.xExpr_png || '(W-overlay_w)/2',
+                    yPx_png: m.yPx_png,  // ❌ NOT yPx or yPxFirstLine
+                    
+                    // Verification hashes
+                    rasterHash: m.rasterHash,
+                    previewFontString: m.previewFontString,
+                    previewFontHash: m.previewFontHash,
+                    
+                    // Typography (informational only for v3 raster)
                     fontPx: Number(m.fontPx || meta.fontPx || 48),
-                    lineSpacingPx: lineSpacingPx,
-                    color: m.color || meta.color || '#ffffff',
-                    opacity: Number(m.opacity ?? meta.opacity ?? 1.0),
                     fontFamily: m.fontFamily || meta.fontFamily || 'DejaVuSans',
                     weightCss: m.weightCss || meta.weightCss || 'normal',
+                    fontStyle: m.fontStyle || 'normal',
+                    textAlign: m.textAlign || 'center',
+                    letterSpacingPx: Number(m.letterSpacingPx ?? 0),
+                    textTransform: m.textTransform || 'none',
+                    
+                    // Color & effects (informational)
+                    color: m.color || meta.color || '#ffffff',
+                    opacity: Number(m.opacity ?? meta.opacity ?? 1.0),
+                    strokePx: Number(m.strokePx ?? 0),
+                    strokeColor: m.strokeColor || 'rgba(0,0,0,0.85)',
+                    shadowColor: m.shadowColor || 'rgba(0,0,0,0.6)',
+                    shadowBlur: Number(m.shadowBlur ?? 12),
+                    shadowOffsetX: Number(m.shadowOffsetX ?? 0),
+                    shadowOffsetY: Number(m.shadowOffsetY ?? 2),
+                    
+                    // Layout (informational)
                     placement: m.placement || 'custom',
                     internalPadding: Number(m.internalPadding ?? 32),
                     
-                    // SSOT fields - store both names for compatibility
-                    totalTextH: totalTextH,
+                    // Diagnostics (keep for debugging, NOT used in render)
+                    lineSpacingPx: Number(m.lineSpacingPx ?? 0),
+                    splitLines: Array.isArray(m.splitLines) ? m.splitLines : [],
+                    totalTextH: Number(m.totalTextH ?? 0),
+                    
+                    // Legacy compatibility fields (deprecated for v3 raster)
                     totalTextHPx: totalTextH,
                     yPxFirstLine: yPxFirstLine,
-                    splitLines: splitLines,
+                    xPct: Number(m.xPct ?? meta.xPct ?? 0.5),
+                    yPct: Number(m.yPct ?? meta.yPct ?? 0.5),
+                    wPct: Number(m.wPct ?? meta.wPct ?? 0.8),
                     
-                    // Raster fields for v3 - use values returned in meta
-                    rasterUrl: data.data?.meta?.rasterUrl,
-                    rasterDataUrl: data.data?.meta?.rasterUrl,
-                    rasterPng: data.data?.meta?.rasterUrl,
-                    rasterW: data.data?.meta?.rasterW,
-                    rasterH: data.data?.meta?.rasterH,
-                    xExpr: '(W-overlay_w)/2',
-                    // IMPORTANT: use top-of-raster Y (already yPxFirstLine - padding)
-                    yPx: data.data?.meta?.yPx
+                    // Additional raster aliases for compatibility
+                    rasterDataUrl: m.rasterUrl,
+                    rasterPng: m.rasterUrl,
+                    xExpr: m.xExpr_png || '(W-overlay_w)/2'
                 };
+
+                // V3 raster mode validation - ensure all required fields are present
+                if (normalizedMeta.mode === 'raster') {
+                    const requiredRasterFields = [
+                        'rasterUrl', 'rasterW', 'rasterH', 
+                        'yPx_png', 'rasterPadding',
+                        'frameW', 'frameH', 'bgScaleExpr', 'bgCropExpr',
+                        'rasterHash', 'previewFontString'
+                    ];
+                    
+                    const missingFields = requiredRasterFields.filter(f => normalizedMeta[f] == null);
+                    
+                    if (missingFields.length > 0) {
+                        console.error('[savePreview-ERROR] Missing raster fields:', missingFields);
+                        throw new Error(`Server returned incomplete raster metadata. Missing: ${missingFields.join(', ')}`);
+                    }
+                    
+                    console.log('[savePreview-v3] ✅ All raster fields present:', {
+                        yPx_png: normalizedMeta.yPx_png,
+                        rasterW: normalizedMeta.rasterW,
+                        rasterH: normalizedMeta.rasterH,
+                        rasterPadding: normalizedMeta.rasterPadding,
+                        frameW: normalizedMeta.frameW,
+                        frameH: normalizedMeta.frameH,
+                        rasterHash: normalizedMeta.rasterHash?.slice(0, 8) + '...'
+                    });
+                }
 
                 // Client-side guard: warn if raster dimensions look like full canvas
                 if (normalizedMeta.mode === 'raster' &&
@@ -3382,11 +3445,19 @@
                 
                 // Debug: Log what was saved
                 console.log('[savePreview] Saved meta details:', {
+                    mode: normalizedMeta.mode,
+                    ssotVersion: normalizedMeta.ssotVersion,
                     text: normalizedMeta.text,
                     textLength: normalizedMeta.text?.length,
-                    xPct: normalizedMeta.xPct,
-                    yPct: normalizedMeta.yPct,
-                    fontPx: normalizedMeta.fontPx
+                    // Raster specifics
+                    yPx_png: normalizedMeta.yPx_png,
+                    rasterW: normalizedMeta.rasterW,
+                    rasterH: normalizedMeta.rasterH,
+                    rasterPadding: normalizedMeta.rasterPadding,
+                    frameW: normalizedMeta.frameW,
+                    frameH: normalizedMeta.frameH,
+                    hasRasterUrl: !!normalizedMeta.rasterUrl,
+                    rasterHash: normalizedMeta.rasterHash?.slice(0, 8) + '...'
                 });
                 
                 // Debug: Verify functions are available
