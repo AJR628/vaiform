@@ -311,7 +311,7 @@ export async function createShort(req, res) {
     }
 
     // 🔒 CONTROLLER BOUNDARY GUARD - detect field loss before service call
-    const oc = payload.overlayCaption || {};
+    const oc = overlayCaption || {};
     console.log('[render:controller:overlay]', {
       hasRasterUrl: !!oc.rasterUrl,
       hasRasterDataUrl: !!oc.rasterDataUrl,
