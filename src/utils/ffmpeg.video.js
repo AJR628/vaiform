@@ -451,6 +451,8 @@ export async function renderVideoQuoteOverlay({
   captionImage,
   // v2 overlay mode
   overlayCaption,
+  // caption options
+  includeBottomCaption = false,
   // style bundle
   fontfile, fontcolor = 'white', fontsize = 72, lineSpacing = 12, shadowColor = 'black', shadowX = 2, shadowY = 2,
   box = 1, boxcolor = 'black@0.35', boxborderw = 24,
@@ -470,6 +472,13 @@ export async function renderVideoQuoteOverlay({
   videoVignette = false,
   haveBgAudio = true,
 }) {
+  // Log options for debugging
+  console.log('[render:opts]', { 
+    includeBottomCaption, 
+    overlayMode: !!overlayCaption, 
+    hasOverlayCaption: !!overlayCaption
+  });
+
   // Default font fallback if caller does not provide one
   const DEFAULT_FONT = process.env.DRAWTEXT_FONTFILE || '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf';
   const effFont = String(fontfile || DEFAULT_FONT);
@@ -500,6 +509,12 @@ export async function renderVideoQuoteOverlay({
     try {
       usingCaptionPng = true;
       captionPngPath = await fetchToTmp(dataUrl, '.png');
+      
+      console.log('[render:raster-guard]', {
+        usingCaptionPng: true,
+        includeBottomCaption,
+        willDisableBottomCaption: true
+      });
       
       // Verify PNG file
       if (!fs.existsSync(captionPngPath) || fs.statSync(captionPngPath).size === 0) {
@@ -1157,7 +1172,7 @@ export async function renderVideoQuoteOverlay({
 
       drawCaption = capDraws.join(',');
     }
-  } else if (!usingCaptionPng && overlayCaption?.mode !== 'raster' && captionText && String(captionText).trim()) {
+  } else if (!usingCaptionPng && overlayCaption?.mode !== 'raster' && includeBottomCaption && captionText && String(captionText).trim()) {
     // Back-compat: simple bottom caption with safe wrapping
     const CANVAS_W = W;
     const CANVAS_H = H;

@@ -249,6 +249,7 @@ export async function createShortService({ ownerUid, mode, text, template, durat
             captionResolved,
             captionImage: captionImageLocal,
             overlayCaption: captionMode === 'overlay' ? overlayCaption : null,
+            includeBottomCaption,
             watermark: watermarkFinal,
             watermarkText: "Vaiform"
           });
@@ -311,6 +312,7 @@ export async function createShortService({ ownerUid, mode, text, template, durat
             captionResolved,
             captionImage: captionImageLocal,
             overlayCaption: captionMode === 'overlay' ? overlayCaption : null,
+            includeBottomCaption,
             watermark: watermarkFinal,
             watermarkText: "Vaiform"
           });
@@ -479,6 +481,7 @@ export async function createShortService({ ownerUid, mode, text, template, durat
           captionResolved,
           captionImage: captionImageLocal,
           overlayCaption: captionMode === 'overlay' ? overlayCaption : null,
+          includeBottomCaption,
         });
         // annotate meta via closure var? We'll include via meta build below
         // For parity with others, nothing else here; mux will run later
