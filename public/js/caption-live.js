@@ -262,13 +262,16 @@ function applyStylesToLiveText(element, captionState, serverMeta) {
     }
     
     // Log parity diagnostics
-    console.log('[parity:preview]', {
-      widthPx: Math.round(cssWidthPx),
-      topPx: Math.round(cssTopPx),
-      fontSizePx: Math.round(cssFontSizePx),
-      lineHeightPx: Math.round(cssLineHeightPx),
-      paddingPx: Math.round(cssPaddingPx),
+    console.log('[parity:applied]', {
       scale: scale.toFixed(3),
+      serverFontPx: fontPx,
+      cssFontSizePx: Math.round(cssFontSizePx),
+      serverLineSpacing: lineSpacingPx,
+      cssLineHeightPx: Math.round(cssLineHeightPx),
+      serverYPx: yPx_png,
+      cssTopPx: Math.round(cssTopPx),
+      serverRasterW: rasterW,
+      cssWidthPx: Math.round(cssWidthPx),
       effectiveTextWidth: Math.round(cssWidthPx - 2 * cssPaddingPx)
     });
     

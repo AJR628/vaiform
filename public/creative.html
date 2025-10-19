@@ -1321,7 +1321,7 @@
             }
 
             // Get caption style parameters from UI
-            const sizePx = window.getCaptionPx(); // Use original mapped size logic
+            const sizePx = 54; // Default - will be overridden by server SSOT
             const opacityPct = parseInt(document.getElementById('caption-opacity')?.value || '85', 10);
             const placement = (document.getElementById('caption-placement')?.value || 'bottom').toLowerCase();
             const showBoxToggle = document.getElementById('caption-background')?.checked || false;
@@ -3295,6 +3295,30 @@
                     alert('Please add caption text first');
                     return;
                 }
+                
+                // Fallback: derive server-space values from live CSS if meta is stale
+                if (!window.__serverCaptionMeta || !window.__serverCaptionMeta.fontPx) {
+                    const liveEl = document.getElementById('caption-live');
+                    if (liveEl) {
+                        const cs = getComputedStyle(liveEl);
+                        const scale = 0.333; // Approximate scale for 360px container
+                        
+                        const derivedFontPx = Math.round(parseFloat(cs.fontSize) / scale);
+                        const derivedLineSpacingPx = Math.round(parseFloat(cs.lineHeight) / scale - derivedFontPx);
+                        
+                        console.log('[savePreview] Deriving from live CSS:', {
+                            cssFontSize: parseFloat(cs.fontSize),
+                            cssLineHeight: parseFloat(cs.lineHeight),
+                            derivedFontPx,
+                            derivedLineSpacingPx,
+                            scale
+                        });
+                        
+                        // Override meta with derived values
+                        meta.fontPx = derivedFontPx;
+                        meta.lineSpacingPx = derivedLineSpacingPx;
+                    }
+                }
 
                 // Build preview payload (v3 format - no v2 flag!)
                 // Include ALL styling fields for server PNG generation parity
@@ -3507,6 +3531,37 @@
                 // Set flag indicating preview is saved for current text
                 window._previewSavedForCurrentText = true;
                 console.log('[preview-state] Preview saved successfully for current caption text');
+                
+                // Apply saved server meta to live preview immediately
+                if (typeof window.updateCaptionState === 'function' && normalizedMeta) {
+                    window.__serverCaptionMeta = normalizedMeta;
+                    const liveEl = document.getElementById('caption-live');
+                    if (liveEl) {
+                        const currentState = {
+                            text: liveEl.textContent || '',
+                            fontPx: normalizedMeta.fontPx || 54,
+                            lineSpacingPx: normalizedMeta.lineSpacingPx || 8,
+                            letterSpacingPx: normalizedMeta.letterSpacingPx || 0,
+                            fontFamily: normalizedMeta.fontFamily || 'DejaVu Sans',
+                            weightCss: normalizedMeta.weightCss || 'bold',
+                            textAlign: normalizedMeta.textAlign || 'center',
+                            textTransform: normalizedMeta.textTransform || 'none',
+                            color: normalizedMeta.color || 'white',
+                            opacity: normalizedMeta.opacity || 0.85,
+                            strokePx: normalizedMeta.strokePx || 0,
+                            strokeColor: normalizedMeta.strokeColor || 'rgba(0,0,0,0.85)',
+                            shadowColor: normalizedMeta.shadowColor || 'rgba(0,0,0,0.6)',
+                            shadowBlur: normalizedMeta.shadowBlur || 12,
+                            shadowOffsetX: normalizedMeta.shadowOffsetX || 0,
+                            shadowOffsetY: normalizedMeta.shadowOffsetY || 2,
+                            xPct: normalizedMeta.xPct || 0.5,
+                            yPct: normalizedMeta.yPct || 0.5,
+                            wPct: normalizedMeta.wPct || 0.8
+                        };
+                        window.updateCaptionState(currentState);
+                        console.log('[savePreview] Applied server meta to live preview');
+                    }
+                }
                 
                 // Debug: Log what was saved
                 console.log('[savePreview] Saved meta details:', {
