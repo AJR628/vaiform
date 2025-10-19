@@ -154,6 +154,9 @@ function updateDebugHUD(element, serverMeta, scale) {
   const hud = document.getElementById('preview-debug-watermark');
   if (!hud) return;
   
+  // Early return if debug elements don't exist
+  if (!document.getElementById('dbg-scale')) return;
+  
   const cs = getComputedStyle(element);
   
   document.getElementById('dbg-scale').textContent = scale.toFixed(3);
