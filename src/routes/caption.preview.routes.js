@@ -252,7 +252,8 @@ router.post("/caption/preview", express.json(), async (req, res) => {
           
           // Placement inputs
           text,
-          // Note: xPct, yPct, wPct removed from raster mode - use absolute coordinates
+          // NOTE: xPct, yPct, wPct NOT used in raster mode - kept for debug only
+          // Client should use rasterW/yPx_png/rasterPadding instead
           
           // Typography
           fontPx,

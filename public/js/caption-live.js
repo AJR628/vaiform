@@ -111,63 +111,199 @@ function computePreviewScale() {
 }
 
 /**
+ * Create and update debug HUD when ?debug=1 is present
+ */
+function createDebugHUD() {
+  if (!window.location.search.includes('debug=1')) return null;
+  
+  let hud = document.getElementById('preview-debug-watermark');
+  if (hud) return hud;
+  
+  hud = document.createElement('div');
+  hud.id = 'preview-debug-watermark';
+  hud.style.cssText = `
+    position: fixed; top: 10px; right: 10px;
+    background: rgba(0,0,0,0.85); color: #0f0;
+    font-family: monospace; font-size: 11px;
+    padding: 8px 12px; border-radius: 4px;
+    z-index: 999999; pointer-events: none; line-height: 1.4;
+  `;
+  
+  hud.innerHTML = `
+    <div><strong>🔍 Caption Parity Debug</strong></div>
+    <div>scale: <span id="dbg-scale">-</span></div>
+    <div>fontPx: <span id="dbg-fontPx">-</span></div>
+    <div>lineSpacingPx: <span id="dbg-lineSpacingPx">-</span></div>
+    <div>yPx_png: <span id="dbg-yPx">-</span></div>
+    <div>rasterW: <span id="dbg-rasterW">-</span></div>
+    <div>rasterPadding: <span id="dbg-padding">-</span></div>
+    <div>---</div>
+    <div>Live CSS:</div>
+    <div>width: <span id="dbg-live-width">-</span>px</div>
+    <div>top: <span id="dbg-live-top">-</span>px</div>
+    <div>fontSize: <span id="dbg-live-fontSize">-</span>px</div>
+    <div>lineHeight: <span id="dbg-live-lineHeight">-</span>px</div>
+    <div>padding: <span id="dbg-live-padding">-</span></div>
+  `;
+  
+  document.body.appendChild(hud);
+  return hud;
+}
+
+function updateDebugHUD(element, serverMeta, scale) {
+  const hud = document.getElementById('preview-debug-watermark');
+  if (!hud) return;
+  
+  const cs = getComputedStyle(element);
+  
+  document.getElementById('dbg-scale').textContent = scale.toFixed(3);
+  document.getElementById('dbg-fontPx').textContent = serverMeta?.fontPx || '-';
+  document.getElementById('dbg-lineSpacingPx').textContent = serverMeta?.lineSpacingPx || '-';
+  document.getElementById('dbg-yPx').textContent = serverMeta?.yPx_png || '-';
+  document.getElementById('dbg-rasterW').textContent = serverMeta?.rasterW || '-';
+  document.getElementById('dbg-padding').textContent = serverMeta?.rasterPadding || serverMeta?.internalPadding || '-';
+  
+  document.getElementById('dbg-live-width').textContent = Math.round(parseFloat(cs.width));
+  document.getElementById('dbg-live-top').textContent = Math.round(parseFloat(cs.top));
+  document.getElementById('dbg-live-fontSize').textContent = Math.round(parseFloat(cs.fontSize));
+  document.getElementById('dbg-live-lineHeight').textContent = Math.round(parseFloat(cs.lineHeight));
+  document.getElementById('dbg-live-padding').textContent = cs.padding;
+}
+
+/**
  * Apply caption styles to live text element using server SSOT values
  */
 function applyStylesToLiveText(element, captionState, serverMeta) {
   const scale = computePreviewScale();
-  const frameW = 1080;
   
-  // Use server SSOT values when available
+  // ========== RASTER MODE: Mirror PNG rectangle exactly ==========
+  if (serverMeta?.mode === 'raster') {
+    console.log('[parity:usingRaster]', {
+      rasterW: serverMeta.rasterW,
+      rasterH: serverMeta.rasterH,
+      yPx_png: serverMeta.yPx_png,
+      rasterPadding: serverMeta.rasterPadding || serverMeta.internalPadding || 24
+    });
+    
+    // Warn if percentage fields leak into raster mode
+    if (serverMeta.wPct !== undefined || serverMeta.xPct !== undefined || serverMeta.yPct !== undefined) {
+      console.warn('[parity:warning] Ignoring %-based fields in raster mode:', {
+        wPct: serverMeta.wPct, xPct: serverMeta.xPct, yPct: serverMeta.yPct
+      });
+    }
+    
+    // Extract server SSOT values
+    const fontPx = serverMeta.fontPx;
+    const lineSpacingPx = serverMeta.lineSpacingPx;
+    const rasterW = serverMeta.rasterW;
+    const yPx_png = serverMeta.yPx_png;
+    const P = serverMeta.rasterPadding ?? serverMeta.internalPadding ?? 24;
+    const letterSpacingPx = serverMeta.letterSpacingPx || 0;
+    
+    // Scale all geometry to CSS pixels
+    const cssWidthPx = rasterW * scale;
+    const cssFontSizePx = fontPx * scale;
+    const cssLineHeightPx = (fontPx + lineSpacingPx) * scale; // PIXEL value, not unitless
+    const cssTopPx = yPx_png * scale;
+    const cssPaddingPx = P * scale;
+    const cssLetterSpacingPx = letterSpacingPx * scale;
+    
+    // Box sizing: border-box so padding is included in width
+    element.style.boxSizing = 'border-box';
+    
+    // Width: exact PNG rectangle width
+    element.style.width = `${cssWidthPx}px`;
+    
+    // Padding: top/right/left = P, bottom = 0 (matches server canvas rendering)
+    // This makes text area = rasterW - 2*P (same as server)
+    element.style.padding = `${cssPaddingPx}px ${cssPaddingPx}px 0 ${cssPaddingPx}px`;
+    
+    // Typography: exact pixel values
+    element.style.fontSize = `${cssFontSizePx}px`;
+    element.style.lineHeight = `${cssLineHeightPx}px`; // NOT unitless!
+    element.style.letterSpacing = `${cssLetterSpacingPx}px`;
+    
+    // Position: PNG's top-left corner as anchor
+    element.style.position = 'absolute';
+    element.style.top = `${cssTopPx}px`;
+    
+    // Center horizontally (matches ffmpeg: xExpr_png='(W-overlay_w)/2')
+    element.style.left = '50%';
+    element.style.transform = 'translateX(-50%)';
+    
+    // Font: must match server registration
+    element.style.fontFamily = '"DejaVu Sans", sans-serif';
+    element.style.fontWeight = '700'; // bold
+    element.style.fontStyle = serverMeta.fontStyle || 'normal';
+    
+    // Text properties
+    element.style.textAlign = serverMeta.textAlign || 'center';
+    element.style.textTransform = serverMeta.textTransform || 'none';
+    element.style.color = serverMeta.color || 'white';
+    element.style.opacity = serverMeta.opacity || 1;
+    
+    // Effects: scale stroke and shadow
+    if (serverMeta.strokePx > 0) {
+      const scaledStrokePx = serverMeta.strokePx * scale;
+      element.style.webkitTextStroke = `${scaledStrokePx}px ${serverMeta.strokeColor}`;
+      element.style.textStroke = `${scaledStrokePx}px ${serverMeta.strokeColor}`;
+    } else {
+      element.style.webkitTextStroke = 'none';
+      element.style.textStroke = 'none';
+    }
+    
+    if (serverMeta.shadowBlur > 0) {
+      const shadowX = (serverMeta.shadowOffsetX || 0) * scale;
+      const shadowY = (serverMeta.shadowOffsetY || 0) * scale;
+      const shadowBlur = serverMeta.shadowBlur * scale;
+      element.style.textShadow = `${shadowX}px ${shadowY}px ${shadowBlur}px ${serverMeta.shadowColor}`;
+    } else {
+      element.style.textShadow = 'none';
+    }
+    
+    // Log parity diagnostics
+    console.log('[parity:preview]', {
+      widthPx: Math.round(cssWidthPx),
+      topPx: Math.round(cssTopPx),
+      fontSizePx: Math.round(cssFontSizePx),
+      lineHeightPx: Math.round(cssLineHeightPx),
+      paddingPx: Math.round(cssPaddingPx),
+      scale: scale.toFixed(3),
+      effectiveTextWidth: Math.round(cssWidthPx - 2 * cssPaddingPx)
+    });
+    
+    // Update debug HUD
+    createDebugHUD();
+    updateDebugHUD(element, serverMeta, scale);
+    
+    return;
+  }
+  
+  // ========== LEGACY MODE: percentage-based (for backward compat) ==========
+  console.warn('[parity:legacy] Using legacy %-based positioning');
+  const frameW = 1080;
+  const wPct = serverMeta?.wPct || captionState.wPct || 0.8;
+  const yPct = serverMeta?.yPct || captionState.yPct || 0.5;
   const fontPx = serverMeta?.fontPx || captionState.fontPx;
   const lineSpacingPx = serverMeta?.lineSpacingPx || captionState.lineSpacingPx;
-  const yPx_png = serverMeta?.yPx_png;
-  const wPct = serverMeta?.wPct || captionState.wPct || 0.8;
   const letterSpacingPx = captionState.letterSpacingPx || 0;
   
-  // Scale all values with single scalar
   const cssWidthPx = wPct * frameW * scale;
   const cssFontSizePx = fontPx * scale;
+  const cssLineHeightPx = (fontPx + lineSpacingPx) * scale;
   const cssLetterSpacingPx = letterSpacingPx * scale;
-  const cssLineHeightPx = (fontPx + lineSpacingPx) * scale; // PIXEL-BASED
   
-  // Position using server's absolute yPx_png
-  const cssTopPx = yPx_png !== undefined ? yPx_png * scale : undefined;
-  
-  // Log parity data
-  console.log('[parity:preview]', {
-    containerCssW: document.getElementById('live-preview-container')?.clientWidth,
-    containerCssH: document.getElementById('live-preview-container')?.clientHeight,
-    frameW, frameH, scale,
-    wPct,
-    computed: {
-      cssWidthPx: Math.round(cssWidthPx),
-      cssFontSizePx: Math.round(cssFontSizePx),
-      cssLineHeightPx: Math.round(cssLineHeightPx),
-      cssLetterSpacingPx: Math.round(cssLetterSpacingPx),
-      cssTopPx_from_yPx_png: cssTopPx ? Math.round(cssTopPx) : 'N/A'
-    },
-    server: {
-      fontPx, lineSpacingPx, yPx_png,
-      rasterW: serverMeta?.rasterW,
-      rasterH: serverMeta?.rasterH,
-      previewFontString: serverMeta?.previewFontString
-    }
-  });
-  
-  // Apply CSS with exact pixel values
   element.style.position = 'absolute';
   element.style.width = `${cssWidthPx}px`;
   element.style.fontSize = `${cssFontSizePx}px`;
-  element.style.lineHeight = `${cssLineHeightPx}px`; // NOT unitless
+  element.style.lineHeight = `${cssLineHeightPx}px`;
   element.style.letterSpacing = `${cssLetterSpacingPx}px`;
-  
-  if (cssTopPx !== undefined) {
-    element.style.top = `${cssTopPx}px`;
-  }
-  
-  // Center horizontally (match server's xExpr_png)
   element.style.left = '50%';
   element.style.transform = 'translateX(-50%)';
+  
+  // Legacy uses yPct for vertical centering
+  const cssTopPct = yPct * 100;
+  element.style.top = `${cssTopPct}%`;
   
   // Font must match server exactly
   element.style.fontFamily = '"DejaVu Sans", sans-serif';
@@ -197,16 +333,6 @@ function applyStylesToLiveText(element, captionState, serverMeta) {
     element.style.textShadow = `${shadowX}px ${shadowY}px ${shadowBlur}px ${captionState.shadowColor}`;
   } else {
     element.style.textShadow = 'none';
-  }
-  
-  // Update debug watermark if present
-  const watermark = document.getElementById('preview-debug-watermark');
-  if (watermark && window.location.search.includes('debug=1')) {
-    watermark.style.display = 'block';
-    document.getElementById('dbg-scale').textContent = scale.toFixed(3);
-    document.getElementById('dbg-fontPx').textContent = fontPx;
-    document.getElementById('dbg-lineSpacingPx').textContent = lineSpacingPx;
-    document.getElementById('dbg-yPx').textContent = yPx_png || 'N/A';
   }
 }
 
@@ -334,53 +460,59 @@ function handlePreviewResponse(response, fingerprint) {
     applyStylesToLiveText(liveEl, currentState, meta);
   }
 
-  // Geometry lock check before PNG swap
+  // ========== PARITY GATE: Compare against PNG rectangle ==========
   const scale = computePreviewScale();
-  const frameW = 1080;
   
-  // Get current state for comparison
-  const currentFontPx = 48; // TODO: Get from current state
-  const currentLineSpacingPx = 8; // TODO: Get from current state
-  const currentWPct = 0.8; // TODO: Get from current state
+  // Get live element computed styles
+  const liveCS = getComputedStyle(liveEl);
+  const liveCssWidth = parseFloat(liveCS.width);
+  const liveCssFontSize = parseFloat(liveCS.fontSize);
+  const liveCssLineHeight = parseFloat(liveCS.lineHeight);
+  const liveCssTop = parseFloat(liveCS.top);
   
-  const serverFontPx = meta.fontPx;
-  const serverLineSpacingPx = meta.lineSpacingPx;
-  const serverWPct = meta.wPct || 0.8;
+  // Expected values: from PNG rectangle (NOT percentages)
+  const expectedWidth = meta.rasterW * scale;
+  const expectedFontSize = meta.fontPx * scale;
+  const expectedLineHeight = (meta.fontPx + meta.lineSpacingPx) * scale;
+  const expectedTop = meta.yPx_png * scale;
   
-  if (Math.abs(currentFontPx - serverFontPx) > 1 ||
-      Math.abs(currentLineSpacingPx - serverLineSpacingPx) > 1 ||
-      Math.abs(currentWPct - serverWPct) > 0.01) {
-    console.log('[preview-swap] geometry mismatch, skipping', {
-      current: { fontPx: currentFontPx, lineSpacingPx: currentLineSpacingPx, wPct: currentWPct },
-      server: { fontPx: serverFontPx, lineSpacingPx: serverLineSpacingPx, wPct: serverWPct }
+  // Tolerances: layout ±2px, typography ±1px
+  const layoutTolerance = 2;
+  const typoTolerance = 1;
+  
+  const widthMatch = Math.abs(liveCssWidth - expectedWidth) <= layoutTolerance;
+  const fontMatch = Math.abs(liveCssFontSize - expectedFontSize) <= typoTolerance;
+  const lineHeightMatch = Math.abs(liveCssLineHeight - expectedLineHeight) <= typoTolerance;
+  const topMatch = Math.abs(liveCssTop - expectedTop) <= layoutTolerance;
+  
+  if (!widthMatch || !fontMatch || !lineHeightMatch || !topMatch) {
+    console.warn('[parity:gate:FAIL] Geometry mismatch - keeping live text', {
+      width: { live: Math.round(liveCssWidth), expected: Math.round(expectedWidth), match: widthMatch },
+      fontSize: { live: Math.round(liveCssFontSize), expected: Math.round(expectedFontSize), match: fontMatch },
+      lineHeight: { live: Math.round(liveCssLineHeight), expected: Math.round(expectedLineHeight), match: lineHeightMatch },
+      top: { live: Math.round(liveCssTop), expected: Math.round(expectedTop), match: topMatch }
     });
     return; // Keep live text
   }
-
-  // Check font hash if provided
-  if (meta.previewFontHash) {
-    // TODO: Compare with expected font hash if we implement font verification
-  }
+  
+  console.log('[parity:gate:PASS] Geometry matches - swapping to PNG');
 
   // Swap to PNG
   const pngEl = document.getElementById('preview-raster-img');
   if (pngEl && imageUrl) {
     pngEl.src = imageUrl;
-    
-    // Scale and position the PNG to match the preview container
     const container = document.getElementById('live-preview-container');
     if (container) {
       const containerRect = container.getBoundingClientRect();
-      const scale = containerRect.width / (meta.frameW || 1080);
+      const imgScale = containerRect.width / (meta.frameW || 1080);
       
-      pngEl.style.width = `${(meta.rasterW || 400) * scale}px`;
-      pngEl.style.height = `${(meta.rasterH || 200) * scale}px`;
-      pngEl.style.left = `${(containerRect.width - (meta.rasterW || 400) * scale) / 2}px`;
-      pngEl.style.top = `${(meta.yPx_png || 0) * scale}px`;
+      pngEl.style.width = `${meta.rasterW * imgScale}px`;
+      pngEl.style.height = `${meta.rasterH * imgScale}px`;
+      pngEl.style.left = `${(containerRect.width - meta.rasterW * imgScale) / 2}px`;
+      pngEl.style.top = `${meta.yPx_png * imgScale}px`;
     }
     
     showPngPreview();
-    console.log('[preview-swap] matching fingerprint → swapping to PNG');
   }
 }
 

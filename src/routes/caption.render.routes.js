@@ -21,6 +21,22 @@ router.post("/caption/render", express.json(), async (req, res) => {
       const yPct = Math.min(Math.max(meta.yPct, SAFE_TOP), SAFE_BOTTOM);
       const payload = { ...meta, yPct };
       
+      // Log raster mode usage
+      if (meta.mode === 'raster') {
+        console.log('[render:raster] Using PNG overlay mode', {
+          rasterW: meta.rasterW,
+          rasterH: meta.rasterH,
+          yPx_png: meta.yPx_png,
+          xExpr_png: meta.xExpr_png,
+          rasterPadding: meta.rasterPadding
+        });
+        
+        // Verify no legacy % fields are used
+        if (meta.yPct !== undefined || meta.yPxFirstLine !== undefined) {
+          console.warn('[render:raster] Legacy positioning fields present - should not be used');
+        }
+      }
+      
       try {
         // For now, return the same as preview - in production you'd integrate with your render pipeline
         const { renderPreviewImage } = await import('./caption.preview.routes.js');
