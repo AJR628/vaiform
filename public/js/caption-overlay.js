@@ -612,6 +612,36 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
       return wrappedLines.join('\n');
     };
     
+    // Extract additional styling fields for server PNG generation
+    const parseShadow = (shadowStr) => {
+      if (!shadowStr || shadowStr === 'none') return { shadowColor: 'rgba(0,0,0,0.6)', shadowBlur: 0, shadowOffsetX: 0, shadowOffsetY: 0 };
+      const match = shadowStr.match(/(-?\d+(?:\.\d+)?)px\s+(-?\d+(?:\.\d+)?)px\s+(\d+(?:\.\d+)?)px\s+(.+)/);
+      if (match) {
+        return {
+          shadowOffsetX: parseFloat(match[1]) || 0,
+          shadowOffsetY: parseFloat(match[2]) || 0,
+          shadowBlur: parseFloat(match[3]) || 0,
+          shadowColor: match[4] || 'rgba(0,0,0,0.6)'
+        };
+      }
+      return { shadowColor: 'rgba(0,0,0,0.6)', shadowBlur: 0, shadowOffsetX: 0, shadowOffsetY: 0 };
+    };
+
+    const parseStroke = (strokeStr) => {
+      if (!strokeStr || strokeStr === 'none') return { strokePx: 0, strokeColor: 'rgba(0,0,0,0.85)' };
+      const match = strokeStr.match(/(\d+(?:\.\d+)?)px\s+(.+)/);
+      if (match) {
+        return {
+          strokePx: parseFloat(match[1]) || 0,
+          strokeColor: match[2] || 'rgba(0,0,0,0.85)'
+        };
+      }
+      return { strokePx: 0, strokeColor: 'rgba(0,0,0,0.85)' };
+    };
+
+    const shadowProps = parseShadow(cs.textShadow);
+    const strokeProps = parseStroke(cs.webkitTextStroke || cs.textStroke);
+
     const meta = {
       text: extractWrappedText(),
       xPct: (b.left - s.left) / s.width,
@@ -620,14 +650,21 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
       hPct: b.height / s.height,
       fontPx: parseInt(cs.fontSize,10),
       weightCss: String(cs.fontWeight),
+      fontStyle: cs.fontStyle || 'normal',
       lineHeight: cs.lineHeight,
+      letterSpacingPx: parseFloat(cs.letterSpacing) || 0,
+      textTransform: cs.textTransform || 'none',
       color: cs.color,
       opacity: Number(cs.opacity || 1),
       textAlign: cs.textAlign,
       paddingPx: parseInt(cs.paddingLeft,10),
       fontFamily: cs.fontFamily,
       showBox: !box.classList.contains('is-boxless'),
-      responsiveText: document.getElementById('responsive-text-toggle')?.checked ?? true
+      responsiveText: document.getElementById('responsive-text-toggle')?.checked ?? true,
+      // Shadow properties
+      ...shadowProps,
+      // Stroke properties  
+      ...strokeProps
     };
     
     // Update global SSOT meta

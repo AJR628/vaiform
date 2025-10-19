@@ -3291,6 +3291,7 @@
                 }
 
                 // Build preview payload (v3 format - no v2 flag!)
+                // Include ALL styling fields for server PNG generation parity
                 const payload = {
                     ssotVersion: 3,
                     placement: 'custom',
@@ -3298,14 +3299,41 @@
                     xPct: meta.xPct,
                     yPct: meta.yPct,
                     wPct: meta.wPct,
+                    // Typography
                     sizePx: meta.fontPx,
+                    fontPx: meta.fontPx, // Server expects both sizePx and fontPx
                     fontFamily: meta.fontFamily || 'DejaVuSans',
                     weightCss: meta.weightCss || 'normal',
+                    fontStyle: meta.fontStyle || 'normal',
+                    textAlign: meta.textAlign || 'center',
+                    letterSpacingPx: meta.letterSpacingPx || 0,
+                    textTransform: meta.textTransform || 'none',
+                    // Color & effects
                     color: meta.color || 'rgb(255, 255, 255)',
-                    opacity: meta.opacity ?? 0.8
+                    opacity: meta.opacity ?? 0.8,
+                    // Stroke (outline)
+                    strokePx: meta.strokePx || 0,
+                    strokeColor: meta.strokeColor || 'rgba(0,0,0,0.85)',
+                    // Shadow
+                    shadowColor: meta.shadowColor || 'rgba(0,0,0,0.6)',
+                    shadowBlur: meta.shadowBlur || 0,
+                    shadowOffsetX: meta.shadowOffsetX || 0,
+                    shadowOffsetY: meta.shadowOffsetY || 0
                 };
 
-                console.log('[savePreview] Sending payload:', payload);
+                console.log('[savePreview] Sending payload with complete styling:', payload);
+                console.log('[savePreview] Style extraction from meta:', {
+                    fontPx: meta.fontPx,
+                    weightCss: meta.weightCss,
+                    fontStyle: meta.fontStyle,
+                    letterSpacingPx: meta.letterSpacingPx,
+                    textTransform: meta.textTransform,
+                    strokePx: meta.strokePx,
+                    strokeColor: meta.strokeColor,
+                    shadowBlur: meta.shadowBlur,
+                    shadowOffsetX: meta.shadowOffsetX,
+                    shadowOffsetY: meta.shadowOffsetY
+                });
 
                 // Call preview API
                 const { apiFetch } = await import('./api.mjs');

@@ -45,6 +45,23 @@ router.post("/caption/preview", express.json(), async (req, res) => {
       const wPct = Number(parsed.data.wPct ?? 0.8);
       const fontPx = Number(parsed.data.sizePx || parsed.data.fontPx || 54);
       
+      // Log received styling fields for debugging
+      console.log('[caption-preview] Received styling fields:', {
+        fontPx: parsed.data.fontPx,
+        weightCss: parsed.data.weightCss,
+        fontStyle: parsed.data.fontStyle,
+        letterSpacingPx: parsed.data.letterSpacingPx,
+        textTransform: parsed.data.textTransform,
+        strokePx: parsed.data.strokePx,
+        strokeColor: parsed.data.strokeColor,
+        shadowBlur: parsed.data.shadowBlur,
+        shadowOffsetX: parsed.data.shadowOffsetX,
+        shadowOffsetY: parsed.data.shadowOffsetY,
+        textAlign: parsed.data.textAlign,
+        color: parsed.data.color,
+        opacity: parsed.data.opacity
+      });
+      
       // Typography
       const fontFamily = String(parsed.data.fontFamily || 'DejaVuSans');
       const weightCss = String(parsed.data.weightCss || 'normal');
@@ -866,8 +883,14 @@ async function renderCaptionRaster(meta) {
     fontWeight: weightToken,
     letterSpacingPx,
     strokePx,
+    strokeColor,
     shadowBlur,
-    textAlign
+    shadowOffsetX,
+    shadowOffsetY,
+    shadowColor,
+    textAlign,
+    color,
+    opacity
   });
   
   return {
