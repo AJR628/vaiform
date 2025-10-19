@@ -100,9 +100,28 @@
         }
     </script>
     <script type="module" src="./frontend.js"></script>
+    <!-- Hybrid caption preview system -->
+    <script type="module" src="./js/caption-live.js"></script>
     <!-- Delegated event system for action buttons -->
     <script src="./js/ui-actions.js"></script>
     <link rel="stylesheet" href="/creative.css" />
+    <!-- Font loading for client-side rasterization parity -->
+    <style>
+        @font-face {
+            font-family: 'DejaVu Sans';
+            src: url('/assets/fonts/DejaVuSans.ttf') format('truetype');
+            font-weight: 400;
+            font-style: normal;
+            font-display: swap;
+        }
+        @font-face {
+            font-family: 'DejaVu Sans';
+            src: url('/assets/fonts/DejaVuSans-Bold.ttf') format('truetype');
+            font-weight: 700;
+            font-style: normal;
+            font-display: swap;
+        }
+    </style>
     <!-- Caption rendering now uses server-side PNG overlay - no fonts needed -->
     <style>
         .loading { opacity: 0.6; pointer-events: none; }
@@ -647,6 +666,9 @@
                       class="absolute inset-0 pointer-events-none block w-full h-full"
                       style="z-index:2"
                     />
+                    <!-- Hybrid preview layers for live text + PNG swap -->
+                    <div id="caption-live" contenteditable="true" style="position:absolute; inset:0; pointer-events:auto; z-index:20; display:none; font-family: 'DejaVu Sans', sans-serif; color: white; text-align: center; padding: 24px; box-sizing: border-box;"></div>
+                    <img id="preview-raster-img" alt="caption png" style="position:absolute; inset:0; pointer-events:none; z-index:10; display:none; object-fit: contain;" />
                     <!-- New draggable caption overlay container -->
                     <div id="stage" class="absolute inset-0 w-full h-full" style="z-index:3; display:none;">
                         <img id="previewMedia" class="w-full h-full object-cover" />
@@ -1563,6 +1585,15 @@
                 if (currentQuote?.text) {
                     setQuote(currentQuote.text);
                     try { ensureOverlayTopAndVisible('#stage'); } catch {}
+                }
+                
+                // Initialize hybrid caption preview system
+                try {
+                    const { initHybridCaptionPreview } = await import('./js/caption-live.js');
+                    await initHybridCaptionPreview();
+                    console.log('[overlay-system] Hybrid caption preview initialized');
+                } catch (error) {
+                    console.warn('[overlay-system] Failed to initialize hybrid caption preview:', error);
                 }
                 
                 overlaySystemInitialized = true;

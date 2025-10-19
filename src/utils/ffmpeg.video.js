@@ -360,7 +360,12 @@ function buildVideoChain({ width, height, videoVignette, drawLayers, captionImag
     // Overlay with format=auto to preserve alpha
     const xExpr = rasterPlacement?.xExpr || '(W-overlay_w)/2';
     const y = Math.round(rasterPlacement?.y ?? 0);
-    const overlayExpr = `[vmain][ovr]overlay=${xExpr}:${y}:format=auto[vout]`;
+    
+    // Colorspace handling for crisp text output
+    const want444 = process.env.FFMPEG_USE_YUV444 === '1';
+    const endFormat = want444 ? 'format=yuv444p' : 'format=yuv420p';
+    
+    const overlayExpr = `[vmain][ovr]overlay=${xExpr}:${y}:format=auto,${endFormat},colorspace=all=bt709:fast=1[vout]`;
     
     // CRITICAL: Log final overlay configuration
     console.log('[render:raster:FFMPEG]', {
@@ -368,7 +373,9 @@ function buildVideoChain({ width, height, videoVignette, drawLayers, captionImag
       actualRasterW: rasterPlacement?.rasterW,
       actualRasterH: rasterPlacement?.rasterH,
       xExpr,
-      y
+      y,
+      colorspace: 'bt709',
+      pixelFormat: endFormat
     });
     
     const filter = `${baseChain};${pngPrep};${overlayExpr}`;
@@ -392,7 +399,12 @@ function buildVideoChain({ width, height, videoVignette, drawLayers, captionImag
     const scale = `scale='if(gt(a,${W}/${H}),-2,${W})':'if(gt(a,${W}/${H}),${H},-2)'`;
     const crop = `crop=${W}:${H}`;
     const core = [ scale, crop, (videoVignette ? 'vignette=PI/4:0.5' : null), 'format=rgba' ].filter(Boolean);
-    const vchain = makeChain('0:v', [ ...core, ...drawLayers, 'format=yuv420p' ].filter(Boolean), 'vout');
+    
+    // Colorspace handling for crisp text output
+    const want444 = process.env.FFMPEG_USE_YUV444 === '1';
+    const endFormat = want444 ? 'format=yuv444p' : 'format=yuv420p';
+    
+    const vchain = makeChain('0:v', [ ...core, ...drawLayers, endFormat, 'colorspace=all=bt709:fast=1' ].filter(Boolean), 'vout');
     return vchain;
   }
 }
@@ -1331,6 +1343,9 @@ export async function renderVideoQuoteOverlay({
     '-filter_complex', finalFilter,
     '-map', '[vout]', '-map', '[aout]',
     '-c:v', 'libx264', '-crf', '23', '-preset', 'veryfast',
+    '-color_primaries', 'bt709',
+    '-color_trc', 'bt709',
+    '-colorspace', 'bt709',
     '-c:a', 'aac', '-b:a', '96k',
     '-movflags', '+faststart',
     '-r', String(fps),
@@ -1585,7 +1600,11 @@ export async function exportSocialImage({
 
   const scale = `scale='min(iw*${H}/ih\,${W})':'min(ih*${W}/iw\,${H})':force_original_aspect_ratio=decrease`;
   const pad = `pad=${W}:${H}:ceil((${W}-iw)/2):ceil((${H}-ih)/2)`;
-  const core = [ scale, pad, 'format=rgba', drawMain, drawAuthor, drawWatermark, 'format=yuv420p' ].filter(Boolean);
+  // Colorspace handling for crisp text output
+  const want444 = process.env.FFMPEG_USE_YUV444 === '1';
+  const endFormat = want444 ? 'format=yuv444p' : 'format=yuv420p';
+  
+  const core = [ scale, pad, 'format=rgba', drawMain, drawAuthor, drawWatermark, endFormat, 'colorspace=all=bt709:fast=1' ].filter(Boolean);
   const chain = makeChain('0:v', core, 'vout');
   const finalFilter = sanitizeFilter(chain);
 

@@ -159,7 +159,15 @@ const CreateShortSchema = z
       rasterHash: z.string().optional(),       // PNG integrity hash
       previewFontString: z.string().optional(),
       previewFontHash: z.string().optional()
-    }).passthrough().optional(),
+    }).refine((data) => {
+      if (data?.mode !== 'raster') return true;
+      return (
+        !!(data.rasterDataUrl || data.rasterUrl || data.rasterPng) &&
+        Number.isFinite(+data.rasterW) &&
+        Number.isFinite(+data.rasterH) &&
+        Number.isFinite(+data.yPx_png)
+      );
+    }, { message: 'Raster mode requires rasterDataUrl, rasterW/H, yPx_png' }).passthrough().optional(),
     // TTS settings for SSOT
     modelId: z.string().optional(),
     outputFormat: z.string().optional(),
