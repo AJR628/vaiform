@@ -410,6 +410,9 @@ export async function generateCaptionPreview(opts) {
     // Store normalized overlay meta for render (SSOT)
     window._overlayMeta = normalizedMeta;
     
+    // Store server meta for live preview system
+    window.__serverCaptionMeta = normalizedMeta;
+    
     // Also keep legacy reference for backward compatibility
     window.__lastCaptionOverlay = {
       dataUrl: imageUrl,

@@ -322,6 +322,16 @@ router.post("/caption/preview", express.json(), async (req, res) => {
           rasterH: rasterResult.rasterH
         });
         
+        // Parity logging for client-server matching
+        console.log('[parity:serverPreview]', {
+          frameW: 1080, frameH: 1920,
+          fontPx, lineSpacingPx, letterSpacingPx,
+          yPxFirstLine, rasterPadding: rasterResult.padding, yPx_png: rasterResult.yPx,
+          rasterW: rasterResult.rasterW, rasterH: rasterResult.rasterH,
+          wPct, xPct, yPct: yPctClamped,
+          previewFontString: rasterResult.previewFontString
+        });
+        
         // Assertion checks for v3 raster mode
         console.log('[v3:assert]', {
           rasterW: rasterResult.rasterW,

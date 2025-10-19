@@ -669,6 +669,12 @@
                     <!-- Hybrid preview layers for live text + PNG swap -->
                     <div id="caption-live" contenteditable="true" style="position:absolute; inset:0; pointer-events:auto; z-index:20; display:none; font-family: 'DejaVu Sans', sans-serif; color: white; text-align: center; padding: 24px; box-sizing: border-box;"></div>
                     <img id="preview-raster-img" alt="caption png" style="position:absolute; inset:0; pointer-events:none; z-index:10; display:none; object-fit: contain;" />
+                    <div id="preview-debug-watermark" style="position:absolute; top:10px; right:10px; background:rgba(0,0,0,0.7); color:#0f0; padding:8px; font:10px monospace; z-index:999; display:none;">
+                        <div>scale: <span id="dbg-scale">-</span></div>
+                        <div>fontPx: <span id="dbg-fontPx">-</span></div>
+                        <div>lineSpacingPx: <span id="dbg-lineSpacingPx">-</span></div>
+                        <div>yPx_png: <span id="dbg-yPx">-</span></div>
+                    </div>
                     <!-- New draggable caption overlay container -->
                     <div id="stage" class="absolute inset-0 w-full h-full" style="z-index:3; display:none;">
                         <img id="previewMedia" class="w-full h-full object-cover" />

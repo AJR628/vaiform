@@ -88,54 +88,125 @@ function generateFingerprint(captionState) {
 }
 
 /**
- * Apply caption styles to live text element
+ * Compute single scale factor from container to frame space
  */
-function applyStylesToLiveText(element, captionState) {
-  const {
-    fontPx,
-    lineSpacingPx,
-    letterSpacingPx,
-    fontFamily,
-    weightCss,
-    textAlign,
-    textTransform,
-    color,
-    opacity,
-    strokePx,
-    strokeColor,
-    shadowColor,
-    shadowBlur,
-    shadowOffsetX,
-    shadowOffsetY
-  } = captionState;
+function computePreviewScale() {
+  const container = document.getElementById('live-preview-container');
+  if (!container) return 1;
+  
+  const containerCssW = container.clientWidth;
+  const containerCssH = container.clientHeight;
+  const frameW = 1080;
+  const frameH = 1920;
+  
+  const scale = containerCssW / frameW;
+  
+  // Sanity check: aspect ratio should match
+  const scaleH = containerCssH / frameH;
+  if (Math.abs(scaleH - scale) > 0.01) {
+    console.warn('[parity] Aspect ratio mismatch:', { scale, scaleH });
+  }
+  
+  return scale;
+}
 
-  // Base typography
-  element.style.fontFamily = `"${fontFamily}", sans-serif`;
-  element.style.fontSize = `${fontPx}px`;
-  element.style.fontWeight = weightCss === 'bold' || weightCss === 700 ? '700' : '400';
-  element.style.textAlign = textAlign || 'center';
-  element.style.textTransform = textTransform || 'none';
-  element.style.letterSpacing = `${letterSpacingPx}px`;
-  element.style.lineHeight = lineSpacingPx > 0 ? `${fontPx + lineSpacingPx}px` : '1.15';
+/**
+ * Apply caption styles to live text element using server SSOT values
+ */
+function applyStylesToLiveText(element, captionState, serverMeta) {
+  const scale = computePreviewScale();
+  const frameW = 1080;
   
-  // Color and opacity
-  element.style.color = color || 'white';
-  element.style.opacity = opacity || 1;
+  // Use server SSOT values when available
+  const fontPx = serverMeta?.fontPx || captionState.fontPx;
+  const lineSpacingPx = serverMeta?.lineSpacingPx || captionState.lineSpacingPx;
+  const yPx_png = serverMeta?.yPx_png;
+  const wPct = serverMeta?.wPct || captionState.wPct || 0.8;
+  const letterSpacingPx = captionState.letterSpacingPx || 0;
   
-  // Stroke (CSS text-stroke approximation)
-  if (strokePx > 0) {
-    element.style.webkitTextStroke = `${strokePx}px ${strokeColor}`;
-    element.style.textStroke = `${strokePx}px ${strokeColor}`;
+  // Scale all values with single scalar
+  const cssWidthPx = wPct * frameW * scale;
+  const cssFontSizePx = fontPx * scale;
+  const cssLetterSpacingPx = letterSpacingPx * scale;
+  const cssLineHeightPx = (fontPx + lineSpacingPx) * scale; // PIXEL-BASED
+  
+  // Position using server's absolute yPx_png
+  const cssTopPx = yPx_png !== undefined ? yPx_png * scale : undefined;
+  
+  // Log parity data
+  console.log('[parity:preview]', {
+    containerCssW: document.getElementById('live-preview-container')?.clientWidth,
+    containerCssH: document.getElementById('live-preview-container')?.clientHeight,
+    frameW, frameH, scale,
+    wPct,
+    computed: {
+      cssWidthPx: Math.round(cssWidthPx),
+      cssFontSizePx: Math.round(cssFontSizePx),
+      cssLineHeightPx: Math.round(cssLineHeightPx),
+      cssLetterSpacingPx: Math.round(cssLetterSpacingPx),
+      cssTopPx_from_yPx_png: cssTopPx ? Math.round(cssTopPx) : 'N/A'
+    },
+    server: {
+      fontPx, lineSpacingPx, yPx_png,
+      rasterW: serverMeta?.rasterW,
+      rasterH: serverMeta?.rasterH,
+      previewFontString: serverMeta?.previewFontString
+    }
+  });
+  
+  // Apply CSS with exact pixel values
+  element.style.position = 'absolute';
+  element.style.width = `${cssWidthPx}px`;
+  element.style.fontSize = `${cssFontSizePx}px`;
+  element.style.lineHeight = `${cssLineHeightPx}px`; // NOT unitless
+  element.style.letterSpacing = `${cssLetterSpacingPx}px`;
+  
+  if (cssTopPx !== undefined) {
+    element.style.top = `${cssTopPx}px`;
+  }
+  
+  // Center horizontally (match server's xExpr_png)
+  element.style.left = '50%';
+  element.style.transform = 'translateX(-50%)';
+  
+  // Font must match server exactly
+  element.style.fontFamily = '"DejaVu Sans", sans-serif';
+  element.style.fontWeight = '700'; // bold
+  element.style.fontStyle = 'normal';
+  
+  // Other styles from captionState
+  element.style.textAlign = captionState.textAlign || 'center';
+  element.style.textTransform = captionState.textTransform || 'none';
+  element.style.color = captionState.color || 'white';
+  element.style.opacity = captionState.opacity || 1;
+  
+  // Effects - scale stroke and shadow values
+  if (captionState.strokePx > 0) {
+    const scaledStrokePx = captionState.strokePx * scale;
+    element.style.webkitTextStroke = `${scaledStrokePx}px ${captionState.strokeColor}`;
+    element.style.textStroke = `${scaledStrokePx}px ${captionState.strokeColor}`;
   } else {
     element.style.webkitTextStroke = 'none';
     element.style.textStroke = 'none';
   }
   
-  // Shadow
-  if (shadowBlur > 0) {
-    element.style.textShadow = `${shadowOffsetX}px ${shadowOffsetY}px ${shadowBlur}px ${shadowColor}`;
+  if (captionState.shadowBlur > 0) {
+    const shadowX = (captionState.shadowOffsetX || 0) * scale;
+    const shadowY = (captionState.shadowOffsetY || 0) * scale;
+    const shadowBlur = captionState.shadowBlur * scale;
+    element.style.textShadow = `${shadowX}px ${shadowY}px ${shadowBlur}px ${captionState.shadowColor}`;
   } else {
     element.style.textShadow = 'none';
+  }
+  
+  // Update debug watermark if present
+  const watermark = document.getElementById('preview-debug-watermark');
+  if (watermark && window.location.search.includes('debug=1')) {
+    watermark.style.display = 'block';
+    document.getElementById('dbg-scale').textContent = scale.toFixed(3);
+    document.getElementById('dbg-fontPx').textContent = fontPx;
+    document.getElementById('dbg-lineSpacingPx').textContent = lineSpacingPx;
+    document.getElementById('dbg-yPx').textContent = yPx_png || 'N/A';
   }
 }
 
@@ -229,6 +300,61 @@ function handlePreviewResponse(response, fingerprint) {
   if (!meta || meta.ssotVersion !== 3 || meta.mode !== 'raster') {
     console.warn('[preview-swap] Invalid response format:', meta);
     return;
+  }
+
+  // Store server SSOT for live layer
+  window.__serverCaptionMeta = meta;
+  
+  // Apply server meta to live layer immediately
+  const liveEl = document.getElementById('caption-live');
+  if (liveEl && meta) {
+    // Get current caption state for fallback values
+    const currentState = {
+      text: liveEl.textContent || '',
+      fontPx: 48, // fallback
+      lineSpacingPx: 8,
+      letterSpacingPx: 0,
+      fontFamily: 'DejaVu Sans',
+      weightCss: 'bold',
+      textAlign: 'center',
+      textTransform: 'none',
+      color: 'white',
+      opacity: 0.85,
+      strokePx: 3,
+      strokeColor: 'rgba(0,0,0,0.85)',
+      shadowColor: 'rgba(0,0,0,0.6)',
+      shadowBlur: 12,
+      shadowOffsetX: 0,
+      shadowOffsetY: 2,
+      xPct: 0.5,
+      yPct: 0.5,
+      wPct: 0.8
+    };
+    
+    applyStylesToLiveText(liveEl, currentState, meta);
+  }
+
+  // Geometry lock check before PNG swap
+  const scale = computePreviewScale();
+  const frameW = 1080;
+  
+  // Get current state for comparison
+  const currentFontPx = 48; // TODO: Get from current state
+  const currentLineSpacingPx = 8; // TODO: Get from current state
+  const currentWPct = 0.8; // TODO: Get from current state
+  
+  const serverFontPx = meta.fontPx;
+  const serverLineSpacingPx = meta.lineSpacingPx;
+  const serverWPct = meta.wPct || 0.8;
+  
+  if (Math.abs(currentFontPx - serverFontPx) > 1 ||
+      Math.abs(currentLineSpacingPx - serverLineSpacingPx) > 1 ||
+      Math.abs(currentWPct - serverWPct) > 0.01) {
+    console.log('[preview-swap] geometry mismatch, skipping', {
+      current: { fontPx: currentFontPx, lineSpacingPx: currentLineSpacingPx, wPct: currentWPct },
+      server: { fontPx: serverFontPx, lineSpacingPx: serverLineSpacingPx, wPct: serverWPct }
+    });
+    return; // Keep live text
   }
 
   // Check font hash if provided
@@ -335,8 +461,9 @@ export async function initHybridCaptionPreview() {
       wPct: 0.8
     };
 
-    // Apply styles to live text
-    applyStylesToLiveText(liveEl, captionState);
+    // Apply styles to live text - use server meta if available
+    const serverMeta = window.__serverCaptionMeta;
+    applyStylesToLiveText(liveEl, captionState, serverMeta);
     
     // Trigger debounced preview
     debouncedPreview(captionState);
@@ -357,8 +484,9 @@ export function updateCaptionState(captionState) {
     liveEl.textContent = captionState.text;
   }
 
-  // Apply styles
-  applyStylesToLiveText(liveEl, captionState);
+  // Apply styles - use server meta if available
+  const serverMeta = window.__serverCaptionMeta;
+  applyStylesToLiveText(liveEl, captionState, serverMeta);
   
   // Trigger debounced preview
   debouncedPreview(captionState);
