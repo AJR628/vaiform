@@ -325,6 +325,11 @@ function buildVideoChain({ width, height, videoVignette, drawLayers, captionImag
   const W = Math.max(4, Number(width)||1080);
   const H = Math.max(4, Number(height)||1920);
   
+  // Env-gated pixel format and colorspace controls
+  const use444 = process.env.FFMPEG_USE_YUV444 === '1';
+  const enableColorspace = process.env.FFMPEG_USE_COLORSPACE === '1';
+  const pixelFmtFilter = `format=${use444 ? 'yuv444p' : 'yuv420p'}`;
+  
   // If using PNG overlay for captions (SSOT v3 raster mode)
   if (usingCaptionPng && captionPngPath && fs.existsSync(captionPngPath)) {
     console.log(`[render] USING PNG OVERLAY from: ${captionPngPath}`);
@@ -361,11 +366,10 @@ function buildVideoChain({ width, height, videoVignette, drawLayers, captionImag
     const xExpr = rasterPlacement?.xExpr || '(W-overlay_w)/2';
     const y = Math.round(rasterPlacement?.y ?? 0);
     
-    // Colorspace handling for crisp text output
-    const want444 = process.env.FFMPEG_USE_YUV444 === '1';
-    const endFormat = want444 ? 'format=yuv444p' : 'format=yuv420p';
+    // Use centralized pixel format filter
+    const endFormat = pixelFmtFilter;
     
-    const overlayExpr = `[vmain][ovr]overlay=${xExpr}:${y}:format=auto,${endFormat},colorspace=all=bt709:fast=1[vout]`;
+    const overlayExpr = `[vmain][ovr]overlay=${xExpr}:${y}:format=auto,${endFormat}[vout]`;
     
     // CRITICAL: Log final overlay configuration
     console.log('[render:raster:FFMPEG]', {
@@ -379,6 +383,18 @@ function buildVideoChain({ width, height, videoVignette, drawLayers, captionImag
     });
     
     const filter = `${baseChain};${pngPrep};${overlayExpr}`;
+    
+    // Sanity check: ensure colorspace filter is NOT in raster chain
+    console.log('[v3:filter-chain]', {
+      mode: 'raster',
+      pixelFmt: use444 ? 'yuv444p' : 'yuv420p',
+      hasColorspaceFilter: filter.includes('colorspace='),
+      filterLength: filter.length
+    });
+    
+    if (filter.includes('colorspace=')) {
+      console.error('[v3:filter-chain] ERROR: colorspace filter found in raster chain - this will cause crashes!');
+    }
     
     return filter;
   } else if (CAPTION_OVERLAY && captionImage) {
@@ -401,8 +417,7 @@ function buildVideoChain({ width, height, videoVignette, drawLayers, captionImag
     const core = [ scale, crop, (videoVignette ? 'vignette=PI/4:0.5' : null), 'format=rgba' ].filter(Boolean);
     
     // Colorspace handling for crisp text output
-    const want444 = process.env.FFMPEG_USE_YUV444 === '1';
-    const endFormat = want444 ? 'format=yuv444p' : 'format=yuv420p';
+    const endFormat = pixelFmtFilter;
     
     const vchain = makeChain('0:v', [ ...core, ...drawLayers, endFormat, 'colorspace=all=bt709:fast=1' ].filter(Boolean), 'vout');
     return vchain;
@@ -1358,6 +1373,32 @@ export async function renderVideoQuoteOverlay({
   try {
     await runFfmpeg(args);
   } catch (e) {
+    // Check if filter chain had colorspace filter
+    const chainHadColorspace = finalFilter.includes('colorspace=all=bt709');
+    
+    if (chainHadColorspace && !usingCaptionPng) {
+      // Retry without colorspace filter (only for non-raster paths)
+      console.warn('[ffmpeg] colorspace filter failed, retrying without colorspace...');
+      const argsFallback = args.map(arg => 
+        typeof arg === 'string' ? arg.replace(/,?colorspace=all=bt709:fast=1/g, '') : arg
+      );
+      const filterIdx = argsFallback.indexOf('-filter_complex');
+      if (filterIdx >= 0) {
+        argsFallback[filterIdx + 1] = argsFallback[filterIdx + 1].replace(/,?colorspace=all=bt709:fast=1/g, '');
+      }
+      
+      try {
+        await runFfmpeg(argsFallback);
+        console.log('[ffmpeg] Fallback succeeded without colorspace filter');
+        return { outPath, durationSec: outSec };
+      } catch (fallbackErr) {
+        // Fallback also failed, throw original error
+        console.error('[ffmpeg] Fallback also failed');
+        throw e;
+      }
+    }
+    
+    // Original error handling
     const err = new Error('RENDER_FAILED');
     err.filter = finalFilter;
     err.cause = e;

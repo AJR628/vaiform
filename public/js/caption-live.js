@@ -9,7 +9,16 @@
  */
 
 import { apiFetch } from "../api.mjs";
-import crypto from 'crypto-js';
+// Use native Web Crypto API instead of crypto-js
+const crypto = {
+  SHA256: async (str) => {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(str);
+    const hashBuffer = await window.crypto.subtle.digest('SHA-256', data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return { toString: () => hashArray.map(b => b.toString(16).padStart(2, '0')).join('') };
+  }
+};
 
 let debounceTimer = null;
 let inFlightFingerprint = null;
