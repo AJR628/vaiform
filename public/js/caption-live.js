@@ -151,26 +151,33 @@ function createDebugHUD() {
 }
 
 function updateDebugHUD(element, serverMeta, scale) {
+  // Only run in debug mode
+  if (!window.location.search.includes('debug=1')) return;
+  
   const hud = document.getElementById('preview-debug-watermark');
   if (!hud) return;
   
-  // Early return if debug elements don't exist
-  if (!document.getElementById('dbg-scale')) return;
+  // Guard each lookup; if any are missing, bail silently
+  const needIds = ['dbg-scale', 'dbg-fontPx', 'dbg-lineSpacingPx', 'dbg-yPx', 
+                   'dbg-rasterW', 'dbg-padding', 'dbg-live-width', 'dbg-live-top', 
+                   'dbg-live-fontSize', 'dbg-live-lineHeight'];
+  for (const id of needIds) {
+    if (!document.getElementById(id)) return;
+  }
   
   const cs = getComputedStyle(element);
   
   document.getElementById('dbg-scale').textContent = scale.toFixed(3);
-  document.getElementById('dbg-fontPx').textContent = serverMeta?.fontPx || '-';
-  document.getElementById('dbg-lineSpacingPx').textContent = serverMeta?.lineSpacingPx || '-';
-  document.getElementById('dbg-yPx').textContent = serverMeta?.yPx_png || '-';
-  document.getElementById('dbg-rasterW').textContent = serverMeta?.rasterW || '-';
-  document.getElementById('dbg-padding').textContent = serverMeta?.rasterPadding || serverMeta?.internalPadding || '-';
+  document.getElementById('dbg-fontPx').textContent = serverMeta?.fontPx ?? '-';
+  document.getElementById('dbg-lineSpacingPx').textContent = serverMeta?.lineSpacingPx ?? '-';
+  document.getElementById('dbg-yPx').textContent = serverMeta?.yPx_png ?? '-';
+  document.getElementById('dbg-rasterW').textContent = serverMeta?.rasterW ?? '-';
+  document.getElementById('dbg-padding').textContent = serverMeta?.rasterPadding ?? serverMeta?.internalPadding ?? '-';
   
   document.getElementById('dbg-live-width').textContent = Math.round(parseFloat(cs.width));
   document.getElementById('dbg-live-top').textContent = Math.round(parseFloat(cs.top));
   document.getElementById('dbg-live-fontSize').textContent = Math.round(parseFloat(cs.fontSize));
   document.getElementById('dbg-live-lineHeight').textContent = Math.round(parseFloat(cs.lineHeight));
-  document.getElementById('dbg-live-padding').textContent = cs.padding;
 }
 
 /**

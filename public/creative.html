@@ -669,12 +669,6 @@
                     <!-- Hybrid preview layers for live text + PNG swap -->
                     <div id="caption-live" contenteditable="true" style="position:absolute; inset:0; pointer-events:auto; z-index:20; display:none; font-family: 'DejaVu Sans', sans-serif; color: white; text-align: center; padding: 24px; box-sizing: border-box;"></div>
                     <img id="preview-raster-img" alt="caption png" style="position:absolute; inset:0; pointer-events:none; z-index:10; display:none; object-fit: contain;" />
-                    <div id="preview-debug-watermark" style="position:absolute; top:10px; right:10px; background:rgba(0,0,0,0.7); color:#0f0; padding:8px; font:10px monospace; z-index:999; display:none;">
-                        <div>scale: <span id="dbg-scale">-</span></div>
-                        <div>fontPx: <span id="dbg-fontPx">-</span></div>
-                        <div>lineSpacingPx: <span id="dbg-lineSpacingPx">-</span></div>
-                        <div>yPx_png: <span id="dbg-yPx">-</span></div>
-                    </div>
                     <!-- New draggable caption overlay container -->
                     <div id="stage" class="absolute inset-0 w-full h-full" style="z-index:3; display:none;">
                         <img id="previewMedia" class="w-full h-full object-cover" />
@@ -3296,59 +3290,90 @@
                     return;
                 }
                 
-                // Fallback: derive server-space values from live CSS if meta is stale
-                if (!window.__serverCaptionMeta || !window.__serverCaptionMeta.fontPx) {
-                    const liveEl = document.getElementById('caption-live');
-                    if (liveEl) {
-                        const cs = getComputedStyle(liveEl);
-                        const scale = 0.333; // Approximate scale for 360px container
-                        
-                        const derivedFontPx = Math.round(parseFloat(cs.fontSize) / scale);
-                        const derivedLineSpacingPx = Math.round(parseFloat(cs.lineHeight) / scale - derivedFontPx);
-                        
-                        console.log('[savePreview] Deriving from live CSS:', {
-                            cssFontSize: parseFloat(cs.fontSize),
-                            cssLineHeight: parseFloat(cs.lineHeight),
-                            derivedFontPx,
-                            derivedLineSpacingPx,
-                            scale
-                        });
-                        
-                        // Override meta with derived values
-                        meta.fontPx = derivedFontPx;
-                        meta.lineSpacingPx = derivedLineSpacingPx;
-                    }
-                }
+                // SSOT-first: prefer server meta, fall back to CSS only if missing
+                const liveEl = document.getElementById('caption-live');
+                const cs = liveEl ? getComputedStyle(liveEl) : null;
+                const scale = (typeof window.computePreviewScale === 'function') 
+                              ? window.computePreviewScale() : 0.333;
+
+                // Use window.__serverCaptionMeta if available (highest priority)
+                const ssot = window.__serverCaptionMeta || {};
+
+                const fontPx = Number.isFinite(ssot.fontPx) ? ssot.fontPx
+                             : Number.isFinite(meta.fontPx) ? meta.fontPx
+                             : (cs ? Math.round(parseFloat(cs.fontSize) / scale) : 48);
+
+                const lineSpacingPx = Number.isFinite(ssot.lineSpacingPx) ? ssot.lineSpacingPx
+                                    : Number.isFinite(meta.lineSpacingPx) ? meta.lineSpacingPx
+                                    : (cs ? Math.round(parseFloat(cs.lineHeight) / scale - fontPx) : 7);
+
+                const yPx_png = Number.isFinite(ssot.yPx_png) ? ssot.yPx_png
+                              : (cs ? Math.round(parseFloat(cs.top) / scale) : 72);
+
+                const rasterW = Number.isFinite(ssot.rasterW) ? ssot.rasterW
+                               : (cs ? Math.round(parseFloat(cs.width) / scale) : 1009);
+
+                const rasterPadding = Number.isFinite(ssot.rasterPadding) ? ssot.rasterPadding
+                                    : Number.isFinite(ssot.internalPadding) ? ssot.internalPadding
+                                    : 24;
+
+                console.log('[savePreview] Payload source priority:', {
+                    hasSSOT: !!window.__serverCaptionMeta,
+                    hasMeta: !!meta.fontPx,
+                    hasCSS: !!cs,
+                    usingFontPx: fontPx,
+                    usingLineSpacing: lineSpacingPx,
+                    usingYPx: yPx_png,
+                    usingRasterW: rasterW
+                });
 
                 // Build preview payload (v3 format - no v2 flag!)
                 // Include ALL styling fields for server PNG generation parity
                 const payload = {
                     ssotVersion: 3,
+                    mode: 'raster',
                     placement: 'custom',
                     text: meta.text,
-                    xPct: meta.xPct,
-                    yPct: meta.yPct,
-                    wPct: meta.wPct,
+                    
+                    // Frame dimensions
+                    frameW: 1080,
+                    frameH: 1920,
+                    
+                    // Raster geometry (priority fields)
+                    rasterW,
+                    rasterH: ssot.rasterH,
+                    rasterPadding,
+                    yPx_png,
+                    xExpr_png: ssot.xExpr_png || '(W-overlay_w)/2',
+                    
                     // Typography
-                    sizePx: meta.fontPx,
-                    fontPx: meta.fontPx, // Server expects both sizePx and fontPx
-                    fontFamily: meta.fontFamily || 'DejaVuSans',
-                    weightCss: meta.weightCss || 'normal',
-                    fontStyle: meta.fontStyle || 'normal',
-                    textAlign: meta.textAlign || 'center',
-                    letterSpacingPx: meta.letterSpacingPx || 0,
-                    textTransform: meta.textTransform || 'none',
+                    fontPx,
+                    lineSpacingPx,
+                    fontFamily: ssot.fontFamily || meta.fontFamily || 'DejaVuSans',
+                    weightCss: ssot.weightCss || meta.weightCss || '700',
+                    fontStyle: ssot.fontStyle || meta.fontStyle || 'normal',
+                    textAlign: ssot.textAlign || meta.textAlign || 'center',
+                    letterSpacingPx: ssot.letterSpacingPx ?? meta.letterSpacingPx ?? 0,
+                    textTransform: ssot.textTransform || meta.textTransform || 'none',
+                    
+                    // Verification hashes
+                    previewFontString: ssot.previewFontString,
+                    previewFontHash: ssot.previewFontHash,
+                    
                     // Color & effects
-                    color: meta.color || 'rgb(255, 255, 255)',
-                    opacity: meta.opacity ?? 0.8,
-                    // Stroke (outline)
-                    strokePx: meta.strokePx || 0,
-                    strokeColor: meta.strokeColor || 'rgba(0,0,0,0.85)',
-                    // Shadow
-                    shadowColor: meta.shadowColor || 'rgba(0,0,0,0.6)',
-                    shadowBlur: meta.shadowBlur || 0,
-                    shadowOffsetX: meta.shadowOffsetX || 0,
-                    shadowOffsetY: meta.shadowOffsetY || 0
+                    color: ssot.color || meta.color || 'rgb(255, 255, 255)',
+                    opacity: ssot.opacity ?? meta.opacity ?? 0.8,
+                    strokePx: ssot.strokePx ?? meta.strokePx ?? 0,
+                    strokeColor: ssot.strokeColor || meta.strokeColor || 'rgb(255, 255, 255)',
+                    shadowColor: ssot.shadowColor || meta.shadowColor || 'rgba(0,0,0,0.6)',
+                    shadowBlur: ssot.shadowBlur ?? meta.shadowBlur ?? 0,
+                    shadowOffsetX: ssot.shadowOffsetX ?? meta.shadowOffsetX ?? 0,
+                    shadowOffsetY: ssot.shadowOffsetY ?? meta.shadowOffsetY ?? 0,
+                    
+                    // Legacy %-based fields (keep for compatibility but not used in raster path)
+                    xPct: ssot.xPct ?? meta.xPct,
+                    yPct: ssot.yPct ?? meta.yPct,
+                    wPct: ssot.wPct ?? meta.wPct
                 };
 
                 console.log('[savePreview] Sending payload with complete styling:', payload);
@@ -3385,7 +3410,7 @@
                 // Accept both field names from server (coerce to numbers)
                 const totalTextH = Number(m.totalTextH ?? m.totalTextHPx);
                 const yPxFirstLine = Number(resp.yPx);  // ← FIX: top-level, NOT meta
-                const lineSpacingPx = Number(m.lineSpacingPx ?? 0);
+                const serverLineSpacingPx = Number(m.lineSpacingPx ?? 0);
                 const splitLines = Array.isArray(m.splitLines) ? m.splitLines : [];
 
                 // Verify we got real values before saving
@@ -3454,7 +3479,7 @@
                     internalPadding: Number(m.internalPadding ?? 32),
                     
                     // Diagnostics (keep for debugging, NOT used in render)
-                    lineSpacingPx: Number(m.lineSpacingPx ?? 0),
+                    lineSpacingPx: serverLineSpacingPx,
                     splitLines: Array.isArray(m.splitLines) ? m.splitLines : [],
                     totalTextH: Number(m.totalTextH ?? 0),
                     
