@@ -3,6 +3,7 @@ import dotenv from "dotenv";
 dotenv.config();
 
 import app from "./src/app.js";
+import { registerDejaVuFonts } from "./src/caption/canvas-fonts.js";
 
 const PORT = process.env.PORT || 3000;
 const HOST = process.env.HOST || "0.0.0.0"; // Replit-friendly
@@ -13,6 +14,11 @@ process.on("unhandledRejection", (reason, p) => {
 process.on("uncaughtException", (err) => {
   console.error("🧯 Uncaught Exception:", err);
 });
+
+// Register DejaVu fonts before starting server
+console.log('[server] Registering DejaVu fonts...');
+const fontStatus = registerDejaVuFonts();
+console.log('[server] Font registration result:', fontStatus);
 
 let server;
 function start() {

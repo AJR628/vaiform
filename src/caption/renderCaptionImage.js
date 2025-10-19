@@ -1,88 +1,7 @@
-import { createCanvas, GlobalFonts } from '@napi-rs/canvas';
-import fs from 'node:fs';
-import path from 'node:path';
-import os from 'node:os';
+import { createCanvas } from '@napi-rs/canvas';
 
-// TASK 6: Improved font registration with @napi-rs/canvas
-// Register all DejaVu font variants with proper style/weight metadata
-const SYSTEM_FONTS = '/usr/share/fonts/truetype/dejavu';
-const LOCAL_FONTS = path.resolve('assets/fonts');
-let fontRegistered = false;
-
-// Check available fonts first
-try {
-  const availableFonts = GlobalFonts.families;
-  console.log('[caption] Available system fonts:', availableFonts.slice(0, 10));
-} catch (err) {
-  console.log('[caption] Could not list system fonts');
-}
-
-// Register DejaVu Sans variants with same family name
-const sansFonts = [
-  { file: 'DejaVuSans.ttf', family: 'DejaVu Sans', style: 'normal', weight: '400' },
-  { file: 'DejaVuSans-Oblique.ttf', family: 'DejaVu Sans', style: 'italic', weight: '400' },
-  { file: 'DejaVuSans-Bold.ttf', family: 'DejaVu Sans', style: 'normal', weight: '700' },
-  { file: 'DejaVuSans-BoldOblique.ttf', family: 'DejaVu Sans', style: 'italic', weight: '700' }
-];
-
-// Register DejaVu Serif variants (optional)
-const serifFonts = [
-  { file: 'DejaVuSerif.ttf', family: 'DejaVu Serif', style: 'normal', weight: '400' },
-  { file: 'DejaVuSerif-Italic.ttf', family: 'DejaVu Serif', style: 'italic', weight: '400' },
-  { file: 'DejaVuSerif-Bold.ttf', family: 'DejaVu Serif', style: 'normal', weight: '700' },
-  { file: 'DejaVuSerif-BoldItalic.ttf', family: 'DejaVu Serif', style: 'italic', weight: '700' }
-];
-
-const allFonts = [...sansFonts, ...serifFonts];
-
-function registerFontsOnce() {
-  if (fontRegistered) return;
-  if (!process.env.USE_FONT_REGISTRATION) {
-    console.log('[caption] Font registration disabled - using system fonts');
-    return;
-  }
-  
-  // Try system fonts first, then local fonts
-  const fontPaths = [SYSTEM_FONTS, LOCAL_FONTS];
-  
-  for (const font of allFonts) {
-    let registered = false;
-    
-    for (const fontDir of fontPaths) {
-      const fontPath = path.join(fontDir, font.file);
-      if (fs.existsSync(fontPath)) {
-        try {
-          GlobalFonts.register(fontPath, font);
-          console.log(`[caption] Font registered: ${font.family} (${font.style}, ${font.weight}) from ${fontDir}`);
-          fontRegistered = true;
-          registered = true;
-          break;
-        } catch (err) {
-          console.warn(`[caption] Failed to register ${font.file}:`, err.message);
-        }
-      }
-    }
-    
-    if (!registered) {
-      console.log(`[caption] Font file not found: ${font.file} (skipping - will fall back to faux italic)`);
-    }
-  }
-}
-
-// Call this once before any raster work
-registerFontsOnce();
-
-// Log available font faces for debugging
-try {
-  const availableFonts = GlobalFonts.families;
-  console.log('[caption] Available registered fonts:', availableFonts);
-} catch (err) {
-  console.log('[caption] Could not list registered fonts');
-}
-
-if (!fontRegistered) {
-  console.warn('[caption] Using system font fallback - DejaVu fonts will not be available');
-}
+// Font registration moved to src/caption/canvas-fonts.js and called from server.js
+// Fonts are assumed to be registered at startup
 
 /**
  * @typedef {Object} CaptionStyle
@@ -162,12 +81,12 @@ export async function renderCaptionImage(jobId, style) {
   const ctx = canvas.getContext('2d');
 
   // Set font with proper style and weight selection
-  const actualFontFamily = fontRegistered ? 'DejaVu Sans' : 'Arial, sans-serif';
+  const actualFontFamily = 'DejaVu Sans';
   const fontStyle = style.fontStyle || 'normal';
   const weightCss = style.weightCss || fontWeight || '700';
   const font = `${fontStyle} ${weightCss} ${fontPx}px "${actualFontFamily}"`;
   ctx.font = font;
-  console.log(`[caption] Font set to: ${ctx.font} (registered: ${fontRegistered})`);
+  console.log(`[caption] Font set to: ${ctx.font}`);
   ctx.textBaseline = 'top';
 
   // Word wrap text to fit within box width
@@ -388,7 +307,7 @@ export async function renderCaptionImage(jobId, style) {
   const yPct = textCenterY / canvasH;
   
   // Track actual font family used (for fallback detection)
-  const fontFamilyUsed = fontRegistered ? 'DejaVu Sans' : 'Arial';
+  const fontFamilyUsed = 'DejaVu Sans';
   
   return {
     pngPath,

@@ -6,9 +6,25 @@
  */
 
 import fs from 'node:fs';
+import path from 'node:path';
 
 export const FONT_FAMILY = 'DejaVu Sans';
-const SYS = '/usr/share/fonts/truetype/dejavu';
+
+// Resolve font path with fallback locations (same logic as canvas-fonts.js)
+function resolveFontPath(filename) {
+  const candidates = [
+    path.resolve(process.cwd(), 'assets', 'fonts', filename),
+    path.resolve(process.cwd(), 'src', 'assets', 'fonts', filename)
+  ];
+  
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
+  }
+  
+  return null;
+}
 
 /**
  * Normalize weight input to standard number
@@ -41,24 +57,32 @@ export function resolveFontFile(weightCss, fontStyle) {
   const w = normalizeWeight(weightCss);
   const s = normalizeFontStyle(fontStyle);
   
-  if (w >= 700 && s === 'italic') return `${SYS}/DejaVuSans-BoldOblique.ttf`;
-  if (w >= 700)                return `${SYS}/DejaVuSans-Bold.ttf`;
-  if (s === 'italic')          return `${SYS}/DejaVuSans-Oblique.ttf`;
-                               return `${SYS}/DejaVuSans.ttf`;
+  let filename;
+  if (w >= 700 && s === 'italic') filename = 'DejaVuSans-BoldOblique.ttf';
+  else if (w >= 700)               filename = 'DejaVuSans-Bold.ttf';
+  else if (s === 'italic')        filename = 'DejaVuSans-Oblique.ttf';
+  else                            filename = 'DejaVuSans.ttf';
+  
+  const resolvedPath = resolveFontPath(filename);
+  if (!resolvedPath) {
+    throw new Error(`Font file not found: ${filename}`);
+  }
+  
+  return resolvedPath;
 }
 
 /**
  * Font resolution test matrix:
- * - resolveFontFile('400', 'normal')  → /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf
- * - resolveFontFile('700', 'normal')  → DejaVuSans-Bold.ttf
- * - resolveFontFile('400', 'italic')  → DejaVuSans-Oblique.ttf
- * - resolveFontFile('700', 'italic')  → DejaVuSans-BoldOblique.ttf
+ * - resolveFontFile('400', 'normal')  → /absolute/path/to/assets/fonts/DejaVuSans.ttf
+ * - resolveFontFile('700', 'normal')  → /absolute/path/to/assets/fonts/DejaVuSans-Bold.ttf
+ * - resolveFontFile('400', 'italic')  → /absolute/path/to/assets/fonts/DejaVuSans-Oblique.ttf
+ * - resolveFontFile('700', 'italic')  → /absolute/path/to/assets/fonts/DejaVuSans-BoldOblique.ttf
  * 
  * Canvas usage (preview):
  * - canvasFontString('700', 'italic', 57) → "italic bold 57px \"DejaVu Sans\""
  * 
  * FFmpeg usage (render):
- * - escapeFontPath(resolveFontFile('700', 'italic')) → fontfile=/usr/share/.../DejaVuSans-BoldOblique.ttf
+ * - escapeFontPath(resolveFontFile('700', 'italic')) → fontfile=/absolute/path/to/assets/fonts/DejaVuSans-BoldOblique.ttf
  */
 
 /**
