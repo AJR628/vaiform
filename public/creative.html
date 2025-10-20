@@ -3552,32 +3552,57 @@
                 
                 // Apply saved server meta to live preview immediately
                 if (typeof window.updateCaptionState === 'function' && normalizedMeta) {
+                    // CRITICAL: Set server SSOT first
                     window.__serverCaptionMeta = normalizedMeta;
+                    
                     const liveEl = document.getElementById('caption-live');
                     if (liveEl) {
+                        // Build COMPLETE SSOT v3 raster state from normalizedMeta
                         const currentState = {
-                            text: liveEl.textContent || '',
-                            fontPx: normalizedMeta.fontPx || 54,
-                            lineSpacingPx: normalizedMeta.lineSpacingPx || 8,
-                            letterSpacingPx: normalizedMeta.letterSpacingPx || 0,
-                            fontFamily: normalizedMeta.fontFamily || 'DejaVu Sans',
+                            // Identity
+                            text: liveEl.textContent || normalizedMeta.text || '',
+                            
+                            // CRITICAL: Tell live layer to use raster branch
+                            mode: normalizedMeta.mode || 'raster',
+                            
+                            // Geometry (raster) - ensure finite numbers
+                            rasterW: Number.isFinite(normalizedMeta.rasterW) ? normalizedMeta.rasterW : 1080,
+                            rasterH: Number.isFinite(normalizedMeta.rasterH) ? normalizedMeta.rasterH : 200,
+                            rasterPadding: Number.isFinite(normalizedMeta.rasterPadding) ? normalizedMeta.rasterPadding : 24,
+                            yPx_png: Number.isFinite(normalizedMeta.yPx_png) ? normalizedMeta.yPx_png : 24,
+                            xExpr_png: normalizedMeta.xExpr_png || '(W-overlay_w)/2',
+                            
+                            // Typography - ensure finite numbers with safe defaults
+                            fontFamily: normalizedMeta.fontFamily || 'DejaVuSans',
+                            fontPx: Number.isFinite(normalizedMeta.fontPx) ? normalizedMeta.fontPx : 48,
+                            lineSpacingPx: Number.isFinite(normalizedMeta.lineSpacingPx) ? normalizedMeta.lineSpacingPx : 8,
+                            letterSpacingPx: Number.isFinite(normalizedMeta.letterSpacingPx) ? normalizedMeta.letterSpacingPx : 0,
                             weightCss: normalizedMeta.weightCss || 'bold',
+                            fontStyle: normalizedMeta.fontStyle || 'normal',
                             textAlign: normalizedMeta.textAlign || 'center',
                             textTransform: normalizedMeta.textTransform || 'none',
-                            color: normalizedMeta.color || 'white',
-                            opacity: normalizedMeta.opacity || 0.85,
-                            strokePx: normalizedMeta.strokePx || 0,
+                            
+                            // Colors & effects - ensure finite numbers with safe defaults
+                            color: normalizedMeta.color || '#ffffff',
+                            opacity: Number.isFinite(normalizedMeta.opacity) ? normalizedMeta.opacity : 1.0,
+                            strokePx: Number.isFinite(normalizedMeta.strokePx) ? normalizedMeta.strokePx : 0,
                             strokeColor: normalizedMeta.strokeColor || 'rgba(0,0,0,0.85)',
                             shadowColor: normalizedMeta.shadowColor || 'rgba(0,0,0,0.6)',
-                            shadowBlur: normalizedMeta.shadowBlur || 12,
-                            shadowOffsetX: normalizedMeta.shadowOffsetX || 0,
-                            shadowOffsetY: normalizedMeta.shadowOffsetY || 2,
+                            shadowBlur: Number.isFinite(normalizedMeta.shadowBlur) ? normalizedMeta.shadowBlur : 12,
+                            shadowOffsetX: Number.isFinite(normalizedMeta.shadowOffsetX) ? normalizedMeta.shadowOffsetX : 0,
+                            shadowOffsetY: Number.isFinite(normalizedMeta.shadowOffsetY) ? normalizedMeta.shadowOffsetY : 2,
+                            
+                            // SSOT metadata
+                            ssotVersion: normalizedMeta.ssotVersion || 3,
+                            
+                            // Legacy compatibility fields (informational only)
                             xPct: normalizedMeta.xPct || 0.5,
                             yPct: normalizedMeta.yPct || 0.5,
                             wPct: normalizedMeta.wPct || 0.8
                         };
+                        
                         window.updateCaptionState(currentState);
-                        console.log('[savePreview] Applied server meta to live preview');
+                        console.log('[savePreview] Applied complete SSOT v3 raster state to live preview');
                     }
                 }
                 

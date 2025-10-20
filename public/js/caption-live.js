@@ -202,13 +202,14 @@ function applyStylesToLiveText(element, captionState, serverMeta) {
       });
     }
     
-    // Extract server SSOT values
-    const fontPx = serverMeta.fontPx;
-    const lineSpacingPx = serverMeta.lineSpacingPx;
-    const rasterW = serverMeta.rasterW;
-    const yPx_png = serverMeta.yPx_png;
-    const P = serverMeta.rasterPadding ?? serverMeta.internalPadding ?? 24;
-    const letterSpacingPx = serverMeta.letterSpacingPx || 0;
+    // Extract server SSOT values - NULL-SAFE: read ONLY from serverMeta, never captionState
+    const fontPx = Number.isFinite(serverMeta.fontPx) ? serverMeta.fontPx : 48;
+    const lineSpacingPx = Number.isFinite(serverMeta.lineSpacingPx) ? serverMeta.lineSpacingPx : 8;
+    const rasterW = Number.isFinite(serverMeta.rasterW) ? serverMeta.rasterW : 1080;
+    const yPx_png = Number.isFinite(serverMeta.yPx_png) ? serverMeta.yPx_png : 24;
+    const P = Number.isFinite(serverMeta.rasterPadding) ? serverMeta.rasterPadding : 
+              (Number.isFinite(serverMeta.internalPadding) ? serverMeta.internalPadding : 24);
+    const letterSpacingPx = Number.isFinite(serverMeta.letterSpacingPx) ? serverMeta.letterSpacingPx : 0;
     
     // Scale all geometry to CSS pixels
     const cssWidthPx = rasterW * scale;
@@ -259,21 +260,28 @@ function applyStylesToLiveText(element, captionState, serverMeta) {
       element.style.textTransform = 'none';
     }
     
-    // Effects: scale stroke and shadow
-    if (serverMeta.strokePx > 0) {
-      const scaledStrokePx = serverMeta.strokePx * scale;
-      element.style.webkitTextStroke = `${scaledStrokePx}px ${serverMeta.strokeColor}`;
-      element.style.textStroke = `${scaledStrokePx}px ${serverMeta.strokeColor}`;
+    // Effects: scale stroke and shadow - NULL-SAFE with finite checks
+    const strokePx = Number.isFinite(serverMeta.strokePx) ? serverMeta.strokePx : 0;
+    const shadowBlur = Number.isFinite(serverMeta.shadowBlur) ? serverMeta.shadowBlur : 0;
+    const shadowOffsetX = Number.isFinite(serverMeta.shadowOffsetX) ? serverMeta.shadowOffsetX : 0;
+    const shadowOffsetY = Number.isFinite(serverMeta.shadowOffsetY) ? serverMeta.shadowOffsetY : 0;
+    
+    if (strokePx > 0) {
+      const scaledStrokePx = strokePx * scale;
+      const strokeColor = serverMeta.strokeColor || 'rgba(0,0,0,0.85)';
+      element.style.webkitTextStroke = `${scaledStrokePx}px ${strokeColor}`;
+      element.style.textStroke = `${scaledStrokePx}px ${strokeColor}`;
     } else {
       element.style.webkitTextStroke = 'none';
       element.style.textStroke = 'none';
     }
     
-    if (serverMeta.shadowBlur > 0) {
-      const shadowX = (serverMeta.shadowOffsetX || 0) * scale;
-      const shadowY = (serverMeta.shadowOffsetY || 0) * scale;
-      const shadowBlur = serverMeta.shadowBlur * scale;
-      element.style.textShadow = `${shadowX}px ${shadowY}px ${shadowBlur}px ${serverMeta.shadowColor}`;
+    if (shadowBlur > 0) {
+      const shadowX = shadowOffsetX * scale;
+      const shadowY = shadowOffsetY * scale;
+      const scaledShadowBlur = shadowBlur * scale;
+      const shadowColor = serverMeta.shadowColor || 'rgba(0,0,0,0.6)';
+      element.style.textShadow = `${shadowX}px ${shadowY}px ${scaledShadowBlur}px ${shadowColor}`;
     } else {
       element.style.textShadow = 'none';
     }
@@ -300,59 +308,67 @@ function applyStylesToLiveText(element, captionState, serverMeta) {
   }
   
   // ========== LEGACY MODE: percentage-based (for backward compat) ==========
-  console.warn('[parity:legacy] Using legacy %-based positioning');
-  const frameW = 1080;
-  const wPct = serverMeta?.wPct || captionState.wPct || 0.8;
-  const yPct = serverMeta?.yPct || captionState.yPct || 0.5;
-  const fontPx = serverMeta?.fontPx || captionState.fontPx;
-  const lineSpacingPx = serverMeta?.lineSpacingPx || captionState.lineSpacingPx;
-  const letterSpacingPx = captionState.letterSpacingPx || 0;
-  
-  const cssWidthPx = wPct * frameW * scale;
-  const cssFontSizePx = fontPx * scale;
-  const cssLineHeightPx = (fontPx + lineSpacingPx) * scale;
-  const cssLetterSpacingPx = letterSpacingPx * scale;
-  
-  element.style.position = 'absolute';
-  element.style.width = `${cssWidthPx}px`;
-  element.style.fontSize = `${cssFontSizePx}px`;
-  element.style.lineHeight = `${cssLineHeightPx}px`;
-  element.style.letterSpacing = `${cssLetterSpacingPx}px`;
-  element.style.left = '50%';
-  element.style.transform = 'translateX(-50%)';
-  
-  // Legacy uses yPct for vertical centering
-  const cssTopPct = yPct * 100;
-  element.style.top = `${cssTopPct}%`;
-  
-  // Font must match server exactly
-  element.style.fontFamily = '"DejaVu Sans", sans-serif';
-  element.style.fontWeight = '700'; // bold
-  element.style.fontStyle = 'normal';
-  
-  // Other styles from captionState
-  element.style.textAlign = captionState.textAlign || 'center';
-  element.style.textTransform = captionState.textTransform || 'none';
-  element.style.color = captionState.color || 'white';
-  element.style.opacity = captionState.opacity || 1;
-  
-  // Effects - scale stroke and shadow values
-  if (captionState.strokePx > 0) {
-    const scaledStrokePx = captionState.strokePx * scale;
-    element.style.webkitTextStroke = `${scaledStrokePx}px ${captionState.strokeColor}`;
-    element.style.textStroke = `${scaledStrokePx}px ${captionState.strokeColor}`;
-  } else {
-    element.style.webkitTextStroke = 'none';
-    element.style.textStroke = 'none';
-  }
-  
-  if (captionState.shadowBlur > 0) {
-    const shadowX = (captionState.shadowOffsetX || 0) * scale;
-    const shadowY = (captionState.shadowOffsetY || 0) * scale;
-    const shadowBlur = captionState.shadowBlur * scale;
-    element.style.textShadow = `${shadowX}px ${shadowY}px ${shadowBlur}px ${captionState.shadowColor}`;
-  } else {
-    element.style.textShadow = 'none';
+  // HARD GATE: Only run legacy mode if we have valid legacy data
+  if (!serverMeta?.mode || serverMeta.mode !== 'raster') {
+    if (!captionState) {
+      console.warn('[parity:legacy] No captionState provided, skipping legacy mode');
+      return;
+    }
+    
+    console.warn('[parity:legacy] Using legacy %-based positioning');
+    const frameW = 1080;
+    const wPct = serverMeta?.wPct || captionState.wPct || 0.8;
+    const yPct = serverMeta?.yPct || captionState.yPct || 0.5;
+    const fontPx = serverMeta?.fontPx || captionState.fontPx;
+    const lineSpacingPx = serverMeta?.lineSpacingPx || captionState.lineSpacingPx;
+    const letterSpacingPx = captionState.letterSpacingPx || 0;
+    
+    const cssWidthPx = wPct * frameW * scale;
+    const cssFontSizePx = fontPx * scale;
+    const cssLineHeightPx = (fontPx + lineSpacingPx) * scale;
+    const cssLetterSpacingPx = letterSpacingPx * scale;
+    
+    element.style.position = 'absolute';
+    element.style.width = `${cssWidthPx}px`;
+    element.style.fontSize = `${cssFontSizePx}px`;
+    element.style.lineHeight = `${cssLineHeightPx}px`;
+    element.style.letterSpacing = `${cssLetterSpacingPx}px`;
+    element.style.left = '50%';
+    element.style.transform = 'translateX(-50%)';
+    
+    // Legacy uses yPct for vertical centering
+    const cssTopPct = yPct * 100;
+    element.style.top = `${cssTopPct}%`;
+    
+    // Font must match server exactly
+    element.style.fontFamily = '"DejaVu Sans", sans-serif';
+    element.style.fontWeight = '700'; // bold
+    element.style.fontStyle = 'normal';
+    
+    // Other styles from captionState
+    element.style.textAlign = captionState.textAlign || 'center';
+    element.style.textTransform = captionState.textTransform || 'none';
+    element.style.color = captionState.color || 'white';
+    element.style.opacity = captionState.opacity || 1;
+    
+    // Effects - scale stroke and shadow values
+    if (captionState.strokePx > 0) {
+      const scaledStrokePx = captionState.strokePx * scale;
+      element.style.webkitTextStroke = `${scaledStrokePx}px ${captionState.strokeColor}`;
+      element.style.textStroke = `${scaledStrokePx}px ${captionState.strokeColor}`;
+    } else {
+      element.style.webkitTextStroke = 'none';
+      element.style.textStroke = 'none';
+    }
+    
+    if (captionState.shadowBlur > 0) {
+      const shadowX = (captionState.shadowOffsetX || 0) * scale;
+      const shadowY = (captionState.shadowOffsetY || 0) * scale;
+      const shadowBlur = captionState.shadowBlur * scale;
+      element.style.textShadow = `${shadowX}px ${shadowY}px ${shadowBlur}px ${captionState.shadowColor}`;
+    } else {
+      element.style.textShadow = 'none';
+    }
   }
 }
 
@@ -631,6 +647,16 @@ export function updateCaptionState(captionState) {
   const liveEl = document.getElementById('caption-live');
   if (!liveEl) return;
 
+  // REGRESSION DETECTION: Warn if receiving incomplete state without mode field
+  if (!captionState.mode) {
+    console.warn('[updateCaptionState] ⚠️ Received state without mode field - may cause parity issues', {
+      hasMode: !!captionState.mode,
+      hasRasterW: !!captionState.rasterW,
+      hasFontPx: !!captionState.fontPx,
+      keys: Object.keys(captionState)
+    });
+  }
+
   // Store as server SSOT
   window.__serverCaptionMeta = captionState;
   
@@ -648,7 +674,8 @@ export function updateCaptionState(captionState) {
   console.log('[caption-live] State updated from toolbar:', {
     fontPx: captionState.fontPx,
     lineSpacingPx: captionState.lineSpacingPx,
-    rasterW: captionState.rasterW
+    rasterW: captionState.rasterW,
+    mode: captionState.mode || 'missing'
   });
 }
 
