@@ -11,6 +11,7 @@ const { createCanvas } = pkg;
 const RasterSchema = z.object({
   ssotVersion: z.literal(3),
   mode: z.literal('raster'),
+  textRaw: z.string().optional(),  // NEW: raw text with newlines
   text: z.string().min(1, 'Caption text is required'),
   
   // Typography
@@ -185,6 +186,7 @@ router.post("/caption/preview", express.json(), async (req, res) => {
           previewFontHash: rasterResult.previewFontHash,
           
           // Typography (pass-through)
+          textRaw: data.textRaw,  // Pass through if provided
           text,
           fontPx,
           fontFamily: data.fontFamily,

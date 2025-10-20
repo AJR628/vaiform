@@ -2806,18 +2806,27 @@
                         const currentMeta = window.getCaptionMeta();
                         console.log('[render-validate] Current meta exists:', !!currentMeta);
                         
-                        // Normalize text for comparison (trim whitespace)
-                        const savedText = (savedMeta.text || '').trim();
-                        const currentText = (currentMeta.text || '').trim();
+                        // Normalize text for comparison - collapse all whitespace to single spaces
+                        const normalizeTextForComparison = (text) => {
+                            return (text || '').replace(/\s*\n\s*/g, ' ').replace(/\s+/g, ' ').trim();
+                        };
+                        
+                        // Use textRaw if available (preserves user input), fallback to text
+                        const savedTextRaw = savedMeta.textRaw || savedMeta.text || '';
+                        const currentTextRaw = currentMeta.textRaw || currentMeta.text || '';
+                        
+                        // Normalize for comparison
+                        const savedText = normalizeTextForComparison(savedTextRaw);
+                        const currentText = normalizeTextForComparison(currentTextRaw);
                         
                         console.log('[render-validate] Text comparison:', {
                             savedLength: savedText.length,
                             currentLength: currentText.length,
                             match: savedText === currentText,
-                            saved: savedText.substring(0, 100),
-                            current: currentText.substring(0, 100),
-                            savedFull: savedText,
-                            currentFull: currentText
+                            savedNormalized: savedText.substring(0, 100),
+                            currentNormalized: currentText.substring(0, 100),
+                            savedRaw: savedTextRaw.substring(0, 100),
+                            currentRaw: currentTextRaw.substring(0, 100)
                         });
                         
                         // Preview is valid if flag is set AND text matches
@@ -3326,10 +3335,20 @@
                 const rasterPadding = guardNum(ssot.rasterPadding, 24);
                 const xExpr_png = ssot.xExpr_png || '(W-overlay_w)/2';
 
+                // Get raw text from overlay input (source of truth for user edits)
+                const textRaw = liveEl?.textContent || meta.text;
+                
+                // Normalize for server and downstream features:
+                // - Convert newlines to spaces
+                // - Collapse multiple spaces into one
+                // - Trim whitespace
+                const text = textRaw.replace(/\s*\n\s*/g, ' ').replace(/\s+/g, ' ').trim();
+
                 const payload = {
                     ssotVersion: 3,
                     mode: 'raster',
-                    text: liveEl?.textContent || meta.text,
+                    textRaw,  // NEW: preserve original with newlines
+                    text,     // normalized canonical version
                     
                     // Typography
                     fontFamily,
@@ -3559,8 +3578,8 @@
                     if (liveEl) {
                         // Build COMPLETE SSOT v3 raster state from normalizedMeta
                         const currentState = {
-                            // Identity
-                            text: liveEl.textContent || normalizedMeta.text || '',
+                            // Identity - use textRaw to preserve user's intended wraps
+                            text: normalizedMeta.textRaw || normalizedMeta.text || '',
                             
                             // CRITICAL: Tell live layer to use raster branch
                             mode: normalizedMeta.mode || 'raster',
@@ -3621,6 +3640,17 @@
                     frameH: normalizedMeta.frameH,
                     hasRasterUrl: !!normalizedMeta.rasterUrl,
                     rasterHash: normalizedMeta.rasterHash?.slice(0, 8) + '...'
+                });
+                
+                // Sanity log: Show text diff snippet to catch regressions
+                const normalizeForLog = (text) => (text || '').replace(/\s*\n\s*/g, ' ').replace(/\s+/g, ' ').trim();
+                const savedNormalized = normalizeForLog(normalizedMeta.textRaw || normalizedMeta.text);
+                const currentNormalized = normalizeForLog(liveEl?.textContent);
+                console.log('[savePreview:sanity] Text diff snippet:', {
+                    savedRaw: (normalizedMeta.textRaw || '').substring(0, 50),
+                    savedNormalized: savedNormalized.substring(0, 50),
+                    currentNormalized: currentNormalized.substring(0, 50),
+                    equality: savedNormalized === currentNormalized
                 });
                 
                 // Debug: Verify functions are available
