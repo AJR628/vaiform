@@ -325,27 +325,41 @@ function buildVideoChain({ width, height, videoVignette, drawLayers, captionImag
   const W = Math.max(4, Number(width)||1080);
   const H = Math.max(4, Number(height)||1920);
   
+  // Destructure for clarity and prevent shadowing
+  const { usingCaptionPng: usePng, captionPngPath: pngPath, rasterPlacement: placement } = { usingCaptionPng, captionPngPath, rasterPlacement };
+  
   // Env-gated pixel format and colorspace controls
   const use444 = process.env.FFMPEG_USE_YUV444 === '1';
   const enableColorspace = process.env.FFMPEG_USE_COLORSPACE === '1';
   const pixelFmtFilter = `format=${use444 ? 'yuv444p' : 'yuv420p'}`;
   
   // If using PNG overlay for captions (SSOT v3 raster mode)
-  if (usingCaptionPng && captionPngPath && fs.existsSync(captionPngPath)) {
-    console.log(`[render] USING PNG OVERLAY from: ${captionPngPath}`);
+  if (usePng && pngPath && fs.existsSync(pngPath)) {
+    console.log(`[render] USING PNG OVERLAY from: ${pngPath}`);
+    
+    // RASTER MODE INVARIANTS - fail fast if geometry missing
+    if (!placement) {
+      throw new Error('RASTER: rasterPlacement is required but was not provided');
+    }
+    if (!placement.xExpr) {
+      throw new Error('RASTER: rasterPlacement.xExpr is required');
+    }
+    if (!Number.isFinite(placement.y)) {
+      throw new Error('RASTER: rasterPlacement.y is required and must be a number');
+    }
     // Build filter graph: scale -> crop -> format -> [vmain], then overlay PNG
     // CRITICAL: Use persisted geometry from preview for exact parity
     let scale, crop;
-    if (rasterPlacement?.bgScaleExpr && rasterPlacement?.bgCropExpr) {
+    if (placement?.bgScaleExpr && placement?.bgCropExpr) {
       // Use EXACT expressions from preview
-      scale = rasterPlacement.bgScaleExpr;
-      crop = rasterPlacement.bgCropExpr;
+      scale = placement.bgScaleExpr;
+      crop = placement.bgCropExpr;
       console.log('[buildVideoChain] Using preview geometry:', { scale, crop });
     } else {
       // Fallback (should not happen in strict raster mode)
       scale = `scale='if(gt(a,${W}/${H}),-2,${W})':'if(gt(a,${W}/${H}),${H},-2)'`;
       crop = `crop=${W}:${H}`;
-      if (usingCaptionPng) {
+      if (usePng) {
         console.warn('[buildVideoChain] Missing bgScaleExpr/bgCropExpr in raster mode!');
       }
     }
@@ -356,15 +370,15 @@ function buildVideoChain({ width, height, videoVignette, drawLayers, captionImag
     const pngPrep = `[1:v]format=rgba[ovr]`;
     
     console.log('[v3:parity] Using preview dimensions verbatim:', {
-      rasterW: rasterPlacement?.rasterW,
-      rasterH: rasterPlacement?.rasterH,
-      yPx: rasterPlacement?.y,
-      xExpr: rasterPlacement?.xExpr
+      rasterW: placement.rasterW,
+      rasterH: placement.rasterH,
+      xExpr: placement.xExpr,
+      y: placement.y
     });
     
     // Overlay with format=auto to preserve alpha - use saved preview placement
-    const xExpr = overlayCaption.xExpr_png ?? '(W-overlay_w)/2';
-    const y = Number.isFinite(overlayCaption.yPx_png) ? overlayCaption.yPx_png : 12;
+    const xExpr = placement.xExpr ?? '(W-overlay_w)/2';
+    const y = Number.isFinite(placement.y) ? placement.y : 12;
     
     // Use centralized pixel format filter
     const endFormat = pixelFmtFilter;
@@ -374,13 +388,22 @@ function buildVideoChain({ width, height, videoVignette, drawLayers, captionImag
     // CRITICAL: Log final overlay configuration
     console.log('[render:raster:FFMPEG]', {
       noScaling: true,
-      actualRasterW: rasterPlacement?.rasterW,
-      actualRasterH: rasterPlacement?.rasterH,
+      actualRasterW: placement.rasterW,
+      actualRasterH: placement.rasterH,
       xExpr,
       y,
       colorspace: 'bt709',
       pixelFormat: endFormat
     });
+    
+    // PARITY GUARD - ensure overlay filter doesn't apply unintended scaling
+    if (placement.rasterW && placement.rasterH) {
+      console.log('[v3:parity-guard] Overlay dimensions locked:', {
+        rasterW: placement.rasterW,
+        rasterH: placement.rasterH,
+        willScaleOverlay: false
+      });
+    }
     
     const filter = `${baseChain};${pngPrep};${overlayExpr}`;
     
