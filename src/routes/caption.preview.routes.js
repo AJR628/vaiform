@@ -1,10 +1,53 @@
 import express from "express";
 import pkg from "@napi-rs/canvas";
 import crypto from "node:crypto";
+import { z } from 'zod';
 import { CaptionMetaSchema } from '../schemas/caption.schema.js';
 import { bufferToTmp } from '../utils/tmp.js';
 import { canvasFontString, normalizeWeight, normalizeFontStyle } from '../utils/font.registry.js';
 const { createCanvas } = pkg;
+
+// V3 raster schema (pixel-based with frame coordinates)
+const RasterSchema = z.object({
+  ssotVersion: z.literal(3),
+  mode: z.literal('raster'),
+  text: z.string().min(1, 'Caption text is required'),
+  
+  // Typography
+  fontFamily: z.string().default('DejaVuSans'),
+  fontPx: z.coerce.number().int().min(16).max(200),
+  lineSpacingPx: z.coerce.number().int().min(0).max(200).default(0),
+  letterSpacingPx: z.coerce.number().default(0),
+  weightCss: z.string().default('700'),
+  fontStyle: z.string().default('normal'),
+  textAlign: z.enum(['left', 'center', 'right']).default('center'),
+  textTransform: z.string().default('none'),
+  
+  // Color & effects
+  color: z.string().default('rgb(255,255,255)'),
+  opacity: z.coerce.number().min(0).max(1).default(1.0),
+  strokePx: z.coerce.number().default(0),
+  strokeColor: z.string().default('rgba(0,0,0,0.85)'),
+  shadowColor: z.string().default('rgba(0,0,0,0.6)'),
+  shadowBlur: z.coerce.number().default(12),
+  shadowOffsetX: z.coerce.number().default(0),
+  shadowOffsetY: z.coerce.number().default(2),
+  
+  // Geometry (frame-space pixels)
+  rasterW: z.coerce.number().int().min(100).max(1080),
+  yPx_png: z.coerce.number().int().min(0).max(1920),
+  rasterPadding: z.coerce.number().int().default(24),
+  xExpr_png: z.string().default('(W-overlay_w)/2'),
+  
+  // Frame dimensions
+  frameW: z.coerce.number().int().default(1080),
+  frameH: z.coerce.number().int().default(1920),
+  
+  // Optional legacy fields (ignored but allowed during transition)
+  xPct: z.coerce.number().optional(),
+  yPct: z.coerce.number().optional(),
+  wPct: z.coerce.number().optional(),
+});
 
 const router = express.Router();
 
@@ -18,8 +61,88 @@ router.post("/caption/preview", express.json(), async (req, res) => {
     
     if (isOverlayFormat) {
       // Check if this is v3 raster mode
-      const isV3Raster = req.body.ssotVersion === 3;
+      const isV3Raster = req.body.ssotVersion === 3 && req.body.mode === 'raster';
       console.log('[caption-preview] Using', isV3Raster ? 'V3 RASTER' : 'V2 OVERLAY', 'path');
+      
+      // Handle V3 raster format
+      if (isV3Raster) {
+        const parsed = RasterSchema.safeParse(req.body);
+        if (!parsed.success) {
+          return res.status(400).json({ ok: false, reason: "INVALID_INPUT", detail: parsed.error.flatten() });
+        }
+        
+        const data = parsed.data;
+        const text = data.text.trim();
+        if (!text) {
+          return res.status(400).json({ ok: false, reason: "EMPTY_TEXT", detail: "Caption text cannot be empty" });
+        }
+        
+        // Use client SSOT values directly - no recomputation in raster mode
+        const fontPx = data.fontPx;
+        const lineSpacingPx = data.lineSpacingPx;
+        const letterSpacingPx = data.letterSpacingPx;
+        const rasterW = data.rasterW;
+        const yPx_png = data.yPx_png;
+        const rasterPadding = data.rasterPadding;
+        
+        console.log('[caption-preview:v3] Using client SSOT values:', {
+          fontPx, lineSpacingPx, letterSpacingPx, rasterW, yPx_png, rasterPadding
+        });
+        
+        // Build SSOT V3 meta (raster mode)
+        const ssotMeta = {
+          ssotVersion: 3,
+          mode: 'raster',
+          
+          // Typography
+          text,
+          fontPx,
+          fontFamily: data.fontFamily,
+          weightCss: data.weightCss,
+          fontStyle: data.fontStyle,
+          textAlign: data.textAlign,
+          letterSpacingPx,
+          textTransform: data.textTransform,
+          
+          // Color & effects
+          color: data.color,
+          opacity: data.opacity,
+          strokePx: data.strokePx,
+          strokeColor: data.strokeColor,
+          shadowColor: data.shadowColor,
+          shadowBlur: data.shadowBlur,
+          shadowOffsetX: data.shadowOffsetX,
+          shadowOffsetY: data.shadowOffsetY,
+          
+          // Geometry
+          rasterW,
+          yPx_png,
+          rasterPadding,
+          xExpr_png: data.xExpr_png,
+          frameW: data.frameW,
+          frameH: data.frameH,
+        };
+        
+        // Parity logging for client-server matching
+        console.log('[parity:serverPreview]', {
+          frameW: data.frameW, frameH: data.frameH,
+          fontPx, lineSpacingPx, letterSpacingPx,
+          yPx_png, rasterPadding, rasterW,
+          xPct: data.xPct, yPct: data.yPct, wPct: data.wPct
+        });
+        
+        return res.status(200).json({
+          ok: true,
+          data: {
+            imageUrl: null, // No preview image for raster mode
+            wPx: data.frameW,
+            hPx: data.frameH,
+            xPx: 0,
+            yPx: yPx_png,
+            meta: ssotMeta,
+          }
+        });
+      }
       // STEP 0: Sanitize inputs - strip computed fields that should NEVER come from client
       const COMPUTED_FIELDS = [
         "lineSpacingPx", "totalTextH", "totalTextHPx", "yPxFirstLine", "lineHeight",

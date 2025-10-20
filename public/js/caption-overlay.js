@@ -857,108 +857,111 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
       });
     };
   }
-}
 
-// Emit unified caption state to live preview system
-function emitCaptionState(reason = 'toolbar') {
-  const cs = getComputedStyle(content);
-  const s = stage.getBoundingClientRect();
-  const b = box.getBoundingClientRect();
-  
-  // Parse stroke from webkitTextStroke: "3px rgba(0,0,0,0.85)"
-  const parseStroke = (str) => {
-    if (!str || str === 'none' || str === '0px') return { px: 0, color: 'rgba(0,0,0,0.85)' };
-    const match = str.match(/^([\d.]+)px\s+(.+)$/);
-    return match ? { px: parseFloat(match[1]), color: match[2] } : { px: 0, color: 'rgba(0,0,0,0.85)' };
-  };
-  
-  // Parse shadow from textShadow: "0px 2px 12px rgba(0,0,0,0.6)"
-  const parseShadow = (str) => {
-    if (!str || str === 'none') return { x: 0, y: 2, blur: 12, color: 'rgba(0,0,0,0.6)' };
-    const match = str.match(/([-\d.]+)px\s+([-\d.]+)px\s+([-\d.]+)px\s+(.+)/);
-    return match ? {
-      x: parseFloat(match[1]),
-      y: parseFloat(match[2]),
-      blur: parseFloat(match[3]),
-      color: match[4]
-    } : { x: 0, y: 2, blur: 12, color: 'rgba(0,0,0,0.6)' };
-  };
-  
-  const stroke = parseStroke(cs.webkitTextStroke || cs.textStroke);
-  const shadow = parseShadow(cs.textShadow);
-  
-  // Extract font family (strip quotes and fallbacks)
-  const fontFamily = (cs.fontFamily || 'DejaVu Sans').split(',')[0].replace(/['"]/g, '').trim();
-  
-  // Typography
-  const fontPx = parseInt(cs.fontSize, 10);
-  const lineHeightPx = parseFloat(cs.lineHeight);
-  const lineSpacingPx = Math.max(0, Math.round(lineHeightPx - fontPx));
-  const letterSpacingPx = parseFloat(cs.letterSpacing) || 0;
-  const weightCss = String(cs.fontWeight);
-  const fontStyle = cs.fontStyle === 'italic' ? 'italic' : 'normal';
-  const textAlign = cs.textAlign || 'center';
-  const textTransform = cs.textTransform || 'none';
-  
-  // Color & effects
-  const color = cs.color || 'rgb(255,255,255)';
-  const opacity = parseFloat(cs.opacity) || 1;
-  
-  // Geometry (frame space = 1080x1920)
-  const frameW = 1080;
-  const frameH = 1920;
-  const rasterW = Math.round((b.width / s.width) * frameW);
-  const yPx_png = Math.round((b.top - s.top) / s.height * frameH);
-  const rasterPadding = parseInt(cs.paddingLeft, 10) || 24;
-  
-  const state = {
+  // Emit unified caption state to live preview system
+  function emitCaptionState(reason = 'toolbar') {
+    const cs = getComputedStyle(content);
+    const s = stage.getBoundingClientRect();
+    const b = box.getBoundingClientRect();
+    
+    // Parse stroke from webkitTextStroke: "3px rgba(0,0,0,0.85)"
+    const parseStroke = (str) => {
+      if (!str || str === 'none' || str === '0px') return { px: 0, color: 'rgba(0,0,0,0.85)' };
+      const match = str.match(/^([\d.]+)px\s+(.+)$/);
+      return match ? { px: parseFloat(match[1]), color: match[2] } : { px: 0, color: 'rgba(0,0,0,0.85)' };
+    };
+    
+    // Parse shadow from textShadow: "0px 2px 12px rgba(0,0,0,0.6)"
+    const parseShadow = (str) => {
+      if (!str || str === 'none') return { x: 0, y: 2, blur: 12, color: 'rgba(0,0,0,0.6)' };
+      const match = str.match(/([-\d.]+)px\s+([-\d.]+)px\s+([-\d.]+)px\s+(.+)/);
+      return match ? {
+        x: parseFloat(match[1]),
+        y: parseFloat(match[2]),
+        blur: parseFloat(match[3]),
+        color: match[4]
+      } : { x: 0, y: 2, blur: 12, color: 'rgba(0,0,0,0.6)' };
+    };
+    
+    const stroke = parseStroke(cs.webkitTextStroke || cs.textStroke);
+    const shadow = parseShadow(cs.textShadow);
+    
+    // Extract font family (strip quotes and fallbacks)
+    const fontFamily = (cs.fontFamily || 'DejaVu Sans').split(',')[0].replace(/['"]/g, '').trim();
+    
     // Typography
-    fontFamily,
-    fontPx,
-    lineSpacingPx,
-    letterSpacingPx,
-    weightCss,
-    fontStyle,
-    textAlign,
-    textTransform,
+    const fontPx = parseInt(cs.fontSize, 10);
+    const lineHeightPx = parseFloat(cs.lineHeight);
+    const lineSpacingPx = Math.max(0, Math.round(lineHeightPx - fontPx));
+    const letterSpacingPx = parseFloat(cs.letterSpacing) || 0;
+    const weightCss = String(cs.fontWeight);
+    const fontStyle = cs.fontStyle === 'italic' ? 'italic' : 'normal';
+    const textAlign = cs.textAlign || 'center';
+    const textTransform = cs.textTransform || 'none';
     
     // Color & effects
-    color,
-    opacity,
-    strokePx: stroke.px,
-    strokeColor: stroke.color,
-    shadowColor: shadow.color,
-    shadowBlur: shadow.blur,
-    shadowOffsetX: shadow.x,
-    shadowOffsetY: shadow.y,
+    const color = cs.color || 'rgb(255,255,255)';
+    const opacity = parseFloat(cs.opacity) || 1;
     
-    // Geometry
-    rasterW,
-    yPx_png,
-    rasterPadding,
-    xExpr_png: '(W-overlay_w)/2', // center horizontally
+    // Geometry (frame space = 1080x1920)
+    const frameW = 1080;
+    const frameH = 1920;
+    const rasterW = Math.round((b.width / s.width) * frameW);
+    const yPx_png = Math.round((b.top - s.top) / s.height * frameH);
+    const rasterPadding = parseInt(cs.paddingLeft, 10) || 24;
     
-    // Metadata
-    text: content.textContent || '',
-    ssotVersion: 3,
-    mode: 'raster',
-    reason
-  };
-  
-  // Guard against NaN/null
-  Object.keys(state).forEach(k => {
-    if (typeof state[k] === 'number' && !Number.isFinite(state[k])) {
-      console.warn(`[emitCaptionState] Invalid number for ${k}:`, state[k]);
-      state[k] = 0;
+    const state = {
+      // Typography
+      fontFamily,
+      fontPx,
+      lineSpacingPx,
+      letterSpacingPx,
+      weightCss,
+      fontStyle,
+      textAlign,
+      textTransform,
+      
+      // Color & effects
+      color,
+      opacity,
+      strokePx: stroke.px,
+      strokeColor: stroke.color,
+      shadowColor: shadow.color,
+      shadowBlur: shadow.blur,
+      shadowOffsetX: shadow.x,
+      shadowOffsetY: shadow.y,
+      
+      // Geometry
+      rasterW,
+      yPx_png,
+      rasterPadding,
+      xExpr_png: '(W-overlay_w)/2', // center horizontally
+      
+      // Metadata
+      text: content.textContent || '',
+      ssotVersion: 3,
+      mode: 'raster',
+      reason
+    };
+    
+    // Guard against NaN/null
+    Object.keys(state).forEach(k => {
+      if (typeof state[k] === 'number' && !Number.isFinite(state[k])) {
+        console.warn(`[emitCaptionState] Invalid number for ${k}:`, state[k]);
+        state[k] = 0;
+      }
+    });
+    
+    console.log('[toolbar:emit]', { reason, fontPx, lineSpacingPx, rasterW, yPx_png });
+    
+    // Call global update handler
+    if (typeof window.updateCaptionState === 'function') {
+      window.updateCaptionState(state);
     }
-  });
-  
-  console.log('[toolbar:emit]', { reason, fontPx, lineSpacingPx, rasterW, yPx_png });
-  
-  // Call global update handler
-  if (typeof window.updateCaptionState === 'function') {
-    window.updateCaptionState(state);
   }
+
+  // Expose emitCaptionState globally so handlers defined elsewhere can call it
+  window.emitCaptionState = emitCaptionState;
 }
 
 export function getCaptionMeta(){ return window.getCaptionMeta(); }

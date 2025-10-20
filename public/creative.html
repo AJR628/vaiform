@@ -3329,7 +3329,7 @@
                 const payload = {
                     ssotVersion: 3,
                     mode: 'raster',
-                    text: meta.text,
+                    text: liveEl?.textContent || meta.text,
                     
                     // Typography
                     fontFamily,
@@ -3362,10 +3362,11 @@
                     frameH: 1920
                 };
 
-                // Strip legacy %-based fields in raster mode
-                delete payload.xPct;
-                delete payload.yPct;
-                delete payload.wPct;
+                // Derive V2 percentage fields from SSOT raster values for backward compatibility
+                const frameW = 1080, frameH = 1920;
+                payload.wPct = Number.isFinite(rasterW) ? +(rasterW / frameW).toFixed(6) : undefined;
+                payload.yPct = Number.isFinite(yPx_png) ? +(yPx_png / frameH).toFixed(6) : undefined;
+                payload.xPct = Number.isFinite(payload.wPct) ? +((1 - payload.wPct) / 2).toFixed(6) : undefined;
 
                 console.log('[savePreview] Final payload:', payload);
 
