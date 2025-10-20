@@ -79,22 +79,112 @@ router.post("/caption/preview", express.json(), async (req, res) => {
         
         // Use client SSOT values directly - no recomputation in raster mode
         const fontPx = data.fontPx;
-        const lineSpacingPx = data.lineSpacingPx;
-        const letterSpacingPx = data.letterSpacingPx;
+        let lineSpacingPx = data.lineSpacingPx;
+        const letterSpacingPx = data.letterSpacingPx || 0;
         const rasterW = data.rasterW;
         const yPx_png = data.yPx_png;
         const rasterPadding = data.rasterPadding;
+        
+        // Guard: fallback for invalid lineSpacingPx
+        if (!Number.isFinite(lineSpacingPx)) {
+          lineSpacingPx = Math.round(fontPx * 0.15);
+          console.log('[v3:fallback] lineSpacingPx not finite, using:', lineSpacingPx);
+        }
         
         console.log('[caption-preview:v3] Using client SSOT values:', {
           fontPx, lineSpacingPx, letterSpacingPx, rasterW, yPx_png, rasterPadding
         });
         
-        // Build SSOT V3 meta (raster mode)
+        // Wrap text using client rasterW (reuse V2 pattern)
+        const canvas = createCanvas(data.frameW, data.frameH);
+        const ctx = canvas.getContext("2d");
+        const font = canvasFontString(data.weightCss, data.fontStyle, fontPx);
+        ctx.font = font;
+        
+        // Wrap text accounting for rasterPadding on both sides
+        const maxWidth = rasterW - (2 * rasterPadding);
+        const segments = text.split('\n');
+        const lines = [];
+        for (const segment of segments) {
+          const words = segment.trim().split(/\s+/).filter(Boolean);
+          let line = "";
+          for (const word of words) {
+            const test = line ? line + " " + word : word;
+            if (ctx.measureText(test).width > maxWidth && line) {
+              lines.push(line);
+              line = word;
+            } else {
+              line = test;
+            }
+          }
+          if (line) lines.push(line);
+        }
+        
+        // Calculate totalTextH using client SSOT formula
+        const totalTextH = lines.length * fontPx + (lines.length - 1) * lineSpacingPx;
+        
+        // Calculate yPxFirstLine (text baseline, NOT PNG top)
+        const yPxFirstLine = yPx_png + rasterPadding;
+        
+        // Call renderCaptionRaster with client SSOT values
+        const rasterResult = await renderCaptionRaster({
+          text,
+          splitLines: lines,
+          maxLineWidth: maxWidth,
+          xPct: data.xPct,  // Not used in raster, but pass for consistency
+          yPct: data.yPct,  // Not used in raster, but pass for consistency
+          wPct: data.wPct,  // Not used in raster, but pass for consistency
+          fontPx,
+          fontFamily: data.fontFamily,
+          weightCss: data.weightCss,
+          fontStyle: data.fontStyle,
+          textAlign: data.textAlign,
+          letterSpacingPx,
+          textTransform: data.textTransform,
+          color: data.color,
+          opacity: data.opacity,
+          strokePx: data.strokePx,
+          strokeColor: data.strokeColor,
+          shadowColor: data.shadowColor,
+          shadowBlur: data.shadowBlur,
+          shadowOffsetX: data.shadowOffsetX,
+          shadowOffsetY: data.shadowOffsetY,
+          lineSpacingPx,
+          totalTextH,
+          yPxFirstLine,
+          W: data.frameW,
+          H: data.frameH
+        });
+        
+        // Compute PNG hash
+        const pngBuffer = Buffer.from(rasterResult.rasterUrl.split(',')[1], 'base64');
+        const rasterHash = crypto.createHash('sha256').update(pngBuffer).digest('hex').slice(0, 16);
+        
+        // Build complete ssotMeta with all required fields
         const ssotMeta = {
           ssotVersion: 3,
           mode: 'raster',
           
-          // Typography
+          // Geometry lock (same as V2)
+          frameW: data.frameW,
+          frameH: data.frameH,
+          bgScaleExpr: "scale='if(gt(a,1080/1920),-2,1080)':'if(gt(a,1080/1920),1920,-2)'",
+          bgCropExpr: "crop=1080:1920",
+          
+          // PNG raster data (CRITICAL - these were missing!)
+          rasterUrl: rasterResult.rasterUrl,
+          rasterW: rasterResult.rasterW,
+          rasterH: rasterResult.rasterH,
+          rasterPadding: rasterResult.padding,
+          xExpr_png: data.xExpr_png,
+          yPx_png: rasterResult.yPx,
+          
+          // Verification hashes (CRITICAL - these were missing!)
+          rasterHash,
+          previewFontString: rasterResult.previewFontString,
+          previewFontHash: rasterResult.previewFontHash,
+          
+          // Typography (pass-through)
           text,
           fontPx,
           fontFamily: data.fontFamily,
@@ -104,7 +194,7 @@ router.post("/caption/preview", express.json(), async (req, res) => {
           letterSpacingPx,
           textTransform: data.textTransform,
           
-          // Color & effects
+          // Color & effects (pass-through)
           color: data.color,
           opacity: data.opacity,
           strokePx: data.strokePx,
@@ -114,31 +204,35 @@ router.post("/caption/preview", express.json(), async (req, res) => {
           shadowOffsetX: data.shadowOffsetX,
           shadowOffsetY: data.shadowOffsetY,
           
-          // Geometry
-          rasterW,
-          yPx_png,
-          rasterPadding,
-          xExpr_png: data.xExpr_png,
-          frameW: data.frameW,
-          frameH: data.frameH,
+          // Keep for debugging and client compatibility
+          splitLines: lines,
+          lineSpacingPx,
+          totalTextH,
+          yPxFirstLine,
         };
         
-        // Parity logging for client-server matching
-        console.log('[parity:serverPreview]', {
-          frameW: data.frameW, frameH: data.frameH,
-          fontPx, lineSpacingPx, letterSpacingPx,
-          yPx_png, rasterPadding, rasterW,
-          xPct: data.xPct, yPct: data.yPct, wPct: data.wPct
+        // Log for verification
+        console.log('[v3:raster:complete]', {
+          rasterW: rasterResult.rasterW,
+          rasterH: rasterResult.rasterH,
+          yPx_png: rasterResult.yPx,
+          lines: lines.length,
+          rasterHash: rasterHash.slice(0, 8) + '...'
+        });
+        
+        console.log('[v3:preview:respond]', { 
+          have: Object.keys(ssotMeta),
+          required: ['rasterUrl', 'rasterW', 'rasterH', 'rasterPadding', 'yPx_png', 'bgScaleExpr', 'bgCropExpr', 'rasterHash', 'previewFontString', 'totalTextH', 'yPxFirstLine', 'splitLines']
         });
         
         return res.status(200).json({
           ok: true,
           data: {
-            imageUrl: null, // No preview image for raster mode
+            imageUrl: null,  // V3 raster mode returns PNG in meta.rasterUrl
             wPx: data.frameW,
             hPx: data.frameH,
             xPx: 0,
-            yPx: yPx_png,
+            yPx: yPxFirstLine,  // Text baseline, not PNG top
             meta: ssotMeta,
           }
         });
