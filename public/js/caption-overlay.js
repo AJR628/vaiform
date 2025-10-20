@@ -550,7 +550,8 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     
     // Extract wrapped text with actual line breaks from DOM
     const extractWrappedText = () => {
-      const text = content.innerText.trim();
+      // Use textContent to avoid innerText space-eating bug with wrapped text
+      const text = (content.textContent || content.innerText).trim();
       if (!text) return '';
       
       // Create a temporary range to measure actual line breaks
@@ -645,7 +646,7 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
 
     const meta = {
       text: extractWrappedText(),
-      textRaw: content.innerText.trim(),  // NEW: preserve raw text as displayed
+      textRaw: (content.textContent || content.innerText).trim(),  // Use textContent to avoid space corruption
       xPct: (b.left - s.left) / s.width,
       yPct: (b.top  - s.top ) / s.height,
       wPct: b.width / s.width,
@@ -677,7 +678,7 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
   
   window.applyCaptionMeta = function applyCaptionMeta(meta, options = {}){
     const s = stage.getBoundingClientRect();
-    if (typeof meta.text === 'string') content.innerText = meta.text;
+    if (typeof meta.text === 'string') content.textContent = meta.text;
     if (typeof meta.xPct === 'number') box.style.left = (meta.xPct * 100) + '%';
     if (typeof meta.yPct === 'number') box.style.top  = (meta.yPct * 100) + '%';
     if (typeof meta.wPct === 'number') box.style.width  = (meta.wPct * 100) + '%';
@@ -713,7 +714,7 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     if (text && text.trim()) {
       setTextAutoSize(text.trim());
     } else {
-      content.innerText = text || ''; 
+      content.textContent = text || ''; 
       if (!overlayV2) shrinkToFit(content, box); else try { ensureFitNextRAF('quote'); } catch {}
     }
     try { ensureOverlayTopAndVisible(stageSel); } catch {}
