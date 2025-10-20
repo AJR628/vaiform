@@ -532,6 +532,7 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
       if (overlayV2) { try { endResizeSession(); } catch {} } else { try { fitText(); } catch {} }
       const meta = getCaptionMeta();
       applyCaptionMeta(meta);
+      emitCaptionState('resize-end');
       if (overlayV2 && window.__debugOverlay) { try { console.log(JSON.stringify({ tag:'overlay:counters', pm:__pm, ro:__ro, raf:__raf })); __pm=__ro=__raf=0; } catch {} }
     }
     if (!overlayV2) {
@@ -799,44 +800,44 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
         const fam = document.createElement('select'); fam.style.display='block'; fam.style.marginBottom='6px'; fam.style.color='#111';
         ['Inter','Roboto','Segoe UI','System UI','DejaVu Sans','Arial','Georgia'].forEach(f=>{ const o=document.createElement('option'); o.value=f; o.textContent=f; fam.appendChild(o); });
         fam.value = (getComputedStyle(content).fontFamily||'').split(',')[0].replaceAll('"','').trim();
-        fam.onchange = ()=>{ content.style.fontFamily = fam.value + ', system-ui, -apple-system, Segoe UI, Roboto, sans-serif'; scheduleLayout(); };
+        fam.onchange = ()=>{ content.style.fontFamily = fam.value + ', system-ui, -apple-system, Segoe UI, Roboto, sans-serif'; scheduleLayout(); emitCaptionState('font-family'); };
         const lhL = document.createElement('div'); lhL.textContent='Line height'; lhL.style.margin='6px 0 2px';
         const lh = document.createElement('input'); lh.type='range'; lh.min='0.9'; lh.max='2.0'; lh.step='0.05'; lh.value=String(parseFloat(getComputedStyle(content).lineHeight)||1.15);
         lh.oninput = ()=>{ content.style.lineHeight = String(lh.value); };
-        lh.onchange = ()=>{ scheduleLayout(); };
+        lh.onchange = ()=>{ scheduleLayout(); emitCaptionState('line-height'); };
         const lsL = document.createElement('div'); lsL.textContent='Letter spacing'; lsL.style.margin='6px 0 2px';
         const ls = document.createElement('input'); ls.type='range'; ls.min='-1'; ls.max='6'; ls.step='0.5'; ls.value=String(parseFloat(getComputedStyle(content).letterSpacing)||0);
         ls.oninput = ()=>{ content.style.letterSpacing = `${ls.value}px`; };
-        ls.onchange = ()=>{ scheduleLayout(); };
+        ls.onchange = ()=>{ scheduleLayout(); emitCaptionState('letter-spacing'); };
         pop.appendChild(fam); pop.appendChild(lhL); pop.appendChild(lh); pop.appendChild(lsL); pop.appendChild(ls);
       });
     };
 
     // Size
-    decBtn.onclick = ()=>{ const v = Math.max(12,(parseInt(getComputedStyle(content).fontSize,10)||24)-2); content.style.fontSize=v+'px'; scheduleLayout(); };
-    incBtn.onclick = ()=>{ const v = Math.min(200,(parseInt(getComputedStyle(content).fontSize,10)||24)+2); content.style.fontSize=v+'px'; scheduleLayout(); };
+    decBtn.onclick = ()=>{ const v = Math.max(12,(parseInt(getComputedStyle(content).fontSize,10)||24)-2); content.style.fontSize=v+'px'; scheduleLayout(); emitCaptionState('font-size'); };
+    incBtn.onclick = ()=>{ const v = Math.min(200,(parseInt(getComputedStyle(content).fontSize,10)||24)+2); content.style.fontSize=v+'px'; scheduleLayout(); emitCaptionState('font-size'); };
 
     // Bold/Italic
-    boldBtn.onclick = ()=>{ const w=getComputedStyle(content).fontWeight; content.style.fontWeight=(w==='700'||parseInt(w,10)>=600)?'400':'700'; scheduleLayout(); };
-    italicBtn.onclick = ()=>{ const fs=getComputedStyle(content).fontStyle; content.style.fontStyle=(fs==='italic')?'normal':'italic'; scheduleLayout(); };
+    boldBtn.onclick = ()=>{ const w=getComputedStyle(content).fontWeight; content.style.fontWeight=(w==='700'||parseInt(w,10)>=600)?'400':'700'; scheduleLayout(); emitCaptionState('bold'); };
+    italicBtn.onclick = ()=>{ const fs=getComputedStyle(content).fontStyle; content.style.fontStyle=(fs==='italic')?'normal':'italic'; scheduleLayout(); emitCaptionState('italic'); };
 
     // Color / stroke / shadow (paint-only)
     colorBtn.onclick = (e)=>{
       openPopover(e.currentTarget, (pop)=>{
-        const color = document.createElement('input'); color.type='color'; color.value='#ffffff'; color.style.width='100%'; color.oninput=()=>{ content.style.color=color.value; };
+        const color = document.createElement('input'); color.type='color'; color.value='#ffffff'; color.style.width='100%'; color.oninput=()=>{ content.style.color=color.value; emitCaptionState('color'); };
         const stroke = document.createElement('input'); stroke.type='range'; stroke.min='0'; stroke.max='6'; stroke.step='1'; stroke.value='0'; stroke.style.width='100%';
-        stroke.oninput = ()=>{ const sw=parseInt(stroke.value,10)||0; content.style.webkitTextStroke = sw?`${sw}px #000`:''; };
+        stroke.oninput = ()=>{ const sw=parseInt(stroke.value,10)||0; content.style.webkitTextStroke = sw?`${sw}px #000`:''; emitCaptionState('stroke'); };
         const sh = document.createElement('input'); sh.type='range'; sh.min='0'; sh.max='24'; sh.step='1'; sh.value='12'; sh.style.width='100%';
-        sh.oninput = ()=>{ const n=parseInt(sh.value,10)||0; content.style.textShadow = n?`0 2px ${Math.round(n)}px rgba(0,0,0,.65)`:'none'; };
+        sh.oninput = ()=>{ const n=parseInt(sh.value,10)||0; content.style.textShadow = n?`0 2px ${Math.round(n)}px rgba(0,0,0,.65)`:'none'; emitCaptionState('shadow'); };
         pop.appendChild(color); pop.appendChild(stroke); pop.appendChild(sh);
       });
     };
 
     // Opacity (paint-only)
-    opBtn.onclick = (e)=>{ openPopover(e.currentTarget, (pop)=>{ const op=document.createElement('input'); op.type='range'; op.min='0'; op.max='1'; op.step='0.05'; op.value=String(parseFloat(getComputedStyle(content).opacity)||1); op.oninput=()=>{ content.style.opacity=String(op.value); }; pop.appendChild(op); }); };
+    opBtn.onclick = (e)=>{ openPopover(e.currentTarget, (pop)=>{ const op=document.createElement('input'); op.type='range'; op.min='0'; op.max='1'; op.step='0.05'; op.value=String(parseFloat(getComputedStyle(content).opacity)||1); op.oninput=()=>{ content.style.opacity=String(op.value); emitCaptionState('opacity'); }; pop.appendChild(op); }); };
 
     // Align
-    alignBtn.onclick = (e)=>{ openPopover(e.currentTarget, (pop)=>{ const mk=(t,v)=>{ const b=document.createElement('button'); b.textContent=t; b.className='ct-btn'; b.onclick=()=>{ content.style.textAlign=v; scheduleLayout(); }; return b; }; pop.appendChild(mk('L','left')); pop.appendChild(mk('C','center')); pop.appendChild(mk('R','right')); }); };
+    alignBtn.onclick = (e)=>{ openPopover(e.currentTarget, (pop)=>{ const mk=(t,v)=>{ const b=document.createElement('button'); b.textContent=t; b.className='ct-btn'; b.onclick=()=>{ content.style.textAlign=v; scheduleLayout(); emitCaptionState('align'); }; return b; }; pop.appendChild(mk('L','left')); pop.appendChild(mk('C','center')); pop.appendChild(mk('R','right')); }); };
 
     // More (padding + duplicate/lock/delete hooks if present)
     moreBtn.onclick = (e)=>{
@@ -844,7 +845,7 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
         const padL=document.createElement('div'); padL.textContent='Padding'; padL.style.margin='0 0 4px';
         const pad=document.createElement('input'); pad.type='range'; pad.min='0'; pad.max='48'; pad.step='1'; pad.value=String(parseInt(getComputedStyle(content).paddingLeft,10)||12);
         pad.oninput=()=>{ const v=parseInt(pad.value,10)||0; content.style.padding=`${v}px`; };
-        pad.onchange=()=>{ scheduleLayout(); };
+        pad.onchange=()=>{ scheduleLayout(); emitCaptionState('padding'); };
         const row=document.createElement('div'); row.style.display='flex'; row.style.gap='6px'; row.style.marginTop='8px';
         const mk=(t)=>{ const b=document.createElement('button'); b.textContent=t; b.className='ct-btn'; return b; };
         const dup=mk('Duplicate'), lock=mk('Lock'), del=mk('Delete');
@@ -855,6 +856,108 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
         pop.appendChild(padL); pop.appendChild(pad); pop.appendChild(row);
       });
     };
+  }
+}
+
+// Emit unified caption state to live preview system
+function emitCaptionState(reason = 'toolbar') {
+  const cs = getComputedStyle(content);
+  const s = stage.getBoundingClientRect();
+  const b = box.getBoundingClientRect();
+  
+  // Parse stroke from webkitTextStroke: "3px rgba(0,0,0,0.85)"
+  const parseStroke = (str) => {
+    if (!str || str === 'none' || str === '0px') return { px: 0, color: 'rgba(0,0,0,0.85)' };
+    const match = str.match(/^([\d.]+)px\s+(.+)$/);
+    return match ? { px: parseFloat(match[1]), color: match[2] } : { px: 0, color: 'rgba(0,0,0,0.85)' };
+  };
+  
+  // Parse shadow from textShadow: "0px 2px 12px rgba(0,0,0,0.6)"
+  const parseShadow = (str) => {
+    if (!str || str === 'none') return { x: 0, y: 2, blur: 12, color: 'rgba(0,0,0,0.6)' };
+    const match = str.match(/([-\d.]+)px\s+([-\d.]+)px\s+([-\d.]+)px\s+(.+)/);
+    return match ? {
+      x: parseFloat(match[1]),
+      y: parseFloat(match[2]),
+      blur: parseFloat(match[3]),
+      color: match[4]
+    } : { x: 0, y: 2, blur: 12, color: 'rgba(0,0,0,0.6)' };
+  };
+  
+  const stroke = parseStroke(cs.webkitTextStroke || cs.textStroke);
+  const shadow = parseShadow(cs.textShadow);
+  
+  // Extract font family (strip quotes and fallbacks)
+  const fontFamily = (cs.fontFamily || 'DejaVu Sans').split(',')[0].replace(/['"]/g, '').trim();
+  
+  // Typography
+  const fontPx = parseInt(cs.fontSize, 10);
+  const lineHeightPx = parseFloat(cs.lineHeight);
+  const lineSpacingPx = Math.max(0, Math.round(lineHeightPx - fontPx));
+  const letterSpacingPx = parseFloat(cs.letterSpacing) || 0;
+  const weightCss = String(cs.fontWeight);
+  const fontStyle = cs.fontStyle === 'italic' ? 'italic' : 'normal';
+  const textAlign = cs.textAlign || 'center';
+  const textTransform = cs.textTransform || 'none';
+  
+  // Color & effects
+  const color = cs.color || 'rgb(255,255,255)';
+  const opacity = parseFloat(cs.opacity) || 1;
+  
+  // Geometry (frame space = 1080x1920)
+  const frameW = 1080;
+  const frameH = 1920;
+  const rasterW = Math.round((b.width / s.width) * frameW);
+  const yPx_png = Math.round((b.top - s.top) / s.height * frameH);
+  const rasterPadding = parseInt(cs.paddingLeft, 10) || 24;
+  
+  const state = {
+    // Typography
+    fontFamily,
+    fontPx,
+    lineSpacingPx,
+    letterSpacingPx,
+    weightCss,
+    fontStyle,
+    textAlign,
+    textTransform,
+    
+    // Color & effects
+    color,
+    opacity,
+    strokePx: stroke.px,
+    strokeColor: stroke.color,
+    shadowColor: shadow.color,
+    shadowBlur: shadow.blur,
+    shadowOffsetX: shadow.x,
+    shadowOffsetY: shadow.y,
+    
+    // Geometry
+    rasterW,
+    yPx_png,
+    rasterPadding,
+    xExpr_png: '(W-overlay_w)/2', // center horizontally
+    
+    // Metadata
+    text: content.textContent || '',
+    ssotVersion: 3,
+    mode: 'raster',
+    reason
+  };
+  
+  // Guard against NaN/null
+  Object.keys(state).forEach(k => {
+    if (typeof state[k] === 'number' && !Number.isFinite(state[k])) {
+      console.warn(`[emitCaptionState] Invalid number for ${k}:`, state[k]);
+      state[k] = 0;
+    }
+  });
+  
+  console.log('[toolbar:emit]', { reason, fontPx, lineSpacingPx, rasterW, yPx_png });
+  
+  // Call global update handler
+  if (typeof window.updateCaptionState === 'function') {
+    window.updateCaptionState(state);
   }
 }
 

@@ -3290,104 +3290,96 @@
                     return;
                 }
                 
-                // SSOT-first: prefer server meta, fall back to CSS only if missing
+                // SSOT-first: use window.__serverCaptionMeta if available
+                const ssot = window.__serverCaptionMeta || {};
                 const liveEl = document.getElementById('caption-live');
                 const cs = liveEl ? getComputedStyle(liveEl) : null;
                 const scale = (typeof window.computePreviewScale === 'function') 
                               ? window.computePreviewScale() : 0.333;
 
-                // Use window.__serverCaptionMeta if available (highest priority)
-                const ssot = window.__serverCaptionMeta || {};
+                // Guard helper for numeric values
+                const guardNum = (val, fallback) => Number.isFinite(val) ? val : fallback;
 
-                const fontPx = Number.isFinite(ssot.fontPx) ? ssot.fontPx
-                             : Number.isFinite(meta.fontPx) ? meta.fontPx
-                             : (cs ? Math.round(parseFloat(cs.fontSize) / scale) : 48);
+                // Typography
+                const fontFamily = ssot.fontFamily || meta.fontFamily || 'DejaVu Sans';
+                const fontPx = guardNum(ssot.fontPx, guardNum(meta.fontPx, 48));
+                const lineSpacingPx = guardNum(ssot.lineSpacingPx, guardNum(meta.lineSpacingPx, 8));
+                const letterSpacingPx = guardNum(ssot.letterSpacingPx, 0);
+                const weightCss = ssot.weightCss || meta.weightCss || '700';
+                const fontStyle = ssot.fontStyle || 'normal';
+                const textAlign = ssot.textAlign || meta.textAlign || 'center';
+                const textTransform = ssot.textTransform || 'none';
 
-                const lineSpacingPx = Number.isFinite(ssot.lineSpacingPx) ? ssot.lineSpacingPx
-                                    : Number.isFinite(meta.lineSpacingPx) ? meta.lineSpacingPx
-                                    : (cs ? Math.round(parseFloat(cs.lineHeight) / scale - fontPx) : 7);
+                // Color & effects
+                const color = ssot.color || meta.color || 'rgb(255,255,255)';
+                const opacity = guardNum(ssot.opacity, guardNum(meta.opacity, 0.85));
+                const strokePx = guardNum(ssot.strokePx, 0);
+                const strokeColor = ssot.strokeColor || 'rgba(0,0,0,0.85)';
+                const shadowColor = ssot.shadowColor || 'rgba(0,0,0,0.6)';
+                const shadowBlur = guardNum(ssot.shadowBlur, 12);
+                const shadowOffsetX = guardNum(ssot.shadowOffsetX, 0);
+                const shadowOffsetY = guardNum(ssot.shadowOffsetY, 2);
 
-                const yPx_png = Number.isFinite(ssot.yPx_png) ? ssot.yPx_png
-                              : (cs ? Math.round(parseFloat(cs.top) / scale) : 72);
+                // Geometry
+                const rasterW = guardNum(ssot.rasterW, 864);
+                const yPx_png = guardNum(ssot.yPx_png, 960);
+                const rasterPadding = guardNum(ssot.rasterPadding, 24);
+                const xExpr_png = ssot.xExpr_png || '(W-overlay_w)/2';
 
-                const rasterW = Number.isFinite(ssot.rasterW) ? ssot.rasterW
-                               : (cs ? Math.round(parseFloat(cs.width) / scale) : 1009);
-
-                const rasterPadding = Number.isFinite(ssot.rasterPadding) ? ssot.rasterPadding
-                                    : Number.isFinite(ssot.internalPadding) ? ssot.internalPadding
-                                    : 24;
-
-                console.log('[savePreview] Payload source priority:', {
-                    hasSSOT: !!window.__serverCaptionMeta,
-                    hasMeta: !!meta.fontPx,
-                    hasCSS: !!cs,
-                    usingFontPx: fontPx,
-                    usingLineSpacing: lineSpacingPx,
-                    usingYPx: yPx_png,
-                    usingRasterW: rasterW
-                });
-
-                // Build preview payload (v3 format - no v2 flag!)
-                // Include ALL styling fields for server PNG generation parity
                 const payload = {
                     ssotVersion: 3,
                     mode: 'raster',
-                    placement: 'custom',
                     text: meta.text,
+                    
+                    // Typography
+                    fontFamily,
+                    fontPx,
+                    lineSpacingPx,
+                    letterSpacingPx,
+                    weightCss,
+                    fontStyle,
+                    textAlign,
+                    textTransform,
+                    
+                    // Color & effects
+                    color,
+                    opacity,
+                    strokePx,
+                    strokeColor,
+                    shadowColor,
+                    shadowBlur,
+                    shadowOffsetX,
+                    shadowOffsetY,
+                    
+                    // Geometry
+                    rasterW,
+                    yPx_png,
+                    rasterPadding,
+                    xExpr_png,
                     
                     // Frame dimensions
                     frameW: 1080,
-                    frameH: 1920,
-                    
-                    // Raster geometry (priority fields)
-                    rasterW,
-                    rasterH: ssot.rasterH,
-                    rasterPadding,
-                    yPx_png,
-                    xExpr_png: ssot.xExpr_png || '(W-overlay_w)/2',
-                    
-                    // Typography
-                    fontPx,
-                    lineSpacingPx,
-                    fontFamily: ssot.fontFamily || meta.fontFamily || 'DejaVuSans',
-                    weightCss: ssot.weightCss || meta.weightCss || '700',
-                    fontStyle: ssot.fontStyle || meta.fontStyle || 'normal',
-                    textAlign: ssot.textAlign || meta.textAlign || 'center',
-                    letterSpacingPx: ssot.letterSpacingPx ?? meta.letterSpacingPx ?? 0,
-                    textTransform: ssot.textTransform || meta.textTransform || 'none',
-                    
-                    // Verification hashes
-                    previewFontString: ssot.previewFontString,
-                    previewFontHash: ssot.previewFontHash,
-                    
-                    // Color & effects
-                    color: ssot.color || meta.color || 'rgb(255, 255, 255)',
-                    opacity: ssot.opacity ?? meta.opacity ?? 0.8,
-                    strokePx: ssot.strokePx ?? meta.strokePx ?? 0,
-                    strokeColor: ssot.strokeColor || meta.strokeColor || 'rgb(255, 255, 255)',
-                    shadowColor: ssot.shadowColor || meta.shadowColor || 'rgba(0,0,0,0.6)',
-                    shadowBlur: ssot.shadowBlur ?? meta.shadowBlur ?? 0,
-                    shadowOffsetX: ssot.shadowOffsetX ?? meta.shadowOffsetX ?? 0,
-                    shadowOffsetY: ssot.shadowOffsetY ?? meta.shadowOffsetY ?? 0,
-                    
-                    // Legacy %-based fields (keep for compatibility but not used in raster path)
-                    xPct: ssot.xPct ?? meta.xPct,
-                    yPct: ssot.yPct ?? meta.yPct,
-                    wPct: ssot.wPct ?? meta.wPct
+                    frameH: 1920
                 };
 
-                console.log('[savePreview] Sending payload with complete styling:', payload);
-                console.log('[savePreview] Style extraction from meta:', {
-                    fontPx: meta.fontPx,
-                    weightCss: meta.weightCss,
-                    fontStyle: meta.fontStyle,
-                    letterSpacingPx: meta.letterSpacingPx,
-                    textTransform: meta.textTransform,
-                    strokePx: meta.strokePx,
-                    strokeColor: meta.strokeColor,
-                    shadowBlur: meta.shadowBlur,
-                    shadowOffsetX: meta.shadowOffsetX,
-                    shadowOffsetY: meta.shadowOffsetY
+                // Strip legacy %-based fields in raster mode
+                delete payload.xPct;
+                delete payload.yPct;
+                delete payload.wPct;
+
+                console.log('[savePreview] Final payload:', payload);
+
+                console.log('[savePreview:parity]', {
+                    hasSSOT: !!window.__serverCaptionMeta,
+                    fontPx,
+                    lineSpacingPx,
+                    letterSpacingPx,
+                    rasterW,
+                    yPx_png,
+                    rasterPadding,
+                    allNumsFinite: Object.entries(payload)
+                        .filter(([k, v]) => typeof v === 'number')
+                        .every(([k, v]) => Number.isFinite(v))
                 });
 
                 // Call preview API

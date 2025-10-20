@@ -137,11 +137,20 @@ router.post("/caption/preview", express.json(), async (req, res) => {
       }
 
       try {
-        // SSOT V3: Render caption as PNG at final render scale
-        const lineHeightMultiplier = 1.15;  // Fixed
-        const lineHeight = Math.round(fontPx * lineHeightMultiplier);
-        const lineSpacingPx = lines.length === 1 ? 0 : Math.round(lineHeight - fontPx);
-        const totalTextH = lines.length * fontPx + (lines.length - 1) * lineSpacingPx;  // ✅ CORRECT
+        // SSOT V3: Use client values directly; only compute if missing
+        // Line spacing: use client SSOT if provided, otherwise compute
+        let lineSpacingPx;
+        if (Number.isFinite(parsed.data.lineSpacingPx)) {
+          lineSpacingPx = parsed.data.lineSpacingPx;
+          console.log('[preview:ssot] Using client lineSpacingPx:', lineSpacingPx);
+        } else {
+          const lineHeightMultiplier = 1.15;
+          const lineHeight = Math.round(fontPx * lineHeightMultiplier);
+          lineSpacingPx = lines.length === 1 ? 0 : Math.round(lineHeight - fontPx);
+          console.log('[preview:computed] Computed lineSpacingPx:', lineSpacingPx);
+        }
+
+        const totalTextH = lines.length * fontPx + (lines.length - 1) * lineSpacingPx;
         
         // SSOT formula enforcement
         const expectedTotalTextH = (lines.length * fontPx) + ((lines.length - 1) * lineSpacingPx);

@@ -242,8 +242,8 @@ function applyStylesToLiveText(element, captionState, serverMeta) {
     element.style.transform = 'translateX(-50%)';
     
     // Font: must match server registration
-    element.style.fontFamily = '"DejaVu Sans", sans-serif';
-    element.style.fontWeight = '700'; // bold
+    element.style.fontFamily = serverMeta.fontFamily || '"DejaVu Sans", sans-serif';
+    element.style.fontWeight = serverMeta.weightCss || '700';
     element.style.fontStyle = serverMeta.fontStyle || 'normal';
     
     // Text properties
@@ -251,6 +251,13 @@ function applyStylesToLiveText(element, captionState, serverMeta) {
     element.style.textTransform = serverMeta.textTransform || 'none';
     element.style.color = serverMeta.color || 'white';
     element.style.opacity = serverMeta.opacity || 1;
+    
+    // Apply text transform
+    if (serverMeta.textTransform && serverMeta.textTransform !== 'none') {
+      element.style.textTransform = serverMeta.textTransform;
+    } else {
+      element.style.textTransform = 'none';
+    }
     
     // Effects: scale stroke and shadow
     if (serverMeta.strokePx > 0) {
@@ -624,17 +631,25 @@ export function updateCaptionState(captionState) {
   const liveEl = document.getElementById('caption-live');
   if (!liveEl) return;
 
+  // Store as server SSOT
+  window.__serverCaptionMeta = captionState;
+  
   // Update text content
   if (captionState.text !== undefined) {
     liveEl.textContent = captionState.text;
   }
 
-  // Apply styles - use server meta if available
-  const serverMeta = window.__serverCaptionMeta;
-  applyStylesToLiveText(liveEl, captionState, serverMeta);
+  // Apply styles using SSOT
+  applyStylesToLiveText(liveEl, null, captionState);
   
-  // Trigger debounced preview
-  debouncedPreview(captionState);
+  // Trigger debounced preview (optional - only if PNG refresh is desired)
+  // debouncedPreview(captionState);
+  
+  console.log('[caption-live] State updated from toolbar:', {
+    fontPx: captionState.fontPx,
+    lineSpacingPx: captionState.lineSpacingPx,
+    rasterW: captionState.rasterW
+  });
 }
 
 /**

@@ -269,6 +269,12 @@ app.use(
   })
 );
 
+app.use("/assets/fonts", (req, res, next) => {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET");
+  next();
+});
+
 // Minimal MIME fix for .woff2 (no behavior change for other assets)
 app.use((req, res, next) => {
   try {
