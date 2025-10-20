@@ -362,9 +362,9 @@ function buildVideoChain({ width, height, videoVignette, drawLayers, captionImag
       xExpr: rasterPlacement?.xExpr
     });
     
-    // Overlay with format=auto to preserve alpha
-    const xExpr = rasterPlacement?.xExpr || '(W-overlay_w)/2';
-    const y = Math.round(rasterPlacement?.y ?? 0);
+    // Overlay with format=auto to preserve alpha - use saved preview placement
+    const xExpr = overlayCaption.xExpr_png ?? '(W-overlay_w)/2';
+    const y = Number.isFinite(overlayCaption.yPx_png) ? overlayCaption.yPx_png : 12;
     
     // Use centralized pixel format filter
     const endFormat = pixelFmtFilter;

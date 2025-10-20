@@ -181,6 +181,16 @@ function updateDebugHUD(element, serverMeta, scale) {
 }
 
 /**
+ * Convert placement/% to absolute yPx_png
+ */
+function toRasterYPx({frameH, rasterH, placement, yPct, internalPaddingPx}) {
+  const pad = Number.isFinite(internalPaddingPx) ? internalPaddingPx : Math.round((yPct ?? 0) * frameH);
+  if (placement === 'bottom') return frameH - rasterH - pad;
+  if (placement === 'center') return Math.round((frameH - rasterH)/2);
+  return pad; // top
+}
+
+/**
  * Apply caption styles to live text element using server SSOT values
  */
 function applyStylesToLiveText(element, captionState, serverMeta) {
@@ -195,18 +205,23 @@ function applyStylesToLiveText(element, captionState, serverMeta) {
       rasterPadding: serverMeta.rasterPadding || serverMeta.internalPadding || 24
     });
     
-    // Warn if percentage fields leak into raster mode
-    if (serverMeta.wPct !== undefined || serverMeta.xPct !== undefined || serverMeta.yPct !== undefined) {
-      console.warn('[parity:warning] Ignoring %-based fields in raster mode:', {
-        wPct: serverMeta.wPct, xPct: serverMeta.xPct, yPct: serverMeta.yPct
-      });
-    }
-    
     // Extract server SSOT values - NULL-SAFE: read ONLY from serverMeta, never captionState
     const fontPx = Number.isFinite(serverMeta.fontPx) ? serverMeta.fontPx : 48;
     const lineSpacingPx = Number.isFinite(serverMeta.lineSpacingPx) ? serverMeta.lineSpacingPx : 8;
     const rasterW = Number.isFinite(serverMeta.rasterW) ? serverMeta.rasterW : 1080;
-    const yPx_png = Number.isFinite(serverMeta.yPx_png) ? serverMeta.yPx_png : 24;
+    let yPx_png = Number.isFinite(serverMeta.yPx_png) ? serverMeta.yPx_png : null;
+    
+    // If yPx_png is missing, compute from placement/% using helper
+    if (!Number.isFinite(yPx_png)) {
+      const frameH = serverMeta.frameH || 1920;
+      const rasterH = Number.isFinite(serverMeta.rasterH) ? serverMeta.rasterH : 200;
+      const placement = serverMeta.placement || 'center';
+      const yPct = serverMeta.yPct || 0.5;
+      const internalPaddingPx = serverMeta.rasterPadding || serverMeta.internalPadding || 24;
+      
+      yPx_png = toRasterYPx({frameH, rasterH, placement, yPct, internalPaddingPx});
+      console.log('[parity:computed] yPx_png from placement:', {placement, yPct, yPx_png});
+    }
     const P = Number.isFinite(serverMeta.rasterPadding) ? serverMeta.rasterPadding : 
               (Number.isFinite(serverMeta.internalPadding) ? serverMeta.internalPadding : 24);
     const letterSpacingPx = Number.isFinite(serverMeta.letterSpacingPx) ? serverMeta.letterSpacingPx : 0;

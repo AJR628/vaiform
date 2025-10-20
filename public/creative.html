@@ -3252,6 +3252,14 @@
             return Object.fromEntries(Object.entries(obj).filter(([, v]) => v !== undefined));
         }
 
+        // Convert placement/% to absolute yPx_png
+        function toRasterYPx({frameH, rasterH, placement, yPct, internalPaddingPx}) {
+            const pad = Number.isFinite(internalPaddingPx) ? internalPaddingPx : Math.round((yPct ?? 0) * frameH);
+            if (placement === 'bottom') return frameH - rasterH - pad;
+            if (placement === 'center') return Math.round((frameH - rasterH)/2);
+            return pad; // top
+        }
+
         // Reset preview saved state when caption text changes
         function resetPreviewSavedState() {
             console.log('[preview-state] Resetting preview saved state - caption changed');
@@ -3431,12 +3439,34 @@
                 const serverLineSpacingPx = Number(m.lineSpacingPx ?? 0);
                 const splitLines = Array.isArray(m.splitLines) ? m.splitLines : [];
 
+                // Server-authoritative geometry - overwrite client values
+                const serverRasterW = Number.isFinite(m.rasterW) ? m.rasterW : rasterW;
+                const serverRasterH = Number.isFinite(m.rasterH) ? m.rasterH : 200;
+                const serverRasterPadding = Number.isFinite(m.rasterPadding) ? m.rasterPadding : rasterPadding;
+                let serverYPxPng = Number.isFinite(m.yPx_png) ? m.yPx_png : null;
+                const serverXExprPng = m.xExpr_png || xExpr_png;
+                const serverPreviewFontString = m.previewFontString || '';
+                const serverPreviewFontHash = m.previewFontHash || '';
+
+                // If server omits yPx_png, compute via toRasterYPx helper
+                if (!Number.isFinite(serverYPxPng)) {
+                    const frameH = m.frameH || 1920;
+                    const placement = m.placement || 'center';
+                    const yPct = m.yPct || 0.5;
+                    serverYPxPng = toRasterYPx({frameH, rasterH: serverRasterH, placement, yPct, internalPaddingPx: serverRasterPadding});
+                    console.log('[savePreview] Computed yPx_png from placement:', {placement, yPct, serverYPxPng});
+                }
+
                 // Verify we got real values before saving
                 console.log('[savePreview] SSOT fields extracted:', {
                     totalTextH,
                     yPxFirstLine,
                     lineSpacingPx,
                     splitLines: splitLines.length,
+                    serverRasterW,
+                    serverRasterH,
+                    serverYPxPng,
+                    serverRasterPadding,
                     source: {
                         'data.yPx': resp.yPx,
                         'meta.totalTextH': m.totalTextH,
@@ -3458,20 +3488,20 @@
                     bgScaleExpr: m.bgScaleExpr,
                     bgCropExpr: m.bgCropExpr,
                     
-                    // PNG raster data
+                    // PNG raster data - use server-authoritative values
                     rasterUrl: m.rasterUrl,
-                    rasterW: m.rasterW,
-                    rasterH: m.rasterH,
-                    rasterPadding: m.rasterPadding,  // CRITICAL
+                    rasterW: serverRasterW,
+                    rasterH: serverRasterH,
+                    rasterPadding: serverRasterPadding,  // CRITICAL
                     
-                    // PNG placement (absolute coordinates)
-                    xExpr_png: m.xExpr_png || '(W-overlay_w)/2',
-                    yPx_png: m.yPx_png,  // ❌ NOT yPx or yPxFirstLine
+                    // PNG placement (absolute coordinates) - use server-authoritative values
+                    xExpr_png: serverXExprPng,
+                    yPx_png: serverYPxPng,  // Server-computed or computed via helper
                     
-                    // Verification hashes
+                    // Verification hashes - use server values
                     rasterHash: m.rasterHash,
-                    previewFontString: m.previewFontString,
-                    previewFontHash: m.previewFontHash,
+                    previewFontString: serverPreviewFontString,
+                    previewFontHash: serverPreviewFontHash,
                     
                     // Typography (informational only for v3 raster)
                     fontPx: Number(m.fontPx || meta.fontPx || 48),
@@ -3530,15 +3560,17 @@
                         throw new Error(`Server returned incomplete raster metadata. Missing: ${missingFields.join(', ')}`);
                     }
                     
-                    console.log('[savePreview-v3] ✅ All raster fields present:', {
-                        yPx_png: normalizedMeta.yPx_png,
-                        rasterW: normalizedMeta.rasterW,
-                        rasterH: normalizedMeta.rasterH,
-                        rasterPadding: normalizedMeta.rasterPadding,
-                        frameW: normalizedMeta.frameW,
-                        frameH: normalizedMeta.frameH,
-                        rasterHash: normalizedMeta.rasterHash?.slice(0, 8) + '...'
-                    });
+                console.log('[savePreview-v3] ✅ All raster fields present (server-authoritative):', {
+                    yPx_png: normalizedMeta.yPx_png,
+                    rasterW: normalizedMeta.rasterW,
+                    rasterH: normalizedMeta.rasterH,
+                    rasterPadding: normalizedMeta.rasterPadding,
+                    frameW: normalizedMeta.frameW,
+                    frameH: normalizedMeta.frameH,
+                    rasterHash: normalizedMeta.rasterHash?.slice(0, 8) + '...',
+                    xExpr_png: normalizedMeta.xExpr_png,
+                    previewFontString: normalizedMeta.previewFontString?.slice(0, 20) + '...'
+                });
                 }
 
                 // Client-side guard: warn if raster dimensions look like full canvas

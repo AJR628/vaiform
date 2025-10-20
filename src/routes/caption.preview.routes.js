@@ -161,7 +161,20 @@ router.post("/caption/preview", express.json(), async (req, res) => {
         const pngBuffer = Buffer.from(rasterResult.rasterUrl.split(',')[1], 'base64');
         const rasterHash = crypto.createHash('sha256').update(pngBuffer).digest('hex').slice(0, 16);
         
-        // Build complete ssotMeta with all required fields
+        // Optional warn if client raster dims differ by >5px, but always return server values
+        const clientRasterW = data.rasterW;
+        const clientYPxPng = data.yPx_png;
+        const serverRasterW = rasterResult.rasterW;
+        const serverYPxPng = rasterResult.yPx;
+        
+        if (Math.abs(clientRasterW - serverRasterW) > 5 || Math.abs(clientYPxPng - serverYPxPng) > 5) {
+          console.warn('[caption-preview:dimension-mismatch] Client vs server dimensions differ:', {
+            client: { rasterW: clientRasterW, yPx_png: clientYPxPng },
+            server: { rasterW: serverRasterW, yPx_png: serverYPxPng }
+          });
+        }
+
+        // Build complete ssotMeta with all required fields - echo back actual server values
         const ssotMeta = {
           ssotVersion: 3,
           mode: 'raster',
@@ -172,7 +185,7 @@ router.post("/caption/preview", express.json(), async (req, res) => {
           bgScaleExpr: "scale='if(gt(a,1080/1920),-2,1080)':'if(gt(a,1080/1920),1920,-2)'",
           bgCropExpr: "crop=1080:1920",
           
-          // PNG raster data (CRITICAL - these were missing!)
+          // PNG raster data - echo back actual server values
           rasterUrl: rasterResult.rasterUrl,
           rasterW: rasterResult.rasterW,
           rasterH: rasterResult.rasterH,
@@ -180,7 +193,7 @@ router.post("/caption/preview", express.json(), async (req, res) => {
           xExpr_png: data.xExpr_png,
           yPx_png: rasterResult.yPx,
           
-          // Verification hashes (CRITICAL - these were missing!)
+          // Verification hashes - echo back actual server values
           rasterHash,
           previewFontString: rasterResult.previewFontString,
           previewFontHash: rasterResult.previewFontHash,
@@ -467,7 +480,7 @@ router.post("/caption/preview", express.json(), async (req, res) => {
           fontFamily, weightCss, color, opacity, textAlign: 'center'
         });
         
-        // STEP 6: Build SSOT V3 meta (raster mode)
+        // STEP 6: Build SSOT V3 meta (raster mode) - echo back actual server values
         const ssotMeta = {
           ssotVersion: 3,
           mode: 'raster',
@@ -510,7 +523,7 @@ router.post("/caption/preview", express.json(), async (req, res) => {
           placement,
           internalPadding,
           
-          // Exact PNG details
+          // Exact PNG details - echo back actual server values
           rasterUrl: rasterResult.rasterUrl,
           rasterW: rasterResult.rasterW,
           rasterH: rasterResult.rasterH,
