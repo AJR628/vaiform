@@ -645,6 +645,7 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
 
     const meta = {
       text: extractWrappedText(),
+      textRaw: content.innerText.trim(),  // NEW: preserve raw text as displayed
       xPct: (b.left - s.left) / s.width,
       yPct: (b.top  - s.top ) / s.height,
       wPct: b.width / s.width,

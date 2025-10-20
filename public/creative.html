@@ -3336,7 +3336,11 @@
                 const xExpr_png = ssot.xExpr_png || '(W-overlay_w)/2';
 
                 // Get raw text from overlay input (source of truth for user edits)
-                const textRaw = liveEl?.textContent || meta.text;
+                // Use innerText to preserve word boundaries at line breaks
+                const textRaw = 
+                  (liveEl?.innerText && liveEl.innerText.trim()) ||
+                  (document.querySelector('#caption-input')?.value?.trim()) ||
+                  meta.text || '';
                 
                 // Normalize for server and downstream features:
                 // - Convert newlines to spaces
@@ -3645,7 +3649,7 @@
                 // Sanity log: Show text diff snippet to catch regressions
                 const normalizeForLog = (text) => (text || '').replace(/\s*\n\s*/g, ' ').replace(/\s+/g, ' ').trim();
                 const savedNormalized = normalizeForLog(normalizedMeta.textRaw || normalizedMeta.text);
-                const currentNormalized = normalizeForLog(liveEl?.textContent);
+                const currentNormalized = normalizeForLog(liveEl?.innerText);
                 console.log('[savePreview:sanity] Text diff snippet:', {
                     savedRaw: (normalizedMeta.textRaw || '').substring(0, 50),
                     savedNormalized: savedNormalized.substring(0, 50),
