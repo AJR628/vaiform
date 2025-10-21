@@ -3356,6 +3356,7 @@
 
                 // Geometry
                 const rasterW = guardNum(ssot.rasterW, 864);
+                const rasterH = guardNum(ssot.rasterH, 200);
                 const yPx_png = guardNum(ssot.yPx_png, 960);
                 const rasterPadding = guardNum(ssot.rasterPadding, 24);
                 const xExpr_png = ssot.xExpr_png || '(W-overlay_w)/2';
@@ -3403,6 +3404,7 @@
                     
                     // Geometry
                     rasterW,
+                    rasterH,
                     yPx_png,
                     rasterPadding,
                     xExpr_png,
@@ -3426,6 +3428,7 @@
                     lineSpacingPx,
                     letterSpacingPx,
                     rasterW,
+                    rasterH,
                     yPx_png,
                     rasterPadding,
                     allNumsFinite: Object.entries(payload)
