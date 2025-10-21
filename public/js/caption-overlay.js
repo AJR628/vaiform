@@ -860,6 +860,81 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     };
   }
 
+  // Extract actual line breaks from DOM rendering
+  function extractRenderedLines(element) {
+    const text = element.textContent || '';
+    if (!text.trim()) return [];
+    
+    // Primary: Use Range API to detect line boxes
+    try {
+      const range = document.createRange();
+      const walker = document.createTreeWalker(
+        element,
+        NodeFilter.SHOW_TEXT,
+        null,
+        false
+      );
+      
+      const lines = [];
+      let currentLine = '';
+      let lastBottom = null;
+      
+      let textNode;
+      while (textNode = walker.nextNode()) {
+        const nodeText = textNode.textContent;
+        for (let i = 0; i < nodeText.length; i++) {
+          range.setStart(textNode, i);
+          range.setEnd(textNode, i + 1);
+          const rects = range.getClientRects();
+          if (rects.length > 0) {
+            const rect = rects[0];
+            if (lastBottom !== null && rect.bottom > lastBottom + 2) {
+              // Line break detected
+              if (currentLine.trim()) lines.push(currentLine.trim());
+              currentLine = nodeText[i];
+            } else {
+              currentLine += nodeText[i];
+            }
+            lastBottom = rect.bottom;
+          }
+        }
+      }
+      if (currentLine.trim()) lines.push(currentLine.trim());
+      
+      if (lines.length > 0) {
+        console.log('[extractLines] DOM method:', lines.length, 'lines');
+        return lines;
+      }
+    } catch (e) {
+      console.warn('[extractLines] DOM method failed:', e);
+    }
+    
+    // Fallback: Canvas measurement (only if DOM fails)
+    const cs = getComputedStyle(element);
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    ctx.font = `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+    
+    const maxWidth = element.clientWidth - parseInt(cs.paddingLeft, 10) - parseInt(cs.paddingRight, 10);
+    const words = text.trim().split(/\s+/).filter(Boolean);
+    const lines = [];
+    let line = '';
+    
+    for (const word of words) {
+      const test = line ? line + ' ' + word : word;
+      if (ctx.measureText(test).width > maxWidth && line) {
+        lines.push(test);
+        line = word;
+      } else {
+        line = test;
+      }
+    }
+    if (line) lines.push(line);
+    
+    console.log('[extractLines] Canvas fallback:', lines.length, 'lines');
+    return lines;
+  }
+
   // Emit unified caption state to live preview system
   function emitCaptionState(reason = 'toolbar') {
     const cs = getComputedStyle(content);
@@ -888,12 +963,13 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     const stroke = parseStroke(cs.webkitTextStroke || cs.textStroke);
     const shadow = parseShadow(cs.textShadow);
     
-    // Extract font family (strip quotes and fallbacks)
+    // Read ACTUAL computed values from browser (visual truth)
     const fontFamily = (cs.fontFamily || 'DejaVu Sans').split(',')[0].replace(/['"]/g, '').trim();
-    
-    // Typography
     const fontPx = parseInt(cs.fontSize, 10);
-    const lineHeightPx = parseFloat(cs.lineHeight);
+    const lineHeightRaw = cs.lineHeight;
+    const lineHeightPx = lineHeightRaw === 'normal' 
+      ? Math.round(fontPx * 1.2) 
+      : parseFloat(lineHeightRaw);
     const lineSpacingPx = Math.max(0, Math.round(lineHeightPx - fontPx));
     const letterSpacingPx = parseFloat(cs.letterSpacing) || 0;
     const weightCss = String(cs.fontWeight);
@@ -901,58 +977,59 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     const textAlign = cs.textAlign || 'center';
     const textTransform = cs.textTransform || 'none';
     
+    // Build exact font string the browser used
+    const previewFontString = `${fontStyle} ${weightCss} ${fontPx}px "${fontFamily}"`;
+    
+    // Extract actual line breaks as rendered by browser
+    const lines = extractRenderedLines(content);
+    if (lines.length === 0) {
+      console.error('[emitCaptionState] No valid lines extracted');
+      return;
+    }
+    
     // Color & effects
     const color = cs.color || 'rgb(255,255,255)';
     const opacity = parseFloat(cs.opacity) || 1;
     
-    // Geometry (frame space = 1080x1920)
+    // Geometry: tight to rendered text + visible padding
+    const cssPaddingLeft = parseInt(cs.paddingLeft, 10) || 0;
+    const cssPaddingRight = parseInt(cs.paddingRight, 10) || 0;
+    const cssPaddingTop = parseInt(cs.paddingTop, 10) || 0;
+    const cssPaddingBottom = parseInt(cs.paddingBottom, 10) || 0;
+
+    // If user dragged box taller/wider, preserve that airy look
+    const contentTextW = content.scrollWidth;
+    const contentTextH = content.scrollHeight;
+    const boxInnerW = box.clientWidth;
+    const boxInnerH = box.clientHeight;
+
+    // rasterPadding: use the visual padding the user sees
+    const rasterPaddingX = Math.max(cssPaddingLeft, cssPaddingRight, 
+      Math.round((boxInnerW - contentTextW) / 2));
+    const rasterPaddingY = Math.max(cssPaddingTop, cssPaddingBottom,
+      Math.round((boxInnerH - contentTextH) / 2));
+
+    // totalTextH from actual rendered lines
+    const totalTextH = lines.length * fontPx + (lines.length - 1) * lineSpacingPx;
+
+    // Raster dimensions: text + padding (what user sees)
     const frameW = 1080;
     const frameH = 1920;
     const wPx = Math.round((b.width / s.width) * frameW);
-    const internalPadding = parseInt(cs.paddingLeft, 10) || 24;
+    const rasterW = wPx;
+    const rasterH = Math.round(totalTextH + cssPaddingTop + cssPaddingBottom);
+    const rasterPadding = Math.round((cssPaddingTop + cssPaddingBottom) / 2); // average for legacy
     
-    // ✅ NEW: Measure text wrapping using CANVAS
-    const text = content.textContent || '';
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
-    ctx.font = `${cs.fontStyle} ${cs.fontWeight} ${fontPx}px "${fontFamily}"`;
-    
-    const maxWidth = wPx - (2 * internalPadding);
-    const segments = text.split('\n');
-    const lines = [];
-    
-    for (const segment of segments) {
-      const words = segment.trim().split(/\s+/).filter(Boolean);
-      let line = "";
-      for (const word of words) {
-        const test = line ? line + " " + word : word;
-        if (ctx.measureText(test).width > maxWidth && line) {
-          lines.push(line);
-          line = word;
-        } else {
-          line = test;
-        }
-      }
-      if (line) lines.push(line);
-    }
-    
-    // ✅ CANONICAL PIXELS: Calculate totalTextH and rasterH with padding
-    const totalTextH = lines.length * fontPx + (lines.length - 1) * lineSpacingPx;
-    const rasterW = wPx;  // Full box width
-    const rasterPadding = internalPadding;  // Use consistent naming
-    const rasterH = totalTextH + 2 * rasterPadding;  // Include padding in total height
-    
-    // ✅ NEW: Compute yPx_png (box top in frame space)
+    // Position: box top-left in frame space (no %)
     const yPct = (b.top - s.top) / s.height;
     const yPx_png = Math.round(yPct * frameH);
     
-    // ✅ NEW: Compute xExpr_png
     const xExpr_png = (textAlign === 'center') ? '(W-overlay_w)/2'
       : (textAlign === 'right') ? '(W-overlay_w)'
       : '0';
     
     const state = {
-      // Typography
+      // Typography (browser truth)
       fontFamily,
       fontPx,
       lineSpacingPx,
@@ -961,6 +1038,7 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
       fontStyle,
       textAlign,
       textTransform,
+      previewFontString, // CRITICAL: exact font string browser used
       
       // Color & effects
       color,
@@ -972,18 +1050,23 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
       shadowOffsetX: shadow.x,
       shadowOffsetY: shadow.y,
       
-      // Geometry (PIXELS ONLY) - CANONICAL VALUES
-      frameW, frameH,
-      rasterW, rasterH, totalTextH,
-      rasterPadding,  // Use consistent naming
+      // Geometry (frame-space pixels, authoritative)
+      frameW,
+      frameH,
+      rasterW,
+      rasterH,
+      totalTextH,
+      rasterPadding,
+      rasterPaddingX,
+      rasterPaddingY,
       yPx_png,
       xExpr_png,
       
-      // Wrapping data for server
+      // Line breaks (browser truth)
       splitLines: lines,
       
       // Metadata
-      text,
+      text: content.textContent || '',
       textRaw: content.textContent || '',
       ssotVersion: 3,
       mode: 'raster',

@@ -131,6 +131,7 @@ function createDebugHUD() {
   
   hud.innerHTML = `
     <div><strong>🔍 Caption Parity Debug</strong></div>
+    <div id="parity-chip" style="border: 2px solid green; padding: 4px; margin: 4px 0; font-family: monospace; background: rgba(0,0,0,0.1);">NO META</div>
     <div>scale: <span id="dbg-scale">-</span></div>
     <div>fontPx: <span id="dbg-fontPx">-</span></div>
     <div>lineSpacingPx: <span id="dbg-lineSpacingPx">-</span></div>
@@ -150,6 +151,21 @@ function createDebugHUD() {
   return hud;
 }
 
+// Build parity chip: W×H | yPx | fontPx | lineSp | lines=N | hash
+function buildParityChip(meta) {
+  if (!meta) return 'NO META';
+  
+  const W = meta.rasterW || '?';
+  const H = meta.rasterH || '?';
+  const y = meta.yPx_png ?? '?';
+  const f = meta.fontPx || '?';
+  const ls = meta.lineSpacingPx ?? '?';
+  const n = meta.splitLines?.length || '?';
+  const hash = meta.rasterHash?.slice(0, 8) || '?';
+  
+  return `${W}×${H} | y${y} | f${f} | ls${ls} | lines=${n} | ${hash}`;
+}
+
 function updateDebugHUD(element, serverMeta, scale) {
   // Only run in debug mode
   if (!window.location.search.includes('debug=1')) return;
@@ -167,6 +183,19 @@ function updateDebugHUD(element, serverMeta, scale) {
   
   const cs = getComputedStyle(element);
   
+  // Display parity chip
+  const chipText = buildParityChip(serverMeta);
+  const parityChip = document.getElementById('parity-chip');
+  if (parityChip) {
+    parityChip.textContent = chipText;
+    
+    // Red border if invalid
+    const hasNaN = !Number.isFinite(serverMeta?.rasterW) || 
+                   !Number.isFinite(serverMeta?.rasterH) ||
+                   !Number.isFinite(serverMeta?.yPx_png);
+    parityChip.style.borderColor = hasNaN ? 'red' : 'green';
+  }
+  
   document.getElementById('dbg-scale').textContent = scale.toFixed(3);
   document.getElementById('dbg-fontPx').textContent = serverMeta?.fontPx ?? '-';
   document.getElementById('dbg-lineSpacingPx').textContent = serverMeta?.lineSpacingPx ?? '-';
@@ -178,6 +207,23 @@ function updateDebugHUD(element, serverMeta, scale) {
   document.getElementById('dbg-live-top').textContent = Math.round(parseFloat(cs.top));
   document.getElementById('dbg-live-fontSize').textContent = Math.round(parseFloat(cs.fontSize));
   document.getElementById('dbg-live-lineHeight').textContent = Math.round(parseFloat(cs.lineHeight));
+  
+  // Block render if preview stale
+  const renderBtn = document.getElementById('render-btn');
+  if (renderBtn) {
+    const hasNaN = !Number.isFinite(serverMeta?.rasterW) || 
+                   !Number.isFinite(serverMeta?.rasterH) ||
+                   !Number.isFinite(serverMeta?.yPx_png);
+    if (hasNaN || !serverMeta?.rasterHash) {
+      renderBtn.disabled = true;
+      renderBtn.textContent = 'Regenerate Preview First';
+      renderBtn.style.background = '#ef4444';
+    } else {
+      renderBtn.disabled = false;
+      renderBtn.textContent = 'Render Video';
+      renderBtn.style.background = '';
+    }
+  }
 }
 
 /**

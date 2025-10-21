@@ -63,6 +63,18 @@ function assertRasterParity(overlayCaption, captionPngPath, finalFilter) {
     errors.push('PNG file missing at ' + captionPngPath);
   }
   
+  // PNG integrity check
+  if (overlayCaption.rasterHash && captionPngPath) {
+    const pngBuffer = fs.readFileSync(captionPngPath);
+    const actualHash = crypto.createHash('sha256').update(pngBuffer).digest('hex').slice(0, 16);
+    
+    if (actualHash !== overlayCaption.rasterHash) {
+      errors.push(`PNG hash mismatch: expected ${overlayCaption.rasterHash}, got ${actualHash} (preview stale?)`);
+    } else {
+      console.log('[assertRasterParity] ✅ PNG hash verified:', actualHash);
+    }
+  }
+  
   // Forbidden fields (indicate wrong mode)
   if (overlayCaption.yPxFirstLine != null) {
     console.warn('[assertRasterParity] yPxFirstLine present (should use yPx_png only)');
@@ -347,6 +359,18 @@ function buildVideoChain({ width, height, videoVignette, drawLayers, captionImag
     if (!Number.isFinite(placement.y)) {
       throw new Error('RASTER: rasterPlacement.y is required and must be a number');
     }
+
+    // NEW: Validate dimensions match preview
+    if (!placement.rasterW || !placement.rasterH) {
+      throw new Error('RASTER: rasterPlacement must include rasterW and rasterH');
+    }
+
+    console.log('[raster:ffmpeg] Using exact preview dimensions:', {
+      rasterW: placement.rasterW,
+      rasterH: placement.rasterH,
+      yPx_png: placement.y,
+      xExpr_png: placement.xExpr
+    });
     // Build filter graph: scale -> crop -> format -> [vmain], then overlay PNG
     // CRITICAL: Use persisted geometry from preview for exact parity
     let scale, crop;
@@ -1356,6 +1380,12 @@ export async function renderVideoQuoteOverlay({
   // Assert raster parity constraints before spawning ffmpeg
   if (overlayCaption?.mode === 'raster') {
     assertRasterParity(overlayCaption, captionPngPath, finalFilter);
+    
+    // Parity log (matches contract spec)
+    const pngBuffer = fs.readFileSync(captionPngPath);
+    const rasterHash = crypto.createHash('sha256').update(pngBuffer).digest('hex').slice(0, 16);
+
+    console.log(`[RASTER_PARITY] W×H=${overlayCaption.rasterW}×${overlayCaption.rasterH}, y=${overlayCaption.yPx_png}, fontPx=${overlayCaption.fontPx}, lineSp=${overlayCaption.lineSpacingPx}, lines=${overlayCaption.splitLines?.length || '?'}, hash=${rasterHash}`);
   }
   try {
     const scaleDesc = `scale='if(gt(a,${W}/${H}),-2,${W})':'if(gt(a,${W}/${H}),${H},-2)'`;

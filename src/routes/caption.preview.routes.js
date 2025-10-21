@@ -101,32 +101,20 @@ router.post("/caption/preview", express.json(), async (req, res) => {
         const font = canvasFontString(data.weightCss, data.fontStyle, fontPx);
         ctx.font = font;
         
-        // ✅ Use client splitLines if provided to avoid re-wrapping differences
+        // ✅ Use client splitLines if provided - NO RE-WRAP
         let lines;
         if (splitLines && splitLines.length > 0) {
-          // Trust client splitLines exactly - no re-wrapping
+          // Trust client splitLines exactly - these are browser-rendered line breaks
           lines = splitLines;
-          console.log('[raster] Using client splitLines:', lines.length, 'lines');
+          console.log('[raster] Using client splitLines (browser truth):', lines.length, 'lines');
         } else {
-          // Fallback: wrap text accounting for rasterPadding on both sides
-          const maxWidth = rasterW - (2 * rasterPadding);
-          const segments = text.split('\n');
-          lines = [];
-          for (const segment of segments) {
-            const words = segment.trim().split(/\s+/).filter(Boolean);
-            let line = "";
-            for (const word of words) {
-              const test = line ? line + " " + word : word;
-              if (ctx.measureText(test).width > maxWidth && line) {
-                lines.push(line);
-                line = word;
-              } else {
-                line = test;
-              }
-            }
-            if (line) lines.push(line);
-          }
-          console.log('[raster] Server-wrapped text:', lines.length, 'lines');
+          // Reject if missing - client MUST send lines
+          console.error('[raster] Client splitLines missing - cannot proceed');
+          return res.status(400).json({ 
+            ok: false, 
+            reason: "MISSING_SPLITLINES", 
+            detail: "Client must send browser-rendered splitLines in raster mode" 
+          });
         }
         
         // Calculate totalTextH using client SSOT formula
@@ -173,15 +161,11 @@ router.post("/caption/preview", express.json(), async (req, res) => {
         const pngBuffer = Buffer.from(rasterResult.rasterUrl.split(',')[1], 'base64');
         const rasterHash = crypto.createHash('sha256').update(pngBuffer).digest('hex').slice(0, 16);
         
-        // ✅ VALIDATION: Warn if server ideal differs from client by >3px, but never override
-        const serverIdealH = totalTextH + 2 * rasterPadding;
-        if (Math.abs(serverIdealH - rasterH) > 3) {
-          console.warn('[raster:warn] client/server H mismatch', { 
-            clientRasterH: rasterH, 
-            serverIdealH: serverIdealH,
-            difference: Math.abs(serverIdealH - rasterH)
-          });
-        }
+        // ✅ Use client SSOT values - NO RECOMPUTATION
+        console.log('[geom:server] Using client SSOT (no recomputation):', {
+          fontPx, lineSpacingPx, letterSpacingPx, rasterW, rasterH,
+          yPx_png, rasterPadding, previewFontString: data.previewFontString
+        });
         
         // ✅ VALIDATION: Ensure all numeric fields are finite
         const numericFields = { fontPx, lineSpacingPx, letterSpacingPx, rasterW, rasterH, yPx_png, rasterPadding };
@@ -249,6 +233,22 @@ router.post("/caption/preview", express.json(), async (req, res) => {
           totalTextH: totalTextH,  // ✅ Use server-computed value for verification
           yPxFirstLine: data.yPx_png + data.rasterPadding,
         };
+        
+        // Validate echo integrity
+        const echoErrors = [];
+        if (ssotMeta.rasterW !== data.rasterW) echoErrors.push('rasterW');
+        if (ssotMeta.rasterH !== data.rasterH) echoErrors.push('rasterH');
+        if (ssotMeta.yPx_png !== data.yPx_png) echoErrors.push('yPx_png');
+        if (ssotMeta.fontPx !== data.fontPx) echoErrors.push('fontPx');
+
+        if (echoErrors.length > 0) {
+          console.error('[raster:echo] Failed to echo client values:', echoErrors);
+          return res.status(500).json({
+            ok: false,
+            reason: "ECHO_INTEGRITY_FAILED",
+            detail: `Server modified: ${echoErrors.join(', ')}`
+          });
+        }
         
         // Log for verification
         console.log('[v3:raster:complete]', {
@@ -967,11 +967,11 @@ async function renderCaptionRaster(meta) {
   const tempCanvas = createCanvas(W, H);
   const tempCtx = tempCanvas.getContext("2d");
   
-  // IMPORTANT: Build font string with SSOT registry - let canvas select the registered face
-  const font = canvasFontString(meta.weightCss, meta.fontStyle, fontPx);
+  // CRITICAL: Use client's exact font string (browser truth)
+  const font = meta.previewFontString || canvasFontString(meta.weightCss, meta.fontStyle, fontPx);
   tempCtx.font = font;
-  
-  console.log('[raster] Font set to:', font, '| registered family:', fontFamilyName);
+
+  console.log('[raster] Using client previewFontString:', font);
   
   // Helper to measure text width accounting for letter spacing
   const measureTextWidth = (ctx, text, letterSpacing) => {
@@ -1009,24 +1009,18 @@ async function renderCaptionRaster(meta) {
   // ✅ Use client canonical values if provided (trust client SSOT)
   let padding, rasterW, rasterH;
   
-  if (meta.clientRasterPadding && meta.clientRasterW && meta.clientRasterH) {
-    // Trust client values exactly - no recomputation
-    padding = meta.clientRasterPadding;
-    rasterW = meta.clientRasterW;
-    rasterH = meta.clientRasterH;
-    console.log('[raster] Using client canonical values:', { padding, rasterW, rasterH });
-  } else {
-    // Fallback: calculate padding based on shadow/stroke
-    const maxShadowExtent = Math.max(
-      Math.abs(shadowOffsetX) + shadowBlur,
-      Math.abs(shadowOffsetY) + shadowBlur,
-      strokePx
-    );
-    padding = Math.ceil(Math.max(24, maxShadowExtent * 1.5));
-    rasterW = Math.ceil(maxLineWidth) + (padding * 2);
-    rasterH = Math.ceil(meta.totalTextH) + (padding * 2);
-    console.log('[raster] Computed fallback values:', { padding, rasterW, rasterH });
+  // ✅ Use client canonical values - NO FALLBACK
+  if (!meta.clientRasterW || !meta.clientRasterH || !meta.clientRasterPadding) {
+    throw new Error('RASTER: clientRasterW/H/Padding required but missing');
   }
+
+  padding = meta.clientRasterPadding;
+  rasterW = meta.clientRasterW;
+  rasterH = meta.clientRasterH;
+
+  console.log('[raster] Using client canonical values (no computation):', { 
+    padding, rasterW, rasterH 
+  });
   
   // Create transparent canvas for caption only
   const rasterCanvas = createCanvas(rasterW, rasterH);
