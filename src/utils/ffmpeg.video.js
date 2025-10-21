@@ -789,8 +789,13 @@ export async function renderVideoQuoteOverlay({
       // Skip drawtext - we'll use overlay filter instead
       drawCaption = '';
       
-      console.log('[raster] overlay: x=' + placement.xExpr + ', y=' + placement.y + 
-                  ', rasterW/H=' + placement.rasterW + '×' + placement.rasterH);
+    console.log('[ffmpeg:overlay]', {
+      xExpr: placement.xExpr,
+      y: placement.y,
+      rasterW: placement.rasterW,
+      rasterH: placement.rasterH,
+      match: placement.rasterW === overlayWidth && placement.rasterH === overlayHeight
+    });
       
       // Skip the rest of the drawtext logic
       // Jump directly to buildVideoChain

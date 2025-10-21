@@ -404,9 +404,47 @@ function showLiveText() {
 function showPngPreview() {
   const liveEl = document.getElementById('caption-live');
   const pngEl = document.getElementById('preview-raster-img');
-  
+
   if (liveEl) liveEl.style.display = 'none';
   if (pngEl) pngEl.style.display = 'block';
+}
+
+/**
+ * Swap HTML preview to server PNG (WYSIWYG guarantee)
+ */
+function showServerPNG(pngDataUrl, meta) {
+  const liveEl = document.getElementById('caption-live');
+  const pngEl = document.getElementById('preview-raster-img');
+  
+  if (!liveEl || !pngEl) return;
+  
+  // Hide HTML, show PNG
+  liveEl.style.display = 'none';
+  pngEl.style.display = 'block';
+  pngEl.src = pngDataUrl;
+  
+  // Compute preview scale
+  const stageEl = liveEl.closest('.caption-stage') || liveEl.parentElement;
+  const cssHeight = stageEl?.clientHeight || 640;
+  const previewScale = cssHeight / (meta.frameH || 1920);
+  
+  // ✅ Position PNG with exact pixels
+  const xPx = (meta.xExpr_png === '(W-overlay_w)/2') ? (meta.frameW - meta.rasterW) / 2
+    : (meta.xExpr_png === '(W-overlay_w)') ? (meta.frameW - meta.rasterW)
+    : 0;
+  
+  pngEl.style.left = `${xPx * previewScale}px`;
+  pngEl.style.top = `${meta.yPx_png * previewScale}px`;
+  pngEl.style.width = `${meta.rasterW * previewScale}px`;
+  pngEl.style.height = `${meta.rasterH * previewScale}px`;
+  pngEl.style.objectFit = 'fill';  // No scaling
+  
+  console.log('[png:preview]', {
+    left: xPx * previewScale,
+    top: meta.yPx_png * previewScale,
+    width: meta.rasterW * previewScale,
+    height: meta.rasterH * previewScale
+  });
 }
 
 /**
@@ -610,6 +648,8 @@ function debouncedPreview(captionState) {
 /**
  * Initialize hybrid caption preview system
  */
+export { showServerPNG };
+
 export async function initHybridCaptionPreview() {
   // Wait for fonts to be ready
   await ensureFontsReady();

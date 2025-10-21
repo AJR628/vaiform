@@ -908,9 +908,47 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     // Geometry (frame space = 1080x1920)
     const frameW = 1080;
     const frameH = 1920;
-    const rasterW = Math.round((b.width / s.width) * frameW);
-    const yPx_png = Math.round((b.top - s.top) / s.height * frameH);
-    const rasterPadding = parseInt(cs.paddingLeft, 10) || 24;
+    const wPx = Math.round((b.width / s.width) * frameW);
+    const internalPadding = parseInt(cs.paddingLeft, 10) || 24;
+    
+    // ✅ NEW: Measure text wrapping using CANVAS
+    const text = content.textContent || '';
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    ctx.font = `${cs.fontStyle} ${cs.fontWeight} ${fontPx}px "${fontFamily}"`;
+    
+    const maxWidth = wPx - (2 * internalPadding);
+    const segments = text.split('\n');
+    const lines = [];
+    
+    for (const segment of segments) {
+      const words = segment.trim().split(/\s+/).filter(Boolean);
+      let line = "";
+      for (const word of words) {
+        const test = line ? line + " " + word : word;
+        if (ctx.measureText(test).width > maxWidth && line) {
+          lines.push(line);
+          line = word;
+        } else {
+          line = test;
+        }
+      }
+      if (line) lines.push(line);
+    }
+    
+    // ✅ NEW: Calculate totalTextH and rasterH
+    const totalTextH = lines.length * fontPx + (lines.length - 1) * lineSpacingPx;
+    const rasterW = wPx;  // NO PADDING - padding handled separately
+    const rasterH = totalTextH;  // NO PADDING - padding affects yPx_png positioning
+    
+    // ✅ NEW: Compute yPx_png (box top in frame space)
+    const yPct = (b.top - s.top) / s.height;
+    const yPx_png = Math.round(yPct * frameH);
+    
+    // ✅ NEW: Compute xExpr_png
+    const xExpr_png = (textAlign === 'center') ? '(W-overlay_w)/2'
+      : (textAlign === 'right') ? '(W-overlay_w)'
+      : '0';
     
     const state = {
       // Typography
@@ -933,14 +971,16 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
       shadowOffsetX: shadow.x,
       shadowOffsetY: shadow.y,
       
-      // Geometry
-      rasterW,
+      // Geometry (PIXELS ONLY)
+      frameW, frameH,
+      rasterW, rasterH, totalTextH,
+      internalPadding,  // renamed from rasterPadding
       yPx_png,
-      rasterPadding,
-      xExpr_png: '(W-overlay_w)/2', // center horizontally
+      xExpr_png,
       
       // Metadata
-      text: content.textContent || '',
+      text,
+      textRaw: content.textContent || '',
       ssotVersion: 3,
       mode: 'raster',
       reason
@@ -954,9 +994,13 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
       }
     });
     
-    console.log('[toolbar:emit]', { reason, fontPx, lineSpacingPx, rasterW, yPx_png });
+    console.log('[geom:client]', {
+      fontPx, lineSpacingPx, letterSpacingPx, wPx: rasterW,
+      xExpr: xExpr_png, yPx_png, frameW, frameH, rows: lines.length, totalTextH
+    });
     
-    // Call global update handler
+    // Store and emit
+    window.__overlayMeta = state;
     if (typeof window.updateCaptionState === 'function') {
       window.updateCaptionState(state);
     }

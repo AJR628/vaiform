@@ -1718,23 +1718,40 @@
         
         // Convert overlay meta to SSOT payload
         function overlayMetaToSSOT(meta) {
-            const overlayV2 = (window.__overlayV2 === true);
-            const xPct = Number.isFinite(meta?.xPct) ? Number(meta.xPct) : 0.5;
-            const yPct = Number.isFinite(meta?.yPct) ? Number(meta.yPct) : 0.5;
-            const wPct = Number.isFinite(meta?.wPct) ? Number(meta.wPct) : 0.8;
-            const sizePx = Math.max(32, Math.min(120, Number(meta.fontPx || 48)));
-            const lineSpacingPx = Math.round(sizePx * (Number(meta.lineHeight || 1.15) - 1) * 0.3);
-            const base = {
-                text: String(meta.text || ''),
-                placement: 'custom',
-                xPct, yPct, wPct,
-                sizePx, lineSpacingPx,
+            // ✅ Extract pixels computed by emitCaptionState
+            return {
+                ssotVersion: 3,
+                mode: 'raster',
+                text: meta.text || meta.textRaw || '',
+                textRaw: meta.textRaw,
+                
+                // ✅ CANONICAL PIXELS (no percentages!)
+                frameW: 1080,
+                frameH: 1920,
+                fontPx: meta.fontPx,
+                lineSpacingPx: meta.lineSpacingPx,
+                letterSpacingPx: meta.letterSpacingPx,
+                rasterW: meta.rasterW,
+                rasterH: meta.rasterH,  // ✅ NEW: send rasterH
+                yPx_png: meta.yPx_png,
+                rasterPadding: meta.internalPadding || 24,
+                xExpr_png: meta.xExpr_png || '(W-overlay_w)/2',
+                
+                // Styles
                 fontFamily: meta.fontFamily || 'DejaVuSans',
-                weightCss: String(meta.weightCss || 'bold'),
-                color: meta.color || '#FFFFFF',
-                opacity: Number.isFinite(meta.opacity) ? Number(meta.opacity) : 0.85,
+                weightCss: meta.weightCss || '700',
+                fontStyle: meta.fontStyle || 'normal',
+                textAlign: meta.textAlign || 'center',
+                textTransform: meta.textTransform || 'none',
+                color: meta.color || 'rgb(255,255,255)',
+                opacity: meta.opacity ?? 1.0,
+                strokePx: meta.strokePx || 0,
+                strokeColor: meta.strokeColor || 'rgba(0,0,0,0.85)',
+                shadowColor: meta.shadowColor || 'rgba(0,0,0,0.6)',
+                shadowBlur: meta.shadowBlur ?? 12,
+                shadowOffsetX: meta.shadowOffsetX ?? 0,
+                shadowOffsetY: meta.shadowOffsetY ?? 2
             };
-            return base;  // No v2 flag - always use v3 with ssotVersion: 3
         }
         
         // Preview function for overlay system
@@ -3721,6 +3738,17 @@
                 
                 // Enable render button (after localStorage save is complete)
                 updateRenderButtonState();
+                
+                // ✅ NEW: Show server PNG for WYSIWYG guarantee
+                if (normalizedMeta?.rasterUrl) {
+                    try {
+                        const { showServerPNG } = await import('./js/caption-live.js');
+                        showServerPNG(normalizedMeta.rasterUrl, normalizedMeta);
+                        console.log('[savePreview] Swapped to server PNG for WYSIWYG');
+                    } catch (error) {
+                        console.warn('[savePreview] Failed to swap to PNG:', error);
+                    }
+                }
                 
                 alert('Preview saved! You can now render the video.');
 

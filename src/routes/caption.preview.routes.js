@@ -36,6 +36,7 @@ const RasterSchema = z.object({
   
   // Geometry (frame-space pixels)
   rasterW: z.coerce.number().int().min(100).max(1080),
+  rasterH: z.coerce.number().int().min(50).max(1920),  // ✅ NEW
   yPx_png: z.coerce.number().int().min(0).max(1920),
   rasterPadding: z.coerce.number().int().default(24),
   xExpr_png: z.string().default('(W-overlay_w)/2'),
@@ -78,22 +79,18 @@ router.post("/caption/preview", express.json(), async (req, res) => {
           return res.status(400).json({ ok: false, reason: "EMPTY_TEXT", detail: "Caption text cannot be empty" });
         }
         
-        // Use client SSOT values directly - no recomputation in raster mode
+        // ✅ Use client SSOT values - NO RECOMPUTATION
         const fontPx = data.fontPx;
-        let lineSpacingPx = data.lineSpacingPx;
+        const lineSpacingPx = data.lineSpacingPx;
         const letterSpacingPx = data.letterSpacingPx || 0;
         const rasterW = data.rasterW;
-        const yPx_png = data.yPx_png;
+        const rasterH = data.rasterH;  // ✅ NEW: trust client
+        const yPx_png = data.yPx_png;  // ✅ NO FALLBACK, NO MAGIC
         const rasterPadding = data.rasterPadding;
         
-        // Guard: fallback for invalid lineSpacingPx
-        if (!Number.isFinite(lineSpacingPx)) {
-          lineSpacingPx = Math.round(fontPx * 0.15);
-          console.log('[v3:fallback] lineSpacingPx not finite, using:', lineSpacingPx);
-        }
-        
-        console.log('[caption-preview:v3] Using client SSOT values:', {
-          fontPx, lineSpacingPx, letterSpacingPx, rasterW, yPx_png, rasterPadding
+        console.log('[geom:server]', {
+          fontPx, lineSpacingPx, letterSpacingPx, rasterW, rasterH,
+          xExpr_png: data.xExpr_png, yPx_png, frameW: data.frameW, frameH: data.frameH
         });
         
         // Wrap text using client rasterW (reuse V2 pattern)
@@ -174,7 +171,7 @@ router.post("/caption/preview", express.json(), async (req, res) => {
           });
         }
 
-        // Build complete ssotMeta with all required fields - echo back actual server values
+        // Build complete ssotMeta with all required fields - echo back client values unchanged
         const ssotMeta = {
           ssotVersion: 3,
           mode: 'raster',
@@ -185,13 +182,13 @@ router.post("/caption/preview", express.json(), async (req, res) => {
           bgScaleExpr: "scale='if(gt(a,1080/1920),-2,1080)':'if(gt(a,1080/1920),1920,-2)'",
           bgCropExpr: "crop=1080:1920",
           
-          // PNG raster data - echo back actual server values
+          // ✅ Echo client pixels (unchanged)
           rasterUrl: rasterResult.rasterUrl,
-          rasterW: rasterResult.rasterW,
-          rasterH: rasterResult.rasterH,
-          rasterPadding: rasterResult.padding,
+          rasterW: data.rasterW,  // ✅ Client value (not rasterResult.rasterW)
+          rasterH: data.rasterH,  // ✅ Client value (not rasterResult.rasterH)
+          rasterPadding: data.rasterPadding,
           xExpr_png: data.xExpr_png,
-          yPx_png: rasterResult.yPx,
+          yPx_png: data.yPx_png,  // ✅ Client value (not rasterResult.yPx)
           
           // Verification hashes - echo back actual server values
           rasterHash,
@@ -219,11 +216,11 @@ router.post("/caption/preview", express.json(), async (req, res) => {
           shadowOffsetX: data.shadowOffsetX,
           shadowOffsetY: data.shadowOffsetY,
           
-          // Keep for debugging and client compatibility
+          // Debug info
           splitLines: lines,
           lineSpacingPx,
-          totalTextH,
-          yPxFirstLine,
+          totalTextH: data.rasterH,  // ✅ Use client value
+          yPxFirstLine: data.yPx_png + data.rasterPadding,
         };
         
         // Log for verification
