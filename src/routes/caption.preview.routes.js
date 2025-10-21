@@ -219,7 +219,7 @@ router.post("/caption/preview", express.json(), async (req, res) => {
           // Debug info
           splitLines: lines,
           lineSpacingPx,
-          totalTextH: data.rasterH,  // ✅ Use client value
+          totalTextH: totalTextH,  // ✅ Use server-computed value
           yPxFirstLine: data.yPx_png + data.rasterPadding,
         };
         
