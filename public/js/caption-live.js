@@ -439,11 +439,16 @@ function showServerPNG(pngDataUrl, meta) {
   pngEl.style.height = `${meta.rasterH * previewScale}px`;
   pngEl.style.objectFit = 'fill';  // No scaling
   
-  console.log('[png:preview]', {
-    left: xPx * previewScale,
-    top: meta.yPx_png * previewScale,
-    width: meta.rasterW * previewScale,
-    height: meta.rasterH * previewScale
+  console.log('[png:preview:authoritative]', {
+    rasterW: meta.rasterW,
+    rasterH: meta.rasterH,
+    yPx_png: meta.yPx_png,
+    xExpr_png: meta.xExpr_png,
+    previewScale: previewScale.toFixed(3),
+    cssLeft: Math.round(xPx * previewScale),
+    cssTop: Math.round(meta.yPx_png * previewScale),
+    cssWidth: Math.round(meta.rasterW * previewScale),
+    cssHeight: Math.round(meta.rasterH * previewScale)
   });
 }
 

@@ -84,13 +84,15 @@ router.post("/caption/preview", express.json(), async (req, res) => {
         const lineSpacingPx = data.lineSpacingPx;
         const letterSpacingPx = data.letterSpacingPx || 0;
         const rasterW = data.rasterW;
-        const rasterH = data.rasterH;  // ✅ NEW: trust client
-        const yPx_png = data.yPx_png;  // ✅ NO FALLBACK, NO MAGIC
-        const rasterPadding = data.rasterPadding;
+        const rasterH = data.rasterH;  // ✅ TRUST CLIENT - no recomputation
+        const yPx_png = data.yPx_png;  // ✅ TRUST CLIENT - no fallback
+        const rasterPadding = data.rasterPadding;  // ✅ TRUST CLIENT - no recomputation
+        const splitLines = data.splitLines || [];  // ✅ Use client splitLines if provided
         
         console.log('[geom:server]', {
           fontPx, lineSpacingPx, letterSpacingPx, rasterW, rasterH,
-          xExpr_png: data.xExpr_png, yPx_png, frameW: data.frameW, frameH: data.frameH
+          xExpr_png: data.xExpr_png, yPx_png, frameW: data.frameW, frameH: data.frameH,
+          splitLines: Array.isArray(splitLines) ? splitLines.length : 'n/a'
         });
         
         // Wrap text using client rasterW (reuse V2 pattern)
@@ -99,23 +101,32 @@ router.post("/caption/preview", express.json(), async (req, res) => {
         const font = canvasFontString(data.weightCss, data.fontStyle, fontPx);
         ctx.font = font;
         
-        // Wrap text accounting for rasterPadding on both sides
-        const maxWidth = rasterW - (2 * rasterPadding);
-        const segments = text.split('\n');
-        const lines = [];
-        for (const segment of segments) {
-          const words = segment.trim().split(/\s+/).filter(Boolean);
-          let line = "";
-          for (const word of words) {
-            const test = line ? line + " " + word : word;
-            if (ctx.measureText(test).width > maxWidth && line) {
-              lines.push(line);
-              line = word;
-            } else {
-              line = test;
+        // ✅ Use client splitLines if provided to avoid re-wrapping differences
+        let lines;
+        if (splitLines && splitLines.length > 0) {
+          // Trust client splitLines exactly - no re-wrapping
+          lines = splitLines;
+          console.log('[raster] Using client splitLines:', lines.length, 'lines');
+        } else {
+          // Fallback: wrap text accounting for rasterPadding on both sides
+          const maxWidth = rasterW - (2 * rasterPadding);
+          const segments = text.split('\n');
+          lines = [];
+          for (const segment of segments) {
+            const words = segment.trim().split(/\s+/).filter(Boolean);
+            let line = "";
+            for (const word of words) {
+              const test = line ? line + " " + word : word;
+              if (ctx.measureText(test).width > maxWidth && line) {
+                lines.push(line);
+                line = word;
+              } else {
+                line = test;
+              }
             }
+            if (line) lines.push(line);
           }
-          if (line) lines.push(line);
+          console.log('[raster] Server-wrapped text:', lines.length, 'lines');
         }
         
         // Calculate totalTextH using client SSOT formula
@@ -128,7 +139,7 @@ router.post("/caption/preview", express.json(), async (req, res) => {
         const rasterResult = await renderCaptionRaster({
           text,
           splitLines: lines,
-          maxLineWidth: maxWidth,
+          maxLineWidth: rasterW - (2 * rasterPadding),  // Use client geometry
           xPct: data.xPct,  // Not used in raster, but pass for consistency
           yPct: data.yPct,  // Not used in raster, but pass for consistency
           wPct: data.wPct,  // Not used in raster, but pass for consistency
@@ -150,6 +161,10 @@ router.post("/caption/preview", express.json(), async (req, res) => {
           lineSpacingPx,
           totalTextH,
           yPxFirstLine,
+          // ✅ Pass client canonical values to render function
+          clientRasterW: rasterW,
+          clientRasterH: rasterH,
+          clientRasterPadding: rasterPadding,
           W: data.frameW,
           H: data.frameH
         });
@@ -158,16 +173,28 @@ router.post("/caption/preview", express.json(), async (req, res) => {
         const pngBuffer = Buffer.from(rasterResult.rasterUrl.split(',')[1], 'base64');
         const rasterHash = crypto.createHash('sha256').update(pngBuffer).digest('hex').slice(0, 16);
         
-        // Optional warn if client raster dims differ by >5px, but always return server values
-        const clientRasterW = data.rasterW;
-        const clientYPxPng = data.yPx_png;
-        const serverRasterW = rasterResult.rasterW;
-        const serverYPxPng = rasterResult.yPx;
+        // ✅ VALIDATION: Warn if server ideal differs from client by >3px, but never override
+        const serverIdealH = totalTextH + 2 * rasterPadding;
+        if (Math.abs(serverIdealH - rasterH) > 3) {
+          console.warn('[raster:warn] client/server H mismatch', { 
+            clientRasterH: rasterH, 
+            serverIdealH: serverIdealH,
+            difference: Math.abs(serverIdealH - rasterH)
+          });
+        }
         
-        if (Math.abs(clientRasterW - serverRasterW) > 5 || Math.abs(clientYPxPng - serverYPxPng) > 5) {
-          console.warn('[caption-preview:dimension-mismatch] Client vs server dimensions differ:', {
-            client: { rasterW: clientRasterW, yPx_png: clientYPxPng },
-            server: { rasterW: serverRasterW, yPx_png: serverYPxPng }
+        // ✅ VALIDATION: Ensure all numeric fields are finite
+        const numericFields = { fontPx, lineSpacingPx, letterSpacingPx, rasterW, rasterH, yPx_png, rasterPadding };
+        const invalidFields = Object.entries(numericFields)
+          .filter(([key, value]) => !Number.isFinite(value))
+          .map(([key]) => key);
+        
+        if (invalidFields.length > 0) {
+          console.error('[raster:validation] Invalid numeric fields:', invalidFields);
+          return res.status(400).json({ 
+            ok: false, 
+            reason: "INVALID_NUMERIC_FIELDS", 
+            detail: `Invalid fields: ${invalidFields.join(', ')}` 
           });
         }
 
@@ -182,13 +209,13 @@ router.post("/caption/preview", express.json(), async (req, res) => {
           bgScaleExpr: "scale='if(gt(a,1080/1920),-2,1080)':'if(gt(a,1080/1920),1920,-2)'",
           bgCropExpr: "crop=1080:1920",
           
-          // ✅ Echo client pixels (unchanged)
+          // ✅ Echo client pixels (unchanged) - TRUST CLIENT SSOT
           rasterUrl: rasterResult.rasterUrl,
-          rasterW: data.rasterW,  // ✅ Client value (not rasterResult.rasterW)
-          rasterH: data.rasterH,  // ✅ Client value (not rasterResult.rasterH)
-          rasterPadding: data.rasterPadding,
-          xExpr_png: data.xExpr_png,
-          yPx_png: data.yPx_png,  // ✅ Client value (not rasterResult.yPx)
+          rasterW: data.rasterW,  // ✅ Client canonical value
+          rasterH: data.rasterH,  // ✅ Client canonical value  
+          rasterPadding: data.rasterPadding,  // ✅ Client canonical value
+          xExpr_png: data.xExpr_png,  // ✅ Client canonical value
+          yPx_png: data.yPx_png,  // ✅ Client canonical value
           
           // Verification hashes - echo back actual server values
           rasterHash,
@@ -216,10 +243,10 @@ router.post("/caption/preview", express.json(), async (req, res) => {
           shadowOffsetX: data.shadowOffsetX,
           shadowOffsetY: data.shadowOffsetY,
           
-          // Debug info
-          splitLines: lines,
+          // Debug info - include splitLines for client
+          splitLines: lines,  // ✅ Return exact lines used
           lineSpacingPx,
-          totalTextH: totalTextH,  // ✅ Use server-computed value
+          totalTextH: totalTextH,  // ✅ Use server-computed value for verification
           yPxFirstLine: data.yPx_png + data.rasterPadding,
         };
         
@@ -979,16 +1006,27 @@ async function renderCaptionRaster(meta) {
     }
   }
   
-  // Calculate padding based on shadow/stroke
-  const maxShadowExtent = Math.max(
-    Math.abs(shadowOffsetX) + shadowBlur,
-    Math.abs(shadowOffsetY) + shadowBlur,
-    strokePx
-  );
-  const padding = Math.ceil(Math.max(24, maxShadowExtent * 1.5));
+  // ✅ Use client canonical values if provided (trust client SSOT)
+  let padding, rasterW, rasterH;
   
-  const rasterW = Math.ceil(maxLineWidth) + (padding * 2);
-  const rasterH = Math.ceil(meta.totalTextH) + (padding * 2);
+  if (meta.clientRasterPadding && meta.clientRasterW && meta.clientRasterH) {
+    // Trust client values exactly - no recomputation
+    padding = meta.clientRasterPadding;
+    rasterW = meta.clientRasterW;
+    rasterH = meta.clientRasterH;
+    console.log('[raster] Using client canonical values:', { padding, rasterW, rasterH });
+  } else {
+    // Fallback: calculate padding based on shadow/stroke
+    const maxShadowExtent = Math.max(
+      Math.abs(shadowOffsetX) + shadowBlur,
+      Math.abs(shadowOffsetY) + shadowBlur,
+      strokePx
+    );
+    padding = Math.ceil(Math.max(24, maxShadowExtent * 1.5));
+    rasterW = Math.ceil(maxLineWidth) + (padding * 2);
+    rasterH = Math.ceil(meta.totalTextH) + (padding * 2);
+    console.log('[raster] Computed fallback values:', { padding, rasterW, rasterH });
+  }
   
   // Create transparent canvas for caption only
   const rasterCanvas = createCanvas(rasterW, rasterH);

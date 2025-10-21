@@ -387,13 +387,12 @@ function buildVideoChain({ width, height, videoVignette, drawLayers, captionImag
     
     // CRITICAL: Log final overlay configuration
     console.log('[render:raster:FFMPEG]', {
-      noScaling: true,
       actualRasterW: placement.rasterW,
       actualRasterH: placement.rasterH,
       xExpr,
       y,
-      colorspace: 'bt709',
-      pixelFormat: endFormat
+      noScaling: true,
+      willScaleOverlay: false
     });
     
     // PARITY GUARD - ensure overlay filter doesn't apply unintended scaling

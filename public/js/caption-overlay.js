@@ -936,10 +936,11 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
       if (line) lines.push(line);
     }
     
-    // ✅ NEW: Calculate totalTextH and rasterH
+    // ✅ CANONICAL PIXELS: Calculate totalTextH and rasterH with padding
     const totalTextH = lines.length * fontPx + (lines.length - 1) * lineSpacingPx;
-    const rasterW = wPx;  // NO PADDING - padding handled separately
-    const rasterH = totalTextH;  // NO PADDING - padding affects yPx_png positioning
+    const rasterW = wPx;  // Full box width
+    const rasterPadding = internalPadding;  // Use consistent naming
+    const rasterH = totalTextH + 2 * rasterPadding;  // Include padding in total height
     
     // ✅ NEW: Compute yPx_png (box top in frame space)
     const yPct = (b.top - s.top) / s.height;
@@ -971,12 +972,15 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
       shadowOffsetX: shadow.x,
       shadowOffsetY: shadow.y,
       
-      // Geometry (PIXELS ONLY)
+      // Geometry (PIXELS ONLY) - CANONICAL VALUES
       frameW, frameH,
       rasterW, rasterH, totalTextH,
-      internalPadding,  // renamed from rasterPadding
+      rasterPadding,  // Use consistent naming
       yPx_png,
       xExpr_png,
+      
+      // Wrapping data for server
+      splitLines: lines,
       
       // Metadata
       text,
@@ -995,8 +999,10 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     });
     
     console.log('[geom:client]', {
-      fontPx, lineSpacingPx, letterSpacingPx, wPx: rasterW,
-      xExpr: xExpr_png, yPx_png, frameW, frameH, rows: lines.length, totalTextH
+      fontPx, lineSpacingPx, letterSpacingPx, 
+      rasterW, rasterPadding, totalTextH, rasterH,
+      xExpr_png, yPx_png, frameW, frameH, 
+      splitLinesLen: lines.length
     });
     
     // Store and emit

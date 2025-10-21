@@ -1149,7 +1149,24 @@
         
         // New draggable overlay system
         let overlaySystemInitialized = false;
-        let useOverlayMode = true; // Default to overlay mode as SSOT
+        let useOverlayMode = true; // Default to overlay mode as SSOT (V3 raster)
+        
+        // ✅ Clear legacy V2 cache to prevent schema mixing
+        try {
+            const v2Keys = ['overlayMetaV2', 'overlayMeta', 'lastCaptionOverlay'];
+            v2Keys.forEach(key => {
+                const stored = localStorage.getItem(key);
+                if (stored) {
+                    const meta = JSON.parse(stored);
+                    if (meta.ssotVersion !== 3) {
+                        console.log('[v3:cleanup] Removing legacy V2 cache:', key);
+                        localStorage.removeItem(key);
+                    }
+                }
+            });
+        } catch (e) {
+            console.warn('[v3:cleanup] Cache cleanup failed:', e);
+        }
 
         // Helper functions for overlay management
         const must = (sel) => {
@@ -1732,10 +1749,13 @@
                 lineSpacingPx: meta.lineSpacingPx,
                 letterSpacingPx: meta.letterSpacingPx,
                 rasterW: meta.rasterW,
-                rasterH: meta.rasterH,  // ✅ NEW: send rasterH
+                rasterH: meta.rasterH,  // ✅ Client canonical value
                 yPx_png: meta.yPx_png,
-                rasterPadding: meta.internalPadding || 24,
+                rasterPadding: meta.rasterPadding || 24,  // ✅ Use consistent naming
                 xExpr_png: meta.xExpr_png || '(W-overlay_w)/2',
+                
+                // ✅ Send splitLines to avoid server re-wrapping
+                splitLines: meta.splitLines || [],
                 
                 // Styles
                 fontFamily: meta.fontFamily || 'DejaVuSans',
