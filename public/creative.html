@@ -3297,6 +3297,52 @@
             return pad; // top
         }
 
+        // Integer/non-negative normalization for server strict validation
+        function int(n) { 
+            return Number.isFinite(n) ? Math.round(n) : 0; 
+        }
+
+        function nonneg(n) { 
+            return Math.max(0, int(n)); 
+        }
+
+        function normalizeRasterPayload(p) {
+            return {
+                ...p,
+                
+                // integers the server expects
+                frameW: int(p.frameW),
+                frameH: int(p.frameH),
+                rasterW: int(p.rasterW),
+                rasterH: int(p.rasterH),
+                rasterPadding: int(p.rasterPadding || 0),
+                fontPx: int(p.fontPx),
+                lineSpacingPx: int(p.lineSpacingPx),
+                letterSpacingPx: int(p.letterSpacingPx || 0),
+                totalTextH: int(p.totalTextH),
+                yPxFirstLine: int(p.yPxFirstLine),
+                splitLines: Math.max(1, int(p.splitLines)),
+                
+                // placement must be >= 0
+                xPx_png: nonneg(p.xPx_png ?? 0),
+                yPx_png: nonneg(p.yPx_png ?? 0),
+                
+                // strings – ensure they're present
+                fontFamily: String(p.fontFamily || ''),
+                fontStyle: String(p.fontStyle || 'normal'),
+                weightCss: String(p.weightCss || '400'),
+                previewFontString: String(p.previewFontString || ''),
+                
+                // optional but recommended
+                lines: Array.isArray(p.lines) ? p.lines.map(s => String(s ?? '')) : undefined,
+                
+                // remove percent fields to avoid ambiguity in raster mode
+                xPct: undefined,
+                yPct: undefined,
+                wPct: undefined
+            };
+        }
+
         // Reset preview saved state when caption text changes
         function resetPreviewSavedState() {
             console.log('[preview-state] Resetting preview saved state - caption changed');
@@ -3336,12 +3382,12 @@
         // Collect computed styles we need (what the user actually sees)
         function readComputed(el) {
             const cs = getComputedStyle(el);
-            const fontPx = px(cs.fontSize);
+            const fontPx = Math.round(px(cs.fontSize));  // ✅ Round immediately
             const lineHeightPx = cs.lineHeight === 'normal'
                 ? Math.ceil(fontPx * 1.2)             // browser default fallback
-                : px(cs.lineHeight);
-            const lineSpacingPx = Math.max(0, lineHeightPx - fontPx);
-            const letterSpacingPx = px(cs.letterSpacing);
+                : Math.round(px(cs.lineHeight));  // ✅ Round
+            const lineSpacingPx = Math.max(0, Math.round(lineHeightPx - fontPx));  // ✅ Round
+            const letterSpacingPx = Math.round(px(cs.letterSpacing));  // ✅ Round
 
             return {
                 fontFamily: cs.fontFamily,
@@ -3615,11 +3661,11 @@
                 payload.xPct = Number.isFinite(payload.wPct) ? +((1 - payload.wPct) / 2).toFixed(6) : undefined;
 
                 // Validate payload before POST
-                const numericFields = ['splitLines', 'totalTextH', 'yPxFirstLine', 'rasterW', 'rasterH', 'fontPx', 'lineSpacingPx', 'letterSpacingPx'];
-                const invalidFields = numericFields.filter(field => !Number.isFinite(payload[field]));
+                const preNormalizationFields = ['splitLines', 'totalTextH', 'yPxFirstLine', 'rasterW', 'rasterH', 'fontPx', 'lineSpacingPx', 'letterSpacingPx'];
+                const preInvalidFields = preNormalizationFields.filter(field => !Number.isFinite(payload[field]));
                 
-                if (invalidFields.length > 0) {
-                    throw new Error(`Invalid numeric fields: ${invalidFields.join(', ')}`);
+                if (preInvalidFields.length > 0) {
+                    throw new Error(`Invalid numeric fields: ${preInvalidFields.join(', ')}`);
                 }
                 
                 if (payload.splitLines < 1) {
@@ -3630,29 +3676,80 @@
                     throw new Error('lines array is required and must be non-empty');
                 }
 
-                console.log('[savePreview] Final payload:', payload);
+                console.log('[savePreview] Final payload (before normalization):', payload);
+
+                // ✅ Normalize payload for server strict validation
+                const normalizedPayload = normalizeRasterPayload(payload);
+
+                // ✅ Comprehensive validation of normalized payload
+                const numericFields = ['frameW', 'frameH', 'rasterW', 'rasterH', 'rasterPadding', 'fontPx', 'lineSpacingPx', 'letterSpacingPx', 'totalTextH', 'yPxFirstLine', 'splitLines', 'xPx_png', 'yPx_png'];
+                const invalidFields = numericFields.filter(field => {
+                    const val = normalizedPayload[field];
+                    return !Number.isFinite(val) || !Number.isInteger(val);
+                });
+                
+                if (invalidFields.length > 0) {
+                    console.error('[savePreview:validation] Invalid numeric fields after normalization:', invalidFields);
+                    throw new Error(`Normalization failed for fields: ${invalidFields.join(', ')}`);
+                }
+                
+                // Guard against negative or NaN yPx_png
+                if (normalizedPayload.yPx_png < 0 || !Number.isFinite(normalizedPayload.yPx_png)) {
+                    console.error('[savePreview:validation] Invalid yPx_png:', normalizedPayload.yPx_png);
+                    throw new Error(`yPx_png must be >= 0, got: ${normalizedPayload.yPx_png}`);
+                }
+                
+                // Ensure splitLines >= 1
+                if (normalizedPayload.splitLines < 1) {
+                    console.error('[savePreview:validation] Invalid splitLines:', normalizedPayload.splitLines);
+                    throw new Error(`splitLines must be >= 1, got: ${normalizedPayload.splitLines}`);
+                }
+                
+                // Validate string fields are present
+                const stringFields = ['fontFamily', 'fontStyle', 'weightCss', 'previewFontString'];
+                const missingStringFields = stringFields.filter(field => !normalizedPayload[field] || normalizedPayload[field].trim() === '');
+                
+                if (missingStringFields.length > 0) {
+                    console.warn('[savePreview:validation] Missing string fields:', missingStringFields);
+                }
+                
+                // Log normalized payload for debugging
+                console.log('[savePreview:normalized]', {
+                    frameW: normalizedPayload.frameW,
+                    frameH: normalizedPayload.frameH,
+                    rasterW: normalizedPayload.rasterW,
+                    rasterH: normalizedPayload.rasterH,
+                    fontPx: normalizedPayload.fontPx,
+                    lineSpacingPx: normalizedPayload.lineSpacingPx,
+                    letterSpacingPx: normalizedPayload.letterSpacingPx,
+                    yPx_png: normalizedPayload.yPx_png,
+                    xPx_png: normalizedPayload.xPx_png,
+                    splitLines: normalizedPayload.splitLines,
+                    allIntegers: numericFields.every(field => Number.isInteger(normalizedPayload[field])),
+                    allNonNegative: ['xPx_png', 'yPx_png'].every(field => normalizedPayload[field] >= 0)
+                });
 
                 console.log('[savePreview:parity]', {
                     hasSSOT: !!window.__serverCaptionMeta,
-                    fontPx: browserGeometry.fontPx,
-                    lineSpacingPx: browserGeometry.lineSpacingPx,
-                    letterSpacingPx: browserGeometry.letterSpacingPx,
-                    rasterW: browserGeometry.rasterW,
-                    rasterH: browserGeometry.rasterH,
-                    yPx_png: browserGeometry.yPx_png,
-                    rasterPadding: browserGeometry.rasterPadding,
-                    splitLines: browserGeometry.splitLines,
-                    linesCount: browserGeometry.lines.length,
-                    allNumsFinite: Object.entries(payload)
+                    fontPx: normalizedPayload.fontPx,
+                    lineSpacingPx: normalizedPayload.lineSpacingPx,
+                    letterSpacingPx: normalizedPayload.letterSpacingPx,
+                    rasterW: normalizedPayload.rasterW,
+                    rasterH: normalizedPayload.rasterH,
+                    yPx_png: normalizedPayload.yPx_png,
+                    rasterPadding: normalizedPayload.rasterPadding,
+                    splitLines: normalizedPayload.splitLines,
+                    linesCount: normalizedPayload.lines?.length,
+                    allNumsFinite: Object.entries(normalizedPayload)
                         .filter(([k, v]) => typeof v === 'number')
                         .every(([k, v]) => Number.isFinite(v))
                 });
 
-                // Call preview API
+                // Call preview API with normalized payload
                 const { apiFetch } = await import('./api.mjs');
                 const data = await apiFetch('/caption/preview', {
                     method: 'POST',
-                    body: payload
+                    body: normalizedPayload
                 });
 
                 if (!data?.ok) {
