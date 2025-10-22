@@ -3666,7 +3666,7 @@
                 payload.xPct = Number.isFinite(payload.wPct) ? +((1 - payload.wPct) / 2).toFixed(6) : undefined;
 
                 // Validate payload before POST
-                const preNormalizationFields = ['splitLines', 'totalTextH', 'yPxFirstLine', 'rasterW', 'rasterH', 'fontPx', 'lineSpacingPx', 'letterSpacingPx'];
+                const preNormalizationFields = ['totalTextH', 'yPxFirstLine', 'rasterW', 'rasterH', 'fontPx', 'lineSpacingPx', 'letterSpacingPx'];
                 const preInvalidFields = preNormalizationFields.filter(field => !Number.isFinite(payload[field]));
                 
                 if (preInvalidFields.length > 0) {
@@ -3684,7 +3684,7 @@
                 const normalizedPayload = normalizeRasterPayload(payload);
 
                 // ✅ Comprehensive validation of normalized payload
-                const numericFields = ['frameW', 'frameH', 'rasterW', 'rasterH', 'rasterPadding', 'fontPx', 'lineSpacingPx', 'letterSpacingPx', 'totalTextH', 'yPxFirstLine', 'splitLines', 'xPx_png', 'yPx_png'];
+                const numericFields = ['frameW', 'frameH', 'rasterW', 'rasterH', 'rasterPadding', 'fontPx', 'lineSpacingPx', 'letterSpacingPx', 'totalTextH', 'yPxFirstLine', 'xPx_png', 'yPx_png'];
                 const invalidFields = numericFields.filter(field => {
                     const val = normalizedPayload[field];
                     return !Number.isFinite(val) || !Number.isInteger(val);
@@ -3701,11 +3701,6 @@
                     throw new Error(`yPx_png must be >= 0, got: ${normalizedPayload.yPx_png}`);
                 }
                 
-                // Ensure splitLines >= 1
-                if (normalizedPayload.splitLines < 1) {
-                    console.error('[savePreview:validation] Invalid splitLines:', normalizedPayload.splitLines);
-                    throw new Error(`splitLines must be >= 1, got: ${normalizedPayload.splitLines}`);
-                }
                 
                 // Validate string fields are present
                 const stringFields = ['fontFamily', 'fontStyle', 'weightCss', 'previewFontString'];
@@ -3726,7 +3721,7 @@
                     letterSpacingPx: normalizedPayload.letterSpacingPx,
                     yPx_png: normalizedPayload.yPx_png,
                     xPx_png: normalizedPayload.xPx_png,
-                    splitLines: normalizedPayload.splitLines,
+                    splitLines: normalizedPayload.splitLines?.length || 0,
                     allIntegers: numericFields.every(field => Number.isInteger(normalizedPayload[field])),
                     allNonNegative: ['xPx_png', 'yPx_png'].every(field => normalizedPayload[field] >= 0)
                 });
@@ -3740,7 +3735,7 @@
                     rasterH: normalizedPayload.rasterH,
                     yPx_png: normalizedPayload.yPx_png,
                     rasterPadding: normalizedPayload.rasterPadding,
-                    splitLines: normalizedPayload.splitLines,
+                    splitLines: normalizedPayload.splitLines?.length || 0,
                     linesCount: normalizedPayload.lines?.length,
                     allNumsFinite: Object.entries(normalizedPayload)
                         .filter(([k, v]) => typeof v === 'number')
