@@ -3321,7 +3321,7 @@
                 letterSpacingPx: int(p.letterSpacingPx || 0),
                 totalTextH: int(p.totalTextH),
                 yPxFirstLine: int(p.yPxFirstLine),
-                splitLines: Math.max(1, int(p.splitLines)),
+                splitLines: Array.isArray(p.splitLines) ? p.splitLines.map(s => String(s ?? '')) : [],
                 
                 // placement must be >= 0
                 xPx_png: nonneg(p.xPx_png ?? 0),
@@ -3459,7 +3459,7 @@
 
             // 2) Visual lines
             const { lines, rectsPerLine } = extractLines(contentEl);
-            const splitLines = Math.max(1, lines.length);
+            const splitLinesCount = Math.max(1, lines.length);
 
             // 3) Overlay box in CSS pixels (content box)
             const box = stageEl.getBoundingClientRect();
@@ -3471,7 +3471,7 @@
             const letterSpacingPxFrame = toFramePx(s.letterSpacingPx, { frameW, previewCssW });
 
             // 5) Calculate totalTextH in frame space
-            const totalTextHFrame = fontPxFrame * splitLines + lineSpacingPxFrame * (splitLines - 1);
+            const totalTextHFrame = fontPxFrame * splitLinesCount + lineSpacingPxFrame * (splitLinesCount - 1);
 
             // 6) Convert to frame pixels
             const rW = toFramePx(box.width, { frameW, previewCssW });
@@ -3482,8 +3482,9 @@
 
             return {
                 // DOM truth
-                lines,
-                splitLines,
+                lines,           // Keep for backward compat if needed
+                splitLines: lines,  // Server expects the array here
+                splitLinesCount,    // The numeric count
                 totalTextH: totalTextHFrame,      // Frame pixels
                 yPxFirstLine: toFramePx(firstLineTopCss, { frameW, previewCssW }),
 
@@ -3620,8 +3621,7 @@
                     text,     // normalized canonical version
                     
                     // Browser-rendered line data (REQUIRED)
-                    lines: browserGeometry.lines,
-                    splitLines: browserGeometry.splitLines,
+                    splitLines: browserGeometry.lines,  // Server expects array here
                     totalTextH: browserGeometry.totalTextH,
                     yPxFirstLine: browserGeometry.yPxFirstLine,
                     
@@ -3673,13 +3673,10 @@
                     throw new Error(`Invalid numeric fields: ${preInvalidFields.join(', ')}`);
                 }
                 
-                if (payload.splitLines < 1) {
-                    throw new Error('splitLines must be >= 1');
+                if (!Array.isArray(payload.splitLines) || payload.splitLines.length === 0) {
+                    throw new Error('splitLines must be a non-empty array');
                 }
                 
-                if (!Array.isArray(payload.lines) || payload.lines.length === 0) {
-                    throw new Error('lines array is required and must be non-empty');
-                }
 
                 console.log('[savePreview] Final payload (before normalization):', payload);
 
