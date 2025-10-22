@@ -3322,6 +3322,143 @@
             updateRenderButtonState();
         }
 
+        // ---- Browser-as-Visual-Truth Helper Functions ----
+        
+        // Parse pixel values safely
+        const px = v => (typeof v === 'number' ? v : parseFloat(v || 0)) || 0;
+
+        // Convert CSS px (preview) -> frame px (e.g., 1080x1920)
+        function toFramePx(cssPx, { frameW, previewCssW }) {
+            const scale = frameW / previewCssW;      // e.g., 1080 / 360 = 3
+            return Math.round(cssPx * scale);
+        }
+
+        // Collect computed styles we need (what the user actually sees)
+        function readComputed(el) {
+            const cs = getComputedStyle(el);
+            const fontPx = px(cs.fontSize);
+            const lineHeightPx = cs.lineHeight === 'normal'
+                ? Math.ceil(fontPx * 1.2)             // browser default fallback
+                : px(cs.lineHeight);
+            const lineSpacingPx = Math.max(0, lineHeightPx - fontPx);
+            const letterSpacingPx = px(cs.letterSpacing);
+
+            return {
+                fontFamily: cs.fontFamily,
+                fontStyle: cs.fontStyle,
+                weightCss: cs.fontWeight,
+                fontPx,
+                lineHeightPx,
+                lineSpacingPx,
+                letterSpacingPx,
+            };
+        }
+
+        // Extract visual lines from the DOM
+        // Works for contentEditable or an inline-block text container.
+        function extractLines(contentEl) {
+            // Force a Range over the *text* content. Works even with <br> or soft wraps.
+            const walker = document.createTreeWalker(contentEl, NodeFilter.SHOW_TEXT, null);
+            const lines = [];
+            const rectsPerLine = [];
+
+            let lastTop = null, currLine = '', currRects = [];
+
+            function flush() {
+                if (!currLine && currRects.length === 0) return;
+                lines.push(currLine);
+                rectsPerLine.push(currRects.slice());
+                currLine = ''; currRects.length = 0;
+            }
+
+            while (walker.nextNode()) {
+                const node = walker.currentNode;
+                if (!node.nodeValue) continue;
+
+                // Measure this text node by slicing ranges at grapheme-ish steps.
+                // (We don't need per-word fidelity—per-node jumps suffice in practice.)
+                const range = document.createRange();
+                range.selectNodeContents(node);
+                const rects = Array.from(range.getClientRects()); // visual boxes for this node
+
+                rects.forEach(r => {
+                    // New line if top jumps significantly (accounts for fractional px)
+                    if (lastTop === null || Math.abs(r.top - lastTop) > 0.5) {
+                        flush();
+                        lastTop = r.top;
+                    }
+                    currRects.push({ top: r.top, left: r.left, width: r.width, height: r.height });
+                });
+
+                currLine += node.nodeValue; // text in order; server doesn't wrap again
+                range.detach();
+            }
+            flush();
+
+            // Clean up trailing whitespace lines
+            const trimmed = lines.map(l => l.replace(/\s+$/g, ''));
+            return { lines: trimmed, rectsPerLine };
+        }
+
+        // Build raster geometry exactly like the user sees
+        function buildRasterFromBrowser({
+            stageEl,        // the draggable/resize box element (POSITIONED)
+            contentEl,        // the inner text element (where computed styles apply)
+            frameW = 1080,  // video width
+            frameH = 1920,  // video height
+            previewCssW,   // CSS width of the live preview (e.g., 360)
+        }) {
+            // 1) Styles (browser truth)
+            const s = readComputed(contentEl);
+
+            // 2) Visual lines
+            const { lines, rectsPerLine } = extractLines(contentEl);
+            const splitLines = Math.max(1, lines.length);
+
+            // 3) Overlay box in CSS pixels (content box)
+            const box = stageEl.getBoundingClientRect();
+            const firstLineTopCss = rectsPerLine[0]?.[0]?.top ?? box.top;
+
+            // 4) Total text height by definition (not recomputed on server)
+            const totalTextH = s.fontPx * splitLines + s.lineSpacingPx * (splitLines - 1);
+
+            // 5) Convert to frame pixels
+            const rW = toFramePx(box.width, { frameW, previewCssW });
+            const rH = toFramePx(totalTextH, { frameW, previewCssW });
+
+            const xPx_png = toFramePx(box.left, { frameW, previewCssW });
+            const yPx_png = toFramePx(firstLineTopCss, { frameW, previewCssW });
+
+            return {
+                // DOM truth
+                lines,
+                splitLines,
+                totalTextH,                       // css px (pre-scale), OK—server doesn't recompute
+                yPxFirstLine: toFramePx(firstLineTopCss, { frameW, previewCssW }),
+
+                // Fonts & spacing (exactly as rendered)
+                fontPx: s.fontPx,
+                lineSpacingPx: s.lineSpacingPx,
+                letterSpacingPx: s.letterSpacingPx,
+                fontFamily: s.fontFamily,
+                fontStyle: s.fontStyle,
+                weightCss: s.weightCss,
+                previewFontString: `${s.fontStyle} ${s.weightCss} ${s.fontPx}px "${s.fontFamily.split(',')[0].replace(/["']/g,'').trim()}"`,
+
+                // Raster box (tight to the content box)
+                rasterW: rW,
+                rasterH: rH,
+                rasterPadding: 0,                 // set >0 only if your overlay shows extra pad visually
+
+                // Placement in frame space
+                xPx_png,                          // or use xExpr_png='(W-overlay_w)/2' if you center
+                yPx_png,
+
+                // Frame (unchanged)
+                frameW, frameH,
+            };
+        }
+
         // Save Preview function (SSOT workflow)
         async function savePreview() {
             if (!window.auth?.currentUser) {
@@ -3336,6 +3473,9 @@
             saveBtn.textContent = 'Saving...';
 
             try {
+                // Wait for fonts to be ready before measuring DOM
+                await document.fonts.ready;
+                
                 // Get current caption meta from overlay system
                 const meta = window.getCaptionMeta();
                 
@@ -3344,9 +3484,35 @@
                     return;
                 }
                 
+                // Find the correct elements for browser measurement
+                const liveEl = document.getElementById('caption-live');
+                const stageEl = document.querySelector('.caption-box') || liveEl?.parentElement;
+                const contentEl = liveEl || document.querySelector('.caption-box .content');
+                const container = document.getElementById('live-preview-container');
+                const previewCssW = container?.clientWidth || 360;
+                
+                if (!contentEl) {
+                    alert('Preview text element not found');
+                    return;
+                }
+                
+                // Get browser-rendered geometry
+                const browserGeometry = buildRasterFromBrowser({
+                    stageEl,
+                    contentEl,
+                    frameW: 1080,
+                    frameH: 1920,
+                    previewCssW
+                });
+                
+                // Validate browser geometry
+                if (browserGeometry.splitLines < 1) {
+                    alert('Unable to detect text lines - please try again');
+                    return;
+                }
+                
                 // SSOT-first: use window.__serverCaptionMeta if available
                 const ssot = window.__serverCaptionMeta || {};
-                const liveEl = document.getElementById('caption-live');
                 const cs = liveEl ? getComputedStyle(liveEl) : null;
                 const scale = (typeof window.computePreviewScale === 'function') 
                               ? window.computePreviewScale() : 0.333;
@@ -3402,17 +3568,24 @@
                     textRaw,  // NEW: preserve original with newlines
                     text,     // normalized canonical version
                     
-                    // Typography
-                    fontFamily,
-                    fontPx,
-                    lineSpacingPx,
-                    letterSpacingPx,
-                    weightCss,
-                    fontStyle,
+                    // Browser-rendered line data (REQUIRED)
+                    lines: browserGeometry.lines,
+                    splitLines: browserGeometry.splitLines,
+                    totalTextH: browserGeometry.totalTextH,
+                    yPxFirstLine: browserGeometry.yPxFirstLine,
+                    
+                    // Typography (from browser)
+                    fontFamily: browserGeometry.fontFamily,
+                    fontPx: browserGeometry.fontPx,
+                    lineSpacingPx: browserGeometry.lineSpacingPx,
+                    letterSpacingPx: browserGeometry.letterSpacingPx,
+                    weightCss: browserGeometry.weightCss,
+                    fontStyle: browserGeometry.fontStyle,
+                    previewFontString: browserGeometry.previewFontString,
                     textAlign,
                     textTransform,
                     
-                    // Color & effects
+                    // Color & effects (from existing logic)
                     color,
                     opacity,
                     strokePx,
@@ -3422,11 +3595,12 @@
                     shadowOffsetX,
                     shadowOffsetY,
                     
-                    // Geometry
-                    rasterW,
-                    rasterH,
-                    yPx_png,
-                    rasterPadding,
+                    // Geometry (from browser)
+                    rasterW: browserGeometry.rasterW,
+                    rasterH: browserGeometry.rasterH,
+                    rasterPadding: browserGeometry.rasterPadding,
+                    xPx_png: browserGeometry.xPx_png,
+                    yPx_png: browserGeometry.yPx_png,
                     xExpr_png,
                     
                     // Frame dimensions
@@ -3436,21 +3610,39 @@
 
                 // Derive V2 percentage fields from SSOT raster values for backward compatibility
                 const frameW = 1080, frameH = 1920;
-                payload.wPct = Number.isFinite(rasterW) ? +(rasterW / frameW).toFixed(6) : undefined;
-                payload.yPct = Number.isFinite(yPx_png) ? +(yPx_png / frameH).toFixed(6) : undefined;
+                payload.wPct = Number.isFinite(browserGeometry.rasterW) ? +(browserGeometry.rasterW / frameW).toFixed(6) : undefined;
+                payload.yPct = Number.isFinite(browserGeometry.yPx_png) ? +(browserGeometry.yPx_png / frameH).toFixed(6) : undefined;
                 payload.xPct = Number.isFinite(payload.wPct) ? +((1 - payload.wPct) / 2).toFixed(6) : undefined;
+
+                // Validate payload before POST
+                const numericFields = ['splitLines', 'totalTextH', 'yPxFirstLine', 'rasterW', 'rasterH', 'fontPx', 'lineSpacingPx', 'letterSpacingPx'];
+                const invalidFields = numericFields.filter(field => !Number.isFinite(payload[field]));
+                
+                if (invalidFields.length > 0) {
+                    throw new Error(`Invalid numeric fields: ${invalidFields.join(', ')}`);
+                }
+                
+                if (payload.splitLines < 1) {
+                    throw new Error('splitLines must be >= 1');
+                }
+                
+                if (!Array.isArray(payload.lines) || payload.lines.length === 0) {
+                    throw new Error('lines array is required and must be non-empty');
+                }
 
                 console.log('[savePreview] Final payload:', payload);
 
                 console.log('[savePreview:parity]', {
                     hasSSOT: !!window.__serverCaptionMeta,
-                    fontPx,
-                    lineSpacingPx,
-                    letterSpacingPx,
-                    rasterW,
-                    rasterH,
-                    yPx_png,
-                    rasterPadding,
+                    fontPx: browserGeometry.fontPx,
+                    lineSpacingPx: browserGeometry.lineSpacingPx,
+                    letterSpacingPx: browserGeometry.letterSpacingPx,
+                    rasterW: browserGeometry.rasterW,
+                    rasterH: browserGeometry.rasterH,
+                    yPx_png: browserGeometry.yPx_png,
+                    rasterPadding: browserGeometry.rasterPadding,
+                    splitLines: browserGeometry.splitLines,
+                    linesCount: browserGeometry.lines.length,
                     allNumsFinite: Object.entries(payload)
                         .filter(([k, v]) => typeof v === 'number')
                         .every(([k, v]) => Number.isFinite(v))
