@@ -3465,12 +3465,17 @@
             const box = stageEl.getBoundingClientRect();
             const firstLineTopCss = rectsPerLine[0]?.[0]?.top ?? box.top;
 
-            // 4) Total text height by definition (not recomputed on server)
-            const totalTextH = s.fontPx * splitLines + s.lineSpacingPx * (splitLines - 1);
+            // 4) Convert typography to frame pixels
+            const fontPxFrame = toFramePx(s.fontPx, { frameW, previewCssW });
+            const lineSpacingPxFrame = toFramePx(s.lineSpacingPx, { frameW, previewCssW });
+            const letterSpacingPxFrame = toFramePx(s.letterSpacingPx, { frameW, previewCssW });
 
-            // 5) Convert to frame pixels
+            // 5) Calculate totalTextH in frame space
+            const totalTextHFrame = fontPxFrame * splitLines + lineSpacingPxFrame * (splitLines - 1);
+
+            // 6) Convert to frame pixels
             const rW = toFramePx(box.width, { frameW, previewCssW });
-            const rH = toFramePx(totalTextH, { frameW, previewCssW });
+            const rH = totalTextHFrame;  // Already in frame space, no conversion needed
 
             const xPx_png = toFramePx(box.left, { frameW, previewCssW });
             const yPx_png = toFramePx(firstLineTopCss, { frameW, previewCssW });
@@ -3479,17 +3484,17 @@
                 // DOM truth
                 lines,
                 splitLines,
-                totalTextH,                       // css px (pre-scale), OK—server doesn't recompute
+                totalTextH: totalTextHFrame,      // Frame pixels
                 yPxFirstLine: toFramePx(firstLineTopCss, { frameW, previewCssW }),
 
-                // Fonts & spacing (exactly as rendered)
-                fontPx: s.fontPx,
-                lineSpacingPx: s.lineSpacingPx,
-                letterSpacingPx: s.letterSpacingPx,
+                // Fonts & spacing (converted to frame space)
+                fontPx: fontPxFrame,
+                lineSpacingPx: lineSpacingPxFrame,
+                letterSpacingPx: letterSpacingPxFrame,
                 fontFamily: s.fontFamily,
                 fontStyle: s.fontStyle,
                 weightCss: s.weightCss,
-                previewFontString: `${s.fontStyle} ${s.weightCss} ${s.fontPx}px "${s.fontFamily.split(',')[0].replace(/["']/g,'').trim()}"`,
+                previewFontString: `${s.fontStyle} ${s.weightCss} ${fontPxFrame}px "${s.fontFamily.split(',')[0].replace(/["']/g,'').trim()}"`,
 
                 // Raster box (tight to the content box)
                 rasterW: rW,
