@@ -128,6 +128,51 @@ router.post("/caption/preview", express.json(), async (req, res) => {
         const totalTextH = data.totalTextH || (lines.length * fontPx + (lines.length - 1) * lineSpacingPx);
         const yPxFirstLine = data.yPxFirstLine || (yPx_png + rasterPadding);
         
+        // ✅ Safety logs and assertions for client canonical values
+        console.log('[raster] Using client canonical values:', {
+          clientRasterW: rasterW,
+          clientRasterH: rasterH,
+          clientRasterPadding: rasterPadding,
+          linesCount: lines.length
+        });
+        
+        // Assert that all required client values are present and numeric
+        if (!Number.isFinite(rasterW) || rasterW <= 0) {
+          console.error('[raster] clientRasterW is missing or invalid:', rasterW);
+          return res.status(400).json({ 
+            ok: false, 
+            reason: "MISSING_CLIENT_RASTER_W", 
+            detail: `clientRasterW is required but missing or invalid: ${rasterW}` 
+          });
+        }
+        
+        if (!Number.isFinite(rasterH) || rasterH <= 0) {
+          console.error('[raster] clientRasterH is missing or invalid:', rasterH);
+          return res.status(400).json({ 
+            ok: false, 
+            reason: "MISSING_CLIENT_RASTER_H", 
+            detail: `clientRasterH is required but missing or invalid: ${rasterH}` 
+          });
+        }
+        
+        if (!Number.isFinite(rasterPadding) || rasterPadding < 0) {
+          console.error('[raster] clientRasterPadding is missing or invalid:', rasterPadding);
+          return res.status(400).json({ 
+            ok: false, 
+            reason: "MISSING_CLIENT_RASTER_PADDING", 
+            detail: `clientRasterPadding is required but missing or invalid: ${rasterPadding}` 
+          });
+        }
+        
+        if (!Array.isArray(lines) || lines.length === 0) {
+          console.error('[raster] lines array is missing or empty:', lines);
+          return res.status(400).json({ 
+            ok: false, 
+            reason: "MISSING_LINES", 
+            detail: `lines array is required but missing or empty` 
+          });
+        }
+        
         // Call renderCaptionRaster with client SSOT values
         const rasterResult = await renderCaptionRaster({
           text,

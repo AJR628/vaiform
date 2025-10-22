@@ -102,6 +102,11 @@
     <script type="module" src="./frontend.js"></script>
     <!-- Hybrid caption preview system -->
     <script type="module" src="./js/caption-live.js"></script>
+    <!-- Import shared line extraction function -->
+    <script type="module">
+        import { extractRenderedLines } from './js/caption-overlay.js';
+        window.extractRenderedLines = extractRenderedLines;
+    </script>
     <!-- Delegated event system for action buttons -->
     <script src="./js/ui-actions.js"></script>
     <link rel="stylesheet" href="/creative.css" />
@@ -3317,6 +3322,11 @@
                 rasterH: int(p.rasterH),
                 rasterPadding: int(p.rasterPadding || 0),
                 fontPx: int(p.fontPx),
+                
+                // Client canonical values (required for V3 raster)
+                clientRasterW: int(p.clientRasterW || p.rasterW),
+                clientRasterH: int(p.clientRasterH || p.rasterH),
+                clientRasterPadding: int(p.clientRasterPadding || p.rasterPadding || 0),
                 lineSpacingPx: int(p.lineSpacingPx),
                 letterSpacingPx: int(p.letterSpacingPx || 0),
                 totalTextH: int(p.totalTextH),
@@ -3460,13 +3470,13 @@
             // 1) Styles (browser truth)
             const s = readComputed(contentEl);
 
-            // 2) Visual lines
-            const { lines, rectsPerLine } = extractLines(contentEl);
+            // 2) Visual lines - use shared line extraction from overlay
+            const lines = window.extractRenderedLines(contentEl);
             const splitLinesCount = Math.max(1, lines.length);
 
             // 3) Overlay box in CSS pixels (content box)
             const box = stageEl.getBoundingClientRect();
-            const firstLineTopCss = rectsPerLine[0]?.[0]?.top ?? box.top;
+            const firstLineTopCss = box.top; // Use box top as fallback since we don't have rectsPerLine
 
             // 4) Convert typography to frame pixels
             const fontPxFrame = toFramePx(s.fontPx, { frameW, previewCssW });
@@ -3550,7 +3560,7 @@
                     return;
                 }
                 
-                // Get browser-rendered geometry
+                // Get browser-rendered geometry using shared line extraction
                 const browserGeometry = buildRasterFromBrowser({
                     stageEl,
                     contentEl,
@@ -3656,6 +3666,11 @@
                     xPx_png: browserGeometry.xPx_png,
                     yPx_png: browserGeometry.yPx_png,
                     xExpr_png,
+                    
+                    // Client canonical values for server (required for V3 raster)
+                    clientRasterW: browserGeometry.rasterW,
+                    clientRasterH: browserGeometry.rasterH,
+                    clientRasterPadding: browserGeometry.rasterPadding,
                     
                     // Frame dimensions
                     frameW: 1080,

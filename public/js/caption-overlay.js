@@ -860,80 +860,6 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     };
   }
 
-  // Extract actual line breaks from DOM rendering
-  function extractRenderedLines(element) {
-    const text = element.textContent || '';
-    if (!text.trim()) return [];
-    
-    // Primary: Use Range API to detect line boxes
-    try {
-      const range = document.createRange();
-      const walker = document.createTreeWalker(
-        element,
-        NodeFilter.SHOW_TEXT,
-        null,
-        false
-      );
-      
-      const lines = [];
-      let currentLine = '';
-      let lastBottom = null;
-      
-      let textNode;
-      while (textNode = walker.nextNode()) {
-        const nodeText = textNode.textContent;
-        for (let i = 0; i < nodeText.length; i++) {
-          range.setStart(textNode, i);
-          range.setEnd(textNode, i + 1);
-          const rects = range.getClientRects();
-          if (rects.length > 0) {
-            const rect = rects[0];
-            if (lastBottom !== null && rect.bottom > lastBottom + 2) {
-              // Line break detected
-              if (currentLine.trim()) lines.push(currentLine.trim());
-              currentLine = nodeText[i];
-            } else {
-              currentLine += nodeText[i];
-            }
-            lastBottom = rect.bottom;
-          }
-        }
-      }
-      if (currentLine.trim()) lines.push(currentLine.trim());
-      
-      if (lines.length > 0) {
-        console.log('[extractLines] DOM method:', lines.length, 'lines');
-        return lines;
-      }
-    } catch (e) {
-      console.warn('[extractLines] DOM method failed:', e);
-    }
-    
-    // Fallback: Canvas measurement (only if DOM fails)
-    const cs = getComputedStyle(element);
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
-    ctx.font = `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
-    
-    const maxWidth = element.clientWidth - parseInt(cs.paddingLeft, 10) - parseInt(cs.paddingRight, 10);
-    const words = text.trim().split(/\s+/).filter(Boolean);
-    const lines = [];
-    let line = '';
-    
-    for (const word of words) {
-      const test = line ? line + ' ' + word : word;
-      if (ctx.measureText(test).width > maxWidth && line) {
-        lines.push(test);
-        line = word;
-      } else {
-        line = test;
-      }
-    }
-    if (line) lines.push(line);
-    
-    console.log('[extractLines] Canvas fallback:', lines.length, 'lines');
-    return lines;
-  }
 
   // Emit unified caption state to live preview system
   function emitCaptionState(reason = 'toolbar') {
@@ -1102,6 +1028,81 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
 export function getCaptionMeta(){ return window.getCaptionMeta(); }
 export function applyCaptionMeta(meta){ return window.applyCaptionMeta(meta); }
 export function setQuote(text){ return window.setQuote(text); }
+
+// Export the line extraction function for shared use
+export function extractRenderedLines(element) {
+  const text = element.textContent || '';
+  if (!text.trim()) return [];
+  
+  // Primary: Use Range API to detect line boxes
+  try {
+    const range = document.createRange();
+    const walker = document.createTreeWalker(
+      element,
+      NodeFilter.SHOW_TEXT,
+      null,
+      false
+    );
+    
+    const lines = [];
+    let currentLine = '';
+    let lastBottom = null;
+    
+    let textNode;
+    while (textNode = walker.nextNode()) {
+      const nodeText = textNode.textContent;
+      for (let i = 0; i < nodeText.length; i++) {
+        range.setStart(textNode, i);
+        range.setEnd(textNode, i + 1);
+        const rects = range.getClientRects();
+        if (rects.length > 0) {
+          const rect = rects[0];
+          if (lastBottom !== null && rect.bottom > lastBottom + 2) {
+            // Line break detected
+            if (currentLine.trim()) lines.push(currentLine.trim());
+            currentLine = nodeText[i];
+          } else {
+            currentLine += nodeText[i];
+          }
+          lastBottom = rect.bottom;
+        }
+      }
+    }
+    if (currentLine.trim()) lines.push(currentLine.trim());
+    
+    if (lines.length > 0) {
+      console.log('[extractLines] DOM method:', lines.length, 'lines');
+      return lines;
+    }
+  } catch (e) {
+    console.warn('[extractLines] DOM method failed:', e);
+  }
+  
+  // Fallback: Canvas measurement (only if DOM fails)
+  const cs = getComputedStyle(element);
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  ctx.font = `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+  
+  const maxWidth = element.clientWidth - parseInt(cs.paddingLeft, 10) - parseInt(cs.paddingRight, 10);
+  const words = text.trim().split(/\s+/).filter(Boolean);
+  const lines = [];
+  let line = '';
+  
+  for (const word of words) {
+    const test = line ? line + ' ' + word : word;
+    if (ctx.measureText(test).width > maxWidth && line) {
+      lines.push(test);
+      line = word;
+    } else {
+      line = test;
+    }
+  }
+  if (line) lines.push(line);
+  
+  console.log('[extractLines] Canvas fallback:', lines.length, 'lines');
+  return lines;
+}
 
 // Ensure the caption box is on top, hit-testable, and inside the stage viewport
 export function ensureOverlayTopAndVisible(stageSel = '#stage') {
