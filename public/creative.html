@@ -3321,7 +3321,8 @@
                 letterSpacingPx: int(p.letterSpacingPx || 0),
                 totalTextH: int(p.totalTextH),
                 yPxFirstLine: int(p.yPxFirstLine),
-                splitLines: Array.isArray(p.splitLines) ? p.splitLines.map(s => String(s ?? '')) : [],
+                lines: Array.isArray(p.lines) ? p.lines.map(s => String(s ?? '')) : [],
+                splitLines: int(p.splitLines || (Array.isArray(p.lines) ? p.lines.length : 0)),
                 
                 // placement must be >= 0
                 xPx_png: nonneg(p.xPx_png ?? 0),
@@ -3332,9 +3333,6 @@
                 fontStyle: String(p.fontStyle || 'normal'),
                 weightCss: String(p.weightCss || '400'),
                 previewFontString: String(p.previewFontString || ''),
-                
-                // optional but recommended
-                lines: Array.isArray(p.lines) ? p.lines.map(s => String(s ?? '')) : undefined,
                 
                 // remove percent fields to avoid ambiguity in raster mode
                 xPct: undefined,
@@ -3481,10 +3479,9 @@
             const yPx_png = toFramePx(firstLineTopCss, { frameW, previewCssW });
 
             return {
-                // DOM truth
-                lines,           // Keep for backward compat if needed
-                splitLines: lines,  // Server expects the array here
-                splitLinesCount,    // The numeric count
+                // DOM truth - correct field names for server
+                lines,                    // string[] - the actual line text
+                splitLines: lines.length,  // number - the count
                 totalTextH: totalTextHFrame,      // Frame pixels
                 yPxFirstLine: toFramePx(firstLineTopCss, { frameW, previewCssW }),
 
@@ -3621,7 +3618,8 @@
                     text,     // normalized canonical version
                     
                     // Browser-rendered line data (REQUIRED)
-                    splitLines: browserGeometry.lines,  // Server expects array here
+                    lines: browserGeometry.lines,              // string[] - the actual line text
+                    splitLines: browserGeometry.splitLines,     // number - the count
                     totalTextH: browserGeometry.totalTextH,
                     yPxFirstLine: browserGeometry.yPxFirstLine,
                     
@@ -3673,8 +3671,8 @@
                     throw new Error(`Invalid numeric fields: ${preInvalidFields.join(', ')}`);
                 }
                 
-                if (!Array.isArray(payload.splitLines) || payload.splitLines.length === 0) {
-                    throw new Error('splitLines must be a non-empty array');
+                if (!Array.isArray(payload.lines) || payload.lines.length === 0) {
+                    throw new Error('lines must be a non-empty array');
                 }
                 
 
@@ -3740,6 +3738,14 @@
                     allNumsFinite: Object.entries(normalizedPayload)
                         .filter(([k, v]) => typeof v === 'number')
                         .every(([k, v]) => Number.isFinite(v))
+                });
+
+                // Preflight validation to catch MISSING_SPLITLINES early
+                console.log('[preflight]', {
+                    hasLinesArray: Array.isArray(normalizedPayload.lines),
+                    linesLen: normalizedPayload.lines?.length,
+                    splitLinesType: typeof normalizedPayload.splitLines,
+                    splitLinesValue: normalizedPayload.splitLines,
                 });
 
                 // Call preview API with normalized payload

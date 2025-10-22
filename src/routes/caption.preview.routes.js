@@ -45,6 +45,13 @@ const RasterSchema = z.object({
   frameW: z.coerce.number().int().default(1080),
   frameH: z.coerce.number().int().default(1920),
   
+  // Browser-rendered line data (REQUIRED in raster mode)
+  lines: z.array(z.string()).min(1, "At least one line required"),
+  splitLines: z.coerce.number().int().min(1),  // line count
+  totalTextH: z.coerce.number().int().min(1),
+  yPxFirstLine: z.coerce.number().int(),
+  previewFontString: z.string().optional(),
+  
   // Optional legacy fields (ignored but allowed during transition)
   xPct: z.coerce.number().optional(),
   yPct: z.coerce.number().optional(),
@@ -87,12 +94,14 @@ router.post("/caption/preview", express.json(), async (req, res) => {
         const rasterH = data.rasterH;  // ✅ TRUST CLIENT - no recomputation
         const yPx_png = data.yPx_png;  // ✅ TRUST CLIENT - no fallback
         const rasterPadding = data.rasterPadding;  // ✅ TRUST CLIENT - no recomputation
-        const splitLines = data.splitLines || [];  // ✅ Use client splitLines if provided
+        const lines = data.lines || [];  // ✅ Use client lines (browser-rendered)
+        const splitLines = data.splitLines || lines.length;  // Use provided count or derive from lines
         
         console.log('[geom:server]', {
           fontPx, lineSpacingPx, letterSpacingPx, rasterW, rasterH,
           xExpr_png: data.xExpr_png, yPx_png, frameW: data.frameW, frameH: data.frameH,
-          splitLines: Array.isArray(splitLines) ? splitLines.length : 'n/a'
+          lines: Array.isArray(lines) ? lines.length : 'n/a',
+          splitLines: splitLines
         });
         
         // Wrap text using client rasterW (reuse V2 pattern)
@@ -101,27 +110,23 @@ router.post("/caption/preview", express.json(), async (req, res) => {
         const font = canvasFontString(data.weightCss, data.fontStyle, fontPx);
         ctx.font = font;
         
-        // ✅ Use client splitLines if provided - NO RE-WRAP
-        let lines;
-        if (splitLines && splitLines.length > 0) {
-          // Trust client splitLines exactly - these are browser-rendered line breaks
-          lines = splitLines;
-          console.log('[raster] Using client splitLines (browser truth):', lines.length, 'lines');
+        // ✅ Use client lines if provided - NO RE-WRAP
+        if (lines && lines.length > 0) {
+          // Trust client lines exactly - these are browser-rendered line breaks
+          console.log('[raster] Using client lines (browser truth):', lines.length, 'lines');
         } else {
           // Reject if missing - client MUST send lines
-          console.error('[raster] Client splitLines missing - cannot proceed');
+          console.error('[raster] Client lines missing - cannot proceed');
           return res.status(400).json({ 
             ok: false, 
             reason: "MISSING_SPLITLINES", 
-            detail: "Client must send browser-rendered splitLines in raster mode" 
+            detail: "Client must send browser-rendered lines in raster mode" 
           });
         }
         
-        // Calculate totalTextH using client SSOT formula
-        const totalTextH = lines.length * fontPx + (lines.length - 1) * lineSpacingPx;
-        
-        // Calculate yPxFirstLine (text baseline, NOT PNG top)
-        const yPxFirstLine = yPx_png + rasterPadding;
+        // ✅ Use client SSOT values - NO RECOMPUTATION
+        const totalTextH = data.totalTextH || (lines.length * fontPx + (lines.length - 1) * lineSpacingPx);
+        const yPxFirstLine = data.yPxFirstLine || (yPx_png + rasterPadding);
         
         // Call renderCaptionRaster with client SSOT values
         const rasterResult = await renderCaptionRaster({
@@ -227,8 +232,9 @@ router.post("/caption/preview", express.json(), async (req, res) => {
           shadowOffsetX: data.shadowOffsetX,
           shadowOffsetY: data.shadowOffsetY,
           
-          // Debug info - include splitLines for client
-          splitLines: lines,  // ✅ Return exact lines used
+          // Debug info - include lines for client
+          lines: lines,  // ✅ Return exact lines used
+          splitLines: lines.length,  // ✅ Return count
           lineSpacingPx,
           totalTextH: totalTextH,  // ✅ Use server-computed value for verification
           yPxFirstLine: data.yPx_png + data.rasterPadding,
@@ -261,7 +267,7 @@ router.post("/caption/preview", express.json(), async (req, res) => {
         
         console.log('[v3:preview:respond]', { 
           have: Object.keys(ssotMeta),
-          required: ['rasterUrl', 'rasterW', 'rasterH', 'rasterPadding', 'yPx_png', 'bgScaleExpr', 'bgCropExpr', 'rasterHash', 'previewFontString', 'totalTextH', 'yPxFirstLine', 'splitLines']
+          required: ['rasterUrl', 'rasterW', 'rasterH', 'rasterPadding', 'yPx_png', 'bgScaleExpr', 'bgCropExpr', 'rasterHash', 'previewFontString', 'totalTextH', 'yPxFirstLine', 'lines', 'splitLines']
         });
         
         return res.status(200).json({
