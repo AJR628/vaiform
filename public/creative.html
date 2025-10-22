@@ -3334,6 +3334,11 @@
                 weightCss: String(p.weightCss || '400'),
                 previewFontString: String(p.previewFontString || ''),
                 
+                // CRITICAL: Map client fields to server-expected field names
+                clientRasterW: int(p.rasterW),
+                clientRasterH: int(p.rasterH),
+                clientRasterPadding: int(p.rasterPadding || 0),
+                
                 // remove percent fields to avoid ambiguity in raster mode
                 xPct: undefined,
                 yPct: undefined,
