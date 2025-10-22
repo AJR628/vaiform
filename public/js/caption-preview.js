@@ -380,7 +380,7 @@ export async function generateCaptionPreview(opts) {
       internalPadding: Number(meta.internalPadding ?? 32),
       
       // SSOT fields - must match server response
-      splitLines: Array.isArray(meta.splitLines) ? meta.splitLines : [],
+      splitLines: Array.isArray(meta.splitLines) ? meta.splitLines.length : (Number(meta.splitLines) || 0),
       totalTextH: totalTextH,
       totalTextHPx: totalTextH,
       yPxFirstLine: yPxFirstLine,

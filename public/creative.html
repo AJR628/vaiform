@@ -3336,7 +3336,7 @@
                 
                 // placement must be >= 0
                 xPx_png: nonneg(p.xPx_png ?? 0),
-                yPx_png: nonneg(p.yPx_png ?? 0),
+                yPx_png: int(p.yPx_png ?? 0),
                 
                 // strings – ensure they're present
                 fontFamily: String(p.fontFamily || ''),
@@ -3699,7 +3699,7 @@
                     xPx_png: normalizedPayload.xPx_png,
                     splitLines: normalizedPayload.splitLines?.length || 0,
                     allIntegers: numericFields.every(field => Number.isInteger(normalizedPayload[field])),
-                    allNonNegative: ['xPx_png', 'yPx_png'].every(field => normalizedPayload[field] >= 0)
+                    allNonNegative: ['xPx_png'].every(field => normalizedPayload[field] >= 0)
                 });
 
                 console.log('[savePreview:parity]', {
@@ -3747,7 +3747,7 @@
                 const totalTextH = Number(m.totalTextH ?? m.totalTextHPx);
                 const yPxFirstLine = Number(resp.yPx);  // ← FIX: top-level, NOT meta
                 const serverLineSpacingPx = Number(m.lineSpacingPx ?? 0);
-                const splitLines = Array.isArray(m.splitLines) ? m.splitLines : [];
+                const splitLines = Array.isArray(m.splitLines) ? m.splitLines.length : (Number(m.splitLines) || 0);
 
                 // Server-authoritative geometry - overwrite client values
                 const serverRasterW = Number.isFinite(m.rasterW) ? m.rasterW : rasterW;
@@ -3838,7 +3838,7 @@
                     
                     // Diagnostics (keep for debugging, NOT used in render)
                     lineSpacingPx: serverLineSpacingPx,
-                    splitLines: Array.isArray(m.splitLines) ? m.splitLines : [],
+                    splitLines: Array.isArray(m.splitLines) ? m.splitLines.length : (Number(m.splitLines) || 0),
                     totalTextH: Number(m.totalTextH ?? 0),
                     
                     // Legacy compatibility fields (deprecated for v3 raster)
@@ -4266,7 +4266,7 @@
                     throw new Error('Missing SSOT field: yPxFirstLine');
                   }
 
-                  if (!Array.isArray(savedMeta?.splitLines) || savedMeta.splitLines.length === 0) {
+                  if (!Number.isFinite(savedMeta?.splitLines) || savedMeta.splitLines <= 0) {
                     alert('Preview data incomplete (splitLines missing). Please generate and save preview again.');
                     throw new Error('Missing SSOT field: splitLines');
                   }
