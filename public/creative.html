@@ -3344,10 +3344,6 @@
                 weightCss: String(p.weightCss || '400'),
                 previewFontString: String(p.previewFontString || ''),
                 
-                // CRITICAL: Map client fields to server-expected field names
-                clientRasterW: int(p.rasterW),
-                clientRasterH: int(p.rasterH),
-                clientRasterPadding: int(p.rasterPadding || 0),
                 
                 // remove percent fields to avoid ambiguity in raster mode
                 xPct: undefined,
@@ -3413,51 +3409,6 @@
             };
         }
 
-        // Extract visual lines from the DOM
-        // Works for contentEditable or an inline-block text container.
-        function extractLines(contentEl) {
-            // Force a Range over the *text* content. Works even with <br> or soft wraps.
-            const walker = document.createTreeWalker(contentEl, NodeFilter.SHOW_TEXT, null);
-            const lines = [];
-            const rectsPerLine = [];
-
-            let lastTop = null, currLine = '', currRects = [];
-
-            function flush() {
-                if (!currLine && currRects.length === 0) return;
-                lines.push(currLine);
-                rectsPerLine.push(currRects.slice());
-                currLine = ''; currRects.length = 0;
-            }
-
-            while (walker.nextNode()) {
-                const node = walker.currentNode;
-                if (!node.nodeValue) continue;
-
-                // Measure this text node by slicing ranges at grapheme-ish steps.
-                // (We don't need per-word fidelity—per-node jumps suffice in practice.)
-                const range = document.createRange();
-                range.selectNodeContents(node);
-                const rects = Array.from(range.getClientRects()); // visual boxes for this node
-
-                rects.forEach(r => {
-                    // New line if top jumps significantly (accounts for fractional px)
-                    if (lastTop === null || Math.abs(r.top - lastTop) > 0.5) {
-                        flush();
-                        lastTop = r.top;
-                    }
-                    currRects.push({ top: r.top, left: r.left, width: r.width, height: r.height });
-                });
-
-                currLine += node.nodeValue; // text in order; server doesn't wrap again
-                range.detach();
-            }
-            flush();
-
-            // Clean up trailing whitespace lines
-            const trimmed = lines.map(l => l.replace(/\s+$/g, ''));
-            return { lines: trimmed, rectsPerLine };
-        }
 
         // Build raster geometry exactly like the user sees
         function buildRasterFromBrowser({
@@ -3486,19 +3437,26 @@
             // 5) Calculate totalTextH in frame space
             const totalTextHFrame = fontPxFrame * splitLinesCount + lineSpacingPxFrame * (splitLinesCount - 1);
 
-            // 6) Convert to frame pixels
+            // 6a) Read actual padding from content element (if any)
+            const sContent = getComputedStyle(contentEl);
+            const contentPadTopCss = parseFloat(sContent.paddingTop) || 0;
+            const paddingFramePx = Math.round(toFramePx(contentPadTopCss, { frameW, previewCssW }));
+
+            // 6b) Convert to frame pixels
             const rW = toFramePx(box.width, { frameW, previewCssW });
             const rH = totalTextHFrame;  // Already in frame space, no conversion needed
 
             const xPx_png = toFramePx(box.left, { frameW, previewCssW });
             const yPx_png = toFramePx(firstLineTopCss, { frameW, previewCssW });
 
+            console.debug('[browser-geom]', { rW, rH, paddingFramePx, yPx_png, yPxFirstLine: yPx_png + paddingFramePx, lines: lines.length });
+
             return {
                 // DOM truth - correct field names for server
                 lines,                    // string[] - the actual line text
                 splitLines: lines.length,  // number - the count
                 totalTextH: totalTextHFrame,      // Frame pixels
-                yPxFirstLine: toFramePx(firstLineTopCss, { frameW, previewCssW }),
+                yPxFirstLine: yPx_png + paddingFramePx,
 
                 // Fonts & spacing (converted to frame space)
                 fontPx: fontPxFrame,
@@ -3512,7 +3470,7 @@
                 // Raster box (tight to the content box)
                 rasterW: rW,
                 rasterH: rH,
-                rasterPadding: 0,                 // set >0 only if your overlay shows extra pad visually
+                rasterPadding: paddingFramePx,
 
                 // Placement in frame space
                 xPx_png,                          // or use xExpr_png='(W-overlay_w)/2' if you center

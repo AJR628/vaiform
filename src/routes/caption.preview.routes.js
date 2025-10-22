@@ -1061,13 +1061,24 @@ async function renderCaptionRaster(meta) {
   let padding, rasterW, rasterH;
   
   // ✅ Use client canonical values - NO FALLBACK
-  if (!meta.clientRasterW || !meta.clientRasterH || !meta.clientRasterPadding) {
-    throw new Error('RASTER: clientRasterW/H/Padding required but missing');
+  if (
+    !Number.isFinite(meta.clientRasterW) || meta.clientRasterW <= 0 ||
+    !Number.isFinite(meta.clientRasterH) || meta.clientRasterH <= 0 ||
+    meta.clientRasterPadding === undefined || meta.clientRasterPadding === null ||
+    !Number.isFinite(meta.clientRasterPadding) || meta.clientRasterPadding < 0
+  ) {
+    throw new Error('RASTER: clientRasterW/H/Padding required but missing or invalid');
   }
 
   padding = meta.clientRasterPadding;
   rasterW = meta.clientRasterW;
   rasterH = meta.clientRasterH;
+
+  console.log('[raster] guard-ok:', {
+    clientRasterW: meta.clientRasterW,
+    clientRasterH: meta.clientRasterH,
+    clientRasterPadding: meta.clientRasterPadding
+  });
 
   console.log('[raster] Using client canonical values (no computation):', { 
     padding, rasterW, rasterH 
