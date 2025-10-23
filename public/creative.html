@@ -3425,9 +3425,14 @@
             const lines = window.extractRenderedLines(contentEl);
             const splitLinesCount = Math.max(1, lines.length);
 
-            // 3) Overlay box in CSS pixels (content box)
+            // 3) Get container for relative positioning
+            const stageContainer = stageEl.parentElement || stageEl;
+            const containerRect = stageContainer.getBoundingClientRect();
             const box = stageEl.getBoundingClientRect();
-            const firstLineTopCss = box.top; // Use box top as fallback since we don't have rectsPerLine
+
+            // Calculate position relative to container (not viewport)
+            const relativeTopCss = box.top - containerRect.top;
+            const relativeLeftCss = box.left - containerRect.left;
 
             // 4) Convert typography to frame pixels
             const fontPxFrame = toFramePx(s.fontPx, { frameW, previewCssW });
@@ -3446,8 +3451,8 @@
             const rW = toFramePx(box.width, { frameW, previewCssW });
             const rH = totalTextHFrame;  // Already in frame space, no conversion needed
 
-            const xPx_png = toFramePx(box.left, { frameW, previewCssW });
-            const yPx_png = toFramePx(firstLineTopCss, { frameW, previewCssW });
+            const xPx_png = toFramePx(relativeLeftCss, { frameW, previewCssW });
+            const yPx_png = toFramePx(relativeTopCss, { frameW, previewCssW });
 
             console.debug('[browser-geom]', { rW, rH, paddingFramePx, yPx_png, yPxFirstLine: yPx_png + paddingFramePx, lines: lines.length });
 
