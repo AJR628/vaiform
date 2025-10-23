@@ -317,7 +317,7 @@ export async function renderCaptionImage(jobId, style) {
     wPx: trimmedWidth,
     hPx: trimmedHeight,
     meta: {
-      splitLines: lines, // Use lines as expected by the system
+      lines: lines, // Use lines as expected by the system
       baselines,
       fontPx: finalFontPx,
       lineSpacingPx: lineSpacingPx,

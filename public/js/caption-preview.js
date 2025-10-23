@@ -102,24 +102,24 @@ function detectOverlayV2() {
 function validateTotalTextHFormula(meta) {
   if (!meta || typeof meta !== 'object') return false;
   
-  const { fontPx, lineSpacingPx, totalTextH, splitLines } = meta;
+  const { fontPx, lineSpacingPx, totalTextH, lines } = meta;
   
   // Must have all required fields
   if (!Number.isFinite(fontPx) || !Number.isFinite(lineSpacingPx) || 
-      !Number.isFinite(totalTextH) || !Array.isArray(splitLines) || splitLines.length === 0) {
+      !Number.isFinite(totalTextH) || !Array.isArray(lines) || lines.length === 0) {
     return false;
   }
   
   // Validate formula: totalTextH = lines * fontPx + (lines-1) * lineSpacingPx
-  const expectedTotalTextH = (splitLines.length * fontPx) + ((splitLines.length - 1) * lineSpacingPx);
+  const expectedTotalTextH = (lines.length * fontPx) + ((lines.length - 1) * lineSpacingPx);
   const isValid = Math.abs(totalTextH - expectedTotalTextH) <= 0.5;
   
   if (!isValid) {
     console.warn('[caption-preview] Invalid totalTextH formula:', {
       actual: totalTextH,
       expected: expectedTotalTextH,
-      formula: `${splitLines.length}*${fontPx} + ${splitLines.length-1}*${lineSpacingPx}`,
-      splitLines: splitLines.length,
+      formula: `${lines.length}*${fontPx} + ${lines.length-1}*${lineSpacingPx}`,
+      lines: lines.length,
       fontPx,
       lineSpacingPx
     });
@@ -349,7 +349,7 @@ export async function generateCaptionPreview(opts) {
         lineSpacingPx: meta.lineSpacingPx,
         totalTextH: meta.totalTextH,
         yPxFirstLine: meta.yPxFirstLine,
-        splitLines: Array.isArray(meta.splitLines) ? meta.splitLines.length : 0
+        lines: Array.isArray(meta.lines) ? meta.lines.length : 0
       });
       
       // Only validate totalTextH formula for drawtext mode
@@ -380,7 +380,7 @@ export async function generateCaptionPreview(opts) {
       internalPadding: Number(meta.internalPadding ?? 32),
       
       // SSOT fields - must match server response
-      splitLines: Array.isArray(meta.splitLines) ? meta.splitLines.length : (Number(meta.splitLines) || 0),
+      lines: Array.isArray(meta.lines) ? meta.lines : [],
       totalTextH: totalTextH,
       totalTextHPx: totalTextH,
       yPxFirstLine: yPxFirstLine,

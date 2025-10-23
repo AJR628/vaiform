@@ -347,7 +347,7 @@ export async function renderImageQuoteVideo({
       opacity: overlayCaption.opacity,
       fontFamily: overlayCaption.fontFamily,
       weightCss: overlayCaption.weightCss,
-      splitLines: overlayCaption.splitLines?.length || 0
+      lines: overlayCaption.lines?.length || 0
     });
     
     // Use SSOT values instead of defaults

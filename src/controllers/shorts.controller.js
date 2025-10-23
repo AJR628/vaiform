@@ -135,7 +135,7 @@ const CreateShortSchema = z
       placement: z.enum(["custom","center","top","bottom"]).optional(),
       internalPadding: z.coerce.number().optional(),
       lineSpacingPx: z.coerce.number().optional(),
-      splitLines: z.array(z.string()).optional(),
+      lines: z.array(z.string()).min(1).optional(),
       baselines: z.array(z.number()).optional(),
       // 🔑 SSOT from preview (critical positioning data)
       totalTextH: z.coerce.number().optional(),
@@ -165,9 +165,10 @@ const CreateShortSchema = z
         !!(data.rasterDataUrl || data.rasterUrl || data.rasterPng) &&
         Number.isFinite(+data.rasterW) &&
         Number.isFinite(+data.rasterH) &&
-        Number.isFinite(+data.yPx_png)
+        Number.isFinite(+data.yPx_png) &&
+        Array.isArray(data.lines) && data.lines.length > 0
       );
-    }, { message: 'Raster mode requires rasterDataUrl, rasterW/H, yPx_png' }).optional(),
+    }, { message: 'Raster mode requires rasterDataUrl, rasterW/H, yPx_png, and lines array' }).optional(),
     // TTS settings for SSOT
     modelId: z.string().optional(),
     outputFormat: z.string().optional(),
@@ -313,7 +314,7 @@ export async function createShort(req, res) {
         totalTextHPx: overlayCaption?.totalTextHPx,
         totalTextH: overlayCaption?.totalTextH,
         lineSpacingPx: overlayCaption?.lineSpacingPx,
-        splitLines: overlayCaption?.splitLines?.length,
+        lines: overlayCaption?.lines?.length,
         fontPx: overlayCaption?.fontPx
       });
     }

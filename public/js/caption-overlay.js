@@ -989,7 +989,7 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
       xExpr_png,
       
       // Line breaks (browser truth)
-      splitLines: lines,
+      lines: lines,
       
       // Metadata
       text: content.textContent || '',
@@ -1011,7 +1011,7 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
       fontPx, lineSpacingPx, letterSpacingPx, 
       rasterW, rasterPadding, totalTextH, rasterH,
       xExpr_png, yPx_png, frameW, frameH, 
-      splitLinesLen: lines.length
+      linesLen: lines.length
     });
     
     // Store and emit

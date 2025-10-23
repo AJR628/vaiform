@@ -225,7 +225,7 @@ router.post('/caption', requireAuth, async (req, res) => {
           weightCss: overlay.weightCss,
           // Computed placement data
           totalTextH: placement.totalTextH,
-          splitLines: captionImage.meta.splitLines,
+          lines: captionImage.meta.lines,
           baselines: captionImage.meta.baselines,
         },
       },

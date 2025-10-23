@@ -160,7 +160,7 @@ function buildParityChip(meta) {
   const y = meta.yPx_png ?? '?';
   const f = meta.fontPx || '?';
   const ls = meta.lineSpacingPx ?? '?';
-  const n = meta.splitLines?.length || '?';
+  const n = meta.lines?.length || '?';
   const hash = meta.rasterHash?.slice(0, 8) || '?';
   
   return `${W}×${H} | y${y} | f${f} | ls${ls} | lines=${n} | ${hash}`;

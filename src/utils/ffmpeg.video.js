@@ -737,7 +737,7 @@ export async function renderVideoQuoteOverlay({
       totalTextH: normalized.totalTextH,
       totalTextHPx: normalized.totalTextHPx,
       yPxFirstLine: normalized.yPxFirstLine,
-      splitLines: Array.isArray(normalized.splitLines) ? normalized.splitLines.length : 0,
+      lines: Array.isArray(normalized.lines) ? normalized.lines.length : 0,
       internalPadding: normalized.internalPadding,
       placement: normalized.placement,
       lineSpacingPx: normalized.lineSpacingPx
@@ -827,7 +827,7 @@ export async function renderVideoQuoteOverlay({
       const useSSOT = placement?.willUseSSOT === true;
       let { 
         xExpr, y, fontPx: overlayFontPx, lineSpacingPx, totalTextH, 
-        fromSavedPreview, splitLines, leftPx, windowW 
+        fromSavedPreview, lines, leftPx, windowW 
       } = placement;
     
     // Log SSOT values before drawtext
@@ -839,7 +839,7 @@ export async function renderVideoQuoteOverlay({
       totalTextH,
       y,
       yPxFirstLine: normalized.yPxFirstLine,
-      splitLines: splitLines?.length
+      lines: lines?.length
     });
     
     // ===== SANITY CHECKS - Only apply to fallback values, not SSOT =====
@@ -861,8 +861,8 @@ export async function renderVideoQuoteOverlay({
       
       if (!Number.isFinite(totalTextH) || totalTextH <= 0) {
         console.warn(`[ffmpeg-sanity] Invalid totalTextH=${totalTextH}, recomputing`);
-        const lines = (splitLines && splitLines.length) || 1;
-        totalTextH = lines * Math.round(overlayFontPx * 1.15);
+        const linesCount = (lines && lines.length) || 1;
+        totalTextH = linesCount * Math.round(overlayFontPx * 1.15);
       }
       
       if (!Number.isFinite(y)) {
@@ -886,7 +886,7 @@ export async function renderVideoQuoteOverlay({
       computedY: y,
       lineSpacingPx,
       xExpr,
-      splitLines: splitLines?.length || 'unknown'
+      lines: lines?.length || 'unknown'
     });
     
     // Use overlay font settings
@@ -907,16 +907,16 @@ export async function renderVideoQuoteOverlay({
       fontFile: fontFile
     });
     
-    // Text to render: use saved splitLines if available, otherwise fallback to word-wrap
+    // Text to render: use saved lines if available, otherwise fallback to word-wrap
     let textToRender;
-    if (useSSOT && splitLines && splitLines.length > 0) {
+    if (useSSOT && lines && lines.length > 0) {
       // Use exact text from saved preview (SSOT) - don't rewrap!
-      textToRender = splitLines.join('\n');  // Use actual newlines, escapeForDrawtext will handle escaping
-      console.log(`[render] Using SSOT splitLines: ${splitLines.length} lines`);
-    } else if (Array.isArray(splitLines) && splitLines.length > 0) {
-      // Have splitLines but not SSOT mode (legacy path with saved lines)
-      textToRender = splitLines.join('\n');  // Use actual newlines, escapeForDrawtext will handle escaping
-      console.log(`[render] Using saved splitLines (legacy): ${splitLines.length} lines`);
+      textToRender = lines.join('\n');  // Use actual newlines, escapeForDrawtext will handle escaping
+      console.log(`[render] Using SSOT lines: ${lines.length} lines`);
+    } else if (Array.isArray(lines) && lines.length > 0) {
+      // Have lines but not SSOT mode (legacy path with saved lines)
+      textToRender = lines.join('\n');  // Use actual newlines, escapeForDrawtext will handle escaping
+      console.log(`[render] Using saved lines (legacy): ${lines.length} lines`);
     } else {
       // Fallback: word-wrap text
       textToRender = (normalized.text || '').replace(/\r\n/g, '\n');
@@ -957,7 +957,7 @@ export async function renderVideoQuoteOverlay({
       lineSpacingPx: lineSpacingPx,
       totalTextH: totalTextH,
       y: y,
-      splitLines: splitLines?.length,
+      lines: lines?.length,
       xExpr: xExpr,
       supportsLineSpacing: supportsLineSpacing
     });
@@ -999,7 +999,7 @@ export async function renderVideoQuoteOverlay({
         y, 
         supportsLineSpacing, 
         textLength: textToRender.length, 
-        lines: splitLines?.length || 'unknown'
+        lines: lines?.length || 'unknown'
       })); 
     } catch {}
     
@@ -1013,8 +1013,8 @@ export async function renderVideoQuoteOverlay({
       lineSpacingPx,
       xExpr,
       text: textToRender.substring(0, 50).replace(/\n/g, '\\n'),
-      splitLines: splitLines?.length || 'unknown',
-      lines: textToRender.split('\n').length
+      linesCount: lines?.length || 'unknown',
+      textLines: textToRender.split('\n').length
     });
     }  // End of else block for non-raster mode
   } else if (CAPTION_OVERLAY && captionImage) {
@@ -1103,12 +1103,12 @@ export async function renderVideoQuoteOverlay({
     }
     
     // ---- Pure painter approach: use captionResolved verbatim when available (only if NOT using PNG) ----
-    let usingResolved = !usingCaptionPng && !!(captionResolved && captionResolved.fontPx && Array.isArray(captionResolved.splitLines) && captionResolved.splitLines.length > 0);
+    let usingResolved = !usingCaptionPng && !!(captionResolved && captionResolved.fontPx && Array.isArray(captionResolved.lines) && captionResolved.lines.length > 0);
     
     let fontPx, lineSpacing, strokeW, shadowX, shadowY, textAlpha, baseY, lines, n, _lineSp;
     
-    // Safety check: if we have captionResolved but no valid splitLines, fail explicitly
-    if (captionResolved && captionResolved.fontPx && (!Array.isArray(captionResolved.splitLines) || captionResolved.splitLines.length === 0)) {
+    // Safety check: if we have captionResolved but no valid lines, fail explicitly
+    if (captionResolved && captionResolved.fontPx && (!Array.isArray(captionResolved.lines) || captionResolved.lines.length === 0)) {
       throw new Error("Caption resolution missing: overlay not provided");
     }
     
@@ -1120,12 +1120,12 @@ export async function renderVideoQuoteOverlay({
       shadowX = Number(captionResolved.shadowX || 0);
       shadowY = Number(captionResolved.shadowY || 2);
       textAlpha = Number(captionResolved.textAlpha || 1.0);
-      const splitLines = captionResolved.splitLines || [];
+      const linesFromResolved = captionResolved.lines || [];
       
-      console.log(`[render] usingResolved=true fontPx=${fontPx} lineSpacing=${lineSpacing} strokeW=${strokeW} lines=${splitLines.length}`);
+      console.log(`[render] usingResolved=true fontPx=${fontPx} lineSpacing=${lineSpacing} strokeW=${strokeW} lines=${linesFromResolved.length}`);
       
       // Use frontend's exact line breaks and positioning
-      lines = splitLines;
+      lines = linesFromResolved;
       n = Math.max(1, lines.length);
       
       // Compute Y position from preview anchor (no scaling)
@@ -1385,7 +1385,7 @@ export async function renderVideoQuoteOverlay({
     const pngBuffer = fs.readFileSync(captionPngPath);
     const rasterHash = crypto.createHash('sha256').update(pngBuffer).digest('hex').slice(0, 16);
 
-    console.log(`[RASTER_PARITY] W×H=${overlayCaption.rasterW}×${overlayCaption.rasterH}, y=${overlayCaption.yPx_png}, fontPx=${overlayCaption.fontPx}, lineSp=${overlayCaption.lineSpacingPx}, lines=${overlayCaption.splitLines?.length || '?'}, hash=${rasterHash}`);
+    console.log(`[RASTER_PARITY] W×H=${overlayCaption.rasterW}×${overlayCaption.rasterH}, y=${overlayCaption.yPx_png}, fontPx=${overlayCaption.fontPx}, lineSp=${overlayCaption.lineSpacingPx}, lines=${overlayCaption.lines?.length || '?'}, hash=${rasterHash}`);
   }
   try {
     const scaleDesc = `scale='if(gt(a,${W}/${H}),-2,${W})':'if(gt(a,${W}/${H}),${H},-2)'`;

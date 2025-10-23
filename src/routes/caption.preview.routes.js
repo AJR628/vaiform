@@ -47,7 +47,6 @@ const RasterSchema = z.object({
   
   // Browser-rendered line data (REQUIRED in raster mode)
   lines: z.array(z.string()).min(1, "At least one line required"),
-  splitLines: z.coerce.number().int().min(1),  // line count
   totalTextH: z.coerce.number().int().min(1),
   yPxFirstLine: z.coerce.number().int(),
   previewFontString: z.string().optional(),
@@ -95,13 +94,13 @@ router.post("/caption/preview", express.json(), async (req, res) => {
         const yPx_png = data.yPx_png;  // ✅ TRUST CLIENT - no fallback
         const rasterPadding = data.rasterPadding;  // ✅ TRUST CLIENT - no recomputation
         const lines = data.lines || [];  // ✅ Use client lines (browser-rendered)
-        const splitLines = data.splitLines || lines.length;  // Use provided count or derive from lines
+        const linesCount = lines.length;  // Derive from lines array
         
         console.log('[geom:server]', {
           fontPx, lineSpacingPx, letterSpacingPx, rasterW, rasterH,
           xExpr_png: data.xExpr_png, yPx_png, frameW: data.frameW, frameH: data.frameH,
           lines: Array.isArray(lines) ? lines.length : 'n/a',
-          splitLines: splitLines
+          linesCount: linesCount
         });
         
         // Wrap text using client rasterW (reuse V2 pattern)
@@ -176,7 +175,7 @@ router.post("/caption/preview", express.json(), async (req, res) => {
         // Call renderCaptionRaster with client SSOT values
         const rasterResult = await renderCaptionRaster({
           text,
-          splitLines: lines,
+          lines: lines,
           maxLineWidth: rasterW - (2 * rasterPadding),  // Use client geometry
           xPct: data.xPct,  // Not used in raster, but pass for consistency
           yPct: data.yPct,  // Not used in raster, but pass for consistency
@@ -279,7 +278,6 @@ router.post("/caption/preview", express.json(), async (req, res) => {
           
           // Debug info - include lines for client
           lines: lines,  // ✅ Return exact lines used
-          splitLines: lines.length,  // ✅ Return count
           lineSpacingPx,
           totalTextH: totalTextH,  // ✅ Use server-computed value for verification
           yPxFirstLine: data.yPx_png + data.rasterPadding,
@@ -312,7 +310,7 @@ router.post("/caption/preview", express.json(), async (req, res) => {
         
         console.log('[v3:preview:respond]', { 
           have: Object.keys(ssotMeta),
-          required: ['rasterUrl', 'rasterW', 'rasterH', 'rasterPadding', 'yPx_png', 'bgScaleExpr', 'bgCropExpr', 'rasterHash', 'previewFontString', 'totalTextH', 'yPxFirstLine', 'lines', 'splitLines']
+          required: ['rasterUrl', 'rasterW', 'rasterH', 'rasterPadding', 'yPx_png', 'bgScaleExpr', 'bgCropExpr', 'rasterHash', 'previewFontString', 'totalTextH', 'yPxFirstLine', 'lines']
         });
         
         return res.status(200).json({
@@ -330,7 +328,7 @@ router.post("/caption/preview", express.json(), async (req, res) => {
       // STEP 0: Sanitize inputs - strip computed fields that should NEVER come from client
       const COMPUTED_FIELDS = [
         "lineSpacingPx", "totalTextH", "totalTextHPx", "yPxFirstLine", "lineHeight",
-        "hpct", "hPct", "hPx", "v2", "splitLines", "baselines"
+        "hpct", "hPct", "hPx", "v2", "baselines"
       ];
       COMPUTED_FIELDS.forEach(k => {
         if (req.body && k in req.body) {
@@ -520,7 +518,7 @@ router.post("/caption/preview", express.json(), async (req, res) => {
         // SSOT V3: Render caption to transparent PNG at final render scale
         const rasterResult = await renderCaptionRaster({
           text,
-          splitLines: lines,
+          lines: lines,
           maxLineWidth: maxWidth,  // Pass preview's maxLineWidth for validation
           xPct,
           yPct: yPctClamped,
@@ -550,7 +548,7 @@ router.post("/caption/preview", express.json(), async (req, res) => {
         // Render preview image for display
         const previewUrl = await renderPreviewImage({
           text, 
-          splitLines: lines,
+          lines: lines,
           xPct, yPct: yPctClamped, wPct, sizePx: fontPx,
           fontFamily, weightCss, color, opacity, textAlign: 'center'
         });
@@ -609,7 +607,7 @@ router.post("/caption/preview", express.json(), async (req, res) => {
           previewFontHash: rasterResult.previewFontHash,
           
           // Keep for debugging (but these are NOT used in v3 raster mode)
-          splitLines: lines,
+          lines: lines,
           lineSpacingPx,
           totalTextH,
         };
@@ -866,7 +864,7 @@ router.post("/caption/preview", express.json(), async (req, res) => {
     
     // Include meta information for render reuse with proper height data
     const meta = {
-      splitLines: lines,
+      lines: lines,
       fontPx: clampedFontPx, // Use clamped font size
       lineSpacing: lh,
       xPct: 50, // centered
@@ -923,7 +921,7 @@ router.post("/caption/preview", express.json(), async (req, res) => {
           placement,
           wPx: W,
           hPx: H,
-          splitLines: lines,
+          lines: lines,
           baselines: undefined,
         }
       }
@@ -985,7 +983,7 @@ async function renderCaptionRaster(meta) {
   const fontStyle = meta.fontStyle ?? 'normal'; // 'italic'|'normal'|'oblique'
   const fontFamilyName = pickFamily(meta.fontFamily);
   const fontPx = meta.fontPx;
-  const lines = meta.splitLines || [];
+  const lines = meta.lines || [];
   const textAlign = meta.textAlign ?? 'center';
   const letterSpacingPx = meta.letterSpacingPx ?? 0;
   
@@ -1286,7 +1284,7 @@ async function renderPreviewImage(meta) {
   ctx.textBaseline = 'top';
   
   // Use pre-wrapped lines if provided (SSOT path)
-  const lines = meta.splitLines || (() => {
+  const lines = meta.lines || (() => {
     // Fallback: wrap text (legacy path)
     const segments = meta.text.split('\n');
     const wrappedLines = [];

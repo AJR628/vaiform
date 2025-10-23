@@ -13,7 +13,7 @@ export const CaptionMetaSchema = z.object({
   totalTextH: z.number().min(0).optional(),
   lineSpacingPx: z.number().min(0).max(240).optional(),
   internalPadding: z.number().optional(),
-  splitLines: z.array(z.string()).optional(),
+  lines: z.array(z.string()).min(1).optional(),
   fontPx: z.number().min(8).max(160).optional(),
   sizePx: z.number().min(8).max(160).optional(), // alias for fontPx
   xExpr: z.string().optional(),

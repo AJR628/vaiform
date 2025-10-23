@@ -184,14 +184,14 @@ export function computeOverlayPlacement(overlay, W, H) {
     return Number.isFinite(val);
   });
   
-  // Also check splitLines separately
-  const splitLines = overlay?.splitLines;
-  const hasSplit = Array.isArray(splitLines) && splitLines.length > 0;
+  // Also check lines separately
+  const lines = overlay?.lines;
+  const hasLines = Array.isArray(lines) && lines.length > 0;
   
   const totalTextHVal = num(overlay?.totalTextH ?? overlay?.totalTextHPx);
   const yPxFirstLineVal = num(overlay?.yPxFirstLine);
   
-  const willUseSSOT = !!(hasV3 && hasReq && hasSplit);
+  const willUseSSOT = !!(hasV3 && hasReq && hasLines);
   
   if (hasV3 && !willUseSSOT && mode !== 'raster') {
     console.warn(`[overlay] Ignoring saved preview with ssotVersion=3 but missing required fields. Has: ${Object.keys(overlay || {}).join(', ')}`);
@@ -210,7 +210,7 @@ export function computeOverlayPlacement(overlay, W, H) {
     totalTextHPx: num(overlay?.totalTextHPx),
     yPxFirstLine: yPxFirstLineVal,
     lineSpacingPx: num(overlay?.lineSpacingPx),
-    splitLines: Array.isArray(splitLines) ? splitLines.length : 0,
+    lines: Array.isArray(lines) ? lines.length : 0,
     willUseSSOT
   });
 
@@ -249,22 +249,22 @@ export function computeOverlayPlacement(overlay, W, H) {
     }
     
     // SSOT invariant check
-    const expectedTotalTextH = (splitLines.length * fontPx) + ((splitLines.length - 1) * lineSpacingPx);
+    const expectedTotalTextH = (lines.length * fontPx) + ((lines.length - 1) * lineSpacingPx);
     if (Math.abs(totalTextH - expectedTotalTextH) > 0.5) {
       console.error('[ssot/v2:render:INVARIANT] mismatch', {
-        totalTextH, expectedTotalTextH, splitLines: splitLines.length, fontPx, lineSpacingPx
+        totalTextH, expectedTotalTextH, lines: lines.length, fontPx, lineSpacingPx
       });
       throw new Error(`[ssot/v2:render:INVARIANT] totalTextH=${totalTextH} != expected=${expectedTotalTextH}`);
     }
 
     console.log('[overlay-SSOT] Using server values verbatim:', {
-      fontPx, lineSpacingPx, totalTextH, y, splitLines: splitLines.length
+      fontPx, lineSpacingPx, totalTextH, y, lines: lines.length
     });
 
     console.log('[ssot/v2:render:IN]', {
       fontPx, lineSpacingPx, totalTextH, y: yPxFirstLineVal,
-      lines: splitLines.length, useSSOT: true,
-      formula: `${splitLines.length}*${fontPx} + ${splitLines.length-1}*${lineSpacingPx} = ${totalTextH}`
+      lines: lines.length, useSSOT: true,
+      formula: `${lines.length}*${fontPx} + ${lines.length-1}*${lineSpacingPx} = ${totalTextH}`
     });
     
     // Horizontal window from preview
@@ -283,11 +283,11 @@ export function computeOverlayPlacement(overlay, W, H) {
       internalPadding,
       fontPx,
       lineSpacingPx,
-      splitLines: splitLines,
+      lines: lines,
       totalTextH: totalTextHVal,
       y: y,  // First line Y from preview
       xExpr: '(W - text_w)/2',  // Center using frame width, not ad-hoc constants
-      lines: splitLines.length,
+      linesCount: lines.length,
       leftPx, 
       windowW, 
       yPx: y,
@@ -456,7 +456,7 @@ export function normalizeOverlayCaption(overlay) {
   const hasRaster = hasV3 && overlay?.mode === 'raster';
   const hasFirst = overlay?.yPxFirstLine != null;
   const hasBlock = (overlay?.totalTextH != null || overlay?.totalTextHPx != null)
-    && Array.isArray(overlay?.splitLines) && overlay.splitLines.length > 0;
+    && Array.isArray(overlay?.lines) && overlay.lines.length > 0;
   
   // If SSOT V3 raster mode, pass through all raster fields verbatim
   if (hasRaster) {
@@ -498,7 +498,7 @@ export function normalizeOverlayCaption(overlay) {
       // Keep debug fields (but NOT used in raster mode)
       totalTextH: toNum(overlay.totalTextH),
       lineSpacingPx: toNum(overlay.lineSpacingPx),
-      splitLines: Array.isArray(overlay.splitLines) ? overlay.splitLines : []
+      lines: Array.isArray(overlay.lines) ? overlay.lines : []
     };
     
     // CRITICAL: Log raster dimensions to detect any mutation
@@ -529,7 +529,7 @@ export function normalizeOverlayCaption(overlay) {
         totalTextH: toNum(overlay.totalTextH ?? overlay.totalTextHPx),
         totalTextHPx: toNum(overlay.totalTextHPx ?? overlay.totalTextH),
         yPxFirstLine: toNum(overlay.yPxFirstLine),
-        splitLines: Array.isArray(overlay.splitLines) ? overlay.splitLines : []
+        lines: Array.isArray(overlay.lines) ? overlay.lines : []
       }
     : base;
 }

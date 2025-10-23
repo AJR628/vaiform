@@ -1759,8 +1759,7 @@
                 rasterPadding: meta.rasterPadding || 24,  // ✅ Use consistent naming
                 xExpr_png: meta.xExpr_png || '(W-overlay_w)/2',
                 
-                // ✅ Send splitLines to avoid server re-wrapping
-                splitLines: meta.splitLines || [],
+                // lines array is already included in browserGeometry above
                 
                 // Styles
                 fontFamily: meta.fontFamily || 'DejaVuSans',
@@ -3332,7 +3331,6 @@
                 totalTextH: int(p.totalTextH),
                 yPxFirstLine: int(p.yPxFirstLine),
                 lines: Array.isArray(p.lines) ? p.lines.map(s => String(s ?? '')) : [],
-                splitLines: int(p.splitLines || (Array.isArray(p.lines) ? p.lines.length : 0)),
                 
                 // placement must be >= 0
                 xPx_png: nonneg(p.xPx_png ?? 0),
@@ -3423,7 +3421,7 @@
 
             // 2) Visual lines - use shared line extraction from overlay
             const lines = window.extractRenderedLines(contentEl);
-            const splitLinesCount = Math.max(1, lines.length);
+            const linesCount = Math.max(1, lines.length);
 
             // 3) Get container for relative positioning
             const stageContainer = stageEl.parentElement || stageEl;
@@ -3440,7 +3438,7 @@
             const letterSpacingPxFrame = toFramePx(s.letterSpacingPx, { frameW, previewCssW });
 
             // 5) Calculate totalTextH in frame space
-            const totalTextHFrame = fontPxFrame * splitLinesCount + lineSpacingPxFrame * (splitLinesCount - 1);
+            const totalTextHFrame = fontPxFrame * linesCount + lineSpacingPxFrame * (linesCount - 1);
 
             // 6a) Read actual padding from content element (if any)
             const sContent = getComputedStyle(contentEl);
@@ -3458,8 +3456,7 @@
 
             return {
                 // DOM truth - correct field names for server
-                lines,                    // string[] - the actual line text
-                splitLines: lines.length,  // number - the count
+                lines,                    // string[] - the actual line text (server derives count from lines.length)
                 totalTextH: totalTextHFrame,      // Frame pixels
                 yPxFirstLine: yPx_png + paddingFramePx,
 
@@ -3533,7 +3530,7 @@
                 });
                 
                 // Validate browser geometry
-                if (browserGeometry.splitLines < 1) {
+                if (browserGeometry.lines.length < 1) {
                     alert('Unable to detect text lines - please try again');
                     return;
                 }
@@ -3596,8 +3593,7 @@
                     text,     // normalized canonical version
                     
                     // Browser-rendered line data (REQUIRED)
-                    lines: browserGeometry.lines,              // string[] - the actual line text
-                    splitLines: browserGeometry.splitLines,     // number - the count
+                    lines: browserGeometry.lines,              // string[] - the actual line text (server derives count from lines.length)
                     totalTextH: browserGeometry.totalTextH,
                     yPxFirstLine: browserGeometry.yPxFirstLine,
                     
@@ -3702,7 +3698,7 @@
                     letterSpacingPx: normalizedPayload.letterSpacingPx,
                     yPx_png: normalizedPayload.yPx_png,
                     xPx_png: normalizedPayload.xPx_png,
-                    splitLines: normalizedPayload.splitLines?.length || 0,
+                    lines: normalizedPayload.lines?.length || 0,
                     allIntegers: numericFields.every(field => Number.isInteger(normalizedPayload[field])),
                     allNonNegative: ['xPx_png'].every(field => normalizedPayload[field] >= 0)
                 });
@@ -3716,7 +3712,7 @@
                     rasterH: normalizedPayload.rasterH,
                     yPx_png: normalizedPayload.yPx_png,
                     rasterPadding: normalizedPayload.rasterPadding,
-                    splitLines: normalizedPayload.splitLines?.length || 0,
+                    lines: normalizedPayload.lines?.length || 0,
                     linesCount: normalizedPayload.lines?.length,
                     allNumsFinite: Object.entries(normalizedPayload)
                         .filter(([k, v]) => typeof v === 'number')
@@ -3727,8 +3723,6 @@
                 console.log('[preflight]', {
                     hasLinesArray: Array.isArray(normalizedPayload.lines),
                     linesLen: normalizedPayload.lines?.length,
-                    splitLinesType: typeof normalizedPayload.splitLines,
-                    splitLinesValue: normalizedPayload.splitLines,
                 });
 
                 // Call preview API with normalized payload
@@ -3752,7 +3746,7 @@
                 const totalTextH = Number(m.totalTextH ?? m.totalTextHPx);
                 const yPxFirstLine = Number(resp.yPx);  // ← FIX: top-level, NOT meta
                 const serverLineSpacingPx = Number(m.lineSpacingPx ?? 0);
-                const splitLines = Array.isArray(m.splitLines) ? m.splitLines.length : (Number(m.splitLines) || 0);
+                const linesCount = m.lines?.length || 0;
 
                 // Server-authoritative geometry - overwrite client values
                 const serverRasterW = Number.isFinite(m.rasterW) ? m.rasterW : rasterW;
@@ -3777,7 +3771,7 @@
                     totalTextH,
                     yPxFirstLine,
                     lineSpacingPx,
-                    splitLines: splitLines.length,
+                    lines: linesCount,
                     serverRasterW,
                     serverRasterH,
                     serverYPxPng,
@@ -3786,7 +3780,7 @@
                         'data.yPx': resp.yPx,
                         'meta.totalTextH': m.totalTextH,
                         'meta.totalTextHPx': m.totalTextHPx,
-                        'meta.splitLines': m.splitLines?.length
+                        'meta.lines': m.lines?.length
                     }
                 });
 
@@ -3843,7 +3837,7 @@
                     
                     // Diagnostics (keep for debugging, NOT used in render)
                     lineSpacingPx: serverLineSpacingPx,
-                    splitLines: Array.isArray(m.splitLines) ? m.splitLines.length : (Number(m.splitLines) || 0),
+                    lines: Array.isArray(m.lines) ? m.lines : [],
                     totalTextH: Number(m.totalTextH ?? 0),
                     
                     // Legacy compatibility fields (deprecated for v3 raster)
@@ -4257,7 +4251,7 @@
                     totalTextHPx: savedMeta?.totalTextHPx,
                     yPxFirstLine: savedMeta?.yPxFirstLine,
                     lineSpacingPx: savedMeta?.lineSpacingPx,
-                    splitLines: Array.isArray(savedMeta?.splitLines) ? savedMeta.splitLines.length : 0
+                    lines: Array.isArray(savedMeta?.lines) ? savedMeta.lines.length : 0
                   });
 
                   // Guard: fail fast if critical SSOT fields are missing/invalid
@@ -4271,9 +4265,9 @@
                     throw new Error('Missing SSOT field: yPxFirstLine');
                   }
 
-                  if (!Number.isFinite(savedMeta?.splitLines) || savedMeta.splitLines <= 0) {
-                    alert('Preview data incomplete (splitLines missing). Please generate and save preview again.');
-                    throw new Error('Missing SSOT field: splitLines');
+                  if (!Array.isArray(savedMeta?.lines) || savedMeta.lines.length === 0) {
+                    alert('Preview data incomplete (lines missing). Please generate and save preview again.');
+                    throw new Error('Missing SSOT field: lines');
                   }
                   
                   payload.captionMode = 'overlay';
@@ -4298,8 +4292,8 @@
                     lineSpacingPx: savedMeta.lineSpacingPx,
                     totalTextH: savedMeta.totalTextH,
                     yPxFirstLine: savedMeta.yPxFirstLine,
-                    splitLines: savedMeta.splitLines?.length,
-                    formula: `${savedMeta.splitLines?.length}*${savedMeta.fontPx} + ${(savedMeta.splitLines?.length-1)}*${savedMeta.lineSpacingPx} = ${savedMeta.totalTextH}`
+                    lines: savedMeta.lines?.length,
+                    formula: `${savedMeta.lines?.length}*${savedMeta.fontPx} + ${(savedMeta.lines?.length-1)}*${savedMeta.lineSpacingPx} = ${savedMeta.totalTextH}`
                   });
                   
                   // SSOT v2 logging
@@ -4364,7 +4358,7 @@
                     totalTextHPx: payload.overlayCaption?.totalTextHPx,
                     totalTextH: payload.overlayCaption?.totalTextH,
                     lineSpacingPx: payload.overlayCaption?.lineSpacingPx,
-                    splitLines: payload.overlayCaption?.splitLines?.length,
+                    lines: payload.overlayCaption?.lines?.length,
                     fontPx: payload.overlayCaption?.fontPx,
                     xPct: payload.overlayCaption?.xPct,
                     yPct: payload.overlayCaption?.yPct,
@@ -4373,16 +4367,16 @@
                   });
                   
                   // SSOT invariant validation before render
-                  const { fontPx, lineSpacingPx, totalTextH, splitLines } = payload.overlayCaption;
+                  const { fontPx, lineSpacingPx, totalTextH, lines } = payload.overlayCaption;
                   if (Number.isFinite(fontPx) && Number.isFinite(lineSpacingPx) && 
-                      Number.isFinite(totalTextH) && Array.isArray(splitLines) && splitLines.length > 0) {
-                    const expectedTotalTextH = (splitLines.length * fontPx) + ((splitLines.length - 1) * lineSpacingPx);
+                      Number.isFinite(totalTextH) && Array.isArray(lines) && lines.length > 0) {
+                    const expectedTotalTextH = (lines.length * fontPx) + ((lines.length - 1) * lineSpacingPx);
                     if (Math.abs(totalTextH - expectedTotalTextH) > 0.5) {
                       console.error('[render-INVARIANT] Client totalTextH mismatch - forcing preview regeneration:', {
                         actual: totalTextH,
                         expected: expectedTotalTextH,
-                        formula: `${splitLines.length}*${fontPx} + ${splitLines.length-1}*${lineSpacingPx}`,
-                        splitLines: splitLines.length,
+                        formula: `${lines.length}*${fontPx} + ${lines.length-1}*${lineSpacingPx}`,
+                        lines: lines.length,
                         fontPx,
                         lineSpacingPx
                       });
