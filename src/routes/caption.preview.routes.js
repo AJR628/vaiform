@@ -1202,6 +1202,16 @@ async function renderCaptionRaster(meta) {
     console.log('[DEBUG] Visual markers added to PNG');
   }
   
+  // Optional: Debug parity border (set DEBUG_PARITY=1 in .env)
+  if (process.env.DEBUG_PARITY === '1') {
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255, 0, 0, 1)';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(1, 1, rasterW - 2, rasterH - 2);
+    ctx.restore();
+    console.log('[DEBUG] Red parity border added to raster PNG');
+  }
+  
   // Convert to data URL
   const rasterDataUrl = rasterCanvas.toDataURL("image/png");
   

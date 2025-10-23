@@ -245,15 +245,15 @@ function RenderStep({ studioId, captionMode, watermark, onDone }:{ studioId:stri
       </div>
       {loading && (<div className="text-xs text-neutral-400">Rendering…</div>)}
       <div className="border border-neutral-800 rounded p-3 space-y-2">
-        <video
-          id="preview"
-          className="w-full max-w-md rounded"
-          controls
-          playsInline
-          preload="metadata"
-          crossOrigin="anonymous"
-          style={{ backgroundColor: '#000' as any }}
-        />
+        <div className="render-stage">
+          <video
+            id="preview"
+            controls
+            playsInline
+            preload="metadata"
+            crossOrigin="anonymous"
+          />
+        </div>
         {result?.coverImageUrl && (
           <a className="text-blue-400 text-sm" href={result.coverImageUrl} target="_blank">Open cover.jpg</a>
         )}

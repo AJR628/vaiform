@@ -24,13 +24,14 @@ export function ShortDetailsPage(){
       <h1 className="text-xl font-semibold">Short: {d.jobId}</h1>
 
       {d.videoUrl && (
-        <video
-          src={d.videoUrl}
-          controls
-          playsInline
-          muted
-          className="w-full max-w-md rounded-lg"
-        />
+        <div className="render-stage">
+          <video
+            src={d.videoUrl}
+            controls
+            playsInline
+            muted
+          />
+        </div>
       )}
 
       <div className="space-x-3">
