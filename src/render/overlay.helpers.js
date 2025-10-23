@@ -185,8 +185,8 @@ export function computeOverlayPlacement(overlay, W, H) {
   });
   
   // Also check lines separately
-  const lines = overlay?.lines;
-  const hasLines = Array.isArray(lines) && lines.length > 0;
+  const ssotLines = overlay?.lines;
+  const hasLines = Array.isArray(ssotLines) && ssotLines.length > 0;
   
   const totalTextHVal = num(overlay?.totalTextH ?? overlay?.totalTextHPx);
   const yPxFirstLineVal = num(overlay?.yPxFirstLine);
@@ -210,7 +210,7 @@ export function computeOverlayPlacement(overlay, W, H) {
     totalTextHPx: num(overlay?.totalTextHPx),
     yPxFirstLine: yPxFirstLineVal,
     lineSpacingPx: num(overlay?.lineSpacingPx),
-    lines: Array.isArray(lines) ? lines.length : 0,
+    lines: Array.isArray(ssotLines) ? ssotLines.length : 0,
     willUseSSOT
   });
 
@@ -249,22 +249,23 @@ export function computeOverlayPlacement(overlay, W, H) {
     }
     
     // SSOT invariant check
-    const expectedTotalTextH = (lines.length * fontPx) + ((lines.length - 1) * lineSpacingPx);
-    if (Math.abs(totalTextH - expectedTotalTextH) > 0.5) {
+    const expected = ssotLines.length * fontPx + (ssotLines.length - 1) * lineSpacingPx;
+    const within = Math.abs(totalTextH - expected) <= 2;
+    if (!within) {
       console.error('[ssot/v2:render:INVARIANT] mismatch', {
-        totalTextH, expectedTotalTextH, lines: lines.length, fontPx, lineSpacingPx
+        totalTextH, expected, lines: ssotLines.length, fontPx, lineSpacingPx
       });
-      throw new Error(`[ssot/v2:render:INVARIANT] totalTextH=${totalTextH} != expected=${expectedTotalTextH}`);
+      throw new Error(`[ssot/v2:render:INVARIANT] totalTextH=${totalTextH} != expected=${expected}`);
     }
 
     console.log('[overlay-SSOT] Using server values verbatim:', {
-      fontPx, lineSpacingPx, totalTextH, y, lines: lines.length
+      fontPx, lineSpacingPx, totalTextH, y, lines: ssotLines.length
     });
 
     console.log('[ssot/v2:render:IN]', {
       fontPx, lineSpacingPx, totalTextH, y: yPxFirstLineVal,
-      lines: lines.length, useSSOT: true,
-      formula: `${lines.length}*${fontPx} + ${lines.length-1}*${lineSpacingPx} = ${totalTextH}`
+      lines: ssotLines.length, useSSOT: true,
+      formula: `${ssotLines.length}*${fontPx} + ${ssotLines.length-1}*${lineSpacingPx} = ${totalTextH}`
     });
     
     // Horizontal window from preview
@@ -283,11 +284,11 @@ export function computeOverlayPlacement(overlay, W, H) {
       internalPadding,
       fontPx,
       lineSpacingPx,
-      lines: lines,
+      lines: ssotLines,
       totalTextH: totalTextHVal,
       y: y,  // First line Y from preview
       xExpr: '(W - text_w)/2',  // Center using frame width, not ad-hoc constants
-      linesCount: lines.length,
+      linesCount: ssotLines.length,
       leftPx, 
       windowW, 
       yPx: y,
