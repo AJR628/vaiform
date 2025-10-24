@@ -122,6 +122,34 @@ export function registerDejaVuFonts() {
   try {
     const families = GlobalFonts.families;
     console.log('[canvas-fonts] Available families:', families);
+    
+    // Verify all 4 DejaVu Sans variants are available
+    const requiredVariants = [
+      { family: 'DejaVu Sans', weight: 400, style: 'normal' },
+      { family: 'DejaVu Sans', weight: 700, style: 'normal' },
+      { family: 'DejaVu Sans', weight: 400, style: 'italic' },
+      { family: 'DejaVu Sans', weight: 700, style: 'italic' }
+    ];
+    
+    let allVariantsAvailable = true;
+    for (const variant of requiredVariants) {
+      const isAvailable = families.some(f => 
+        f.family === variant.family && 
+        f.weight === variant.weight && 
+        f.style === variant.style
+      );
+      if (!isAvailable) {
+        console.error(`[canvas-fonts] MISSING VARIANT: ${variant.family} weight=${variant.weight} style=${variant.style}`);
+        allVariantsAvailable = false;
+      }
+    }
+    
+    if (!allVariantsAvailable) {
+      console.error('[canvas-fonts] FAILED: Not all DejaVu Sans variants are available');
+      throw new Error('DejaVu Sans font registration incomplete - missing italic variants');
+    } else {
+      console.log('[canvas-fonts] SUCCESS: All 4 DejaVu Sans variants verified');
+    }
   } catch (e) {
     console.log('[canvas-fonts] Could not list font families:', e.message);
   }

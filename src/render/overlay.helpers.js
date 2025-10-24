@@ -417,7 +417,7 @@ export function normalizeOverlayCaption(overlay) {
     align = 'center',
     color = '#ffffff',
     opacity = 1.0,
-    fontFamily = 'DejaVuSans',
+    fontFamily = 'DejaVu Sans',
     weightCss = 'normal',
     showBox = false
   } = overlay;
@@ -444,7 +444,7 @@ export function normalizeOverlayCaption(overlay) {
     align: ['left', 'center', 'right'].includes(align) ? align : 'center',
     color: String(color),
     opacity: clamp01(opacity),
-    fontFamily: String(fontFamily || 'DejaVuSans'),
+    fontFamily: String(fontFamily || 'DejaVu Sans'),
     weightCss: String(weightCss || 'normal'),
     showBox: Boolean(showBox),
     placement: overlay?.placement,

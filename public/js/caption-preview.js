@@ -228,7 +228,7 @@ export async function generateCaptionPreview(opts) {
         wPct: Number.isFinite(opts?.wPct) ? Number(opts.wPct) : 0.8,
         sizePx: fontPx,  // ← Use computed fontPx, not opts
         lineSpacingPx: lineSpacingPx,  // ← Always use fresh computed (server will recompute anyway)
-        fontFamily: opts.fontFamily || 'DejaVuSans',
+        fontFamily: opts.fontFamily || 'DejaVu Sans',
         weightCss: opts.weight || 'normal',
         fontStyle: domStyles.fontStyle || 'normal',  // Ensure fontStyle is explicitly included
         color: opts.color || '#FFFFFF',
@@ -239,7 +239,7 @@ export async function generateCaptionPreview(opts) {
     : {
         style: {
           text: opts.text,
-          fontFamily: opts.fontFamily || "DejaVuSans",
+          fontFamily: opts.fontFamily || "DejaVu Sans",
           weight: opts.weight || "normal",
           fontPx: fontPx,
           lineSpacingPx: lineSpacingPx,
@@ -374,7 +374,7 @@ export async function generateCaptionPreview(opts) {
       lineSpacingPx: Number(meta.lineSpacingPx ?? 0),
       color: meta.color || opts.color || '#ffffff',
       opacity: Number(meta.opacity ?? opts.opacity ?? 1.0),
-      fontFamily: meta.fontFamily || opts.fontFamily || 'DejaVuSans',
+      fontFamily: meta.fontFamily || opts.fontFamily || 'DejaVu Sans',
       weightCss: meta.weightCss || opts.weight || opts.weightCss || 'normal',
       placement: meta.placement || 'custom',
       internalPadding: Number(meta.internalPadding ?? 32),

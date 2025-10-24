@@ -15,7 +15,7 @@ const RasterSchema = z.object({
   text: z.string().min(1, 'Caption text is required'),
   
   // Typography
-  fontFamily: z.string().default('DejaVuSans'),
+  fontFamily: z.string().default('DejaVu Sans'),
   fontPx: z.coerce.number().int().min(16).max(200),
   lineSpacingPx: z.coerce.number().int().min(0).max(200).default(0),
   letterSpacingPx: z.coerce.number().default(0),
@@ -368,7 +368,7 @@ router.post("/caption/preview", express.json(), async (req, res) => {
       });
       
       // Typography
-      const fontFamily = String(parsed.data.fontFamily || 'DejaVuSans');
+      const fontFamily = String(parsed.data.fontFamily || 'DejaVu Sans');
       const weightCss = String(parsed.data.weightCss || 'normal');
       const fontStyle = parsed.data.fontStyle || 'normal';
       const textAlign = parsed.data.textAlign || 'center';
@@ -743,7 +743,7 @@ router.post("/caption/preview", express.json(), async (req, res) => {
     function resolveFontFamilyUsed(clientFontFamily) {
       // SSOT: Use consistent font family name that matches registration
       const fontMap = {
-        'DejaVuSans': 'DejaVu Sans',
+        'DejaVu Sans': 'DejaVu Sans',
         'DejaVu Sans Local': 'DejaVu Sans',
         'DejaVu Serif Local': 'DejaVu Serif',
         'DejaVu Serif Bold Local': 'DejaVu Serif Bold'
@@ -1065,6 +1065,12 @@ async function renderCaptionRaster(meta) {
     });
     if (width > maxLineWidth + 1) {  // +1px tolerance
       console.warn(`[raster] Line exceeds maxLineWidth: "${line}" (${width}px > ${maxLineWidth}px)`);
+      console.log('[parity:overflow]', {
+        line: transformedLine.substring(0, 30),
+        width: Math.round(width),
+        maxLineWidth: Math.round(maxLineWidth),
+        overflow: Math.round(width - maxLineWidth)
+      });
     }
   }
   
@@ -1103,6 +1109,34 @@ async function renderCaptionRaster(meta) {
   // Setup font
   ctx.font = font;
   ctx.textBaseline = 'top';
+  
+  // Font comparison and validation
+  const normalizeFontString = (str) => str.replace(/\s+/g, ' ').trim();
+  const incomingFont = meta.previewFontString || '';
+  const actualFont = ctx.font;
+  
+  console.log('[font-parity:server]', {
+    incomingPreviewFontString: incomingFont,
+    actualCtxFont: actualFont,
+    fontPx,
+    fontStyle: meta.fontStyle,
+    weightCss: meta.weightCss
+  });
+  
+  // Compare normalized font strings and bail if mismatch
+  if (incomingFont && normalizeFontString(incomingFont) !== normalizeFontString(actualFont)) {
+    console.error('[font-parity:ERROR] Font mismatch detected:', {
+      expected: incomingFont,
+      actual: actualFont,
+      normalizedExpected: normalizeFontString(incomingFont),
+      normalizedActual: normalizeFontString(actualFont)
+    });
+    return res.status(422).json({
+      ok: false,
+      reason: 'FONT_MISMATCH',
+      detail: `Expected font "${incomingFont}", got "${actualFont}"`
+    });
+  }
   
   // Freeze typography for forensic parity debugging
   const previewFontString = ctx.font;

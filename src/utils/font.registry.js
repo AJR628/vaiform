@@ -119,3 +119,19 @@ export function assertFontExists(fontfile) {
 export function escapeFontPath(fontfile) {
   return fontfile.replace(/:/g, '\\:');
 }
+
+/**
+ * Build consistent canvas font string for @napi-rs/canvas
+ * Normalizes weight and style to ensure parity between client and server
+ * @param {Object} options - Font options
+ * @param {string} [options.fontStyle='normal'] - Font style ('italic' or 'normal')
+ * @param {string|number} [options.weightCss='700'] - Font weight
+ * @param {number} options.fontPx - Font size in pixels
+ * @param {string} [options.family='DejaVu Sans'] - Font family
+ * @returns {string} Canvas font string
+ */
+export function toCanvasFont({fontStyle='normal', weightCss='700', fontPx, family='DejaVu Sans'}) {
+  const weight = (weightCss+'').toLowerCase()==='bold' ? '700' : String(weightCss||'700');
+  const style = fontStyle === 'italic' ? 'italic' : 'normal';
+  return `${style} ${weight} ${fontPx}px "${family}"`;
+}

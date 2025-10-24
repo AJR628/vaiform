@@ -1,4 +1,5 @@
 import { createCanvas } from '@napi-rs/canvas';
+import { toCanvasFont } from '../utils/font.registry.js';
 
 // Font registration moved to src/caption/canvas-fonts.js and called from server.js
 // Fonts are assumed to be registered at startup
@@ -6,7 +7,7 @@ import { createCanvas } from '@napi-rs/canvas';
 /**
  * @typedef {Object} CaptionStyle
  * @property {string} text - The text to render
- * @property {'DejaVuSans'} fontFamily - Font family
+ * @property {'DejaVu Sans'} fontFamily - Font family
  * @property {400|700} fontWeight - Font weight
  * @property {number} fontPx - Font size in pixels at 1080×1920
  * @property {number} lineSpacingPx - Line spacing in pixels
@@ -55,7 +56,7 @@ export async function renderCaptionImage(jobId, style) {
 
   const {
     text,
-    fontFamily = 'DejaVuSans',
+    fontFamily = 'DejaVu Sans',
     fontWeight = 700,
     fontPx = 44,
     lineSpacingPx = 52,
@@ -146,8 +147,20 @@ export async function renderCaptionImage(jobId, style) {
     finalFontPx = Math.max(24, Math.round(clampedFontPx * scaleFactor)); // Minimum 24px
     finalLineSpacing = Math.round(lineSpacingPx * scaleFactor);
     
-    // Re-wrap with smaller font
-    ctx.font = `${fontWeight || 700} ${finalFontPx}px "${actualFontFamily}"`;
+    // Re-wrap with smaller font (only for non-raster flows that need rewrap)
+    const needsRewrap = style.mode !== 'raster';
+    if (needsRewrap) {
+      // Use toCanvasFont helper to ensure proper fontStyle inclusion
+      ctx.font = toCanvasFont({
+        fontStyle: style.fontStyle || 'normal',
+        weightCss: style.weightCss || fontWeight || 700,
+        fontPx: finalFontPx,
+        family: actualFontFamily
+      });
+    } else {
+      // For raster mode, use simple font string (no rewrap should occur)
+      ctx.font = `${fontWeight || 700} ${finalFontPx}px "${actualFontFamily}"`;
+    }
     const newLines = [];
     let currentLine = '';
     

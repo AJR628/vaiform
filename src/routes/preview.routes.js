@@ -11,7 +11,7 @@ const router = Router();
 // Legacy v1 schema (pixel-based)
 const CaptionStyleSchema = z.object({
   text: z.string().min(1, 'Caption text is required'),
-  fontFamily: z.string().default('DejaVuSans'),
+  fontFamily: z.string().default('DejaVu Sans'),
   fontWeight: z.union([z.literal(400), z.literal(700)]).default(700),
   fontPx: z.number().int().min(16).max(200).default(44),
   lineSpacingPx: z.number().int().min(0).max(200).default(52),
@@ -46,7 +46,7 @@ const OverlaySchema = z.object({
   align: z.enum(['left', 'center', 'right']).default('center'),
   color: z.string().default('#ffffff'),
   opacity: z.coerce.number().min(0).max(1).default(1.0),
-  fontFamily: z.string().default('DejaVuSans'),
+  fontFamily: z.string().default('DejaVu Sans'),
   weightCss: z.string().default('normal'),
   showBox: z.boolean().default(false),
   v2: z.boolean().optional(), // flag to indicate v2 format

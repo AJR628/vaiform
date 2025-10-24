@@ -1392,10 +1392,10 @@
             
             // Map UI font selection to server font names (only use registered fonts)
             const fontMapping = {
-                'system': { family: 'DejaVuSans', weightCss: 'normal' },
-                'bold': { family: 'DejaVuSans', weightCss: 'bold' },
-                'cinematic': { family: 'DejaVuSans', weightCss: 'bold' }, // Fallback to DejaVu until we add more fonts
-                'minimal': { family: 'DejaVuSans', weightCss: 'normal' }
+                'system': { family: 'DejaVu Sans', weightCss: 'normal' },
+                'bold': { family: 'DejaVu Sans', weightCss: 'bold' },
+                'cinematic': { family: 'DejaVu Sans', weightCss: 'bold' }, // Fallback to DejaVu until we add more fonts
+                'minimal': { family: 'DejaVu Sans', weightCss: 'normal' }
             };
             
             const selectedFont = document.getElementById('caption-font')?.value || 'system';
@@ -1777,7 +1777,7 @@
                 // lines array is already included in browserGeometry above
                 
                 // Styles
-                fontFamily: meta.fontFamily || 'DejaVuSans',
+                fontFamily: meta.fontFamily || 'DejaVu Sans',
                 weightCss: meta.weightCss || '700',
                 fontStyle: meta.fontStyle || 'normal',
                 textAlign: meta.textAlign || 'center',
@@ -1807,6 +1807,17 @@
                 
                 const payload = overlayMetaToSSOT(meta);
                 console.log('[overlay-preview] Sending payload:', payload);
+                
+                // DEBUG_PARITY: Log font details before save (gated by DEBUG_PARITY flag)
+                if (window.DEBUG_PARITY) {
+                    console.log('[caption-overlay:save]', {
+                        fontFamily: meta.fontFamily,
+                        weightCss: meta.weightCss,
+                        fontStyle: meta.fontStyle,
+                        previewFontString: meta.previewFontString
+                    });
+                }
+                
                 const { apiFetch } = await import('./api.mjs');
                 const result = await apiFetch('/caption/preview', { method: 'POST', body: payload });
                 console.log('[overlay-preview] Server response:', result);
@@ -2577,8 +2588,8 @@
         
         // Font parity map for client-side consistency
         const FONT_MAP = { 
-            DejaVuSans: 'DejaVu Sans', 
-            DejaVuSerif: 'DejaVu Serif' 
+            'DejaVu Sans': 'DejaVu Sans', 
+            'DejaVu Serif': 'DejaVu Serif' 
         };
         
         // Helper function to derive yPct from placement
@@ -2650,7 +2661,7 @@
             
             const payload = {
                 text,
-                fontFamily: captionStyle.fontFamily || 'DejaVuSans',
+                fontFamily: captionStyle.fontFamily || 'DejaVu Sans',
                 weight: captionStyle.weightCss || captionStyle.weight || 'normal', // Fix: Use weightCss from captionStyle
                 fontPx: captionStyle.fontPx || 48,
                 opacity,
@@ -3866,7 +3877,7 @@
                     
                     // Typography (informational only for v3 raster)
                     fontPx: Number(m.fontPx || meta.fontPx || 48),
-                    fontFamily: m.fontFamily || meta.fontFamily || 'DejaVuSans',
+                    fontFamily: m.fontFamily || meta.fontFamily || 'DejaVu Sans',
                     weightCss: m.weightCss || meta.weightCss || 'normal',
                     fontStyle: m.fontStyle || 'normal',
                     textAlign: m.textAlign || 'center',
@@ -3991,7 +4002,7 @@
                             xExpr_png: normalizedMeta.xExpr_png || '(W-overlay_w)/2',
                             
                             // Typography - ensure finite numbers with safe defaults
-                            fontFamily: normalizedMeta.fontFamily || 'DejaVuSans',
+                            fontFamily: normalizedMeta.fontFamily || 'DejaVu Sans',
                             fontPx: Number.isFinite(normalizedMeta.fontPx) ? normalizedMeta.fontPx : 48,
                             lineSpacingPx: Number.isFinite(normalizedMeta.lineSpacingPx) ? normalizedMeta.lineSpacingPx : 8,
                             letterSpacingPx: Number.isFinite(normalizedMeta.letterSpacingPx) ? normalizedMeta.letterSpacingPx : 0,

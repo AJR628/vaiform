@@ -67,7 +67,7 @@ router.get("/caption-smoke", async (_req, res) => {
     
     const testStyle = {
       text: "This is a test caption for smoke testing the new PNG overlay system.",
-      fontFamily: 'DejaVuSans',
+      fontFamily: 'DejaVu Sans',
       fontWeight: 700,
       fontPx: 44,
       lineSpacingPx: 52,

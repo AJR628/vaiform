@@ -926,7 +926,7 @@ export async function renderVideoQuoteOverlay({
         // Create temporary canvas for text measurement
         const tempCanvas = createCanvas(W, H);
         const tempCtx = tempCanvas.getContext("2d");
-        const fontString = `${normalized.weightCss || 'normal'} ${overlayFontPx}px DejaVuSans`;
+        const fontString = `${normalized.weightCss || 'normal'} ${overlayFontPx}px "DejaVu Sans"`;
         tempCtx.font = fontString;
         
         // Word-wrap using same logic as legacy caption path
