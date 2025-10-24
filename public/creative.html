@@ -104,8 +104,9 @@
     <script type="module" src="./js/caption-live.js"></script>
     <!-- Import shared line extraction function -->
     <script type="module">
-        import { extractRenderedLines } from './js/caption-overlay.js';
+        import { extractRenderedLines, extractLinesStable } from './js/caption-overlay.js';
         window.extractRenderedLines = extractRenderedLines;
+        window.extractLinesStable = extractLinesStable;
     </script>
     <!-- Delegated event system for action buttons -->
     <script src="./js/ui-actions.js"></script>
@@ -3419,9 +3420,24 @@
             // 1) Styles (browser truth)
             const s = readComputed(contentEl);
 
-            // 2) Visual lines - use shared line extraction from overlay
-            const lines = window.extractRenderedLines(contentEl);
+            // 2) Visual lines - use stable line extraction with retry and caching
+            const metrics = {
+                fontPx: s.fontPx,
+                lineSpacingPx: s.lineSpacingPx
+            };
+            const extractionResult = window.extractLinesStable(contentEl, metrics);
+            const lines = extractionResult.lines;
             const linesCount = Math.max(1, lines.length);
+            
+            // Log extraction result for debugging
+            console.log('[lines:save]', {
+                source: extractionResult.source,
+                count: lines.length,
+                clientWidth: contentEl.clientWidth,
+                maxWidthUsed: contentEl.clientWidth - (parseInt(getComputedStyle(contentEl).paddingLeft, 10) || 0) - (parseInt(getComputedStyle(contentEl).paddingRight, 10) || 0),
+                fontPx: metrics.fontPx,
+                lineSpacingPx: metrics.lineSpacingPx,
+            });
 
             // 3) Get container for relative positioning
             const stageContainer = stageEl.parentElement || stageEl;
@@ -3511,7 +3527,8 @@
                 // Find the correct elements for browser measurement
                 const liveEl = document.getElementById('caption-live');
                 const stageEl = document.querySelector('.caption-box') || liveEl?.parentElement;
-                const contentEl = liveEl || document.querySelector('.caption-box .content');
+                const overlayEl = document.querySelector('.caption-box .content');
+                const contentEl = overlayEl || liveEl; // Prefer overlay, fallback to live
                 const container = document.getElementById('live-preview-container');
                 const previewCssW = container?.clientWidth || 360;
                 
@@ -3519,6 +3536,17 @@
                     alert('Preview text element not found');
                     return;
                 }
+                
+                // Diagnostic logging (temporary)
+                console.log('[savePreview:element-debug]', {
+                    using: overlayEl ? '.caption-box .content' : '#caption-live',
+                    clientWidth: contentEl?.clientWidth,
+                    styleWidth: getComputedStyle(contentEl).width,
+                    padL: getComputedStyle(contentEl).paddingLeft,
+                    padR: getComputedStyle(contentEl).paddingRight,
+                    font: getComputedStyle(contentEl).font,
+                    textPreview: (contentEl?.innerText || '').slice(0, 60),
+                });
                 
                 // Get browser-rendered geometry using shared line extraction
                 const browserGeometry = buildRasterFromBrowser({

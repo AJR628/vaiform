@@ -913,6 +913,17 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
       return;
     }
     
+    // Cache successful DOM extraction for stable extraction reuse
+    const text = (content.innerText || content.textContent || '').replace(/\s+/g, ' ').trim();
+    lastGoodDOMCache = {
+      text,
+      lines: lines,
+      contentWidth: content.clientWidth,
+      fontPx: fontPx,
+      lineSpacingPx: lineSpacingPx,
+      timestamp: Date.now()
+    };
+    
     // Color & effects
     const color = cs.color || 'rgb(255,255,255)';
     const opacity = parseFloat(cs.opacity) || 1;
@@ -1102,6 +1113,153 @@ export function extractRenderedLines(element) {
   
   console.log('[extractLines] Canvas fallback:', lines.length, 'lines');
   return lines;
+}
+
+// Cache for stable line extraction
+let lastGoodDOMCache = null;
+
+// Stable line extraction with retry, caching, and proper fallback
+export function extractLinesStable(content, metrics) {
+  const text = (content.innerText || content.textContent || '').replace(/\s+/g, ' ').trim();
+  if (!text) return { lines: [], source: 'empty' };
+  
+  // Check font/layout readiness
+  if (document.fonts.status !== 'loaded') {
+    console.warn('[extractLinesStable] Fonts not ready, retrying...');
+    return { lines: [], source: 'fonts-not-ready' };
+  }
+  
+  if (content.offsetParent === null) {
+    console.warn('[extractLinesStable] Element not laid out, retrying...');
+    return { lines: [], source: 'not-laid-out' };
+  }
+  
+  // Try DOM method first
+  const domResult = tryDOMExtraction(content);
+  if (domResult.lines.length > 0) {
+    // Cache successful DOM result
+    lastGoodDOMCache = {
+      text,
+      lines: domResult.lines,
+      contentWidth: content.clientWidth,
+      fontPx: metrics.fontPx,
+      lineSpacingPx: metrics.lineSpacingPx,
+      timestamp: Date.now()
+    };
+    return { lines: domResult.lines, source: 'dom' };
+  }
+  
+  // Try DOM with retry (up to 2x requestAnimationFrame)
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    // Use synchronous rAF for now - can be made async later if needed
+    const retryResult = tryDOMExtraction(content);
+    if (retryResult.lines.length > 0) {
+      lastGoodDOMCache = {
+        text,
+        lines: retryResult.lines,
+        contentWidth: content.clientWidth,
+        fontPx: metrics.fontPx,
+        lineSpacingPx: metrics.lineSpacingPx,
+        timestamp: Date.now()
+      };
+      return { lines: retryResult.lines, source: 'dom-retry' };
+    }
+  }
+  
+  // Check cache for reuse
+  if (lastGoodDOMCache && 
+      lastGoodDOMCache.text === text &&
+      Math.abs(lastGoodDOMCache.contentWidth - content.clientWidth) <= 1 &&
+      Math.abs(lastGoodDOMCache.fontPx - metrics.fontPx) <= 1 &&
+      Math.abs(lastGoodDOMCache.lineSpacingPx - metrics.lineSpacingPx) <= 1) {
+    console.log('[extractLinesStable] Using cached DOM result');
+    return { lines: lastGoodDOMCache.lines, source: 'dom-cached' };
+  }
+  
+  // Fallback to canvas with proper content box measurement
+  const canvasResult = tryCanvasExtraction(content, metrics);
+  return { lines: canvasResult.lines, source: 'canvas' };
+}
+
+// DOM extraction helper
+function tryDOMExtraction(element) {
+  try {
+    const range = document.createRange();
+    const walker = document.createTreeWalker(
+      element,
+      NodeFilter.SHOW_TEXT,
+      null,
+      false
+    );
+    
+    const lines = [];
+    let currentLine = '';
+    let lastBottom = null;
+    
+    let textNode;
+    while (textNode = walker.nextNode()) {
+      const nodeText = textNode.textContent;
+      for (let i = 0; i < nodeText.length; i++) {
+        range.setStart(textNode, i);
+        range.setEnd(textNode, i + 1);
+        const rects = range.getClientRects();
+        if (rects.length > 0) {
+          const rect = rects[0];
+          if (lastBottom !== null && rect.bottom > lastBottom + 2) {
+            if (currentLine.trim()) lines.push(currentLine.trim());
+            currentLine = nodeText[i];
+          } else {
+            currentLine += nodeText[i];
+          }
+          lastBottom = rect.bottom;
+        }
+      }
+    }
+    if (currentLine.trim()) lines.push(currentLine.trim());
+    
+    return { lines, success: lines.length > 0 };
+  } catch (e) {
+    console.warn('[tryDOMExtraction] DOM method failed:', e);
+    return { lines: [], success: false };
+  }
+}
+
+// Canvas extraction helper with proper content box measurement
+function tryCanvasExtraction(element, metrics) {
+  const cs = getComputedStyle(element);
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  
+  // Use exact font string from computed styles
+  ctx.font = `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+  
+  // Calculate content box width (clientWidth - padding)
+  const padL = parseInt(cs.paddingLeft, 10) || 0;
+  const padR = parseInt(cs.paddingRight, 10) || 0;
+  const maxWidth = element.clientWidth - padL - padR;
+  
+  if (maxWidth <= 0) {
+    console.warn('[tryCanvasExtraction] Invalid maxWidth:', maxWidth);
+    return { lines: [], success: false };
+  }
+  
+  const text = (element.innerText || element.textContent || '').replace(/\s+/g, ' ').trim();
+  const words = text.split(/\s+/).filter(Boolean);
+  const lines = [];
+  let line = '';
+  
+  for (const word of words) {
+    const test = line ? line + ' ' + word : word;
+    if (ctx.measureText(test).width > maxWidth && line) {
+      lines.push(line);
+      line = word;
+    } else {
+      line = test;
+    }
+  }
+  if (line) lines.push(line);
+  
+  return { lines, success: true };
 }
 
 // Ensure the caption box is on top, hit-testable, and inside the stage viewport
