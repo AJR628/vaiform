@@ -128,7 +128,7 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
       font-size:18px; line-height:1; color:rgba(255,255,255,.6); }
     .caption-box .content{ padding:28px 12px 12px 12px; outline:none; white-space:pre-wrap; word-break:normal; overflow-wrap:normal; hyphens:none; overflow:hidden; box-sizing:border-box;
       color:#fff; text-align:center; font-weight:800; font-size:38px; line-height:1.15; text-shadow:0 2px 12px rgba(0,0,0,.65);
-      font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+      font-family: "DejaVu Sans", sans-serif; }
     .caption-box .drag-resize{ position:absolute; right:0; bottom:0; width:16px; height:16px;
       cursor:nwse-resize; border-right:2px solid #fff; border-bottom:2px solid #fff; opacity:.7; }
     /* V2: keep chrome in layout to avoid measurement shifts; always show handle for immediate interaction */

@@ -1021,6 +1021,13 @@ async function renderCaptionRaster(meta) {
   tempCtx.font = font;
 
   console.log('[raster] Using client previewFontString:', font);
+  console.log('[font-parity:server]', {
+    ctxFont: tempCtx.font,
+    previewFontString: font,
+    fontPx,
+    fontStyle: meta.fontStyle,
+    weightCss: meta.weightCss
+  });
   
   // Helper to measure text width accounting for letter spacing
   const measureTextWidth = (ctx, text, letterSpacing) => {
@@ -1050,6 +1057,12 @@ async function renderCaptionRaster(meta) {
   for (const line of lines) {
     const transformedLine = applyTransform(line);
     const width = measureTextWidth(tempCtx, transformedLine, letterSpacingPx);
+    console.log('[font-parity:measure]', {
+      line: transformedLine.substring(0, 20),
+      width: Math.round(width),
+      maxLineWidth: Math.round(maxLineWidth),
+      fits: width <= maxLineWidth + 1
+    });
     if (width > maxLineWidth + 1) {  // +1px tolerance
       console.warn(`[raster] Line exceeds maxLineWidth: "${line}" (${width}px > ${maxLineWidth}px)`);
     }

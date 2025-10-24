@@ -3497,6 +3497,16 @@
                 // Frame (unchanged)
                 frameW, frameH,
             };
+            
+            // Font parity verification log
+            console.log('[font-parity:client]', {
+                previewFontString: browserGeometry.previewFontString,
+                fontFamily: browserGeometry.fontFamily,
+                fontStyle: browserGeometry.fontStyle,
+                weightCss: browserGeometry.weightCss
+            });
+            
+            return browserGeometry;
         }
 
         // Save Preview function (SSOT workflow)
