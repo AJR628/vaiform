@@ -229,3 +229,12 @@
 #live-preview-container.has-media {
   min-height: 640px;
 }
+
+/* Only for the rasterized bitmap coming from canvas */
+.rendered-bg {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;       /* preserve AR, no extra crop */
+  object-position: center;
+  background: #000;
+}

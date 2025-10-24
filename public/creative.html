@@ -691,7 +691,7 @@
                     <img id="preview-raster-img" alt="caption png" style="position:absolute; inset:0; pointer-events:none; z-index:10; display:none; object-fit: contain;" />
                     <!-- New draggable caption overlay container -->
                     <div id="stage" class="absolute inset-0 w-full h-full" style="z-index:3; display:none;">
-                        <img id="previewMedia" class="w-full h-full object-cover" />
+                        <img id="previewMedia" class="w-full h-full block rendered-bg" />
                     </div>
                     </div>
                 </div>
@@ -1598,6 +1598,19 @@
                         const dataUrl = canvas.toDataURL('image/png');
                         previewMedia.src = dataUrl;
                         console.log('[overlay-system] Canvas background set');
+                        
+                        // Sanity check: bitmap dimensions should match canvas (9:16)
+                        requestAnimationFrame(() => {
+                            console.log('[bg:bitmap]', {
+                                canvasW: canvas.width,
+                                canvasH: canvas.height,
+                                elW: previewMedia.naturalWidth,
+                                elH: previewMedia.naturalHeight,
+                                aspectCanvas: (canvas.width / canvas.height).toFixed(4),
+                                aspectBitmap: (previewMedia.naturalWidth / previewMedia.naturalHeight).toFixed(4)
+                            });
+                        });
+                        
                         return true;
                     }
                     return false;
@@ -1746,6 +1759,19 @@
                     const dataUrl = canvas.toDataURL('image/png');
                     previewMedia.src = dataUrl;
                     console.log('[overlay-canvas] Background updated');
+                    
+                    // Sanity check: bitmap dimensions should match canvas (9:16)
+                    requestAnimationFrame(() => {
+                        console.log('[bg:bitmap]', {
+                            canvasW: canvas.width,
+                            canvasH: canvas.height,
+                            elW: previewMedia.naturalWidth,
+                            elH: previewMedia.naturalHeight,
+                            aspectCanvas: (canvas.width / canvas.height).toFixed(4),
+                            aspectBitmap: (previewMedia.naturalWidth / previewMedia.naturalHeight).toFixed(4)
+                        });
+                    });
+                    
                     try { const { ensureOverlayTopAndVisible } = await import('./js/caption-overlay.js'); ensureOverlayTopAndVisible('#stage'); } catch {}
                 }
             } catch (error) {
