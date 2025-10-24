@@ -39,7 +39,7 @@ export function registerDejaVuFonts() {
   try {
     if (GlobalFonts.has && GlobalFonts.has('DejaVu Sans')) {
       console.log('[canvas-fonts] DejaVu fonts already registered');
-      return { okRegular: true, okBold: true };
+      return { okRegular: true, okBold: true, okItalic: true, okBoldItalic: true };
     }
   } catch (e) {
     // GlobalFonts.has might not be available in all versions
@@ -49,12 +49,18 @@ export function registerDejaVuFonts() {
   // Resolve font paths
   const regularPath = resolveFontPath('DejaVuSans.ttf');
   const boldPath = resolveFontPath('DejaVuSans-Bold.ttf');
+  const obliquePath = resolveFontPath('DejaVuSans-Oblique.ttf');
+  const boldObliquePath = resolveFontPath('DejaVuSans-BoldOblique.ttf');
   
   console.log('[canvas-fonts] regularPath:', regularPath);
   console.log('[canvas-fonts] boldPath:', boldPath);
+  console.log('[canvas-fonts] obliquePath:', obliquePath);
+  console.log('[canvas-fonts] boldObliquePath:', boldObliquePath);
   
   let okRegular = false;
   let okBold = false;
+  let okItalic = false;
+  let okBoldItalic = false;
   
   // Register regular font
   if (regularPath) {
@@ -82,8 +88,34 @@ export function registerDejaVuFonts() {
     console.error('[canvas-fonts] Bold font not found in any location');
   }
   
+  // Register italic font
+  if (obliquePath) {
+    try {
+      GlobalFonts.registerFromPath(obliquePath, 'DejaVu Sans');
+      console.log('[canvas-fonts] Registered italic font:', obliquePath);
+      okItalic = true;
+    } catch (e) {
+      console.error('[canvas-fonts] Failed to register italic font:', e.message);
+    }
+  } else {
+    console.error('[canvas-fonts] Italic font not found in any location');
+  }
+  
+  // Register bold italic font
+  if (boldObliquePath) {
+    try {
+      GlobalFonts.registerFromPath(boldObliquePath, 'DejaVu Sans');
+      console.log('[canvas-fonts] Registered bold-italic font:', boldObliquePath);
+      okBoldItalic = true;
+    } catch (e) {
+      console.error('[canvas-fonts] Failed to register bold-italic font:', e.message);
+    }
+  } else {
+    console.error('[canvas-fonts] Bold-italic font not found in any location');
+  }
+  
   // Log registration status
-  const status = { okRegular, okBold };
+  const status = { okRegular, okBold, okItalic, okBoldItalic };
   console.log('[canvas-fonts] Registered fonts:', status);
   
   // Log available font families
