@@ -1053,7 +1053,10 @@ async function renderCaptionRaster(meta) {
     return max;
   })();
   
-  // Validate that lines fit within maxLineWidth
+  // Validate that lines fit within maxLineWidth and rewrap if needed
+  let needsRewrap = false;
+  let serverWrappedLines = lines;
+  
   for (const line of lines) {
     const transformedLine = applyTransform(line);
     const width = measureTextWidth(tempCtx, transformedLine, letterSpacingPx);
@@ -1071,7 +1074,19 @@ async function renderCaptionRaster(meta) {
         maxLineWidth: Math.round(maxLineWidth),
         overflow: Math.round(width - maxLineWidth)
       });
+      needsRewrap = true;
     }
+  }
+  
+  // Server-side rewrap if client lines overflow
+  if (needsRewrap) {
+    console.log('[parity:server-rewrap] Client lines overflow detected, rewrapping with server font');
+    serverWrappedLines = wrapLinesWithFont(text, maxLineWidth, tempCtx, letterSpacingPx);
+    console.log('[parity:server-rewrap]', {
+      oldLines: lines.length,
+      newLines: serverWrappedLines.length,
+      maxLineWidth: Math.round(maxLineWidth)
+    });
   }
   
   // ✅ Use client canonical values if provided (trust client SSOT)
@@ -1167,11 +1182,12 @@ async function renderCaptionRaster(meta) {
     }
   };
   
-  // Draw each line
+  // Draw each line (use server-wrapped lines if rewrap occurred)
+  const finalLines = serverWrappedLines;
   let currentY = padding;  // Start after top padding
   
-  for (let i = 0; i < lines.length; i++) {
-    const line = applyTransform(lines[i]);
+  for (let i = 0; i < finalLines.length; i++) {
+    const line = applyTransform(finalLines[i]);
     
     // Calculate X position based on alignment
     const lineWidth = measureTextWidth(ctx, line, letterSpacingPx);
@@ -1233,7 +1249,7 @@ async function renderCaptionRaster(meta) {
     drawTextWithLetterSpacing(ctx, line, x, currentY, letterSpacingPx, 'fill');
     ctx.restore();
     
-    currentY += fontPx + (i < lines.length - 1 ? meta.lineSpacingPx : 0);
+    currentY += fontPx + (i < finalLines.length - 1 ? meta.lineSpacingPx : 0);
   }
   
   // TEMPORARY: Visual debug markers (remove after verification)
@@ -1275,7 +1291,7 @@ async function renderCaptionRaster(meta) {
     rasterH,
     yPx,
     padding,
-    lines: lines.length,
+    lines: finalLines.length,
     maxLineWidth,
     fontStyle: styleToken,
     fontWeight: weightToken,
@@ -1399,6 +1415,38 @@ function toRgba(color, opacity) {
     return color.replace('rgb', 'rgba').replace(')', `, ${opacity})`);
   }
   return `rgba(255, 255, 255, ${opacity})`;
+}
+
+// Helper function for server-side text wrapping with exact font measurement
+function wrapLinesWithFont(text, maxLineWidth, ctx, letterSpacingPx = 0) {
+  const words = text.trim().split(/\s+/).filter(Boolean);
+  const lines = [];
+  let line = "";
+  
+  // Helper to measure text width accounting for letter spacing
+  const measureWidth = (str) => {
+    if (!letterSpacingPx || letterSpacingPx === 0) {
+      return ctx.measureText(str).width;
+    }
+    let totalWidth = 0;
+    for (let i = 0; i < str.length; i++) {
+      totalWidth += ctx.measureText(str[i]).width;
+      if (i < str.length - 1) totalWidth += letterSpacingPx;
+    }
+    return totalWidth;
+  };
+  
+  for (const word of words) {
+    const test = line ? `${line} ${word}` : word;
+    if (measureWidth(test) > maxLineWidth && line) {
+      lines.push(line);
+      line = word;
+    } else {
+      line = test;
+    }
+  }
+  if (line) lines.push(line);
+  return lines;
 }
 
 export default router;

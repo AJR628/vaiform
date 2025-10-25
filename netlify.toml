@@ -24,6 +24,13 @@ command = "rm -rf node_modules package-lock.json && npm install && npm run build
   status = 200
   force = true
 
+# proxy font files to backend (fixes browser font loading)
+[[redirects]]
+  from = "/assets/fonts/*"
+  to = "https://17e0d1d1-e327-483d-b1ea-c41bea08fb59-00-1ef93t84nlhq6.janeway.replit.dev/assets/fonts/:splat"
+  status = 200
+  force = true
+
 [[redirects]]
   from = "/stripe/webhook"
   to = "https://17e0d1d1-e327-483d-b1ea-c41bea08fb59-00-1ef93t84nlhq6.janeway.replit.dev/stripe/webhook"
