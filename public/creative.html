@@ -3338,11 +3338,11 @@
 
         function normalizeRasterPayload(p) {
             return {
-                // CRITICAL: Ensure text fields are always present (before spread)
+                ...p,
+                
+                // ✅ Override text fields AFTER spread to ensure they're never undefined
                 text: String(p.text || ''),
                 textRaw: String(p.textRaw || p.text || ''),
-                
-                ...p,
                 
                 // integers the server expects
                 frameW: int(p.frameW),
