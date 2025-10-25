@@ -691,6 +691,9 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     if (meta.paddingPx != null) content.style.padding = meta.paddingPx + 'px';
     if (meta.fontFamily) content.style.fontFamily = meta.fontFamily;
     
+    // Prevent browser from synthesizing faux bold/italic
+    content.style.fontSynthesis = 'none';
+    
     // Handle showBox toggle
     if (typeof meta.showBox === 'boolean') {
       if (meta.showBox) {
@@ -800,7 +803,7 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     fontBtn.onclick = (e)=>{
       openPopover(e.currentTarget, (pop)=>{
         const fam = document.createElement('select'); fam.style.display='block'; fam.style.marginBottom='6px'; fam.style.color='#111';
-        ['Inter','Roboto','Segoe UI','System UI','DejaVu Sans','Arial','Georgia'].forEach(f=>{ const o=document.createElement('option'); o.value=f; o.textContent=f; fam.appendChild(o); });
+        ['DejaVu Sans'].forEach(f=>{ const o=document.createElement('option'); o.value=f; o.textContent=f; fam.appendChild(o); });
         fam.value = (getComputedStyle(content).fontFamily||'').split(',')[0].replaceAll('"','').trim();
         fam.onchange = ()=>{ content.style.fontFamily = fam.value + ', system-ui, -apple-system, Segoe UI, Roboto, sans-serif'; scheduleLayout(); emitCaptionState('font-family'); };
         const lhL = document.createElement('div'); lhL.textContent='Line height'; lhL.style.margin='6px 0 2px';
@@ -820,8 +823,8 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     incBtn.onclick = ()=>{ const v = Math.min(200,(parseInt(getComputedStyle(content).fontSize,10)||24)+2); content.style.fontSize=v+'px'; scheduleLayout(); emitCaptionState('font-size'); };
 
     // Bold/Italic
-    boldBtn.onclick = ()=>{ const w=getComputedStyle(content).fontWeight; content.style.fontWeight=(w==='700'||parseInt(w,10)>=600)?'400':'700'; scheduleLayout(); emitCaptionState('bold'); };
-    italicBtn.onclick = ()=>{ const fs=getComputedStyle(content).fontStyle; content.style.fontStyle=(fs==='italic')?'normal':'italic'; scheduleLayout(); emitCaptionState('italic'); };
+    boldBtn.onclick = ()=>{ const w=getComputedStyle(content).fontWeight; content.style.fontWeight=(w==='700'||parseInt(w,10)>=600)?'400':'700'; content.style.fontSynthesis='none'; scheduleLayout(); emitCaptionState('bold'); };
+    italicBtn.onclick = ()=>{ const fs=getComputedStyle(content).fontStyle; content.style.fontStyle=(fs==='italic')?'normal':'italic'; content.style.fontSynthesis='none'; scheduleLayout(); emitCaptionState('italic'); };
 
     // Color / stroke / shadow (paint-only)
     colorBtn.onclick = (e)=>{
@@ -898,7 +901,9 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
       : parseFloat(lineHeightRaw);
     const lineSpacingPx = Math.max(0, Math.round(lineHeightPx - fontPx));
     const letterSpacingPx = parseFloat(cs.letterSpacing) || 0;
-    const weightCss = String(cs.fontWeight);
+    // Normalize weight to numeric tokens (400/700) for server consistency
+    const rawWeight = String(cs.fontWeight);
+    const weightCss = (rawWeight === 'bold' || parseInt(rawWeight, 10) >= 600) ? '700' : '400';
     const fontStyle = cs.fontStyle === 'italic' ? 'italic' : 'normal';
     const textAlign = cs.textAlign || 'center';
     const textTransform = cs.textTransform || 'none';

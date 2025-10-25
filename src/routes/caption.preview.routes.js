@@ -1081,6 +1081,11 @@ async function renderCaptionRaster(meta) {
   // Server-side rewrap if client lines overflow
   if (needsRewrap) {
     console.log('[parity:server-rewrap] Client lines overflow detected, rewrapping with server font');
+    console.log('[parity:server-rewrap] Preserving font:', {
+      font: tempCtx.font,
+      weightCss: meta.weightCss,
+      fontStyle: meta.fontStyle
+    });
     serverWrappedLines = wrapLinesWithFont(text, maxLineWidth, tempCtx, letterSpacingPx);
     console.log('[parity:server-rewrap]', {
       oldLines: lines.length,
@@ -1282,9 +1287,10 @@ async function renderCaptionRaster(meta) {
   // But the raster includes padding, so we need to adjust
   const yPx = meta.yPxFirstLine - padding;
   
-  // Compute debug tokens for cleaner output
-  const weightToken = normalizeWeight(fontWeight) >= 700 ? 'bold' : 'normal';
-  const styleToken = normalizeFontStyle(fontStyle) === 'italic' ? 'italic' : 'normal';
+  // Compute debug tokens for cleaner output - use actual weight from meta
+  const weightUsed = String(meta.weightCss || '400');
+  const weightToken = Number(weightUsed) >= 700 ? 'bold' : 'normal';
+  const styleToken = normalizeFontStyle(meta.fontStyle || 'normal') === 'italic' ? 'italic' : 'normal';
   
   console.log('[raster] Drew caption PNG with styles:', {
     rasterW,
