@@ -98,6 +98,11 @@
                 return null;
             };
         }
+        
+        // Initialize preview saved flag
+        if (typeof window._previewSavedForCurrentText === 'undefined') {
+            window._previewSavedForCurrentText = false;
+        }
     </script>
     <script type="module" src="./frontend.js"></script>
     <!-- Hybrid caption preview system -->
@@ -115,28 +120,28 @@
     <style>
         @font-face {
             font-family: 'DejaVu Sans';
-            src: url('/assets/fonts/DejaVuSans.ttf') format('truetype');
+            src: url('https://17e0d1d1-e327-483d-b1ea-c41bea08fb59-00-1ef93t84nlhq6.janeway.replit.dev/assets/fonts/DejaVuSans.ttf') format('truetype');
             font-weight: 400;
             font-style: normal;
             font-display: swap;
         }
         @font-face {
-            font-family: 'DejaVu Sans Bold';
-            src: url('/assets/fonts/DejaVuSans-Bold.ttf') format('truetype');
+            font-family: 'DejaVu Sans';
+            src: url('https://17e0d1d1-e327-483d-b1ea-c41bea08fb59-00-1ef93t84nlhq6.janeway.replit.dev/assets/fonts/DejaVuSans-Bold.ttf') format('truetype');
             font-weight: 700;
             font-style: normal;
             font-display: swap;
         }
         @font-face {
-            font-family: 'DejaVu Sans Italic';
-            src: url('/assets/fonts/DejaVuSans-Oblique.ttf') format('truetype');
+            font-family: 'DejaVu Sans';
+            src: url('https://17e0d1d1-e327-483d-b1ea-c41bea08fb59-00-1ef93t84nlhq6.janeway.replit.dev/assets/fonts/DejaVuSans-Oblique.ttf') format('truetype');
             font-weight: 400;
             font-style: italic;
             font-display: swap;
         }
         @font-face {
-            font-family: 'DejaVu Sans Bold Italic';
-            src: url('/assets/fonts/DejaVuSans-BoldOblique.ttf') format('truetype');
+            font-family: 'DejaVu Sans';
+            src: url('https://17e0d1d1-e327-483d-b1ea-c41bea08fb59-00-1ef93t84nlhq6.janeway.replit.dev/assets/fonts/DejaVuSans-BoldOblique.ttf') format('truetype');
             font-weight: 700;
             font-style: italic;
             font-display: swap;
@@ -1411,7 +1416,8 @@
                 shadow: true,
                 showBox: showBoxToggle,
                 boxColor: `rgba(0,0,0,${boxOpacityPct/100})`,
-                placement: placementData.placement, // Server will compute yPct based on placement
+                placement: placementData.placement,
+                yPct: placementData.placement === 'bottom' ? 0.90 : placementData.placement === 'top' ? 0.10 : 0.50, // Set yPct based on placement
                 lineHeight: 1.05, // reduced for better stacking
                 padding: 24,
                 maxWidthPct: 0.90, // increased for bigger text

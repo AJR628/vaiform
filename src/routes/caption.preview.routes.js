@@ -1200,6 +1200,9 @@ async function renderCaptionRaster(meta) {
   const previewFontHash = crypto.createHash('sha256').update(previewFontString).digest('hex').slice(0, 16);
   console.log('[raster] Frozen font:', { previewFontString, previewFontHash });
   
+  // Calculate Y position BEFORE logging it
+  const yPx = meta.yPxFirstLine - padding;
+  
   // AUDIT: Log response SSOT
   console.info('[AUDIT:SERVER:response-ssot]', {
     previewFontString,
@@ -1341,10 +1344,6 @@ async function renderCaptionRaster(meta) {
   
   // Convert to data URL
   const rasterDataUrl = rasterCanvas.toDataURL("image/png");
-  
-  // Calculate Y position: yPxFirstLine is where the text starts
-  // But the raster includes padding, so we need to adjust
-  const yPx = meta.yPxFirstLine - padding;
   
   // Compute debug tokens for cleaner output - use actual weight from meta
   const weightUsed = String(meta.weightCss || '400');

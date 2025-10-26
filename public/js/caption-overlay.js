@@ -866,11 +866,7 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
 
   // Get variant-specific family name based on weight and style (mirrors server logic)
   function getVariantFamily(weightCss, fontStyle) {
-    const w = String(weightCss ?? '400');
-    const s = (fontStyle ?? 'normal');
-    if ((w === '700' || w === 'bold') && s === 'italic') return 'DejaVu Sans Bold Italic';
-    if ((w === '700' || w === 'bold'))                  return 'DejaVu Sans Bold';
-    if (s === 'italic')                                 return 'DejaVu Sans Italic';
+    // Always return base family - browser selects variant via weight/style descriptors
     return 'DejaVu Sans';
   }
 
@@ -918,6 +914,16 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     const textAlign = cs.textAlign || 'center';
     const textTransform = cs.textTransform || 'none';
     
+    // Extract actual line breaks as rendered by browser
+    const lines = extractRenderedLines(content);
+    if (lines.length === 0) {
+      console.error('[emitCaptionState] No valid lines extracted');
+      return;
+    }
+    
+    // Cache successful DOM extraction for stable extraction reuse
+    const text = (content.innerText || content.textContent || '').replace(/\s+/g, ' ').trim();
+    
     // Build exact font string the browser used with variant-specific family
     const family = getVariantFamily(weightCss, fontStyle);
     const previewFontString = `${fontStyle} ${weightCss === '700' ? 'bold' : 'normal'} ${fontPx}px "${family}"`;
@@ -930,16 +936,6 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
       fontStyle,
       sample: text.slice(0, 60)
     });
-    
-    // Extract actual line breaks as rendered by browser
-    const lines = extractRenderedLines(content);
-    if (lines.length === 0) {
-      console.error('[emitCaptionState] No valid lines extracted');
-      return;
-    }
-    
-    // Cache successful DOM extraction for stable extraction reuse
-    const text = (content.innerText || content.textContent || '').replace(/\s+/g, ' ').trim();
     lastGoodDOMCache = {
       text,
       lines: lines,
