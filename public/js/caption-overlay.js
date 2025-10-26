@@ -914,15 +914,15 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     const textAlign = cs.textAlign || 'center';
     const textTransform = cs.textTransform || 'none';
     
+    // Cache successful DOM extraction for stable extraction reuse
+    const text = (content.innerText || content.textContent || '').replace(/\s+/g, ' ').trim();
+    
     // Extract actual line breaks as rendered by browser
     const lines = extractRenderedLines(content);
     if (lines.length === 0) {
       console.error('[emitCaptionState] No valid lines extracted');
       return;
     }
-    
-    // Cache successful DOM extraction for stable extraction reuse
-    const text = (content.innerText || content.textContent || '').replace(/\s+/g, ' ').trim();
     
     // Build exact font string the browser used with variant-specific family
     const family = getVariantFamily(weightCss, fontStyle);

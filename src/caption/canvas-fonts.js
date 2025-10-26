@@ -72,10 +72,11 @@ export function registerDejaVuFonts() {
     console.log('[canvas-fonts] Checking existing fonts...');
   }
   
+  // Register all variants with base family "DejaVu Sans" using weight/style descriptors
   const okRegular    = addFont('DejaVuSans.ttf',             'DejaVu Sans');
-  const okBold       = addFont('DejaVuSans-Bold.ttf',        'DejaVu Sans Bold');
-  const okItalic     = addFont('DejaVuSans-Oblique.ttf',     'DejaVu Sans Italic');
-  const okBoldItalic = addFont('DejaVuSans-BoldOblique.ttf', 'DejaVu Sans Bold Italic');
+  const okBold       = addFont('DejaVuSans-Bold.ttf',        'DejaVu Sans');
+  const okItalic     = addFont('DejaVuSans-Oblique.ttf',     'DejaVu Sans');
+  const okBoldItalic = addFont('DejaVuSans-BoldOblique.ttf', 'DejaVu Sans');
   
   // Log registration status
   const status = { okRegular, okBold, okItalic, okBoldItalic };
@@ -86,12 +87,9 @@ export function registerDejaVuFonts() {
     const families = GlobalFonts.families;
     console.log('[canvas-fonts] Available families:', families);
     
-    // Verify all 4 DejaVu Sans variants are available
+    // Verify all 4 DejaVu Sans variants are available (all registered as "DejaVu Sans")
     const requiredVariants = [
-      'DejaVu Sans',
-      'DejaVu Sans Bold', 
-      'DejaVu Sans Italic',
-      'DejaVu Sans Bold Italic'
+      'DejaVu Sans'
     ];
     
     let allVariantsAvailable = true;
@@ -104,10 +102,10 @@ export function registerDejaVuFonts() {
     }
     
     if (!allVariantsAvailable) {
-      console.error('[canvas-fonts] FAILED: Not all DejaVu Sans variants are available');
-      throw new Error('DejaVu Sans font registration incomplete - missing variant families');
+      console.error('[canvas-fonts] FAILED: DejaVu Sans base family not available');
+      throw new Error('DejaVu Sans font registration incomplete - base family missing');
     } else {
-      console.log('[canvas-fonts] SUCCESS: All 4 DejaVu Sans variants verified');
+      console.log('[canvas-fonts] SUCCESS: DejaVu Sans base family verified (all variants registered)');
     }
   } catch (e) {
     console.log('[canvas-fonts] Could not list font families:', e.message);

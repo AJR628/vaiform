@@ -111,10 +111,9 @@ export function getVariantFamily(baseFamily, weightCss, fontStyle) {
  * @returns {string} Canvas font string
  */
 export function canvasFontString(weightCss, fontStyle, px, baseFamily = 'DejaVu Sans') {
-  const family = getVariantFamily(baseFamily, weightCss, fontStyle);
   const w = normalizeWeight(weightCss) >= 700 ? 'bold' : 'normal';
   const s = normalizeFontStyle(fontStyle);
-  return `${s} ${w} ${px}px "${family}"`;
+  return `${s} ${w} ${px}px "${baseFamily}"`;  // Always use base family + descriptors
 }
 
 /**
@@ -150,7 +149,7 @@ export function escapeFontPath(fontfile) {
  * @returns {string} Canvas font string
  */
 export function toCanvasFont({fontStyle='normal', weightCss='700', fontPx, family='DejaVu Sans'}) {
-  const weight = (weightCss+'').toLowerCase()==='bold' ? '700' : String(weightCss||'700');
+  const weight = (weightCss+'').toLowerCase()==='bold' ? 'bold' : 'normal';
   const style = fontStyle === 'italic' ? 'italic' : 'normal';
-  return `${style} ${weight} ${fontPx}px "${family}"`;
+  return `${style} ${weight} ${fontPx}px "${family}"`;  // Always use base family + descriptors
 }

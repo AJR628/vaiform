@@ -2803,9 +2803,9 @@
           if (document.fonts) {
             console.info('[AUDIT:FONTS:client-load]', {
               regular: document.fonts.check('56px "DejaVu Sans"'),
-              bold: document.fonts.check('bold 56px "DejaVu Sans Bold"'),
-              italic: document.fonts.check('italic 56px "DejaVu Sans Italic"'),
-              boldItalic: document.fonts.check('italic bold 56px "DejaVu Sans Bold Italic"')
+              bold: document.fonts.check('bold 56px "DejaVu Sans"'),
+              italic: document.fonts.check('italic 56px "DejaVu Sans"'),
+              boldItalic: document.fonts.check('italic bold 56px "DejaVu Sans"')
             });
           }
 
@@ -3616,6 +3616,19 @@
             try {
                 // Wait for fonts to be ready before measuring DOM
                 await document.fonts.ready;
+                
+                // Verify all DejaVu Sans variants are loaded
+                const fontsReady = 
+                    document.fonts.check('16px "DejaVu Sans"') &&
+                    document.fonts.check('bold 16px "DejaVu Sans"') &&
+                    document.fonts.check('italic 16px "DejaVu Sans"') &&
+                    document.fonts.check('italic bold 16px "DejaVu Sans"');
+                
+                if (!fontsReady) {
+                    console.warn('[savePreview] Fonts not ready; aborting save to avoid mismatch');
+                    alert('Fonts are still loading. Please try again in a moment.');
+                    return;
+                }
                 
                 // Get current caption meta from overlay system
                 const meta = window.getCaptionMeta();
