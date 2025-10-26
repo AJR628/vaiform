@@ -1057,6 +1057,15 @@ async function renderCaptionRaster(meta) {
     weightCss: meta.weightCss
   });
   
+  // AUDIT: Log pre-wrap font details
+  console.info('[AUDIT:SERVER:pre-wrap]', {
+    incomingPreviewFontString: meta.previewFontString,
+    chosenCtxFont: tempCtx.font,
+    fontPx,
+    fontStyle: meta.fontStyle,
+    weightCss: meta.weightCss
+  });
+  
   // Helper to measure text width accounting for letter spacing
   const measureTextWidth = (ctx, text, letterSpacing) => {
     if (!letterSpacing || letterSpacing === 0) {
@@ -1187,9 +1196,27 @@ async function renderCaptionRaster(meta) {
   }
   
   // Freeze typography for forensic parity debugging
-  const previewFontString = ctx.font;
+  const previewFontString = ctx.font; // freeze exactly what we used
   const previewFontHash = crypto.createHash('sha256').update(previewFontString).digest('hex').slice(0, 16);
   console.log('[raster] Frozen font:', { previewFontString, previewFontHash });
+  
+  // AUDIT: Log response SSOT
+  console.info('[AUDIT:SERVER:response-ssot]', {
+    previewFontString,
+    previewFontHash,
+    rasterHash: '(computed below)',
+    yPx_png: yPx,
+    rasterW,
+    rasterH
+  });
+  
+  // Warn if server changed the font string
+  if (meta.previewFontString && meta.previewFontString !== previewFontString) {
+    console.warn('[AUDIT:MUTATION:server]', { 
+      sent: meta.previewFontString, 
+      used: previewFontString 
+    });
+  }
   
   // Helper to draw text with letter spacing
   const drawTextWithLetterSpacing = (ctx, text, x, y, letterSpacing, method = 'fill') => {

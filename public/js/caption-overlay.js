@@ -922,6 +922,15 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     const family = getVariantFamily(weightCss, fontStyle);
     const previewFontString = `${fontStyle} ${weightCss === '700' ? 'bold' : 'normal'} ${fontPx}px "${family}"`;
     
+    // AUDIT: Log toolbar font construction
+    console.info('[AUDIT:CLIENT:toolbar]', {
+      previewFontString,
+      fontFamily: family,
+      weightCss,
+      fontStyle,
+      sample: text.slice(0, 60)
+    });
+    
     // Extract actual line breaks as rendered by browser
     const lines = extractRenderedLines(content);
     if (lines.length === 0) {

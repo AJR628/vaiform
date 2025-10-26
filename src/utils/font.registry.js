@@ -112,7 +112,7 @@ export function getVariantFamily(baseFamily, weightCss, fontStyle) {
  */
 export function canvasFontString(weightCss, fontStyle, px, baseFamily = 'DejaVu Sans') {
   const family = getVariantFamily(baseFamily, weightCss, fontStyle);
-  const w = normalizeWeight(weightCss) === 700 ? 'bold' : 'normal';
+  const w = normalizeWeight(weightCss) >= 700 ? 'bold' : 'normal';
   const s = normalizeFontStyle(fontStyle);
   return `${s} ${w} ${px}px "${family}"`;
 }

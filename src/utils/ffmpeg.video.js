@@ -1333,6 +1333,15 @@ export async function renderVideoQuoteOverlay({
       willScaleOverlay: false  // Design A enforced
     };
     console.log('[PARITY_CHECKLIST]', JSON.stringify(checklist, null, 2));
+    
+    // AUDIT: Log PNG consume details
+    console.info('[AUDIT:SHORTS:png-consume]', {
+      path: captionPngPath,
+      pngExists: fs.existsSync(captionPngPath),
+      usingCaptionPng,
+      previewFontString: rasterPlacement.previewFontString,
+      previewFontHash: rasterPlacement.previewFontHash
+    });
   }
 
   const vchain = buildVideoChain({ 

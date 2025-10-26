@@ -1831,6 +1831,13 @@
                         meta: result.data.meta || {}
                     };
                     console.log('[overlay-preview] Stored server meta:', window.__lastCaptionOverlay.meta);
+                    
+                    // AUDIT: Log after-save comparison
+                    console.info('[AUDIT:CLIENT:after-save]', {
+                        sent: normalizedPayload.previewFontString,
+                        returned: result.data.meta?.previewFontString,
+                        equal: normalizedPayload.previewFontString === result.data.meta?.previewFontString
+                    });
                 }
                 
                 const previewMedia = document.getElementById('previewMedia');
@@ -2785,6 +2792,16 @@
         document.addEventListener('DOMContentLoaded', async () => {
           // Wrap each init so one failure doesn't stop the others
           const safe = (label, fn) => { try { fn && fn(); } catch (e) { console.error(`[init] ${label} failed`, e); } };
+          
+          // AUDIT: Check font loading status
+          if (document.fonts) {
+            console.info('[AUDIT:FONTS:client-load]', {
+              regular: document.fonts.check('56px "DejaVu Sans"'),
+              bold: document.fonts.check('bold 56px "DejaVu Sans Bold"'),
+              italic: document.fonts.check('italic 56px "DejaVu Sans Italic"'),
+              boldItalic: document.fonts.check('italic bold 56px "DejaVu Sans Bold Italic"')
+            });
+          }
 
           // PRIORITY: Initialize assets after auth is ready
           (async () => {
@@ -3536,10 +3553,14 @@
                 fontPx: fontPxFrame,
                 lineSpacingPx: lineSpacingPxFrame,
                 letterSpacingPx: letterSpacingPxFrame,
-                fontFamily: s.fontFamily,
+                fontFamily: 'DejaVu Sans',  // Always send base family
                 fontStyle: s.fontStyle,
                 weightCss: s.weightCss,
-                previewFontString: `${s.fontStyle} ${s.weightCss} ${fontPxFrame}px "${s.fontFamily.split(',')[0].replace(/["']/g,'').trim()}"`,
+                previewFontString: (() => {
+                    const baseFamily = 'DejaVu Sans';
+                    const weightToken = (String(s.weightCss) === '700' || s.weightCss === 'bold') ? 'bold' : 'normal';
+                    return `${s.fontStyle} ${weightToken} ${fontPxFrame}px "${baseFamily}"`;
+                })(),
 
                 // Raster box (tight to the content box)
                 rasterW: rW,
@@ -3560,6 +3581,14 @@
                 fontFamily: browserGeometry.fontFamily,
                 fontStyle: browserGeometry.fontStyle,
                 weightCss: browserGeometry.weightCss
+            });
+            
+            // AUDIT: Log build-raster font construction
+            console.info('[AUDIT:CLIENT:build-raster]', {
+                previewFontString: browserGeometry.previewFontString,
+                fontFamily: browserGeometry.fontFamily,
+                weightCss: browserGeometry.weightCss,
+                fontStyle: browserGeometry.fontStyle
             });
             
             return browserGeometry;
@@ -3754,6 +3783,15 @@
                 // ✅ Normalize payload for server strict validation
                 const normalizedPayload = normalizeRasterPayload(payload);
 
+                // AUDIT: Log final payload before POST
+                console.info('[AUDIT:CLIENT:final-payload]', {
+                    previewFontString: normalizedPayload.previewFontString,
+                    fontFamily: normalizedPayload.fontFamily,
+                    weightCss: normalizedPayload.weightCss,
+                    fontStyle: normalizedPayload.fontStyle,
+                    sample: (normalizedPayload.text ?? '').slice(0, 60)
+                });
+                
                 // ✅ Comprehensive validation of normalized payload
                 const numericFields = ['frameW', 'frameH', 'rasterW', 'rasterH', 'rasterPadding', 'fontPx', 'lineSpacingPx', 'letterSpacingPx', 'totalTextH', 'yPxFirstLine', 'xPx_png', 'yPx_png'];
                 const invalidFields = numericFields.filter(field => {
@@ -4492,6 +4530,17 @@
                 }
 
                 console.log('[render] Final payload:', payload);
+                
+                // AUDIT: Log render POST payload
+                if (payload.overlayCaption) {
+                    console.info('[AUDIT:CLIENT:render-post]', {
+                        ssotVersion: payload.overlayCaption.ssotVersion,
+                        previewFontString: payload.overlayCaption.previewFontString,
+                        fontFamily: payload.overlayCaption.fontFamily,
+                        previewFontHash: payload.overlayCaption.previewFontHash
+                    });
+                }
+                
                 // SSOT validation: Log overlay caption meta to verify positioning data
                 if (payload.overlayCaption) {
                   const textPreview = payload.overlayCaption.text || '';
