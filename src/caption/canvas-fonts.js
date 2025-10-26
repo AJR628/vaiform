@@ -30,6 +30,32 @@ function resolveFontPath(filename) {
 }
 
 /**
+ * Add font with fallback path resolution
+ * @param {string} file - Font filename
+ * @param {string} family - Font family name
+ * @returns {boolean} Success status
+ */
+function addFont(file, family) {
+  const candidates = [
+    path.join(process.cwd(), 'assets', 'fonts', file),
+    path.join(process.cwd(), 'web', 'assets', 'fonts', file)
+  ];
+  for (const p of candidates) {
+    if (fs.existsSync(p)) {
+      try {
+        GlobalFonts.registerFromPath(p, family);
+        console.log('[canvas-fonts] Registered font:', p, 'as', family);
+        return true;
+      } catch (e) {
+        console.error('[canvas-fonts] Failed to register font:', p, e.message);
+      }
+    }
+  }
+  console.error('[canvas-fonts] Font not found:', file);
+  return false;
+}
+
+/**
  * Register DejaVu fonts with @napi-rs/canvas
  * Idempotent - safe to call multiple times
  * @returns {Object} Registration status
@@ -37,7 +63,7 @@ function resolveFontPath(filename) {
 export function registerDejaVuFonts() {
   // Idempotent guard - check if already registered
   try {
-    if (GlobalFonts.has && GlobalFonts.has('DejaVu Sans')) {
+    if (GlobalFonts.has && GlobalFonts.has('DejaVu Sans Bold Italic')) {
       console.log('[canvas-fonts] DejaVu fonts already registered');
       return { okRegular: true, okBold: true, okItalic: true, okBoldItalic: true };
     }
@@ -46,77 +72,14 @@ export function registerDejaVuFonts() {
     console.log('[canvas-fonts] Checking existing fonts...');
   }
   
-  // Resolve font paths
-  const regularPath = resolveFontPath('DejaVuSans.ttf');
-  const boldPath = resolveFontPath('DejaVuSans-Bold.ttf');
-  const obliquePath = resolveFontPath('DejaVuSans-Oblique.ttf');
-  const boldObliquePath = resolveFontPath('DejaVuSans-BoldOblique.ttf');
-  
-  console.log('[canvas-fonts] regularPath:', regularPath);
-  console.log('[canvas-fonts] boldPath:', boldPath);
-  console.log('[canvas-fonts] obliquePath:', obliquePath);
-  console.log('[canvas-fonts] boldObliquePath:', boldObliquePath);
-  
-  let okRegular = false;
-  let okBold = false;
-  let okItalic = false;
-  let okBoldItalic = false;
-  
-  // Register regular font
-  if (regularPath) {
-    try {
-      GlobalFonts.registerFromPath(regularPath, 'DejaVu Sans');
-      console.log('[canvas-fonts] Registered regular font:', regularPath);
-      okRegular = true;
-    } catch (e) {
-      console.error('[canvas-fonts] Failed to register regular font:', e.message);
-    }
-  } else {
-    console.error('[canvas-fonts] Regular font not found in any location');
-  }
-  
-  // Register bold font
-  if (boldPath) {
-    try {
-      GlobalFonts.registerFromPath(boldPath, 'DejaVu Sans');
-      console.log('[canvas-fonts] Registered bold font:', boldPath);
-      okBold = true;
-    } catch (e) {
-      console.error('[canvas-fonts] Failed to register bold font:', e.message);
-    }
-  } else {
-    console.error('[canvas-fonts] Bold font not found in any location');
-  }
-  
-  // Register italic font
-  if (obliquePath) {
-    try {
-      GlobalFonts.registerFromPath(obliquePath, 'DejaVu Sans');
-      console.log('[canvas-fonts] Registered italic font:', obliquePath);
-      okItalic = true;
-    } catch (e) {
-      console.error('[canvas-fonts] Failed to register italic font:', e.message);
-    }
-  } else {
-    console.error('[canvas-fonts] Italic font not found in any location');
-  }
-  
-  // Register bold italic font
-  if (boldObliquePath) {
-    try {
-      GlobalFonts.registerFromPath(boldObliquePath, 'DejaVu Sans');
-      console.log('[canvas-fonts] Registered bold-italic font:', boldObliquePath);
-      okBoldItalic = true;
-    } catch (e) {
-      console.error('[canvas-fonts] Failed to register bold-italic font:', e.message);
-    }
-  } else {
-    console.error('[canvas-fonts] Bold-italic font not found in any location');
-  }
+  const okRegular    = addFont('DejaVuSans.ttf',             'DejaVu Sans');
+  const okBold       = addFont('DejaVuSans-Bold.ttf',        'DejaVu Sans Bold');
+  const okItalic     = addFont('DejaVuSans-Oblique.ttf',     'DejaVu Sans Italic');
+  const okBoldItalic = addFont('DejaVuSans-BoldOblique.ttf', 'DejaVu Sans Bold Italic');
   
   // Log registration status
   const status = { okRegular, okBold, okItalic, okBoldItalic };
-  console.log('[canvas-fonts] Registered fonts:', status);
+  console.log('[canvas-fonts] DejaVu variants registered:', status);
   
   // Log available font families
   try {
@@ -125,28 +88,24 @@ export function registerDejaVuFonts() {
     
     // Verify all 4 DejaVu Sans variants are available
     const requiredVariants = [
-      { family: 'DejaVu Sans', weight: 400, style: 'normal' },
-      { family: 'DejaVu Sans', weight: 700, style: 'normal' },
-      { family: 'DejaVu Sans', weight: 400, style: 'italic' },
-      { family: 'DejaVu Sans', weight: 700, style: 'italic' }
+      'DejaVu Sans',
+      'DejaVu Sans Bold', 
+      'DejaVu Sans Italic',
+      'DejaVu Sans Bold Italic'
     ];
     
     let allVariantsAvailable = true;
-    for (const variant of requiredVariants) {
-      const isAvailable = families.some(f => 
-        f.family === variant.family && 
-        f.weight === variant.weight && 
-        f.style === variant.style
-      );
+    for (const family of requiredVariants) {
+      const isAvailable = families.some(f => f.family === family);
       if (!isAvailable) {
-        console.error(`[canvas-fonts] MISSING VARIANT: ${variant.family} weight=${variant.weight} style=${variant.style}`);
+        console.error('[canvas-fonts] Missing variant family:', family);
         allVariantsAvailable = false;
       }
     }
     
     if (!allVariantsAvailable) {
       console.error('[canvas-fonts] FAILED: Not all DejaVu Sans variants are available');
-      throw new Error('DejaVu Sans font registration incomplete - missing italic variants');
+      throw new Error('DejaVu Sans font registration incomplete - missing variant families');
     } else {
       console.log('[canvas-fonts] SUCCESS: All 4 DejaVu Sans variants verified');
     }

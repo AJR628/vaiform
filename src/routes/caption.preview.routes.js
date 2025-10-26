@@ -124,7 +124,7 @@ router.post("/caption/preview", express.json(), async (req, res) => {
         // Wrap text using client rasterW (reuse V2 pattern)
         const canvas = createCanvas(data.frameW, data.frameH);
         const ctx = canvas.getContext("2d");
-        const font = canvasFontString(data.weightCss, data.fontStyle, fontPx);
+        const font = canvasFontString(data.weightCss, data.fontStyle, fontPx, 'DejaVu Sans');
         ctx.font = font;
         
         // ✅ Use client lines if provided - NO RE-WRAP
@@ -425,7 +425,7 @@ router.post("/caption/preview", express.json(), async (req, res) => {
       
       // Setup font for measurement - use SSOT font registry
       const family = pickFamily(fontFamily);
-      const font = canvasFontString(weightCss, fontStyle, fontPx);
+      const font = canvasFontString(weightCss, fontStyle, fontPx, 'DejaVu Sans');
       ctx.font = font;
       
       // Compute maxWidth accounting for internal padding (match UI box exactly)
@@ -1044,8 +1044,9 @@ async function renderCaptionRaster(meta) {
   const tempCtx = tempCanvas.getContext("2d");
   
   // CRITICAL: Use client's exact font string (browser truth)
-  const font = meta.previewFontString || canvasFontString(meta.weightCss, meta.fontStyle, fontPx);
+  const font = meta.previewFontString || canvasFontString(meta.weightCss, meta.fontStyle, fontPx, 'DejaVu Sans');
   tempCtx.font = font;
+  tempCtx.textBaseline = 'alphabetic'; // consistent baseline for measurements
 
   console.log('[raster] Using client previewFontString:', font);
   console.log('[font-parity:server]', {
@@ -1385,7 +1386,7 @@ async function renderPreviewImage(meta) {
   
   // Font setup - use SSOT font registry
   const family = pickFamily(meta.fontFamily);
-  const font = canvasFontString(meta.weightCss, meta.fontStyle, meta.sizePx);
+  const font = canvasFontString(meta.weightCss, meta.fontStyle, meta.sizePx, 'DejaVu Sans');
   const color = toRgba(meta.color, meta.opacity ?? 1);
   
   ctx.font = font;

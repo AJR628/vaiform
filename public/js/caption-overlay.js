@@ -864,6 +864,16 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
   }
 
 
+  // Get variant-specific family name based on weight and style (mirrors server logic)
+  function getVariantFamily(weightCss, fontStyle) {
+    const w = String(weightCss ?? '400');
+    const s = (fontStyle ?? 'normal');
+    if ((w === '700' || w === 'bold') && s === 'italic') return 'DejaVu Sans Bold Italic';
+    if ((w === '700' || w === 'bold'))                  return 'DejaVu Sans Bold';
+    if (s === 'italic')                                 return 'DejaVu Sans Italic';
+    return 'DejaVu Sans';
+  }
+
   // Emit unified caption state to live preview system
   function emitCaptionState(reason = 'toolbar') {
     const cs = getComputedStyle(content);
@@ -908,8 +918,9 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     const textAlign = cs.textAlign || 'center';
     const textTransform = cs.textTransform || 'none';
     
-    // Build exact font string the browser used
-    const previewFontString = `${fontStyle} ${weightCss} ${fontPx}px "${fontFamily}"`;
+    // Build exact font string the browser used with variant-specific family
+    const family = getVariantFamily(weightCss, fontStyle);
+    const previewFontString = `${fontStyle} ${weightCss === '700' ? 'bold' : 'normal'} ${fontPx}px "${family}"`;
     
     // Extract actual line breaks as rendered by browser
     const lines = extractRenderedLines(content);

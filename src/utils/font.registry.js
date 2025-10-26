@@ -86,16 +86,35 @@ export function resolveFontFile(weightCss, fontStyle) {
  */
 
 /**
+ * Get variant-specific family name based on weight and style
+ * @param {string} baseFamily - Base font family name
+ * @param {string|number} weightCss - Font weight
+ * @param {string} fontStyle - Font style
+ * @returns {string} Variant-specific family name
+ */
+export function getVariantFamily(baseFamily, weightCss, fontStyle) {
+  const w = normalizeWeight(weightCss);
+  const s = normalizeFontStyle(fontStyle);
+
+  if (w === 700 && s === 'italic') return `${baseFamily} Bold Italic`;
+  if (w === 700 && s === 'normal') return `${baseFamily} Bold`;
+  if (w === 400 && s === 'italic') return `${baseFamily} Italic`;
+  return baseFamily; // 400 + normal
+}
+
+/**
  * Build canvas font string for @napi-rs/canvas
  * @param {string|number} weightCss - Font weight
  * @param {string} fontStyle - Font style
  * @param {number} px - Font size in pixels
+ * @param {string} baseFamily - Base font family name
  * @returns {string} Canvas font string
  */
-export function canvasFontString(weightCss, fontStyle, px) {
-  const w = normalizeWeight(weightCss) >= 700 ? 'bold' : 'normal';
-  const s = normalizeFontStyle(fontStyle) === 'italic' ? 'italic' : 'normal';
-  return `${s} ${w} ${px}px "${FONT_FAMILY}"`;
+export function canvasFontString(weightCss, fontStyle, px, baseFamily = 'DejaVu Sans') {
+  const family = getVariantFamily(baseFamily, weightCss, fontStyle);
+  const w = normalizeWeight(weightCss) === 700 ? 'bold' : 'normal';
+  const s = normalizeFontStyle(fontStyle);
+  return `${s} ${w} ${px}px "${family}"`;
 }
 
 /**
