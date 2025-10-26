@@ -74,7 +74,25 @@ router.post("/caption/preview", express.json(), async (req, res) => {
       
       // Handle V3 raster format
       if (isV3Raster) {
-        const parsed = RasterSchema.safeParse(req.body);
+        // Server-side fallback guard: ensure text field exists before schema validation
+        const body = req.body || {};
+        if ((!body.text || !String(body.text).trim()) && Array.isArray(body.lines) && body.lines.length) {
+          console.log('[caption-preview:fallback] Missing text field, deriving from lines array');
+          body.text = body.lines.join(' ').trim();
+        }
+        
+        // Log raw request body for debugging
+        console.log('[caption-preview:raw]', {
+          hasText: !!body.text,
+          hasTextRaw: !!body.textRaw,
+          hasLines: Array.isArray(body.lines),
+          linesCount: body.lines?.length || 0,
+          textSample: body.text?.slice(0, 50),
+          ssotVersion: body.ssotVersion,
+          mode: body.mode
+        });
+        
+        const parsed = RasterSchema.safeParse(body);
         if (!parsed.success) {
           return res.status(400).json({ ok: false, reason: "INVALID_INPUT", detail: parsed.error.flatten() });
         }

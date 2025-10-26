@@ -3336,13 +3336,41 @@
             return Math.max(0, int(n)); 
         }
 
+        // Extract clean text from the preview editor (SSOT for caption text)
+        function getEditorPlainText() {
+            // Use the preview content as the SSOT for text
+            const el = document.querySelector('.caption-box .content');
+            if (!el) {
+                console.warn('[getEditorPlainText] No .caption-box .content element found');
+                return { textRaw: '', text: '' };
+            }
+            
+            // innerText preserves line breaks; normalize them to spaces for `text`
+            const raw = (el.innerText || '').trim();
+            return {
+                textRaw: raw,                 // keep line breaks for debugging if you like
+                text: raw.replace(/\s*\n\s*/g, ' ').replace(/\s+/g, ' ').trim(), // schema expects a string; no HTML
+            };
+        }
+
         function normalizeRasterPayload(p) {
+            // Extract text from DOM as SSOT (guarantees text always exists)
+            const { text, textRaw } = getEditorPlainText();
+            
+            // Use existing lines if present; otherwise derive from text
+            const safeLines = Array.isArray(p.lines) && p.lines.length
+                ? p.lines
+                : (text ? text.split(/\s*\n\s*/g).filter(Boolean) : []);
+
             return {
                 ...p,
                 
-                // ✅ Override text fields AFTER spread to ensure they're never undefined
-                text: String(p.text || ''),
-                textRaw: String(p.textRaw || p.text || ''),
+                // ✅ Force-fill text fields (server schema-friendly)
+                text: (p.text && p.text.trim() ? p.text.trim() : text).trim(),
+                textRaw: (p.textRaw && p.textRaw.trim() ? p.textRaw.trim() : textRaw).trim(),
+                
+                // Use safe lines array
+                lines: safeLines,
                 
                 // integers the server expects
                 frameW: int(p.frameW),
@@ -3360,7 +3388,6 @@
                 letterSpacingPx: int(p.letterSpacingPx || 0),
                 totalTextH: int(p.totalTextH),
                 yPxFirstLine: int(p.yPxFirstLine),
-                lines: Array.isArray(p.lines) ? p.lines.map(s => String(s ?? '')) : [],
                 
                 // placement must be >= 0
                 xPx_png: nonneg(p.xPx_png ?? 0),
@@ -3790,6 +3817,17 @@
                 console.log('[preflight]', {
                     hasLinesArray: Array.isArray(normalizedPayload.lines),
                     linesLen: normalizedPayload.lines?.length,
+                });
+
+                // Diagnostic logging of final payload before POST
+                console.log('[savePreview:final]', { 
+                    keys: Object.keys(normalizedPayload), 
+                    textLen: normalizedPayload.text?.length, 
+                    textRawLen: normalizedPayload.textRaw?.length,
+                    sample: normalizedPayload.text?.slice(0, 80),
+                    hasText: !!normalizedPayload.text,
+                    hasTextRaw: !!normalizedPayload.textRaw,
+                    linesCount: normalizedPayload.lines?.length || 0
                 });
 
                 // Call preview API with normalized payload
