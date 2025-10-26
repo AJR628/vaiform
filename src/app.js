@@ -127,6 +127,29 @@ app.post("/diag/echo", (req, res) => {
 });
 console.log("[routes] /health and /diag/echo mounted");
 
+// ---------- STATIC FILES FIRST (before API routes to avoid shadowing) ----------
+// Serve /assets/fonts with correct MIME types and CORS headers
+app.use(
+  "/assets",
+  express.static(path.join(process.cwd(), "assets"), {
+    setHeaders: (res, filePath) => {
+      if (filePath.endsWith(".ttf"))  res.setHeader("Content-Type", "font/ttf");
+      if (filePath.endsWith(".otf"))  res.setHeader("Content-Type", "font/otf");
+      if (filePath.endsWith(".woff")) res.setHeader("Content-Type", "font/woff");
+      if (filePath.endsWith(".woff2"))res.setHeader("Content-Type", "font/woff2");
+    },
+  })
+);
+
+app.use("/assets/fonts", (req, res, next) => {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET");
+  next();
+});
+
+console.log("✅ Mounted static /assets (fonts) before API routes");
+
+// ---------- API ROUTES ----------
 app.use("/", healthRoutes);
 app.use("/", whoamiRoutes);
 // Keep existing creditsRoutes mount if present, but also provide a direct handler to avoid 404s.
@@ -190,8 +213,7 @@ if (routes?.quotes) {
 }
 if (routes?.assets) {
   app.use("/api/assets", routes.assets);
-  app.use("/assets", routes.assets);
-  console.log("✅ Mounted assets at /assets and /api/assets");
+  console.log("✅ Mounted assets API at /api/assets");
 }
 if (routes?.limits) {
   app.use("/api/limits", routes.limits);
@@ -255,25 +277,6 @@ try {
 } catch (e) {
   console.warn("[web] SPA hosting setup failed:", e?.message || e);
 }
-
-// Serve assets with correct MIME types
-app.use(
-  "/assets",
-  express.static(path.join(process.cwd(), "assets"), {
-    setHeaders: (res, filePath) => {
-      if (filePath.endsWith(".ttf"))  res.setHeader("Content-Type", "font/ttf");
-      if (filePath.endsWith(".otf"))  res.setHeader("Content-Type", "font/otf");
-      if (filePath.endsWith(".woff")) res.setHeader("Content-Type", "font/woff");
-      if (filePath.endsWith(".woff2"))res.setHeader("Content-Type", "font/woff2");
-    },
-  })
-);
-
-app.use("/assets/fonts", (req, res, next) => {
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET");
-  next();
-});
 
 // Minimal MIME fix for .woff2 (no behavior change for other assets)
 app.use((req, res, next) => {
