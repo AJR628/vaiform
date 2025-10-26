@@ -28,6 +28,13 @@
   font-display: swap; 
 }
 
+/* Font synthesis disabled to prevent browser from faking bold/italic */
+.caption-box .content {
+  font-synthesis: none;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
 /* 9:16 holder with cover image */
 #short-preview, #live-preview, #preview-holder, #ai-result-preview {
   position: relative;
