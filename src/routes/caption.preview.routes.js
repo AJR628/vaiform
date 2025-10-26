@@ -1005,6 +1005,15 @@ async function renderCaptionRaster(meta) {
   const textAlign = meta.textAlign ?? 'center';
   const letterSpacingPx = meta.letterSpacingPx ?? 0;
   
+  // ⛑️ Ensure `text` exists in this scope for rewrap & logging.
+  // Fallback: derive from lines if text is missing (defensive)
+  const text =
+    typeof meta.text === 'string' && meta.text.length
+      ? meta.text
+      : Array.isArray(lines) && lines.length
+        ? lines.join('\n')
+        : '';
+  
   // Color & opacity
   const opacity = meta.opacity ?? 1.0;
   const color = toRgba(meta.color, opacity);
@@ -1207,6 +1216,10 @@ async function renderCaptionRaster(meta) {
   
   // Draw each line (use server-wrapped lines if rewrap occurred)
   const finalLines = serverWrappedLines;
+  
+  // Canonical text reference for consistent usage in response/meta
+  const canonicalText = text || (finalLines?.join('\n') ?? '');
+  
   let currentY = padding;  // Start after top padding
   
   for (let i = 0; i < finalLines.length; i++) {
