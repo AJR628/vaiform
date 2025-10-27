@@ -989,7 +989,6 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     const totalTextH = Math.round(content.getBoundingClientRect().height);
     
     // Raster dimensions: text + padding (what user sees)
-    const { W: frameW, H: frameH } = window.CaptionGeom.getFrameDims();
     const wPx = Math.round((boxRect.width / stageRect.width) * frameW);
     const rasterW = wPx;
     
@@ -1005,18 +1004,19 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     
     // Position: box top-left in frame space (no %) - compute from fresh rects
     const yPct = (boxRect.top - stageRect.top) / stageRect.height;
-    const yPx_png = Math.round(yPct * frameH);
     
     // Compute xPct and wPct from fresh rects too
     const xPct = (boxRect.left - stageRect.left) / stageRect.width;
     const wPct = boxRect.width / stageRect.width;
     
-    // NEW: Compute absolute X position in frame space with safety clamping
-    const rw = state.rasterW ?? overlayCaption?.rasterW; // whichever we have here
-    let xPx_png = Math.round(xPct * frameW);
-    if (Number.isFinite(rw) && Number.isFinite(frameW)) {
-      xPx_png = Math.max(0, Math.min(xPx_png, frameW - rw));
-    }
+    // Get frame dimensions once at the top to avoid shadowing
+    const { W: frameW, H: frameH } = window.CaptionGeom.getFrameDims();
+    
+    // Compute absolute pixel positions with proper clamping and rounding
+    const xPctClamped = Math.max(0, Math.min(1, xPct));
+    const xPx_png = Math.round(xPctClamped * frameW);
+    const yPx_png = Math.round(yPct * frameH);
+    
     
     console.log('[geom:yPx_png]', {
       boxTop: boxRect.top,
@@ -1029,14 +1029,10 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     });
     
     console.log('[geom:xPx_png]', {
-      boxLeft: boxRect.left,
-      stageLeft: stageRect.left,
       stageWidth: stageRect.width,
       xPct,
       xPx_png,
-      frameW,
-      rasterW: rw,
-      clamped: xPx_png !== Math.round(xPct * frameW)
+      frameW
     });
     
     const xExpr_png = (textAlign === 'center') ? '(W-overlay_w)/2'

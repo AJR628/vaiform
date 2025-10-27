@@ -404,7 +404,7 @@ function buildVideoChain({ width, height, videoVignette, drawLayers, captionImag
     // Prefer absolute X if present; else fall back to expression.
     let xExpr = placement.xExpr ?? placement.xExpr_png ?? '(W-overlay_w)/2';
     if (Number.isFinite(placement?.xPx_png)) {
-      xExpr = String(Math.trunc(placement.xPx_png));
+      xExpr = String(Math.round(placement.xPx_png));
     }
     
     const y = Number.isFinite(placement.y) ? placement.y : 12;
