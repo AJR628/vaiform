@@ -401,7 +401,13 @@ function buildVideoChain({ width, height, videoVignette, drawLayers, captionImag
     });
     
     // Overlay with format=auto to preserve alpha - use saved preview placement
-    const xExpr = placement.xExpr ?? '(W-overlay_w)/2';
+    let xExpr = placement.xExpr_png || placement.xExpr || '(W-overlay_w)/2';
+    
+    // NEW: Prefer absolute X if client sent it
+    if (Number.isFinite(placement.xPx_png)) {
+      xExpr = String(placement.xPx_png);
+    }
+    
     const y = Number.isFinite(placement.y) ? placement.y : 12;
     
     // Use centralized pixel format filter
@@ -417,6 +423,15 @@ function buildVideoChain({ width, height, videoVignette, drawLayers, captionImag
       y,
       noScaling: true,
       willScaleOverlay: false
+    });
+    
+    // CRITICAL: Log x-mode for verification
+    console.log('[raster:x-mode]', {
+      usingAbsoluteX: Number.isFinite(placement.xPx_png),
+      xExpr,
+      y,
+      xPx_png: placement.xPx_png,
+      fallbackUsed: !Number.isFinite(placement.xPx_png)
     });
     
     // PARITY GUARD - ensure overlay filter doesn't apply unintended scaling
@@ -1288,6 +1303,7 @@ export async function renderVideoQuoteOverlay({
     rasterW: overlayCaption.rasterW,
     rasterH: overlayCaption.rasterH,
     xExpr: (overlayCaption.xExpr_png || overlayCaption.xExpr || '(W-overlay_w)/2').replace(/\s+/g, ''),
+    xPx_png: overlayCaption.xPx_png,  // NEW: pass through absolute X
     y: overlayCaption.yPx_png ?? overlayCaption.yPx,  // Use PNG anchor, not drawtext anchor
     wPct: overlayCaption.wPct ?? 1,
     // Geometry lock fields

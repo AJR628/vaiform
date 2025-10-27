@@ -35,6 +35,33 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* Drag handle styling - dedicated top-left corner */
+.caption-box .drag-handle {
+  position: absolute;
+  left: 8px;
+  top: 8px;
+  width: 32px;
+  height: 32px;
+  z-index: 10000;
+  cursor: move;
+  touch-action: none;
+  pointer-events: auto;
+  display: grid;
+  place-items: center;
+  font-size: 18px;
+  color: rgba(255,255,255,.6);
+}
+
+/* Keep content editable - do NOT disable pointer events */
+.caption-box .content {
+  pointer-events: auto;
+  user-select: text;
+}
+
+.caption-box.is-dragging .drag-handle {
+  cursor: grabbing;
+}
+
 /* 9:16 holder with cover image */
 #short-preview, #live-preview, #preview-holder, #ai-result-preview {
   position: relative;

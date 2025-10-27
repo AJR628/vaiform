@@ -38,6 +38,7 @@ const RasterSchema = z.object({
   rasterW: z.coerce.number().int().min(100).max(1080),
   rasterH: z.coerce.number().int().min(50).max(1920),  // ✅ NEW
   yPx_png: z.coerce.number().int().min(0).max(1920),
+  xPx_png: z.coerce.number().int().min(0).max(1080).optional(),  // NEW: absolute X position
   rasterPadding: z.coerce.number().int().default(24),
   padTop: z.coerce.number().int().optional(),
   padBottom: z.coerce.number().int().optional(),

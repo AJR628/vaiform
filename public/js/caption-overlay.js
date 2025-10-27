@@ -180,42 +180,69 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     content.style.maxWidth = '100%';
   }
 
-  // Drag behavior (strict: only move while actively dragging)
-  let drag = null; let dragging = false;
-  handle.addEventListener('pointerdown', (e)=>{
+  // Drag behavior (strict: only handle initiates drag)
+  let drag = null;
+  let dragging = false;
+
+  handle.addEventListener('pointerdown', (e) => {
+    // Only left button
+    if (e.button !== 0) return;
+    
+    // Ignore if clicking on toolbar or resize handle
+    if (e.target.closest('.caption-toolbar, .drag-resize')) return;
+    
     const s = stage.getBoundingClientRect();
     const b = box.getBoundingClientRect();
-    drag = { startX: e.clientX, startY: e.clientY, ox: b.left - s.left, oy: b.top - s.top, sw: s.width, sh: s.height, bw: b.width, bh: b.height };
+    
+    drag = {
+      startX: e.clientX,
+      startY: e.clientY,
+      ox: b.left - s.left,
+      oy: b.top - s.top,
+      sw: s.width,
+      sh: s.height,
+      bw: b.width,
+      bh: b.height,
+      pointerId: e.pointerId
+    };
+    
     handle.setPointerCapture(e.pointerId);
     dragging = true;
     box.classList.add('is-dragging');
-    try {
-      const el = document.elementFromPoint(e.clientX, e.clientY);
-      console.log('[overlay] pointerdown at', e.clientX, e.clientY, 'elementUnder', el?.tagName, el?.id || el?.className || '');
-    } catch {}
+    
+    e.preventDefault();
   });
-  
-  const onMove = (e)=>{
-    if(!dragging || !drag) return; // stop hover push
-    const dx = e.clientX - drag.startX, dy = e.clientY - drag.startY;
+
+  window.addEventListener('pointermove', (e) => {
+    if (!dragging || !drag) return;
+    
+    const dx = e.clientX - drag.startX;
+    const dy = e.clientY - drag.startY;
+    
+    // Clamp within stage
     let x = Math.max(0, Math.min(drag.ox + dx, drag.sw - drag.bw));
     let y = Math.max(0, Math.min(drag.oy + dy, drag.sh - drag.bh));
+    
+    // Update as % for responsive scaling
     box.style.left = (x / drag.sw * 100) + '%';
-    box.style.top  = (y / drag.sh * 100) + '%';
-    clampToStage(); // Ensure box stays within stage
+    box.style.top = (y / drag.sh * 100) + '%';
+  });
+
+  const endDrag = () => {
+    if (!dragging) return;
+    try {
+      handle.releasePointerCapture(drag.pointerId);
+    } catch {}
+    dragging = false;
+    drag = null;
+    box.classList.remove('is-dragging');
+    
+    // Emit state to persist new position
+    emitCaptionState('dragend');
   };
 
-  // Listen on document so moving fast outside handle doesn't break drag (legacy)
-  if (!overlayV2) {
-    document.addEventListener('pointermove', onMove, { passive: true });
-    document.addEventListener('pointerup', ()=> { dragging = false; drag = null; }, { passive: true });
-    document.addEventListener('pointercancel', ()=> { dragging = false; drag = null; }, { passive: true });
-  } else {
-    // V2: keep drag local to handle via capture
-    handle.addEventListener('pointermove', onMove, { passive: true });
-    handle.addEventListener('pointerup', ()=> { dragging = false; drag = null; box.classList.remove('is-dragging'); }, { passive: true });
-    handle.addEventListener('pointercancel', ()=> { dragging = false; drag = null; box.classList.remove('is-dragging'); }, { passive: true });
-  }
+  window.addEventListener('pointerup', endDrag);
+  window.addEventListener('pointercancel', endDrag);
 
   // Keep inside frame on resize and clamp to stage
   const clamp = ()=>{
@@ -984,6 +1011,9 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     const xPct = (boxRect.left - stageRect.left) / stageRect.width;
     const wPct = boxRect.width / stageRect.width;
     
+    // NEW: Compute absolute X position in frame space
+    const xPx_png = Math.round(xPct * frameW);
+    
     console.log('[geom:yPx_png]', {
       boxTop: boxRect.top,
       stageTop: stageRect.top,
@@ -992,6 +1022,15 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
       yPx_png,
       placement: window.currentPlacement,
       frameH
+    });
+    
+    console.log('[geom:xPx_png]', {
+      boxLeft: boxRect.left,
+      stageLeft: stageRect.left,
+      stageWidth: stageRect.width,
+      xPct,
+      xPx_png,
+      frameW
     });
     
     const xExpr_png = (textAlign === 'center') ? '(W-overlay_w)/2'
@@ -1033,7 +1072,8 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
       yPct,
       wPct,
       yPx_png,
-      xExpr_png,
+      xPx_png,      // NEW: absolute X position
+      xExpr_png,    // KEEP: fallback expression
       
       // Line breaks (browser truth)
       lines: lines,
