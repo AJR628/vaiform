@@ -144,6 +144,10 @@ export async function generateCaptionPreview(opts) {
     window.__lastCaptionOverlay = null;
   }
 
+  // Shared constant - mirrors server MAX_FONT_PX
+  const MAX_FONT_PX = 400;
+  const clamp = (n, min, max) => Math.max(min, Math.min(n, max));
+
   // TASK 1: Clamp fontPx and lineSpacingPx to prevent HTTP 400 errors
   // If fontPx wasn't provided by caller, pull the current slider-mapped px from UI.
   // This preserves SSOT (server still clamps), but avoids the 48px server default.
@@ -151,12 +155,21 @@ export async function generateCaptionPreview(opts) {
     Number.isFinite(opts?.fontPx) ? opts.fontPx
     : (typeof window?.getCaptionPx === 'function' ? Number(window.getCaptionPx()) : undefined);
 
-  const fontPx = Math.max(24, Math.min(200, Number(ensureFontPx || opts.sizePx || (typeof window?.__overlayMeta?.fontPx === 'number' ? window.__overlayMeta.fontPx : 48))));
+  // Clamp once with consistent bounds
+  const fontPx = clamp(
+    Number(ensureFontPx || opts.sizePx || opts.fontPx || 48),
+    8,
+    MAX_FONT_PX
+  );
   
   // Line spacing calculation - lineHeight is a multiplier (e.g., 1.15), not pixels
   const lineHeightMul = 1.15;  // FIXED multiplier, ignore opts.lineHeight
   const lineHeightPx = Math.round(fontPx * lineHeightMul);   // baseline-to-baseline (62px)
-  const lineSpacingPx = Math.max(0, Math.round(lineHeightPx - fontPx)); // gap (8px)
+  const lineSpacingPx = clamp(
+    Math.max(0, Math.round(lineHeightPx - fontPx)),
+    0,
+    MAX_FONT_PX
+  );
   
   // Extract style fields from DOM if content element exists
   const extractDOMStyles = () => {
@@ -215,6 +228,16 @@ export async function generateCaptionPreview(opts) {
   
   const domStyles = extractDOMStyles();
   
+  // Compute xPx_png and yPx_png (avoid variable shadowing)
+  // Get frame dimensions FIRST
+  const { W: frameW, H: frameH } = window.CaptionGeom?.getFrameDims?.() || { W: 1080, H: 1920 };
+  
+  // Then compute absolute positions
+  const xPct = Number.isFinite(opts?.xPct) ? Number(opts.xPct) : 0.5;
+  const yPct = Number.isFinite(opts?.yPct) ? Number(opts.yPct) : 0.5;
+  const xPx_png = Math.round(xPct * frameW);
+  const yPx_png = Math.round(yPct * frameH);
+  
   // Use server-compatible payload structure
   const overlayV2 = detectOverlayV2();
   const payload = overlayV2
@@ -223,14 +246,17 @@ export async function generateCaptionPreview(opts) {
         ssotVersion: 3,  // ← Bumped version to invalidate stale data
         text: opts.text,
         placement: 'custom',
-        xPct: Number.isFinite(opts?.xPct) ? Number(opts.xPct) : 0.5,
-        yPct: Number.isFinite(opts?.yPct) ? Number(opts.yPct) : 0.5,
+        xPct,
+        yPct,
         wPct: Number.isFinite(opts?.wPct) ? Number(opts.wPct) : 0.8,
-        sizePx: fontPx,  // ← Use computed fontPx, not opts
-        lineSpacingPx: lineSpacingPx,  // ← Always use fresh computed (server will recompute anyway)
+        sizePx: fontPx,  // ← Already clamped
+        fontPx,          // ← Also include as fontPx for server
+        lineSpacingPx,   // ← Already clamped
+        xPx_png,         // ← NEW: absolute X
+        xExpr_png: '(W-overlay_w)/2',  // ← Keep expression for fallback
         fontFamily: opts.fontFamily || 'DejaVu Sans',
         weightCss: opts.weight || 'normal',
-        fontStyle: domStyles.fontStyle || 'normal',  // Ensure fontStyle is explicitly included
+        fontStyle: domStyles.fontStyle || 'normal',
         color: opts.color || '#FFFFFF',
         opacity: Number(opts.opacity ?? 0.85),
         // Additional style fields from DOM

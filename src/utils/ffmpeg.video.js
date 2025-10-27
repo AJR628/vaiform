@@ -333,12 +333,56 @@ function fitQuoteToBox({ text, boxWidthPx, baseFontSize = 72 }) {
   return { text: lines.join('\n'), fontsize: fz, lineSpacing };  // Use actual newlines, escapeForDrawtext will handle escaping
 }
 
-function buildVideoChain({ width, height, videoVignette, drawLayers, captionImage, usingCaptionPng, captionPngPath, rasterPlacement }){
+function buildVideoChain({ width, height, videoVignette, drawLayers, captionImage, usingCaptionPng, captionPngPath, rasterPlacement, overlayCaption }){
   const W = Math.max(4, Number(width)||1080);
   const H = Math.max(4, Number(height)||1920);
   
+  // Prefer already-built placement (primary path)
+  let placement = rasterPlacement ?? null;
+  
+  // Graceful fallback: reconstruct from overlayCaption if needed
+  if (!placement && overlayCaption?.mode === 'raster') {
+    console.log('[buildVideoChain] Reconstructing rasterPlacement from overlayCaption (fallback)');
+    placement = {
+      mode: 'raster',
+      rasterW: overlayCaption.rasterW,
+      rasterH: overlayCaption.rasterH,
+      xExpr: (overlayCaption.xExpr_png || overlayCaption.xExpr || '(W-overlay_w)/2').replace(/\s+/g,''),
+      xPx_png: overlayCaption.xPx_png,
+      y: overlayCaption.yPx_png ?? overlayCaption.yPx ?? 24,
+      // Pass through geometry lock fields
+      frameW: overlayCaption.frameW,
+      frameH: overlayCaption.frameH,
+      bgScaleExpr: overlayCaption.bgScaleExpr,
+      bgCropExpr: overlayCaption.bgCropExpr,
+      rasterHash: overlayCaption.rasterHash,
+      previewFontString: overlayCaption.previewFontString,
+      rasterPadding: overlayCaption.rasterPadding
+    };
+  }
+  
+  // Defaults for non-raster / legacy paths
+  if (!placement) {
+    placement = { xExpr: '(W-overlay_w)/2', y: 24 };
+  }
+  
+  // Prefer absolute X in raster mode (Decision 2)
+  let xExpr = placement.xExpr || '(W-overlay_w)/2';
+  if (Number.isFinite(placement.xPx_png)) {
+    xExpr = String(Math.trunc(placement.xPx_png));
+    console.log('[raster:x-absolute]', { xPx_png: placement.xPx_png, xExpr });
+  }
+  const y = Number.isFinite(placement.y) ? placement.y : 24;
+  
+  console.log('[raster:x-mode]', {
+    usingAbsoluteX: Number.isFinite(placement.xPx_png),
+    xExpr, y,
+    xPx_png: placement.xPx_png ?? null,
+    fallbackUsed: !Number.isFinite(placement.xPx_png)
+  });
+  
   // Destructure for clarity and prevent shadowing
-  const { usingCaptionPng: usePng, captionPngPath: pngPath, rasterPlacement: placement } = { usingCaptionPng, captionPngPath, rasterPlacement };
+  const { usingCaptionPng: usePng, captionPngPath: pngPath } = { usingCaptionPng, captionPngPath };
   
   // Env-gated pixel format and colorspace controls
   const use444 = process.env.FFMPEG_USE_YUV444 === '1';
@@ -400,19 +444,15 @@ function buildVideoChain({ width, height, videoVignette, drawLayers, captionImag
       y: placement.y
     });
     
-    // Overlay with format=auto to preserve alpha - use saved preview placement
-    // Prefer absolute X if present; else fall back to expression.
-    let xExpr = placement.xExpr ?? placement.xExpr_png ?? '(W-overlay_w)/2';
-    if (Number.isFinite(placement?.xPx_png)) {
-      xExpr = String(Math.round(placement.xPx_png));
-    }
-    
-    const y = Number.isFinite(placement.y) ? placement.y : 12;
+    // Use the xExpr and y already computed above (prefers absolute X)
     
     // Use centralized pixel format filter
     const endFormat = pixelFmtFilter;
     
     const overlayExpr = `[vmain][ovr]overlay=${xExpr}:${y}:format=auto,${endFormat}[vout]`;
+    
+    // Log exact ffmpeg overlay expression for parity debugging
+    console.log('[ffmpeg:overlay]', { overlay: `overlay=${xExpr}:${y}:format=auto` });
     
     // CRITICAL: Log final overlay configuration
     console.log('[render:raster:FFMPEG]', {
@@ -1367,7 +1407,8 @@ export async function renderVideoQuoteOverlay({
     captionImage: CAPTION_OVERLAY ? captionImage : null,
     usingCaptionPng,
     captionPngPath,
-    rasterPlacement
+    rasterPlacement,
+    overlayCaption  // ← ADD THIS
   });
   // If includeBottomCaption flag is passed via captionStyle, honor it
 
