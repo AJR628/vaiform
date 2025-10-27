@@ -257,16 +257,10 @@ function applyStylesToLiveText(element, captionState, serverMeta) {
     const rasterW = Number.isFinite(serverMeta.rasterW) ? serverMeta.rasterW : 1080;
     let yPx_png = Number.isFinite(serverMeta.yPx_png) ? serverMeta.yPx_png : null;
     
-    // If yPx_png is missing, compute from placement/% using helper
+    // yPx_png should always be present from save; log error if missing
     if (!Number.isFinite(yPx_png)) {
-      const frameH = serverMeta.frameH || 1920;
-      const rasterH = Number.isFinite(serverMeta.rasterH) ? serverMeta.rasterH : 200;
-      const placement = serverMeta.placement || 'center';
-      const yPct = serverMeta.yPct || 0.5;
-      const internalPaddingPx = serverMeta.rasterPadding || serverMeta.internalPadding || 24;
-      
-      yPx_png = toRasterYPx({frameH, rasterH, placement, yPct, internalPaddingPx});
-      console.log('[parity:computed] yPx_png from placement:', {placement, yPct, yPx_png});
+      console.error('[parity] yPx_png missing from server meta - preview may be stale');
+      yPx_png = 24; // emergency fallback only
     }
     const P = Number.isFinite(serverMeta.rasterPadding) ? serverMeta.rasterPadding : 
               (Number.isFinite(serverMeta.internalPadding) ? serverMeta.internalPadding : 24);

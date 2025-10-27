@@ -39,6 +39,8 @@ const RasterSchema = z.object({
   rasterH: z.coerce.number().int().min(50).max(1920),  // ✅ NEW
   yPx_png: z.coerce.number().int().min(0).max(1920),
   rasterPadding: z.coerce.number().int().default(24),
+  padTop: z.coerce.number().int().optional(),
+  padBottom: z.coerce.number().int().optional(),
   xExpr_png: z.string().default('(W-overlay_w)/2'),
   
   // Frame dimensions
@@ -329,6 +331,26 @@ router.post("/caption/preview", express.json(), async (req, res) => {
         console.log('[v3:preview:respond]', { 
           have: Object.keys(ssotMeta),
           required: ['rasterUrl', 'rasterW', 'rasterH', 'rasterPadding', 'yPx_png', 'bgScaleExpr', 'bgCropExpr', 'rasterHash', 'previewFontString', 'totalTextH', 'yPxFirstLine', 'lines']
+        });
+        
+        // Add parity checklist log
+        console.log('[PARITY_CHECKLIST]', {
+          mode: 'raster',
+          frameW: data.frameW,
+          frameH: data.frameH,
+          rasterW: data.rasterW,
+          rasterH: data.rasterH,
+          xExpr_png: data.xExpr_png,
+          yPx_png: data.yPx_png,
+          rasterPadding: data.rasterPadding,
+          padTop: data.padTop || data.rasterPadding,
+          padBottom: data.padBottom || data.rasterPadding,
+          previewFontString: rasterResult.previewFontString,
+          previewFontHash: rasterResult.previewFontHash,
+          rasterHash,
+          bgScaleExpr: "scale='if(gt(a,1080/1920),-2,1080)':'if(gt(a,1080/1920),1920,-2)'",
+          bgCropExpr: "crop=1080:1920",
+          willMatchPreview: true
         });
         
         return res.status(200).json({

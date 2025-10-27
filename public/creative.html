@@ -105,6 +105,8 @@
         }
     </script>
     <script type="module" src="./frontend.js"></script>
+    <!-- Shared geometry utilities for caption positioning -->
+    <script src="./js/caption-geom.js"></script>
     <!-- Hybrid caption preview system -->
     <script type="module" src="./js/caption-live.js"></script>
     <!-- Import shared line extraction function -->
@@ -3576,12 +3578,29 @@
 
             // 6b) Convert to frame pixels
             const rW = toFramePx(box.width, { frameW, previewCssW });
-            const rH = totalTextHFrame;  // Already in frame space, no conversion needed
+            
+            // Use CaptionGeom to compute rasterH with descender/shadow safety
+            const shadow = window.CaptionGeom ? window.CaptionGeom.parseShadow(sContent.textShadow) : { blur: 12, y: 2 };
+            const rH = window.CaptionGeom ? window.CaptionGeom.computeRasterH({
+                totalTextH: totalTextHFrame,
+                padTop: paddingFramePx,
+                padBottom: paddingFramePx,
+                shadowBlur: shadow.blur,
+                shadowOffsetY: shadow.y
+            }) : totalTextHFrame + (paddingFramePx * 2);
 
             const xPx_png = toFramePx(relativeLeftCss, { frameW, previewCssW });
             const yPx_png = toFramePx(relativeTopCss, { frameW, previewCssW });
 
-            console.debug('[browser-geom]', { rW, rH, paddingFramePx, yPx_png, yPxFirstLine: yPx_png + paddingFramePx, lines: lines.length });
+            // Compute asymmetric padding
+            const padTop = paddingFramePx;
+            const padBottom = paddingFramePx + (window.CaptionGeom ? window.CaptionGeom.DESCENDER_PAD + window.CaptionGeom.SHADOW_BLUR_DEFAULT + Math.max(0, shadow.y) : 0);
+
+            console.log('[browser-geom]', { 
+                rW, rH, yPx_png, yPxFirstLine: yPx_png + paddingFramePx, 
+                padTop, padBottom,
+                lines: lines.length 
+            });
 
             return {
                 // DOM truth - correct field names for server
@@ -3605,7 +3624,9 @@
                 // Raster box (tight to the content box)
                 rasterW: rW,
                 rasterH: rH,
-                rasterPadding: paddingFramePx,
+                rasterPadding: paddingFramePx, // legacy
+                padTop,
+                padBottom,
 
                 // Placement in frame space
                 xPx_png,                          // or use xExpr_png='(W-overlay_w)/2' if you center
@@ -5108,26 +5129,12 @@
             const newPlacement = document.getElementById('caption-placement').value;
             console.log('[controls] Placement changed to:', newPlacement);
             
-            // Clear existing caption overlay to force regeneration
-            const overlay = document.getElementById('caption-overlay');
-            if (overlay) {
-                overlay.innerHTML = '';
-                overlay.style.display = 'none';
+            // Snap box using overlay API
+            if (window.OverlayAPI?.snapToPlacement) {
+                window.OverlayAPI.snapToPlacement(newPlacement);
             }
             
-            // Clear cached caption data
-            if (window.lastCaptionPNG) {
-                window.lastCaptionPNG = null;
-            }
-            if (window.__lastCaptionOverlay) {
-                window.__lastCaptionOverlay = null;
-            }
-            
-            updateCaptionStyleValues();
             updateRenderPreview();
-            updateLivePreview();
-            updateCaptionOverlay((currentQuote?.text||'').trim(), true);
-            updateOverlayCaption((currentQuote?.text||'').trim(), true);
         };
         const captionBackground = document.getElementById('caption-background');
         if (captionBackground) captionBackground.onchange = () => {

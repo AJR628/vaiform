@@ -872,9 +872,10 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
 
   // Emit unified caption state to live preview system
   function emitCaptionState(reason = 'toolbar') {
+    // Get fresh rects AFTER any snap/drag
+    const stageRect = stage.getBoundingClientRect();
+    const boxRect = box.getBoundingClientRect();
     const cs = getComputedStyle(content);
-    const s = stage.getBoundingClientRect();
-    const b = box.getBoundingClientRect();
     
     // Parse stroke from webkitTextStroke: "3px rgba(0,0,0,0.85)"
     const parseStroke = (str) => {
@@ -883,20 +884,10 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
       return match ? { px: parseFloat(match[1]), color: match[2] } : { px: 0, color: 'rgba(0,0,0,0.85)' };
     };
     
-    // Parse shadow from textShadow: "0px 2px 12px rgba(0,0,0,0.6)"
-    const parseShadow = (str) => {
-      if (!str || str === 'none') return { x: 0, y: 2, blur: 12, color: 'rgba(0,0,0,0.6)' };
-      const match = str.match(/([-\d.]+)px\s+([-\d.]+)px\s+([-\d.]+)px\s+(.+)/);
-      return match ? {
-        x: parseFloat(match[1]),
-        y: parseFloat(match[2]),
-        blur: parseFloat(match[3]),
-        color: match[4]
-      } : { x: 0, y: 2, blur: 12, color: 'rgba(0,0,0,0.6)' };
-    };
-    
     const stroke = parseStroke(cs.webkitTextStroke || cs.textStroke);
-    const shadow = parseShadow(cs.textShadow);
+    const shadow = window.CaptionGeom.parseShadow(cs.textShadow);
+    // Convert to legacy format for state
+    const shadowData = { x: 0, y: shadow.y, blur: shadow.blur, color: 'rgba(0,0,0,0.6)' };
     
     // Read ACTUAL computed values from browser (visual truth)
     const fontFamily = (cs.fontFamily || 'DejaVu Sans').split(',')[0].replace(/['"]/g, '').trim();
@@ -967,20 +958,41 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     const rasterPaddingY = Math.max(cssPaddingTop, cssPaddingBottom,
       Math.round((boxInnerH - contentTextH) / 2));
 
-    // totalTextH from actual rendered lines
-    const totalTextH = lines.length * fontPx + (lines.length - 1) * lineSpacingPx;
-
+    // Use actual DOM height for totalTextH (includes line-height effects)
+    const totalTextH = Math.round(content.getBoundingClientRect().height);
+    
     // Raster dimensions: text + padding (what user sees)
-    const frameW = 1080;
-    const frameH = 1920;
-    const wPx = Math.round((b.width / s.width) * frameW);
+    const { W: frameW, H: frameH } = window.CaptionGeom.getFrameDims();
+    const wPx = Math.round((boxRect.width / stageRect.width) * frameW);
     const rasterW = wPx;
-    const rasterH = Math.round(totalTextH + cssPaddingTop + cssPaddingBottom);
+    
+    // Use shared helper for rasterH
+    const rasterH = window.CaptionGeom.computeRasterH({
+      totalTextH,
+      padTop: cssPaddingTop,
+      padBottom: cssPaddingBottom,
+      shadowBlur: shadow.blur,
+      shadowOffsetY: shadow.y
+    });
     const rasterPadding = Math.round((cssPaddingTop + cssPaddingBottom) / 2); // average for legacy
     
-    // Position: box top-left in frame space (no %)
-    const yPct = (b.top - s.top) / s.height;
+    // Position: box top-left in frame space (no %) - compute from fresh rects
+    const yPct = (boxRect.top - stageRect.top) / stageRect.height;
     const yPx_png = Math.round(yPct * frameH);
+    
+    // Compute xPct and wPct from fresh rects too
+    const xPct = (boxRect.left - stageRect.left) / stageRect.width;
+    const wPct = boxRect.width / stageRect.width;
+    
+    console.log('[geom:yPx_png]', {
+      boxTop: boxRect.top,
+      stageTop: stageRect.top,
+      stageHeight: stageRect.height,
+      yPct,
+      yPx_png,
+      placement: window.currentPlacement,
+      frameH
+    });
     
     const xExpr_png = (textAlign === 'center') ? '(W-overlay_w)/2'
       : (textAlign === 'right') ? '(W-overlay_w)'
@@ -1003,10 +1015,10 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
       opacity,
       strokePx: stroke.px,
       strokeColor: stroke.color,
-      shadowColor: shadow.color,
-      shadowBlur: shadow.blur,
-      shadowOffsetX: shadow.x,
-      shadowOffsetY: shadow.y,
+      shadowColor: shadowData.color,
+      shadowBlur: shadowData.blur,
+      shadowOffsetX: shadowData.x,
+      shadowOffsetY: shadowData.y,
       
       // Geometry (frame-space pixels, authoritative)
       frameW,
@@ -1017,6 +1029,9 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
       rasterPadding,
       rasterPaddingX,
       rasterPaddingY,
+      xPct,
+      yPct,
+      wPct,
       yPx_png,
       xExpr_png,
       
@@ -1055,6 +1070,47 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
 
   // Expose emitCaptionState globally so handlers defined elsewhere can call it
   window.emitCaptionState = emitCaptionState;
+
+  // Snap box to placement preset (placement dropdown helper)
+  function snapToPlacement(placement) {
+    // Get current metrics from DOM
+    const stageRect = stage.getBoundingClientRect();
+    const cs = getComputedStyle(content);
+    
+    // Use actual rendered height for totalTextH
+    const totalTextH = Math.round(content.getBoundingClientRect().height);
+    const padTop = parseInt(cs.paddingTop, 10) || 0;
+    const padBottom = parseInt(cs.paddingBottom, 10) || 0;
+    const shadow = window.CaptionGeom.parseShadow(cs.textShadow);
+    
+    // Compute rasterH using shared helper
+    const rH = window.CaptionGeom.computeRasterH({
+      totalTextH,
+      padTop,
+      padBottom,
+      shadowBlur: shadow.blur,
+      shadowOffsetY: shadow.y
+    });
+    
+    // Get frame dimensions from meta
+    const { H: FRAME_H } = window.CaptionGeom.getFrameDims();
+    
+    // Compute target y in frame space
+    const targetYPx = window.CaptionGeom.computeYPxFromPlacement(placement, rH);
+    
+    // Map frame px to stage css px
+    const pxFrameToStage = stageRect.height / FRAME_H;
+    const cssTop = Math.round(targetYPx * pxFrameToStage);
+    
+    box.style.top = `${cssTop}px`;
+    window.currentPlacement = placement;
+    
+    // Trigger state emit to persist new position
+    emitCaptionState('snap');
+  }
+
+  // Expose snap API globally
+  window.OverlayAPI = { snapToPlacement };
 }
 
 export function getCaptionMeta(){ return window.getCaptionMeta(); }
