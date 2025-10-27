@@ -1011,8 +1011,12 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     const xPct = (boxRect.left - stageRect.left) / stageRect.width;
     const wPct = boxRect.width / stageRect.width;
     
-    // NEW: Compute absolute X position in frame space
-    const xPx_png = Math.round(xPct * frameW);
+    // NEW: Compute absolute X position in frame space with safety clamping
+    const rw = state.rasterW ?? overlayCaption?.rasterW; // whichever we have here
+    let xPx_png = Math.round(xPct * frameW);
+    if (Number.isFinite(rw) && Number.isFinite(frameW)) {
+      xPx_png = Math.max(0, Math.min(xPx_png, frameW - rw));
+    }
     
     console.log('[geom:yPx_png]', {
       boxTop: boxRect.top,
@@ -1030,7 +1034,9 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
       stageWidth: stageRect.width,
       xPct,
       xPx_png,
-      frameW
+      frameW,
+      rasterW: rw,
+      clamped: xPx_png !== Math.round(xPct * frameW)
     });
     
     const xExpr_png = (textAlign === 'center') ? '(W-overlay_w)/2'
@@ -1072,7 +1078,7 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
       yPct,
       wPct,
       yPx_png,
-      xPx_png,      // NEW: absolute X position
+      xPx_png,      // NEW: absolute X position (clamped)
       xExpr_png,    // KEEP: fallback expression
       
       // Line breaks (browser truth)
