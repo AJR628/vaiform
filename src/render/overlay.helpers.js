@@ -428,6 +428,18 @@ export function normalizeOverlayCaption(overlay) {
   // Helper to safely coerce to number
   const toNum = v => (v == null ? undefined : Number(v));
   
+  // Detect SSOT fields from preview
+  const hasV2 = overlay?.ssotVersion === 2;
+  const hasV3 = overlay?.ssotVersion === 3;
+  const isRaster = hasV3 && overlay?.mode === 'raster';
+  
+  // Helper for clamping (skip in raster mode)
+  const clamp = (n, min, max) => Math.max(min, Math.min(n, max));
+  const clampOrPreserve = (val, min, max) => {
+    if (isRaster) return val; // Raster: preserve verbatim
+    return clamp(Number(val), min, max);
+  };
+  
   // Base normalized fields (safe for legacy compute path)
   const base = {
     text: String(text || '').trim(),
@@ -435,11 +447,11 @@ export function normalizeOverlayCaption(overlay) {
     yPct: clamp01(yPct),
     wPct: clamp01(wPct),
     hPct: clamp01(hPct),
-    fontPx: Math.max(10, Math.min(200, Math.round(finalFontPx))),
+    fontPx: isRaster ? finalFontPx : clamp(Math.round(finalFontPx), 10, 400),
     lineHeight: Math.max(0.9, Math.min(2.0, Number(lineHeight) || 1.15)),
-    // Sanity clamp: lineSpacing should never exceed 3x typical font size
+    // lineSpacing clamp (skip in raster mode)
     lineSpacingPx: Number.isFinite(toNum(lineSpacingPx))
-      ? Math.max(0, Math.min(Math.round(toNum(lineSpacingPx)), 300))
+      ? clampOrPreserve(Math.round(toNum(lineSpacingPx)), 0, 600)
       : 0,
     align: ['left', 'center', 'right'].includes(align) ? align : 'center',
     color: String(color),
@@ -450,17 +462,12 @@ export function normalizeOverlayCaption(overlay) {
     placement: overlay?.placement,
     internalPadding: overlay?.internalPadding
   };
-  
-  // Detect SSOT fields from preview
-  const hasV2 = overlay?.ssotVersion === 2;
-  const hasV3 = overlay?.ssotVersion === 3;
-  const hasRaster = hasV3 && overlay?.mode === 'raster';
   const hasFirst = overlay?.yPxFirstLine != null;
   const hasBlock = (overlay?.totalTextH != null || overlay?.totalTextHPx != null)
     && Array.isArray(overlay?.lines) && overlay.lines.length > 0;
   
   // If SSOT V3 raster mode, pass through all raster fields verbatim
-  if (hasRaster) {
+  if (isRaster) {
     // Explicit priority order for field mapping (future-proof)
     const y = Number.isFinite(overlay.yPx_png) ? overlay.yPx_png
             : Number.isFinite(overlay.yPx) ? overlay.yPx
@@ -548,7 +555,15 @@ export function validateOverlayCaption(overlay) {
     return { valid: false, errors: ['Overlay must be an object'] };
   }
   
-  // Required fields
+  const isRaster = overlay?.mode === 'raster';
+  
+  // In raster mode, the text is already baked into the PNG.
+  // fontPx/lineSpacingPx are informational only; skip numeric bounds.
+  if (isRaster) {
+    return { valid: true, errors: [] };
+  }
+  
+  // Required fields (non-raster only)
   if (!overlay.text || typeof overlay.text !== 'string' || !overlay.text.trim()) {
     errors.push('text is required and must be non-empty');
   }
@@ -563,10 +578,18 @@ export function validateOverlayCaption(overlay) {
     }
   });
   
-  // Validate fontPx
+  // Validate fontPx (non-raster, caps match Zod schemas)
   const fontPx = overlay.fontPx || overlay.sizePx;
-  if (typeof fontPx === 'number' && (fontPx <= 0 || fontPx > 200)) {
-    errors.push(`fontPx must be between 1 and 200 (got ${fontPx})`);
+  const fp = Number(fontPx);
+  if (Number.isFinite(fp) && (fp < 1 || fp > 400)) {
+    errors.push(`fontPx must be between 1 and 400 (got ${fontPx})`);
+  }
+  
+  // Validate lineSpacingPx (non-raster)
+  const lineSpacingPx = overlay.lineSpacingPx;
+  const lsp = Number(lineSpacingPx);
+  if (Number.isFinite(lsp) && (lsp < 0 || lsp > 600)) {
+    errors.push(`lineSpacingPx must be between 0 and 600 (got ${lineSpacingPx})`);
   }
   
   return {

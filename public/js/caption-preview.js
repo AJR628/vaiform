@@ -540,7 +540,15 @@ export function validateOverlayCaption(overlay) {
     return { valid: false, errors: ['Overlay must be an object'] };
   }
   
-  // Required fields
+  const isRaster = overlay?.mode === 'raster';
+  
+  // In raster mode, the text is already baked into the PNG.
+  // fontPx/lineSpacingPx are informational only; skip numeric bounds.
+  if (isRaster) {
+    return { valid: true, errors: [] };
+  }
+  
+  // Required fields (non-raster only)
   if (!overlay.text || typeof overlay.text !== 'string' || !overlay.text.trim()) {
     errors.push('text is required and must be non-empty');
   }
@@ -555,10 +563,18 @@ export function validateOverlayCaption(overlay) {
     }
   });
   
-  // Validate fontPx
+  // Validate fontPx (non-raster, caps match Zod schemas)
   const fontPx = overlay.fontPx || overlay.sizePx;
-  if (typeof fontPx === 'number' && (fontPx <= 0 || fontPx > 200)) {
-    errors.push(`fontPx must be between 1 and 200 (got ${fontPx})`);
+  const fp = Number(fontPx);
+  if (Number.isFinite(fp) && (fp < 1 || fp > 400)) {
+    errors.push(`fontPx must be between 1 and 400 (got ${fontPx})`);
+  }
+  
+  // Validate lineSpacingPx (non-raster)
+  const lineSpacingPx = overlay.lineSpacingPx;
+  const lsp = Number(lineSpacingPx);
+  if (Number.isFinite(lsp) && (lsp < 0 || lsp > 600)) {
+    errors.push(`lineSpacingPx must be between 0 and 600 (got ${lineSpacingPx})`);
   }
   
   return {
