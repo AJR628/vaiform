@@ -11,11 +11,11 @@ export const CaptionMetaSchema = z.object({
   yPx: z.number().optional(),       // top-of-raster
   yPxFirstLine: z.number().optional(),
   totalTextH: z.number().min(0).optional(),
-  lineSpacingPx: z.number().min(0).max(240).optional(),
+  lineSpacingPx: z.number().min(0).max(400).optional(),
   internalPadding: z.number().optional(),
   lines: z.array(z.string()).min(1).optional(),
-  fontPx: z.number().min(8).max(160).optional(),
-  sizePx: z.number().min(8).max(160).optional(), // alias for fontPx
+  fontPx: z.number().min(8).max(400).optional(),
+  sizePx: z.number().min(8).max(400).optional(), // alias for fontPx
   xExpr: z.string().optional(),
   
   // Raster mode (v3)

@@ -16,8 +16,8 @@ const RasterSchema = z.object({
   
   // Typography
   fontFamily: z.string().default('DejaVu Sans'),
-  fontPx: z.coerce.number().int().refine(Number.isFinite, 'Must be finite').min(8).max(400),
-  lineSpacingPx: z.coerce.number().int().refine(Number.isFinite, 'Must be finite').min(0).max(400).default(0),
+  fontPx: z.coerce.number().int().finite().min(8).max(400),
+  lineSpacingPx: z.coerce.number().int().finite().min(0).max(400).default(0),
   letterSpacingPx: z.coerce.number().default(0),
   weightCss: z.string().default('700'),
   fontStyle: z.string().default('normal'),
