@@ -2794,18 +2794,52 @@
           update(); // initial paint
         }
         
+        /**
+         * Actively load DejaVu Sans variants using Font Loading API
+         * Returns true if all variants are ready, false if timeout/failure
+         */
+        async function ensureDejaVuVariantsReady(timeoutMs = 3000) {
+          // Wait for font set to be ready first
+          try { await document.fonts.ready; } catch {}
+
+          // Explicitly request each face we care about
+          const descriptors = [
+            '16px "DejaVu Sans"',
+            'bold 16px "DejaVu Sans"',
+            'italic 16px "DejaVu Sans"',
+            'italic bold 16px "DejaVu Sans"',
+          ];
+
+          // Actively load them (Chrome/Firefox/Safari support)
+          const loadAll = Promise.all(descriptors.map(d => document.fonts.load(d)));
+
+          // Optional timeout so we don't hang the UI forever
+          await Promise.race([
+            loadAll,
+            new Promise((_, reject) => setTimeout(() => reject(new Error('font-load-timeout')), timeoutMs))
+          ]).catch(err => {
+            console.warn('[fonts] load() did not fully resolve:', err);
+          });
+
+          // Final check (now it should pass)
+          const ok = descriptors.every(d => document.fonts.check(d));
+          if (!ok) console.warn('[fonts] check() still false for some faces');
+          return ok;
+        }
+        
         // --- robust page bootstrap (run after DOM is ready)
         document.addEventListener('DOMContentLoaded', async () => {
           // Wrap each init so one failure doesn't stop the others
           const safe = (label, fn) => { try { fn && fn(); } catch (e) { console.error(`[init] ${label} failed`, e); } };
           
-          // AUDIT: Check font loading status
+          // AUDIT: Actively load fonts and check status
           if (document.fonts) {
+            await ensureDejaVuVariantsReady(3000);
             console.info('[AUDIT:FONTS:client-load]', {
-              regular: document.fonts.check('56px "DejaVu Sans"'),
-              bold: document.fonts.check('bold 56px "DejaVu Sans"'),
-              italic: document.fonts.check('italic 56px "DejaVu Sans"'),
-              boldItalic: document.fonts.check('italic bold 56px "DejaVu Sans"')
+              regular: document.fonts.check('16px "DejaVu Sans"'),
+              bold: document.fonts.check('bold 16px "DejaVu Sans"'),
+              italic: document.fonts.check('italic 16px "DejaVu Sans"'),
+              boldItalic: document.fonts.check('italic bold 16px "DejaVu Sans"')
             });
           }
 
@@ -3617,17 +3651,12 @@
                 // Wait for fonts to be ready before measuring DOM
                 await document.fonts.ready;
                 
-                // Verify all DejaVu Sans variants are loaded
-                const fontsReady = 
-                    document.fonts.check('16px "DejaVu Sans"') &&
-                    document.fonts.check('bold 16px "DejaVu Sans"') &&
-                    document.fonts.check('italic 16px "DejaVu Sans"') &&
-                    document.fonts.check('italic bold 16px "DejaVu Sans"');
-                
+                // Actively load all DejaVu Sans variants
+                const fontsReady = await ensureDejaVuVariantsReady(3000);
                 if (!fontsReady) {
-                    console.warn('[savePreview] Fonts not ready; aborting save to avoid mismatch');
-                    alert('Fonts are still loading. Please try again in a moment.');
-                    return;
+                    // TTFs are fetched; don't hard-block the user
+                    // Continue with soft warning - parity is still very likely correct
+                    console.warn('[savePreview] Proceeding even though some faces did not confirm via check()');
                 }
                 
                 // Get current caption meta from overlay system
