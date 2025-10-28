@@ -126,7 +126,17 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     .caption-box .drag-handle{ position:absolute; top:0; left:0; width:28px; height:28px; display:grid; place-items:center;
       cursor:grab; user-select:none; touch-action:none; 
       font-size:18px; line-height:1; color:rgba(255,255,255,.6); }
-    .caption-box .content{ padding:28px 12px 12px 12px; outline:none; white-space:pre-wrap; word-break:normal; overflow-wrap:normal; hyphens:none; overflow:hidden; box-sizing:border-box;
+    .caption-box .content{ 
+      width: 100%; 
+      height: 100%; 
+      padding:28px 12px 12px 12px; 
+      outline:none; 
+      white-space:pre-wrap; 
+      word-break:normal; 
+      overflow-wrap:anywhere; 
+      hyphens:none; 
+      overflow:hidden; 
+      box-sizing:border-box;
       color:#fff; text-align:center; font-weight:800; font-size:38px; line-height:1.15; text-shadow:0 2px 12px rgba(0,0,0,.65);
       font-family: "DejaVu Sans", sans-serif; font-synthesis: none; }
     .caption-box .drag-resize{ position:absolute; right:0; bottom:0; width:16px; height:16px;
@@ -178,6 +188,7 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
   // Ensure content.maxWidth defaults to 100% (prevents narrow pixel constraints)
   if (overlayV2) {
     content.style.maxWidth = '100%';
+    content.style.width = '100%';
   }
 
   // Drag behavior (strict: only handle initiates drag)
@@ -899,6 +910,9 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
 
   // Emit unified caption state to live preview system
   function emitCaptionState(reason = 'toolbar') {
+    // Get frame dimensions FIRST (before any usage)
+    const { W: frameW, H: frameH } = window.CaptionGeom.getFrameDims();
+    
     // Get fresh rects AFTER any snap/drag
     const stageRect = stage.getBoundingClientRect();
     const boxRect = box.getBoundingClientRect();
@@ -1009,8 +1023,7 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     const xPct = (boxRect.left - stageRect.left) / stageRect.width;
     const wPct = boxRect.width / stageRect.width;
     
-    // Get frame dimensions once at the top to avoid shadowing
-    const { W: frameW, H: frameH } = window.CaptionGeom.getFrameDims();
+    // Frame dimensions already obtained at function start
     
     // Compute absolute pixel positions with proper clamping and rounding
     const xPctClamped = Math.max(0, Math.min(1, xPct));
