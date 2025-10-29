@@ -1179,6 +1179,15 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
       linesLen: lines.length
     });
     
+    // Verification logs for mode and font tracking
+    console.log('[emit:mode-check]', {
+      mode: window.CaptionPreview?.getMode?.(),
+      willApplyParity: window.CaptionPreview?.getMode?.() !== 'live',
+      fontPx: parseInt(cs.fontSize, 10),
+      serverFontPx: window.__serverCaptionMeta?.fontPx,
+      reason
+    });
+    
     // Store and emit
     window.__overlayMeta = state;
     if (typeof window.updateCaptionState === 'function') {

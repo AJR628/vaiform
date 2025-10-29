@@ -25,6 +25,14 @@ let inFlightFingerprint = null;
 let currentFingerprint = null;
 let fontsReady = false;
 
+// Visibility change guard - reset to raster mode if tab hidden during editing
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden && window.CaptionPreview?.getMode?.() === 'live') {
+    console.debug('[parity] Tab hidden during edit → forcing raster mode');
+    window.CaptionPreview.setMode('raster');
+  }
+});
+
 // Font load gating - wait for DejaVu fonts before first layout
 async function ensureFontsReady() {
   if (fontsReady) return true;
@@ -240,6 +248,12 @@ function toRasterYPx({frameH, rasterH, placement, yPct, internalPaddingPx}) {
  * Apply caption styles to live text element using server SSOT values
  */
 function applyStylesToLiveText(element, captionState, serverMeta) {
+  // Skip parity apply if user is actively editing
+  if (window.CaptionPreview?.getMode?.() === 'live') {
+    console.debug('[parity] Skipping apply during live editing');
+    return;
+  }
+
   const scale = computePreviewScale();
   
   // ========== RASTER MODE: Mirror PNG rectangle exactly ==========
