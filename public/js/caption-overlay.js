@@ -34,6 +34,13 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
   const overlayV2 = detectOverlayV2();
   // Debug counters (printed only when debug flag enabled)
   let __pm = 0, __ro = 0, __raf = 0;
+  
+  // Single debounce for raster regeneration
+  let rasterRegenTimer = null;
+  const queueRasterRegen = (fn, ms = 200) => {
+    clearTimeout(rasterRegenTimer);
+    rasterRegenTimer = setTimeout(fn, ms);
+  };
 
   // V2 sticky-bounds fitter state (align with server clamps)
   const MIN_PX = 12, MAX_PX = 200;
@@ -133,7 +140,7 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
       outline:none; 
       white-space:pre-wrap; 
       word-break:normal; 
-      overflow-wrap:anywhere; 
+      overflow-wrap:break-word; 
       hyphens:none; 
       overflow:hidden; 
       box-sizing:border-box;
@@ -202,6 +209,15 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     // Ignore if clicking on toolbar or resize handle
     if (e.target.closest('.caption-toolbar, .drag-resize')) return;
     
+    // Gate interaction hooks
+    if (!overlayV2) return;
+    if (document.hidden) return; // don't regen when tab hidden
+    
+    // Switch to live mode
+    try {
+      window.CaptionPreview?.setMode('live');
+    } catch {}
+    
     const s = stage.getBoundingClientRect();
     const b = box.getBoundingClientRect();
     
@@ -250,6 +266,23 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     
     // Emit state to persist new position
     emitCaptionState('dragend');
+    
+    // Debounced raster regeneration after drag
+    queueRasterRegen(async () => {
+      try {
+        const state = window.__overlayMeta;
+        if (!state || !state.fontPx || !state.box?.wPx || !state.box?.hPx) return;
+        // avoid stale state: ensure the fontPx we push came from the LAST fit
+        state.fontPx = parseFloat(getComputedStyle(document.querySelector('.caption-box .content')).fontSize);
+        
+        if (window.CaptionPreview) {
+          await window.CaptionPreview.regenerateRasterFromState(state);
+          requestAnimationFrame(() => window.CaptionPreview.setMode('raster'));
+        }
+      } catch (err) {
+        console.error('[caption-overlay] Raster regen after drag failed:', err);
+      }
+    });
   };
 
   window.addEventListener('pointerup', endDrag);
@@ -518,6 +551,18 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
   let resizeStart = null;
   resizeHandle.addEventListener('pointerdown', (e) => {
     e.preventDefault();
+    
+    // Gate interaction hooks
+    if (!overlayV2) return;
+    if (document.hidden) return; // don't regen when tab hidden
+    
+    // Switch to live mode at start of interaction
+    try {
+      window.CaptionPreview?.setMode('live');
+    } catch (err) {
+      console.warn('[caption-overlay] Could not set live mode:', err);
+    }
+    
     try { resizeHandle.setPointerCapture(e.pointerId); } catch {}
     const start = {x: e.clientX, y: e.clientY, w: box.offsetWidth, h: box.offsetHeight, left: box.offsetLeft, top: box.offsetTop};
     const initialFontPx = parseInt(getComputedStyle(content).fontSize, 10);
@@ -571,6 +616,24 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
       const meta = getCaptionMeta();
       applyCaptionMeta(meta);
       emitCaptionState('resize-end');
+      
+      // Debounced raster regeneration after resize
+      queueRasterRegen(async () => {
+        try {
+          const state = window.__overlayMeta;
+          if (!state || !state.fontPx || !state.box?.wPx || !state.box?.hPx) return;
+          // avoid stale state: ensure the fontPx we push came from the LAST fit
+          state.fontPx = parseFloat(getComputedStyle(document.querySelector('.caption-box .content')).fontSize);
+          
+          if (window.CaptionPreview) {
+            await window.CaptionPreview.regenerateRasterFromState(state);
+            requestAnimationFrame(() => window.CaptionPreview.setMode('raster'));
+          }
+        } catch (err) {
+          console.error('[caption-overlay] Raster regen after resize failed:', err);
+        }
+      });
+      
       if (overlayV2 && window.__debugOverlay) { try { console.log(JSON.stringify({ tag:'overlay:counters', pm:__pm, ro:__ro, raf:__raf })); __pm=__ro=__raf=0; } catch {} }
     }
     if (!overlayV2) {

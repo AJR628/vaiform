@@ -427,6 +427,9 @@ function applyStylesToLiveText(element, captionState, serverMeta) {
   }
 }
 
+// Mode controller state
+let _previewMode = 'raster'; // 'live' | 'raster'
+
 /**
  * Show live text layer and hide PNG layer
  */
@@ -447,6 +450,52 @@ function showPngPreview() {
 
   if (liveEl) liveEl.style.display = 'none';
   if (pngEl) pngEl.style.display = 'block';
+}
+
+/**
+ * Set preview mode with flicker guard
+ */
+function setPreviewMode(mode) {
+  if (_previewMode === mode) return;
+  _previewMode = mode;
+  console.log(`[caption-live] Mode switch: ${_previewMode} → ${mode}`);
+  _previewMode = mode;
+  
+  // Only switch DOM layers if their visibility would actually change
+  if (mode === 'live') { 
+    showPngPreview(false); 
+    showLiveText(true); 
+  } else { 
+    showLiveText(false); 
+    showPngPreview(true); 
+  }
+}
+
+/**
+ * Regenerate raster from computed state
+ */
+async function regenerateRasterFromState(state) {
+  if (!state) {
+    console.warn('[caption-live] No state provided for raster regeneration');
+    return;
+  }
+  
+  console.log('[caption-live] Regenerating raster from state:', {
+    fontPx: state.fontPx,
+    text: state.text?.slice(0, 40) + '...'
+  });
+  
+  // Reuse existing callPreviewAPI + handlePreviewResponse
+  const fingerprint = await generateFingerprint(state);
+  currentFingerprint = fingerprint;
+  
+  try {
+    const response = await callPreviewAPI(state, fingerprint);
+    handlePreviewResponse(response, fingerprint);
+  } catch (error) {
+    console.error('[caption-live] Raster regeneration failed:', error);
+    throw error;
+  }
 }
 
 /**
@@ -800,4 +849,11 @@ if (typeof window !== 'undefined') {
   window.initHybridCaptionPreview = initHybridCaptionPreview;
   window.updateCaptionState = updateCaptionState;
   window.setHybridPreviewVisible = setHybridPreviewVisible;
+  
+  // Export CaptionPreview API for overlay integration
+  window.CaptionPreview = {
+    setMode: setPreviewMode,
+    getMode: () => _previewMode,
+    regenerateRasterFromState
+  };
 }
