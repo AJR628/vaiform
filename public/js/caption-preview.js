@@ -770,3 +770,34 @@ if (typeof window !== 'undefined') {
   window.validateOverlayCaption = validateOverlayCaption;
   window.forceClearPreviewCache = forceClearPreviewCache;
 }
+
+/**
+ * Compute contain-fit scale from a draggable box to server SSOT raster metrics.
+ * Uses verbatim server keys: rasterW (content width), totalTextH (content height), internalPadding.
+ * Returns { s, scaledTotalTextH, scaledPadding } where s is unitless.
+ */
+export function computeScaleFromBox(meta, boxRect) {
+  if (!meta || !boxRect) return { s: 1, scaledTotalTextH: 0, scaledPadding: 0 };
+  const rasterW = Number(meta.rasterW || meta.wPx || 0);
+  const totalTextH = Number(meta.totalTextH || 0);
+  const internalPadding = Number(meta.internalPadding || meta.rasterPadding || 0);
+  const innerW = Math.max(0, Math.floor(boxRect.width));
+  const innerH = Math.max(0, Math.floor(boxRect.height));
+  if (rasterW <= 0 || totalTextH <= 0 || innerW <= 0 || innerH <= 0) {
+    return { s: 1, scaledTotalTextH: totalTextH, scaledPadding: internalPadding };
+  }
+  const sW = innerW / rasterW;
+  const sH = innerH / totalTextH;
+  const s = Math.max(0.01, Math.min(4, Math.min(sW, sH)));
+  return { s, scaledTotalTextH: totalTextH * s, scaledPadding: internalPadding * s };
+}
+
+/**
+ * Compute clamped top from server yPct with local scale s. Does not recompute yPct.
+ */
+export function applyPositionFromYPct({ yPct, totalTextH }, s, finalH, safeTopMargin = 0, safeBottomMargin = 0) {
+  const scaledTotalTextH = Math.max(0, (Number(totalTextH) || 0) * (Number(s) || 1));
+  const targetTop = (Number(yPct) || 0) * (Number(finalH) || 0) - (scaledTotalTextH / 2);
+  let top = Math.max(Number(safeTopMargin) || 0, Math.min(targetTop, (Number(finalH) || 0) - (Number(safeBottomMargin) || 0) - scaledTotalTextH));
+  return { top, scaledTotalTextH };
+}

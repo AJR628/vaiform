@@ -1652,6 +1652,28 @@
                 
                 overlaySystemInitialized = true;
                 console.log('[overlay-system] Initialized draggable overlay');
+
+                // Ensure live DOM text is visible during any geometry edits
+                try {
+                    const { setHybridPreviewVisible } = await import('./js/caption-live.js');
+                    setHybridPreviewVisible(true);
+                } catch {}
+
+                // Wire ResizeObserver to caption box to keep DOM text in sync while resizing
+                try {
+                    const box = document.querySelector('#stage .caption-box');
+                    if (box && window.ResizeObserver) {
+                        const ro = new ResizeObserver(() => {
+                            // Show live text layer while user resizes and invalidate saved PNG
+                            try {
+                                const { setHybridPreviewVisible } = window;
+                                if (typeof setHybridPreviewVisible === 'function') setHybridPreviewVisible(true);
+                            } catch {}
+                            try { resetPreviewSavedState(); } catch {}
+                        });
+                        ro.observe(box);
+                    }
+                } catch {}
                 
                 // Mark preview as unsaved when caption text changes (SSOT workflow)
                 try {
