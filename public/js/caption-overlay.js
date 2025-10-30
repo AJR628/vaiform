@@ -528,6 +528,7 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
       content.style.fontSize = mid + 'px';
       content.style.maxWidth = maxW + 'px';
       const ok = (content.scrollWidth <= maxW + 0.5) && (content.scrollHeight <= maxH + 0.5);
+      console.debug('[fit:search]', { i, mid, ok, scrollW: content.scrollWidth, maxW, scrollH: content.scrollHeight, maxH });
       if (ok) { best = mid; lo = mid + 1; } else { hi = mid - 1; }
     }
     const prev = v2State.fitBounds.lastGoodPx != null ? v2State.fitBounds.lastGoodPx : best;
@@ -996,7 +997,7 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     
     // Read ACTUAL computed values from browser (visual truth)
     const fontFamily = (cs.fontFamily || 'DejaVu Sans').split(',')[0].replace(/['"]/g, '').trim();
-    const fontPx = parseInt(cs.fontSize, 10);
+    let fontPx = parseInt(cs.fontSize, 10);
     const lineHeightRaw = cs.lineHeight;
     const lineHeightPx = lineHeightRaw === 'normal' 
       ? Math.round(fontPx * 1.2) 
