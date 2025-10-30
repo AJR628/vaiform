@@ -525,10 +525,30 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     let best = Math.round(v2State.fitBounds.lastGoodPx || lo);
     for (let i = 0; i < 8 && lo <= hi; i++) {
       const mid = (lo + hi) >> 1;
+      
+      // Recompute maxW/maxH from fresh box dimensions
+      const s = getComputedStyle(content);
+      const padX = parseInt(s.paddingLeft,10) + parseInt(s.paddingRight,10);
+      const padY = parseInt(s.paddingTop,10) + parseInt(s.paddingBottom,10);
+      const freshMaxW = Math.max(0, box.clientWidth - padX);
+      const freshMaxH = Math.max(0, box.clientHeight - padY);
+      
+      // Force proper wrapping constraints
       content.style.fontSize = mid + 'px';
-      content.style.maxWidth = maxW + 'px';
-      const ok = (content.scrollWidth <= maxW + 0.5) && (content.scrollHeight <= maxH + 0.5);
-      console.debug('[fit:search]', { i, mid, ok, scrollW: content.scrollWidth, maxW, scrollH: content.scrollHeight, maxH });
+      content.style.maxWidth = freshMaxW + 'px';
+      content.style.width = freshMaxW + 'px';
+      content.style.maxHeight = freshMaxH + 'px';
+      content.style.whiteSpace = 'pre-wrap';
+      content.style.wordBreak = 'break-word';
+      content.style.overflowWrap = 'anywhere';
+      content.style.overflow = 'hidden';
+      const ls = (window.__serverCaptionMeta?.lineSpacingPx ?? 8);
+      content.style.lineHeight = (mid + ls) / mid; // unitless ratio
+      
+      // Use rect height instead of scrollHeight for more reliable measurement
+      const rectH = content.getBoundingClientRect().height;
+      const ok = (content.scrollWidth <= freshMaxW + 0.5) && (rectH <= freshMaxH + 0.5);
+      console.debug('[fit:search]', { i, mid, ok, scrollW: content.scrollWidth, maxW: freshMaxW, rectH, maxH: freshMaxH });
       if (ok) { best = mid; lo = mid + 1; } else { hi = mid - 1; }
     }
     const prev = v2State.fitBounds.lastGoodPx != null ? v2State.fitBounds.lastGoodPx : best;
@@ -536,6 +556,10 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     let target = best;
     if (best > prev) target = Math.min(best, prev + step);
     else if (best < prev) target = Math.max(best, prev - step);
+    
+    // Fallback safety: if binary search failed, use smaller safe value
+    const MIN = 8;
+    target = (best != null) ? target : Math.max(MIN, hi);
     target = Math.max(MIN_PX, Math.min(MAX_PX, target));
     content.style.fontSize = target + 'px';
     console.debug('[fit:write]', { px: target, reason, boxW: box.clientWidth, boxH: box.clientHeight });
