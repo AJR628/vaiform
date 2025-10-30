@@ -1662,18 +1662,39 @@
                 // Wire ResizeObserver to caption box to keep DOM text in sync while resizing
                 try {
                     const box = document.querySelector('#stage .caption-box');
-                    if (box && window.ResizeObserver) {
+                    const content = box?.querySelector('.content');
+                    if (box && content && window.ResizeObserver) {
+                        let rafPending = false;
                         const ro = new ResizeObserver(() => {
-                            // Show live text layer while user resizes and invalidate saved PNG
+                            // Switch to DOM mode (hide PNG, show live text) during resize
                             try {
-                                const { setHybridPreviewVisible } = window;
-                                if (typeof setHybridPreviewVisible === 'function') setHybridPreviewVisible(true);
+                                const { setHybridPreviewVisible } = await import('./js/caption-live.js');
+                                setHybridPreviewVisible(true);
                             } catch {}
+                            
+                            // Invalidate saved preview
                             try { resetPreviewSavedState(); } catch {}
+                            
+                            // Trigger fit-to-box algorithm via rAF (same mechanism as resize handle)
+                            if (!rafPending) {
+                                rafPending = true;
+                                requestAnimationFrame(() => {
+                                    rafPending = false;
+                                    try {
+                                        // Access fit function via window if exposed, or trigger emitCaptionState which should trigger fit
+                                        if (typeof window.emitCaptionState === 'function') {
+                                            window.emitCaptionState('resize-observer');
+                                        }
+                                    } catch {}
+                                });
+                            }
                         });
                         ro.observe(box);
+                        console.log('[overlay-system] ResizeObserver wired to caption box for fit-to-box scaling');
                     }
-                } catch {}
+                } catch (e) {
+                    console.warn('[overlay-system] Failed to wire ResizeObserver:', e);
+                }
                 
                 // Mark preview as unsaved when caption text changes (SSOT workflow)
                 try {
