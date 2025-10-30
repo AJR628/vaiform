@@ -1359,7 +1359,7 @@
             }
 
             // Get caption style parameters from UI
-            const sizePx = 54; // Default - will be overridden by server SSOT
+            const sizePx = 48; // Initial size - overlay mode will auto-fit to box
             const opacityPct = parseInt(document.getElementById('caption-opacity')?.value || '85', 10);
             const placement = (document.getElementById('caption-placement')?.value || 'bottom').toLowerCase();
             const showBoxToggle = document.getElementById('caption-background')?.checked || false;
@@ -1443,12 +1443,12 @@
                             const meta = getCaptionMeta && getCaptionMeta();
                             if (meta) {
                                 // Update overlay style based on current UI controls
-                                meta.fontPx = captionStyle.fontPx;
+                                // Do NOT set meta.fontPx - let fitText handle sizing
                                 meta.fontFamily = captionStyle.fontFamily;
                                 meta.weightCss = captionStyle.weightCss || captionStyle.weight;
                                 meta.color = '#FFFFFF';
                                 meta.opacity = captionStyle.opacity;
-                                applyCaptionMeta && applyCaptionMeta(meta);
+                                applyCaptionMeta && applyCaptionMeta(meta, { skipFontSize: true });
                             }
                             // Keep the stage background in sync with the canvas
                             if (typeof updateOverlayCanvasBackground === 'function') updateOverlayCanvasBackground();

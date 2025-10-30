@@ -721,7 +721,8 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     if (typeof meta.yPct === 'number') box.style.top  = (meta.yPct * 100) + '%';
     if (typeof meta.wPct === 'number') box.style.width  = (meta.wPct * 100) + '%';
     if (typeof meta.hPct === 'number') box.style.height = (meta.hPct * 100) + '%';
-    if (meta.fontPx) content.style.fontSize = meta.fontPx + 'px';
+    // Only apply fontPx if not skipped
+    if (meta.fontPx && !options.skipFontSize) content.style.fontSize = meta.fontPx + 'px';
     if (meta.weightCss) content.style.fontWeight = meta.weightCss;
     if (meta.textAlign) content.style.textAlign = meta.textAlign;
     if (meta.color) content.style.color = meta.color;
