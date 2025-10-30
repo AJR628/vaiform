@@ -25,14 +25,6 @@ let inFlightFingerprint = null;
 let currentFingerprint = null;
 let fontsReady = false;
 
-// Visibility change guard - reset to raster mode if tab hidden during editing
-document.addEventListener('visibilitychange', () => {
-  if (document.hidden && window.CaptionPreview?.getMode?.() === 'live') {
-    console.debug('[parity] Tab hidden during edit → forcing raster mode');
-    window.CaptionPreview.setMode('raster');
-  }
-});
-
 // Font load gating - wait for DejaVu fonts before first layout
 async function ensureFontsReady() {
   if (fontsReady) return true;
@@ -248,14 +240,6 @@ function toRasterYPx({frameH, rasterH, placement, yPct, internalPaddingPx}) {
  * Apply caption styles to live text element using server SSOT values
  */
 function applyStylesToLiveText(element, captionState, serverMeta) {
-  // Skip parity writes while user is actively editing (live mode).
-  const _mode = window.CaptionPreview?.getMode?.();
-  console.debug('[applyStyles] mode=', _mode, 'serverFontPx=', serverMeta?.fontPx);
-  if (_mode === 'live') {
-    console.debug('[applyStyles] skipping — live editing in progress');
-    return;
-  }
-
   const scale = computePreviewScale();
   
   // ========== RASTER MODE: Mirror PNG rectangle exactly ==========
@@ -443,9 +427,6 @@ function applyStylesToLiveText(element, captionState, serverMeta) {
   }
 }
 
-// Mode controller state
-let _previewMode = 'raster'; // 'live' | 'raster'
-
 /**
  * Show live text layer and hide PNG layer
  */
@@ -466,52 +447,6 @@ function showPngPreview() {
 
   if (liveEl) liveEl.style.display = 'none';
   if (pngEl) pngEl.style.display = 'block';
-}
-
-/**
- * Set preview mode with flicker guard
- */
-function setPreviewMode(mode) {
-  if (_previewMode === mode) return;
-  _previewMode = mode;
-  console.log(`[caption-live] Mode switch: ${_previewMode} → ${mode}`);
-  _previewMode = mode;
-  
-  // Only switch DOM layers if their visibility would actually change
-  if (mode === 'live') { 
-    showPngPreview(false); 
-    showLiveText(true); 
-  } else { 
-    showLiveText(false); 
-    showPngPreview(true); 
-  }
-}
-
-/**
- * Regenerate raster from computed state
- */
-async function regenerateRasterFromState(state) {
-  if (!state) {
-    console.warn('[caption-live] No state provided for raster regeneration');
-    return;
-  }
-  
-  console.log('[caption-live] Regenerating raster from state:', {
-    fontPx: state.fontPx,
-    text: state.text?.slice(0, 40) + '...'
-  });
-  
-  // Reuse existing callPreviewAPI + handlePreviewResponse
-  const fingerprint = await generateFingerprint(state);
-  currentFingerprint = fingerprint;
-  
-  try {
-    const response = await callPreviewAPI(state, fingerprint);
-    handlePreviewResponse(response, fingerprint);
-  } catch (error) {
-    console.error('[caption-live] Raster regeneration failed:', error);
-    throw error;
-  }
 }
 
 /**
@@ -865,11 +800,4 @@ if (typeof window !== 'undefined') {
   window.initHybridCaptionPreview = initHybridCaptionPreview;
   window.updateCaptionState = updateCaptionState;
   window.setHybridPreviewVisible = setHybridPreviewVisible;
-  
-  // Export CaptionPreview API for overlay integration
-  window.CaptionPreview = {
-    setMode: setPreviewMode,
-    getMode: () => _previewMode,
-    regenerateRasterFromState
-  };
 }

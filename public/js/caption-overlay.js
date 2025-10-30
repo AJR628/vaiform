@@ -34,13 +34,6 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
   const overlayV2 = detectOverlayV2();
   // Debug counters (printed only when debug flag enabled)
   let __pm = 0, __ro = 0, __raf = 0;
-  
-  // Single debounce for raster regeneration
-  let rasterRegenTimer = null;
-  const queueRasterRegen = (fn, ms = 200) => {
-    clearTimeout(rasterRegenTimer);
-    rasterRegenTimer = setTimeout(fn, ms);
-  };
 
   // V2 sticky-bounds fitter state (align with server clamps)
   const MIN_PX = 12, MAX_PX = 200;
@@ -140,7 +133,7 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
       outline:none; 
       white-space:pre-wrap; 
       word-break:normal; 
-      overflow-wrap:break-word; 
+      overflow-wrap:anywhere; 
       hyphens:none; 
       overflow:hidden; 
       box-sizing:border-box;
@@ -209,15 +202,6 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     // Ignore if clicking on toolbar or resize handle
     if (e.target.closest('.caption-toolbar, .drag-resize')) return;
     
-    // Gate interaction hooks
-    if (!overlayV2) return;
-    if (document.hidden) return; // don't regen when tab hidden
-    
-    // Switch to live mode
-    try {
-      window.CaptionPreview?.setMode('live');
-    } catch {}
-    
     const s = stage.getBoundingClientRect();
     const b = box.getBoundingClientRect();
     
@@ -266,23 +250,6 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     
     // Emit state to persist new position
     emitCaptionState('dragend');
-    
-    // Debounced raster regeneration after drag
-    queueRasterRegen(async () => {
-      try {
-        const state = window.__overlayMeta;
-        if (!state || !state.fontPx || !state.box?.wPx || !state.box?.hPx) return;
-        // avoid stale state: ensure the fontPx we push came from the LAST fit
-        state.fontPx = parseFloat(getComputedStyle(document.querySelector('.caption-box .content')).fontSize);
-        
-        if (window.CaptionPreview) {
-          await window.CaptionPreview.regenerateRasterFromState(state);
-          requestAnimationFrame(() => window.CaptionPreview.setMode('raster'));
-        }
-      } catch (err) {
-        console.error('[caption-overlay] Raster regen after drag failed:', err);
-      }
-    });
   };
 
   window.addEventListener('pointerup', endDrag);
@@ -525,30 +492,9 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     let best = Math.round(v2State.fitBounds.lastGoodPx || lo);
     for (let i = 0; i < 8 && lo <= hi; i++) {
       const mid = (lo + hi) >> 1;
-      
-      // Recompute maxW/maxH from fresh box dimensions
-      const s = getComputedStyle(content);
-      const padX = parseInt(s.paddingLeft,10) + parseInt(s.paddingRight,10);
-      const padY = parseInt(s.paddingTop,10) + parseInt(s.paddingBottom,10);
-      const freshMaxW = Math.max(0, box.clientWidth - padX);
-      const freshMaxH = Math.max(0, box.clientHeight - padY);
-      
-      // Force proper wrapping constraints
       content.style.fontSize = mid + 'px';
-      content.style.maxWidth = freshMaxW + 'px';
-      content.style.width = freshMaxW + 'px';
-      content.style.maxHeight = freshMaxH + 'px';
-      content.style.whiteSpace = 'pre-wrap';
-      content.style.wordBreak = 'break-word';
-      content.style.overflowWrap = 'anywhere';
-      content.style.overflow = 'hidden';
-      const ls = (window.__serverCaptionMeta?.lineSpacingPx ?? 8);
-      content.style.lineHeight = (mid + ls) / mid; // unitless ratio
-      
-      // Use rect height instead of scrollHeight for more reliable measurement
-      const rectH = content.getBoundingClientRect().height;
-      const ok = (content.scrollWidth <= freshMaxW + 0.5) && (rectH <= freshMaxH + 0.5);
-      console.debug('[fit:search]', { i, mid, ok, scrollW: content.scrollWidth, maxW: freshMaxW, rectH, maxH: freshMaxH });
+      content.style.maxWidth = maxW + 'px';
+      const ok = (content.scrollWidth <= maxW + 0.5) && (content.scrollHeight <= maxH + 0.5);
       if (ok) { best = mid; lo = mid + 1; } else { hi = mid - 1; }
     }
     const prev = v2State.fitBounds.lastGoodPx != null ? v2State.fitBounds.lastGoodPx : best;
@@ -556,13 +502,8 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     let target = best;
     if (best > prev) target = Math.min(best, prev + step);
     else if (best < prev) target = Math.max(best, prev - step);
-    
-    // Fallback safety: if binary search failed, use smaller safe value
-    const MIN = 8;
-    target = (best != null) ? target : Math.max(MIN, hi);
     target = Math.max(MIN_PX, Math.min(MAX_PX, target));
     content.style.fontSize = target + 'px';
-    console.debug('[fit:write]', { px: target, reason, boxW: box.clientWidth, boxH: box.clientHeight });
     v2State.fitBounds.lastGoodPx = target;
     v2State.lastBoxW = b.width; v2State.lastBoxH = b.height;
     try {
@@ -577,18 +518,6 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
   let resizeStart = null;
   resizeHandle.addEventListener('pointerdown', (e) => {
     e.preventDefault();
-    
-    // Gate interaction hooks
-    if (!overlayV2) return;
-    if (document.hidden) return; // don't regen when tab hidden
-    
-    // Switch to live mode at start of interaction
-    try {
-      window.CaptionPreview?.setMode('live');
-    } catch (err) {
-      console.warn('[caption-overlay] Could not set live mode:', err);
-    }
-    
     try { resizeHandle.setPointerCapture(e.pointerId); } catch {}
     const start = {x: e.clientX, y: e.clientY, w: box.offsetWidth, h: box.offsetHeight, left: box.offsetLeft, top: box.offsetTop};
     const initialFontPx = parseInt(getComputedStyle(content).fontSize, 10);
@@ -642,24 +571,6 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
       const meta = getCaptionMeta();
       applyCaptionMeta(meta);
       emitCaptionState('resize-end');
-      
-      // Debounced raster regeneration after resize
-      queueRasterRegen(async () => {
-        try {
-          const state = window.__overlayMeta;
-          if (!state || !state.fontPx || !state.box?.wPx || !state.box?.hPx) return;
-          // avoid stale state: ensure the fontPx we push came from the LAST fit
-          state.fontPx = parseFloat(getComputedStyle(document.querySelector('.caption-box .content')).fontSize);
-          
-          if (window.CaptionPreview) {
-            await window.CaptionPreview.regenerateRasterFromState(state);
-            requestAnimationFrame(() => window.CaptionPreview.setMode('raster'));
-          }
-        } catch (err) {
-          console.error('[caption-overlay] Raster regen after resize failed:', err);
-        }
-      });
-      
       if (overlayV2 && window.__debugOverlay) { try { console.log(JSON.stringify({ tag:'overlay:counters', pm:__pm, ro:__ro, raf:__raf })); __pm=__ro=__raf=0; } catch {} }
     }
     if (!overlayV2) {
@@ -1021,7 +932,7 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     
     // Read ACTUAL computed values from browser (visual truth)
     const fontFamily = (cs.fontFamily || 'DejaVu Sans').split(',')[0].replace(/['"]/g, '').trim();
-    let fontPx = parseInt(cs.fontSize, 10);
+    const fontPx = parseInt(cs.fontSize, 10);
     const lineHeightRaw = cs.lineHeight;
     const lineHeightPx = lineHeightRaw === 'normal' 
       ? Math.round(fontPx * 1.2) 
@@ -1141,15 +1052,6 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
       : (textAlign === 'right') ? '(W-overlay_w)'
       : '0';
     
-    // While editing, prefer the actual fitted size the user sees
-    const computedPx = parseInt(cs.fontSize, 10);
-    if (window.CaptionPreview?.getMode?.() === 'live') {
-      fontPx = computedPx;  // Use what's currently rendered
-    } else {
-      fontPx = window.__serverCaptionMeta?.fontPx ?? computedPx;  // Use server SSOT or fallback
-    }
-    console.debug('[emit]', { reason, mode: window.CaptionPreview?.getMode?.(), usingPx: fontPx, computedPx });
-    
     const state = {
       // Typography (browser truth)
       fontFamily,
@@ -1212,15 +1114,6 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
       rasterW, rasterPadding, totalTextH, rasterH,
       xExpr_png, yPx_png, frameW, frameH, 
       linesLen: lines.length
-    });
-    
-    // Verification logs for mode and font tracking
-    console.log('[emit:mode-check]', {
-      mode: window.CaptionPreview?.getMode?.(),
-      willApplyParity: window.CaptionPreview?.getMode?.() !== 'live',
-      fontPx: parseInt(cs.fontSize, 10),
-      serverFontPx: window.__serverCaptionMeta?.fontPx,
-      reason
     });
     
     // Store and emit
