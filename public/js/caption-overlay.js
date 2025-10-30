@@ -537,6 +537,7 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     else if (best < prev) target = Math.max(best, prev - step);
     target = Math.max(MIN_PX, Math.min(MAX_PX, target));
     content.style.fontSize = target + 'px';
+    console.debug('[fit:write]', { px: target, reason, boxW: box.clientWidth, boxH: box.clientHeight });
     v2State.fitBounds.lastGoodPx = target;
     v2State.lastBoxW = b.width; v2State.lastBoxH = b.height;
     try {
@@ -1114,6 +1115,15 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     const xExpr_png = (textAlign === 'center') ? '(W-overlay_w)/2'
       : (textAlign === 'right') ? '(W-overlay_w)'
       : '0';
+    
+    // While editing, prefer the actual fitted size the user sees
+    const computedPx = parseInt(cs.fontSize, 10);
+    if (window.CaptionPreview?.getMode?.() === 'live') {
+      fontPx = computedPx;  // Use what's currently rendered
+    } else {
+      fontPx = window.__serverCaptionMeta?.fontPx ?? computedPx;  // Use server SSOT or fallback
+    }
+    console.debug('[emit]', { reason, mode: window.CaptionPreview?.getMode?.(), usingPx: fontPx, computedPx });
     
     const state = {
       // Typography (browser truth)

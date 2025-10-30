@@ -248,9 +248,11 @@ function toRasterYPx({frameH, rasterH, placement, yPct, internalPaddingPx}) {
  * Apply caption styles to live text element using server SSOT values
  */
 function applyStylesToLiveText(element, captionState, serverMeta) {
-  // Skip parity apply if user is actively editing
-  if (window.CaptionPreview?.getMode?.() === 'live') {
-    console.debug('[parity] Skipping apply during live editing');
+  // Skip parity writes while user is actively editing (live mode).
+  const _mode = window.CaptionPreview?.getMode?.();
+  console.debug('[applyStyles] mode=', _mode, 'serverFontPx=', serverMeta?.fontPx);
+  if (_mode === 'live') {
+    console.debug('[applyStyles] skipping — live editing in progress');
     return;
   }
 
