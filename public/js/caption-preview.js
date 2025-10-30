@@ -432,36 +432,55 @@ export async function generateCaptionPreview(opts) {
   // Update global references (SSOT)
   if (typeof window !== 'undefined') {
     window.lastCaptionPNG = lastCaptionPNG;
-    
+
+    // Compute and persist saved geometry hash for gating Render
+    const metaForSave = { ...normalizedMeta };
+    try {
+      const yPxFirstLine = Number.isFinite(metaForSave?.yPxFirstLine)
+        ? metaForSave.yPxFirstLine
+        : (Number(metaForSave?.yPx_png) + Number(metaForSave?.rasterPadding ?? metaForSave?.internalPadding ?? 0));
+      metaForSave.savedGeometryHash = [
+        metaForSave.yPct,
+        metaForSave.wPct,
+        metaForSave.fontPx,
+        metaForSave.lineSpacingPx,
+        metaForSave.totalTextH,
+        yPxFirstLine
+      ].join('|');
+    } catch {}
+
     // Store normalized overlay meta for render (SSOT)
-    window._overlayMeta = normalizedMeta;
-    
+    window._overlayMeta = metaForSave;
+
     // Store server meta for live preview system
-    window.__serverCaptionMeta = normalizedMeta;
+    window.__serverCaptionMeta = metaForSave;
     
     // Also keep legacy reference for backward compatibility
     window.__lastCaptionOverlay = {
       dataUrl: imageUrl,
       width: data.data?.wPx || 1080,
       height: data.data?.hPx || 1920,
-      meta: normalizedMeta
+      meta: metaForSave
     };
     
     // Persist to localStorage for "Save Preview" workflow (V3 storage key)
     try {
-      localStorage.setItem('overlayMetaV3', JSON.stringify(normalizedMeta));
+      localStorage.setItem('overlayMetaV3', JSON.stringify(metaForSave));
+      window._previewSavedForCurrentText = true;
       console.log('[v3:savePreview] saved', { 
-        v: normalizedMeta.ssotVersion, 
-        mode: normalizedMeta.mode,
-        frameW: normalizedMeta.frameW,
-        frameH: normalizedMeta.frameH,
-        rasterHash: normalizedMeta.rasterHash?.slice(0, 8) + '...',
-        keys: Object.keys(normalizedMeta),
-        hasRaster: !!normalizedMeta.rasterUrl || !!normalizedMeta.rasterDataUrl
+        v: metaForSave.ssotVersion, 
+        mode: metaForSave.mode,
+        frameW: metaForSave.frameW,
+        frameH: metaForSave.frameH,
+        rasterHash: metaForSave.rasterHash?.slice(0, 8) + '...',
+        keys: Object.keys(metaForSave),
+        hasRaster: !!metaForSave.rasterUrl || !!metaForSave.rasterDataUrl
       });
     } catch (err) {
       console.warn('[caption-preview] Failed to save to localStorage:', err.message);
     }
+
+    try { if (typeof window.updateRenderButtonState === 'function') window.updateRenderButtonState(); } catch {}
   }
 
   const el = document.getElementById("caption-overlay");

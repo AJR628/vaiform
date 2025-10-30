@@ -103,6 +103,15 @@
         if (typeof window._previewSavedForCurrentText === 'undefined') {
             window._previewSavedForCurrentText = false;
         }
+        // Global helper to mark preview dirty on geometry changes
+        if (typeof window.markPreviewDirty === 'undefined') {
+            window.markPreviewDirty = (reason) => {
+                window._previewSavedForCurrentText = false;
+                window._geometryDirtyReason = reason || 'overlay moved';
+                try { console.log('[dirty] overlay moved/resized → clearing saved preview', { reason }); } catch {}
+                try { if (typeof updateRenderButtonState === 'function') updateRenderButtonState(); } catch {}
+            };
+        }
     </script>
     <script type="module" src="./frontend.js"></script>
     <!-- Shared geometry utilities for caption positioning -->
@@ -2957,6 +2966,29 @@
                         
                         // Preview is valid if flag is set AND text matches
                         hasSavedPreview = (savedText === currentText);
+
+                        // Geometry hash gating: compare current vs saved geometry
+                        try {
+                            const metaForHash = (window.__serverCaptionMeta || window._overlayMeta || savedMeta || {});
+                            const yPct = metaForHash.yPct;
+                            const wPct = metaForHash.wPct;
+                            const fontPx = metaForHash.fontPx;
+                            const lineSpacingPx = metaForHash.lineSpacingPx;
+                            const totalTextH = metaForHash.totalTextH;
+                            const yPxFirstLine = Number.isFinite(metaForHash?.yPxFirstLine)
+                                ? metaForHash.yPxFirstLine
+                                : (Number(metaForHash?.yPx_png) + Number(metaForHash?.rasterPadding ?? metaForHash?.internalPadding ?? 0));
+                            const currentGeometryHash = [yPct, wPct, fontPx, lineSpacingPx, totalTextH, yPxFirstLine].join('|');
+                            const savedGeometryHash = savedMeta?.savedGeometryHash || null;
+                            const match = !!savedGeometryHash && currentGeometryHash === savedGeometryHash;
+                            console.log('[render-validate] geometry match:', match, { saved: savedGeometryHash, current: currentGeometryHash, previewSavedFlag: window._previewSavedForCurrentText });
+                            if (!window._previewSavedForCurrentText || !match) {
+                                hasSavedPreview = false;
+                            }
+                        } catch (e) {
+                            console.warn('[render-validate] geometry hash check failed:', e);
+                            hasSavedPreview = false;
+                        }
                         
                         if (!hasSavedPreview && savedText && currentText && savedText !== currentText) {
                             console.log('[preview-state] Text mismatch detected - saved vs current differ');

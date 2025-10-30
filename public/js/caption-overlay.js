@@ -250,6 +250,7 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     
     // Emit state to persist new position
     emitCaptionState('dragend');
+    try { if (window.markPreviewDirty) window.markPreviewDirty('geometry:drag'); } catch {}
   };
 
   window.addEventListener('pointerup', endDrag);
@@ -571,6 +572,7 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
       const meta = getCaptionMeta();
       applyCaptionMeta(meta);
       emitCaptionState('resize-end');
+      try { if (window.markPreviewDirty) window.markPreviewDirty('geometry:resize'); } catch {}
       if (overlayV2 && window.__debugOverlay) { try { console.log(JSON.stringify({ tag:'overlay:counters', pm:__pm, ro:__ro, raf:__raf })); __pm=__ro=__raf=0; } catch {} }
     }
     if (!overlayV2) {
@@ -1163,6 +1165,7 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     
     // Trigger state emit to persist new position
     emitCaptionState('snap');
+    try { if (window.markPreviewDirty) window.markPreviewDirty('geometry:snap'); } catch {}
   }
 
   // Expose snap API globally
