@@ -575,8 +575,8 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     // Initialize best
     let best;
     if (v2State.isResizing) {
-      // During resize: start from current size, let binary search find optimal fit
-      best = currentPx;
+      // During resize: start from MIN_PX, binary search will find maximum that fits
+      best = MIN_PX;
     } else if (reason === 'apply' || reason === 'fonts' || reason === 'setText') {
       // Initial application: start with box-based estimate, not stale currentPx
       const estimatedPx = Math.max(MIN_PX, Math.min(MAX_PX, Math.floor(maxH / 6)));
