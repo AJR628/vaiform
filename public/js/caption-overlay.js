@@ -582,6 +582,9 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
       // Initial application: start with box-based estimate, not stale currentPx
       const estimatedPx = Math.max(MIN_PX, Math.min(MAX_PX, Math.floor(maxH / 6)));
       best = estimatedPx;
+    } else if (reason === 'post-resize' || reason === 'pointerup') {
+      // After resize: preserve the size user achieved during resize
+      best = currentPx;
     } else {
       // Non-resize: when text doesn't fit, start from lo to allow finding smaller sizes
       // Only use lastGoodPx when text currently fits to maintain smooth transitions
