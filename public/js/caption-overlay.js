@@ -523,7 +523,9 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     
     // Check if current size fits BEFORE adjusting bounds (simplifies bounds logic)
     content.style.fontSize = currentPx + 'px';
-    content.style.width = maxW + 'px';  // Set explicit width to ensure text wraps
+    content.style.maxWidth = maxW + 'px';
+    // Force reflow after setting maxWidth to ensure text wraps
+    void content.offsetHeight;
     const currentFits = (content.scrollWidth <= maxW + 0.5) && (content.scrollHeight <= maxH + 0.5);
     
     // Only adjust bounds during non-resize operations
@@ -575,8 +577,8 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     // Initialize best
     let best;
     if (v2State.isResizing) {
-      // During resize: start from MIN_PX, binary search will find maximum that fits
-      best = MIN_PX;
+      // During resize: start from current size, let binary search find optimal fit
+      best = currentPx;
     } else if (reason === 'apply' || reason === 'fonts' || reason === 'setText') {
       // Initial application: start with box-based estimate, not stale currentPx
       const estimatedPx = Math.max(MIN_PX, Math.min(MAX_PX, Math.floor(maxH / 6)));
@@ -593,7 +595,9 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     for (let i = 0; i < 8 && lo <= hi; i++) {
       const mid = (lo + hi) >> 1;
       content.style.fontSize = mid + 'px';
-      content.style.width = maxW + 'px';  // Set explicit width to ensure text wraps
+      content.style.maxWidth = maxW + 'px';
+      // Force reflow after setting maxWidth to ensure text wraps
+      void content.offsetHeight;
       const fits = (content.scrollWidth <= maxW + 0.5) && (content.scrollHeight <= maxH + 0.5);
       
       // Count lines to prefer sizes with fewer lines (less wrapping)
