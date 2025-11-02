@@ -57,11 +57,13 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
   // Build overlay DOM
   const box = document.createElement('div');
   box.className = 'caption-box';
-  box.style.left = '10%';
-  box.style.top  = '65%';
-  box.style.width = '80%';
+  box.style.left = '6%';
+  box.style.top  = '5%';
+  box.style.width = '88%';
+  box.style.height = '30%';
   box.style.minWidth = '140px';
   box.style.minHeight = '80px';
+  box.style.maxHeight = '95%';
 
   const handle = document.createElement('div');
   handle.className = 'drag-handle';
@@ -571,7 +573,8 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     
     // Only apply step limiter during non-resize operations (font changes, etc.)
     // During active resize, allow immediate full adjustment for real-time feedback
-    if (!v2State.isResizing) {
+    // Also bypass for initialization reasons ('apply', 'fonts') to allow immediate fitting
+    if (!v2State.isResizing && reason !== 'apply' && reason !== 'fonts') {
       const step = 3;
       if (best > prev) target = Math.min(best, prev + step);
       else if (best < prev) target = Math.max(best, prev - step);
