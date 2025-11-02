@@ -519,6 +519,11 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     const significantShrink = shrinkY && (v2State.lastBoxH - b.height > 10);
     const significantExpand = expandY && (b.height - v2State.lastBoxH > 10);
     
+    // Check if current size fits BEFORE adjusting bounds (simplifies bounds logic)
+    content.style.fontSize = currentPx + 'px';
+    content.style.maxWidth = maxW + 'px';
+    const currentFits = (content.scrollWidth <= maxW + 0.5) && (content.scrollHeight <= maxH + 0.5);
+    
     if (expanding) {
       v2State.fitBounds.lowPx  = Math.max(v2State.fitBounds.lowPx, basis);
       if (significantExpand) {
@@ -527,58 +532,22 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
       } else {
         v2State.fitBounds.highPx = Math.min(MAX_PX, Math.max(v2State.fitBounds.highPx, Math.ceil(basis * 2)));
       }
-    } else {
-      // Box is shrinking (or not changing significantly)
-      v2State.fitBounds.highPx = Math.min(v2State.fitBounds.highPx, basis);
-      if (significantShrink) {
-        // Reset low bound aggressively when shrinking significantly to allow much smaller sizes
-        // Reset to full range from MIN_PX to current size to allow finding any size that fits
+    } else if (shrinkY) {
+      // Box is shrinking - simplify bounds to always allow finding smaller sizes
+      // When shrinking and text doesn't fit, allow full range from MIN_PX
+      if (!currentFits) {
+        // Text doesn't fit: allow full search range from MIN_PX to current
         v2State.fitBounds.lowPx = MIN_PX;
-        v2State.fitBounds.highPx = Math.min(MAX_PX, Math.ceil(basis * 1.2));  // Allow up to 20% larger in case we're too aggressive
-      } else if (shrinkY) {
-        // Normal shrink: allow going lower than current, but constrain upper bound
-        v2State.fitBounds.lowPx = Math.max(MIN_PX, Math.min(v2State.fitBounds.lowPx, Math.floor(basis * 0.7)));
+        v2State.fitBounds.highPx = Math.min(MAX_PX, currentPx - 1);
       } else {
-        // No significant change: keep bounds but ensure we can search below current if needed
-        v2State.fitBounds.lowPx = Math.max(MIN_PX, Math.min(v2State.fitBounds.lowPx, Math.floor(basis * 0.9)));
+        // Text fits: maintain tighter bounds for efficiency
+        v2State.fitBounds.highPx = Math.min(v2State.fitBounds.highPx, basis);
+        v2State.fitBounds.lowPx = Math.max(MIN_PX, Math.min(v2State.fitBounds.lowPx, Math.floor(basis * 0.7)));
       }
     }
     
-    // CRITICAL: Ensure bounds allow searching below current fontSize when box height shrinks
-    // If box height decreased, we MUST be able to search smaller sizes
-    if (shrinkY && v2State.fitBounds.lowPx >= currentPx) {
-      console.warn('[fitTextV2] Bounds preventing shrink! Resetting lowPx', {
-        shrinkY,
-        currentPx,
-        lowPx: v2State.fitBounds.lowPx,
-        boxH: b.height,
-        lastH: v2State.lastBoxH
-      });
-      v2State.fitBounds.lowPx = MIN_PX;
-    }
     let lo = Math.max(MIN_PX, v2State.fitBounds.lowPx);
     let hi = Math.min(MAX_PX, v2State.fitBounds.highPx);
-    
-    // CRITICAL FIX: If box shrunk and current size doesn't fit, start search below current size
-    // Check if current size actually fits in the new box dimensions
-    content.style.fontSize = currentPx + 'px';
-    content.style.maxWidth = maxW + 'px';
-    const currentFits = (content.scrollWidth <= maxW + 0.5) && (content.scrollHeight <= maxH + 0.5);
-    
-    if (!currentFits && shrinkY) {
-      // Current size doesn't fit and box shrunk - must search smaller
-      // Ensure hi is below current size to force searching smaller
-      hi = Math.min(hi, currentPx - 1);
-      console.log('[fitTextV2] Current size does not fit, forcing search below', {
-        currentPx,
-        currentFits,
-        scrollH: Math.round(content.scrollHeight),
-        maxH: Math.round(maxH),
-        scrollW: Math.round(content.scrollWidth),
-        maxW: Math.round(maxW),
-        newHi: hi
-      });
-    }
     
     // Ensure we have a valid search range
     if (lo > hi) {
@@ -587,7 +556,9 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
       console.warn('[fitTextV2] Invalid search range, resetting', { lo, hi, currentPx, shrinkY });
     }
     
-    let best = Math.round(v2State.fitBounds.lastGoodPx || (currentFits ? currentPx : lo));
+    // Initialize best: when text doesn't fit, start from lo to allow finding smaller sizes
+    // Only use lastGoodPx when text currently fits to maintain smooth transitions
+    let best = Math.round(currentFits ? (v2State.fitBounds.lastGoodPx || currentPx) : lo);
     for (let i = 0; i < 8 && lo <= hi; i++) {
       const mid = (lo + hi) >> 1;
       content.style.fontSize = mid + 'px';
@@ -596,10 +567,16 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
       if (ok) { best = mid; lo = mid + 1; } else { hi = mid - 1; }
     }
     const prev = v2State.fitBounds.lastGoodPx != null ? v2State.fitBounds.lastGoodPx : best;
-    const step = 3;
     let target = best;
-    if (best > prev) target = Math.min(best, prev + step);
-    else if (best < prev) target = Math.max(best, prev - step);
+    
+    // Only apply step limiter during non-resize operations (font changes, etc.)
+    // During active resize, allow immediate full adjustment for real-time feedback
+    if (!v2State.isResizing) {
+      const step = 3;
+      if (best > prev) target = Math.min(best, prev + step);
+      else if (best < prev) target = Math.max(best, prev - step);
+    }
+    
     target = Math.max(MIN_PX, Math.min(MAX_PX, target));
     content.style.fontSize = target + 'px';
     v2State.fitBounds.lastGoodPx = target;
