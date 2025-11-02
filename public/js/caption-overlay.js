@@ -502,14 +502,30 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     const shrinkY = b.height < v2State.lastBoxH - 2;
     const expanding = (expandX || expandY) && !(shrinkX || shrinkY);
     const currentPx = parseInt(s.fontSize, 10) || MIN_PX;
-    try { if (window.__overlayV2 && window.__debugOverlay) console.log(JSON.stringify({ tag:'fit:start', reason, lowPx: v2State.fitBounds.lowPx, highPx: v2State.fitBounds.highPx, currentPx })); } catch {}
+    try { if (window.__overlayV2 && window.__debugOverlay) console.log(JSON.stringify({ tag:'fit:start', reason, lowPx: v2State.fitBounds.lowPx, highPx: v2State.fitBounds.highPx, currentPx, boxH: b.height, lastH: v2State.lastBoxH })); } catch {}
     const basis = v2State.fitBounds.lastGoodPx || currentPx;
+    
+    // When box shrinks significantly (>10px height change), reset bounds to allow full search
+    const significantShrink = shrinkY && (v2State.lastBoxH - b.height > 10);
+    const significantExpand = expandY && (b.height - v2State.lastBoxH > 10);
+    
     if (expanding) {
       v2State.fitBounds.lowPx  = Math.max(v2State.fitBounds.lowPx, basis);
-      v2State.fitBounds.highPx = Math.min(MAX_PX, Math.max(v2State.fitBounds.highPx, Math.ceil(basis * 2)));
+      if (significantExpand) {
+        // Reset high bound when expanding significantly
+        v2State.fitBounds.highPx = Math.min(MAX_PX, Math.ceil(basis * 2));
+      } else {
+        v2State.fitBounds.highPx = Math.min(MAX_PX, Math.max(v2State.fitBounds.highPx, Math.ceil(basis * 2)));
+      }
     } else {
       v2State.fitBounds.highPx = Math.min(v2State.fitBounds.highPx, basis);
-      v2State.fitBounds.lowPx  = Math.max(MIN_PX, Math.min(v2State.fitBounds.lowPx, Math.floor(basis / 2)));
+      if (significantShrink) {
+        // Reset low bound aggressively when shrinking significantly to allow much smaller sizes
+        v2State.fitBounds.lowPx = MIN_PX;
+      } else {
+        // Allow low bound to go lower, but not below MIN_PX
+        v2State.fitBounds.lowPx = Math.max(MIN_PX, Math.min(v2State.fitBounds.lowPx, Math.floor(basis * 0.7)));
+      }
     }
     let lo = Math.max(MIN_PX, v2State.fitBounds.lowPx);
     let hi = Math.min(MAX_PX, v2State.fitBounds.highPx);
@@ -530,6 +546,23 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     content.style.fontSize = target + 'px';
     v2State.fitBounds.lastGoodPx = target;
     v2State.lastBoxW = b.width; v2State.lastBoxH = b.height;
+    
+    // Debug logging to track fontSize changes
+    console.log('[fitTextV2]', {
+      reason,
+      previousPx: prev,
+      bestPx: best,
+      targetPx: target,
+      currentPx: parseInt(getComputedStyle(content).fontSize, 10),
+      boxW: Math.round(b.width),
+      boxH: Math.round(b.height),
+      maxW: Math.round(maxW),
+      maxH: Math.round(maxH),
+      scrollW: Math.round(content.scrollWidth),
+      scrollH: Math.round(content.scrollHeight),
+      fits: content.scrollWidth <= maxW + 0.5 && content.scrollHeight <= maxH + 0.5
+    });
+    
     try {
       if (window.__overlayV2 && window.__debugOverlay) {
         console.log(JSON.stringify({ tag:'fit:ok', bestPx: target }));
@@ -597,8 +630,8 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
       }
       // Final persist + preview
       if (overlayV2) { try { endResizeSession(); } catch {} } else { try { fitText(); } catch {} }
-      const meta = getCaptionMeta();
-      applyCaptionMeta(meta);
+      // Don't call applyCaptionMeta here - it would override the fontSize that fitTextV2 just set
+      // fitTextV2 already sets the fontSize correctly, we just need to emit state
       
       // Keep geometry dirty and invalidate saved preview
       geometryDirty = true;
@@ -980,6 +1013,16 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     // Read ACTUAL computed values from browser (visual truth)
     const fontFamily = (cs.fontFamily || 'DejaVu Sans').split(',')[0].replace(/['"]/g, '').trim();
     const fontPx = parseInt(cs.fontSize, 10);
+    
+    // Debug logging to track fontSize being emitted
+    console.log('[emitCaptionState]', {
+      reason,
+      fontPx,
+      boxW: Math.round(box.clientWidth),
+      boxH: Math.round(box.clientHeight),
+      contentFontSize: cs.fontSize,
+      computedFontSize: parseFloat(cs.fontSize)
+    });
     const lineHeightRaw = cs.lineHeight;
     const lineHeightPx = lineHeightRaw === 'normal' 
       ? Math.round(fontPx * 1.2) 
