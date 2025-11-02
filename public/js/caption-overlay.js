@@ -28,6 +28,12 @@ function detectOverlayV2() {
   } catch { return false; }
 }
 
+// Geometry dirty flag: tracks when box dimensions change (resize/drag)
+let geometryDirty = false;
+
+// Saved preview flag: tracks if we have a saved PNG from server
+let savedPreview = false;
+
 export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMedia' } = {}) {
   const stage = document.querySelector(stageSel);
   if (!stage) throw new Error('stage not found');
@@ -217,6 +223,10 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
       pointerId: e.pointerId
     };
     
+    // Mark geometry dirty and invalidate saved preview
+    geometryDirty = true;
+    savedPreview = false;
+    
     handle.setPointerCapture(e.pointerId);
     dragging = true;
     box.classList.add('is-dragging');
@@ -398,6 +408,10 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
   };
   // Only fit on text input, not during resize; resize uses the rAF fitText flow
   content.addEventListener('input', ()=> {
+    // Mark geometry dirty and invalidate saved preview
+    geometryDirty = true;
+    savedPreview = false;
+    
     clearTimeout(fitTimer);
     if (overlayV2) { try { ensureFitNextRAF('input'); } catch {} }
     else {
@@ -519,6 +533,11 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
   resizeHandle.addEventListener('pointerdown', (e) => {
     e.preventDefault();
     try { resizeHandle.setPointerCapture(e.pointerId); } catch {}
+    
+    // Mark geometry dirty and invalidate saved preview
+    geometryDirty = true;
+    savedPreview = false;
+    
     const start = {x: e.clientX, y: e.clientY, w: box.offsetWidth, h: box.offsetHeight, left: box.offsetLeft, top: box.offsetTop};
     const initialFontPx = parseInt(getComputedStyle(content).fontSize, 10);
     if (overlayV2) beginResizeSession();
@@ -570,7 +589,21 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
       if (overlayV2) { try { endResizeSession(); } catch {} } else { try { fitText(); } catch {} }
       const meta = getCaptionMeta();
       applyCaptionMeta(meta);
-      emitCaptionState('resize-end');
+      
+      // Keep geometry dirty and invalidate saved preview
+      geometryDirty = true;
+      savedPreview = false;
+      
+      emitCaptionState('resize-end'); // Will use mode:'dom'
+      
+      // Ensure one final fit after state emission
+      requestAnimationFrame(() => {
+        try { 
+          if (overlayV2) fitTextV2('post-resize'); 
+          else fitText();
+        } catch {}
+      });
+      
       if (overlayV2 && window.__debugOverlay) { try { console.log(JSON.stringify({ tag:'overlay:counters', pm:__pm, ro:__ro, raf:__raf })); __pm=__ro=__raf=0; } catch {} }
     }
     if (!overlayV2) {
@@ -1052,6 +1085,16 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
       : (textAlign === 'right') ? '(W-overlay_w)'
       : '0';
     
+    // Determine mode based on geometry state
+    const mode = geometryDirty ? 'dom' : (savedPreview ? 'raster' : 'dom');
+    
+    // Log mode switch for debugging
+    if (mode === 'dom') {
+      console.log('[overlay-live] switched to DOM (geometry dirty or no saved preview)');
+    } else {
+      console.log('[overlay-live] switched to RASTER (saved preview active)');
+    }
+    
     const state = {
       // Typography (browser truth)
       fontFamily,
@@ -1097,7 +1140,7 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
       text: content.textContent || '',
       textRaw: content.textContent || '',
       ssotVersion: 3,
-      mode: 'raster',
+      mode: mode,  // Dynamic instead of hardcoded 'raster'
       reason
     };
     
@@ -1171,6 +1214,17 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
 export function getCaptionMeta(){ return window.getCaptionMeta(); }
 export function applyCaptionMeta(meta){ return window.applyCaptionMeta(meta); }
 export function setQuote(text){ return window.setQuote(text); }
+
+// Export flag setters for external use
+export function markPreviewSaved() {
+  savedPreview = true;
+  geometryDirty = false;
+}
+
+export function markGeometryDirty() {
+  geometryDirty = true;
+  savedPreview = false;
+}
 
 // Export the line extraction function for shared use
 export function extractRenderedLines(element) {

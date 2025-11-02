@@ -362,6 +362,44 @@ function applyStylesToLiveText(element, captionState, serverMeta) {
     return;
   }
   
+  // ========== DOM MODE: Use live fitted text, don't override fontSize ==========
+  if (serverMeta?.mode === 'dom') {
+    console.log('[parity:usingDOM] Live text fitting active, preserving fitted fontSize');
+    // Don't set fontSize here - let fitTextV2 handle it
+    // Only apply non-geometry styles (color, effects, etc.)
+    
+    // Apply visual styles without touching fontSize/dimensions
+    if (captionState) {
+      element.style.fontFamily = captionState.fontFamily || '"DejaVu Sans", sans-serif';
+      element.style.fontWeight = captionState.weightCss || '700';
+      element.style.fontStyle = captionState.fontStyle || 'normal';
+      element.style.textAlign = captionState.textAlign || 'center';
+      element.style.textTransform = captionState.textTransform || 'none';
+      element.style.color = captionState.color || 'white';
+      element.style.opacity = captionState.opacity || 1;
+      
+      // Effects: scale stroke and shadow
+      if (captionState.strokePx > 0) {
+        const scaledStrokePx = captionState.strokePx * scale;
+        element.style.webkitTextStroke = `${scaledStrokePx}px ${captionState.strokeColor}`;
+        element.style.textStroke = `${scaledStrokePx}px ${captionState.strokeColor}`;
+      } else {
+        element.style.webkitTextStroke = 'none';
+        element.style.textStroke = 'none';
+      }
+      
+      if (captionState.shadowBlur > 0) {
+        const shadowX = (captionState.shadowOffsetX || 0) * scale;
+        const shadowY = (captionState.shadowOffsetY || 0) * scale;
+        const shadowBlur = captionState.shadowBlur * scale;
+        element.style.textShadow = `${shadowX}px ${shadowY}px ${shadowBlur}px ${captionState.shadowColor}`;
+      } else {
+        element.style.textShadow = 'none';
+      }
+    }
+    return;
+  }
+  
   // ========== LEGACY MODE: percentage-based (for backward compat) ==========
   // HARD GATE: Only run legacy mode if we have valid legacy data
   if (!serverMeta?.mode || serverMeta.mode !== 'raster') {

@@ -4128,6 +4128,15 @@
                 window._previewSavedForCurrentText = true;
                 console.log('[preview-state] Preview saved successfully for current caption text');
                 
+                // Mark preview as saved in overlay system (clears geometry dirty, enables raster mode)
+                try {
+                    const { markPreviewSaved } = await import('./js/caption-overlay.js');
+                    markPreviewSaved();
+                    console.log('[preview-state] Preview saved successfully, switching to raster mode');
+                } catch (err) {
+                    console.warn('[preview-state] Failed to mark preview as saved:', err);
+                }
+                
                 // Apply saved server meta to live preview immediately
                 if (typeof window.updateCaptionState === 'function' && normalizedMeta) {
                     // CRITICAL: Set server SSOT first
