@@ -362,37 +362,69 @@ function applyStylesToLiveText(element, captionState, serverMeta) {
     return;
   }
   
-  // ========== DOM MODE: Use live fitted text, don't override fontSize ==========
+  // ========== DOM MODE: Use live fitted text, apply fitted fontSize from overlay ==========
   if (serverMeta?.mode === 'dom') {
-    console.log('[parity:usingDOM] Live text fitting active, preserving fitted fontSize');
-    // Don't set fontSize here - let fitTextV2 handle it
-    // Only apply non-geometry styles (color, effects, etc.)
+    console.log('[parity:usingDOM] Live text fitting active, applying fitted fontSize from overlay');
     
-    // Apply visual styles without touching fontSize/dimensions
-    if (captionState) {
-      element.style.fontFamily = captionState.fontFamily || '"DejaVu Sans", sans-serif';
-      element.style.fontWeight = captionState.weightCss || '700';
-      element.style.fontStyle = captionState.fontStyle || 'normal';
-      element.style.textAlign = captionState.textAlign || 'center';
-      element.style.textTransform = captionState.textTransform || 'none';
-      element.style.color = captionState.color || 'white';
-      element.style.opacity = captionState.opacity || 1;
+    // Extract fitted typography values from serverMeta (which comes from the fitted overlay content)
+    // Prefer serverMeta (from fitted overlay) over captionState (which may be stale)
+    const fontPx = Number.isFinite(serverMeta.fontPx) ? serverMeta.fontPx : 
+                   (captionState?.fontPx ? Number(captionState.fontPx) : null);
+    const lineSpacingPx = Number.isFinite(serverMeta.lineSpacingPx) ? serverMeta.lineSpacingPx : 
+                          (captionState?.lineSpacingPx ? Number(captionState.lineSpacingPx) : 8);
+    const letterSpacingPx = Number.isFinite(serverMeta.letterSpacingPx) ? serverMeta.letterSpacingPx : 
+                            (captionState?.letterSpacingPx ? Number(captionState.letterSpacingPx) : 0);
+    
+    // Apply typography styles with scaling
+    if (fontPx !== null && Number.isFinite(fontPx)) {
+      const cssFontSizePx = fontPx * scale;
+      const cssLineHeightPx = (fontPx + lineSpacingPx) * scale;
+      const cssLetterSpacingPx = letterSpacingPx * scale;
+      
+      element.style.fontSize = `${cssFontSizePx}px`;
+      element.style.lineHeight = `${cssLineHeightPx}px`; // PIXEL value, not unitless
+      element.style.letterSpacing = `${cssLetterSpacingPx}px`;
+    }
+    
+    // Apply width constraints if available
+    const rasterW = Number.isFinite(serverMeta.rasterW) ? serverMeta.rasterW : null;
+    if (rasterW !== null) {
+      const cssWidthPx = rasterW * scale;
+      element.style.width = `${cssWidthPx}px`;
+      element.style.maxWidth = `${cssWidthPx}px`;
+      element.style.boxSizing = 'border-box';
+    }
+    
+    // Apply visual styles (font family, weight, color, effects, etc.)
+    if (captionState || serverMeta) {
+      const source = serverMeta || captionState;
+      element.style.fontFamily = source.fontFamily || '"DejaVu Sans", sans-serif';
+      element.style.fontWeight = source.weightCss || '700';
+      element.style.fontStyle = source.fontStyle || 'normal';
+      element.style.textAlign = source.textAlign || 'center';
+      element.style.textTransform = source.textTransform || 'none';
+      element.style.color = source.color || 'white';
+      element.style.opacity = source.opacity !== undefined ? source.opacity : 1;
       
       // Effects: scale stroke and shadow
-      if (captionState.strokePx > 0) {
-        const scaledStrokePx = captionState.strokePx * scale;
-        element.style.webkitTextStroke = `${scaledStrokePx}px ${captionState.strokeColor}`;
-        element.style.textStroke = `${scaledStrokePx}px ${captionState.strokeColor}`;
+      const strokePx = Number.isFinite(source.strokePx) ? source.strokePx : 0;
+      if (strokePx > 0) {
+        const scaledStrokePx = strokePx * scale;
+        const strokeColor = source.strokeColor || 'rgba(0,0,0,0.85)';
+        element.style.webkitTextStroke = `${scaledStrokePx}px ${strokeColor}`;
+        element.style.textStroke = `${scaledStrokePx}px ${strokeColor}`;
       } else {
         element.style.webkitTextStroke = 'none';
         element.style.textStroke = 'none';
       }
       
-      if (captionState.shadowBlur > 0) {
-        const shadowX = (captionState.shadowOffsetX || 0) * scale;
-        const shadowY = (captionState.shadowOffsetY || 0) * scale;
-        const shadowBlur = captionState.shadowBlur * scale;
-        element.style.textShadow = `${shadowX}px ${shadowY}px ${shadowBlur}px ${captionState.shadowColor}`;
+      const shadowBlur = Number.isFinite(source.shadowBlur) ? source.shadowBlur : 0;
+      if (shadowBlur > 0) {
+        const shadowX = (source.shadowOffsetX || 0) * scale;
+        const shadowY = (source.shadowOffsetY || 0) * scale;
+        const scaledShadowBlur = shadowBlur * scale;
+        const shadowColor = source.shadowColor || 'rgba(0,0,0,0.6)';
+        element.style.textShadow = `${shadowX}px ${shadowY}px ${scaledShadowBlur}px ${shadowColor}`;
       } else {
         element.style.textShadow = 'none';
       }
