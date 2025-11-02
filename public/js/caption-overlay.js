@@ -575,9 +575,8 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     // Initialize best
     let best;
     if (v2State.isResizing) {
-      // During resize: estimate based on box height (rough heuristic)
-      const estimatedPx = Math.max(MIN_PX, Math.min(MAX_PX, Math.floor(maxH / 6)));
-      best = estimatedPx;
+      // During resize: start from current size, let binary search find optimal fit
+      best = currentPx;
     } else if (reason === 'apply' || reason === 'fonts' || reason === 'setText') {
       // Initial application: start with box-based estimate, not stale currentPx
       const estimatedPx = Math.max(MIN_PX, Math.min(MAX_PX, Math.floor(maxH / 6)));
