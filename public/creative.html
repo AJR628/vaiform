@@ -103,15 +103,6 @@
         if (typeof window._previewSavedForCurrentText === 'undefined') {
             window._previewSavedForCurrentText = false;
         }
-        // Global helper to mark preview dirty on geometry changes
-        if (typeof window.markPreviewDirty === 'undefined') {
-            window.markPreviewDirty = (reason) => {
-                window._previewSavedForCurrentText = false;
-                window._geometryDirtyReason = reason || 'overlay moved';
-                try { console.log('[dirty] overlay moved/resized → clearing saved preview', { reason }); } catch {}
-                try { if (typeof updateRenderButtonState === 'function') updateRenderButtonState(); } catch {}
-            };
-        }
     </script>
     <script type="module" src="./frontend.js"></script>
     <!-- Shared geometry utilities for caption positioning -->
@@ -1368,7 +1359,7 @@
             }
 
             // Get caption style parameters from UI
-            const sizePx = 48; // Initial size - overlay mode will auto-fit to box
+            const sizePx = 54; // Default - will be overridden by server SSOT
             const opacityPct = parseInt(document.getElementById('caption-opacity')?.value || '85', 10);
             const placement = (document.getElementById('caption-placement')?.value || 'bottom').toLowerCase();
             const showBoxToggle = document.getElementById('caption-background')?.checked || false;
@@ -1452,12 +1443,12 @@
                             const meta = getCaptionMeta && getCaptionMeta();
                             if (meta) {
                                 // Update overlay style based on current UI controls
-                                // Do NOT set meta.fontPx - let fitText handle sizing
+                                meta.fontPx = captionStyle.fontPx;
                                 meta.fontFamily = captionStyle.fontFamily;
                                 meta.weightCss = captionStyle.weightCss || captionStyle.weight;
                                 meta.color = '#FFFFFF';
                                 meta.opacity = captionStyle.opacity;
-                                applyCaptionMeta && applyCaptionMeta(meta, { skipFontSize: true });
+                                applyCaptionMeta && applyCaptionMeta(meta);
                             }
                             // Keep the stage background in sync with the canvas
                             if (typeof updateOverlayCanvasBackground === 'function') updateOverlayCanvasBackground();
@@ -1652,49 +1643,6 @@
                 
                 overlaySystemInitialized = true;
                 console.log('[overlay-system] Initialized draggable overlay');
-
-                // Ensure live DOM text is visible during any geometry edits
-                try {
-                    const { setHybridPreviewVisible } = await import('./js/caption-live.js');
-                    setHybridPreviewVisible(true);
-                } catch {}
-
-                // Wire ResizeObserver to caption box to keep DOM text in sync while resizing
-                try {
-                    const box = document.querySelector('#stage .caption-box');
-                    const content = box?.querySelector('.content');
-                    if (box && content && window.ResizeObserver) {
-                        let rafPending = false;
-                        const ro = new ResizeObserver(() => {
-                            // Switch to DOM mode (hide PNG, show live text) during resize
-                            try {
-                                const { setHybridPreviewVisible } = await import('./js/caption-live.js');
-                                setHybridPreviewVisible(true);
-                            } catch {}
-                            
-                            // Invalidate saved preview
-                            try { resetPreviewSavedState(); } catch {}
-                            
-                            // Trigger fit-to-box algorithm via rAF (same mechanism as resize handle)
-                            if (!rafPending) {
-                                rafPending = true;
-                                requestAnimationFrame(() => {
-                                    rafPending = false;
-                                    try {
-                                        // Access fit function via window if exposed, or trigger emitCaptionState which should trigger fit
-                                        if (typeof window.emitCaptionState === 'function') {
-                                            window.emitCaptionState('resize-observer');
-                                        }
-                                    } catch {}
-                                });
-                            }
-                        });
-                        ro.observe(box);
-                        console.log('[overlay-system] ResizeObserver wired to caption box for fit-to-box scaling');
-                    }
-                } catch (e) {
-                    console.warn('[overlay-system] Failed to wire ResizeObserver:', e);
-                }
                 
                 // Mark preview as unsaved when caption text changes (SSOT workflow)
                 try {
@@ -3009,29 +2957,6 @@
                         
                         // Preview is valid if flag is set AND text matches
                         hasSavedPreview = (savedText === currentText);
-
-                        // Geometry hash gating: compare current vs saved geometry
-                        try {
-                            const metaForHash = (window.__serverCaptionMeta || window._overlayMeta || savedMeta || {});
-                            const yPct = metaForHash.yPct;
-                            const wPct = metaForHash.wPct;
-                            const fontPx = metaForHash.fontPx;
-                            const lineSpacingPx = metaForHash.lineSpacingPx;
-                            const totalTextH = metaForHash.totalTextH;
-                            const yPxFirstLine = Number.isFinite(metaForHash?.yPxFirstLine)
-                                ? metaForHash.yPxFirstLine
-                                : (Number(metaForHash?.yPx_png) + Number(metaForHash?.rasterPadding ?? metaForHash?.internalPadding ?? 0));
-                            const currentGeometryHash = [yPct, wPct, fontPx, lineSpacingPx, totalTextH, yPxFirstLine].join('|');
-                            const savedGeometryHash = savedMeta?.savedGeometryHash || null;
-                            const match = !!savedGeometryHash && currentGeometryHash === savedGeometryHash;
-                            console.log('[render-validate] geometry match:', match, { saved: savedGeometryHash, current: currentGeometryHash, previewSavedFlag: window._previewSavedForCurrentText });
-                            if (!window._previewSavedForCurrentText || !match) {
-                                hasSavedPreview = false;
-                            }
-                        } catch (e) {
-                            console.warn('[render-validate] geometry hash check failed:', e);
-                            hasSavedPreview = false;
-                        }
                         
                         if (!hasSavedPreview && savedText && currentText && savedText !== currentText) {
                             console.log('[preview-state] Text mismatch detected - saved vs current differ');

@@ -250,7 +250,6 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     
     // Emit state to persist new position
     emitCaptionState('dragend');
-    try { if (window.markPreviewDirty) window.markPreviewDirty('geometry:drag'); } catch {}
   };
 
   window.addEventListener('pointerup', endDrag);
@@ -258,34 +257,7 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
 
   // Keep inside frame on resize and clamp to stage
   const clamp = ()=>{
-    if (overlayV2) {
-      // V2 mode: trigger fit-to-box algorithm on resize (if not already resizing via handle)
-      if (!v2State.isResizing) {
-        try { 
-          // Initialize fit bounds if not already set (similar to beginResizeSession)
-          if (v2State.fitBounds.lastGoodPx == null) {
-            const currentPx = parseInt(getComputedStyle(content).fontSize, 10) || MIN_PX;
-            v2State.fitBounds.lowPx = Math.max(MIN_PX, Math.floor(currentPx * 0.6));
-            v2State.fitBounds.highPx = Math.min(MAX_PX, Math.ceil(currentPx * 1.8));
-            v2State.fitBounds.lastGoodPx = Math.max(MIN_PX, Math.min(MAX_PX, currentPx));
-            const b = box.getBoundingClientRect();
-            v2State.lastBoxW = b.width;
-            v2State.lastBoxH = b.height;
-          }
-          ensureFitNextRAF('resize-observer');
-          console.log('[overlay:resize-observer] Triggered fit-to-box algorithm');
-        } catch (e) {
-          console.warn('[overlay:resize-observer] Failed to trigger fit:', e);
-        }
-      }
-      // Also switch to DOM mode during any resize to enable live text scaling
-      try {
-        if (typeof window.setHybridPreviewVisible === 'function') {
-          window.setHybridPreviewVisible(true);
-        }
-      } catch {}
-      return;
-    }
+    if (overlayV2) return; // V2 mode uses percentage-based positioning via applyCaptionMeta
     if (overlayV2 && window.__debugOverlay) { try { __ro++; } catch {} }
     if (overlayV2 && v2State.isResizing) return; // observer no-op during V2 resize
     const s = stage.getBoundingClientRect(), b = box.getBoundingClientRect();
@@ -534,11 +506,6 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     content.style.fontSize = target + 'px';
     v2State.fitBounds.lastGoodPx = target;
     v2State.lastBoxW = b.width; v2State.lastBoxH = b.height;
-    // Update server meta to match fitted font-size so getCaptionMeta() reads correct value
-    if (window.__serverCaptionMeta) {
-      window.__serverCaptionMeta.fontPx = target;
-    }
-    console.log('[overlay:fitTextV2] Applied font size:', target, 'px for box:', Math.round(b.width), 'x', Math.round(b.height), 'reason:', reason);
     try {
       if (window.__overlayV2 && window.__debugOverlay) {
         console.log(JSON.stringify({ tag:'fit:ok', bestPx: target }));
@@ -602,10 +569,8 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
       // Final persist + preview
       if (overlayV2) { try { endResizeSession(); } catch {} } else { try { fitText(); } catch {} }
       const meta = getCaptionMeta();
-      // Skip font-size application - fit algorithm already set it correctly
-      applyCaptionMeta(meta, { skipFontSize: true });
+      applyCaptionMeta(meta);
       emitCaptionState('resize-end');
-      try { if (window.markPreviewDirty) window.markPreviewDirty('geometry:resize'); } catch {}
       if (overlayV2 && window.__debugOverlay) { try { console.log(JSON.stringify({ tag:'overlay:counters', pm:__pm, ro:__ro, raf:__raf })); __pm=__ro=__raf=0; } catch {} }
     }
     if (!overlayV2) {
@@ -756,8 +721,7 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     if (typeof meta.yPct === 'number') box.style.top  = (meta.yPct * 100) + '%';
     if (typeof meta.wPct === 'number') box.style.width  = (meta.wPct * 100) + '%';
     if (typeof meta.hPct === 'number') box.style.height = (meta.hPct * 100) + '%';
-    // Only apply fontPx if not skipped
-    if (meta.fontPx && !options.skipFontSize) content.style.fontSize = meta.fontPx + 'px';
+    if (meta.fontPx) content.style.fontSize = meta.fontPx + 'px';
     if (meta.weightCss) content.style.fontWeight = meta.weightCss;
     if (meta.textAlign) content.style.textAlign = meta.textAlign;
     if (meta.color) content.style.color = meta.color;
@@ -1198,7 +1162,6 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     
     // Trigger state emit to persist new position
     emitCaptionState('snap');
-    try { if (window.markPreviewDirty) window.markPreviewDirty('geometry:snap'); } catch {}
   }
 
   // Expose snap API globally
