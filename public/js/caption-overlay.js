@@ -578,25 +578,43 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
       // During resize: estimate based on box height (rough heuristic)
       const estimatedPx = Math.max(MIN_PX, Math.min(MAX_PX, Math.floor(maxH / 6)));
       best = estimatedPx;
+    } else if (reason === 'apply' || reason === 'fonts' || reason === 'setText') {
+      // Initial application: start with box-based estimate, not stale currentPx
+      const estimatedPx = Math.max(MIN_PX, Math.min(MAX_PX, Math.floor(maxH / 6)));
+      best = estimatedPx;
     } else {
       // Non-resize: when text doesn't fit, start from lo to allow finding smaller sizes
       // Only use lastGoodPx when text currently fits to maintain smooth transitions
       best = Math.round(currentFits ? (v2State.fitBounds.lastGoodPx || currentPx) : lo);
     }
+    let bestLines = Infinity;
     for (let i = 0; i < 8 && lo <= hi; i++) {
       const mid = (lo + hi) >> 1;
       content.style.fontSize = mid + 'px';
       content.style.maxWidth = maxW + 'px';
-      const ok = (content.scrollWidth <= maxW + 0.5) && (content.scrollHeight <= maxH + 0.5);
-      if (ok) { best = mid; lo = mid + 1; } else { hi = mid - 1; }
+      const fits = (content.scrollWidth <= maxW + 0.5) && (content.scrollHeight <= maxH + 0.5);
+      
+      // Count lines to prefer sizes with fewer lines (less wrapping)
+      const lineCount = Math.ceil(content.scrollHeight / mid);
+      
+      if (fits) {
+        // Prefer this size if it has fewer lines or same lines but larger font
+        if (lineCount < bestLines || (lineCount === bestLines && mid > best)) {
+          best = mid;
+          bestLines = lineCount;
+        }
+        lo = mid + 1;
+      } else {
+        hi = mid - 1;
+      }
     }
     const prev = v2State.fitBounds.lastGoodPx != null ? v2State.fitBounds.lastGoodPx : best;
     let target = best;
     
     // Only apply step limiter during non-resize operations (font changes, etc.)
     // During active resize, allow immediate full adjustment for real-time feedback
-    // Also bypass for initialization reasons ('apply', 'fonts') to allow immediate fitting
-    if (!v2State.isResizing && reason !== 'apply' && reason !== 'fonts') {
+    // Also bypass for initialization and post-resize to allow immediate fitting
+    if (!v2State.isResizing && reason !== 'apply' && reason !== 'fonts' && reason !== 'post-resize') {
       const step = 3;
       if (best > prev) target = Math.min(best, prev + step);
       else if (best < prev) target = Math.max(best, prev - step);
