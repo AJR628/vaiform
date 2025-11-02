@@ -523,7 +523,7 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     
     // Check if current size fits BEFORE adjusting bounds (simplifies bounds logic)
     content.style.fontSize = currentPx + 'px';
-    content.style.maxWidth = maxW + 'px';
+    content.style.width = maxW + 'px';  // Set explicit width to ensure text wraps
     const currentFits = (content.scrollWidth <= maxW + 0.5) && (content.scrollHeight <= maxH + 0.5);
     
     // Only adjust bounds during non-resize operations
@@ -593,7 +593,7 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     for (let i = 0; i < 8 && lo <= hi; i++) {
       const mid = (lo + hi) >> 1;
       content.style.fontSize = mid + 'px';
-      content.style.maxWidth = maxW + 'px';
+      content.style.width = maxW + 'px';  // Set explicit width to ensure text wraps
       const fits = (content.scrollWidth <= maxW + 0.5) && (content.scrollHeight <= maxH + 0.5);
       
       // Count lines to prefer sizes with fewer lines (less wrapping)
