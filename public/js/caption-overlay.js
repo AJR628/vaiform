@@ -474,7 +474,17 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     if (!overlayV2) { try { requestAnimationFrame(fitText); } catch {} return; }
     if (v2State.rafPending) return;
     v2State.rafPending = true;
-    requestAnimationFrame(() => { __raf++; v2State.rafPending = false; try { fitTextV2(reason); } catch {} });
+    requestAnimationFrame(() => { 
+      __raf++; 
+      v2State.rafPending = false; 
+      try { 
+        fitTextV2(reason);
+        // Emit state after fit completes for resize operations to update live preview
+        if (reason === 'resize') {
+          emitCaptionState('resize');
+        }
+      } catch {} 
+    });
   }
 
   function fitTextV2(reason) {
@@ -594,13 +604,17 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
       geometryDirty = true;
       savedPreview = false;
       
-      emitCaptionState('resize-end'); // Will use mode:'dom'
-      
-      // Ensure one final fit after state emission
+      // Ensure one final fit, then emit state AFTER it completes
       requestAnimationFrame(() => {
         try { 
-          if (overlayV2) fitTextV2('post-resize'); 
-          else fitText();
+          if (overlayV2) {
+            fitTextV2('post-resize');
+            // Emit state after final fit completes to ensure live preview gets updated fontSize
+            emitCaptionState('resize-end'); // Will use mode:'dom'
+          } else {
+            fitText();
+            emitCaptionState('resize-end'); // Will use mode:'dom'
+          }
         } catch {}
       });
       
