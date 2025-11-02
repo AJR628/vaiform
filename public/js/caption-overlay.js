@@ -526,41 +526,63 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     content.style.maxWidth = maxW + 'px';
     const currentFits = (content.scrollWidth <= maxW + 0.5) && (content.scrollHeight <= maxH + 0.5);
     
-    if (expanding) {
-      v2State.fitBounds.lowPx  = Math.max(v2State.fitBounds.lowPx, basis);
-      if (significantExpand) {
-        // Reset high bound when expanding significantly
-        v2State.fitBounds.highPx = Math.min(MAX_PX, Math.ceil(basis * 2));
-      } else {
-        v2State.fitBounds.highPx = Math.min(MAX_PX, Math.max(v2State.fitBounds.highPx, Math.ceil(basis * 2)));
+    // Only adjust bounds during non-resize operations
+    // During resize, use full range to allow text to scale freely with box
+    if (!v2State.isResizing) {
+      if (expanding) {
+        v2State.fitBounds.lowPx  = Math.max(v2State.fitBounds.lowPx, basis);
+        if (significantExpand) {
+          // Reset high bound when expanding significantly
+          v2State.fitBounds.highPx = Math.min(MAX_PX, Math.ceil(basis * 2));
+        } else {
+          v2State.fitBounds.highPx = Math.min(MAX_PX, Math.max(v2State.fitBounds.highPx, Math.ceil(basis * 2)));
+        }
+      } else if (shrinkY) {
+        // Box is shrinking - simplify bounds to always allow finding smaller sizes
+        // When shrinking and text doesn't fit, allow full range from MIN_PX
+        if (!currentFits) {
+          // Text doesn't fit: allow full search range from MIN_PX to current
+          v2State.fitBounds.lowPx = MIN_PX;
+          v2State.fitBounds.highPx = Math.min(MAX_PX, currentPx - 1);
+        } else {
+          // Text fits: maintain tighter bounds for efficiency
+          v2State.fitBounds.highPx = Math.min(v2State.fitBounds.highPx, basis);
+          v2State.fitBounds.lowPx = Math.max(MIN_PX, Math.min(v2State.fitBounds.lowPx, Math.floor(basis * 0.7)));
+        }
       }
-    } else if (shrinkY) {
-      // Box is shrinking - simplify bounds to always allow finding smaller sizes
-      // When shrinking and text doesn't fit, allow full range from MIN_PX
-      if (!currentFits) {
-        // Text doesn't fit: allow full search range from MIN_PX to current
-        v2State.fitBounds.lowPx = MIN_PX;
-        v2State.fitBounds.highPx = Math.min(MAX_PX, currentPx - 1);
-      } else {
-        // Text fits: maintain tighter bounds for efficiency
-        v2State.fitBounds.highPx = Math.min(v2State.fitBounds.highPx, basis);
-        v2State.fitBounds.lowPx = Math.max(MIN_PX, Math.min(v2State.fitBounds.lowPx, Math.floor(basis * 0.7)));
-      }
+    } else {
+      // During resize: always use full range for maximum flexibility
+      v2State.fitBounds.lowPx = MIN_PX;
+      v2State.fitBounds.highPx = MAX_PX;
     }
     
     let lo = Math.max(MIN_PX, v2State.fitBounds.lowPx);
     let hi = Math.min(MAX_PX, v2State.fitBounds.highPx);
     
+    // During active resize, always use full range regardless of bounds
+    if (v2State.isResizing) {
+      lo = MIN_PX;
+      hi = MAX_PX;
+    }
+    
     // Ensure we have a valid search range
     if (lo > hi) {
       lo = MIN_PX;
-      hi = Math.min(MAX_PX, currentPx);
+      hi = MAX_PX;  // Changed from currentPx to MAX_PX
       console.warn('[fitTextV2] Invalid search range, resetting', { lo, hi, currentPx, shrinkY });
     }
     
-    // Initialize best: when text doesn't fit, start from lo to allow finding smaller sizes
-    // Only use lastGoodPx when text currently fits to maintain smooth transitions
-    let best = Math.round(currentFits ? (v2State.fitBounds.lastGoodPx || currentPx) : lo);
+    // Initialize best
+    let best;
+    if (v2State.isResizing) {
+      // During resize: estimate based on box height (rough heuristic)
+      const estimatedPx = Math.max(MIN_PX, Math.min(MAX_PX, Math.floor(maxH / 6)));
+      best = estimatedPx;
+    } else {
+      // Non-resize: when text doesn't fit, start from lo to allow finding smaller sizes
+      // Only use lastGoodPx when text currently fits to maintain smooth transitions
+      best = Math.round(currentFits ? (v2State.fitBounds.lastGoodPx || currentPx) : lo);
+    }
     for (let i = 0; i < 8 && lo <= hi; i++) {
       const mid = (lo + hi) >> 1;
       content.style.fontSize = mid + 'px';
