@@ -583,12 +583,16 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
       // This allows finding both larger and smaller optimal sizes as box changes
       // Estimate based on available height: aim for ~4-6 lines typically
       const estimatedPx = Math.max(MIN_PX, Math.min(MAX_PX, Math.floor(maxH / 5)));
-      // Start from estimate or current, whichever is closer to middle of search range
-      // This prevents anchoring to current size when box changes significantly
-      const midRange = (lo + hi) >> 1;
-      best = Math.abs(estimatedPx - midRange) < Math.abs(currentPx - midRange) 
-        ? estimatedPx 
-        : currentPx;
+      // When current size doesn't fit, always use estimate to avoid anchoring to oversized currentPx
+      // When current size fits, use estimate or current (whichever is closer to middle) for smoother transitions
+      if (!currentFits) {
+        best = estimatedPx;
+      } else {
+        const midRange = (lo + hi) >> 1;
+        best = Math.abs(estimatedPx - midRange) < Math.abs(currentPx - midRange) 
+          ? estimatedPx 
+          : currentPx;
+      }
     } else if (reason === 'apply' || reason === 'fonts' || reason === 'setText') {
       // Initial application: start with box-based estimate, not stale currentPx
       const estimatedPx = Math.max(MIN_PX, Math.min(MAX_PX, Math.floor(maxH / 6)));
@@ -597,9 +601,13 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
       // After resize: preserve the size user achieved during resize
       best = currentPx;
     } else {
-      // Non-resize: when text doesn't fit, start from lo to allow finding smaller sizes
+      // Non-resize: when text doesn't fit, start from lo (MIN_PX) to ensure search finds a fitting size
       // Only use lastGoodPx when text currently fits to maintain smooth transitions
-      best = Math.round(currentFits ? (v2State.fitBounds.lastGoodPx || currentPx) : lo);
+      if (currentFits) {
+        best = Math.round(v2State.fitBounds.lastGoodPx || currentPx);
+      } else {
+        best = lo; // Start from minimum to find largest fitting size
+      }
     }
     let bestLines = Infinity;
     
@@ -650,6 +658,37 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
         hi = mid - 1;
       }
     }
+    
+    // Validate that best actually fits - if not, linear search downward to find largest fitting size
+    if (best != null) {
+      content.style.fontSize = best + 'px';
+      content.style.maxWidth = maxW + 'px';
+      void content.offsetHeight; // Single reflow
+      const bestFits = (content.scrollWidth <= maxW + 0.5) && (content.scrollHeight <= maxH + 0.5);
+      
+      if (!bestFits && best > MIN_PX) {
+        // Linear search downward from best-1 to find largest size that fits (max 20 iterations)
+        let candidate = best - 1;
+        let foundFit = false;
+        for (let i = 0; i < 20 && candidate >= MIN_PX; i++) {
+          content.style.fontSize = candidate + 'px';
+          content.style.maxWidth = maxW + 'px';
+          void content.offsetHeight; // Single reflow
+          const fits = (content.scrollWidth <= maxW + 0.5) && (content.scrollHeight <= maxH + 0.5);
+          if (fits) {
+            best = candidate;
+            foundFit = true;
+            break;
+          }
+          candidate--;
+        }
+        // If we still didn't find a fit, use MIN_PX as last resort
+        if (!foundFit) {
+          best = MIN_PX;
+        }
+      }
+    }
+    
     const prev = v2State.fitBounds.lastGoodPx != null ? v2State.fitBounds.lastGoodPx : best;
     let target = best;
     
