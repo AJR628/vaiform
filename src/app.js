@@ -265,7 +265,7 @@ try {
   const distDir = path.resolve(process.cwd(), "web", "dist");
   if (fs.existsSync(distDir)) {
     app.use(express.static(distDir, { index: false }));
-    app.get(/^\/(?!api\/).*/, (req, res) => {
+    app.get(/^\/(?!api\/|assets\/).*/, (req, res) => {
       res.sendFile(path.join(distDir, "index.html"));
     });
     console.log(`[web] Serving SPA from ${distDir}`);
