@@ -381,6 +381,8 @@ router.post("/caption/preview", express.json(), async (req, res) => {
     }
     
     console.warn('[caption-preview] LEGACY PATH ENABLED VIA ENV - DEPRECATED');
+    // Wrap in block scope to isolate variables from V3 path
+    {
     // STEP 0: Sanitize inputs - strip computed fields that should NEVER come from client
       const COMPUTED_FIELDS = [
         "lineSpacingPx", "totalTextH", "totalTextHPx", "yPxFirstLine", "lineHeight",
@@ -394,56 +396,56 @@ router.post("/caption/preview", express.json(), async (req, res) => {
       });
       
       // Handle new draggable overlay format
-      const parsed = CaptionMetaSchema.safeParse(req.body);
-      if (!parsed.success) {
-        return res.status(400).json({ ok: false, reason: "INVALID_INPUT", detail: parsed.error.flatten() });
+      const legacyParsed = CaptionMetaSchema.safeParse(req.body);
+      if (!legacyParsed.success) {
+        return res.status(400).json({ ok: false, reason: "INVALID_INPUT", detail: legacyParsed.error.flatten() });
       }
 
       // STEP 1: Extract ONLY safe input fields (no spreading)
-      const text = String(parsed.data.text || "").trim();
-      const xPct = Number(parsed.data.xPct ?? 0.5);
-      const yPct = Number(parsed.data.yPct ?? 0.5);
-      const wPct = Number(parsed.data.wPct ?? 0.8);
-      const fontPx = Number(parsed.data.sizePx || parsed.data.fontPx || 54);
+      const text = String(legacyParsed.data.text || "").trim();
+      const xPct = Number(legacyParsed.data.xPct ?? 0.5);
+      const yPct = Number(legacyParsed.data.yPct ?? 0.5);
+      const wPct = Number(legacyParsed.data.wPct ?? 0.8);
+      const fontPx = Number(legacyParsed.data.sizePx || legacyParsed.data.fontPx || 54);
       
       // Log received styling fields for debugging
       console.log('[caption-preview] Received styling fields:', {
-        fontPx: parsed.data.fontPx,
-        weightCss: parsed.data.weightCss,
-        fontStyle: parsed.data.fontStyle,
-        letterSpacingPx: parsed.data.letterSpacingPx,
-        textTransform: parsed.data.textTransform,
-        strokePx: parsed.data.strokePx,
-        strokeColor: parsed.data.strokeColor,
-        shadowBlur: parsed.data.shadowBlur,
-        shadowOffsetX: parsed.data.shadowOffsetX,
-        shadowOffsetY: parsed.data.shadowOffsetY,
-        textAlign: parsed.data.textAlign,
-        color: parsed.data.color,
-        opacity: parsed.data.opacity
+        fontPx: legacyParsed.data.fontPx,
+        weightCss: legacyParsed.data.weightCss,
+        fontStyle: legacyParsed.data.fontStyle,
+        letterSpacingPx: legacyParsed.data.letterSpacingPx,
+        textTransform: legacyParsed.data.textTransform,
+        strokePx: legacyParsed.data.strokePx,
+        strokeColor: legacyParsed.data.strokeColor,
+        shadowBlur: legacyParsed.data.shadowBlur,
+        shadowOffsetX: legacyParsed.data.shadowOffsetX,
+        shadowOffsetY: legacyParsed.data.shadowOffsetY,
+        textAlign: legacyParsed.data.textAlign,
+        color: legacyParsed.data.color,
+        opacity: legacyParsed.data.opacity
       });
       
       // Typography
-      const fontFamily = String(parsed.data.fontFamily || 'DejaVu Sans');
-      const weightCss = String(parsed.data.weightCss || 'normal');
-      const fontStyle = parsed.data.fontStyle || 'normal';
-      const textAlign = parsed.data.textAlign || 'center';
-      const letterSpacingPx = Number(parsed.data.letterSpacingPx ?? 0);
-      const textTransform = parsed.data.textTransform || 'none';
+      const fontFamily = String(legacyParsed.data.fontFamily || 'DejaVu Sans');
+      const weightCss = String(legacyParsed.data.weightCss || 'normal');
+      const fontStyle = legacyParsed.data.fontStyle || 'normal';
+      const textAlign = legacyParsed.data.textAlign || 'center';
+      const letterSpacingPx = Number(legacyParsed.data.letterSpacingPx ?? 0);
+      const textTransform = legacyParsed.data.textTransform || 'none';
       
       // Color & effects
-      const color = String(parsed.data.color || 'rgb(255, 255, 255)');
-      const opacity = Number(parsed.data.opacity ?? 0.8);
+      const color = String(legacyParsed.data.color || 'rgb(255, 255, 255)');
+      const opacity = Number(legacyParsed.data.opacity ?? 0.8);
       
       // Stroke (outline)
-      const strokePx = Number(parsed.data.strokePx ?? 0);
-      const strokeColor = String(parsed.data.strokeColor || 'rgba(0,0,0,0.85)');
+      const strokePx = Number(legacyParsed.data.strokePx ?? 0);
+      const strokeColor = String(legacyParsed.data.strokeColor || 'rgba(0,0,0,0.85)');
       
       // Shadow
-      const shadowColor = String(parsed.data.shadowColor || 'rgba(0,0,0,0.6)');
-      const shadowBlur = Number(parsed.data.shadowBlur ?? 12);
-      const shadowOffsetX = Number(parsed.data.shadowOffsetX ?? 0);
-      const shadowOffsetY = Number(parsed.data.shadowOffsetY ?? 2);
+      const shadowColor = String(legacyParsed.data.shadowColor || 'rgba(0,0,0,0.6)');
+      const shadowBlur = Number(legacyParsed.data.shadowBlur ?? 12);
+      const shadowOffsetX = Number(legacyParsed.data.shadowOffsetX ?? 0);
+      const shadowOffsetY = Number(legacyParsed.data.shadowOffsetY ?? 2);
       
       const placement = 'custom';
       const internalPadding = 32;
@@ -501,8 +503,8 @@ router.post("/caption/preview", express.json(), async (req, res) => {
         // SSOT V3: Use client values directly; only compute if missing
         // Line spacing: use client SSOT if provided, otherwise compute
         let lineSpacingPx;
-        if (Number.isFinite(parsed.data.lineSpacingPx)) {
-          lineSpacingPx = parsed.data.lineSpacingPx;
+        if (Number.isFinite(legacyParsed.data.lineSpacingPx)) {
+          lineSpacingPx = legacyParsed.data.lineSpacingPx;
           console.log('[preview:ssot] Using client lineSpacingPx:', lineSpacingPx);
         } else {
           const lineHeightMultiplier = 1.15;
@@ -728,11 +730,14 @@ router.post("/caption/preview", express.json(), async (req, res) => {
         console.error('[overlay-preview] Preview failed:', e);
         return res.status(500).json({ ok: false, reason: 'RENDER_FAILED', detail: e.message });
       }
-    } else {
-      console.log('[caption-preview] Using LEGACY path (placement:', req.body.placement, ', yPct:', req.body.yPct, ', v2:', req.body.v2, ', ssotVersion:', req.body.ssotVersion, ')');
-    }
+    } // End legacy path block scope
+    // Note: The following else block appears to be unreachable (V3 path returns early above)
+    // } else {
+    //   console.log('[caption-preview] Using LEGACY path (placement:', req.body.placement, ', yPct:', req.body.yPct, ', v2:', req.body.v2, ', ssotVersion:', req.body.ssotVersion, ')');
+    // }
     
-    // Legacy format handling
+    // Legacy format handling (unreachable if V3 path returns above, but wrapped for scope isolation)
+    {
     const b = req.body || {};
     const s = b.style || {};
 
@@ -982,6 +987,7 @@ router.post("/caption/preview", express.json(), async (req, res) => {
         }
       }
     });
+    } // End legacy format handling block scope
   } catch (e) {
     return res.status(400).json({ success:false, error:"INVALID_INPUT", detail:String(e?.message || e) });
   }
