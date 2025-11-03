@@ -416,7 +416,7 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     clearTimeout(fitTimer);
     if (overlayV2) { try { ensureFitNextRAF('input'); } catch {} }
     else {
-      fitTimer = setTimeout(fitText, 0);
+      fitTimer = setTimeout(fitTextLegacy, 0);
     }
   });
   // Remove box resize observer that competes with our custom resize
@@ -438,7 +438,7 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     return { ok, maxW, maxH };
   };
   // Legacy fitText function - kept for non-V2 mode only
-  const fitText = () => {
+  const fitTextLegacy = () => {
     let lo = 12, hi = 200, best = 12;
     const current = parseInt(getComputedStyle(content).fontSize, 10) || 24;
     // tighten search window around current to reduce work
@@ -628,7 +628,7 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
   }
 
   function ensureFitNextRAF(reason) {
-    if (!overlayV2) { try { requestAnimationFrame(fitText); } catch {} return; }
+    if (!overlayV2) { try { requestAnimationFrame(fitTextLegacy); } catch {} return; }
     if (v2State.rafPending) return;
     v2State.rafPending = true;
     requestAnimationFrame(() => { 
@@ -689,7 +689,7 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
           content.style.fontSize = targetPx + 'px';
         }
         clearTimeout(fitTimer);
-        fitTimer = setTimeout(()=>{ requestAnimationFrame(fitText); }, 16);
+        fitTimer = setTimeout(()=>{ requestAnimationFrame(fitTextLegacy); }, 16);
       }
     }
     
@@ -713,7 +713,7 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
           } catch {}
         });
       } else {
-        try { fitText(); } catch {}
+        try { fitTextLegacy(); } catch {}
         emitCaptionState('resize-end');
       }
       

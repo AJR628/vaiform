@@ -1545,6 +1545,14 @@
             try {
                 const { initCaptionOverlay, getCaptionMeta, applyCaptionMeta, setQuote, ensureOverlayTopAndVisible, bindCaptionDrag } = await import('./js/caption-overlay.js');
                 
+                // Ensure stage is visible before initializing overlay
+                const stage = document.querySelector('#stage');
+                if (stage) {
+                    stage.style.display = 'block';
+                    stage.style.minHeight = '400px';
+                    stage.style.backgroundColor = '#000';
+                }
+                
                 // Initialize the overlay system
                 initCaptionOverlay({ stageSel: '#stage', mediaSel: '#previewMedia' });
                 
