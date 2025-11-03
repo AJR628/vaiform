@@ -1442,9 +1442,29 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
   window.OverlayAPI = { snapToPlacement };
 }
 
-export function getCaptionMeta(){ return window.getCaptionMeta(); }
-export function applyCaptionMeta(meta){ return window.applyCaptionMeta(meta); }
-export function setQuote(text){ return window.setQuote(text); }
+export function getCaptionMeta(){ 
+  if (typeof window.getCaptionMeta === 'function') {
+    return window.getCaptionMeta(); 
+  }
+  console.warn('[caption-overlay] getCaptionMeta called before initCaptionOverlay');
+  return null;
+}
+
+export function applyCaptionMeta(meta){ 
+  if (typeof window.applyCaptionMeta === 'function') {
+    return window.applyCaptionMeta(meta); 
+  }
+  console.warn('[caption-overlay] applyCaptionMeta called before initCaptionOverlay');
+  return false;
+}
+
+export function setQuote(text){ 
+  if (typeof window.setQuote === 'function') {
+    return window.setQuote(text); 
+  }
+  console.warn('[caption-overlay] setQuote called before initCaptionOverlay');
+  return false;
+}
 
 // Export flag setters for external use
 export function markPreviewSaved() {

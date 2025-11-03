@@ -1410,6 +1410,13 @@
                     if (useOverlayMode) {
                         try {
                             const { getCaptionMeta, applyCaptionMeta } = await import('./js/caption-overlay.js');
+                            
+                            // Check if overlay is initialized before using getCaptionMeta
+                            if (typeof window.getCaptionMeta !== 'function') {
+                                console.warn('[overlay-style] Overlay not initialized yet, skipping style update');
+                                return; // Skip style update, will retry after initialization
+                            }
+                            
                             const meta = getCaptionMeta && getCaptionMeta();
                             if (meta) {
                                 // Update overlay style based on current UI controls
@@ -1418,7 +1425,14 @@
                                 meta.weightCss = captionStyle.weightCss || captionStyle.weight;
                                 meta.color = '#FFFFFF';
                                 meta.opacity = captionStyle.opacity;
-                                applyCaptionMeta && applyCaptionMeta(meta);
+                                
+                                if (applyCaptionMeta) {
+                                    applyCaptionMeta(meta);
+                                } else {
+                                    console.warn('[overlay-style] applyCaptionMeta not available');
+                                }
+                            } else {
+                                console.warn('[overlay-style] getCaptionMeta returned null, overlay may not be initialized');
                             }
                             // Keep the stage background in sync with the canvas
                             if (typeof updateOverlayCanvasBackground === 'function') updateOverlayCanvasBackground();
