@@ -41,14 +41,13 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
   // Debug counters (printed only when debug flag enabled)
   let __pm = 0, __ro = 0, __raf = 0;
 
-  // V2 sticky-bounds fitter state (align with server clamps)
+  // Simplified state for measurement-first approach
   const MIN_PX = 12, MAX_PX = 200;
   const v2State = {
-    isResizing: false,
     rafPending: false,
+    lastFontSize: null,
     lastBoxW: 0,
-    lastBoxH: 0,
-    fitBounds: { lowPx: MIN_PX, highPx: MAX_PX, lastGoodPx: null }
+    lastBoxH: 0
   };
   
   // Ensure stage has aspect ratio consistent with final output
@@ -271,7 +270,7 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
   const clamp = ()=>{
     if (overlayV2) return; // V2 mode uses percentage-based positioning via applyCaptionMeta
     if (overlayV2 && window.__debugOverlay) { try { __ro++; } catch {} }
-    if (overlayV2 && v2State.isResizing) return; // observer no-op during V2 resize
+    // Observer can always run - fitText handles debouncing via rafPending
     const s = stage.getBoundingClientRect(), b = box.getBoundingClientRect();
     let x = Math.max(0, Math.min(b.left - s.left, s.width - b.width));
     let y = Math.max(0, Math.min(b.top  - s.top,  s.height - b.height));
@@ -438,6 +437,7 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     const ok = (content.scrollWidth <= maxW + 0.5) && (content.scrollHeight <= maxH + 0.5);
     return { ok, maxW, maxH };
   };
+  // Legacy fitText function - kept for non-V2 mode only
   const fitText = () => {
     let lo = 12, hi = 200, best = 12;
     const current = parseInt(getComputedStyle(content).fontSize, 10) || 24;
@@ -453,33 +453,178 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     content.style.fontSize = best + 'px';
   };
 
-  // V2: single rAF pipeline and sticky-bounds binary search fitter
-  function beginResizeSession() {
-    v2State.isResizing = true;
-    const c = parseInt(getComputedStyle(content).fontSize, 10) || MIN_PX;
-    // Reset bounds to full range to allow searching both smaller and larger
-    // Allow searching from MIN_PX up to current size * 2, but at least allow going down to MIN_PX
-    v2State.fitBounds.lowPx = MIN_PX;  // Always start from minimum to allow shrinking
-    v2State.fitBounds.highPx = Math.min(MAX_PX, Math.ceil(c * 2));  // Allow growing up to 2x
-    v2State.fitBounds.lastGoodPx = Math.max(MIN_PX, Math.min(MAX_PX, c));
-    const b = box.getBoundingClientRect();
-    v2State.lastBoxW = b.width; v2State.lastBoxH = b.height;
-    console.log('[beginResizeSession]', {
-      currentPx: c,
-      lowPx: v2State.fitBounds.lowPx,
-      highPx: v2State.fitBounds.highPx,
-      lastGoodPx: v2State.fitBounds.lastGoodPx,
-      boxW: Math.round(b.width),
-      boxH: Math.round(b.height)
-    });
-    try { if (window.__overlayV2 && window.__debugOverlay) console.log(JSON.stringify({ tag:'overlay:session', phase:'start', c, lo:v2State.fitBounds.lowPx, hi:v2State.fitBounds.highPx })); } catch {}
+  // ========== Core Measurement Functions (Step 2) ==========
+  
+  /**
+   * Get available space in the box after accounting for padding
+   */
+  function getAvailableBoxSpace() {
+    const s = getComputedStyle(content);
+    const padX = parseInt(s.paddingLeft, 10) + parseInt(s.paddingRight, 10);
+    const padY = parseInt(s.paddingTop, 10) + parseInt(s.paddingBottom, 10);
+    const maxW = Math.max(0, box.clientWidth - padX);
+    const maxH = Math.max(0, box.clientHeight - padY);
+    return { maxW, maxH, padX, padY };
   }
 
-  function endResizeSession() {
-    try { fitTextV2('pointerup'); } catch {}
-    v2State.isResizing = false;
-    v2State.rafPending = false;
-    try { if (window.__overlayV2 && window.__debugOverlay) console.log(JSON.stringify({ tag:'overlay:session', phase:'end', best:v2State.fitBounds.lastGoodPx })); } catch {}
+  /**
+   * Measure if text fits at given font size
+   */
+  function measureTextFit(fontSize, maxW, maxH) {
+    content.style.fontSize = fontSize + 'px';
+    content.style.maxWidth = maxW + 'px';
+    // Force reflow to ensure text wraps
+    void content.offsetHeight;
+    const scrollW = content.scrollWidth;
+    const scrollH = content.scrollHeight;
+    const fits = (scrollW <= maxW + 0.5) && (scrollH <= maxH + 0.5);
+    return { fits, scrollW, scrollH };
+  }
+
+  /**
+   * Calculate scale ratio between old and new box dimensions
+   */
+  function calculateScaleRatio(oldBox, newBox) {
+    // Use smaller ratio for conservative scaling (ensures it fits)
+    const scaleW = newBox.width / Math.max(1, oldBox.width);
+    const scaleH = newBox.height / Math.max(1, oldBox.height);
+    return Math.min(scaleW, scaleH);
+  }
+
+  /**
+   * Find largest font size that fits in the given constraints
+   */
+  function findLargestFittingSize(startFontSize, maxW, maxH) {
+    let lo = MIN_PX;
+    let hi = MAX_PX;
+    let best = startFontSize;
+
+    // Determine search direction based on whether start size fits
+    const startMeasurement = measureTextFit(startFontSize, maxW, maxH);
+    if (startMeasurement.fits) {
+      // If it fits, search upward to find largest
+      lo = Math.floor(startFontSize);
+      hi = MAX_PX;
+    } else {
+      // If it doesn't fit, search downward to find largest that fits
+      lo = MIN_PX;
+      hi = Math.floor(startFontSize);
+    }
+
+    // Binary search for largest fitting size
+    for (let i = 0; i < 10 && lo <= hi; i++) {
+      const mid = Math.floor((lo + hi) / 2);
+      const measurement = measureTextFit(mid, maxW, maxH);
+      
+      if (measurement.fits) {
+        best = mid;
+        lo = mid + 1; // Try larger
+      } else {
+        hi = mid - 1; // Try smaller
+      }
+    }
+
+    // Validate best actually fits
+    const finalMeasurement = measureTextFit(best, maxW, maxH);
+    if (!finalMeasurement.fits && best > MIN_PX) {
+      // Linear search downward from best to find largest that fits
+      for (let candidate = best - 1; candidate >= MIN_PX; candidate--) {
+        const measurement = measureTextFit(candidate, maxW, maxH);
+        if (measurement.fits) {
+          return candidate;
+        }
+      }
+      // Fallback to minimum if nothing fits
+      return MIN_PX;
+    }
+
+    return best;
+  }
+
+  // ========== Simple Fitting Function (Step 3) ==========
+  
+  /**
+   * Main text fitting function - measurement-first approach
+   */
+  function fitText(reason) {
+    const { maxW, maxH } = getAvailableBoxSpace();
+    const b = box.getBoundingClientRect();
+    const currentPx = parseInt(getComputedStyle(content).fontSize, 10) || MIN_PX;
+    
+    let targetFontSize;
+    
+    if (reason === 'initial' || reason === 'setText') {
+      // Set to 48px default, then fit to maximize
+      targetFontSize = 48;
+      content.style.fontSize = targetFontSize + 'px';
+      // Always search for optimal size on initial load
+      targetFontSize = findLargestFittingSize(targetFontSize, maxW, maxH);
+      content.style.fontSize = targetFontSize + 'px';
+      // Update state and return early
+      v2State.lastFontSize = targetFontSize;
+      v2State.lastBoxW = b.width;
+      v2State.lastBoxH = b.height;
+      console.log('[fitText]', {
+        reason,
+        targetFontSize: Math.round(targetFontSize),
+        boxW: Math.round(b.width),
+        boxH: Math.round(b.height),
+        maxW: Math.round(maxW),
+        maxH: Math.round(maxH)
+      });
+      return;
+    } else if (reason === 'resize') {
+      // Proportional scaling: calculate scale ratio and apply
+      const oldBox = { width: v2State.lastBoxW || b.width, height: v2State.lastBoxH || b.height };
+      const newBox = { width: b.width, height: b.height };
+      const scaleRatio = calculateScaleRatio(oldBox, newBox);
+      targetFontSize = currentPx * scaleRatio;
+      targetFontSize = Math.max(MIN_PX, Math.min(MAX_PX, targetFontSize));
+      content.style.fontSize = targetFontSize + 'px';
+    } else if (reason === 'textChange' || reason === 'toolbar') {
+      // Measure current after change, then fit if needed
+      targetFontSize = currentPx;
+    } else if (reason === 'apply') {
+      // Apply reason: preserve current font size (from meta), only fit if doesn't fit
+      targetFontSize = currentPx;
+    } else {
+      // Default: use current size and maximize
+      targetFontSize = currentPx;
+    }
+    
+    // Measure if current size fits
+    const measurement = measureTextFit(targetFontSize, maxW, maxH);
+    
+    // If it doesn't fit, search for optimal size
+    // For toolbar/apply: only refit if it doesn't fit (respect user's/saved size choice)
+    // For other reasons, always find largest fitting size
+    if (!measurement.fits) {
+      targetFontSize = findLargestFittingSize(targetFontSize, maxW, maxH);
+      content.style.fontSize = targetFontSize + 'px';
+    } else if (reason !== 'toolbar' && reason !== 'apply') {
+      // For non-toolbar/apply reasons, maximize size even if current fits
+      targetFontSize = findLargestFittingSize(targetFontSize, maxW, maxH);
+      content.style.fontSize = targetFontSize + 'px';
+    }
+    
+    // Update state
+    v2State.lastFontSize = targetFontSize;
+    v2State.lastBoxW = b.width;
+    v2State.lastBoxH = b.height;
+    
+    // Debug logging
+    const finalMeasurement = measureTextFit(targetFontSize, maxW, maxH);
+    console.log('[fitText]', {
+      reason,
+      targetFontSize: Math.round(targetFontSize),
+      boxW: Math.round(b.width),
+      boxH: Math.round(b.height),
+      maxW: Math.round(maxW),
+      maxH: Math.round(maxH),
+      scrollW: Math.round(finalMeasurement.scrollW),
+      scrollH: Math.round(finalMeasurement.scrollH),
+      fits: finalMeasurement.fits
+    });
   }
 
   function ensureFitNextRAF(reason) {
@@ -490,7 +635,7 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
       __raf++; 
       v2State.rafPending = false; 
       try { 
-        fitTextV2(reason);
+        fitText(reason);
         // Emit state after fit completes for resize operations to update live preview
         if (reason === 'resize') {
           emitCaptionState('resize');
@@ -499,251 +644,6 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     });
   }
 
-  function fitTextV2(reason) {
-    // Decide direction to adjust bounds
-    const s = getComputedStyle(content);
-    // Calculate padding: content has padding:28px 12px 12px 12px (top right bottom left)
-    // With box-sizing:border-box, content takes 100% of box, so we subtract padding
-    const padX = parseInt(s.paddingLeft,10) + parseInt(s.paddingRight,10);
-    const padY = parseInt(s.paddingTop,10) + parseInt(s.paddingBottom,10); // Should be 28px + 12px = 40px
-    const maxW = Math.max(0, box.clientWidth - padX);
-    const maxH = Math.max(0, box.clientHeight - padY);
-    const b = box.getBoundingClientRect();
-    // Hysteresis: require >2px delta to flip direction on either axis
-    const expandX = b.width  > v2State.lastBoxW + 2;
-    const shrinkX = b.width  < v2State.lastBoxW - 2;
-    const expandY = b.height > v2State.lastBoxH + 2;
-    const shrinkY = b.height < v2State.lastBoxH - 2;
-    const expanding = (expandX || expandY) && !(shrinkX || shrinkY);
-    const currentPx = parseInt(s.fontSize, 10) || MIN_PX;
-    try { if (window.__overlayV2 && window.__debugOverlay) console.log(JSON.stringify({ tag:'fit:start', reason, lowPx: v2State.fitBounds.lowPx, highPx: v2State.fitBounds.highPx, currentPx, boxH: b.height, lastH: v2State.lastBoxH })); } catch {}
-    const basis = v2State.fitBounds.lastGoodPx || currentPx;
-    
-    // When box shrinks significantly (>10px height change), reset bounds to allow full search
-    const significantShrink = shrinkY && (v2State.lastBoxH - b.height > 10);
-    const significantExpand = expandY && (b.height - v2State.lastBoxH > 10);
-    
-    // Check if current size fits BEFORE adjusting bounds (simplifies bounds logic)
-    content.style.fontSize = currentPx + 'px';
-    content.style.maxWidth = maxW + 'px';
-    // Force reflow after setting maxWidth to ensure text wraps
-    void content.offsetHeight;
-    const currentFits = (content.scrollWidth <= maxW + 0.5) && (content.scrollHeight <= maxH + 0.5);
-    
-    // Only adjust bounds during non-resize operations
-    // During resize, use full range to allow text to scale freely with box
-    if (!v2State.isResizing) {
-      if (expanding) {
-        v2State.fitBounds.lowPx  = Math.max(v2State.fitBounds.lowPx, basis);
-        if (significantExpand) {
-          // Reset high bound when expanding significantly
-          v2State.fitBounds.highPx = Math.min(MAX_PX, Math.ceil(basis * 2));
-        } else {
-          v2State.fitBounds.highPx = Math.min(MAX_PX, Math.max(v2State.fitBounds.highPx, Math.ceil(basis * 2)));
-        }
-      } else if (shrinkY) {
-        // Box is shrinking - simplify bounds to always allow finding smaller sizes
-        // When shrinking and text doesn't fit, allow full range from MIN_PX
-        if (!currentFits) {
-          // Text doesn't fit: allow full search range from MIN_PX to current
-          v2State.fitBounds.lowPx = MIN_PX;
-          v2State.fitBounds.highPx = Math.min(MAX_PX, currentPx - 1);
-        } else {
-          // Text fits: maintain tighter bounds for efficiency
-          v2State.fitBounds.highPx = Math.min(v2State.fitBounds.highPx, basis);
-          v2State.fitBounds.lowPx = Math.max(MIN_PX, Math.min(v2State.fitBounds.lowPx, Math.floor(basis * 0.7)));
-        }
-      }
-    } else {
-      // During resize: always use full range for maximum flexibility
-      v2State.fitBounds.lowPx = MIN_PX;
-      v2State.fitBounds.highPx = MAX_PX;
-    }
-    
-    let lo = Math.max(MIN_PX, v2State.fitBounds.lowPx);
-    let hi = Math.min(MAX_PX, v2State.fitBounds.highPx);
-    
-    // During active resize, always use full range regardless of bounds
-    if (v2State.isResizing) {
-      lo = MIN_PX;
-      hi = MAX_PX;
-    }
-    
-    // Ensure we have a valid search range
-    if (lo > hi) {
-      lo = MIN_PX;
-      hi = MAX_PX;  // Changed from currentPx to MAX_PX
-      console.warn('[fitTextV2] Invalid search range, resetting', { lo, hi, currentPx, shrinkY });
-    }
-    
-    // Initialize best
-    let best;
-    if (v2State.isResizing) {
-      // During resize: start from box-proportional estimate to explore full range
-      // This allows finding both larger and smaller optimal sizes as box changes
-      // Estimate based on available height: aim for ~4-6 lines typically
-      const estimatedPx = Math.max(MIN_PX, Math.min(MAX_PX, Math.floor(maxH / 5)));
-      // When current size doesn't fit, always use estimate to avoid anchoring to oversized currentPx
-      // When current size fits, use estimate or current (whichever is closer to middle) for smoother transitions
-      if (!currentFits) {
-        best = estimatedPx;
-      } else {
-        const midRange = (lo + hi) >> 1;
-        best = Math.abs(estimatedPx - midRange) < Math.abs(currentPx - midRange) 
-          ? estimatedPx 
-          : currentPx;
-      }
-    } else if (reason === 'apply' || reason === 'fonts' || reason === 'setText') {
-      // Initial application: start with box-based estimate, not stale currentPx
-      const estimatedPx = Math.max(MIN_PX, Math.min(MAX_PX, Math.floor(maxH / 6)));
-      best = estimatedPx;
-    } else if (reason === 'post-resize' || reason === 'pointerup') {
-      // After resize: preserve the size user achieved during resize
-      best = currentPx;
-    } else {
-      // Non-resize: when text doesn't fit, start from lo (MIN_PX) to ensure search finds a fitting size
-      // Only use lastGoodPx when text currently fits to maintain smooth transitions
-      if (currentFits) {
-        best = Math.round(v2State.fitBounds.lastGoodPx || currentPx);
-      } else {
-        best = lo; // Start from minimum to find largest fitting size
-      }
-    }
-    let bestLines = Infinity;
-    
-    for (let i = 0; i < 8 && lo <= hi; i++) {
-      const mid = (lo + hi) >> 1;
-      content.style.fontSize = mid + 'px';
-      content.style.maxWidth = maxW + 'px';
-      // Force reflow after setting maxWidth to ensure text wraps
-      void content.offsetHeight;
-      
-      // Get actual line height from computed style (always in pixels after font-size is set)
-      // CSS has line-height:1.15 (unitless), so computed value will be fontSize * 1.15
-      const currentStyle = getComputedStyle(content);
-      const actualLineHeightPx = parseFloat(currentStyle.lineHeight);
-      
-      const fits = (content.scrollWidth <= maxW + 0.5) && (content.scrollHeight <= maxH + 0.5);
-      
-      // Count lines to prefer sizes with fewer lines (less wrapping)
-      // Use actual line height for accurate line count
-      const lineCount = Math.max(1, Math.ceil(content.scrollHeight / actualLineHeightPx));
-      
-      // Debug logging for binary search iterations during resize
-      if (v2State.isResizing && (i === 0 || i === 3 || i === 7)) {
-        console.log('[fitTextV2:binary-search]', {
-          iteration: i,
-          mid,
-          scrollW: Math.round(content.scrollWidth),
-          scrollH: Math.round(content.scrollHeight),
-          maxW: Math.round(maxW),
-          maxH: Math.round(maxH),
-          actualLineHeightPx: Math.round(actualLineHeightPx * 100) / 100,
-          lineCount,
-          fits,
-          lo,
-          hi,
-          best
-        });
-      }
-      
-      if (fits) {
-        // Prefer this size if it has fewer lines or same lines but larger font
-        if (lineCount < bestLines || (lineCount === bestLines && mid > best)) {
-          best = mid;
-          bestLines = lineCount;
-        }
-        lo = mid + 1;
-      } else {
-        hi = mid - 1;
-      }
-    }
-    
-    // Validate that best actually fits - if not, linear search downward to find largest fitting size
-    if (best != null) {
-      content.style.fontSize = best + 'px';
-      content.style.maxWidth = maxW + 'px';
-      void content.offsetHeight; // Single reflow
-      const bestFits = (content.scrollWidth <= maxW + 0.5) && (content.scrollHeight <= maxH + 0.5);
-      
-      if (!bestFits && best > MIN_PX) {
-        // Linear search downward from best-1 to find largest size that fits (max 20 iterations)
-        let candidate = best - 1;
-        let foundFit = false;
-        for (let i = 0; i < 20 && candidate >= MIN_PX; i++) {
-          content.style.fontSize = candidate + 'px';
-          content.style.maxWidth = maxW + 'px';
-          void content.offsetHeight; // Single reflow
-          const fits = (content.scrollWidth <= maxW + 0.5) && (content.scrollHeight <= maxH + 0.5);
-          if (fits) {
-            best = candidate;
-            foundFit = true;
-            break;
-          }
-          candidate--;
-        }
-        // If we still didn't find a fit, use MIN_PX as last resort
-        if (!foundFit) {
-          best = MIN_PX;
-        }
-      }
-    }
-    
-    const prev = v2State.fitBounds.lastGoodPx != null ? v2State.fitBounds.lastGoodPx : best;
-    let target = best;
-    
-    // Only apply step limiter during non-resize operations (font changes, etc.)
-    // During active resize, allow immediate full adjustment for real-time feedback
-    // Also bypass for initialization and post-resize to allow immediate fitting
-    if (!v2State.isResizing && reason !== 'apply' && reason !== 'fonts' && reason !== 'post-resize') {
-      const step = 3;
-      if (best > prev) target = Math.min(best, prev + step);
-      else if (best < prev) target = Math.max(best, prev - step);
-    }
-    
-    target = Math.max(MIN_PX, Math.min(MAX_PX, target));
-    content.style.fontSize = target + 'px';
-    v2State.fitBounds.lastGoodPx = target;
-    v2State.lastBoxW = b.width; v2State.lastBoxH = b.height;
-    
-    // Debug logging to track fontSize changes
-    const finalScrollW = content.scrollWidth;
-    const finalScrollH = content.scrollHeight;
-    const finalFits = finalScrollW <= maxW + 0.5 && finalScrollH <= maxH + 0.5;
-    console.log('[fitTextV2]', {
-      reason,
-      previousPx: prev,
-      bestPx: best,
-      targetPx: target,
-      currentPx: parseInt(getComputedStyle(content).fontSize, 10),
-      boxW: Math.round(b.width),
-      boxH: Math.round(b.height),
-      maxW: Math.round(maxW),
-      maxH: Math.round(maxH),
-      scrollW: Math.round(finalScrollW),
-      scrollH: Math.round(finalScrollH),
-      fits: finalFits,
-      padX: Math.round(padX),
-      padY: Math.round(padY),
-      // Bounds debugging
-      lo: Math.round(lo),
-      hi: Math.round(hi),
-      fitBounds_lowPx: v2State.fitBounds.lowPx,
-      fitBounds_highPx: v2State.fitBounds.highPx,
-      lastGoodPx: v2State.fitBounds.lastGoodPx,
-      expanding,
-      shrinkY,
-      significantShrink,
-      isResizing: v2State.isResizing
-    });
-    
-    try {
-      if (window.__overlayV2 && window.__debugOverlay) {
-        console.log(JSON.stringify({ tag:'fit:ok', bestPx: target }));
-        console.log(JSON.stringify({ tag:'fit:apply', fontPx: target, boxW: box.clientWidth, boxH: box.clientHeight }));
-      }
-    } catch {}
-  }
 
   // Custom resize handle functionality
   let resizeStart = null;
@@ -757,7 +657,8 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     
     const start = {x: e.clientX, y: e.clientY, w: box.offsetWidth, h: box.offsetHeight, left: box.offsetLeft, top: box.offsetTop};
     const initialFontPx = parseInt(getComputedStyle(content).fontSize, 10);
-    if (overlayV2) beginResizeSession();
+    // Store initial box dimensions for proportional scaling
+    const initialBox = { width: box.offsetWidth, height: box.offsetHeight };
     
     function move(ev) {
       // delta from pointer movement
@@ -775,10 +676,9 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
       box.style.width = w + 'px';
       box.style.height = h + 'px';
 
-      // V2: coalesce to a single binary-search fit via one rAF; no timers during drag
+      // V2: Proportional scaling with real-time fitting
       if (overlayV2) {
         clearTimeout(fitTimer);
-        try { if (window.__debugOverlay) console.log(JSON.stringify({ tag:'resize', w, h, rafPending: v2State.rafPending, isResizing: v2State.isResizing })); } catch {}
         try { ensureFitNextRAF('resize'); } catch {}
       } else {
         // Legacy responsive approximation + final fit
@@ -802,28 +702,24 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
         resizeHandle.removeEventListener('pointermove', move);
         resizeHandle.removeEventListener('pointerup', up);
       }
-      // Final persist + preview
-      if (overlayV2) { try { endResizeSession(); } catch {} } else { try { fitText(); } catch {} }
-      // Don't call applyCaptionMeta here - it would override the fontSize that fitTextV2 just set
-      // fitTextV2 already sets the fontSize correctly, we just need to emit state
+      // Final fit and emit state
+      if (overlayV2) {
+        // Ensure one final fit for perfect sizing
+        requestAnimationFrame(() => {
+          try { 
+            fitText('resize');
+            // Emit state after final fit completes to ensure live preview gets updated fontSize
+            emitCaptionState('resize-end');
+          } catch {}
+        });
+      } else {
+        try { fitText(); } catch {}
+        emitCaptionState('resize-end');
+      }
       
       // Keep geometry dirty and invalidate saved preview
       geometryDirty = true;
       savedPreview = false;
-      
-      // Ensure one final fit, then emit state AFTER it completes
-      requestAnimationFrame(() => {
-        try { 
-          if (overlayV2) {
-            fitTextV2('post-resize');
-            // Emit state after final fit completes to ensure live preview gets updated fontSize
-            emitCaptionState('resize-end'); // Will use mode:'dom'
-          } else {
-            fitText();
-            emitCaptionState('resize-end'); // Will use mode:'dom'
-          }
-        } catch {}
-      });
       
       if (overlayV2 && window.__debugOverlay) { try { console.log(JSON.stringify({ tag:'overlay:counters', pm:__pm, ro:__ro, raf:__raf })); __pm=__ro=__raf=0; } catch {} }
     }
