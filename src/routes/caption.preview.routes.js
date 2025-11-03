@@ -64,309 +64,324 @@ const router = express.Router();
 
 router.post("/caption/preview", express.json(), async (req, res) => {
   try {
-    // Check if this is the new overlay format
-    const isOverlayFormat = (
-        req.body.placement === 'custom' && 
-        req.body.yPct !== undefined
-    ) || req.body.v2 === true || req.body.ssotVersion === 3;
+    // V3 Raster Detection Gate - Only allow V3 raster mode
+    const isV3Raster = req.body.ssotVersion === 3 && req.body.mode === 'raster';
     
-    if (isOverlayFormat) {
-      // Check if this is v3 raster mode
-      const isV3Raster = req.body.ssotVersion === 3 && req.body.mode === 'raster';
-      console.log('[caption-preview] Using', isV3Raster ? 'V3 RASTER' : 'V2 OVERLAY', 'path');
+    if (!isV3Raster) {
+      // Strict gate: only V3 raster mode is allowed
+      return res.status(400).json({
+        ok: false,
+        reason: 'V3_RASTER_REQUIRED',
+        detail: 'V3 raster mode is required. Request must include ssotVersion: 3 and mode: "raster"'
+      });
+    }
+    
+    console.log('[caption-preview] Using V3 RASTER path');
+    
+    // Handle V3 raster format
+    // Server-side fallback guard: ensure text field exists before schema validation
+    const body = req.body || {};
+    if ((!body.text || !String(body.text).trim()) && Array.isArray(body.lines) && body.lines.length) {
+      console.log('[caption-preview:fallback] Missing text field, deriving from lines array');
+      body.text = body.lines.join(' ').trim();
+    }
+    
+    // Log raw request body for debugging
+    console.log('[caption-preview:raw]', {
+      hasText: !!body.text,
+      hasTextRaw: !!body.textRaw,
+      hasLines: Array.isArray(body.lines),
+      linesCount: body.lines?.length || 0,
+      textSample: body.text?.slice(0, 50),
+      ssotVersion: body.ssotVersion,
+      mode: body.mode
+    });
+    
+    const parsed = RasterSchema.safeParse(body);
+    if (!parsed.success) {
+      return res.status(400).json({ ok: false, reason: "INVALID_INPUT", detail: parsed.error.flatten() });
+    }
+    
+    const data = parsed.data;
+    const text = data.text.trim();
+    if (!text) {
+      return res.status(400).json({ ok: false, reason: "EMPTY_TEXT", detail: "Caption text cannot be empty" });
+    }
+    
+    // ✅ Use client SSOT values - NO RECOMPUTATION
+    const fontPx = data.fontPx;
+    const lineSpacingPx = data.lineSpacingPx;
+    const letterSpacingPx = data.letterSpacingPx || 0;
+    const rasterW = data.rasterW;
+    const rasterH = data.rasterH;  // ✅ TRUST CLIENT - no recomputation
+    const yPx_png = data.yPx_png;  // ✅ TRUST CLIENT - no fallback
+    const rasterPadding = data.rasterPadding;  // ✅ TRUST CLIENT - no recomputation
+    const lines = data.lines || [];  // ✅ Use client lines (browser-rendered)
+    const linesCount = lines.length;  // Derive from lines array
+    
+    console.log('[geom:server]', {
+      fontPx, lineSpacingPx, letterSpacingPx, rasterW, rasterH,
+      xExpr_png: data.xExpr_png, yPx_png, frameW: data.frameW, frameH: data.frameH,
+      lines: Array.isArray(lines) ? lines.length : 'n/a',
+      linesCount: linesCount
+    });
+    
+    // Wrap text using client rasterW (reuse V2 pattern)
+    const canvas = createCanvas(data.frameW, data.frameH);
+    const ctx = canvas.getContext("2d");
+    const font = canvasFontString(data.weightCss, data.fontStyle, fontPx, 'DejaVu Sans');
+    ctx.font = font;
+    
+    // ✅ Use client lines if provided - NO RE-WRAP
+    if (lines && lines.length > 0) {
+      // Trust client lines exactly - these are browser-rendered line breaks
+      console.log('[raster] Using client lines (browser truth):', lines.length, 'lines');
+    } else {
+      // Reject if missing - client MUST send lines
+      console.error('[raster] Client lines missing - cannot proceed');
+      return res.status(400).json({ 
+        ok: false, 
+        reason: "MISSING_SPLITLINES", 
+        detail: "Client must send browser-rendered lines in raster mode" 
+      });
+    }
+    
+    // ✅ Use client SSOT values - NO RECOMPUTATION
+    const totalTextH = data.totalTextH || (lines.length * fontPx + (lines.length - 1) * lineSpacingPx);
+    const yPxFirstLine = data.yPxFirstLine || (yPx_png + rasterPadding);
+    
+    // ✅ Safety logs and assertions for client canonical values
+    console.log('[raster] Using client canonical values:', {
+      rasterW,
+      rasterH,
+      rasterPadding,
+      linesCount: lines.length
+    });
+    
+    // Schema validation already ensures these fields exist and are valid
+    // Additional runtime checks for safety
+    if (!Number.isFinite(rasterW) || rasterW <= 0) {
+      console.error('[raster] rasterW is missing or invalid:', rasterW);
+      return res.status(400).json({ 
+        ok: false, 
+        reason: "INVALID_RASTER_W", 
+        detail: `rasterW is required but missing or invalid: ${rasterW}` 
+      });
+    }
+    
+    if (!Number.isFinite(rasterH) || rasterH <= 0) {
+      console.error('[raster] rasterH is missing or invalid:', rasterH);
+      return res.status(400).json({ 
+        ok: false, 
+        reason: "INVALID_RASTER_H", 
+        detail: `rasterH is required but missing or invalid: ${rasterH}` 
+      });
+    }
+    
+    if (!Number.isFinite(rasterPadding) || rasterPadding < 0) {
+      console.error('[raster] rasterPadding is missing or invalid:', rasterPadding);
+      return res.status(400).json({ 
+        ok: false, 
+        reason: "INVALID_RASTER_PADDING", 
+        detail: `rasterPadding is required but missing or invalid: ${rasterPadding}` 
+      });
+    }
+    
+    if (!Array.isArray(lines) || lines.length === 0) {
+      console.error('[raster] lines array is missing or empty:', lines);
+      return res.status(400).json({ 
+        ok: false, 
+        reason: "MISSING_LINES", 
+        detail: `lines array is required but missing or empty` 
+      });
+    }
+    
+    // Call renderCaptionRaster with client SSOT values
+    const rasterResult = await renderCaptionRaster({
+      text,
+      lines: lines,
+      maxLineWidth: rasterW - (2 * rasterPadding),  // Use client geometry
+      xPct: data.xPct,  // Not used in raster, but pass for consistency
+      yPct: data.yPct,  // Not used in raster, but pass for consistency
+      wPct: data.wPct,  // Not used in raster, but pass for consistency
+      fontPx,
+      fontFamily: data.fontFamily,
+      weightCss: data.weightCss,
+      fontStyle: data.fontStyle,
+      textAlign: data.textAlign,
+      letterSpacingPx,
+      textTransform: data.textTransform,
+      color: data.color,
+      opacity: data.opacity,
+      strokePx: data.strokePx,
+      strokeColor: data.strokeColor,
+      shadowColor: data.shadowColor,
+      shadowBlur: data.shadowBlur,
+      shadowOffsetX: data.shadowOffsetX,
+      shadowOffsetY: data.shadowOffsetY,
+      lineSpacingPx,
+      totalTextH,
+      yPxFirstLine,
+      // ✅ Pass raster dimensions directly (no clientRaster* prefix)
+      rasterW,
+      rasterH,
+      rasterPadding,
+      W: data.frameW,
+      H: data.frameH
+    });
+    
+    // Compute PNG hash
+    const pngBuffer = Buffer.from(rasterResult.rasterUrl.split(',')[1], 'base64');
+    const rasterHash = crypto.createHash('sha256').update(pngBuffer).digest('hex').slice(0, 16);
+    
+    // ✅ Use client SSOT values - NO RECOMPUTATION
+    console.log('[geom:server] Using client SSOT (no recomputation):', {
+      fontPx, lineSpacingPx, letterSpacingPx, rasterW, rasterH,
+      yPx_png, rasterPadding, previewFontString: data.previewFontString
+    });
+    
+    // ✅ VALIDATION: Ensure all numeric fields are finite
+    const numericFields = { fontPx, lineSpacingPx, letterSpacingPx, rasterW, rasterH, yPx_png, rasterPadding };
+    const invalidFields = Object.entries(numericFields)
+      .filter(([key, value]) => !Number.isFinite(value))
+      .map(([key]) => key);
+    
+    if (invalidFields.length > 0) {
+      console.error('[raster:validation] Invalid numeric fields:', invalidFields);
+      return res.status(400).json({ 
+        ok: false, 
+        reason: "INVALID_NUMERIC_FIELDS", 
+        detail: `Invalid fields: ${invalidFields.join(', ')}` 
+      });
+    }
+
+    // Build complete ssotMeta with all required fields - echo back client values unchanged
+    const ssotMeta = {
+      ssotVersion: 3,
+      mode: 'raster',
       
-      // Handle V3 raster format
-      if (isV3Raster) {
-        // Server-side fallback guard: ensure text field exists before schema validation
-        const body = req.body || {};
-        if ((!body.text || !String(body.text).trim()) && Array.isArray(body.lines) && body.lines.length) {
-          console.log('[caption-preview:fallback] Missing text field, deriving from lines array');
-          body.text = body.lines.join(' ').trim();
-        }
-        
-        // Log raw request body for debugging
-        console.log('[caption-preview:raw]', {
-          hasText: !!body.text,
-          hasTextRaw: !!body.textRaw,
-          hasLines: Array.isArray(body.lines),
-          linesCount: body.lines?.length || 0,
-          textSample: body.text?.slice(0, 50),
-          ssotVersion: body.ssotVersion,
-          mode: body.mode
-        });
-        
-        const parsed = RasterSchema.safeParse(body);
-        if (!parsed.success) {
-          return res.status(400).json({ ok: false, reason: "INVALID_INPUT", detail: parsed.error.flatten() });
-        }
-        
-        const data = parsed.data;
-        const text = data.text.trim();
-        if (!text) {
-          return res.status(400).json({ ok: false, reason: "EMPTY_TEXT", detail: "Caption text cannot be empty" });
-        }
-        
-        // ✅ Use client SSOT values - NO RECOMPUTATION
-        const fontPx = data.fontPx;
-        const lineSpacingPx = data.lineSpacingPx;
-        const letterSpacingPx = data.letterSpacingPx || 0;
-        const rasterW = data.rasterW;
-        const rasterH = data.rasterH;  // ✅ TRUST CLIENT - no recomputation
-        const yPx_png = data.yPx_png;  // ✅ TRUST CLIENT - no fallback
-        const rasterPadding = data.rasterPadding;  // ✅ TRUST CLIENT - no recomputation
-        const lines = data.lines || [];  // ✅ Use client lines (browser-rendered)
-        const linesCount = lines.length;  // Derive from lines array
-        
-        console.log('[geom:server]', {
-          fontPx, lineSpacingPx, letterSpacingPx, rasterW, rasterH,
-          xExpr_png: data.xExpr_png, yPx_png, frameW: data.frameW, frameH: data.frameH,
-          lines: Array.isArray(lines) ? lines.length : 'n/a',
-          linesCount: linesCount
-        });
-        
-        // Wrap text using client rasterW (reuse V2 pattern)
-        const canvas = createCanvas(data.frameW, data.frameH);
-        const ctx = canvas.getContext("2d");
-        const font = canvasFontString(data.weightCss, data.fontStyle, fontPx, 'DejaVu Sans');
-        ctx.font = font;
-        
-        // ✅ Use client lines if provided - NO RE-WRAP
-        if (lines && lines.length > 0) {
-          // Trust client lines exactly - these are browser-rendered line breaks
-          console.log('[raster] Using client lines (browser truth):', lines.length, 'lines');
-        } else {
-          // Reject if missing - client MUST send lines
-          console.error('[raster] Client lines missing - cannot proceed');
-          return res.status(400).json({ 
-            ok: false, 
-            reason: "MISSING_SPLITLINES", 
-            detail: "Client must send browser-rendered lines in raster mode" 
-          });
-        }
-        
-        // ✅ Use client SSOT values - NO RECOMPUTATION
-        const totalTextH = data.totalTextH || (lines.length * fontPx + (lines.length - 1) * lineSpacingPx);
-        const yPxFirstLine = data.yPxFirstLine || (yPx_png + rasterPadding);
-        
-        // ✅ Safety logs and assertions for client canonical values
-        console.log('[raster] Using client canonical values:', {
-          clientRasterW: rasterW,
-          clientRasterH: rasterH,
-          clientRasterPadding: rasterPadding,
-          linesCount: lines.length
-        });
-        
-        // Assert that all required client values are present and numeric
-        if (!Number.isFinite(rasterW) || rasterW <= 0) {
-          console.error('[raster] clientRasterW is missing or invalid:', rasterW);
-          return res.status(400).json({ 
-            ok: false, 
-            reason: "MISSING_CLIENT_RASTER_W", 
-            detail: `clientRasterW is required but missing or invalid: ${rasterW}` 
-          });
-        }
-        
-        if (!Number.isFinite(rasterH) || rasterH <= 0) {
-          console.error('[raster] clientRasterH is missing or invalid:', rasterH);
-          return res.status(400).json({ 
-            ok: false, 
-            reason: "MISSING_CLIENT_RASTER_H", 
-            detail: `clientRasterH is required but missing or invalid: ${rasterH}` 
-          });
-        }
-        
-        if (!Number.isFinite(rasterPadding) || rasterPadding < 0) {
-          console.error('[raster] clientRasterPadding is missing or invalid:', rasterPadding);
-          return res.status(400).json({ 
-            ok: false, 
-            reason: "MISSING_CLIENT_RASTER_PADDING", 
-            detail: `clientRasterPadding is required but missing or invalid: ${rasterPadding}` 
-          });
-        }
-        
-        if (!Array.isArray(lines) || lines.length === 0) {
-          console.error('[raster] lines array is missing or empty:', lines);
-          return res.status(400).json({ 
-            ok: false, 
-            reason: "MISSING_LINES", 
-            detail: `lines array is required but missing or empty` 
-          });
-        }
-        
-        // Call renderCaptionRaster with client SSOT values
-        const rasterResult = await renderCaptionRaster({
-          text,
-          lines: lines,
-          maxLineWidth: rasterW - (2 * rasterPadding),  // Use client geometry
-          xPct: data.xPct,  // Not used in raster, but pass for consistency
-          yPct: data.yPct,  // Not used in raster, but pass for consistency
-          wPct: data.wPct,  // Not used in raster, but pass for consistency
-          fontPx,
-          fontFamily: data.fontFamily,
-          weightCss: data.weightCss,
-          fontStyle: data.fontStyle,
-          textAlign: data.textAlign,
-          letterSpacingPx,
-          textTransform: data.textTransform,
-          color: data.color,
-          opacity: data.opacity,
-          strokePx: data.strokePx,
-          strokeColor: data.strokeColor,
-          shadowColor: data.shadowColor,
-          shadowBlur: data.shadowBlur,
-          shadowOffsetX: data.shadowOffsetX,
-          shadowOffsetY: data.shadowOffsetY,
-          lineSpacingPx,
-          totalTextH,
-          yPxFirstLine,
-          // ✅ Pass client canonical values to render function
-          clientRasterW: rasterW,
-          clientRasterH: rasterH,
-          clientRasterPadding: rasterPadding,
-          W: data.frameW,
-          H: data.frameH
-        });
-        
-        // Compute PNG hash
-        const pngBuffer = Buffer.from(rasterResult.rasterUrl.split(',')[1], 'base64');
-        const rasterHash = crypto.createHash('sha256').update(pngBuffer).digest('hex').slice(0, 16);
-        
-        // ✅ Use client SSOT values - NO RECOMPUTATION
-        console.log('[geom:server] Using client SSOT (no recomputation):', {
-          fontPx, lineSpacingPx, letterSpacingPx, rasterW, rasterH,
-          yPx_png, rasterPadding, previewFontString: data.previewFontString
-        });
-        
-        // ✅ VALIDATION: Ensure all numeric fields are finite
-        const numericFields = { fontPx, lineSpacingPx, letterSpacingPx, rasterW, rasterH, yPx_png, rasterPadding };
-        const invalidFields = Object.entries(numericFields)
-          .filter(([key, value]) => !Number.isFinite(value))
-          .map(([key]) => key);
-        
-        if (invalidFields.length > 0) {
-          console.error('[raster:validation] Invalid numeric fields:', invalidFields);
-          return res.status(400).json({ 
-            ok: false, 
-            reason: "INVALID_NUMERIC_FIELDS", 
-            detail: `Invalid fields: ${invalidFields.join(', ')}` 
-          });
-        }
+      // Geometry lock (same as V2)
+      frameW: data.frameW,
+      frameH: data.frameH,
+      bgScaleExpr: "scale='if(gt(a,1080/1920),-2,1080)':'if(gt(a,1080/1920),1920,-2)'",
+      bgCropExpr: "crop=1080:1920",
+      
+      // ✅ Echo client pixels (unchanged) - TRUST CLIENT SSOT
+      rasterUrl: rasterResult.rasterUrl,
+      rasterW: data.rasterW,  // ✅ Client canonical value
+      rasterH: data.rasterH,  // ✅ Client canonical value  
+      rasterPadding: data.rasterPadding,  // ✅ Client canonical value
+      xExpr_png: data.xExpr_png,  // ✅ Client canonical value
+      yPx_png: data.yPx_png,  // ✅ Client canonical value
+      
+      // Verification hashes - echo back actual server values
+      rasterHash,
+      previewFontString: rasterResult.previewFontString,
+      previewFontHash: rasterResult.previewFontHash,
+      
+      // Typography (pass-through)
+      textRaw: data.textRaw,  // Pass through if provided
+      text,
+      fontPx,
+      fontFamily: data.fontFamily,
+      weightCss: data.weightCss,
+      fontStyle: data.fontStyle,
+      textAlign: data.textAlign,
+      letterSpacingPx,
+      textTransform: data.textTransform,
+      
+      // Color & effects (pass-through)
+      color: data.color,
+      opacity: data.opacity,
+      strokePx: data.strokePx,
+      strokeColor: data.strokeColor,
+      shadowColor: data.shadowColor,
+      shadowBlur: data.shadowBlur,
+      shadowOffsetX: data.shadowOffsetX,
+      shadowOffsetY: data.shadowOffsetY,
+      
+      // Debug info - include lines for client
+      lines: lines,  // ✅ Return exact lines used
+      lineSpacingPx,
+      totalTextH: totalTextH,  // ✅ Use server-computed value for verification
+      // yPxFirstLine removed - debug only, not used for positioning
+    };
+    
+    // Validate echo integrity
+    const echoErrors = [];
+    if (ssotMeta.rasterW !== data.rasterW) echoErrors.push('rasterW');
+    if (ssotMeta.rasterH !== data.rasterH) echoErrors.push('rasterH');
+    if (ssotMeta.yPx_png !== data.yPx_png) echoErrors.push('yPx_png');
+    if (ssotMeta.fontPx !== data.fontPx) echoErrors.push('fontPx');
 
-        // Build complete ssotMeta with all required fields - echo back client values unchanged
-        const ssotMeta = {
-          ssotVersion: 3,
-          mode: 'raster',
-          
-          // Geometry lock (same as V2)
-          frameW: data.frameW,
-          frameH: data.frameH,
-          bgScaleExpr: "scale='if(gt(a,1080/1920),-2,1080)':'if(gt(a,1080/1920),1920,-2)'",
-          bgCropExpr: "crop=1080:1920",
-          
-          // ✅ Echo client pixels (unchanged) - TRUST CLIENT SSOT
-          rasterUrl: rasterResult.rasterUrl,
-          rasterW: data.rasterW,  // ✅ Client canonical value
-          rasterH: data.rasterH,  // ✅ Client canonical value  
-          rasterPadding: data.rasterPadding,  // ✅ Client canonical value
-          xExpr_png: data.xExpr_png,  // ✅ Client canonical value
-          yPx_png: data.yPx_png,  // ✅ Client canonical value
-          
-          // Verification hashes - echo back actual server values
-          rasterHash,
-          previewFontString: rasterResult.previewFontString,
-          previewFontHash: rasterResult.previewFontHash,
-          
-          // Typography (pass-through)
-          textRaw: data.textRaw,  // Pass through if provided
-          text,
-          fontPx,
-          fontFamily: data.fontFamily,
-          weightCss: data.weightCss,
-          fontStyle: data.fontStyle,
-          textAlign: data.textAlign,
-          letterSpacingPx,
-          textTransform: data.textTransform,
-          
-          // Color & effects (pass-through)
-          color: data.color,
-          opacity: data.opacity,
-          strokePx: data.strokePx,
-          strokeColor: data.strokeColor,
-          shadowColor: data.shadowColor,
-          shadowBlur: data.shadowBlur,
-          shadowOffsetX: data.shadowOffsetX,
-          shadowOffsetY: data.shadowOffsetY,
-          
-          // Debug info - include lines for client
-          lines: lines,  // ✅ Return exact lines used
-          lineSpacingPx,
-          totalTextH: totalTextH,  // ✅ Use server-computed value for verification
-          yPxFirstLine: data.yPx_png + data.rasterPadding,
-        };
-        
-        // Validate echo integrity
-        const echoErrors = [];
-        if (ssotMeta.rasterW !== data.rasterW) echoErrors.push('rasterW');
-        if (ssotMeta.rasterH !== data.rasterH) echoErrors.push('rasterH');
-        if (ssotMeta.yPx_png !== data.yPx_png) echoErrors.push('yPx_png');
-        if (ssotMeta.fontPx !== data.fontPx) echoErrors.push('fontPx');
-
-        if (echoErrors.length > 0) {
-          console.error('[raster:echo] Failed to echo client values:', echoErrors);
-          return res.status(500).json({
-            ok: false,
-            reason: "ECHO_INTEGRITY_FAILED",
-            detail: `Server modified: ${echoErrors.join(', ')}`
-          });
-        }
-        
-        // Log for verification
-        console.log('[v3:raster:complete]', {
-          rasterW: rasterResult.rasterW,
-          rasterH: rasterResult.rasterH,
-          yPx_png: rasterResult.yPx,
-          lines: lines.length,
-          rasterHash: rasterHash.slice(0, 8) + '...'
-        });
-        
-        console.log('[v3:preview:respond]', { 
-          have: Object.keys(ssotMeta),
-          required: ['rasterUrl', 'rasterW', 'rasterH', 'rasterPadding', 'yPx_png', 'bgScaleExpr', 'bgCropExpr', 'rasterHash', 'previewFontString', 'totalTextH', 'yPxFirstLine', 'lines']
-        });
-        
-        // Add parity checklist log
-        console.log('[PARITY_CHECKLIST]', {
-          mode: 'raster',
-          frameW: data.frameW,
-          frameH: data.frameH,
-          rasterW: data.rasterW,
-          rasterH: data.rasterH,
-          xExpr_png: data.xExpr_png,
-          yPx_png: data.yPx_png,
-          rasterPadding: data.rasterPadding,
-          padTop: data.padTop || data.rasterPadding,
-          padBottom: data.padBottom || data.rasterPadding,
-          previewFontString: rasterResult.previewFontString,
-          previewFontHash: rasterResult.previewFontHash,
-          rasterHash,
-          bgScaleExpr: "scale='if(gt(a,1080/1920),-2,1080)':'if(gt(a,1080/1920),1920,-2)'",
-          bgCropExpr: "crop=1080:1920",
-          willMatchPreview: true
-        });
-        
-        return res.status(200).json({
-          ok: true,
-          data: {
-            imageUrl: null,  // V3 raster mode returns PNG in meta.rasterUrl
-            wPx: data.frameW,
-            hPx: data.frameH,
-            xPx: 0,
-            yPx: yPxFirstLine,  // Text baseline, not PNG top
-            meta: ssotMeta,
-          }
-        });
+    if (echoErrors.length > 0) {
+      console.error('[raster:echo] Failed to echo client values:', echoErrors);
+      return res.status(500).json({
+        ok: false,
+        reason: "ECHO_INTEGRITY_FAILED",
+        detail: `Server modified: ${echoErrors.join(', ')}`
+      });
+    }
+    
+    // Log for verification
+    console.log('[v3:raster:complete]', {
+      rasterW: rasterResult.rasterW,
+      rasterH: rasterResult.rasterH,
+      yPx_png: rasterResult.yPx,
+      lines: lines.length,
+      rasterHash: rasterHash.slice(0, 8) + '...'
+    });
+    
+    console.log('[v3:preview:respond]', { 
+      have: Object.keys(ssotMeta),
+      required: ['rasterUrl', 'rasterW', 'rasterH', 'rasterPadding', 'yPx_png', 'bgScaleExpr', 'bgCropExpr', 'rasterHash', 'previewFontString', 'totalTextH', 'lines']
+    });
+    
+    // Add parity checklist log
+    console.log('[PARITY_CHECKLIST]', {
+      mode: 'raster',
+      frameW: data.frameW,
+      frameH: data.frameH,
+      rasterW: data.rasterW,
+      rasterH: data.rasterH,
+      xExpr_png: data.xExpr_png,
+      yPx_png: data.yPx_png,
+      rasterPadding: data.rasterPadding,
+      padTop: data.padTop || data.rasterPadding,
+      padBottom: data.padBottom || data.rasterPadding,
+      previewFontString: rasterResult.previewFontString,
+      previewFontHash: rasterResult.previewFontHash,
+      rasterHash,
+      bgScaleExpr: "scale='if(gt(a,1080/1920),-2,1080)':'if(gt(a,1080/1920),1920,-2)'",
+      bgCropExpr: "crop=1080:1920",
+      willMatchPreview: true
+    });
+    
+    return res.status(200).json({
+      ok: true,
+      data: {
+        imageUrl: null,  // V3 raster mode returns PNG in meta.rasterUrl
+        wPx: data.frameW,
+        hPx: data.frameH,
+        xPx: 0,
+        // yPx removed - use meta.yPx_png instead (no ambiguous top-level field)
+        meta: ssotMeta,
       }
-      // STEP 0: Sanitize inputs - strip computed fields that should NEVER come from client
+    });
+    
+    // Legacy path gate - block legacy code path
+    // LEGACY PATH - DEPRECATED, DO NOT USE
+    if (process.env.ALLOW_LEGACY_PREVIEW !== '1') {
+      console.warn('[caption-preview] Legacy path attempted but disabled');
+      return res.status(400).json({
+        ok: false,
+        reason: 'LEGACY_PATH_DISABLED',
+        detail: 'Legacy preview path is disabled. Use V3 raster mode (ssotVersion: 3, mode: "raster")'
+      });
+    }
+    
+    console.warn('[caption-preview] LEGACY PATH ENABLED VIA ENV - DEPRECATED');
+    // STEP 0: Sanitize inputs - strip computed fields that should NEVER come from client
       const COMPUTED_FIELDS = [
         "lineSpacingPx", "totalTextH", "totalTextHPx", "yPxFirstLine", "lineHeight",
         "hpct", "hPct", "hPx", "v2", "baselines"
@@ -1154,28 +1169,10 @@ async function renderCaptionRaster(meta) {
     });
   }
   
-  // ✅ Use client canonical values if provided (trust client SSOT)
-  let padding, rasterW, rasterH;
-  
-  // ✅ Use client canonical values - NO FALLBACK
-  if (
-    !Number.isFinite(meta.clientRasterW) || meta.clientRasterW <= 0 ||
-    !Number.isFinite(meta.clientRasterH) || meta.clientRasterH <= 0 ||
-    meta.clientRasterPadding === undefined || meta.clientRasterPadding === null ||
-    !Number.isFinite(meta.clientRasterPadding) || meta.clientRasterPadding < 0
-  ) {
-    throw new Error('RASTER: clientRasterW/H/Padding required but missing or invalid');
-  }
-
-  padding = meta.clientRasterPadding;
-  rasterW = meta.clientRasterW;
-  rasterH = meta.clientRasterH;
-
-  console.log('[raster] guard-ok:', {
-    clientRasterW: meta.clientRasterW,
-    clientRasterH: meta.clientRasterH,
-    clientRasterPadding: meta.clientRasterPadding
-  });
+  // ✅ Use raster dimensions directly (schema validation ensures these exist)
+  const padding = meta.rasterPadding;
+  const rasterW = meta.rasterW;
+  const rasterH = meta.rasterH;
 
   console.log('[raster] Using client canonical values (no computation):', { 
     padding, rasterW, rasterH 

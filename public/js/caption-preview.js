@@ -240,42 +240,96 @@ export async function generateCaptionPreview(opts) {
   
   // Use server-compatible payload structure
   const overlayV2 = detectOverlayV2();
-  const payload = overlayV2
+  
+  // Get overlay meta for V3 raster fields
+  const overlayMeta = typeof window !== 'undefined' && (
+    window.__overlayMeta || 
+    (typeof window.getCaptionMeta === 'function' ? window.getCaptionMeta() : null)
+  );
+  
+  // Only build V3 raster payload if overlayV2 is enabled AND we have required raster fields
+  const hasRasterFields = overlayMeta && 
+    Number.isFinite(overlayMeta.rasterW) && 
+    Number.isFinite(overlayMeta.rasterH) && 
+    Number.isFinite(overlayMeta.rasterPadding) &&
+    Array.isArray(overlayMeta.lines) && overlayMeta.lines.length > 0 &&
+    Number.isFinite(overlayMeta.totalTextH) &&
+    Number.isFinite(overlayMeta.yPx_png);
+  
+  const payload = (overlayV2 && hasRasterFields)
     ? {
-        // V3 overlay format – schema validated server-side with invariant validation
-        ssotVersion: 3,  // ← Bumped version to invalidate stale data
-        text: opts.text,
+        // V3 raster format – complete payload with all required fields
+        ssotVersion: 3,
+        mode: 'raster',  // ← REQUIRED for V3 raster detection
+        text: opts.text || overlayMeta.text,
         placement: 'custom',
-        xPct,
-        yPct,
-        wPct: Number.isFinite(opts?.wPct) ? Number(opts.wPct) : 0.8,
-        sizePx: fontPx,  // ← Already clamped
-        fontPx,          // ← Also include as fontPx for server
-        lineSpacingPx,   // ← Already clamped
-        xPx_png,         // ← NEW: absolute X
-        xExpr_png: '(W-overlay_w)/2',  // ← Keep expression for fallback
-        fontFamily: opts.fontFamily || 'DejaVu Sans',
-        weightCss: opts.weight || 'normal',
-        fontStyle: domStyles.fontStyle || 'normal',
-        color: opts.color || '#FFFFFF',
-        opacity: Number(opts.opacity ?? 0.85),
-        // Additional style fields from DOM
-        ...domStyles
+        xPct: Number.isFinite(opts?.xPct) ? opts.xPct : (overlayMeta?.xPct ?? 0.5),
+        yPct: Number.isFinite(opts?.yPct) ? opts.yPct : (overlayMeta?.yPct ?? 0.5),
+        wPct: Number.isFinite(opts?.wPct) ? opts.wPct : (overlayMeta?.wPct ?? 0.8),
+        
+        // Typography
+        fontPx,  // ← Already clamped
+        lineSpacingPx,  // ← Already clamped
+        fontFamily: opts.fontFamily || overlayMeta?.fontFamily || 'DejaVu Sans',
+        weightCss: opts.weight || overlayMeta?.weightCss || 'normal',
+        fontStyle: domStyles.fontStyle || overlayMeta?.fontStyle || 'normal',
+        textAlign: domStyles.textAlign || overlayMeta?.textAlign || 'center',
+        letterSpacingPx: domStyles.letterSpacingPx ?? overlayMeta?.letterSpacingPx ?? 0,
+        textTransform: overlayMeta?.textTransform || 'none',
+        
+        // Color & effects
+        color: opts.color || overlayMeta?.color || '#FFFFFF',
+        opacity: Number(opts.opacity ?? overlayMeta?.opacity ?? 0.85),
+        strokePx: domStyles.strokePx ?? overlayMeta?.strokePx ?? 0,
+        strokeColor: domStyles.strokeColor || overlayMeta?.strokeColor || 'rgba(0,0,0,0.85)',
+        shadowColor: domStyles.shadowColor || overlayMeta?.shadowColor || 'rgba(0,0,0,0.6)',
+        shadowBlur: domStyles.shadowBlur ?? overlayMeta?.shadowBlur ?? 12,
+        shadowOffsetX: domStyles.shadowOffsetX ?? overlayMeta?.shadowOffsetX ?? 0,
+        shadowOffsetY: domStyles.shadowOffsetY ?? overlayMeta?.shadowOffsetY ?? 2,
+        
+        // Geometry - required V3 raster fields
+        frameW: overlayMeta.frameW || frameW,
+        frameH: overlayMeta.frameH || frameH,
+        rasterW: overlayMeta.rasterW,
+        rasterH: overlayMeta.rasterH,
+        rasterPadding: overlayMeta.rasterPadding,
+        xPx_png: Number.isFinite(opts?.xPx_png) ? opts.xPx_png : (overlayMeta?.xPx_png ?? xPx_png),
+        yPx_png: Number.isFinite(opts?.yPx_png) ? opts.yPx_png : (overlayMeta?.yPx_png ?? yPx_png),
+        xExpr_png: overlayMeta?.xExpr_png || '(W-overlay_w)/2',
+        
+        // Browser-rendered line data (REQUIRED)
+        lines: overlayMeta.lines,
+        totalTextH: overlayMeta.totalTextH,
+        yPxFirstLine: overlayMeta.yPxFirstLine || (overlayMeta.yPx_png + overlayMeta.rasterPadding),
+        
+        // Font string for parity validation
+        previewFontString: overlayMeta.previewFontString || (
+          typeof window !== 'undefined' && document.getElementById('caption-content')
+            ? getComputedStyle(document.getElementById('caption-content')).font
+            : undefined
+        ),
+        
+        // Optional textRaw
+        textRaw: overlayMeta.textRaw || opts.text
       }
-    : {
-        style: {
-          text: opts.text,
-          fontFamily: opts.fontFamily || "DejaVu Sans",
-          weight: opts.weight || "normal",
-          fontPx: fontPx,
-          lineSpacingPx: lineSpacingPx,
-          opacity: Number(opts.opacity ?? 0.85),
-          placement: opts.placement || 'center',
-          yPct: Number.isFinite(opts?.yPct) ? Number(opts.yPct) : 0.5,
-          ssotVersion: 3,  // ← Bumped version to invalidate stale data
-          _cacheBuster: Date.now()
-        }
-      };
+    : (() => {
+        // Legacy payload branch - should not execute in overlay mode
+        console.warn('[caption-preview] Building payload without V3 raster fields - overlayV2:', overlayV2, 'hasRasterFields:', hasRasterFields);
+        return {
+          style: {
+            text: opts.text,
+            fontFamily: opts.fontFamily || "DejaVu Sans",
+            weight: opts.weight || "normal",
+            fontPx: fontPx,
+            lineSpacingPx: lineSpacingPx,
+            opacity: Number(opts.opacity ?? 0.85),
+            placement: opts.placement || 'center',
+            yPct: Number.isFinite(opts?.yPct) ? Number(opts.yPct) : 0.5,
+            ssotVersion: 3,
+            _cacheBuster: Date.now()
+          }
+        };
+      })();
 
   console.log("[caption-overlay] POST /preview/caption with placement:", opts.placement, "yPct:", opts.yPct);
   console.log("[caption-overlay] payload:", payload); // Log full payload for debugging
@@ -296,12 +350,20 @@ export async function generateCaptionPreview(opts) {
   if (!data?.ok) throw new Error(data?.detail || data?.reason || "Preview generation failed");
 
   // Convert the response to the expected format
-  const imageUrl = data.data?.imageUrl;
-  if (!imageUrl) throw new Error("No image URL in response");
-
-  // CRITICAL: Read from correct locations
+  // V3 raster mode returns PNG in meta.rasterUrl, not data.imageUrl
   const resp = data?.data || {};
   const meta = resp.meta || {};
+  
+  const imageUrl = meta.mode === 'raster' 
+    ? (meta.rasterUrl || data.data?.imageUrl)
+    : data.data?.imageUrl;
+  
+  if (!imageUrl) {
+    if (meta.mode === 'raster') {
+      throw new Error("V3 raster mode requires meta.rasterUrl in response");
+    }
+    throw new Error("No image URL in response");
+  }
 
   // SSOT v3: Use server response VERBATIM when ssotVersion=3 (no rebuilding!)
   let normalizedMeta;
@@ -316,7 +378,7 @@ export async function generateCaptionPreview(opts) {
         mode: meta.mode,
         rasterW: meta.rasterW,
         rasterH: meta.rasterH,
-        yPx: meta.yPx,
+        yPx_png: meta.yPx_png,
         urlType: meta.rasterUrl?.startsWith('data:') ? 'data URL' : 'http(s)',
         urlLength: meta.rasterUrl?.length
       });
@@ -346,7 +408,7 @@ export async function generateCaptionPreview(opts) {
         boxW: Math.round((meta.wPct ?? 0.8) * 1080),
         rasterW: meta.rasterW,
         rasterH: meta.rasterH,
-        yPx: meta.yPx,
+        yPx_png: meta.yPx_png,
         wPct: meta.wPct,
         // Typography
         fontFamily: meta.fontFamily,
@@ -366,7 +428,7 @@ export async function generateCaptionPreview(opts) {
         color: meta.color,
         opacity: meta.opacity,
         // Layout
-        internalPadding: meta.internalPadding,
+        rasterPadding: meta.rasterPadding,
         lineSpacingPx: meta.lineSpacingPx
       });
     } else {
@@ -385,10 +447,10 @@ export async function generateCaptionPreview(opts) {
       }
     }
   } else {
-    // Legacy fallback for non-v2 responses
+    // Legacy fallback for non-v3 responses (should not occur with strict V3 gate)
+    console.warn('[caption-preview] Legacy fallback path - ssotVersion !== 3');
     const totalTextH = Number(meta.totalTextH ?? meta.totalTextHPx);
-    const yPxFirstLine = Number(resp.yPx);  // ← top-level!
-
+    
     normalizedMeta = {
       ssotVersion: 3,  // ← Bumped version to invalidate stale data
       mode: 'raster',  // ← V3 always uses raster mode
@@ -403,13 +465,12 @@ export async function generateCaptionPreview(opts) {
       fontFamily: meta.fontFamily || opts.fontFamily || 'DejaVu Sans',
       weightCss: meta.weightCss || opts.weight || opts.weightCss || 'normal',
       placement: meta.placement || 'custom',
-      internalPadding: Number(meta.internalPadding ?? 32),
+      rasterPadding: Number(meta.rasterPadding ?? meta.internalPadding ?? 32),
       
       // SSOT fields - must match server response
       lines: Array.isArray(meta.lines) ? meta.lines : [],
       totalTextH: totalTextH,
-      totalTextHPx: totalTextH,
-      yPxFirstLine: yPxFirstLine,
+      yPx_png: Number.isFinite(meta.yPx_png) ? meta.yPx_png : (Number.isFinite(meta.yPx) ? meta.yPx : undefined),
       
       // Raster fields for v3
       rasterUrl: imageUrl,

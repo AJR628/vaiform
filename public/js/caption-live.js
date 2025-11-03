@@ -201,7 +201,7 @@ function updateDebugHUD(element, serverMeta, scale) {
   document.getElementById('dbg-lineSpacingPx').textContent = serverMeta?.lineSpacingPx ?? '-';
   document.getElementById('dbg-yPx').textContent = serverMeta?.yPx_png ?? '-';
   document.getElementById('dbg-rasterW').textContent = serverMeta?.rasterW ?? '-';
-  document.getElementById('dbg-padding').textContent = serverMeta?.rasterPadding ?? serverMeta?.internalPadding ?? '-';
+  document.getElementById('dbg-padding').textContent = serverMeta?.rasterPadding ?? '-';
   
   document.getElementById('dbg-live-width').textContent = Math.round(parseFloat(cs.width));
   document.getElementById('dbg-live-top').textContent = Math.round(parseFloat(cs.top));
@@ -248,7 +248,7 @@ function applyStylesToLiveText(element, captionState, serverMeta) {
       rasterW: serverMeta.rasterW,
       rasterH: serverMeta.rasterH,
       yPx_png: serverMeta.yPx_png,
-      rasterPadding: serverMeta.rasterPadding || serverMeta.internalPadding || 24
+      rasterPadding: serverMeta.rasterPadding || 24
     });
     
     // Extract server SSOT values - NULL-SAFE: read ONLY from serverMeta, never captionState
