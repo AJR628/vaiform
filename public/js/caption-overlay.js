@@ -141,7 +141,7 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
       outline:none; 
       white-space:pre-wrap; 
       word-break:normal; 
-      overflow-wrap:anywhere; 
+      overflow-wrap:break-word; 
       hyphens:none; 
       overflow:hidden; 
       box-sizing:border-box;
@@ -525,8 +525,11 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     
     // Check if current size fits BEFORE adjusting bounds (simplifies bounds logic)
     content.style.fontSize = currentPx + 'px';
+    content.style.width = '100%'; // Explicit width to force wrapping
     content.style.maxWidth = maxW + 'px';
-    // Force reflow after setting maxWidth to ensure text wraps
+    // Force multiple reflows to ensure text properly wraps before measurement
+    void content.offsetHeight;
+    void content.scrollWidth;
     void content.offsetHeight;
     const currentFits = (content.scrollWidth <= maxW + 0.5) && (content.scrollHeight <= maxH + 0.5);
     
@@ -606,33 +609,48 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     for (let i = 0; i < 8 && lo <= hi; i++) {
       const mid = (lo + hi) >> 1;
       content.style.fontSize = mid + 'px';
+      content.style.width = '100%'; // Explicit width to force wrapping
       content.style.maxWidth = maxW + 'px';
-      // Force reflow after setting maxWidth to ensure text wraps
+      // Force multiple reflows to ensure text properly wraps before measurement
       void content.offsetHeight;
+      void content.scrollWidth; // Force layout recalculation
+      void content.offsetHeight; // Second pass to ensure layout is stable
       
       // Get actual line height from computed style (always in pixels after font-size is set)
       // CSS has line-height:1.15 (unitless), so computed value will be fontSize * 1.15
       const currentStyle = getComputedStyle(content);
       const actualLineHeightPx = parseFloat(currentStyle.lineHeight);
       
-      const fits = (content.scrollWidth <= maxW + 0.5) && (content.scrollHeight <= maxH + 0.5);
+      // Validate measurements are reasonable (scrollHeight shouldn't exceed maxH by orders of magnitude)
+      const scrollW = content.scrollWidth;
+      const scrollH = content.scrollHeight;
+      const reasonableH = scrollH <= maxH * 10; // Sanity check: scrollH shouldn't be 10x larger than maxH
+      
+      if (!reasonableH) {
+        // Measurement is invalid - skip this size and continue search
+        hi = mid - 1;
+        continue;
+      }
+      
+      const fits = (scrollW <= maxW + 0.5) && (scrollH <= maxH + 0.5);
       
       // Count lines to prefer sizes with fewer lines (less wrapping)
       // Use actual line height for accurate line count
-      const lineCount = Math.max(1, Math.ceil(content.scrollHeight / actualLineHeightPx));
+      const lineCount = Math.max(1, Math.ceil(scrollH / actualLineHeightPx));
       
       // Debug logging for binary search iterations during resize
       if (v2State.isResizing && (i === 0 || i === 3 || i === 7)) {
         console.log('[fitTextV2:binary-search]', {
           iteration: i,
           mid,
-          scrollW: Math.round(content.scrollWidth),
-          scrollH: Math.round(content.scrollHeight),
+          scrollW: Math.round(scrollW),
+          scrollH: Math.round(scrollH),
           maxW: Math.round(maxW),
           maxH: Math.round(maxH),
           actualLineHeightPx: Math.round(actualLineHeightPx * 100) / 100,
           lineCount,
           fits,
+          reasonableH,
           lo,
           hi,
           best
@@ -640,7 +658,7 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
       }
       
       if (fits) {
-        // Prefer this size if it has fewer lines or same lines but larger font
+        // Only update best when text actually fits - prefer larger sizes with fewer lines
         if (lineCount < bestLines || (lineCount === bestLines && mid > best)) {
           best = mid;
           bestLines = lineCount;
@@ -648,6 +666,37 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
         lo = mid + 1;
       } else {
         hi = mid - 1;
+      }
+    }
+    
+    // Safety check: if best doesn't actually fit, reduce it until it does
+    // This handles cases where binary search ended without finding a valid size
+    // Also handle case where best wasn't initialized (shouldn't happen, but be safe)
+    if (best > 0 && Number.isFinite(best)) {
+      content.style.fontSize = best + 'px';
+      content.style.width = '100%';
+      content.style.maxWidth = maxW + 'px';
+      void content.offsetHeight;
+      void content.scrollWidth;
+      void content.offsetHeight;
+      
+      let testPx = best;
+      while (testPx >= MIN_PX) {
+        content.style.fontSize = testPx + 'px';
+        void content.offsetHeight;
+        void content.scrollWidth;
+        void content.offsetHeight;
+        
+        const testScrollW = content.scrollWidth;
+        const testScrollH = content.scrollHeight;
+        const testFits = (testScrollW <= maxW + 0.5) && (testScrollH <= maxH + 0.5);
+        
+        if (testFits) {
+          best = testPx;
+          break;
+        }
+        
+        testPx = Math.max(MIN_PX, testPx - 2); // Reduce by 2px increments
       }
     }
     const prev = v2State.fitBounds.lastGoodPx != null ? v2State.fitBounds.lastGoodPx : best;
@@ -664,6 +713,12 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     
     target = Math.max(MIN_PX, Math.min(MAX_PX, target));
     content.style.fontSize = target + 'px';
+    content.style.width = '100%'; // Ensure width is set for proper wrapping
+    content.style.maxWidth = maxW + 'px';
+    // Force reflow to ensure final size is applied correctly
+    void content.offsetHeight;
+    void content.scrollWidth;
+    void content.offsetHeight;
     v2State.fitBounds.lastGoodPx = target;
     v2State.lastBoxW = b.width; v2State.lastBoxH = b.height;
     
