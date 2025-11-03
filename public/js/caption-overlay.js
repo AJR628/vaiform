@@ -495,20 +495,37 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
    * Find largest font size that fits in the given constraints
    */
   function findLargestFittingSize(startFontSize, maxW, maxH) {
+    // If starting from MIN_PX and box dimensions suggest larger fonts are possible,
+    // use heuristic starting point to avoid searching from tiny 12px
+    let adjustedStartFontSize = startFontSize;
+    if (startFontSize <= MIN_PX && maxH > 150 && maxW > 250) {
+      // Box is large enough to support much larger fonts
+      // Calculate heuristic: use ~15% of height or ~12% of width, whichever is smaller, but at least 24px
+      const heuristicH = Math.round(maxH * 0.15);
+      const heuristicW = Math.round(maxW * 0.12);
+      adjustedStartFontSize = Math.max(24, Math.min(MAX_PX, heuristicH, heuristicW));
+      console.log('[findLargestFittingSize] Using heuristic start for large box:', {
+        originalStart: startFontSize,
+        maxH: Math.round(maxH),
+        maxW: Math.round(maxW),
+        heuristicStart: adjustedStartFontSize
+      });
+    }
+    
     let lo = MIN_PX;
     let hi = MAX_PX;
-    let best = startFontSize;
+    let best = adjustedStartFontSize;
 
     // Determine search direction based on whether start size fits
-    const startMeasurement = measureTextFit(startFontSize, maxW, maxH);
+    const startMeasurement = measureTextFit(adjustedStartFontSize, maxW, maxH);
     if (startMeasurement.fits) {
       // If it fits, search upward to find largest
-      lo = Math.floor(startFontSize);
+      lo = Math.floor(adjustedStartFontSize);
       hi = MAX_PX;
     } else {
       // If it doesn't fit, search downward to find largest that fits
       lo = MIN_PX;
-      hi = Math.floor(startFontSize);
+      hi = Math.floor(adjustedStartFontSize);
     }
 
     // Binary search for largest fitting size
@@ -585,8 +602,25 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
       // Measure current after change, then fit if needed
       targetFontSize = currentPx;
     } else if (reason === 'apply') {
-      // Apply reason: preserve current font size (from meta), only fit if doesn't fit
-      targetFontSize = currentPx;
+      // Apply reason: detect if currentPx is suspiciously small relative to box size
+      // If box is large (e.g., >150px height, >250px width) and font is stuck at MIN_PX, maximize
+      const boxIsLarge = b.height > 150 && b.width > 250;
+      const fontIsMinimal = currentPx <= MIN_PX;
+      
+      if (boxIsLarge && fontIsMinimal) {
+        // Box can clearly support much larger fonts - don't preserve tiny 12px value
+        // Use heuristic starting point based on box dimensions
+        targetFontSize = Math.max(24, Math.min(MAX_PX, Math.round(b.height * 0.15), Math.round(b.width * 0.12)));
+        console.log('[fitText] Large box detected, maximizing from heuristic:', {
+          currentPx,
+          boxH: Math.round(b.height),
+          boxW: Math.round(b.width),
+          heuristicStart: targetFontSize
+        });
+      } else {
+        // Preserve current font size for apply (respecting meta or user choice)
+        targetFontSize = currentPx;
+      }
     } else {
       // Default: use current size and maximize
       targetFontSize = currentPx;
@@ -596,13 +630,24 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     const measurement = measureTextFit(targetFontSize, maxW, maxH);
     
     // If it doesn't fit, search for optimal size
-    // For toolbar/apply: only refit if it doesn't fit (respect user's/saved size choice)
+    // For toolbar: only refit if it doesn't fit (respect user's size choice)
+    // For apply: maximize if we detected large box with minimal font, otherwise preserve
     // For other reasons, always find largest fitting size
     if (!measurement.fits) {
       targetFontSize = findLargestFittingSize(targetFontSize, maxW, maxH);
       content.style.fontSize = targetFontSize + 'px';
-    } else if (reason !== 'toolbar' && reason !== 'apply') {
-      // For non-toolbar/apply reasons, maximize size even if current fits
+    } else if (reason === 'apply') {
+      // For apply: maximize if we started from heuristic (box was large), otherwise preserve
+      const boxIsLarge = b.height > 150 && b.width > 250;
+      const fontWasMinimal = currentPx <= MIN_PX;
+      if (boxIsLarge && fontWasMinimal) {
+        // Maximize to fill available space
+        targetFontSize = findLargestFittingSize(targetFontSize, maxW, maxH);
+        content.style.fontSize = targetFontSize + 'px';
+      }
+      // Otherwise preserve current size (user's/saved choice)
+    } else if (reason !== 'toolbar') {
+      // For non-toolbar reasons (including resize, textChange, etc), maximize size even if current fits
       targetFontSize = findLargestFittingSize(targetFontSize, maxW, maxH);
       content.style.fontSize = targetFontSize + 'px';
     }
@@ -871,7 +916,25 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     if (typeof meta.yPct === 'number') box.style.top  = (meta.yPct * 100) + '%';
     if (typeof meta.wPct === 'number') box.style.width  = (meta.wPct * 100) + '%';
     if (typeof meta.hPct === 'number') box.style.height = (meta.hPct * 100) + '%';
-    if (meta.fontPx) content.style.fontSize = meta.fontPx + 'px';
+    
+    // Validate and apply fontPx - check if it's unreasonable for box size
+    if (meta.fontPx) {
+      const boxRect = box.getBoundingClientRect();
+      const boxIsLarge = boxRect.height > 150 && boxRect.width > 250;
+      const fontIsUnreasonablySmall = meta.fontPx <= MIN_PX && boxIsLarge;
+      
+      if (fontIsUnreasonablySmall && !options.silentPreview) {
+        console.warn('[applyCaptionMeta] Rejecting unreasonably small fontPx for large box:', {
+          fontPx: meta.fontPx,
+          boxH: Math.round(boxRect.height),
+          boxW: Math.round(boxRect.width),
+          suggestion: 'Font will be maximized by fitText instead'
+        });
+        // Don't apply the tiny fontPx - let fitText maximize it
+      } else {
+        content.style.fontSize = meta.fontPx + 'px';
+      }
+    }
     if (meta.weightCss) content.style.fontWeight = meta.weightCss;
     if (meta.textAlign) content.style.textAlign = meta.textAlign;
     if (meta.color) content.style.color = meta.color;
