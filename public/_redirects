@@ -4,6 +4,9 @@
 # API routes - proxy to your backend
 /api/*  https://17e0d1d1-e327-483d-b1ea-c41bea08fb59-00-1ef93t84nlhq6.janeway.replit.dev/api/:splat  200
 
+# Proxy font files to backend (MUST be before catch-all)
+/assets/fonts/*  https://17e0d1d1-e327-483d-b1ea-c41bea08fb59-00-1ef93t84nlhq6.janeway.replit.dev/assets/fonts/:splat  200
+
 # Serve HTML files directly first
 /creative.html  /creative.html  200
 /pricing.html  /pricing.html  200
