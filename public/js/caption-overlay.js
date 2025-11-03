@@ -502,8 +502,10 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
   function fitTextV2(reason) {
     // Decide direction to adjust bounds
     const s = getComputedStyle(content);
+    // Calculate padding: content has padding:28px 12px 12px 12px (top right bottom left)
+    // With box-sizing:border-box, content takes 100% of box, so we subtract padding
     const padX = parseInt(s.paddingLeft,10) + parseInt(s.paddingRight,10);
-    const padY = parseInt(s.paddingTop,10) + parseInt(s.paddingBottom,10);
+    const padY = parseInt(s.paddingTop,10) + parseInt(s.paddingBottom,10); // Should be 28px + 12px = 40px
     const maxW = Math.max(0, box.clientWidth - padX);
     const maxH = Math.max(0, box.clientHeight - padY);
     const b = box.getBoundingClientRect();
@@ -577,8 +579,16 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     // Initialize best
     let best;
     if (v2State.isResizing) {
-      // During resize: start from current size, let binary search find optimal fit
-      best = currentPx;
+      // During resize: start from box-proportional estimate to explore full range
+      // This allows finding both larger and smaller optimal sizes as box changes
+      // Estimate based on available height: aim for ~4-6 lines typically
+      const estimatedPx = Math.max(MIN_PX, Math.min(MAX_PX, Math.floor(maxH / 5)));
+      // Start from estimate or current, whichever is closer to middle of search range
+      // This prevents anchoring to current size when box changes significantly
+      const midRange = (lo + hi) >> 1;
+      best = Math.abs(estimatedPx - midRange) < Math.abs(currentPx - midRange) 
+        ? estimatedPx 
+        : currentPx;
     } else if (reason === 'apply' || reason === 'fonts' || reason === 'setText') {
       // Initial application: start with box-based estimate, not stale currentPx
       const estimatedPx = Math.max(MIN_PX, Math.min(MAX_PX, Math.floor(maxH / 6)));
@@ -592,16 +602,42 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
       best = Math.round(currentFits ? (v2State.fitBounds.lastGoodPx || currentPx) : lo);
     }
     let bestLines = Infinity;
+    
     for (let i = 0; i < 8 && lo <= hi; i++) {
       const mid = (lo + hi) >> 1;
       content.style.fontSize = mid + 'px';
       content.style.maxWidth = maxW + 'px';
       // Force reflow after setting maxWidth to ensure text wraps
       void content.offsetHeight;
+      
+      // Get actual line height from computed style (always in pixels after font-size is set)
+      // CSS has line-height:1.15 (unitless), so computed value will be fontSize * 1.15
+      const currentStyle = getComputedStyle(content);
+      const actualLineHeightPx = parseFloat(currentStyle.lineHeight);
+      
       const fits = (content.scrollWidth <= maxW + 0.5) && (content.scrollHeight <= maxH + 0.5);
       
       // Count lines to prefer sizes with fewer lines (less wrapping)
-      const lineCount = Math.ceil(content.scrollHeight / mid);
+      // Use actual line height for accurate line count
+      const lineCount = Math.max(1, Math.ceil(content.scrollHeight / actualLineHeightPx));
+      
+      // Debug logging for binary search iterations during resize
+      if (v2State.isResizing && (i === 0 || i === 3 || i === 7)) {
+        console.log('[fitTextV2:binary-search]', {
+          iteration: i,
+          mid,
+          scrollW: Math.round(content.scrollWidth),
+          scrollH: Math.round(content.scrollHeight),
+          maxW: Math.round(maxW),
+          maxH: Math.round(maxH),
+          actualLineHeightPx: Math.round(actualLineHeightPx * 100) / 100,
+          lineCount,
+          fits,
+          lo,
+          hi,
+          best
+        });
+      }
       
       if (fits) {
         // Prefer this size if it has fewer lines or same lines but larger font
@@ -632,6 +668,9 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     v2State.lastBoxW = b.width; v2State.lastBoxH = b.height;
     
     // Debug logging to track fontSize changes
+    const finalScrollW = content.scrollWidth;
+    const finalScrollH = content.scrollHeight;
+    const finalFits = finalScrollW <= maxW + 0.5 && finalScrollH <= maxH + 0.5;
     console.log('[fitTextV2]', {
       reason,
       previousPx: prev,
@@ -642,9 +681,11 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
       boxH: Math.round(b.height),
       maxW: Math.round(maxW),
       maxH: Math.round(maxH),
-      scrollW: Math.round(content.scrollWidth),
-      scrollH: Math.round(content.scrollHeight),
-      fits: content.scrollWidth <= maxW + 0.5 && content.scrollHeight <= maxH + 0.5,
+      scrollW: Math.round(finalScrollW),
+      scrollH: Math.round(finalScrollH),
+      fits: finalFits,
+      padX: Math.round(padX),
+      padY: Math.round(padY),
       // Bounds debugging
       lo: Math.round(lo),
       hi: Math.round(hi),
@@ -653,7 +694,8 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
       lastGoodPx: v2State.fitBounds.lastGoodPx,
       expanding,
       shrinkY,
-      significantShrink
+      significantShrink,
+      isResizing: v2State.isResizing
     });
     
     try {
