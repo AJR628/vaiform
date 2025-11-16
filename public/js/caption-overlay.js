@@ -462,8 +462,11 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     const s = getComputedStyle(content);
     const padX = parseInt(s.paddingLeft, 10) + parseInt(s.paddingRight, 10);
     const padY = parseInt(s.paddingTop, 10) + parseInt(s.paddingBottom, 10);
-    const maxW = Math.max(0, box.clientWidth - padX);
-    const maxH = Math.max(0, box.clientHeight - padY);
+    // scrollWidth/scrollHeight already include padding, so use the box's
+    // client dimensions directly as the available space to avoid
+    // double-subtracting padding and forcing the font size to MIN_PX.
+    const maxW = Math.max(0, box.clientWidth);
+    const maxH = Math.max(0, box.clientHeight);
     return { maxW, maxH, padX, padY };
   }
 
