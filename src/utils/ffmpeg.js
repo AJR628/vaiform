@@ -4,6 +4,8 @@ import fs from "fs";
 import os from "os";
 import path from "path";
 import { writeCaptionFile } from "./captionFile.js";
+import { fetchToTmp } from "./tmp.js";
+import { hasLineSpacingOption } from "./ffmpeg.capabilities.js";
 
 // Helper function to save dataUrl to temporary file
 async function saveDataUrlToTmp(dataUrl, prefix = "caption") {
@@ -389,7 +391,43 @@ export async function renderImageQuoteVideo({
   let usingCaptionPng = false;
   let captionPngPath = null;
   
-  if (captionImage?.dataUrl) {
+  // 🔒 EARLY PNG MATERIALIZATION - read directly from overlayCaption for raster mode
+  if (overlayCaption?.mode === 'raster') {
+    const dataUrl = overlayCaption.rasterUrl || overlayCaption.rasterDataUrl || overlayCaption.rasterPng;
+    
+    console.log('[renderImageQuoteVideo:v3:materialize:CHECK]', {
+      hasRasterUrl: Boolean(overlayCaption.rasterUrl),
+      hasRasterDataUrl: Boolean(overlayCaption.rasterDataUrl),
+      rasterUrlLen: dataUrl?.length || 0
+    });
+    
+    if (!dataUrl) {
+      throw new Error('RASTER: missing rasterDataUrl/rasterUrl');
+    }
+    
+    try {
+      usingCaptionPng = true;
+      captionPngPath = await fetchToTmp(dataUrl, '.png');
+      
+      console.log('[renderImageQuoteVideo:raster-guard]', {
+        usingCaptionPng: true,
+        captionPngPath
+      });
+      
+      // Verify PNG file
+      if (!fs.existsSync(captionPngPath) || fs.statSync(captionPngPath).size === 0) {
+        throw new Error('RASTER: PNG file is empty or missing');
+      }
+      
+      console.log('[renderImageQuoteVideo:v3:materialize:AFTER]', {
+        path: captionPngPath,
+        fileSize: fs.statSync(captionPngPath).size
+      });
+    } catch (error) {
+      console.error('[renderImageQuoteVideo:raster] Failed to materialize PNG overlay:', error.message);
+      throw new Error(`Raster overlay failed: ${error.message}. Please regenerate preview.`);
+    }
+  } else if (captionImage?.dataUrl) {
     usingCaptionPng = true;
     try {
       const { file: pngPath } = await saveDataUrlToTmp(captionImage.dataUrl, "caption");
@@ -466,7 +504,10 @@ export async function renderImageQuoteVideo({
       }
     }
     
-    const mainLine = `drawtext=fontfile=${escapeFilterPath(fontPath || '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf')}:textfile=${escapeFilterPath(captionFile)}:reload=0:fontcolor=${effectiveFontColor}:fontsize=${effectiveFontSize}:line_spacing=${effectiveLineSpacing}:shadowcolor=${shadowColor}:shadowx=${shadowX}:shadowy=${shadowY}:box=${box}:boxcolor=${boxcolor}:boxborderw=${boxborderw}:x=(w-text_w)/2:y=${yPosition}`;
+    // Check line_spacing support before using it
+    const supportsLineSpacing = await hasLineSpacingOption();
+    
+    const mainLine = `drawtext=fontfile=${escapeFilterPath(fontPath || '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf')}:textfile=${escapeFilterPath(captionFile)}:reload=0:fontcolor=${effectiveFontColor}:fontsize=${effectiveFontSize}${supportsLineSpacing && effectiveLineSpacing > 0 ? `:line_spacing=${effectiveLineSpacing}` : ''}:shadowcolor=${shadowColor}:shadowx=${shadowX}:shadowy=${shadowY}:box=${box}:boxcolor=${boxcolor}:boxborderw=${boxborderw}:x=(w-text_w)/2:y=${yPosition}`;
     layers.push(mainLine);
     if (authorLine && String(authorLine).trim()) {
       const safeAuthor = escapeDrawtext(String(authorLine).trim());
@@ -493,76 +534,100 @@ export async function renderImageQuoteVideo({
   // Build filter with optional caption PNG overlay using SSOT scaling and positioning (PROBE-FREE)
   let vf;
   if (usingCaptionPng && captionPngPath && fs.existsSync(captionPngPath)) {
-    // PROBE-FREE: Use SSOT metadata directly without ffprobe
+    // Use SSOT placement data from overlayCaption (raster mode) or fallback to legacy
     const W = width, H = height;
-    const safeW = captionResolved?.safeW || 993; // SSOT from caption preview API
-    const maxWidthPct = 0.8; // SSOT from caption preview API
-    const capTargetW = Math.round(safeW * maxWidthPct);
     
-    // Use SSOT coordinates directly from overlayCaption (v2) or captionResolved (legacy)
-    let overlayX = "(W-w)/2"; // Center horizontally
-    let overlayY = "0"; // Default to top
+    // Determine scale and crop expressions - prefer SSOT from preview
+    let scale, crop;
+    if (overlayCaption?.bgScaleExpr && overlayCaption?.bgCropExpr) {
+      // Use EXACT expressions from preview (SSOT v3 raster mode)
+      scale = overlayCaption.bgScaleExpr;
+      crop = overlayCaption.bgCropExpr;
+      console.log('[renderImageQuoteVideo] Using preview geometry:', { scale, crop });
+    } else {
+      // Fallback to default scaling
+      scale = `scale='if(gt(a,${W}/${H}),-2,${W})':'if(gt(a,${W}/${H}),${H},-2)'`;
+      crop = `crop=${W}:${H}`;
+    }
     
-    // SSOT v2: Prefer overlayCaption over captionResolved
-    if (usingSSOT && overlayCaption) {
+    // Determine overlay position - prefer SSOT absolute coordinates
+    let overlayX, overlayY;
+    
+    if (overlayCaption?.mode === 'raster') {
+      // SSOT v3 raster mode: use exact placement from preview
+      // Prefer absolute X if available, otherwise use expression
+      if (Number.isFinite(overlayCaption.xPx_png)) {
+        overlayX = String(Math.trunc(overlayCaption.xPx_png));
+        console.log('[renderImageQuoteVideo:raster:x-absolute]', { xPx_png: overlayCaption.xPx_png, overlayX });
+      } else {
+        overlayX = (overlayCaption.xExpr_png || overlayCaption.xExpr || '(W-overlay_w)/2').replace(/\s+/g, '');
+        console.log('[renderImageQuoteVideo:raster:x-expression]', { overlayX });
+      }
+      
+      // Use yPx_png from SSOT (required for raster mode)
+      if (Number.isFinite(overlayCaption.yPx_png)) {
+        overlayY = String(Math.trunc(overlayCaption.yPx_png));
+      } else if (Number.isFinite(overlayCaption.yPx)) {
+        overlayY = String(Math.trunc(overlayCaption.yPx));
+      } else {
+        overlayY = '24'; // Fallback
+        console.warn('[renderImageQuoteVideo:raster] Missing yPx_png, using fallback');
+      }
+      
+      console.log('[renderImageQuoteVideo:v3:parity] Using preview dimensions verbatim:', {
+        rasterW: overlayCaption.rasterW,
+        rasterH: overlayCaption.rasterH,
+        xExpr: overlayX,
+        y: overlayY
+      });
+    } else if (usingSSOT && overlayCaption) {
+      // SSOT v2: Calculate from yPxFirstLine or yPct
+      overlayX = "(w-overlay_w)/2"; // Center horizontally
       if (Number.isFinite(overlayCaption.yPxFirstLine)) {
-        // Use exact yPxFirstLine from SSOT v2
         overlayY = overlayCaption.yPxFirstLine.toString();
-        console.log(`[caption.overlay] Using SSOT v2 yPxFirstLine: ${overlayY}`);
+        console.log(`[renderImageQuoteVideo] Using SSOT v2 yPxFirstLine: ${overlayY}`);
       } else if (Number.isFinite(overlayCaption.yPct) && Number.isFinite(overlayCaption.totalTextH)) {
-        // Calculate from SSOT v2 yPct and totalTextH
         const yPct = overlayCaption.yPct;
         const totalTextH = overlayCaption.totalTextH;
         const targetTop = (yPct * H) - (totalTextH / 2);
         const safeTopMargin = 50;
         const safeBottomMargin = H * 0.08;
-        const clampedY = Math.max(safeTopMargin, Math.min(targetTop, H - safeBottomMargin - totalTextH));
-        
-        overlayY = clampedY.toString();
-        console.log(`[caption.overlay] SSOT v2 yPct calculation: yPct=${yPct}, totalTextH=${totalTextH}, targetTop=${targetTop}, clampedY=${clampedY}`);
+        overlayY = Math.max(safeTopMargin, Math.min(targetTop, H - safeBottomMargin - totalTextH)).toString();
+        console.log(`[renderImageQuoteVideo] SSOT v2 yPct calculation: yPct=${yPct}, totalTextH=${totalTextH}, overlayY=${overlayY}`);
+      } else {
+        overlayY = "0";
       }
     } else if (captionResolved?.xPx !== undefined && captionResolved?.yPx !== undefined) {
-      // Use precise SSOT coordinates from caption preview API (legacy)
+      // Legacy: Use precise SSOT coordinates from caption preview API
       overlayX = captionResolved.xPx.toString();
       overlayY = captionResolved.yPx.toString();
-      console.log(`[caption.overlay] Using legacy SSOT coordinates: xPx=${overlayX}, yPx=${overlayY}`);
-    } else if (captionResolved?.yPct !== undefined) {
-      // Fallback to yPct calculation using SSOT metadata (legacy)
-      const yPct = Number(captionResolved.yPct);
-      const safeH = captionResolved.safeH || 1612;
-      const totalTextH = captionResolved.totalTextH || 200; // SSOT estimate
-      
-      // Calculate position using SSOT percentages and safe margins
-      const targetTop = (yPct * H / 100) - (totalTextH / 2);
-      const safeTopMargin = 50; // Safe margin from top
-      const safeBottomMargin = H - safeH; // Safe margin from bottom
-      const clampedY = Math.max(safeTopMargin, Math.min(targetTop, H - safeBottomMargin - totalTextH));
-      
-      overlayY = clampedY.toString();
-      console.log(`[caption.overlay] legacy yPct fallback: yPct=${yPct}, targetTop=${targetTop}, clampedY=${clampedY}`);
+      console.log(`[renderImageQuoteVideo] Using legacy SSOT coordinates: xPx=${overlayX}, yPx=${overlayY}`);
     } else {
-      // Default to bottom positioning
-      overlayY = "H-h";
-      console.log(`[caption.overlay] default bottom positioning: overlayY=${overlayY}`);
+      // Default fallback
+      overlayX = "(w-overlay_w)/2";
+      overlayY = "0";
+      console.log(`[renderImageQuoteVideo] Using default positioning: x=${overlayX}, y=${overlayY}`);
     }
     
-    // Build correct filter graph with proper label flow (PROBE-FREE)
-    const fps = 24, dur = durationSec, zoomMax = 1.05;
-    const zoom = `1 + (${zoomMax - 1}) * on / (${fps}*${dur})`;
+    // Build filter graph - skip Ken Burns for raster mode (still images don't need zoompan)
+    const core = [scale, crop, 'format=rgba'].filter(Boolean);
+    const baseChain = `[0:v]${core.join(',')}[vmain]`;
+    const pngPrep = `[1:v]format=rgba[ovr]`;
+    // Determine end format based on output type (will be set later if still image)
+    const endFormat = 'format=yuv420p';
+    const overlayExpr = `[vmain][ovr]overlay=${overlayX}:${overlayY}:format=auto,${endFormat}[vout]`;
     
-    const base = [
-      `scale='if(gt(a,1080/1920),-2,1080)':'if(gt(a,1080/1920),1920,-2)'`,
-      `crop=1080:1920`,
-      `zoompan=z='${zoom}':d=1:s=1080x1920:fps=${fps}`,
-      `format=rgba`
-    ].join(',');
+    vf = `${baseChain};${pngPrep};${overlayExpr}`;
     
-    // PROBE-FREE: Use scale2ref to scale caption relative to base video without probing
-    // This eliminates the need for ffprobe dimension checks
-    vf = `[0:v]${base}[b];[1:v][b]scale2ref=w=${capTargetW}:h=-1[cap][b2];[b2][cap]overlay=${overlayX}:${overlayY}:format=auto[vout]`;
-    
-    console.log(`[renderImageQuoteVideo] Using PROBE-FREE SSOT overlay filter: ${vf}`);
-    console.log(`[caption.overlay] SSOT targetW=${capTargetW} x=${overlayX} y=${overlayY} safeW=${safeW} safeH=${captionResolved?.safeH || 1612}`);
+    console.log(`[renderImageQuoteVideo] Using SSOT overlay filter: ${vf}`);
+    console.log(`[renderImageQuoteVideo:raster:FFMPEG]`, {
+      actualRasterW: overlayCaption?.rasterW,
+      actualRasterH: overlayCaption?.rasterH,
+      overlayX,
+      overlayY,
+      noScaling: overlayCaption?.mode === 'raster',
+      willScaleOverlay: false
+    });
   } else {
     vf = layers.join(",");
     console.log(`[renderImageQuoteVideo] Filter: ${vf}`);
@@ -572,27 +637,66 @@ export async function renderImageQuoteVideo({
   const hasTTS = ttsPath && fs.existsSync(ttsPath);
   const ttsInputIndex = usingCaptionPng ? 2 : 1; // TTS is input 2 if caption PNG is present, otherwise input 1
   
-  const args = [
-    "-loop", "1",
-    "-t", String(durationSec),
-    "-i", imagePath,
-    ...(usingCaptionPng && captionPngPath && fs.existsSync(captionPngPath) && fs.statSync(captionPngPath).size > 0 ? ['-i', captionPngPath] : []),
-    ...(hasTTS ? ['-i', ttsPath] : []),
-    ...(usingCaptionPng && captionPngPath && fs.existsSync(captionPngPath) ? ['-filter_complex', vf, '-map', '[vout]'] : ['-vf', vf]),
-    ...(hasTTS ? ['-map', `${ttsInputIndex}:a`] : []),
-    "-r", String(fps),
-    "-c:v", "libx264",
-    "-pix_fmt", "yuv420p",
-    "-movflags", "+faststart",
-    ...(hasTTS ? ['-c:a', 'aac', '-b:a', '192k', '-shortest'] : ['-an']),
-    outPath,
-  ];
+  // Determine output format: still image if no TTS and using caption overlay, otherwise MP4
+  const isStillImage = !hasTTS && usingCaptionPng && captionPngPath && fs.existsSync(captionPngPath);
+  const outExt = path.extname(outPath).toLowerCase();
   
-  // Log audio mapping details
-  if (hasTTS) {
-    console.log(`[audio.map] TTS input index: ${ttsInputIndex}, map="[vout]" + "${ttsInputIndex}:a" aac 192k`);
+  // If we want a still image but the extension is .mp4, change it to .png
+  let finalOutPath = outPath;
+  if (isStillImage && outExt === '.mp4') {
+    finalOutPath = outPath.replace(/\.mp4$/i, '.png');
+    console.log(`[renderImageQuoteVideo] Changing output from .mp4 to .png for still image: ${finalOutPath}`);
+  }
+  const isImageFormat = isStillImage && (outExt === '.png' || outExt === '.jpg' || outExt === '.jpeg' || outExt === '.mp4');
+  
+  // Update filter for still image output (use rgba format for PNG transparency)
+  if (isImageFormat && usingCaptionPng && captionPngPath && fs.existsSync(captionPngPath)) {
+    const finalExt = path.extname(finalOutPath).toLowerCase();
+    if (finalExt === '.png') {
+      // For PNG, replace yuv420p with rgba format to preserve transparency
+      vf = vf.replace(/format=yuv420p/g, 'format=rgba');
+      console.log(`[renderImageQuoteVideo] Updated filter for PNG output with transparency`);
+    }
+  }
+  
+  let args;
+  if (isImageFormat) {
+    // Render as still image (PNG/JPEG)
+    console.log(`[renderImageQuoteVideo] Rendering still image: ${path.extname(finalOutPath)}`);
+    args = [
+      "-i", imagePath,
+      ...(usingCaptionPng && captionPngPath && fs.existsSync(captionPngPath) && fs.statSync(captionPngPath).size > 0 ? ['-i', captionPngPath] : []),
+      ...(usingCaptionPng && captionPngPath && fs.existsSync(captionPngPath) ? ['-filter_complex', vf, '-map', '[vout]'] : ['-vf', vf]),
+      "-frames:v", "1",
+      "-f", "image2",
+      finalOutPath,
+    ];
+    console.log(`[render.image] Still image mode: inputs img=${imagePath} cap=${usingCaptionPng ? captionPngPath : 'none'}`);
   } else {
-    console.log(`[audio.map] No TTS audio - using silent video (-an)`);
+    // Render as MP4 video
+    console.log(`[renderImageQuoteVideo] Rendering MP4 video`);
+    args = [
+      "-loop", "1",
+      "-t", String(durationSec),
+      "-i", imagePath,
+      ...(usingCaptionPng && captionPngPath && fs.existsSync(captionPngPath) && fs.statSync(captionPngPath).size > 0 ? ['-i', captionPngPath] : []),
+      ...(hasTTS ? ['-i', ttsPath] : []),
+      ...(usingCaptionPng && captionPngPath && fs.existsSync(captionPngPath) ? ['-filter_complex', vf, '-map', '[vout]'] : ['-vf', vf]),
+      ...(hasTTS ? ['-map', `${ttsInputIndex}:a`] : []),
+      "-r", String(fps),
+      "-c:v", "libx264",
+      "-pix_fmt", "yuv420p",
+      "-movflags", "+faststart",
+      ...(hasTTS ? ['-c:a', 'aac', '-b:a', '192k', '-shortest'] : ['-an']),
+      finalOutPath,
+    ];
+    
+    // Log audio mapping details
+    if (hasTTS) {
+      console.log(`[audio.map] TTS input index: ${ttsInputIndex}, map="[vout]" + "${ttsInputIndex}:a" aac 192k`);
+    } else {
+      console.log(`[audio.map] No TTS audio - using silent video (-an)`);
+    }
   }
 
   // Log inputs and filter before spawn
@@ -605,7 +709,7 @@ export async function renderImageQuoteVideo({
     await runFFmpeg(args, { timeout: 120000 }); // 2 minute timeout
     const duration = Date.now() - startTime;
     console.log(`[render.image] done in ${duration}ms`);
-    console.log(`[renderImageQuoteVideo] Successfully rendered: ${outPath}`);
+    console.log(`[renderImageQuoteVideo] Successfully rendered: ${finalOutPath}`);
   } catch (error) {
     const duration = Date.now() - startTime;
     console.error(`[render.image] ffmpeg failed code=${error.code} after ${duration}ms`);
