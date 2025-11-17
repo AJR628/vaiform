@@ -83,8 +83,8 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
   box.appendChild(resizeHandle);
   stage.appendChild(box);
 
-  // V2-only floating toolbar DOM
-  let toolbar = null; let toolbarArrow = null; let toolbarMode = 'inside';
+  // V2-only floating toolbar DOM (now docked)
+  let toolbar = null; let toolbarArrow = null; let toolbarMode = 'inside'; // toolbarMode kept for compatibility but not used for positioning
   if (overlayV2) {
     toolbar = document.createElement('div');
     toolbar.className = 'caption-toolbar';
@@ -107,11 +107,20 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     [fontBtn,decBtn,incBtn,boldBtn,italicBtn,colorBtn,opBtn,alignBtn,moreBtn].forEach(b=>row.appendChild(b));
     toolbar.appendChild(row);
 
-    // Arrow for outside docking
+    // Arrow for outside docking (no longer needed but keep for compatibility)
     toolbarArrow = document.createElement('div'); toolbarArrow.className='ct-arrow'; toolbar.appendChild(toolbarArrow);
 
-    // Attach now (hidden until editing)
-    try { box.appendChild(toolbar); toolbar.style.display='none'; } catch {}
+    // Attach to docked container (visibility controlled by container's hidden class)
+    try { 
+      const container = document.getElementById('caption-toolbar-container');
+      if (container) {
+        container.appendChild(toolbar);
+      } else {
+        // Fallback to box if container not found (shouldn't happen)
+        box.appendChild(toolbar);
+        toolbar.style.display='none';
+      }
+    } catch {}
 
     // Wire controls later after styles load
     toolbar.__buttons = { fontBtn, decBtn, incBtn, boldBtn, italicBtn, colorBtn, opBtn, alignBtn, moreBtn };
@@ -159,21 +168,19 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
   `;
   document.head.appendChild(style);
 
-  // Toolbar CSS (separate style for minimal diff)
+  // Toolbar CSS (docked position, no absolute positioning)
   if (overlayV2) {
     const style2 = document.createElement('style');
     style2.textContent = `
-      .caption-toolbar{ position:absolute; top:6px; left:32px; display:flex; gap:6px; align-items:center; padding:6px 8px;
+      .caption-toolbar{ position:relative; display:flex; gap:6px; align-items:center; padding:6px 8px;
         background:rgba(24,24,27,.55); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
-        color:#fff; border-radius:10px; box-shadow:0 4px 16px rgba(0,0,0,.35); z-index:100000; pointer-events:auto; }
-      .caption-toolbar .ct-row{ display:flex; gap:6px; align-items:center; }
-      .caption-toolbar .ct-btn{ min-width:0; height:24px; padding:0 8px; border-radius:6px; border:1px solid rgba(255,255,255,.15);
+        color:#fff; border-radius:10px; box-shadow:0 4px 16px rgba(0,0,0,.35); z-index:10; pointer-events:auto; }
+      .caption-toolbar .ct-row{ display:flex; gap:6px; align-items:center; flex-wrap: wrap; }
+      .caption-toolbar .ct-btn{ min-width:44px; min-height:44px; height:auto; padding:8px 12px; border-radius:6px; border:1px solid rgba(255,255,255,.15);
         background:rgba(255,255,255,.08); color:#fff; font: 12px/1 system-ui; letter-spacing:.02em; cursor:pointer; }
       .caption-toolbar .ct-btn:hover{ background:rgba(255,255,255,.16); }
       .caption-toolbar[data-mode="inside"] .ct-arrow{ display:none; }
-      .caption-toolbar[data-mode="outside"] .ct-arrow{ position:absolute; width:10px; height:10px; background:inherit; transform:rotate(45deg); box-shadow:inherit; }
-      .caption-box.always-handle .caption-toolbar{ opacity:0; pointer-events:none; }
-      .caption-box.always-handle.editing .caption-toolbar{ opacity:1; pointer-events:auto; }
+      .caption-toolbar[data-mode="outside"] .ct-arrow{ display:none; }
       .caption-toolbar[data-compact="1"] .ct-font,
       .caption-toolbar[data-compact="1"] .ct-bold,
       .caption-toolbar[data-compact="1"] .ct-italic,
@@ -185,6 +192,10 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
       .caption-toolbar[data-compact="2"] .ct-color,
       .caption-toolbar[data-compact="2"] .ct-opacity,
       .caption-toolbar[data-compact="2"] .ct-align{ display:none; }
+      @media (max-width: 640px) {
+        .caption-toolbar .ct-row{ gap:4px; }
+        .caption-toolbar .ct-btn{ min-width:40px; padding:6px 10px; }
+      }
     `;
     document.head.appendChild(style2);
   }
@@ -298,37 +309,15 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
   new ResizeObserver(clamp).observe(box);
   window.addEventListener('resize', clamp);
 
-  // Toolbar placement (V2 only)
+  // Toolbar placement (V2 only) - now static/docked, only update compact mode
   function placeToolbar(){
     if (!overlayV2 || !toolbar) return;
-    const s = stage.getBoundingClientRect();
-    const b = box.getBoundingClientRect();
-    const insideOk = (b.width >= 220) && (b.height >= 70);
-    const compact = b.width < 120 ? 2 : (b.width < 180 ? 1 : 0);
-    toolbar.dataset.compact = String(compact);
-    const nextMode = insideOk ? 'inside' : 'outside';
-    if (nextMode !== toolbarMode) {
-      toolbarMode = nextMode; toolbar.dataset.mode = toolbarMode;
-      try { if (toolbarMode === 'inside') { if (!box.contains(toolbar)) box.appendChild(toolbar); } else { if (!stage.contains(toolbar)) stage.appendChild(toolbar); } } catch {}
-    }
-    if (toolbarMode === 'inside') {
-      toolbar.style.position = 'absolute'; toolbar.style.left = '32px'; toolbar.style.top = '6px'; toolbar.style.transform = 'none';
-    } else {
-      const pad = 6;
-      let left = b.left - s.left + pad;
-      let top  = b.top  - s.top  - 8 - (toolbar.offsetHeight || 30);
-      let arrowAt = 'down';
-      if (top < 0) { top = b.bottom - s.top + 8; arrowAt = 'up'; }
-      left = Math.max(4, Math.min(left, s.width - (toolbar.offsetWidth || 180) - 4));
-      top  = Math.max(4, Math.min(top,  s.height - (toolbar.offsetHeight || 30) - 4));
-      toolbar.style.position = 'absolute';
-      toolbar.style.left = `${Math.round(left)}px`;
-      toolbar.style.top  = `${Math.round(top)}px`;
-      if (toolbarArrow) {
-        const ax = Math.max(10, Math.min((b.left - s.left + 10) - left, (toolbar.offsetWidth || 180) - 10));
-        if (arrowAt === 'down') { toolbarArrow.style.left = `${Math.round(ax)}px`; toolbarArrow.style.top = `${(toolbar.offsetHeight||30)-5}px`; }
-        else { toolbarArrow.style.left = `${Math.round(ax)}px`; toolbarArrow.style.top = `-5px`; }
-      }
+    // Toolbar is now docked, so we only need to update compact mode based on container width
+    const container = document.getElementById('caption-toolbar-container');
+    if (container) {
+      const containerWidth = container.getBoundingClientRect().width;
+      const compact = containerWidth < 120 ? 2 : (containerWidth < 180 ? 1 : 0);
+      toolbar.dataset.compact = String(compact);
     }
   }
   
@@ -343,13 +332,30 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
       box.classList.remove('editing');
     }
     if (overlayV2 && toolbar) {
-      try { toolbar.style.display = editing ? 'flex' : 'none'; } catch {}
+      // Toggle container visibility instead of toolbar display
+      const container = document.getElementById('caption-toolbar-container');
+      if (container) {
+        if (editing) {
+          container.classList.remove('hidden');
+        } else {
+          container.classList.add('hidden');
+        }
+      } else {
+        // Fallback to old behavior if container not found
+        try { toolbar.style.display = editing ? 'flex' : 'none'; } catch {}
+      }
+      // Update compact mode on visibility change
       try { requestAnimationFrame(()=>{ placeToolbar(); }); } catch {}
     }
   }
   
   // Click outside to exit editing mode (clean preview)
   document.addEventListener('click', (e) => {
+    // Don't exit editing if clicking on toolbar or its container
+    const container = document.getElementById('caption-toolbar-container');
+    if (container && container.contains(e.target)) {
+      return;
+    }
     if (!box.contains(e.target)) {
       setEditing(false);
     }
