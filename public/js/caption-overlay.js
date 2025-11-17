@@ -196,6 +196,8 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
   if (overlayV2) {
     content.style.maxWidth = '100%';
     content.style.width = '100%';
+    // Trigger initial fit on mount (will run after fonts are ready if needed)
+    try { ensureFitNextRAF('initial'); } catch {}
   }
 
   // Drag behavior (strict: only handle initiates drag)

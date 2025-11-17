@@ -3948,7 +3948,6 @@
 
                 // Accept both field names from server (coerce to numbers)
                 const totalTextH = Number(m.totalTextH ?? m.totalTextHPx);
-                const yPxFirstLine = Number(resp.yPx);  // ← FIX: top-level, NOT meta
                 const serverLineSpacingPx = Number(m.lineSpacingPx ?? 0);
                 const linesCount = m.lines?.length || 0;
 
@@ -3969,6 +3968,11 @@
                     serverYPxPng = toRasterYPx({frameH, rasterH: serverRasterH, placement, yPct, internalPaddingPx: serverRasterPadding});
                     console.log('[savePreview] Computed yPx_png from placement:', {placement, yPct, serverYPxPng});
                 }
+
+                // Compute yPxFirstLine from yPx_png + rasterPadding (server no longer returns top-level yPx)
+                const yPxFirstLine = Number.isFinite(serverYPxPng) && Number.isFinite(serverRasterPadding)
+                    ? serverYPxPng + serverRasterPadding
+                    : NaN;
 
                 // Verify we got real values before saving
                 console.log('[savePreview] SSOT fields extracted:', {
