@@ -31,6 +31,7 @@ export async function createShortService({ ownerUid, mode, text, template, durat
   const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), `${jobId}-`));
   const outPath = path.join(tmpRoot, "short.mp4");
   const audioPath = path.join(tmpRoot, "quote.mp3");
+  let actualOutPath = outPath; // Will be updated if renderImageQuoteVideo returns a different path (e.g., .png)
 
   // Create Firestore document for tracking
   const db = admin.firestore();
@@ -189,7 +190,7 @@ export async function createShortService({ ownerUid, mode, text, template, durat
       try {
         const img = await fetchImageToTmp(background.imageUrl);
         imageTmpPath = img.path;
-        await renderImageQuoteVideo({
+        actualOutPath = await renderImageQuoteVideo({
           outPath,
           imagePath: imageTmpPath,
           durationSec,
@@ -263,7 +264,7 @@ export async function createShortService({ ownerUid, mode, text, template, durat
           const stockUrl = background.url || await resolveStockImage({ query: background.query });
           const img = await fetchImageToTmp(stockUrl);
           imageTmpPath = img.path;
-          await renderImageQuoteVideo({
+          actualOutPath = await renderImageQuoteVideo({
             outPath,
             imagePath: imageTmpPath,
             durationSec,
@@ -324,7 +325,7 @@ export async function createShortService({ ownerUid, mode, text, template, durat
         try {
           const img = await fetchImageToTmp(uploadUrl);
           imageTmpPath = img.path;
-          await renderImageQuoteVideo({
+          actualOutPath = await renderImageQuoteVideo({
             outPath,
             imagePath: imageTmpPath,
             durationSec,
@@ -364,7 +365,7 @@ export async function createShortService({ ownerUid, mode, text, template, durat
         }
         
         if (imagePath) {
-          await renderImageQuoteVideo({
+          actualOutPath = await renderImageQuoteVideo({
             outPath,
             imagePath: imagePath,
             durationSec,
@@ -390,7 +391,7 @@ export async function createShortService({ ownerUid, mode, text, template, durat
             const stockUrl = await resolveStockImage({ query: background.prompt });
             const img = await fetchImageToTmp(stockUrl);
             imageTmpPath = img.path;
-            await renderImageQuoteVideo({
+            actualOutPath = await renderImageQuoteVideo({
               outPath,
               imagePath: imageTmpPath,
               durationSec,
@@ -530,13 +531,17 @@ export async function createShortService({ ownerUid, mode, text, template, durat
     throw err;
   }
 
+  // Detect if output is PNG (still image without TTS)
+  const isPng = path.extname(actualOutPath).toLowerCase() === '.png';
+  
   // If audio present, mux it (soft-fail if mux fails) with explicit stream mapping
-  let muxedPath = outPath;
-  if (audioOk) {
+  // Skip muxing for PNG files (still images don't have audio)
+  let muxedPath = actualOutPath;
+  if (audioOk && !isPng) {
     const muxOut = path.join(tmpRoot, "short_mx.mp4");
     try {
       const args = [
-        "-i", outPath,
+        "-i", actualOutPath,
         "-i", audioPath,
         "-map", "0:v:0",
         "-map", "1:a:0",
@@ -549,27 +554,32 @@ export async function createShortService({ ownerUid, mode, text, template, durat
       muxedPath = muxOut;
     } catch (e) {
       // proceed silently without audio
-      muxedPath = outPath;
+      muxedPath = actualOutPath;
     }
   }
 
   const destBase = `artifacts/${ownerUid}/${jobId}`;
-  const destPath = `${destBase}/short.mp4`;
-  console.log("[shorts] uploading", audioOk ? "muxed (with audio)" : "silent", "video");
-  const { publicUrl } = await uploadPublic(muxedPath, destPath, "video/mp4");
+  const fileExt = isPng ? 'png' : 'mp4';
+  const destPath = `${destBase}/short.${fileExt}`;
+  const mimeType = isPng ? 'image/png' : 'video/mp4';
+  console.log("[shorts] uploading", isPng ? "PNG image" : (audioOk ? "muxed (with audio)" : "silent"), isPng ? "" : "video");
+  const { publicUrl } = await uploadPublic(muxedPath, destPath, mimeType);
 
   // Extract and upload cover thumbnail (best-effort)
+  // Skip cover extraction for PNG files (they're already images)
   const coverLocal = path.join(tmpRoot, "cover.jpg");
   let coverUrl = null;
-  try {
-    const ok = await extractCoverJpeg({ inPath: muxedPath, outPath: coverLocal, durationSec, width: 720 });
-    if (fs.existsSync(coverLocal)) {
-      const coverDest = `${destBase}/cover.jpg`;
-      const { publicUrl: cUrl } = await uploadPublic(coverLocal, coverDest, "image/jpeg");
-      coverUrl = cUrl;
+  if (!isPng) {
+    try {
+      const ok = await extractCoverJpeg({ inPath: muxedPath, outPath: coverLocal, durationSec, width: 720 });
+      if (fs.existsSync(coverLocal)) {
+        const coverDest = `${destBase}/cover.jpg`;
+        const { publicUrl: cUrl } = await uploadPublic(coverLocal, coverDest, "image/jpeg");
+        coverUrl = cUrl;
+      }
+    } catch (e) {
+      // ignore cover failures
     }
-  } catch (e) {
-    // ignore cover failures
   }
 
   // Upload meta.json (best-effort)
@@ -582,7 +592,7 @@ export async function createShortService({ ownerUid, mode, text, template, durat
       usedTemplate: template,
       usedQuote,
       credits,
-      files: { video: "short.mp4", cover: "cover.jpg" },
+      files: { video: `short.${fileExt}`, cover: "cover.jpg" },
       urls: { video: publicUrl, cover: coverUrl },
     };
     const metaLocal = path.join(tmpRoot, "meta.json");

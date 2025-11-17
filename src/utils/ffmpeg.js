@@ -725,6 +725,8 @@ export async function renderImageQuoteVideo({
     enhancedError.duration = duration;
     throw enhancedError;
   }
+  
+  return finalOutPath;
 }
 
 export default {
