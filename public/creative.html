@@ -248,22 +248,23 @@
                     <div class="accordion-header active" data-section="quote">
                         <div class="accordion-title">
                             <span class="accordion-icon">▼</span>
-                            <span class="accordion-label">Quote</span>
+                            <span class="accordion-label">Step 1 – Your Quote</span>
                         </div>
-                        <div class="accordion-summary" id="quote-summary">Enter a prompt to generate quotes</div>
+                        <div class="accordion-summary" id="quote-summary">Write your own quote or let AI suggest one.</div>
                     </div>
                     <div class="accordion-body active" id="quote-body">
 
                         <!-- Quote Generation Section -->
                         <div id="section-quote" class="content-box bg-white dark:bg-gray-800 rounded-lg p-6 space-y-4 border border-gray-200 dark:border-gray-600">
                             <h2 class="text-xl font-semibold text-gray-900 dark:text-white">Generate Quote</h2>
+                            <p class="text-sm text-gray-600 dark:text-gray-400">Describe the kind of quote you want, or type your own.</p>
             
             <div class="flex gap-4 items-center">
                 <input
                     type="text"
                     id="quote-text"
                     value="Create a motivational quote about success"
-                    placeholder="Describe what kind of quote you want..."
+                    placeholder="Describe the quote you want…"
                     class="flex-1 bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-3 py-2 text-gray-900 dark:text-white"
                 />
                 <div class="text-xs text-gray-500 dark:text-gray-400 w-20 text-right" id="quote-char-count">0/200</div>
@@ -292,9 +293,10 @@
                     <div class="flex-1">
                         <div id="quote-text-display" class="text-lg font-medium text-gray-900 dark:text-white hidden"></div>
                         <textarea id="quote-edit" class="w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded px-3 py-2 text-sm text-gray-900 dark:text-white" style="min-height: 100px;" placeholder="Enter your quote here or generate one above..."></textarea>
+                        <!-- Primary actions row -->
                         <div class="flex gap-2 mt-2">
-                            <button id="save-quote-btn" data-action="saveQuote" type="button" class="px-3 py-1 bg-green-600 hover:bg-green-500 rounded text-sm text-white">Save</button>
-                            <button id="cancel-quote-btn" data-action="cancelEdit" type="button" class="px-3 py-1 bg-gray-600 dark:bg-gray-700 hover:bg-gray-700 dark:hover:bg-gray-600 rounded text-sm text-white hidden">Cancel</button>
+                            <button id="save-quote-btn" data-action="saveQuote" type="button" class="px-4 py-2 bg-green-600 hover:bg-green-500 rounded text-base font-medium text-white">Save</button>
+                            <button id="cancel-quote-btn" data-action="cancelEdit" type="button" class="px-4 py-2 bg-gray-600 dark:bg-gray-700 hover:bg-gray-700 dark:hover:bg-gray-600 rounded text-base font-medium text-white hidden">Cancel</button>
                         </div>
                     </div>
                     <div class="flex flex-col gap-2 items-end">
@@ -307,15 +309,15 @@
                 <div id="quote-author" class="text-sm text-gray-400 hidden"></div>
                 <div id="quote-tone-tag" class="text-xs text-blue-400 hidden"></div>
                 
-                <!-- Remix buttons (Pro only) -->
-                <div id="remix-buttons" class="flex gap-2">
-                    <button id="regenerate-btn" data-action="regenerateQuote" type="button" class="px-3 py-1 bg-purple-600 hover:bg-purple-500 disabled:bg-gray-600 rounded text-sm">
+                <!-- Secondary actions row (less emphasis) -->
+                <div id="remix-buttons" class="flex gap-2 mt-2">
+                    <button id="regenerate-btn" data-action="regenerateQuote" type="button" class="px-3 py-1.5 border border-purple-600 dark:border-purple-500 text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/20 disabled:opacity-50 disabled:cursor-not-allowed rounded text-sm">
                         Regenerate
                     </button>
-                    <button id="rephrase-btn" data-action="rephraseQuote" type="button" class="px-3 py-1 bg-purple-600 hover:bg-purple-500 disabled:bg-gray-600 rounded text-sm">
+                    <button id="rephrase-btn" data-action="rephraseQuote" type="button" class="px-3 py-1.5 border border-purple-600 dark:border-purple-500 text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/20 disabled:opacity-50 disabled:cursor-not-allowed rounded text-sm">
                         Rephrase
                     </button>
-                    <button id="tone-shift-btn" data-action="changeTone" type="button" class="px-3 py-1 bg-purple-600 hover:bg-purple-500 disabled:bg-gray-600 rounded text-sm">
+                    <button id="tone-shift-btn" data-action="changeTone" type="button" class="px-3 py-1.5 border border-purple-600 dark:border-purple-500 text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/20 disabled:opacity-50 disabled:cursor-not-allowed rounded text-sm">
                         Change Tone
                     </button>
                 </div>
@@ -329,14 +331,14 @@
                     <div class="accordion-header" data-section="media">
                         <div class="accordion-title">
                             <span class="accordion-icon">▶</span>
-                            <span class="accordion-label">Media</span>
+                            <span class="accordion-label">Step 2 – Background</span>
                         </div>
-                        <div class="accordion-summary" id="media-summary">No media selected</div>
+                        <div class="accordion-summary" id="media-summary">No background selected</div>
                     </div>
                     <div class="accordion-body" id="media-body">
                         <!-- Asset Selection Section -->
                         <div id="section-media" class="content-box bg-white dark:bg-gray-800 rounded-lg p-6 space-y-4 border border-gray-200 dark:border-gray-600">
-                            <h2 class="text-xl font-semibold text-gray-900 dark:text-white">Media</h2>
+                            <h2 class="text-xl font-semibold text-gray-900 dark:text-white">Background</h2>
             
             <!-- Asset Type Tabs -->
             <div class="flex gap-2">
@@ -583,7 +585,7 @@
                     <div class="accordion-header" data-section="voice">
                         <div class="accordion-title">
                             <span class="accordion-icon">▶</span>
-                            <span class="accordion-label">Voiceover</span>
+                            <span class="accordion-label">Step 3 – Voiceover (optional)</span>
                         </div>
                         <div class="accordion-summary" id="voice-summary">No voice selected</div>
                     </div>
@@ -591,6 +593,7 @@
                         <!-- Voiceover Section -->
                         <div id="section-voice" class="content-box bg-white dark:bg-gray-800 rounded-lg p-6 space-y-4 border border-gray-200 dark:border-gray-600">
                             <h2 class="text-xl font-semibold text-gray-900 dark:text-white">Voiceover</h2>
+                            <p class="text-sm text-gray-600 dark:text-gray-400">Add AI voice if you want audio, or leave this empty for a silent image or video.</p>
             
             <div class="grid grid-cols-2 gap-4">
                 <div>
@@ -673,6 +676,11 @@
                     </div>
                 </div>
                 
+                <!-- Helper text for empty preview -->
+                <div id="preview-helper-text" class="mt-3 text-center text-sm text-gray-500 dark:text-gray-400 hidden">
+                    Start by writing a quote, then choose an image or video background.
+                </div>
+                
                 <!-- Render buttons below preview -->
                 <div class="mt-4 flex flex-col items-center gap-3">
                     <!-- Preview Status Indicator -->
@@ -680,22 +688,13 @@
                     
                     <!-- Action Buttons -->
                     <div class="flex gap-3">
-                        <!-- Save Preview Button -->
-                        <button
-                            id="save-preview-btn"
-                            class="px-6 py-3 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-400 disabled:cursor-not-allowed rounded-lg text-base font-semibold text-white shadow-md transition-colors"
-                        >
-                            Save Preview
-                        </button>
-                        
-                        <!-- Render Button (disabled until preview saved) -->
+                        <!-- Create Button (combines Save Preview + Render) -->
                         <button
                             id="render-btn"
                             class="px-6 py-3 bg-green-600 hover:bg-green-500 disabled:bg-gray-400 disabled:cursor-not-allowed rounded-lg text-base font-semibold text-white shadow-md transition-colors"
-                            disabled
-                            title="Save preview first"
+                            title="Create your short"
                         >
-                            Render
+                            Create
                         </button>
                     </div>
                 </div>
@@ -2412,7 +2411,7 @@
                     document.getElementById('preview-asset').textContent = 
                         `Background: ${selectedAsset.provider === 'ai' ? 'AI Image' : selectedAsset.provider === 'uploaded' ? 'Uploaded' : `${currentAssetType} - ${selectedAsset.query}`}`;
                 } else {
-                    document.getElementById('preview-asset').textContent = 'Background: None (black)';
+                    document.getElementById('preview-asset').textContent = 'Background: Default (solid black)';
                 }
                 
                 // Update caption style preview
@@ -2445,6 +2444,16 @@
                 // Always show preview container when we have any feature
                 document.getElementById('live-preview-container').classList.remove('opacity-0');
                 
+                // Hide helper text when we have quote and background
+                const helperText = document.getElementById('preview-helper-text');
+                if (helperText) {
+                    if (currentQuote && selectedAsset) {
+                        helperText.classList.add('hidden');
+                    } else {
+                        helperText.classList.remove('hidden');
+                    }
+                }
+                
                 // Wait a frame for the container to be visible, then update preview
                 requestAnimationFrame(() => {
                     // Ensure proper sequence: Container → Canvas → Preview → Caption
@@ -2464,6 +2473,12 @@
                 preview.classList.add('hidden');
                 renderBtn.classList.remove('hidden'); // Keep button visible
                 document.getElementById('live-preview-container').classList.add('opacity-0');
+                
+                // Show helper text when nothing is configured
+                const helperText = document.getElementById('preview-helper-text');
+                if (helperText) {
+                    helperText.classList.remove('hidden');
+                }
             }
             updateRenderButtonState();
         }
@@ -2970,8 +2985,8 @@
             
             console.log('[render-validate] Final hasSavedPreview:', hasSavedPreview);
             
-            // Render requires: features + logged in + saved preview
-            const canRender = (hasQuote || hasValidAsset || hasVoiceover) && isLoggedIn && hasSavedPreview;
+            // Render requires: features + logged in (preview will be saved on-demand)
+            const canRender = (hasQuote || hasValidAsset || hasVoiceover) && isLoggedIn;
             
             console.log('[render-validate] Final render decision:', {
                 hasQuote,
@@ -3462,13 +3477,6 @@
         function resetPreviewSavedState() {
             console.log('[preview-state] Resetting preview saved state - caption changed');
             
-            // Show Save Preview button
-            const saveBtn = document.getElementById('save-preview-btn');
-            if (saveBtn) {
-                saveBtn.style.display = '';
-                saveBtn.disabled = false;
-            }
-            
             // Hide Preview Saved status indicator
             const statusContainer = document.querySelector('#preview-status');
             if (statusContainer) {
@@ -3648,17 +3656,19 @@
         }
 
         // Save Preview function (SSOT workflow)
-        async function savePreview() {
+        async function savePreview(buttonElement = null) {
             if (!window.auth?.currentUser) {
                 alert('Please log in to save preview');
-                return;
+                return false;
             }
 
-            const saveBtn = document.getElementById('save-preview-btn');
-            const originalText = saveBtn.textContent;
+            const saveBtn = buttonElement || document.getElementById('save-preview-btn');
+            const originalText = saveBtn ? saveBtn.textContent : 'Save Preview';
             
-            saveBtn.disabled = true;
-            saveBtn.textContent = 'Saving...';
+            if (saveBtn) {
+                saveBtn.disabled = true;
+                saveBtn.textContent = 'Saving...';
+            }
 
             try {
                 // Wait for fonts to be ready before measuring DOM
@@ -3677,7 +3687,11 @@
                 
                 if (!meta || !meta.text || !meta.text.trim()) {
                     alert('Please add caption text first');
-                    return;
+                    if (saveBtn) {
+                        saveBtn.disabled = false;
+                        saveBtn.textContent = originalText;
+                    }
+                    return false;
                 }
                 
                 // Find the correct elements for browser measurement
@@ -3690,7 +3704,11 @@
                 
                 if (!contentEl) {
                     alert('Preview text element not found');
-                    return;
+                    if (saveBtn) {
+                        saveBtn.disabled = false;
+                        saveBtn.textContent = originalText;
+                    }
+                    return false;
                 }
                 
                 // Diagnostic logging (temporary)
@@ -3716,7 +3734,11 @@
                 // Validate browser geometry
                 if (browserGeometry.lines.length < 1) {
                     alert('Unable to detect text lines - please try again');
-                    return;
+                    if (saveBtn) {
+                        saveBtn.disabled = false;
+                        saveBtn.textContent = originalText;
+                    }
+                    return false;
                 }
                 
                 // SSOT-first: use window.__serverCaptionMeta if available
@@ -4259,14 +4281,49 @@
                     }
                 }
                 
-                alert('Preview saved! You can now render the video.');
+                // Preview saved successfully
+                return true;
 
             } catch (error) {
                 console.error('[savePreview] Error:', error);
                 alert(`Save preview failed: ${error.message}`);
+                return false;
             } finally {
-                saveBtn.disabled = false;
-                saveBtn.textContent = originalText;
+                if (saveBtn) {
+                    saveBtn.disabled = false;
+                    saveBtn.textContent = originalText;
+                }
+            }
+        }
+
+        // Combined Create function (Save Preview + Render)
+        async function createShort() {
+            const renderBtn = document.getElementById('render-btn');
+            if (!renderBtn) return;
+            
+            const originalText = renderBtn.textContent;
+            
+            try {
+                // Step 1: Save Preview
+                renderBtn.disabled = true;
+                renderBtn.textContent = 'Saving preview...';
+                
+                const previewSaved = await savePreview(renderBtn);
+                if (!previewSaved) {
+                    // Error already shown by savePreview
+                    renderBtn.disabled = false;
+                    renderBtn.textContent = originalText;
+                    return;
+                }
+                
+                // Step 2: Render (renderShort will handle its own button state)
+                await renderShort();
+                
+            } catch (error) {
+                console.error('[createShort] Error:', error);
+                alert(`Failed to create short: ${error.message}`);
+                renderBtn.disabled = false;
+                renderBtn.textContent = originalText;
             }
         }
 
@@ -5041,11 +5098,7 @@
         };
         
         const renderBtn = document.getElementById('render-btn');
-        if (renderBtn) renderBtn.onclick = renderShort;
-        
-        // Wire Save Preview button (SSOT workflow)
-        const savePreviewBtn = document.getElementById('save-preview-btn');
-        if (savePreviewBtn) savePreviewBtn.onclick = savePreview;
+        if (renderBtn) renderBtn.onclick = createShort;
         
         // Overlay mode toggle event listener (auto-initialize overlay; no extra buttons)
         const overlayModeToggle = document.getElementById('overlay-mode-toggle');
