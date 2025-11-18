@@ -681,6 +681,42 @@
                     </div>
                 </div>
                 
+                <!-- Mobile Toolbar (visible only on mobile) -->
+                <div id="mobile-studio-toolbar" class="hidden mt-4 w-full">
+                    <div class="flex items-center gap-2 w-full" style="max-width: 100%;">
+                        <!-- Step Tabs -->
+                        <button
+                            id="mobile-tab-quote"
+                            class="mobile-studio-tab flex-1 px-3 py-2 text-sm font-medium rounded-lg border transition-colors"
+                            data-section="quote"
+                        >
+                            Quote
+                        </button>
+                        <button
+                            id="mobile-tab-background"
+                            class="mobile-studio-tab flex-1 px-3 py-2 text-sm font-medium rounded-lg border transition-colors"
+                            data-section="media"
+                        >
+                            Background
+                        </button>
+                        <button
+                            id="mobile-tab-voiceover"
+                            class="mobile-studio-tab flex-1 px-3 py-2 text-sm font-medium rounded-lg border transition-colors"
+                            data-section="voice"
+                        >
+                            Voiceover
+                        </button>
+                        <!-- Create Button -->
+                        <button
+                            id="mobile-create-btn"
+                            class="px-4 py-2 bg-green-600 hover:bg-green-500 disabled:bg-gray-400 disabled:cursor-not-allowed rounded-lg text-sm font-semibold text-white shadow-md transition-colors whitespace-nowrap"
+                            title="Create your short"
+                        >
+                            Create
+                        </button>
+                    </div>
+                </div>
+                
                 <!-- Helper text for empty preview -->
                 <div id="preview-helper-text" class="mt-3 text-center text-sm text-gray-500 dark:text-gray-400 hidden">
                     Start by writing a quote, then choose an image or video background.
@@ -3005,6 +3041,12 @@
             
             renderBtn.disabled = !canRender;
             
+            // Also update mobile Create button state
+            const mobileCreateBtn = document.getElementById('mobile-create-btn');
+            if (mobileCreateBtn) {
+                mobileCreateBtn.disabled = !canRender;
+            }
+            
             if (!canRender) {
                 let reason = '';
                 if (!isLoggedIn) reason = 'Please log in';
@@ -3013,9 +3055,11 @@
                 
                 console.log('[render-validate] Button disabled, reason:', reason);
                 renderBtn.title = reason;
+                if (mobileCreateBtn) mobileCreateBtn.title = reason;
             } else {
                 console.log('[render-validate] Button ENABLED - ready to render!');
                 renderBtn.title = 'Ready to render with saved preview';
+                if (mobileCreateBtn) mobileCreateBtn.title = 'Ready to render with saved preview';
             }
         }
 
@@ -4304,20 +4348,33 @@
         // Combined Create function (Save Preview + Render)
         async function createShort() {
             const renderBtn = document.getElementById('render-btn');
-            if (!renderBtn) return;
+            const mobileCreateBtn = document.getElementById('mobile-create-btn');
+            if (!renderBtn && !mobileCreateBtn) return;
             
-            const originalText = renderBtn.textContent;
+            const originalText = renderBtn?.textContent || mobileCreateBtn?.textContent || 'Create';
             
             try {
                 // Step 1: Save Preview
-                renderBtn.disabled = true;
-                renderBtn.textContent = 'Saving preview...';
+                if (renderBtn) {
+                    renderBtn.disabled = true;
+                    renderBtn.textContent = 'Saving preview...';
+                }
+                if (mobileCreateBtn) {
+                    mobileCreateBtn.disabled = true;
+                    mobileCreateBtn.textContent = 'Saving preview...';
+                }
                 
-                const previewSaved = await savePreview(renderBtn);
+                const previewSaved = await savePreview(renderBtn || mobileCreateBtn);
                 if (!previewSaved) {
                     // Error already shown by savePreview
-                    renderBtn.disabled = false;
-                    renderBtn.textContent = originalText;
+                    if (renderBtn) {
+                        renderBtn.disabled = false;
+                        renderBtn.textContent = originalText;
+                    }
+                    if (mobileCreateBtn) {
+                        mobileCreateBtn.disabled = false;
+                        mobileCreateBtn.textContent = originalText;
+                    }
                     return;
                 }
                 
@@ -4327,8 +4384,14 @@
             } catch (error) {
                 console.error('[createShort] Error:', error);
                 alert(`Failed to create short: ${error.message}`);
-                renderBtn.disabled = false;
-                renderBtn.textContent = originalText;
+                if (renderBtn) {
+                    renderBtn.disabled = false;
+                    renderBtn.textContent = originalText;
+                }
+                if (mobileCreateBtn) {
+                    mobileCreateBtn.disabled = false;
+                    mobileCreateBtn.textContent = originalText;
+                }
             }
         }
 
@@ -4346,10 +4409,17 @@
             }
 
             const renderBtn = document.getElementById('render-btn');
-            const originalText = renderBtn.textContent;
+            const mobileCreateBtn = document.getElementById('mobile-create-btn');
+            const originalText = renderBtn?.textContent || mobileCreateBtn?.textContent || 'Create';
             
-            renderBtn.disabled = true;
-            renderBtn.textContent = 'Rendering...';
+            if (renderBtn) {
+                renderBtn.disabled = true;
+                renderBtn.textContent = 'Rendering...';
+            }
+            if (mobileCreateBtn) {
+                mobileCreateBtn.disabled = true;
+                mobileCreateBtn.textContent = 'Rendering...';
+            }
 
             try {
                 const { apiFetch } = await import('./api.mjs');
@@ -4478,8 +4548,14 @@
                   
                   if (!validation.valid) {
                     alert(`Cannot render: ${validation.errors.join(', ')}`);
-                    renderBtn.disabled = false;
-                    renderBtn.textContent = originalText;
+                    if (renderBtn) {
+                        renderBtn.disabled = false;
+                        renderBtn.textContent = originalText;
+                    }
+                    if (mobileCreateBtn) {
+                        mobileCreateBtn.disabled = false;
+                        mobileCreateBtn.textContent = originalText;
+                    }
                     return;
                   }
                   
@@ -4490,8 +4566,14 @@
                   if (savedMeta?.ssotVersion !== 3) {
                       console.error('[render-ERROR] Invalid ssotVersion, expected 3, got:', savedMeta?.ssotVersion);
                       alert('Preview data is outdated (wrong version). Please Save Preview again (v3).');
-                      renderBtn.disabled = false;
-                      renderBtn.textContent = originalText;
+                      if (renderBtn) {
+                          renderBtn.disabled = false;
+                          renderBtn.textContent = originalText;
+                      }
+                      if (mobileCreateBtn) {
+                          mobileCreateBtn.disabled = false;
+                          mobileCreateBtn.textContent = originalText;
+                      }
                       return;
                   }
                   
@@ -4499,8 +4581,14 @@
                   if (isRaster && !savedMeta?.rasterUrl && !savedMeta?.rasterDataUrl) {
                       console.error('[render-ERROR] Raster mode requires rasterUrl, got:', savedMeta);
                       alert('Raster preview incomplete. Please Save Preview again (v3).');
-                      renderBtn.disabled = false;
-                      renderBtn.textContent = originalText;
+                      if (renderBtn) {
+                          renderBtn.disabled = false;
+                          renderBtn.textContent = originalText;
+                      }
+                      if (mobileCreateBtn) {
+                          mobileCreateBtn.disabled = false;
+                          mobileCreateBtn.textContent = originalText;
+                      }
                       return;
                   }
                   
@@ -4518,8 +4606,14 @@
                   if (!Number.isFinite(savedMeta.totalTextH) || savedMeta.totalTextH <= 0) {
                       console.error('[render-ERROR] Invalid totalTextH:', savedMeta.totalTextH);
                       alert('Preview data has invalid metrics. Please regenerate preview.');
-                      renderBtn.disabled = false;
-                      renderBtn.textContent = originalText;
+                      if (renderBtn) {
+                          renderBtn.disabled = false;
+                          renderBtn.textContent = originalText;
+                      }
+                      if (mobileCreateBtn) {
+                          mobileCreateBtn.disabled = false;
+                          mobileCreateBtn.textContent = originalText;
+                      }
                       return;
                   }
                   
@@ -4536,16 +4630,40 @@
                   // Guard: fail fast if critical SSOT fields are missing/invalid
                   if (!Number.isFinite(savedMeta?.totalTextH)) {
                     alert('Preview data incomplete (totalTextH missing). Please generate and save preview again.');
+                    if (renderBtn) {
+                        renderBtn.disabled = false;
+                        renderBtn.textContent = originalText;
+                    }
+                    if (mobileCreateBtn) {
+                        mobileCreateBtn.disabled = false;
+                        mobileCreateBtn.textContent = originalText;
+                    }
                     throw new Error('Missing SSOT field: totalTextH');
                   }
 
                   if (!Number.isFinite(savedMeta?.yPxFirstLine)) {
                     alert('Preview data incomplete (yPxFirstLine missing). Please generate and save preview again.');
+                    if (renderBtn) {
+                        renderBtn.disabled = false;
+                        renderBtn.textContent = originalText;
+                    }
+                    if (mobileCreateBtn) {
+                        mobileCreateBtn.disabled = false;
+                        mobileCreateBtn.textContent = originalText;
+                    }
                     throw new Error('Missing SSOT field: yPxFirstLine');
                   }
 
                   if (!Array.isArray(savedMeta?.lines) || savedMeta.lines.length === 0) {
                     alert('Preview data incomplete (lines missing). Please generate and save preview again.');
+                    if (renderBtn) {
+                        renderBtn.disabled = false;
+                        renderBtn.textContent = originalText;
+                    }
+                    if (mobileCreateBtn) {
+                        mobileCreateBtn.disabled = false;
+                        mobileCreateBtn.textContent = originalText;
+                    }
                     throw new Error('Missing SSOT field: lines');
                   }
                   
@@ -4744,8 +4862,14 @@
                 const hint = summarizeCreateError(error);
                 alert(`Render failed${hint ? ': ' + hint : ': ' + (error?.message || 'Unknown error')}`);
             } finally {
-                renderBtn.disabled = false;
-                renderBtn.textContent = originalText;
+                if (renderBtn) {
+                    renderBtn.disabled = false;
+                    renderBtn.textContent = originalText;
+                }
+                if (mobileCreateBtn) {
+                    mobileCreateBtn.disabled = false;
+                    mobileCreateBtn.textContent = originalText;
+                }
             }
         }
 
@@ -5104,6 +5228,10 @@
         
         const renderBtn = document.getElementById('render-btn');
         if (renderBtn) renderBtn.onclick = createShort;
+        
+        // Wire mobile Create button to same function
+        const mobileCreateBtn = document.getElementById('mobile-create-btn');
+        if (mobileCreateBtn) mobileCreateBtn.onclick = createShort;
         
         // Overlay mode toggle event listener (auto-initialize overlay; no extra buttons)
         const overlayModeToggle = document.getElementById('overlay-mode-toggle');
@@ -5546,6 +5674,11 @@
         const headers = document.querySelectorAll('.accordion-header');
         const bodies = document.querySelectorAll('.accordion-body');
         
+        // Check if we're on mobile
+        function isMobile() {
+          return window.matchMedia('(max-width: 768px)').matches;
+        }
+        
         function toggleSection(targetSection) {
           const targetHeader = document.querySelector(`[data-section="${targetSection}"]`);
           const targetBody = document.getElementById(`${targetSection}-body`);
@@ -5567,7 +5700,12 @@
         
         headers.forEach(header => {
           header.addEventListener('click', (event) => {
-            // Only toggle if clicking the header itself, not buttons inside
+            // On mobile, accordion headers are handled by mobile tab logic
+            if (isMobile()) {
+              return; // Let mobile tab logic handle it
+            }
+            
+            // Desktop behavior: only toggle if clicking the header itself, not buttons inside
             if (event.target === header || event.target.closest('.accordion-header') === header) {
               // Don't toggle if clicking on action buttons
               if (event.target.dataset && event.target.dataset.action) {
@@ -5621,6 +5759,116 @@
             updateSummaries();
           };
         }
+        
+        // Mobile tab switching logic
+        (function() {
+          let activeMobileTab = null;
+          
+          // Check if we're on mobile
+          function isMobile() {
+            return window.matchMedia('(max-width: 768px)').matches;
+          }
+          
+          // Function to switch to a specific tab (reuses existing accordion DOM)
+          function switchToTab(section) {
+            if (!isMobile()) return;
+            
+            // Map section names to tab IDs
+            const tabIdMap = {
+                'quote': 'mobile-tab-quote',
+                'media': 'mobile-tab-background',
+                'voice': 'mobile-tab-voiceover'
+            };
+            const tabButton = document.getElementById(tabIdMap[section]);
+            const accordionBody = document.getElementById(`${section}-body`);
+            const accordionHeader = document.querySelector(`[data-section="${section}"]`);
+            const accordionIcon = accordionHeader?.querySelector('.accordion-icon');
+            
+            // If clicking the same tab, collapse it
+            if (activeMobileTab === section) {
+              activeMobileTab = null;
+              if (tabButton) tabButton.classList.remove('active');
+              if (accordionBody) accordionBody.classList.remove('active');
+              if (accordionHeader) accordionHeader.classList.remove('active');
+              if (accordionIcon) accordionIcon.textContent = '▶';
+              return;
+            }
+            
+            // Close all other tabs and accordion bodies
+            document.querySelectorAll('.mobile-studio-tab').forEach(tab => {
+              tab.classList.remove('active');
+            });
+            document.querySelectorAll('.accordion-body').forEach(body => {
+              body.classList.remove('active');
+            });
+            document.querySelectorAll('.accordion-header').forEach(header => {
+              header.classList.remove('active');
+              const icon = header.querySelector('.accordion-icon');
+              if (icon) icon.textContent = '▶';
+            });
+            
+            // Open the selected tab
+            activeMobileTab = section;
+            if (tabButton) tabButton.classList.add('active');
+            if (accordionBody) accordionBody.classList.add('active');
+            if (accordionHeader) accordionHeader.classList.add('active');
+            if (accordionIcon) accordionIcon.textContent = '▼';
+          }
+          
+          // Set up tab click handlers
+          document.querySelectorAll('.mobile-studio-tab').forEach(tab => {
+            tab.addEventListener('click', (e) => {
+              e.preventDefault();
+              const section = tab.dataset.section;
+              switchToTab(section);
+            });
+          });
+          
+          // On mobile, make accordion headers call the same logic as tabs
+          // (Note: accordion headers already skip their default behavior on mobile via the check above)
+          // We add a separate listener that runs after the desktop check
+          headers.forEach(header => {
+            header.addEventListener('click', (event) => {
+              if (!isMobile()) return; // Desktop behavior unchanged
+              
+              // Don't interfere with action buttons
+              if (event.target.dataset && event.target.dataset.action) {
+                return;
+              }
+              
+              // Only handle if clicking the header itself
+              if (event.target === header || event.target.closest('.accordion-header') === header) {
+                const section = header.dataset.section;
+                switchToTab(section);
+              }
+            });
+          });
+          
+          // Initialize: open Quote tab by default on mobile
+          if (isMobile()) {
+            switchToTab('quote');
+          }
+          
+          // Handle window resize to sync state
+          let resizeTimeout;
+          window.addEventListener('resize', () => {
+            clearTimeout(resizeTimeout);
+            resizeTimeout = setTimeout(() => {
+              if (!isMobile()) {
+                // Reset mobile state when switching to desktop
+                activeMobileTab = null;
+                document.querySelectorAll('.mobile-studio-tab').forEach(tab => {
+                  tab.classList.remove('active');
+                });
+              } else {
+                // Initialize mobile state when switching to mobile
+                if (!activeMobileTab) {
+                  switchToTab('quote');
+                }
+              }
+            }, 100);
+          });
+        })();
         
         // Update summaries on load
         setTimeout(updateSummaries, 1000);

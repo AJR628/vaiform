@@ -293,3 +293,118 @@
 #live-preview-container.has-media {
   min-height: 640px;
 }
+
+/* Mobile Studio Layout - max-width: 768px */
+@media (max-width: 768px) {
+  /* Header full-width, center content */
+  .max-w-6xl {
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+  
+  /* Hide "Live Preview" title on mobile */
+  .studio-accordion-right .content-box h2 {
+    display: none;
+  }
+  
+  /* Hide preview summary card on mobile */
+  #render-preview {
+    display: none !important;
+  }
+  
+  /* Hide desktop Create button on mobile */
+  .studio-accordion-right #render-btn {
+    display: none;
+  }
+  
+  /* Center preview container, set width to ~95% with padding */
+  #live-preview-container {
+    width: 95% !important;
+    max-width: 95%;
+    margin-left: auto;
+    margin-right: auto;
+    padding: 0 2.5%;
+  }
+  
+  /* Adjust preview wrapper to match container width */
+  #live-preview-container .relative {
+    width: 100% !important;
+    max-width: 100%;
+  }
+  
+  /* Ensure no horizontal scroll */
+  body {
+    overflow-x: hidden;
+  }
+  
+  /* Accordion layout single column with preview first */
+  .studio-accordion-layout {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+  
+  .studio-accordion-right {
+    position: static;
+    order: -1;
+  }
+  
+  /* Ensure floating toolbar still works on mobile */
+  #caption-toolbar-container {
+    position: relative;
+    z-index: 1000;
+  }
+  
+  /* Show mobile toolbar on mobile */
+  #mobile-studio-toolbar {
+    display: block !important;
+  }
+  
+  /* Mobile toolbar styling */
+  #mobile-studio-toolbar {
+    width: 95%;
+    max-width: 95%;
+    margin-left: auto;
+    margin-right: auto;
+    padding: 0 2.5%;
+  }
+  
+  /* Mobile tab buttons */
+  .mobile-studio-tab {
+    background: #f9fafb;
+    border-color: #e5e7eb;
+    color: #111827;
+  }
+  
+  .dark .mobile-studio-tab {
+    background: #374151;
+    border-color: #4b5563;
+    color: #f9fafb;
+  }
+  
+  .mobile-studio-tab:hover {
+    background: #f3f4f6;
+  }
+  
+  .dark .mobile-studio-tab:hover {
+    background: #4b5563;
+  }
+  
+  .mobile-studio-tab.active {
+    background: #3b82f6;
+    border-color: #3b82f6;
+    color: white;
+  }
+  
+  .dark .mobile-studio-tab.active {
+    background: #1e3a8a;
+    border-color: #3b82f6;
+    color: white;
+  }
+}
+
+/* Hide mobile toolbar on desktop */
+@media (min-width: 769px) {
+  #mobile-studio-toolbar {
+    display: none !important;
+  }
+}
