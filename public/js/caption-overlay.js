@@ -1138,8 +1138,20 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     const { W: frameW, H: frameH } = window.CaptionGeom.getFrameDims();
     
     // Get fresh rects AFTER any snap/drag
+    // Keep rects for offsets (positioning calculations)
     const stageRect = stage.getBoundingClientRect();
     const boxRect = box.getBoundingClientRect();
+    
+    // New: logical stage size in CSS px (not affected by DPR/viewport scaling)
+    let stageWidth = stage.clientWidth;
+    let stageHeight = stage.clientHeight;
+    
+    // Fallback to rect if clientWidth/clientHeight are 0 (defensive)
+    if (!stageWidth || !stageHeight) {
+      stageWidth = stageRect.width;
+      stageHeight = stageRect.height;
+    }
+    
     const cs = getComputedStyle(content);
     
     // Parse stroke from webkitTextStroke: "3px rgba(0,0,0,0.85)"
@@ -1237,7 +1249,7 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     const totalTextH = Math.round(content.getBoundingClientRect().height);
     
     // Raster dimensions: text + padding (what user sees)
-    const wPx = Math.round((boxRect.width / stageRect.width) * frameW);
+    const wPx = Math.round((boxRect.width / stageWidth) * frameW);
     const rasterW = wPx;
     
     // Use shared helper for rasterH
@@ -1251,11 +1263,11 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     const rasterPadding = Math.round((cssPaddingTop + cssPaddingBottom) / 2); // average for legacy
     
     // Position: box top-left in frame space (no %) - compute from fresh rects
-    const yPct = (boxRect.top - stageRect.top) / stageRect.height;
+    const yPct = (boxRect.top - stageRect.top) / stageHeight;
     
     // Compute xPct and wPct from fresh rects too
-    const xPct = (boxRect.left - stageRect.left) / stageRect.width;
-    const wPct = boxRect.width / stageRect.width;
+    const xPct = (boxRect.left - stageRect.left) / stageWidth;
+    const wPct = boxRect.width / stageWidth;
     
     // Frame dimensions already obtained at function start
     
@@ -1268,7 +1280,7 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     console.log('[geom:yPx_png]', {
       boxTop: boxRect.top,
       stageTop: stageRect.top,
-      stageHeight: stageRect.height,
+      stageHeight: stageHeight,
       yPct,
       yPx_png,
       placement: window.currentPlacement,
@@ -1276,7 +1288,7 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     });
     
     console.log('[geom:xPx_png]', {
-      stageWidth: stageRect.width,
+      stageWidth: stageWidth,
       xPct,
       xPx_png,
       frameW
@@ -1376,6 +1388,12 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     const stageRect = stage.getBoundingClientRect();
     const cs = getComputedStyle(content);
     
+    // Use logical stage height in CSS px (not affected by DPR/viewport scaling)
+    let stageHeight = stage.clientHeight;
+    if (!stageHeight) {
+      stageHeight = stageRect.height;
+    }
+    
     // Use actual rendered height for totalTextH
     const totalTextH = Math.round(content.getBoundingClientRect().height);
     const padTop = parseInt(cs.paddingTop, 10) || 0;
@@ -1398,7 +1416,7 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     const targetYPx = window.CaptionGeom.computeYPxFromPlacement(placement, rH);
     
     // Map frame px to stage css px
-    const pxFrameToStage = stageRect.height / FRAME_H;
+    const pxFrameToStage = stageHeight / FRAME_H;
     const cssTop = Math.round(targetYPx * pxFrameToStage);
     
     box.style.top = `${cssTop}px`;
