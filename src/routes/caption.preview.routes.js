@@ -1159,9 +1159,33 @@ async function renderCaptionRaster(meta) {
     }
   }
   
-  // Server-side rewrap if client lines overflow
+  // Check for mid-word splits using adjacent-line heuristic
+  // Mobile Safari's Range API can incorrectly break words mid-word
+  for (let i = 0; i < lines.length - 1; i++) {
+    const lineA = lines[i].trim();
+    const lineB = lines[i + 1].trim();
+    
+    if (lineA.length > 0 && lineB.length > 0) {
+      const endsWithLetterOrDigit = /[a-zA-Z0-9]$/.test(lineA);
+      const startsWithLetterOrDigit = /^[a-zA-Z0-9]/.test(lineB);
+      const endsWithHyphen = /-$/.test(lineA);
+      
+      // If line A ends with letter/digit, line B starts with letter/digit, and A doesn't end with hyphen,
+      // it's likely a mid-word break
+      if (endsWithLetterOrDigit && startsWithLetterOrDigit && !endsWithHyphen) {
+        console.log('[raster:word-split]', {
+          lineA: lineA.substring(Math.max(0, lineA.length - 20)),
+          lineB: lineB.substring(0, Math.min(20, lineB.length)),
+          index: i
+        });
+        needsRewrap = true;
+      }
+    }
+  }
+  
+  // Server-side rewrap if client lines overflow or have broken words
   if (needsRewrap) {
-    console.log('[parity:server-rewrap] Client lines overflow detected, rewrapping with server font');
+    console.log('[parity:server-rewrap] Client lines overflow or broken words detected, rewrapping with server font');
     console.log('[parity:server-rewrap] Preserving font:', {
       font: tempCtx.font,
       weightCss: meta.weightCss,
