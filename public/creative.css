@@ -400,6 +400,38 @@
     border-color: #3b82f6;
     color: white;
   }
+
+  /* Hide accordion headers on mobile */
+  .studio-accordion-left .accordion-header {
+    display: none !important;
+  }
+  
+  /* Position accordion bodies directly under toolbar */
+  .studio-accordion-left {
+    margin-top: 0;
+    width: 95%;
+    max-width: 95%;
+    margin-left: auto;
+    margin-right: auto;
+    padding: 0 2.5%;
+  }
+  
+  /* Ensure only active body is visible, positioned under toolbar */
+  .studio-accordion-left .accordion-body {
+    display: none;
+    margin-top: 0.5rem; /* Small gap from toolbar */
+    border-radius: 0.5rem;
+  }
+  
+  .studio-accordion-left .accordion-body.active {
+    display: block;
+  }
+  
+  /* Hide accordion section borders on mobile since headers are hidden */
+  .studio-accordion-left .accordion-section {
+    border: none;
+    background: transparent;
+  }
 }
 
 /* Hide mobile toolbar on desktop */
