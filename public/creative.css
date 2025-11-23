@@ -365,6 +365,7 @@
     max-width: 95%;
     margin-left: auto;
     margin-right: auto;
+    margin-top: 0.5rem;
     padding: 0 2.5%;
   }
   
@@ -419,18 +420,39 @@
   /* Ensure only active body is visible, positioned under toolbar */
   .studio-accordion-left .accordion-body {
     display: none;
-    margin-top: 0.5rem; /* Small gap from toolbar */
+    margin-top: 0.25rem; /* Minimal gap from toolbar */
     border-radius: 0.5rem;
   }
-  
+
   .studio-accordion-left .accordion-body.active {
     display: block;
+    margin-top: 0; /* Remove gap for visual connection */
+    border-top-left-radius: 0;
+    border-top-right-radius: 0; /* Align with toolbar tabs */
+  }
+
+  /* Visual connection: match active tab background with active accordion body */
+  .studio-accordion-left .accordion-body.active .content-box {
+    border-top-left-radius: 0;
+    border-top-right-radius: 0;
+    border-top: none; /* Remove top border for seamless connection */
+  }
+
+  /* Match active tab border radius to connect with accordion body */
+  .mobile-studio-tab.active {
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
   }
   
   /* Hide accordion section borders on mobile since headers are hidden */
   .studio-accordion-left .accordion-section {
     border: none;
     background: transparent;
+  }
+
+  /* Hide helper text on mobile */
+  #preview-helper-text {
+    display: none !important;
   }
 }
 
