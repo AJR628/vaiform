@@ -5489,7 +5489,10 @@
         window.addEventListener('resize', () => {
             clearTimeout(resizeTimeout);
             resizeTimeout = setTimeout(() => {
-                try { import('./js/caption-overlay.js').then(({ ensureOverlayTopAndVisible }) => ensureOverlayTopAndVisible('#stage')); } catch {}
+                // Skip overlay positioning if drag is active
+                if (!window.__overlayIsDragging) {
+                    try { import('./js/caption-overlay.js').then(({ ensureOverlayTopAndVisible }) => ensureOverlayTopAndVisible('#stage')); } catch {}
+                }
                 if (selectedAsset) {
                     if (_currentPexelsPhoto && selectedAsset?.provider === 'pexels') {
                         // Preserve existing previewUrl when updating selectedAsset
@@ -5607,6 +5610,7 @@
                     const container = document.getElementById('live-preview-container');
                     if (canvas && container) {
                         new ResizeObserver(() => {
+                            if (window.__overlayIsDragging) return; // Skip during drag
                             if (sizeCanvasToCSS(canvas)) {
                                 // Trigger preview update on resize
                                 if (currentQuote?.text && selectedAsset) {

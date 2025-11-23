@@ -214,6 +214,8 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
   // Drag behavior (strict: only handle initiates drag)
   let drag = null;
   let dragging = false;
+  let isDragging = false; // Track drag state for resize handler guards
+  window.__overlayIsDragging = false; // Expose for creative.html
 
   handle.addEventListener('pointerdown', (e) => {
     // Only left button
@@ -243,7 +245,19 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     
     handle.setPointerCapture(e.pointerId);
     dragging = true;
+    isDragging = true;
+    window.__overlayIsDragging = true;
     box.classList.add('is-dragging');
+    
+    // Lock body scroll during drag on touch devices
+    const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+    if (isTouchDevice) {
+      // Lock body scroll during drag
+      document.body.style.overflow = 'hidden';
+      document.body.style.position = 'fixed';
+      document.body.style.width = '100%';
+      document.body.style.top = `-${window.scrollY}px`;
+    }
     
     e.preventDefault();
   });
@@ -269,8 +283,24 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
       handle.releasePointerCapture(drag.pointerId);
     } catch {}
     dragging = false;
+    isDragging = false;
+    window.__overlayIsDragging = false;
     drag = null;
     box.classList.remove('is-dragging');
+    
+    // Restore body scroll on touch devices
+    const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+    if (isTouchDevice) {
+      // Restore body scroll
+      const scrollY = document.body.style.top;
+      document.body.style.overflow = '';
+      document.body.style.position = '';
+      document.body.style.width = '';
+      document.body.style.top = '';
+      if (scrollY) {
+        window.scrollTo(0, parseInt(scrollY || '0') * -1);
+      }
+    }
     
     // Emit state to persist new position
     emitCaptionState('dragend');
@@ -281,6 +311,7 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
 
   // Keep inside frame on resize and clamp to stage
   const clamp = ()=>{
+    if (isDragging) return; // Skip during drag to prevent overlay movement
     if (overlayV2) return; // V2 mode uses percentage-based positioning via applyCaptionMeta
     if (overlayV2 && window.__debugOverlay) { try { __ro++; } catch {} }
     // Observer can always run - fitText handles debouncing via rafPending
@@ -306,8 +337,21 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     box.style.top = (y / s.height * 100) + '%';
   };
   
-  new ResizeObserver(clamp).observe(box);
-  window.addEventListener('resize', clamp);
+  new ResizeObserver((entries) => {
+    if (isDragging) return; // Skip during drag
+    clamp();
+  }).observe(box);
+  
+  // Debounce resize handler with longer delay on mobile
+  const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+  let resizeDebounceTimer = null;
+  window.addEventListener('resize', () => {
+    if (isDragging) return;
+    clearTimeout(resizeDebounceTimer);
+    resizeDebounceTimer = setTimeout(() => {
+      clamp();
+    }, isTouchDevice ? 300 : 150); // Longer debounce on mobile
+  });
 
   // Toolbar placement (V2 only) - now static/docked, only update compact mode
   function placeToolbar(){
@@ -370,7 +414,10 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
 
   // Re-place toolbar while dragging/resizing V2
   if (overlayV2 && toolbar) {
-    const placeOnMove = ()=>{ try { requestAnimationFrame(()=>{ placeToolbar(); }); } catch {} };
+    const placeOnMove = ()=>{
+      if (isDragging) return; // Skip during drag
+      try { requestAnimationFrame(()=>{ placeToolbar(); }); } catch {}
+    };
     handle.addEventListener('pointermove', placeOnMove, { passive:true });
     try { new ResizeObserver(placeOnMove).observe(box); } catch {}
     window.addEventListener('resize', placeOnMove);
@@ -1724,7 +1771,11 @@ export function ensureOverlayTopAndVisible(stageSel = '#stage') {
   box.style.top  = /%$/.test(box.style.top)  ? `${(top  / Math.max(1, sH)) * 100}%`  : `${top}px`;
 
   // Ensure stage is visible in viewport for hit testing/dragging
-  try { stage.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'instant' }); } catch {}
+  // Only scrollIntoView on non-touch devices to prevent mobile jumps
+  const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+  if (!isTouchDevice) {
+    try { stage.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'instant' }); } catch {}
+  }
   try { console.log('[overlay] snapped caption-box in-view', { left, top, sW, sH, bW, bH }); } catch {}
 }
 
