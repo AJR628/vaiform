@@ -130,6 +130,7 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
   const style = document.createElement('style');
   style.textContent = `
     .caption-stage{ position:relative; border-radius:12px; overflow:hidden }
+    .caption-stage.dragging{ touch-action:none; overflow:hidden; }
     .caption-stage img,.caption-stage video{ position:absolute; inset:0; width:100%; height:100%; object-fit:cover; pointer-events:none }
     .caption-box{ position:absolute; resize:none; overflow:hidden; outline:1.5px dashed rgba(255,255,255,.45);
       border-radius:12px; z-index:9999; touch-action:none; user-select:none; background:rgba(0,0,0,.25); box-sizing:border-box; }
@@ -217,6 +218,24 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
   let isDragging = false; // Track drag state for resize handler guards
   window.__overlayIsDragging = false; // Expose for creative.html
 
+  // Body scroll lock helpers (mobile only, stores original value)
+  function lockBodyScroll() {
+    const isMobile = window.matchMedia('(pointer: coarse)').matches;
+    if (isMobile && !document.body.dataset.overflowOriginal) {
+      document.body.dataset.overflowOriginal = document.body.style.overflow || '';
+      document.body.style.overflow = 'hidden';
+    }
+  }
+
+  function unlockBodyScroll() {
+    const original = document.body.dataset.overflowOriginal || '';
+    document.body.style.overflow = original;
+    delete document.body.dataset.overflowOriginal;
+  }
+
+  // Safety: ensure body is never stuck locked on init
+  unlockBodyScroll();
+
   handle.addEventListener('pointerdown', (e) => {
     // Only left button
     if (e.button !== 0) return;
@@ -249,14 +268,11 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     window.__overlayIsDragging = true;
     box.classList.add('is-dragging');
     
-    // Lock body scroll during drag on touch devices
-    const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
-    if (isTouchDevice) {
-      // Lock body scroll during drag
-      document.body.style.overflow = 'hidden';
-      document.body.style.position = 'fixed';
-      document.body.style.width = '100%';
-      document.body.style.top = `-${window.scrollY}px`;
+    // Lock body scroll and add dragging class on mobile
+    const isMobile = window.matchMedia('(pointer: coarse)').matches;
+    if (isMobile) {
+      stage.classList.add('dragging');
+      lockBodyScroll();
     }
     
     e.preventDefault();
@@ -282,25 +298,18 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     try {
       handle.releasePointerCapture(drag.pointerId);
     } catch {}
+    // Unlock body scroll and remove dragging class on mobile (early, before other logic)
+    const isMobile = window.matchMedia('(pointer: coarse)').matches;
+    if (isMobile) {
+      stage.classList.remove('dragging');
+      unlockBodyScroll();
+    }
+    
     dragging = false;
     isDragging = false;
     window.__overlayIsDragging = false;
     drag = null;
     box.classList.remove('is-dragging');
-    
-    // Restore body scroll on touch devices
-    const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
-    if (isTouchDevice) {
-      // Restore body scroll
-      const scrollY = document.body.style.top;
-      document.body.style.overflow = '';
-      document.body.style.position = '';
-      document.body.style.width = '';
-      document.body.style.top = '';
-      if (scrollY) {
-        window.scrollTo(0, parseInt(scrollY || '0') * -1);
-      }
-    }
     
     // Emit state to persist new position
     emitCaptionState('dragend');
