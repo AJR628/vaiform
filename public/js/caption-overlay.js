@@ -1779,6 +1779,9 @@ export function ensureOverlayTopAndVisible(stageSel = '#stage') {
   box.style.left = /%$/.test(box.style.left) ? `${(left / Math.max(1, sW)) * 100}%` : `${left}px`;
   box.style.top  = /%$/.test(box.style.top)  ? `${(top  / Math.max(1, sH)) * 100}%`  : `${top}px`;
 
+  // Force layout read to ensure mobile browsers recalculate and render the caption box
+  void stage.getBoundingClientRect();
+
   // Ensure stage is visible in viewport for hit testing/dragging
   // Only scrollIntoView on non-touch devices to prevent mobile jumps
   const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;

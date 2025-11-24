@@ -5903,6 +5903,67 @@
         
         // Media buttons are now handled by ui-actions.js delegated event system
       })();
+      
+      // Debug helper for caption box visibility
+      window.debugCaptionBox = function() {
+        const stage = document.getElementById('stage');
+        const box = stage?.querySelector('.caption-box');
+        const container = document.getElementById('live-preview-container');
+        const canvas = document.getElementById('live-preview-canvas');
+        
+        if (!stage) {
+          console.warn('[debugCaptionBox] Stage not found');
+          return;
+        }
+        
+        if (!box) {
+          console.warn('[debugCaptionBox] Caption box not found');
+          return;
+        }
+        
+        const stageRect = stage.getBoundingClientRect();
+        const boxRect = box.getBoundingClientRect();
+        const containerRect = container?.getBoundingClientRect();
+        const canvasRect = canvas?.getBoundingClientRect();
+        
+        console.log('[debugCaptionBox] Stage:', {
+          display: window.getComputedStyle(stage).display,
+          visibility: window.getComputedStyle(stage).visibility,
+          opacity: window.getComputedStyle(stage).opacity,
+          rect: { width: stageRect.width, height: stageRect.height, top: stageRect.top, left: stageRect.left },
+          clientWidth: stage.clientWidth,
+          clientHeight: stage.clientHeight,
+          offsetWidth: stage.offsetWidth,
+          offsetHeight: stage.offsetHeight
+        });
+        
+        console.log('[debugCaptionBox] Caption Box:', {
+          display: window.getComputedStyle(box).display,
+          visibility: window.getComputedStyle(box).visibility,
+          opacity: window.getComputedStyle(box).opacity,
+          position: window.getComputedStyle(box).position,
+          zIndex: window.getComputedStyle(box).zIndex,
+          rect: { width: boxRect.width, height: boxRect.height, top: boxRect.top, left: boxRect.left },
+          styleLeft: box.style.left,
+          styleTop: box.style.top,
+          offsetWidth: box.offsetWidth,
+          offsetHeight: box.offsetHeight,
+          clientWidth: box.clientWidth,
+          clientHeight: box.clientHeight
+        });
+        
+        console.log('[debugCaptionBox] Container:', {
+          display: container ? window.getComputedStyle(container).display : 'N/A',
+          rect: containerRect ? { width: containerRect.width, height: containerRect.height } : 'N/A'
+        });
+        
+        console.log('[debugCaptionBox] Canvas:', {
+          display: canvas ? window.getComputedStyle(canvas).display : 'N/A',
+          rect: canvasRect ? { width: canvasRect.width, height: canvasRect.height } : 'N/A',
+          canvasWidth: canvas?.width,
+          canvasHeight: canvas?.height
+        });
+      };
     </script>
 
 
