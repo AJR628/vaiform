@@ -1811,8 +1811,22 @@ export function ensureOverlayTopAndVisible(stageSel = '#stage') {
     const minTop = SAFE_MARGIN;
     const maxTop = Math.max(SAFE_MARGIN, stageHeight - boxHeight - SAFE_MARGIN);
     
-    // Clamp into view
-    const clampedTopPx = Math.min(Math.max(currentTopPx, minTop), maxTop);
+    // Determine if box is outside visible area
+    const isBelowStage = currentTopPx > stageHeight;
+    const isAboveStage = currentTopPx < -boxHeight;
+    const isOutsideVisible = isBelowStage || isAboveStage;
+    
+    let clampedTopPx;
+    if (isOutsideVisible) {
+      // Box is outside visible area - position it near top (like desktop default ~10%)
+      // This matches desktop behavior where box starts at ~10% from top
+      clampedTopPx = Math.max(SAFE_MARGIN, Math.round(stageHeight * 0.10));
+      // Ensure it doesn't exceed maxTop
+      clampedTopPx = Math.min(clampedTopPx, maxTop);
+    } else {
+      // Box is in visible area - just clamp to ensure it stays visible
+      clampedTopPx = Math.min(Math.max(currentTopPx, minTop), maxTop);
+    }
     
     // Preserve existing unit type (% or px) when setting style
     const wasPercentage = /%$/.test(box.style.top);
@@ -1828,7 +1842,8 @@ export function ensureOverlayTopAndVisible(stageSel = '#stage') {
         sh: stageHeight, 
         bh: boxHeight,
         wasPercentage,
-        originalTop: currentTopPx
+        originalTop: currentTopPx,
+        wasOutsideVisible: isOutsideVisible
       }); 
     } catch {}
   }
