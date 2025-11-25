@@ -1802,20 +1802,21 @@
         
         // New overlay-based caption update function
         async function updateOverlayCaption(text = '', show = true) {
+            // Unhide container at the top (before early return)
+            const container = document.getElementById('live-preview-container');
+            if (container) {
+                container.classList.remove('opacity-0');
+                if (!container.style.opacity) {
+                    container.style.opacity = '1';
+                }
+            }
+            
             if (!useOverlayMode || !overlaySystemInitialized) return;
             
-            // Unhide container when showing a quote
-            if (show === true) {
-                const container = document.getElementById('live-preview-container');
-                if (container) {
-                    container.classList.remove('opacity-0');
-                    // Only set inline opacity if style is currently empty (to not override transitions)
-                    if (!container.style.opacity) {
-                        container.style.opacity = '1';
-                    }
-                    // Force layout recalculation on mobile
-                    void container.offsetHeight;
-                }
+            // Ensure stage is visible
+            const stage = document.getElementById('stage');
+            if (stage) {
+                stage.style.display = 'block';
             }
             
             try {
@@ -2077,7 +2078,14 @@
                     await displayQuote(currentQuote, { skipPreview: true }); // keep textarea visible, skip preview update
                     decRegens();
                     
-                    // Preview update removed - will only happen on Save
+                    // Update overlay if system is active (for mobile visibility)
+                    if (useOverlayMode && overlaySystemInitialized && currentQuote?.text) {
+                        try {
+                            await maybeUpdateOverlay(currentQuote.text.trim(), true);
+                        } catch (e) {
+                            console.warn('[generate-quote] overlay update failed', e);
+                        }
+                    }
                 } else {
                     showError('quote-error', data.reason || 'Failed to generate quote');
                 }
@@ -2566,7 +2574,11 @@
                     if (currentQuote) {
                         // Small delay to ensure preview is rendered before caption
                         setTimeout(() => {
-                            updateCaptionOverlay(currentQuote.text.trim(), true);
+                            if (useOverlayMode && overlaySystemInitialized) {
+                                updateOverlayCaption(currentQuote.text.trim(), true);
+                            } else {
+                                updateCaptionOverlay(currentQuote.text.trim(), true);
+                            }
                         }, 100);
                     }
                 });
