@@ -83,6 +83,9 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
   box.appendChild(resizeHandle);
   stage.appendChild(box);
 
+  // Apply mobile compositing hints to force Safari hardware acceleration
+  applyMobileCompositing(box);
+
   // V2-only floating toolbar DOM (now docked)
   let toolbar = null; let toolbarArrow = null; let toolbarMode = 'inside'; // toolbarMode kept for compatibility but not used for positioning
   if (overlayV2) {
@@ -1040,6 +1043,9 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     }
     try { ensureOverlayTopAndVisible(stageSel); } catch {}
     
+    // Apply mobile compositing hints after positioning
+    applyMobileCompositing(box);
+    
     // Update global SSOT meta after setting quote
     window.__overlayMeta = getCaptionMeta();
   };
@@ -1750,6 +1756,25 @@ function isMobileViewport() {
          (window.innerWidth <= 768);
 }
 
+// Apply mobile-only compositing hints to force Safari hardware acceleration
+function applyMobileCompositing(box) {
+  if (!isMobileViewport() || !box) return;
+  
+  const inner = box.querySelector('.content');
+  
+  box.style.transform = 'translateZ(0)';
+  box.style.willChange = 'transform';
+  
+  if (inner) {
+    inner.style.transform = 'translateZ(0)';
+    inner.style.willChange = 'transform';
+  }
+  
+  // Force repaint on Safari
+  void box.offsetHeight;
+  if (inner) void inner.offsetHeight;
+}
+
 // Ensure the caption box is on top, hit-testable, and inside the stage viewport
 export function ensureOverlayTopAndVisible(stageSel = '#stage') {
   const stage = document.querySelector(stageSel);
@@ -1862,6 +1887,9 @@ export function ensureOverlayTopAndVisible(stageSel = '#stage') {
         wasOutsideVisible: isOutsideVisible
       }); 
     } catch {}
+    
+    // Apply mobile compositing hints after mobile-specific positioning
+    applyMobileCompositing(box);
   }
 
   // Force layout read to ensure mobile browsers recalculate and render the caption box
