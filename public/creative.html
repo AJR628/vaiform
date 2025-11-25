@@ -1293,6 +1293,20 @@
             // Legacy function - use maybeUpdateOverlay instead for new overlay system
             console.log('[preview-init] updateCaptionOverlay called with:', { text: text?.substring(0, 50), show });
             
+            // Unhide container when showing a quote
+            if (show === true) {
+                const container = document.getElementById('live-preview-container');
+                if (container) {
+                    container.classList.remove('opacity-0');
+                    // Only set inline opacity if style is currently empty (to not override transitions)
+                    if (!container.style.opacity) {
+                        container.style.opacity = '1';
+                    }
+                    // Force layout recalculation on mobile
+                    void container.offsetHeight;
+                }
+            }
+            
             const overlay = document.getElementById('caption-overlay');
             if (!overlay) return;
             
@@ -1675,6 +1689,12 @@
                 
                 overlaySystemInitialized = true;
                 console.log('[overlay-system] Initialized draggable overlay');
+                
+                // Ensure stage is not display:none after initialization
+                const stageEl = document.getElementById('stage');
+                if (stageEl && getComputedStyle(stageEl).display === 'none') {
+                    stageEl.style.display = 'block';
+                }
                 
                 // Mark preview as unsaved when caption text changes (SSOT workflow)
                 try {
@@ -5963,6 +5983,28 @@
           canvasWidth: canvas?.width,
           canvasHeight: canvas?.height
         });
+      };
+      
+      // Debug helper for caption visibility diagnostics
+      window.debugCaptionVisibility = function() {
+        const container = document.getElementById('live-preview-container');
+        const stage = document.getElementById('stage');
+        const box = document.querySelector('.caption-box');
+        return {
+          container: container && {
+            classes: container.className,
+            styleOpacity: container.style.opacity,
+            computedOpacity: getComputedStyle(container).opacity,
+          },
+          stage: stage && {
+            styleDisplay: stage.style.display,
+            computedDisplay: getComputedStyle(stage).display,
+          },
+          box: box && {
+            rect: box.getBoundingClientRect(),
+            visible: getComputedStyle(box).visibility,
+          },
+        };
       };
     </script>
 
