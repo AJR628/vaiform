@@ -1743,6 +1743,13 @@ function tryCanvasExtraction(element, metrics) {
   return { lines, success: true };
 }
 
+// Mobile detection helper (matches existing isTouchDevice pattern)
+function isMobileViewport() {
+  return window.matchMedia('(pointer: coarse)').matches ||
+         /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) ||
+         (window.innerWidth <= 768);
+}
+
 // Ensure the caption box is on top, hit-testable, and inside the stage viewport
 export function ensureOverlayTopAndVisible(stageSel = '#stage') {
   const stage = document.querySelector(stageSel);
@@ -1778,6 +1785,53 @@ export function ensureOverlayTopAndVisible(stageSel = '#stage') {
 
   box.style.left = /%$/.test(box.style.left) ? `${(left / Math.max(1, sW)) * 100}%` : `${left}px`;
   box.style.top  = /%$/.test(box.style.top)  ? `${(top  / Math.max(1, sH)) * 100}%`  : `${top}px`;
+
+  // Mobile-only: Use getBoundingClientRect() for accurate positioning
+  // This fixes the bug where percentage-based positions (e.g., "10%") are misparsed
+  if (isMobileViewport()) {
+    const stageRect = stage.getBoundingClientRect();
+    const boxRect = box.getBoundingClientRect();
+    
+    // Get actual rendered dimensions
+    const stageHeight = stageRect.height;
+    const boxHeight = boxRect.height;
+    
+    // Skip if box hasn't rendered yet (one retry via rAF if needed)
+    if (boxHeight === 0 || stageHeight === 0) {
+      requestAnimationFrame(() => {
+        try { ensureOverlayTopAndVisible(stageSel); } catch {}
+      });
+      return;
+    }
+    
+    // Convert viewport coordinates to stage-relative coordinates
+    const currentTopPx = boxRect.top - stageRect.top;
+    
+    const SAFE_MARGIN = 8; // px, matches existing pad constant
+    const minTop = SAFE_MARGIN;
+    const maxTop = Math.max(SAFE_MARGIN, stageHeight - boxHeight - SAFE_MARGIN);
+    
+    // Clamp into view
+    const clampedTopPx = Math.min(Math.max(currentTopPx, minTop), maxTop);
+    
+    // Preserve existing unit type (% or px) when setting style
+    const wasPercentage = /%$/.test(box.style.top);
+    if (wasPercentage) {
+      box.style.top = `${(clampedTopPx / Math.max(1, stageHeight)) * 100}%`;
+    } else {
+      box.style.top = `${clampedTopPx}px`;
+    }
+    
+    try { 
+      console.log('[overlay] snapped caption-box in-view (mobile)', { 
+        top: clampedTopPx, 
+        sh: stageHeight, 
+        bh: boxHeight,
+        wasPercentage,
+        originalTop: currentTopPx
+      }); 
+    } catch {}
+  }
 
   // Force layout read to ensure mobile browsers recalculate and render the caption box
   void stage.getBoundingClientRect();
