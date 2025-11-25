@@ -1267,6 +1267,21 @@
                     }
                 }
                 if (legacyOverlay) legacyOverlay.style.display = 'none';
+                
+                // Unhide container if there's a quote
+                if (currentQuote?.text) {
+                    const container = document.getElementById('live-preview-container');
+                    if (container) {
+                        container.classList.remove('opacity-0');
+                        // Only set inline opacity if style is currently empty (to not override transitions)
+                        if (!container.style.opacity) {
+                            container.style.opacity = '1';
+                        }
+                        // Force layout recalculation on mobile
+                        void container.offsetHeight;
+                    }
+                }
+                
                 console.log('[overlay] ensureOverlayActive: stage visible, hasMedia:', !!selectedAsset);
             } catch (e) { console.warn('[overlay] ensureOverlayActive failed', e); }
         }
@@ -1676,6 +1691,18 @@
                 if (currentQuote?.text) {
                     setQuote(currentQuote.text);
                     try { ensureOverlayTopAndVisible('#stage'); } catch {}
+                    
+                    // Unhide container when initial quote exists
+                    const container = document.getElementById('live-preview-container');
+                    if (container) {
+                        container.classList.remove('opacity-0');
+                        // Only set inline opacity if style is currently empty (to not override transitions)
+                        if (!container.style.opacity) {
+                            container.style.opacity = '1';
+                        }
+                        // Force layout recalculation on mobile
+                        void container.offsetHeight;
+                    }
                 }
                 
                 // Initialize hybrid caption preview system
@@ -1776,6 +1803,20 @@
         // New overlay-based caption update function
         async function updateOverlayCaption(text = '', show = true) {
             if (!useOverlayMode || !overlaySystemInitialized) return;
+            
+            // Unhide container when showing a quote
+            if (show === true) {
+                const container = document.getElementById('live-preview-container');
+                if (container) {
+                    container.classList.remove('opacity-0');
+                    // Only set inline opacity if style is currently empty (to not override transitions)
+                    if (!container.style.opacity) {
+                        container.style.opacity = '1';
+                    }
+                    // Force layout recalculation on mobile
+                    void container.offsetHeight;
+                }
+            }
             
             try {
                 const { setQuote, getCaptionMeta, applyCaptionMeta, ensureOverlayTopAndVisible } = await import('./js/caption-overlay.js');
