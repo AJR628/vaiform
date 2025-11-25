@@ -1788,58 +1788,74 @@ export function ensureOverlayTopAndVisible(stageSel = '#stage') {
 
   // Mobile-only: Use getBoundingClientRect() for accurate positioning
   // This fixes the bug where percentage-based positions (e.g., "10%") are misparsed
+  // Clamp relative to visible wrapper viewport (overflow-hidden parent), not full stage
   if (isMobileViewport()) {
+    // Find the wrapper (visible viewport with overflow-hidden)
+    const wrapper = stage.parentElement;
+    if (!wrapper) return;
+    
+    const wrapperRect = wrapper.getBoundingClientRect();
     const stageRect = stage.getBoundingClientRect();
     const boxRect = box.getBoundingClientRect();
     
     // Get actual rendered dimensions
-    const stageHeight = stageRect.height;
+    const wrapperHeight = wrapperRect.height; // visible viewport height
+    const stageHeight = stageRect.height; // full stage height (for unit conversion)
     const boxHeight = boxRect.height;
     
     // Skip if box hasn't rendered yet (one retry via rAF if needed)
-    if (boxHeight === 0 || stageHeight === 0) {
+    if (boxHeight === 0 || wrapperHeight === 0) {
       requestAnimationFrame(() => {
         try { ensureOverlayTopAndVisible(stageSel); } catch {}
       });
       return;
     }
     
-    // Convert viewport coordinates to stage-relative coordinates
-    const currentTopPx = boxRect.top - stageRect.top;
+    // Calculate box position relative to visible wrapper viewport
+    const currentTopPx = boxRect.top - wrapperRect.top;
     
     const SAFE_MARGIN = 8; // px, matches existing pad constant
     const minTop = SAFE_MARGIN;
-    const maxTop = Math.max(SAFE_MARGIN, stageHeight - boxHeight - SAFE_MARGIN);
+    const maxTop = Math.max(SAFE_MARGIN, wrapperHeight - boxHeight - SAFE_MARGIN);
     
-    // Determine if box is outside visible area
-    const isBelowStage = currentTopPx > stageHeight;
-    const isAboveStage = currentTopPx < -boxHeight;
-    const isOutsideVisible = isBelowStage || isAboveStage;
+    // Determine if box is outside visible wrapper area
+    const isBelowWrapper = currentTopPx > wrapperHeight;
+    const isAboveWrapper = currentTopPx < -boxHeight;
+    const isOutsideVisible = isBelowWrapper || isAboveWrapper;
     
     let clampedTopPx;
     if (isOutsideVisible) {
-      // Box is outside visible area - position it near top (like desktop default ~10%)
+      // Box is outside visible wrapper area - position it near top (like desktop default ~10%)
       // This matches desktop behavior where box starts at ~10% from top
-      clampedTopPx = Math.max(SAFE_MARGIN, Math.round(stageHeight * 0.10));
+      clampedTopPx = Math.max(SAFE_MARGIN, Math.round(wrapperHeight * 0.10));
       // Ensure it doesn't exceed maxTop
       clampedTopPx = Math.min(clampedTopPx, maxTop);
     } else {
-      // Box is in visible area - just clamp to ensure it stays visible
+      // Box is in visible wrapper area - just clamp to ensure it stays visible
       clampedTopPx = Math.min(Math.max(currentTopPx, minTop), maxTop);
     }
+    
+    // Convert clamped position (relative to wrapper) back to stage-relative units
+    // Since box.style.top is relative to stage, we need to convert wrapper-relative px to stage-relative
+    // Calculate the stage-relative position: wrapper-relative position + (stage top - wrapper top)
+    const stageTopOffset = stageRect.top - wrapperRect.top;
+    const stageRelativeTopPx = clampedTopPx - stageTopOffset;
     
     // Preserve existing unit type (% or px) when setting style
     const wasPercentage = /%$/.test(box.style.top);
     if (wasPercentage) {
-      box.style.top = `${(clampedTopPx / Math.max(1, stageHeight)) * 100}%`;
+      // Convert stage-relative px to percentage of stage height
+      box.style.top = `${(stageRelativeTopPx / Math.max(1, stageHeight)) * 100}%`;
     } else {
-      box.style.top = `${clampedTopPx}px`;
+      box.style.top = `${stageRelativeTopPx}px`;
     }
     
     try { 
       console.log('[overlay] snapped caption-box in-view (mobile)', { 
         top: clampedTopPx, 
-        sh: stageHeight, 
+        wrapperHeight,
+        stageHeight,
+        stageRelativeTopPx,
         bh: boxHeight,
         wasPercentage,
         originalTop: currentTopPx,
