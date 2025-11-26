@@ -785,6 +785,14 @@
         }
         window.isSimpleMobile = isSimpleMobile;
 
+        // --- Helper to mark desktop-only elements as hidden ---
+        function markDesktopOnly(el, description) {
+            if (el) {
+                el.style.display = 'none';
+                console.log('[simple-mobile] hiding desktop-only element:', description);
+            }
+        }
+
         // --- Auth ready (wait for Firebase to finish initializing exactly once) ---
         window.__authReady = window.__authReady || new Promise((resolve) => {
           try {
@@ -2982,19 +2990,35 @@
           // Simple mobile mode: hide desktop Studio UI elements
           if (isSimpleMobile()) {
             console.log('[simple-mobile] enabled');
-            // Hide desktop accordion sections
-            document.querySelectorAll('.accordion-section').forEach(section => {
-              section.style.display = 'none';
+            
+            // Hide all accordion headers (the chrome tabs)
+            document.querySelectorAll('.accordion-header').forEach(header => {
+              markDesktopOnly(header, 'accordion-header');
             });
-            // Hide mobile studio toolbar
-            const mobileToolbar = document.getElementById('mobile-studio-toolbar');
-            if (mobileToolbar) mobileToolbar.style.display = 'none';
+            
+            // Hide Background and Voiceover sections (keep Quote section visible)
+            document.querySelectorAll('.accordion-section').forEach(section => {
+              const header = section.querySelector('.accordion-header');
+              if (header) {
+                const sectionType = header.getAttribute('data-section');
+                if (sectionType === 'media') {
+                  markDesktopOnly(section, 'Background section');
+                } else if (sectionType === 'voice') {
+                  markDesktopOnly(section, 'Voiceover section');
+                }
+                // Quote section (data-section="quote") is NOT hidden - keep it visible
+              }
+            });
+            
+            // Hide mobile studio toolbar (tabs row)
+            markDesktopOnly(document.getElementById('mobile-studio-toolbar'), 'mobile-studio-toolbar');
+            
             // Hide desktop Create button
-            const renderBtn = document.getElementById('render-btn');
-            if (renderBtn) renderBtn.style.display = 'none';
+            markDesktopOnly(document.getElementById('render-btn'), 'render-btn (desktop Create)');
+            
             // Hide mobile Create button
-            const mobileCreateBtn = document.getElementById('mobile-create-btn');
-            if (mobileCreateBtn) mobileCreateBtn.style.display = 'none';
+            markDesktopOnly(document.getElementById('mobile-create-btn'), 'mobile-create-btn');
+            
             // Ensure One-Click Short buttons remain visible
             const oneClickBtn = document.getElementById('one-click-btn');
             if (oneClickBtn) oneClickBtn.style.display = '';
