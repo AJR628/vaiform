@@ -114,6 +114,15 @@ const ACTIONS = {
     } else {
       console.error('[ui-actions] loadAssets function not found');
     }
+  },
+  
+  oneClickShort: () => {
+    console.log('[ui-actions] oneClickShort triggered');
+    if (typeof window.oneClickShort === 'function') {
+      window.oneClickShort();
+    } else {
+      console.error('[ui-actions] oneClickShort function not found');
+    }
   }
 };
 
