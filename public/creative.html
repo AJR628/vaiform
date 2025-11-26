@@ -665,6 +665,14 @@
                 <!-- Fix A: Give the preview wrapper a predictable size -->
                 <div class="relative mx-auto bg-black rounded-lg overflow-hidden" style="width: 360px; aspect-ratio: 9 / 16;">
                     <canvas id="live-preview-canvas" class="w-full h-full block"></canvas>
+                    <!-- One-Click status overlay -->
+                    <div
+                      id="one-click-status"
+                      class="pointer-events-none absolute inset-0 z-40 flex items-center justify-center text-center px-4 text-sm sm:text-base font-semibold text-white bg-black/60 opacity-0 transition-opacity duration-200"
+                      aria-hidden="true"
+                    >
+                      <span id="one-click-status-text"></span>
+                    </div>
                     <!-- Legacy caption overlay (hidden when using new overlay system) -->
                     <img
                       id="caption-overlay"
@@ -5065,9 +5073,30 @@
             }
         }
 
+        // One-Click status overlay helpers
+        function setOneClickStatus(text) {
+            const container = document.getElementById('one-click-status');
+            const label = document.getElementById('one-click-status-text');
+            if (!container || !label) return;
+            
+            if (!text) {
+                container.style.opacity = '0';
+                label.textContent = '';
+                return;
+            }
+            
+            label.textContent = text;
+            container.style.opacity = '1';
+        }
+
+        function clearOneClickStatus() {
+            setOneClickStatus('');
+        }
+
         // One-Click Short orchestration function
         async function oneClickShort() {
             console.log('[one-click] Starting one-click short flow');
+            setOneClickStatus('Generating quote…');
             
             // Disable buttons during flow
             const oneClickBtn = document.getElementById('one-click-btn');
@@ -5112,6 +5141,8 @@
                     }
                     quoteText = currentQuote.text;
                 }
+                
+                setOneClickStatus('Finding background…');
                 
                 // Step 2: Build asset search query
                 console.log('[one-click] Step 2: Building asset search query...');
@@ -5228,6 +5259,7 @@
                 
                 // Step 4: Save preview
                 console.log('[one-click] Step 4: Saving preview...');
+                setOneClickStatus('Saving preview…');
                 if (oneClickBtn) oneClickBtn.textContent = 'Saving preview...';
                 if (mobileOneClickBtn) mobileOneClickBtn.textContent = 'Saving...';
                 
@@ -5241,6 +5273,7 @@
                 
                 // Step 5: Render
                 console.log('[one-click] Step 5: Rendering short...');
+                setOneClickStatus('Rendering…');
                 if (oneClickBtn) oneClickBtn.textContent = 'Rendering...';
                 if (mobileOneClickBtn) mobileOneClickBtn.textContent = 'Rendering...';
                 
@@ -5262,6 +5295,10 @@
                     mobileOneClickBtn.disabled = false;
                     mobileOneClickBtn.textContent = originalMobileText;
                 }
+                // Clear status overlay with a brief delay
+                setTimeout(() => {
+                    clearOneClickStatus();
+                }, 600);
             }
         }
         
