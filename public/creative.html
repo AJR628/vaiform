@@ -4462,6 +4462,8 @@
                     previewSavedFlag: window._previewSavedForCurrentText
                 });
 
+                // --- OPTIONAL overlay / debug work below. Must never block a successful save. ---
+
                 // Hide Save Preview button and show success indicator
                 saveBtn.style.display = 'none';
                 
@@ -4502,7 +4504,23 @@
 
             } catch (error) {
                 console.error('[savePreview] Error:', error);
-                alert(`Save preview failed: ${error.message}`);
+                const msg = error?.message || String(error || '');
+                const isStyleNull = msg.includes("Cannot read properties of null (reading 'style')");
+                
+                const metaAvailable = (() => {
+                    try {
+                        return typeof window.getSavedOverlayMeta === 'function' && !!window.getSavedOverlayMeta();
+                    } catch (_) {
+                        return false;
+                    }
+                })();
+                
+                if (isStyleNull && metaAvailable) {
+                    console.warn('[savePreview][nonfatal] style=null after successful save, ignoring.', { msg });
+                    return true;
+                }
+                
+                alert(`Save preview failed: ${msg}`);
                 return false;
             } finally {
                 if (saveBtn) {
