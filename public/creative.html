@@ -4044,7 +4044,16 @@
                 // Derive V2 percentage fields from SSOT raster values for backward compatibility
                 const frameW = 1080, frameH = 1920;
                 payload.wPct = Number.isFinite(browserGeometry.rasterW) ? +(browserGeometry.rasterW / frameW).toFixed(6) : undefined;
-                payload.yPct = Number.isFinite(browserGeometry.yPx_png) ? +(browserGeometry.yPx_png / frameH).toFixed(6) : undefined;
+                // Clamp yPct to [0, 1] range to prevent negative values
+                const rawYPct = Number.isFinite(browserGeometry.yPx_png) ? +(browserGeometry.yPx_png / frameH).toFixed(6) : undefined;
+                if (Number.isFinite(rawYPct)) {
+                    payload.yPct = Math.max(0, Math.min(1, rawYPct));
+                    if (rawYPct < 0 || rawYPct > 1) {
+                        console.warn('[savePreview] Clamped yPct from', rawYPct, 'to', payload.yPct);
+                    }
+                } else {
+                    payload.yPct = undefined;
+                }
                 payload.xPct = Number.isFinite(payload.wPct) ? +((1 - payload.wPct) / 2).toFixed(6) : undefined;
 
                 // Validate payload before POST
@@ -4273,7 +4282,15 @@
                     totalTextHPx: totalTextH,
                     yPxFirstLine: yPxFirstLine,
                     xPct: Number(m.xPct ?? meta.xPct ?? 0.5),
-                    yPct: Number(m.yPct ?? meta.yPct ?? 0.5),
+                    // PRIMARY FIX: Clamp yPct to [0, 1] range to prevent negative values
+                    yPct: (() => {
+                        const rawYPct = Number(m.yPct ?? meta.yPct ?? 0.5);
+                        const clamped = Math.max(0, Math.min(1, rawYPct));
+                        if (rawYPct < 0 || rawYPct > 1) {
+                            console.warn('[savePreview] Clamped normalizedMeta.yPct from', rawYPct, 'to', clamped);
+                        }
+                        return clamped;
+                    })(),
                     wPct: Number(m.wPct ?? meta.wPct ?? 0.8),
                     
                     // Additional raster aliases for compatibility
@@ -4817,6 +4834,13 @@
                     throw new Error('Missing SSOT field: lines');
                   }
                   
+                  // Tiny safety net: Clamp yPct to [0, 1] if somehow still negative (defensive programming)
+                  if (Number.isFinite(savedMeta.yPct) && (savedMeta.yPct < 0 || savedMeta.yPct > 1)) {
+                    const clamped = Math.max(0, Math.min(1, savedMeta.yPct));
+                    console.warn('[render] Safety net: Clamped savedMeta.yPct from', savedMeta.yPct, 'to', clamped);
+                    savedMeta.yPct = clamped;
+                  }
+                  
                   payload.captionMode = 'overlay';
                   payload.overlayCaption = savedMeta; // Use saved meta directly (already normalized by server)
                   
@@ -5161,13 +5185,23 @@
                     await new Promise(resolve => setTimeout(resolve, 300));
                     
                     // Ensure overlay is visible and properly positioned before saving
-                    try {
-                        const { ensureOverlayTopAndVisible } = await import('./js/caption-overlay.js');
-                        ensureOverlayTopAndVisible('#stage');
-                        // Wait for layout to settle after positioning
-                        await new Promise(resolve => requestAnimationFrame(resolve));
-                    } catch (e) {
-                        console.warn('[one-click] Overlay positioning failed:', e);
+                    if (useOverlayMode && overlaySystemInitialized) {
+                        try {
+                            const stage = document.querySelector('#stage');
+                            const box = stage?.querySelector('.caption-box');
+                            if (stage && box) {
+                                const { ensureOverlayTopAndVisible } = await import('./js/caption-overlay.js');
+                                ensureOverlayTopAndVisible('#stage');
+                                // Wait for layout to settle after positioning
+                                await new Promise(resolve => requestAnimationFrame(resolve));
+                            } else {
+                                console.warn('[one-click] Overlay elements not found, skipping positioning');
+                            }
+                        } catch (e) {
+                            console.warn('[one-click] Overlay positioning failed:', e);
+                        }
+                    } else {
+                        console.log('[one-click] Overlay system not initialized, skipping positioning');
                     }
                 } else {
                     console.log('[one-click] No assets found, will use black background');
