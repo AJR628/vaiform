@@ -3783,7 +3783,13 @@
             }) : totalTextHFrame + (paddingFramePx * 2);
 
             const xPx_png = toFramePx(relativeLeftCss, { frameW, previewCssW });
-            const yPx_png = toFramePx(relativeTopCss, { frameW, previewCssW });
+            let yPx_png = toFramePx(relativeTopCss, { frameW, previewCssW });
+            
+            // Clamp negative yPx_png to 0 as safety net (overlay may be off-screen on mobile)
+            if (yPx_png < 0) {
+                console.warn('[browser-geom] Clamping negative yPx_png:', yPx_png, '-> 0');
+                yPx_png = 0;
+            }
 
             // Compute asymmetric padding
             const padTop = paddingFramePx;
@@ -5153,6 +5159,16 @@
                     
                     // Wait for preview to update
                     await new Promise(resolve => setTimeout(resolve, 300));
+                    
+                    // Ensure overlay is visible and properly positioned before saving
+                    try {
+                        const { ensureOverlayTopAndVisible } = await import('./js/caption-overlay.js');
+                        ensureOverlayTopAndVisible('#stage');
+                        // Wait for layout to settle after positioning
+                        await new Promise(resolve => requestAnimationFrame(resolve));
+                    } catch (e) {
+                        console.warn('[one-click] Overlay positioning failed:', e);
+                    }
                 } else {
                     console.log('[one-click] No assets found, will use black background');
                     selectedAsset = null;
