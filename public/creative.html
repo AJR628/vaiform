@@ -779,6 +779,12 @@
             return API_BASE_FIXED.replace(/\/$/, '');
         }
 
+        // --- Simple mobile mode detection ---
+        function isSimpleMobile() {
+            return window.innerWidth <= 768 || window.matchMedia('(pointer: coarse)').matches;
+        }
+        window.isSimpleMobile = isSimpleMobile;
+
         // --- Auth ready (wait for Firebase to finish initializing exactly once) ---
         window.__authReady = window.__authReady || new Promise((resolve) => {
           try {
@@ -2972,6 +2978,29 @@
         document.addEventListener('DOMContentLoaded', async () => {
           // Wrap each init so one failure doesn't stop the others
           const safe = (label, fn) => { try { fn && fn(); } catch (e) { console.error(`[init] ${label} failed`, e); } };
+          
+          // Simple mobile mode: hide desktop Studio UI elements
+          if (isSimpleMobile()) {
+            console.log('[simple-mobile] enabled');
+            // Hide desktop accordion sections
+            document.querySelectorAll('.accordion-section').forEach(section => {
+              section.style.display = 'none';
+            });
+            // Hide mobile studio toolbar
+            const mobileToolbar = document.getElementById('mobile-studio-toolbar');
+            if (mobileToolbar) mobileToolbar.style.display = 'none';
+            // Hide desktop Create button
+            const renderBtn = document.getElementById('render-btn');
+            if (renderBtn) renderBtn.style.display = 'none';
+            // Hide mobile Create button
+            const mobileCreateBtn = document.getElementById('mobile-create-btn');
+            if (mobileCreateBtn) mobileCreateBtn.style.display = 'none';
+            // Ensure One-Click Short buttons remain visible
+            const oneClickBtn = document.getElementById('one-click-btn');
+            if (oneClickBtn) oneClickBtn.style.display = '';
+            const mobileOneClickBtn = document.getElementById('mobile-one-click-btn');
+            if (mobileOneClickBtn) mobileOneClickBtn.style.display = '';
+          }
           
           // AUDIT: Actively load fonts and check status
           if (document.fonts) {
