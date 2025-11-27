@@ -296,11 +296,7 @@
 
 /* Mobile Studio Layout - max-width: 768px */
 @media (max-width: 768px) {
-  /* Header full-width, center content */
-  .max-w-6xl {
-    padding-left: 1rem;
-    padding-right: 1rem;
-  }
+  /* Header full-width - no padding constraints */
   
   /* Hide "Live Preview" title on mobile */
   .studio-accordion-right .content-box h2 {
@@ -317,13 +313,10 @@
     display: none;
   }
   
-  /* Center preview container, set width to ~95% with padding */
+  /* Preview container full-width on mobile */
   #live-preview-container {
-    width: 95% !important;
-    max-width: 95%;
-    margin-left: auto;
-    margin-right: auto;
-    padding: 0 2.5%;
+    width: 100% !important;
+    max-width: 100%;
   }
   
   /* Adjust preview wrapper to match container width */
@@ -361,12 +354,9 @@
   
   /* Mobile toolbar styling */
   #mobile-studio-toolbar {
-    width: 95%;
-    max-width: 95%;
-    margin-left: auto;
-    margin-right: auto;
+    width: 100%;
+    max-width: 100%;
     margin-top: 0.5rem;
-    padding: 0 2.5%;
   }
   
   /* Mobile tab buttons */
@@ -410,11 +400,8 @@
   /* Position accordion bodies directly under toolbar */
   .studio-accordion-left {
     margin-top: 0;
-    width: 95%;
-    max-width: 95%;
-    margin-left: auto;
-    margin-right: auto;
-    padding: 0 2.5%;
+    width: 100%;
+    max-width: 100%;
   }
   
   /* Ensure only active body is visible, positioned under toolbar */

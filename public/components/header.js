@@ -4,9 +4,9 @@
 export function createUnifiedHeader() {
   const headerHTML = `
     <header class="bg-gray-800 dark:bg-gray-800 shadow sticky top-0 z-50">
-      <div class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-2">
+      <div class="w-full md:max-w-6xl md:mx-auto py-2">
         <!-- Top bar row: Logo left, Credits + Theme + Logout right -->
-        <div class="flex items-center justify-between gap-3 md:gap-4">
+        <div class="flex items-center justify-between gap-3 md:gap-4 px-4 sm:px-6 lg:px-8">
           <!-- Logo/Brand -->
           <h1 class="text-2xl font-bold text-indigo-400">
             <a href="/">Vaiform</a>
@@ -29,7 +29,7 @@ export function createUnifiedHeader() {
           </div>
         </div>
         <!-- Nav row: All navigation links in a wrapping row -->
-        <nav class="mt-2 flex flex-wrap gap-2 text-sm sm:text-base md:justify-start md:gap-4">
+        <nav class="mt-2 flex flex-wrap gap-2 text-sm sm:text-base md:justify-start md:gap-4 px-4 sm:px-6 lg:px-8">
           <a href="/creative.html" class="px-2 py-1 rounded hover:bg-white/5 hover:text-indigo-400 nav-link text-gray-300 font-medium" data-page="creative">Creative Studio</a>
           <a href="/image-creator.html" class="px-2 py-1 rounded hover:bg-white/5 hover:text-indigo-400 nav-link text-gray-300 font-medium" data-page="image-creator">Image Creator</a>
           <a href="/my-shorts.html" class="px-2 py-1 rounded hover:bg-white/5 hover:text-indigo-400 nav-link text-gray-300 font-medium" data-page="shorts">My Shorts</a>
