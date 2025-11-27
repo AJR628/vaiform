@@ -4,8 +4,8 @@
 export function createUnifiedHeader() {
   const headerHTML = `
     <header class="bg-gray-800 dark:bg-gray-800 shadow sticky top-0 z-50">
-      <div class="max-w-6xl mx-auto px-4 py-4 flex justify-between items-center">
-        <div class="flex items-center gap-6">
+      <div class="max-w-full mx-auto px-4 py-2 flex justify-between items-center relative">
+        <div class="flex items-center gap-6 flex-1">
           <h1 class="text-2xl font-bold text-indigo-400">
             <a href="/">Vaiform</a>
           </h1>
@@ -17,7 +17,7 @@ export function createUnifiedHeader() {
             <a href="/pricing.html" class="hover:text-indigo-400 nav-link" data-page="pricing">Plans & Pricing</a>
           </nav>
         </div>
-        <div class="flex items-center gap-4">
+        <div class="flex items-center gap-3 pr-12">
           <!-- Credits display for logged-in users -->
           <div id="credit-display" class="text-sm text-gray-300 logged-in hidden">
             <span class="bg-indigo-900 text-indigo-300 px-2 py-1 rounded-full text-xs font-medium">
@@ -25,14 +25,14 @@ export function createUnifiedHeader() {
             </span>
             <a href="/buy-credits.html" class="ml-2 text-xs text-indigo-400 hover:underline">buy more</a>
           </div>
-          
-          <!-- Theme toggle -->
-          <button id="theme-toggle" class="text-yellow-400 hover:text-yellow-300 text-xl" title="Toggle theme">🌙</button>
-          
+        </div>
+        <div class="flex flex-col items-end gap-1 absolute top-1 right-1">
           <!-- Auth buttons -->
           <button id="signup-button" class="text-sm bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700 logged-out hidden">Sign Up</button>
           <button id="login-button" class="text-sm border border-gray-600 text-gray-300 px-3 py-1 rounded hover:bg-gray-700 logged-out hidden">Login</button>
-          <button id="logout-button" class="text-sm border border-gray-600 text-gray-300 px-3 py-1 rounded hover:bg-gray-700 logged-in hidden">Logout</button>
+          <button id="logout-button" class="text-xs border border-gray-600 text-gray-300 px-2 py-0.5 rounded hover:bg-gray-700 logged-in hidden">Logout</button>
+          <!-- Theme toggle -->
+          <button id="theme-toggle" class="text-yellow-400 hover:text-yellow-300 text-base" title="Toggle theme">🌙</button>
         </div>
       </div>
     </header>
