@@ -36,15 +36,32 @@ export async function concatenateClips({ clips, outPath, options = {} }) {
   
   // Build filter_complex for concatenation
   // Scale all clips to same dimensions, then concat
-  const inputs = validClips.map((_, i) => `[${i}:v]`);
   const scaleFilters = validClips.map((clip, i) => {
     return `[${i}:v]scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2,setpts=PTS-STARTPTS[v${i}]`;
   }).join(';');
   
+  // Video concatenation (video only)
   const concatInputs = validClips.map((_, i) => `[v${i}]`).join('');
   const concatFilter = `${concatInputs}concat=n=${validClips.length}:v=1:a=0[outv]`;
   
-  const filterComplex = `${scaleFilters};${concatFilter}`;
+  // Audio processing: normalize all inputs to same format
+  // Process each input's audio stream
+  // Note: Segments should all have audio (rendered with TTS), but if one doesn't, FFmpeg will error
+  const audioFilters = validClips.map((clip, i) => {
+    // Process audio: resample to 48kHz, format to stereo fltp, reset PTS
+    return `[${i}:a]aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo,asetpts=PTS-STARTPTS[a${i}]`;
+  }).join(';');
+  
+  // Audio concatenation
+  const audioConcatInputs = validClips.map((_, i) => `[a${i}]`).join('');
+  const audioConcatFilter = `${audioConcatInputs}concat=n=${validClips.length}:v=0:a=1[outa]`;
+  
+  // Combined filter complex: video scaling, video concat, audio processing, audio concat
+  const filterComplex = `${scaleFilters};${concatFilter};${audioFilters};${audioConcatFilter}`;
+  
+  // Log filter complex for debugging
+  console.log('[ffmpeg.timeline] Concatenating', validClips.length, 'clips with audio');
+  console.log('[ffmpeg.timeline] Filter complex length:', filterComplex.length);
   
   // Build FFmpeg args
   // Note: Segments are already rendered to correct duration, so no need to trim inputs
@@ -54,13 +71,15 @@ export async function concatenateClips({ clips, outPath, options = {} }) {
     ...inputArgs,
     '-filter_complex', filterComplex,
     '-map', '[outv]',
+    '-map', '[outa]', // Map audio output
     '-c:v', 'libx264',
     '-pix_fmt', 'yuv420p',
     '-r', String(fps),
     '-preset', 'veryfast',
     '-crf', '23',
+    '-c:a', 'aac', // Audio codec
+    '-b:a', '96k', // Audio bitrate
     '-movflags', '+faststart',
-    '-an', // No audio for now (will be added with TTS later)
     outPath
   ];
   
