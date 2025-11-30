@@ -5101,10 +5101,22 @@
             setOneClickStatus('');
         }
 
+        // URL detection helper
+        function isUrl(text) {
+            if (!text || typeof text !== 'string') return false;
+            const trimmed = text.trim();
+            try {
+                const url = new URL(trimmed);
+                return url.protocol === 'http:' || url.protocol === 'https:';
+            } catch {
+                // Check if it looks like a URL even if URL constructor fails
+                return /^https?:\/\/.+/.test(trimmed);
+            }
+        }
+
         // One-Click Short orchestration function
         async function oneClickShort() {
             console.log('[one-click] Starting one-click short flow');
-            setOneClickStatus('Generating quote…');
             
             // Disable buttons during flow
             const oneClickBtn = document.getElementById('one-click-btn');
@@ -5113,180 +5125,27 @@
             const originalMobileText = mobileOneClickBtn?.textContent || 'One-Click';
             
             try {
-                // Step 1: Generate or reuse quote
-                console.log('[one-click] Step 1: Generating or reusing quote...');
-                if (oneClickBtn) {
-                    oneClickBtn.disabled = true;
-                    oneClickBtn.textContent = 'Generating quote...';
-                }
-                if (mobileOneClickBtn) {
-                    mobileOneClickBtn.disabled = true;
-                    mobileOneClickBtn.textContent = 'Generating...';
-                }
-                
-                let quoteText = '';
-                if (currentQuote && currentQuote.text) {
-                    console.log('[one-click] Reusing existing quote');
-                    quoteText = currentQuote.text;
-                } else {
-                    const quoteInput = document.getElementById('quote-text');
-                    quoteText = quoteInput?.value?.trim() || '';
-                    
-                    if (!quoteText) {
-                        showError('quote-error', 'Please enter a quote topic or text first');
-                        throw new Error('No quote text provided');
-                    }
-                    
-                    // Generate quote
-                    await window.generateQuote();
-                    
-                    // Wait a bit for quote to be set
-                    await new Promise(resolve => setTimeout(resolve, 500));
-                    
-                    if (!currentQuote || !currentQuote.text) {
-                        showError('quote-error', 'Failed to generate quote');
-                        throw new Error('Quote generation failed');
-                    }
-                    quoteText = currentQuote.text;
-                }
-                
-                setOneClickStatus('Finding background…');
-                
-                // Step 2: Build asset search query
-                console.log('[one-click] Step 2: Building asset search query...');
-                if (oneClickBtn) oneClickBtn.textContent = 'Finding background...';
-                if (mobileOneClickBtn) mobileOneClickBtn.textContent = 'Finding...';
-                
-                const assetQueryInput = document.getElementById('asset-query');
+                // Get input from quote box
                 const quoteInput = document.getElementById('quote-text');
+                const inputText = quoteInput?.value?.trim() || '';
                 
-                let searchQuery = '';
-                if (assetQueryInput?.value?.trim()) {
-                    searchQuery = assetQueryInput.value.trim();
-                } else if (quoteInput?.value?.trim()) {
-                    searchQuery = quoteInput.value.trim();
-                } else if (quoteText) {
-                    // Use first 20 chars of quote text
-                    searchQuery = quoteText.trim().substring(0, 20);
+                if (!inputText) {
+                    showError('quote-error', 'Please enter a URL, quote topic, or text first');
+                    throw new Error('No input provided');
+                }
+                
+                // Check if input is a URL
+                const isLink = isUrl(inputText);
+                
+                if (isLink) {
+                    // Use story service pipeline for links
+                    console.log('[one-click] Detected URL, using story service pipeline');
+                    await oneClickShortFromLink(inputText, oneClickBtn, mobileOneClickBtn);
                 } else {
-                    searchQuery = 'calm'; // Default fallback
+                    // Use existing quote flow for non-URLs
+                    console.log('[one-click] Using quote generation flow');
+                    await oneClickShortFromQuote(oneClickBtn, mobileOneClickBtn);
                 }
-                
-                console.log('[one-click] Using search query:', searchQuery);
-                
-                // Step 3: Search and select asset
-                console.log('[one-click] Step 3: Searching for assets...');
-                
-                // Set asset type to videos (prefer videos for shorts)
-                if (typeof window !== 'undefined') {
-                    window.currentAssetType = 'videos';
-                }
-                currentAssetType = 'videos';
-                
-                // Update asset query input
-                if (assetQueryInput) {
-                    assetQueryInput.value = searchQuery;
-                }
-                
-                // Load assets
-                await window.loadAssets(1);
-                
-                // Wait for grid to populate (with timeout)
-                let attempts = 0;
-                let assets = [];
-                while (attempts < 10) {
-                    await new Promise(resolve => setTimeout(resolve, 200));
-                    
-                    // Try to get assets from cache
-                    const cacheKey = `${currentAssetType}-${searchQuery}-1`;
-                    if (assetCache.has(cacheKey)) {
-                        const cachedData = assetCache.get(cacheKey);
-                        assets = cachedData.items || [];
-                        if (assets.length > 0) break;
-                    }
-                    
-                    // Also check DOM grid
-                    const grid = document.getElementById('asset-grid');
-                    if (grid && grid.children.length > 0) {
-                        // Extract assets from DOM by finding use buttons and their associated asset data
-                        // Since assets are in closure, we need to get from cache
-                        if (assetCache.has(cacheKey)) {
-                            const cachedData = assetCache.get(cacheKey);
-                            assets = cachedData.items || [];
-                            break;
-                        }
-                    }
-                    
-                    attempts++;
-                }
-                
-                console.log('[one-click] Found assets:', assets.length);
-                
-                // Select best asset (prefer vertical: height >= width)
-                let chosenAsset = null;
-                if (assets.length > 0) {
-                    // Prefer vertical assets
-                    chosenAsset = assets.find(a => a.height && a.width && a.height >= a.width);
-                    
-                    // Fallback to first result if no vertical found
-                    if (!chosenAsset) {
-                        chosenAsset = assets[0];
-                    }
-                    
-                    console.log('[one-click] Selected asset:', chosenAsset.id);
-                    
-                    // Apply asset to preview
-                    selectAsset(chosenAsset);
-                    
-                    // Wait for preview to update
-                    await new Promise(resolve => setTimeout(resolve, 300));
-                    
-                    // Ensure overlay is visible and properly positioned before saving
-                    if (useOverlayMode && overlaySystemInitialized) {
-                        try {
-                            const stage = document.querySelector('#stage');
-                            const box = stage?.querySelector('.caption-box');
-                            if (stage && box) {
-                                const { ensureOverlayTopAndVisible } = await import('./js/caption-overlay.js');
-                                ensureOverlayTopAndVisible('#stage');
-                                // Wait for layout to settle after positioning
-                                await new Promise(resolve => requestAnimationFrame(resolve));
-                            } else {
-                                console.warn('[one-click] Overlay elements not found, skipping positioning');
-                            }
-                        } catch (e) {
-                            console.warn('[one-click] Overlay positioning failed:', e);
-                        }
-                    } else {
-                        console.log('[one-click] Overlay system not initialized, skipping positioning');
-                    }
-                } else {
-                    console.log('[one-click] No assets found, will use black background');
-                    selectedAsset = null;
-                }
-                
-                // Step 4: Save preview
-                console.log('[one-click] Step 4: Saving preview...');
-                setOneClickStatus('Saving preview…');
-                if (oneClickBtn) oneClickBtn.textContent = 'Saving preview...';
-                if (mobileOneClickBtn) mobileOneClickBtn.textContent = 'Saving...';
-                
-                // Wait a bit more for preview to stabilize
-                await new Promise(resolve => setTimeout(resolve, 200));
-                
-                // Save preview
-                await savePreview();
-                
-                console.log('[one-click] Preview saved successfully');
-                
-                // Step 5: Render
-                console.log('[one-click] Step 5: Rendering short...');
-                setOneClickStatus('Rendering…');
-                if (oneClickBtn) oneClickBtn.textContent = 'Rendering...';
-                if (mobileOneClickBtn) mobileOneClickBtn.textContent = 'Rendering...';
-                
-                // Render the short
-                await renderShort();
                 
                 console.log('[one-click] One-click flow completed successfully');
                 
@@ -5308,6 +5167,271 @@
                     clearOneClickStatus();
                 }, 600);
             }
+        }
+
+        // Story service pipeline for links
+        async function oneClickShortFromLink(url, oneClickBtn, mobileOneClickBtn) {
+            const { apiFetch } = await import('./api.mjs');
+            
+            // Step 1: Create story session
+            setOneClickStatus('Extracting article content…');
+            if (oneClickBtn) {
+                oneClickBtn.disabled = true;
+                oneClickBtn.textContent = 'Extracting content...';
+            }
+            if (mobileOneClickBtn) {
+                mobileOneClickBtn.disabled = true;
+                mobileOneClickBtn.textContent = 'Extracting...';
+            }
+            
+            const startResp = await apiFetch('/story/start', {
+                method: 'POST',
+                body: {
+                    input: url,
+                    inputType: 'link'
+                }
+            });
+            
+            if (!startResp.success || !startResp.data?.id) {
+                throw new Error(startResp.error || 'Failed to create story session');
+            }
+            
+            const sessionId = startResp.data.id;
+            console.log('[one-click] Story session created:', sessionId);
+            
+            // Step 2: Finalize story (runs full pipeline: generate → plan → search → render)
+            setOneClickStatus('Generating story…');
+            if (oneClickBtn) oneClickBtn.textContent = 'Generating story...';
+            if (mobileOneClickBtn) mobileOneClickBtn.textContent = 'Generating...';
+            
+            // Poll for progress (finalize can take a while)
+            const pollInterval = setInterval(() => {
+                if (oneClickBtn) {
+                    const current = oneClickBtn.textContent;
+                    if (current.includes('Generating')) {
+                        oneClickBtn.textContent = current.replace('...', '....').replace('....', '...');
+                    }
+                }
+            }, 500);
+            
+            try {
+                const finalizeResp = await apiFetch('/story/finalize', {
+                    method: 'POST',
+                    body: { sessionId }
+                });
+                
+                clearInterval(pollInterval);
+                
+                if (!finalizeResp.success) {
+                    throw new Error(finalizeResp.error || finalizeResp.detail || 'Failed to finalize story');
+                }
+                
+                const session = finalizeResp.data;
+                
+                if (!session.finalVideo?.url) {
+                    throw new Error('Story generation completed but no video URL found');
+                }
+                
+                console.log('[one-click] Story finalized, video URL:', session.finalVideo.url);
+                
+                // Step 3: Display result
+                setOneClickStatus('Complete!');
+                if (oneClickBtn) oneClickBtn.textContent = 'Complete!';
+                if (mobileOneClickBtn) mobileOneClickBtn.textContent = 'Done!';
+                
+                // Show success message and video
+                showError('quote-error', ''); // Clear any errors
+                alert(`Story video created successfully! ${session.story?.sentences?.length || 0} sentences, ${Math.round(session.finalVideo.durationSec || 0)}s duration.\n\nVideo URL: ${session.finalVideo.url}`);
+                
+                // Optionally open video in new tab
+                if (confirm('Open video in new tab?')) {
+                    window.open(session.finalVideo.url, '_blank');
+                }
+                
+            } catch (error) {
+                clearInterval(pollInterval);
+                throw error;
+            }
+        }
+
+        // Original quote flow for non-URLs
+        async function oneClickShortFromQuote(oneClickBtn, mobileOneClickBtn) {
+            setOneClickStatus('Generating quote…');
+            
+            // Step 1: Generate or reuse quote
+            console.log('[one-click] Step 1: Generating or reusing quote...');
+            if (oneClickBtn) {
+                oneClickBtn.disabled = true;
+                oneClickBtn.textContent = 'Generating quote...';
+            }
+            if (mobileOneClickBtn) {
+                mobileOneClickBtn.disabled = true;
+                mobileOneClickBtn.textContent = 'Generating...';
+            }
+            
+            let quoteText = '';
+            if (currentQuote && currentQuote.text) {
+                console.log('[one-click] Reusing existing quote');
+                quoteText = currentQuote.text;
+            } else {
+                const quoteInput = document.getElementById('quote-text');
+                quoteText = quoteInput?.value?.trim() || '';
+                
+                if (!quoteText) {
+                    showError('quote-error', 'Please enter a quote topic or text first');
+                    throw new Error('No quote text provided');
+                }
+                
+                // Generate quote
+                await window.generateQuote();
+                
+                // Wait a bit for quote to be set
+                await new Promise(resolve => setTimeout(resolve, 500));
+                
+                if (!currentQuote || !currentQuote.text) {
+                    showError('quote-error', 'Failed to generate quote');
+                    throw new Error('Quote generation failed');
+                }
+                quoteText = currentQuote.text;
+            }
+            
+            setOneClickStatus('Finding background…');
+            
+            // Step 2: Build asset search query
+            console.log('[one-click] Step 2: Building asset search query...');
+            if (oneClickBtn) oneClickBtn.textContent = 'Finding background...';
+            if (mobileOneClickBtn) mobileOneClickBtn.textContent = 'Finding...';
+            
+            const assetQueryInput = document.getElementById('asset-query');
+            const quoteInput = document.getElementById('quote-text');
+            
+            let searchQuery = '';
+            if (assetQueryInput?.value?.trim()) {
+                searchQuery = assetQueryInput.value.trim();
+            } else if (quoteInput?.value?.trim()) {
+                searchQuery = quoteInput.value.trim();
+            } else if (quoteText) {
+                // Use first 20 chars of quote text
+                searchQuery = quoteText.trim().substring(0, 20);
+            } else {
+                searchQuery = 'calm'; // Default fallback
+            }
+            
+            console.log('[one-click] Using search query:', searchQuery);
+            
+            // Step 3: Search and select asset
+            console.log('[one-click] Step 3: Searching for assets...');
+            
+            // Set asset type to videos (prefer videos for shorts)
+            if (typeof window !== 'undefined') {
+                window.currentAssetType = 'videos';
+            }
+            currentAssetType = 'videos';
+            
+            // Update asset query input
+            if (assetQueryInput) {
+                assetQueryInput.value = searchQuery;
+            }
+            
+            // Load assets
+            await window.loadAssets(1);
+            
+            // Wait for grid to populate (with timeout)
+            let attempts = 0;
+            let assets = [];
+            while (attempts < 10) {
+                await new Promise(resolve => setTimeout(resolve, 200));
+                
+                // Try to get assets from cache
+                const cacheKey = `${currentAssetType}-${searchQuery}-1`;
+                if (assetCache.has(cacheKey)) {
+                    const cachedData = assetCache.get(cacheKey);
+                    assets = cachedData.items || [];
+                    if (assets.length > 0) break;
+                }
+                
+                // Also check DOM grid
+                const grid = document.getElementById('asset-grid');
+                if (grid && grid.children.length > 0) {
+                    // Extract assets from DOM by finding use buttons and their associated asset data
+                    // Since assets are in closure, we need to get from cache
+                    if (assetCache.has(cacheKey)) {
+                        const cachedData = assetCache.get(cacheKey);
+                        assets = cachedData.items || [];
+                        break;
+                    }
+                }
+                
+                attempts++;
+            }
+            
+            console.log('[one-click] Found assets:', assets.length);
+            
+            // Select best asset (prefer vertical: height >= width)
+            let chosenAsset = null;
+            if (assets.length > 0) {
+                // Prefer vertical assets
+                chosenAsset = assets.find(a => a.height && a.width && a.height >= a.width);
+                
+                // Fallback to first result if no vertical found
+                if (!chosenAsset) {
+                    chosenAsset = assets[0];
+                }
+                
+                console.log('[one-click] Selected asset:', chosenAsset.id);
+                
+                // Apply asset to preview
+                selectAsset(chosenAsset);
+                
+                // Wait for preview to update
+                await new Promise(resolve => setTimeout(resolve, 300));
+                
+                // Ensure overlay is visible and properly positioned before saving
+                if (useOverlayMode && overlaySystemInitialized) {
+                    try {
+                        const stage = document.querySelector('#stage');
+                        const box = stage?.querySelector('.caption-box');
+                        if (stage && box) {
+                            const { ensureOverlayTopAndVisible } = await import('./js/caption-overlay.js');
+                            ensureOverlayTopAndVisible('#stage');
+                            // Wait for layout to settle after positioning
+                            await new Promise(resolve => requestAnimationFrame(resolve));
+                        } else {
+                            console.warn('[one-click] Overlay elements not found, skipping positioning');
+                        }
+                    } catch (e) {
+                        console.warn('[one-click] Overlay positioning failed:', e);
+                    }
+                } else {
+                    console.log('[one-click] Overlay system not initialized, skipping positioning');
+                }
+            } else {
+                console.log('[one-click] No assets found, will use black background');
+                selectedAsset = null;
+            }
+            
+            // Step 4: Save preview
+            console.log('[one-click] Step 4: Saving preview...');
+            setOneClickStatus('Saving preview…');
+            if (oneClickBtn) oneClickBtn.textContent = 'Saving preview...';
+            if (mobileOneClickBtn) mobileOneClickBtn.textContent = 'Saving...';
+            
+            // Wait a bit more for preview to stabilize
+            await new Promise(resolve => setTimeout(resolve, 200));
+            
+            // Save preview
+            await savePreview();
+            
+            console.log('[one-click] Preview saved successfully');
+            
+            // Step 5: Render
+            console.log('[one-click] Step 5: Rendering short...');
+            setOneClickStatus('Rendering…');
+            if (oneClickBtn) oneClickBtn.textContent = 'Rendering...';
+            if (mobileOneClickBtn) mobileOneClickBtn.textContent = 'Rendering...';
+            
+            // Render the short
+            await renderShort();
         }
         
         // Expose to window scope for ui-actions.js

@@ -42,8 +42,8 @@ export async function extractContentFromUrl(url) {
  * Use LLM to extract structured content from HTML
  */
 async function extractWithLLM(html, url) {
-  // Truncate HTML to avoid token limits (keep first 8000 chars)
-  const truncatedHtml = html.slice(0, 8000);
+  // Truncate HTML to avoid token limits (keep first 12000 chars for better context)
+  const truncatedHtml = html.slice(0, 12000);
   
   const apiUrl = `${OPENAI_BASE}/chat/completions`;
   const body = {
@@ -52,11 +52,11 @@ async function extractWithLLM(html, url) {
     messages: [
       {
         role: 'system',
-        content: 'You extract the main content from web pages. Return ONLY valid JSON: {"title":"...","summary":"2-3 sentence summary","keyPoints":["point1","point2",...]}'
+        content: 'You extract the main content from web pages. Extract the full article content, not just the headline. Return ONLY valid JSON: {"title":"...","summary":"4-8 sentence comprehensive summary covering the main points of the article","keyPoints":["point1","point2",...]}. The summary should be detailed enough to generate a 4-6 sentence video story.'
       },
       {
         role: 'user',
-        content: `Extract content from this HTML (URL: ${url}):\n\n${truncatedHtml}`
+        content: `Extract the full article content from this HTML (URL: ${url}). Provide a comprehensive summary that captures the main story, not just the headline:\n\n${truncatedHtml}`
       }
     ]
   };

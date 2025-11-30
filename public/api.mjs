@@ -122,7 +122,8 @@ export async function apiFetch(path, opts = {}) {
     path.startsWith("/shorts/") ||
     path.startsWith("/quotes/") ||
     path.startsWith("/assets/") ||
-    path.startsWith("/caption/");
+    path.startsWith("/caption/") ||
+    path.startsWith("/story/");
 
   if (!headers["Authorization"]) {
     const tok = await resolveIdToken(!!needsAuth);
