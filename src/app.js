@@ -237,6 +237,10 @@ if (routes?.tts) {
   app.use("/api/tts", routes.tts);
   console.log("✅ Mounted tts at /api/tts");
 }
+if (routes?.story) {
+  app.use("/api/story", routes.story);
+  console.log("✅ Mounted story at /api/story");
+}
 
 // Mount caption preview routes
 import captionPreviewRoutes from "./routes/caption.preview.routes.js";

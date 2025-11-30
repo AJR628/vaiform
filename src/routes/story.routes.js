@@ -1,0 +1,306 @@
+import { Router } from "express";
+import { z } from "zod";
+import requireAuth from "../middleware/requireAuth.js";
+import {
+  createStorySession,
+  getStorySession,
+  generateStory,
+  planShots,
+  searchShots,
+  buildTimeline,
+  generateCaptionTimings,
+  renderStory,
+  finalizeStory
+} from "../services/story.service.js";
+
+const r = Router();
+r.use(requireAuth);
+
+const StartSchema = z.object({
+  input: z.string().min(1).max(2000),
+  inputType: z.enum(["link", "idea", "paragraph"]).default("paragraph"),
+});
+
+const SessionSchema = z.object({
+  sessionId: z.string().min(3),
+});
+
+const GenerateSchema = z.object({
+  sessionId: z.string().min(3),
+  input: z.string().min(1).max(2000).optional(),
+  inputType: z.enum(["link", "idea", "paragraph"]).optional(),
+});
+
+// POST /api/story/start - Create session, accept input
+r.post("/start", async (req, res) => {
+  try {
+    const parsed = StartSchema.safeParse(req.body || {});
+    if (!parsed.success) {
+      return res.status(400).json({
+        success: false,
+        error: "INVALID_INPUT",
+        detail: parsed.error.flatten()
+      });
+    }
+    
+    const { input, inputType } = parsed.data;
+    const session = await createStorySession({
+      uid: req.user.uid,
+      input,
+      inputType
+    });
+    
+    return res.json({ success: true, data: session });
+  } catch (e) {
+    console.error("[story][start] error:", e);
+    return res.status(500).json({
+      success: false,
+      error: "STORY_START_FAILED",
+      detail: e?.message || "Failed to create story session"
+    });
+  }
+});
+
+// POST /api/story/generate - Generate story from input
+r.post("/generate", async (req, res) => {
+  try {
+    const parsed = GenerateSchema.safeParse(req.body || {});
+    if (!parsed.success) {
+      return res.status(400).json({
+        success: false,
+        error: "INVALID_INPUT",
+        detail: parsed.error.flatten()
+      });
+    }
+    
+    const { sessionId, input, inputType } = parsed.data;
+    const session = await generateStory({
+      uid: req.user.uid,
+      sessionId,
+      input,
+      inputType
+    });
+    
+    return res.json({ success: true, data: session });
+  } catch (e) {
+    console.error("[story][generate] error:", e);
+    return res.status(500).json({
+      success: false,
+      error: "STORY_GENERATE_FAILED",
+      detail: e?.message || "Failed to generate story"
+    });
+  }
+});
+
+// POST /api/story/plan - Generate visual plan
+r.post("/plan", async (req, res) => {
+  try {
+    const parsed = SessionSchema.safeParse(req.body || {});
+    if (!parsed.success) {
+      return res.status(400).json({
+        success: false,
+        error: "INVALID_INPUT",
+        detail: parsed.error.flatten()
+      });
+    }
+    
+    const { sessionId } = parsed.data;
+    const session = await planShots({
+      uid: req.user.uid,
+      sessionId
+    });
+    
+    return res.json({ success: true, data: session });
+  } catch (e) {
+    console.error("[story][plan] error:", e);
+    return res.status(500).json({
+      success: false,
+      error: "STORY_PLAN_FAILED",
+      detail: e?.message || "Failed to plan shots"
+    });
+  }
+});
+
+// POST /api/story/search - Search and select clips (Phase 3)
+r.post("/search", async (req, res) => {
+  try {
+    const parsed = SessionSchema.safeParse(req.body || {});
+    if (!parsed.success) {
+      return res.status(400).json({
+        success: false,
+        error: "INVALID_INPUT",
+        detail: parsed.error.flatten()
+      });
+    }
+    
+    const { sessionId } = parsed.data;
+    const session = await searchShots({
+      uid: req.user.uid,
+      sessionId
+    });
+    
+    return res.json({ success: true, data: session });
+  } catch (e) {
+    console.error("[story][search] error:", e);
+    return res.status(500).json({
+      success: false,
+      error: "STORY_SEARCH_FAILED",
+      detail: e?.message || "Failed to search clips"
+    });
+  }
+});
+
+// POST /api/story/timeline - Build stitched video (Phase 4)
+r.post("/timeline", async (req, res) => {
+  try {
+    const parsed = SessionSchema.safeParse(req.body || {});
+    if (!parsed.success) {
+      return res.status(400).json({
+        success: false,
+        error: "INVALID_INPUT",
+        detail: parsed.error.flatten()
+      });
+    }
+    
+    const { sessionId } = parsed.data;
+    const session = await buildTimeline({
+      uid: req.user.uid,
+      sessionId
+    });
+    
+    return res.json({ success: true, data: session });
+  } catch (e) {
+    console.error("[story][timeline] error:", e);
+    return res.status(500).json({
+      success: false,
+      error: "STORY_TIMELINE_FAILED",
+      detail: e?.message || "Failed to build timeline"
+    });
+  }
+});
+
+// POST /api/story/captions - Generate caption timings (Phase 5)
+r.post("/captions", async (req, res) => {
+  try {
+    const parsed = SessionSchema.safeParse(req.body || {});
+    if (!parsed.success) {
+      return res.status(400).json({
+        success: false,
+        error: "INVALID_INPUT",
+        detail: parsed.error.flatten()
+      });
+    }
+    
+    const { sessionId } = parsed.data;
+    const session = await generateCaptionTimings({
+      uid: req.user.uid,
+      sessionId
+    });
+    
+    return res.json({ success: true, data: session });
+  } catch (e) {
+    console.error("[story][captions] error:", e);
+    return res.status(500).json({
+      success: false,
+      error: "STORY_CAPTIONS_FAILED",
+      detail: e?.message || "Failed to generate caption timings"
+    });
+  }
+});
+
+// POST /api/story/render - Render final video (Phase 6)
+r.post("/render", async (req, res) => {
+  try {
+    const parsed = SessionSchema.safeParse(req.body || {});
+    if (!parsed.success) {
+      return res.status(400).json({
+        success: false,
+        error: "INVALID_INPUT",
+        detail: parsed.error.flatten()
+      });
+    }
+    
+    const { sessionId } = parsed.data;
+    const session = await renderStory({
+      uid: req.user.uid,
+      sessionId
+    });
+    
+    return res.json({ success: true, data: session });
+  } catch (e) {
+    console.error("[story][render] error:", e);
+    return res.status(500).json({
+      success: false,
+      error: "STORY_RENDER_FAILED",
+      detail: e?.message || "Failed to render story"
+    });
+  }
+});
+
+// POST /api/story/finalize - Run full pipeline (Phase 7)
+r.post("/finalize", async (req, res) => {
+  try {
+    const parsed = SessionSchema.safeParse(req.body || {});
+    if (!parsed.success) {
+      return res.status(400).json({
+        success: false,
+        error: "INVALID_INPUT",
+        detail: parsed.error.flatten()
+      });
+    }
+    
+    const { sessionId } = parsed.data;
+    const session = await finalizeStory({
+      uid: req.user.uid,
+      sessionId,
+      options: req.body.options || {}
+    });
+    
+    return res.json({ success: true, data: session });
+  } catch (e) {
+    console.error("[story][finalize] error:", e);
+    return res.status(500).json({
+      success: false,
+      error: "STORY_FINALIZE_FAILED",
+      detail: e?.message || "Failed to finalize story"
+    });
+  }
+});
+
+// GET /api/story/:sessionId - Get story session
+r.get("/:sessionId", async (req, res) => {
+  try {
+    const sessionId = String(req.params?.sessionId || "").trim();
+    if (!sessionId) {
+      return res.status(400).json({
+        success: false,
+        error: "INVALID_INPUT",
+        message: "sessionId required"
+      });
+    }
+    
+    const session = await getStorySession({
+      uid: req.user.uid,
+      sessionId
+    });
+    
+    if (!session) {
+      return res.status(404).json({
+        success: false,
+        error: "NOT_FOUND"
+      });
+    }
+    
+    return res.json({ success: true, data: session });
+  } catch (e) {
+    console.error("[story][get] error:", e);
+    return res.status(500).json({
+      success: false,
+      error: "STORY_GET_FAILED",
+      detail: e?.message || "Failed to get story session"
+    });
+  }
+});
+
+export default r;
+

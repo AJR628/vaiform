@@ -17,6 +17,7 @@ import creativeRouter from "./creative.routes.js";
 import voiceRouter from "./voice.routes.js";
 import previewRouter from "./preview.routes.js";
 import ttsRouter from "./tts.routes.js";
+import storyRouter from "./story.routes.js";
 
 // Lightweight root
 const index = Router();
@@ -42,4 +43,5 @@ export default {
   voice: voiceRouter,       // "/voice"
   preview: previewRouter,   // "/preview"
   tts: ttsRouter,          // "/tts"
+  story: storyRouter,       // "/story"
 };
