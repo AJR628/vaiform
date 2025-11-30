@@ -418,7 +418,7 @@ export async function renderStory({ uid, sessionId }) {
  * Finalize story - run full pipeline (Phase 7)
  */
 export async function finalizeStory({ uid, sessionId, options = {} }) {
-  const session = await loadStorySession({ uid, sessionId });
+  let session = await loadStorySession({ uid, sessionId });
   if (!session) throw new Error('SESSION_NOT_FOUND');
   
   try {
