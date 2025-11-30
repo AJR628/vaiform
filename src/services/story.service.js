@@ -453,6 +453,9 @@ export async function finalizeStory({ uid, sessionId, options = {} }) {
     // Step 6: Render segments
     if (!session.finalVideo) {
       await renderStory({ uid, sessionId });
+      // Reload session to get updated finalVideo field
+      session = await loadStorySession({ uid, sessionId });
+      if (!session) throw new Error('SESSION_NOT_FOUND_AFTER_RENDER');
     }
     
     return session;
