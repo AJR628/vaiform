@@ -1215,6 +1215,8 @@
         let currentLimits = null;
         let currentQuote = null;
         let selectedAsset = null;
+        let currentStorySessionId = null;
+        let currentStoryUrl = null;
         // SSOT: Use window scope so ui-actions.js can update it
         window.currentAssetType = window.currentAssetType || 'images';
         let currentAssetPage = 1;
@@ -2129,6 +2131,10 @@
                     }
                     
                     const sessionId = startResp.data.id;
+                    
+                    // Store sessionId and URL for reuse in one-click short
+                    currentStorySessionId = sessionId;
+                    currentStoryUrl = text; // Store original URL
                     
                     // Step 2: Generate story (4-6 sentences)
                     const generateResp = await apiFetch('/story/generate', {
@@ -5198,12 +5204,20 @@
                 }
                 
                 // Check if input is a URL
-                const isLink = isUrl(inputText);
+                let isLink = isUrl(inputText);
+                let urlToUse = inputText;
+                
+                // If textarea doesn't contain a URL but we have a stored story URL, use that
+                if (!isLink && currentStoryUrl && currentStorySessionId) {
+                    console.log('[one-click] Textarea has joined text, using stored URL:', currentStoryUrl);
+                    isLink = true;
+                    urlToUse = currentStoryUrl;
+                }
                 
                 if (isLink) {
                     // Use story service pipeline for links
                     console.log('[one-click] Detected URL, using story service pipeline');
-                    await oneClickShortFromLink(inputText, oneClickBtn, mobileOneClickBtn);
+                    await oneClickShortFromLink(urlToUse, oneClickBtn, mobileOneClickBtn);
                 } else {
                     // Use existing quote flow for non-URLs
                     console.log('[one-click] Using quote generation flow');
@@ -5236,31 +5250,52 @@
         async function oneClickShortFromLink(url, oneClickBtn, mobileOneClickBtn) {
             const { apiFetch } = await import('./api.mjs');
             
-            // Step 1: Create story session
-            setOneClickStatus('Extracting article content…');
-            if (oneClickBtn) {
-                oneClickBtn.disabled = true;
-                oneClickBtn.textContent = 'Extracting content...';
-            }
-            if (mobileOneClickBtn) {
-                mobileOneClickBtn.disabled = true;
-                mobileOneClickBtn.textContent = 'Extracting...';
-            }
+            let sessionId = null;
             
-            const startResp = await apiFetch('/story/start', {
-                method: 'POST',
-                body: {
-                    input: url,
-                    inputType: 'link'
+            // Check if we can reuse existing story session
+            if (currentStorySessionId && currentStoryUrl && currentStoryUrl === url) {
+                console.log('[one-click] Reusing existing story session:', currentStorySessionId);
+                sessionId = currentStorySessionId;
+                setOneClickStatus('Using existing story…');
+                if (oneClickBtn) {
+                    oneClickBtn.disabled = true;
+                    oneClickBtn.textContent = 'Using existing story...';
                 }
-            });
-            
-            if (!startResp.success || !startResp.data?.id) {
-                throw new Error(startResp.error || 'Failed to create story session');
+                if (mobileOneClickBtn) {
+                    mobileOneClickBtn.disabled = true;
+                    mobileOneClickBtn.textContent = 'Using story...';
+                }
+            } else {
+                // Step 1: Create new story session
+                setOneClickStatus('Extracting article content…');
+                if (oneClickBtn) {
+                    oneClickBtn.disabled = true;
+                    oneClickBtn.textContent = 'Extracting content...';
+                }
+                if (mobileOneClickBtn) {
+                    mobileOneClickBtn.disabled = true;
+                    mobileOneClickBtn.textContent = 'Extracting...';
+                }
+                
+                const startResp = await apiFetch('/story/start', {
+                    method: 'POST',
+                    body: {
+                        input: url,
+                        inputType: 'link'
+                    }
+                });
+                
+                if (!startResp.success || !startResp.data?.id) {
+                    throw new Error(startResp.error || 'Failed to create story session');
+                }
+                
+                sessionId = startResp.data.id;
+                console.log('[one-click] Story session created:', sessionId);
+                
+                // Store for potential future reuse
+                currentStorySessionId = sessionId;
+                currentStoryUrl = url;
             }
-            
-            const sessionId = startResp.data.id;
-            console.log('[one-click] Story session created:', sessionId);
             
             // Step 2: Finalize story (runs full pipeline: generate → plan → search → render)
             setOneClickStatus('Generating story…');
