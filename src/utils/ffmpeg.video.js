@@ -535,9 +535,9 @@ function buildVideoChain({ width, height, videoVignette, drawLayers, captionImag
       console.log('[render] Adding ASS subtitles for karaoke highlighting:', assPath);
       // Escape path for FFmpeg
       const escAssPath = assPath.replace(/\\/g, '/').replace(/:/g, '\\:').replace(/'/g, "\\'");
-      // Apply subtitles after overlay
-      filter = filter.replace('[vout]', `[vout]`); // Keep vout label
-      filter = `${filter},subtitles='${escAssPath}':force_style='Alignment=2'[vout]`;
+      // Apply subtitles after overlay - replace [vout] with intermediate, then add subtitles
+      filter = filter.replace('[vout]', '[vsub]');
+      filter = `${filter};[vsub]subtitles='${escAssPath}':force_style='Alignment=2'[vout]`;
       console.log('[render] ASS subtitles added to filter chain');
     }
     
@@ -586,9 +586,9 @@ function buildVideoChain({ width, height, videoVignette, drawLayers, captionImag
       // Escape path for FFmpeg
       const escAssPath = assPath.replace(/\\/g, '/').replace(/:/g, '\\:').replace(/'/g, "\\'");
       // Apply subtitles after all drawtext layers
-      // Replace vout with intermediate, then add subtitles
-      vchain = vchain.replace('[vout]', '[vtemp]');
-      vchain = `${vchain},subtitles='${escAssPath}':force_style='Alignment=2'[vout]`;
+      // Replace vout with intermediate, then add subtitles as separate filter
+      vchain = vchain.replace('[vout]', '[vsub]');
+      vchain = `${vchain};[vsub]subtitles='${escAssPath}':force_style='Alignment=2'[vout]`;
       console.log('[render] ASS subtitles added to drawtext chain');
     }
     
