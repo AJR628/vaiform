@@ -398,24 +398,34 @@ export async function renderStory({ uid, sessionId }) {
       // Fetch clip to temp file
       const fetched = await fetchVideoToTmp(shot.selectedClip.url);
       
-      // Calculate duration from caption timing or TTS duration
-      let durationSec = caption.endTimeSec - caption.startTimeSec;
-      if (durationSec <= 0) {
-        durationSec = shot.durationSec || 3;
-      }
-      // If we have TTS, use its duration (with some padding)
+      // Calculate duration - TTS duration is the primary source for synchronization
+      let durationSec;
       if (ttsPath) {
+        // TTS duration is the primary source - use it directly
         try {
           const { getDurationMsFromMedia } = await import('../utils/media.duration.js');
           const ttsDurationMs = await getDurationMsFromMedia(ttsPath);
           if (ttsDurationMs) {
             const ttsDurationSec = ttsDurationMs / 1000;
-            // Use TTS duration + 0.5s padding, but respect minimum
-            durationSec = Math.max(durationSec, ttsDurationSec + 0.5);
+            // Use TTS duration with minimal padding (0.2s for smooth transitions)
+            durationSec = ttsDurationSec + 0.2;
+            console.log(`[story.service] Segment ${i} duration from TTS: ${ttsDurationSec.toFixed(2)}s + 0.2s = ${durationSec.toFixed(2)}s`);
+          } else {
+            // Fallback if duration probe fails
+            durationSec = caption.endTimeSec - caption.startTimeSec || shot.durationSec || 3;
+            console.warn(`[story.service] Segment ${i} TTS duration probe returned null, using caption timing: ${durationSec.toFixed(2)}s`);
           }
         } catch (err) {
-          // Ignore duration probe errors
+          console.warn(`[story.service] Failed to get TTS duration for segment ${i}, using caption timing:`, err?.message);
+          durationSec = caption.endTimeSec - caption.startTimeSec || shot.durationSec || 3;
         }
+      } else {
+        // No TTS - use caption timing or shot duration
+        durationSec = caption.endTimeSec - caption.startTimeSec;
+        if (durationSec <= 0) {
+          durationSec = shot.durationSec || 3;
+        }
+        console.log(`[story.service] Segment ${i} duration from caption/shot (no TTS): ${durationSec.toFixed(2)}s`);
       }
       
       // Render segment with caption, TTS, and ASS highlighting
