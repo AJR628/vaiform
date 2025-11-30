@@ -326,11 +326,15 @@ export async function renderStory({ uid, sessionId }) {
   const renderedSegments = [];
   
   // Render each segment
+  const segmentErrors = [];
   for (let i = 0; i < shotsWithClips.length; i++) {
     const shot = shotsWithClips[i];
     const caption = session.captions.find(c => c.sentenceIndex === shot.sentenceIndex);
     
-    if (!caption) continue;
+    if (!caption) {
+      console.warn(`[story.service] No caption found for shot ${i}, sentenceIndex ${shot.sentenceIndex}`);
+      continue;
+    }
     
     try {
       // Fetch clip to temp file
@@ -348,7 +352,7 @@ export async function renderStory({ uid, sessionId }) {
         text: caption.text,
         captionText: caption.text,
         ttsPath: null, // No TTS for now
-        keepVideoAudio: true, // Keep background audio
+        keepVideoAudio: true, // Keep background audio (will auto-detect if audio exists)
         bgAudioVolume: 0.5,
         watermark: true
       });
@@ -357,14 +361,32 @@ export async function renderStory({ uid, sessionId }) {
         path: segmentPath,
         durationSec: shot.durationSec || 3
       });
+      
+      console.log(`[story.service] Successfully rendered segment ${i}/${shotsWithClips.length - 1}: "${caption.text.substring(0, 50)}..."`);
     } catch (error) {
-      console.warn(`[story.service] Render failed for segment ${i}:`, error?.message);
+      const errorMsg = error?.message || error?.stderr || String(error);
+      console.warn(`[story.service] Render failed for segment ${i} (sentence "${caption.text.substring(0, 50)}..."):`, errorMsg);
+      segmentErrors.push({
+        segmentIndex: i,
+        sentenceIndex: shot.sentenceIndex,
+        error: errorMsg
+      });
       // Continue with other segments
     }
   }
   
   if (renderedSegments.length === 0) {
-    throw new Error('NO_SEGMENTS_RENDERED');
+    const errorDetail = segmentErrors.length > 0 
+      ? `All ${segmentErrors.length} segments failed. First error: ${segmentErrors[0].error}`
+      : 'No segments were attempted';
+    throw new Error(`NO_SEGMENTS_RENDERED: ${errorDetail}`);
+  }
+  
+  // Log summary of successes and failures
+  if (segmentErrors.length > 0) {
+    console.warn(`[story.service] Rendered ${renderedSegments.length}/${shotsWithClips.length} segments successfully. ${segmentErrors.length} segments failed.`);
+  } else {
+    console.log(`[story.service] Successfully rendered all ${renderedSegments.length} segments.`);
   }
   
   // Concatenate all segments

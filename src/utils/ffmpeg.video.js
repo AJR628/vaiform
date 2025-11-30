@@ -8,6 +8,52 @@ import crypto from "node:crypto";
 import pkg from "@napi-rs/canvas";
 import { renderImageQuoteVideo } from "./ffmpeg.js";
 import { getDurationMsFromMedia } from "./media.duration.js";
+
+/**
+ * Check if a video file has an audio stream
+ * @param {string} videoPath - Path to video file
+ * @returns {Promise<boolean>}
+ */
+async function hasAudioStream(videoPath) {
+  return new Promise((resolve) => {
+    try {
+      const ffprobePath = ffmpegPath.replace('ffmpeg', 'ffprobe');
+      const args = [
+        '-v', 'error',
+        '-select_streams', 'a',
+        '-show_entries', 'stream=codec_type',
+        '-of', 'csv=p=0',
+        videoPath
+      ];
+      
+      const proc = spawn(ffprobePath, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+      let stdout = '';
+      let stderr = '';
+      
+      proc.stdout.on('data', (d) => { stdout += d.toString(); });
+      proc.stderr.on('data', (d) => { stderr += d.toString(); });
+      
+      proc.on('close', (code) => {
+        if (code === 0) {
+          // If stdout contains 'audio', the video has an audio stream
+          resolve(stdout.trim().includes('audio') || stdout.trim().length > 0);
+        } else {
+          // If ffprobe fails, assume no audio (safer default)
+          console.warn('[ffmpeg.video] Audio detection failed, assuming no audio:', stderr.slice(0, 200));
+          resolve(false);
+        }
+      });
+      
+      proc.on('error', () => {
+        console.warn('[ffmpeg.video] Audio detection spawn failed, assuming no audio');
+        resolve(false);
+      });
+    } catch (error) {
+      console.warn('[ffmpeg.video] Audio detection error, assuming no audio:', error?.message);
+      resolve(false);
+    }
+  });
+}
 import { CAPTION_OVERLAY } from "../config/env.js";
 import { hasLineSpacingOption } from "./ffmpeg.capabilities.js";
 import { normalizeOverlayCaption, computeOverlayPlacement } from "../render/overlay.helpers.js";
@@ -1432,9 +1478,23 @@ export async function renderVideoQuoteOverlay({
   const tailSec = Math.max(0, Number.isFinite(Number(tailPadSec)) ? Number(tailPadSec) : (envTailMs/1000));
   const bgVol = Math.min(1, Math.max(0, Number.isFinite(Number(bgAudioVolume)) ? Number(bgAudioVolume) : 0.35));
 
+  // Detect if video has audio stream (only if we want to keep video audio)
+  let detectedHaveBgAudio = haveBgAudio;
+  if (keepVideoAudio && videoPath) {
+    try {
+      detectedHaveBgAudio = await hasAudioStream(videoPath);
+      if (!detectedHaveBgAudio) {
+        console.log('[ffmpeg.video] Video has no audio stream, using silent audio');
+      }
+    } catch (error) {
+      console.warn('[ffmpeg.video] Failed to detect audio, using provided haveBgAudio:', error?.message);
+      // Keep the provided value as fallback
+    }
+  }
+  
   // Calculate correct TTS input index (PNG input shifts audio index)
   const ttsInputIndex = usingCaptionPng ? 2 : 1;
-  const aChain = buildAudioChain({ outSec, keepVideoAudio, haveBgAudio, ttsPath, leadInMs, tailSec, bgVol, ttsInputIndex });
+  const aChain = buildAudioChain({ outSec, keepVideoAudio, haveBgAudio: detectedHaveBgAudio, ttsPath, leadInMs, tailSec, bgVol, ttsInputIndex });
 
   // Assemble and log RAW vs FINAL filter_complex
   const rawFilter = [vchain, aChain].filter(Boolean).join(';');

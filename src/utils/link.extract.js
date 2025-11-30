@@ -11,31 +11,74 @@ const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
  * @returns {Promise<{title: string, summary: string, keyPoints: string[]}>}
  */
 export async function extractContentFromUrl(url) {
-  try {
-    // Fetch HTML
-    const response = await fetch(url, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-      },
-      redirect: 'follow'
-    });
-    
-    if (!response.ok) {
-      throw new Error(`HTTP_${response.status}`);
-    }
-    
-    const html = await response.text();
-    
-    // Try LLM extraction first
+  // Realistic browser headers to avoid bot detection
+  const headers = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
+    'Accept-Language': 'en-US,en;q=0.9',
+    'Accept-Encoding': 'gzip, deflate, br',
+    'Referer': 'https://www.google.com/',
+    'Connection': 'keep-alive',
+    'Upgrade-Insecure-Requests': '1',
+    'Sec-Fetch-Dest': 'document',
+    'Sec-Fetch-Mode': 'navigate',
+    'Sec-Fetch-Site': 'none',
+    'Cache-Control': 'max-age=0'
+  };
+  
+  let lastError = null;
+  const maxRetries = 2;
+  
+  // Retry logic for 403/429 errors
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
-      return await extractWithLLM(html, url);
-    } catch (llmError) {
-      console.warn('[link.extract] LLM extraction failed, using fallback:', llmError?.message);
-      return extractFallback(html, url);
+      if (attempt > 0) {
+        // Wait before retry with exponential backoff
+        const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        console.log(`[link.extract] Retry attempt ${attempt} for ${url}`);
+      }
+      
+      // Fetch HTML
+      const response = await fetch(url, {
+        headers,
+        redirect: 'follow'
+      });
+      
+      if (!response.ok) {
+        // Retry on 403/429, but fail immediately on other errors
+        if ((response.status === 403 || response.status === 429) && attempt < maxRetries) {
+          lastError = new Error(`HTTP_${response.status}`);
+          continue;
+        }
+        throw new Error(`HTTP_${response.status}`);
+      }
+      
+      const html = await response.text();
+      
+      // Try LLM extraction first
+      try {
+        return await extractWithLLM(html, url);
+      } catch (llmError) {
+        console.warn('[link.extract] LLM extraction failed, using fallback:', llmError?.message);
+        return extractFallback(html, url);
+      }
+    } catch (error) {
+      lastError = error;
+      // Only retry on network/403/429 errors
+      if (attempt < maxRetries && (
+        error.message.includes('HTTP_403') || 
+        error.message.includes('HTTP_429') ||
+        error.message.includes('fetch')
+      )) {
+        continue;
+      }
+      throw new Error(`LINK_EXTRACT_FAILED: ${error?.message || error}`);
     }
-  } catch (error) {
-    throw new Error(`LINK_EXTRACT_FAILED: ${error?.message || error}`);
   }
+  
+  // If we exhausted retries, throw the last error
+  throw new Error(`LINK_EXTRACT_FAILED: ${lastError?.message || 'Max retries exceeded'}`);
 }
 
 /**
