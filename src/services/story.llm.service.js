@@ -39,7 +39,7 @@ export async function generateStoryFromInput({ input, inputType }) {
         content: [
           'You create engaging short-form video stories. Output a cohesive 4-6 sentence narrative.',
           'Each sentence: 8-12 words, clear and visual. Sentences should flow together as a complete story.',
-          'For link content: Create a cohesive summary in your own words that captures the essence of the article.',
+          'For link content: Tell a story about the topic in your own words. Do not mention "the article", "this article", or reference the article itself. Write original sentences - never copy text word-for-word from the source. The story should be about the subject matter itself, written as if narrating the events or concepts directly.',
           'Total story should be 12-30 seconds when spoken (estimate ~2-3 words per second).',
           'Return ONLY valid JSON: {"sentences":["sentence1","sentence2",...],"totalDurationSec":number}'
         ].join(' ')
@@ -49,7 +49,7 @@ export async function generateStoryFromInput({ input, inputType }) {
         content: inputType === 'idea' 
           ? `Expand this idea into a 4-6 sentence cohesive story: "${input}"`
           : inputType === 'link'
-          ? `Create a 4-6 sentence cohesive story summary from this article content. Write it in your own words as a flowing narrative:\n\n${sourceContent}`
+          ? `Tell a 4-6 sentence story about this topic. Write it as a flowing narrative in your own words. Do not reference "the article" or copy sentences verbatim. Tell the story directly about the subject matter:\n\n${sourceContent}`
           : `Create a 4-6 sentence cohesive story from this text:\n\n${input}`
       }
     ]

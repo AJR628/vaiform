@@ -95,7 +95,7 @@ async function extractWithLLM(html, url) {
     messages: [
       {
         role: 'system',
-        content: 'You extract the main content from web pages. Extract the full article content, not just the headline. Return ONLY valid JSON: {"title":"...","summary":"4-8 sentence comprehensive summary covering the main points of the article","keyPoints":["point1","point2",...]}. The summary should be detailed enough to generate a 4-6 sentence video story.'
+        content: 'You extract the main content from web pages. Extract the full article content, not just the headline. Return ONLY valid JSON: {"title":"...","summary":"4-8 sentence comprehensive summary covering the main points of the article","keyPoints":["point1","point2",...]}. The summary should be detailed enough to generate a 4-6 sentence video story. Write the summary in your own words - do not copy sentences verbatim from the article.'
       },
       {
         role: 'user',
