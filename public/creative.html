@@ -5330,20 +5330,43 @@
                     throw new Error('Story generation completed but no video URL found');
                 }
                 
-                console.log('[one-click] Story finalized, video URL:', session.finalVideo.url);
+                // Extract jobId from finalVideo or from URL path
+                let jobId = session.finalVideo?.jobId;
+                if (!jobId && session.finalVideo?.url) {
+                    // Try to extract from URL path: artifacts/{uid}/{jobId}/story.mp4
+                    const urlMatch = session.finalVideo.url.match(/artifacts\/[^/]+\/([^/]+)\//);
+                    if (urlMatch) {
+                        jobId = urlMatch[1];
+                    }
+                }
                 
-                // Step 3: Display result
+                if (!jobId) {
+                    console.warn('[one-click] Could not extract jobId, using session ID');
+                    jobId = session.id || 'unknown';
+                }
+                
+                console.log('[one-click] Story finalized, video URL:', session.finalVideo.url, 'jobId:', jobId);
+                
+                // Step 3: Display result and redirect to My Shorts
                 setOneClickStatus('Complete!');
                 if (oneClickBtn) oneClickBtn.textContent = 'Complete!';
                 if (mobileOneClickBtn) mobileOneClickBtn.textContent = 'Done!';
                 
-                // Show success message and video
+                // Show success message and redirect to My Shorts
                 showError('quote-error', ''); // Clear any errors
-                alert(`Story video created successfully! ${session.story?.sentences?.length || 0} sentences, ${Math.round(session.finalVideo.durationSec || 0)}s duration.\n\nVideo URL: ${session.finalVideo.url}`);
                 
-                // Optionally open video in new tab
-                if (confirm('Open video in new tab?')) {
-                    window.open(session.finalVideo.url, '_blank');
+                // Brief success message, then redirect
+                const sentenceCount = session.story?.sentences?.length || 0;
+                const durationSec = Math.round(session.finalVideo.durationSec || 0);
+                alert(`Story video created successfully! ${sentenceCount} sentences, ${durationSec}s duration.\n\nRedirecting to My Shorts...`);
+                
+                // Redirect to My Shorts page with the new video
+                try {
+                    window.location.href = `/my-shorts.html?new=${encodeURIComponent(jobId)}`;
+                } catch (e) {
+                    console.error('[one-click] Failed to redirect:', e);
+                    // Fallback: try to open My Shorts in same tab
+                    window.location.href = '/my-shorts.html';
                 }
                 
             } catch (error) {

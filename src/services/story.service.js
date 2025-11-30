@@ -14,6 +14,7 @@ import { concatenateClips, fetchClipsToTmp } from '../utils/ffmpeg.timeline.js';
 import { renderVideoQuoteOverlay } from '../utils/ffmpeg.video.js';
 import { fetchVideoToTmp } from '../utils/video.fetch.js';
 import { uploadPublic } from '../utils/storage.js';
+import admin from '../config/firebase.js';
 
 const TTL_HOURS = Number(process.env.STORY_TTL_HOURS || 48);
 
@@ -402,10 +403,43 @@ export async function renderStory({ uid, sessionId }) {
   const destPath = `artifacts/${uid}/${jobId}/story.mp4`;
   const { publicUrl } = await uploadPublic(finalPath, destPath, 'video/mp4');
   
+  const durationSec = renderedSegments.reduce((sum, s) => sum + s.durationSec, 0);
+  const joinedText = session.story?.sentences?.join(' ') || '';
+  
+  // Create Firestore document in 'shorts' collection so it appears in My Shorts
+  const db = admin.firestore();
+  const shortsRef = db.collection('shorts').doc(jobId);
+  
+  try {
+    await shortsRef.set({
+      ownerId: uid,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      status: 'ready',
+      videoUrl: publicUrl,
+      durationSec: durationSec,
+      quoteText: joinedText,
+      mode: 'story',
+      template: 'story',
+      voiceover: false,
+      wantAttribution: false,
+      captionMode: 'overlay',
+      watermark: true,
+      background: {
+        kind: 'video',
+        type: 'video'
+      },
+      completedAt: admin.firestore.FieldValue.serverTimestamp()
+    });
+    console.log(`[story.service] Created Firestore doc in shorts collection: ${jobId}`);
+  } catch (error) {
+    console.warn(`[story.service] Failed to create Firestore doc: ${error.message}`);
+  }
+  
   session.renderedSegments = renderedSegments.map(s => s.path);
   session.finalVideo = {
     url: publicUrl,
-    durationSec: renderedSegments.reduce((sum, s) => sum + s.durationSec, 0)
+    durationSec: durationSec,
+    jobId: jobId // Store jobId for frontend redirect
   };
   session.status = 'rendered';
   session.updatedAt = new Date().toISOString();
