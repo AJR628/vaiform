@@ -75,19 +75,23 @@ export async function elevenLabsSynthesizeWithTimestamps({ text, voiceId, modelI
   
   // DEBUG: Log actual response structure to diagnose missing timestamps
   console.log('[elevenlabs.timestamps] Response keys:', Object.keys(data));
-  console.log('[elevenlabs.timestamps] Has characters:', !!data.characters, 'type:', typeof data.characters, 'length:', data.characters?.length);
-  console.log('[elevenlabs.timestamps] Has words:', !!data.words, 'type:', typeof data.words, 'length:', data.words?.length);
+  console.log('[elevenlabs.timestamps] Has alignment:', !!data.alignment, 'type:', typeof data.alignment);
+  console.log('[elevenlabs.timestamps] Has normalized_alignment:', !!data.normalized_alignment, 'type:', typeof data.normalized_alignment);
   
-  if (data.characters && Array.isArray(data.characters) && data.characters.length > 0) {
-    console.log('[elevenlabs.timestamps] Sample character:', JSON.stringify(data.characters[0]));
+  // Log alignment structure if it exists
+  if (data.alignment) {
+    if (Array.isArray(data.alignment)) {
+      console.log('[elevenlabs.timestamps] Alignment is array, length:', data.alignment.length);
+      if (data.alignment.length > 0) {
+        console.log('[elevenlabs.timestamps] Sample alignment entry:', JSON.stringify(data.alignment[0]));
+      }
+    } else if (typeof data.alignment === 'object') {
+      console.log('[elevenlabs.timestamps] Alignment keys:', Object.keys(data.alignment));
+      console.log('[elevenlabs.timestamps] Alignment preview:', JSON.stringify(data.alignment).substring(0, 500));
+    } else {
+      console.log('[elevenlabs.timestamps] Alignment value:', String(data.alignment).substring(0, 200));
+    }
   }
-  if (data.words && Array.isArray(data.words) && data.words.length > 0) {
-    console.log('[elevenlabs.timestamps] Sample word:', JSON.stringify(data.words[0]));
-  }
-  
-  // Log first 1000 chars of response to see structure
-  const responsePreview = JSON.stringify(data).substring(0, 1000);
-  console.log('[elevenlabs.timestamps] Full response preview:', responsePreview);
   
   // ElevenLabs with-timestamps returns:
   // - audio_base64: base64 encoded audio
@@ -101,7 +105,63 @@ export async function elevenLabsSynthesizeWithTimestamps({ text, voiceId, modelI
   let characters = [];
   let words = [];
   
-  // Try direct fields first
+  // ElevenLabs /with-timestamps endpoint returns alignment data in 'alignment' or 'normalized_alignment' fields
+  // The alignment format is typically an array of objects with character/word timing information
+  if (data.alignment) {
+    if (Array.isArray(data.alignment)) {
+      // Parse alignment array - each entry typically has character/word info with timestamps
+      for (const entry of data.alignment) {
+        if (entry.character && (entry.start_time_ms !== undefined || entry.start !== undefined)) {
+          // Character-level timing
+          characters.push({
+            character: entry.character,
+            start_time_ms: entry.start_time_ms ?? (entry.start ? entry.start * 1000 : 0),
+            end_time_ms: entry.end_time_ms ?? (entry.end ? entry.end * 1000 : 0)
+          });
+        }
+        if (entry.word && (entry.start_time_ms !== undefined || entry.start !== undefined)) {
+          // Word-level timing
+          words.push({
+            word: entry.word,
+            start_time_ms: entry.start_time_ms ?? (entry.start ? entry.start * 1000 : 0),
+            end_time_ms: entry.end_time_ms ?? (entry.end ? entry.end * 1000 : 0)
+          });
+        }
+      }
+    } else if (data.alignment.characters && Array.isArray(data.alignment.characters)) {
+      characters = data.alignment.characters;
+    } else if (data.alignment.words && Array.isArray(data.alignment.words)) {
+      words = data.alignment.words;
+    }
+  }
+  
+  // Try normalized_alignment if alignment didn't yield results
+  if (characters.length === 0 && words.length === 0 && data.normalized_alignment) {
+    if (Array.isArray(data.normalized_alignment)) {
+      for (const entry of data.normalized_alignment) {
+        if (entry.character && (entry.start_time_ms !== undefined || entry.start !== undefined)) {
+          characters.push({
+            character: entry.character,
+            start_time_ms: entry.start_time_ms ?? (entry.start ? entry.start * 1000 : 0),
+            end_time_ms: entry.end_time_ms ?? (entry.end ? entry.end * 1000 : 0)
+          });
+        }
+        if (entry.word && (entry.start_time_ms !== undefined || entry.start !== undefined)) {
+          words.push({
+            word: entry.word,
+            start_time_ms: entry.start_time_ms ?? (entry.start ? entry.start * 1000 : 0),
+            end_time_ms: entry.end_time_ms ?? (entry.end ? entry.end * 1000 : 0)
+          });
+        }
+      }
+    } else if (data.normalized_alignment.characters && Array.isArray(data.normalized_alignment.characters)) {
+      characters = data.normalized_alignment.characters;
+    } else if (data.normalized_alignment.words && Array.isArray(data.normalized_alignment.words)) {
+      words = data.normalized_alignment.words;
+    }
+  }
+  
+  // Fallback to legacy field names
   if (data.characters && Array.isArray(data.characters)) {
     characters = data.characters;
   } else if (data.character_timestamps && Array.isArray(data.character_timestamps)) {
