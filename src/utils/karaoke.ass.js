@@ -430,6 +430,7 @@ export async function buildKaraokeASSFromTimestamps({ text, timestamps, duration
       });
     } else {
       // Fallback to defaults if conversion fails
+      // Use center-middle alignment to match centered drawtext at y=(h-text_h)/2
       finalStyle = {
         Fontname: "DejaVu Sans",
         Fontsize: 64,
@@ -440,12 +441,13 @@ export async function buildKaraokeASSFromTimestamps({ text, timestamps, duration
         Bold: 0, Italic: 0, Underline: 0, StrikeOut: 0,
         ScaleX: 100, ScaleY: 100, Spacing: 0.5, Angle: 0,
         BorderStyle: 1, Outline: 3, Shadow: 1,
-        Alignment: 2,
-        MarginL: 40, MarginR: 40, MarginV: 260
+        Alignment: 5, // Center-middle (was 2 = center-bottom)
+        MarginL: 40, MarginR: 40, MarginV: 0 // Center vertically (was 260 = bottom margin)
       };
     }
   } else {
     // Use provided style or defaults (legacy mode)
+    // Use center-middle alignment to match centered drawtext at y=(h-text_h)/2
     const defaultStyle = {
       Fontname: "DejaVu Sans",
       Fontsize: 64,
@@ -456,8 +458,8 @@ export async function buildKaraokeASSFromTimestamps({ text, timestamps, duration
       Bold: 0, Italic: 0, Underline: 0, StrikeOut: 0,
       ScaleX: 100, ScaleY: 100, Spacing: 0.5, Angle: 0,
       BorderStyle: 1, Outline: 3, Shadow: 1,
-      Alignment: 2,
-      MarginL: 40, MarginR: 40, MarginV: 260
+      Alignment: 5, // Center-middle (was 2 = center-bottom)
+      MarginL: 40, MarginR: 40, MarginV: 0 // Center vertically (was 260 = bottom margin)
     };
     finalStyle = { ...defaultStyle, ...style };
   }
