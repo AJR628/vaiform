@@ -4,6 +4,7 @@
 
 import { randomUUID } from 'crypto';
 import { extractContentFromUrl } from '../utils/link.extract.js';
+import { calculateReadingDuration } from '../utils/text.duration.js';
 
 const OPENAI_BASE = process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1';
 const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
@@ -151,9 +152,9 @@ export async function planVisualShots({ sentences }) {
           'You plan visual shots for short-form video. For each sentence, provide:',
           '- visualDescription: What should be shown (2-3 words)',
           '- searchQuery: 2-4 word search term for stock video (portrait-oriented)',
-          '- durationSec: 2-4 seconds per shot',
-          'Return ONLY valid JSON: {"shots":[{"sentenceIndex":0,"visualDescription":"...","searchQuery":"...","durationSec":3},...]}',
-          'Total duration should match the story length.'
+          '- durationSec: Duration in seconds based on text length (3-10 seconds, longer sentences need more time)',
+          'Return ONLY valid JSON: {"shots":[{"sentenceIndex":0,"visualDescription":"...","searchQuery":"...","durationSec":number},...]}',
+          'Total duration should match the story length. Longer sentences should have longer durations.'
         ].join(' ')
       },
       {
@@ -200,11 +201,14 @@ export async function planVisualShots({ sentences }) {
         .filter(w => w.length > 3)
         .slice(0, 3);
       
+      // Calculate duration based on sentence text length
+      const durationSec = calculateReadingDuration(sentence);
+      
       return {
         sentenceIndex: index,
         visualDescription: words.join(' ') || 'abstract',
         searchQuery: words.slice(0, 2).join(' ') || 'nature',
-        durationSec: 3,
+        durationSec,
         startTimeSec: 0
       };
     });
@@ -213,12 +217,28 @@ export async function planVisualShots({ sentences }) {
   // Calculate start times and normalize durations
   let cumulativeTime = 0;
   shots = shots.map((shot, index) => {
-    const durationSec = Math.max(2, Math.min(4, Number(shot.durationSec) || 3));
+    const sentenceIndex = Number(shot.sentenceIndex) ?? index;
+    const sentence = sentences[sentenceIndex] || sentences[index] || '';
+    
+    // Calculate duration from text, but respect LLM-provided duration if reasonable
+    const llmDuration = Number(shot.durationSec) || 0;
+    const calculatedDuration = calculateReadingDuration(sentence);
+    
+    // Use calculated duration, but if LLM provided a value in reasonable range, prefer it
+    let durationSec = calculatedDuration;
+    if (llmDuration >= 3 && llmDuration <= 10) {
+      // LLM provided reasonable duration, use average of both
+      durationSec = Math.round((calculatedDuration + llmDuration) / 2 * 2) / 2;
+    }
+    
+    // Clamp to 3-10 seconds (expanded from 2-4)
+    durationSec = Math.max(3, Math.min(10, durationSec));
+    
     const startTimeSec = cumulativeTime;
     cumulativeTime += durationSec;
     
     return {
-      sentenceIndex: Number(shot.sentenceIndex) ?? index,
+      sentenceIndex,
       visualDescription: String(shot.visualDescription || '').trim() || 'visual',
       searchQuery: String(shot.searchQuery || '').trim() || 'nature',
       durationSec,

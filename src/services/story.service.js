@@ -14,6 +14,7 @@ import { concatenateClips, fetchClipsToTmp } from '../utils/ffmpeg.timeline.js';
 import { renderVideoQuoteOverlay } from '../utils/ffmpeg.video.js';
 import { fetchVideoToTmp } from '../utils/video.fetch.js';
 import { uploadPublic } from '../utils/storage.js';
+import { calculateReadingDuration } from '../utils/text.duration.js';
 import admin from '../config/firebase.js';
 
 const TTL_HOURS = Number(process.env.STORY_TTL_HOURS || 48);
@@ -281,16 +282,27 @@ export async function generateCaptionTimings({ uid, sessionId }) {
   }
   
   // Calculate timings based on shot durations
+  // Recalculate durations from text to ensure consistency with reading speed
   const captions = [];
   let cumulativeTime = 0;
   
   for (let i = 0; i < session.story.sentences.length; i++) {
     const shot = session.plan.find(s => s.sentenceIndex === i) || session.plan[i];
-    const durationSec = shot?.durationSec || 3;
+    const sentence = session.story.sentences[i];
+    
+    // Recalculate duration from text to ensure consistency
+    // Use shot duration as fallback, but prefer calculated duration
+    const calculatedDuration = calculateReadingDuration(sentence);
+    const shotDuration = shot?.durationSec || calculatedDuration;
+    
+    // Use the calculated duration, but respect shot duration if reasonable
+    const durationSec = (shotDuration >= 3 && shotDuration <= 10) 
+      ? Math.round((calculatedDuration + shotDuration) / 2 * 2) / 2 
+      : calculatedDuration;
     
     captions.push({
       sentenceIndex: i,
-      text: session.story.sentences[i],
+      text: sentence,
       startTimeSec: cumulativeTime,
       endTimeSec: cumulativeTime + durationSec
     });
@@ -341,6 +353,10 @@ export async function renderStory({ uid, sessionId }) {
       // Fetch clip to temp file
       const fetched = await fetchVideoToTmp(shot.selectedClip.url);
       
+      // Calculate duration from caption timing (uses text-based calculation)
+      const captionDuration = caption.endTimeSec - caption.startTimeSec;
+      const durationSec = captionDuration > 0 ? captionDuration : (shot.durationSec || 3);
+      
       // Render segment with caption
       const segmentPath = path.join(tmpDir, `segment_${i}.mp4`);
       await renderVideoQuoteOverlay({
@@ -348,7 +364,7 @@ export async function renderStory({ uid, sessionId }) {
         outPath: segmentPath,
         width: 1080,
         height: 1920,
-        durationSec: shot.durationSec || 3,
+        durationSec,
         fps: 24,
         text: caption.text,
         captionText: caption.text,
@@ -360,7 +376,7 @@ export async function renderStory({ uid, sessionId }) {
       
       renderedSegments.push({
         path: segmentPath,
-        durationSec: shot.durationSec || 3
+        durationSec
       });
       
       console.log(`[story.service] Successfully rendered segment ${i}/${shotsWithClips.length - 1}: "${caption.text.substring(0, 50)}..."`);
