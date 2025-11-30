@@ -106,7 +106,10 @@ export async function elevenLabsSynthesizeWithTimestamps({ text, voiceId, modelI
   let words = [];
   
   // ElevenLabs /with-timestamps endpoint returns alignment data in 'alignment' or 'normalized_alignment' fields
-  // The alignment format is typically an array of objects with character/word timing information
+  // The alignment format can be:
+  // 1. Object with separate arrays: { characters: [...], character_start_times_seconds: [...], character_end_times_seconds: [...] }
+  // 2. Array of objects with character/word info
+  // 3. Object with nested characters/words arrays
   if (data.alignment) {
     if (Array.isArray(data.alignment)) {
       // Parse alignment array - each entry typically has character/word info with timestamps
@@ -128,10 +131,28 @@ export async function elevenLabsSynthesizeWithTimestamps({ text, voiceId, modelI
           });
         }
       }
-    } else if (data.alignment.characters && Array.isArray(data.alignment.characters)) {
-      characters = data.alignment.characters;
-    } else if (data.alignment.words && Array.isArray(data.alignment.words)) {
-      words = data.alignment.words;
+    } else if (typeof data.alignment === 'object') {
+      // Check for separate arrays format (characters + character_start_times_seconds + character_end_times_seconds)
+      if (Array.isArray(data.alignment.characters) && 
+          Array.isArray(data.alignment.character_start_times_seconds) &&
+          Array.isArray(data.alignment.character_end_times_seconds)) {
+        // Zip the arrays together to create character timing objects
+        const chars = data.alignment.characters;
+        const starts = data.alignment.character_start_times_seconds;
+        const ends = data.alignment.character_end_times_seconds;
+        for (let i = 0; i < chars.length && i < starts.length && i < ends.length; i++) {
+          characters.push({
+            character: chars[i],
+            start_time_ms: Math.round(starts[i] * 1000),
+            end_time_ms: Math.round(ends[i] * 1000)
+          });
+        }
+        console.log('[elevenlabs.timestamps] Parsed character timestamps from separate arrays:', characters.length);
+      } else if (Array.isArray(data.alignment.characters)) {
+        characters = data.alignment.characters;
+      } else if (Array.isArray(data.alignment.words)) {
+        words = data.alignment.words;
+      }
     }
   }
   
@@ -154,10 +175,27 @@ export async function elevenLabsSynthesizeWithTimestamps({ text, voiceId, modelI
           });
         }
       }
-    } else if (data.normalized_alignment.characters && Array.isArray(data.normalized_alignment.characters)) {
-      characters = data.normalized_alignment.characters;
-    } else if (data.normalized_alignment.words && Array.isArray(data.normalized_alignment.words)) {
-      words = data.normalized_alignment.words;
+    } else if (typeof data.normalized_alignment === 'object') {
+      // Check for separate arrays format in normalized_alignment
+      if (Array.isArray(data.normalized_alignment.characters) && 
+          Array.isArray(data.normalized_alignment.character_start_times_seconds) &&
+          Array.isArray(data.normalized_alignment.character_end_times_seconds)) {
+        const chars = data.normalized_alignment.characters;
+        const starts = data.normalized_alignment.character_start_times_seconds;
+        const ends = data.normalized_alignment.character_end_times_seconds;
+        for (let i = 0; i < chars.length && i < starts.length && i < ends.length; i++) {
+          characters.push({
+            character: chars[i],
+            start_time_ms: Math.round(starts[i] * 1000),
+            end_time_ms: Math.round(ends[i] * 1000)
+          });
+        }
+        console.log('[elevenlabs.timestamps] Parsed character timestamps from normalized_alignment arrays:', characters.length);
+      } else if (Array.isArray(data.normalized_alignment.characters)) {
+        characters = data.normalized_alignment.characters;
+      } else if (Array.isArray(data.normalized_alignment.words)) {
+        words = data.normalized_alignment.words;
+      }
     }
   }
   

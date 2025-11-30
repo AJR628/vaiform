@@ -295,61 +295,71 @@ export async function buildKaraokeASSFromTimestamps({ text, timestamps, duration
 
   // Build word-level timing from character timings if needed
   let wordTimingsFinal = wordTimings;
-  if (!wordTimingsFinal && charTimings) {
+  if (!wordTimingsFinal && charTimings && charTimings.length > 0) {
     // Reconstruct word timings from character timings
-    // Match words to character positions in the text
+    // Build a character string from the character timings to match against text
+    const charString = charTimings.map(c => c.character || '').join('');
+    
     wordTimingsFinal = [];
-    let textPos = 0;
+    let charIdx = 0; // Current position in character timings array
     
     for (const word of tokens) {
-      // Find the word's position in the original text
-      const wordStartPos = text.indexOf(word, textPos);
-      if (wordStartPos === -1) {
-        // Word not found, use fallback
-        const estimatedDuration = durationMs ? (durationMs / tokens.length) : 200;
-        const lastEnd = wordTimingsFinal.length > 0 
-          ? wordTimingsFinal[wordTimingsFinal.length - 1].end_time_ms 
-          : 0;
-        wordTimingsFinal.push({
-          word: word,
-          start_time_ms: lastEnd,
-          end_time_ms: lastEnd + estimatedDuration
-        });
-        textPos += word.length + 1; // +1 for space
-        continue;
-      }
+      // Find the word in the character string starting from current position
+      const wordInChars = word.split('').join(''); // Word as character sequence
+      let found = false;
+      let wordStartCharIdx = -1;
+      let wordEndCharIdx = -1;
       
-      const wordEndPos = wordStartPos + word.length;
-      
-      // Find corresponding character timings
-      // Match by position in text (approximate)
-      let charStartIdx = -1;
-      let charEndIdx = -1;
-      
-      // Try to find character timings that correspond to this word
-      // This is approximate - we match by text position
-      for (let i = 0; i < charTimings.length; i++) {
-        const char = charTimings[i];
-        // Simple heuristic: if we have enough characters, assume they map 1:1
-        if (charStartIdx === -1 && i >= wordStartPos) {
-          charStartIdx = i;
+      // Search for the word in the character sequence
+      for (let i = charIdx; i < charTimings.length; i++) {
+        // Try to match the word starting at position i
+        let matches = true;
+        for (let j = 0; j < word.length && (i + j) < charTimings.length; j++) {
+          const charFromTiming = charTimings[i + j].character || '';
+          const charFromWord = word[j] || '';
+          // Match character (case-insensitive, ignore spaces)
+          if (charFromTiming.toLowerCase() !== charFromWord.toLowerCase() && 
+              charFromTiming !== ' ' && charFromWord !== ' ') {
+            matches = false;
+            break;
+          }
         }
-        if (i >= wordEndPos - 1 && charEndIdx === -1) {
-          charEndIdx = i;
+        
+        if (matches && wordStartCharIdx === -1) {
+          wordStartCharIdx = i;
+          // Skip spaces before the word
+          while (wordStartCharIdx < charTimings.length && 
+                 (charTimings[wordStartCharIdx].character === ' ' || 
+                  charTimings[wordStartCharIdx].character === '\n')) {
+            wordStartCharIdx++;
+          }
+          // Find end of word (last non-space character)
+          wordEndCharIdx = wordStartCharIdx;
+          let charsMatched = 0;
+          for (let k = wordStartCharIdx; k < charTimings.length && charsMatched < word.length; k++) {
+            const ch = charTimings[k].character || '';
+            if (ch !== ' ' && ch !== '\n') {
+              charsMatched++;
+              wordEndCharIdx = k;
+            }
+          }
+          found = true;
           break;
         }
       }
       
-      if (charStartIdx >= 0 && charEndIdx >= charStartIdx) {
-        const startMs = charTimings[charStartIdx].start_time_ms || 0;
-        const endMs = charTimings[charEndIdx].end_time_ms || startMs + 200;
+      if (found && wordStartCharIdx >= 0 && wordEndCharIdx >= wordStartCharIdx) {
+        // Use timing from first and last character of the word
+        const startChar = charTimings[wordStartCharIdx];
+        const endChar = charTimings[wordEndCharIdx];
         wordTimingsFinal.push({
           word: word,
-          start_time_ms: startMs,
-          end_time_ms: endMs
+          start_time_ms: startChar.start_time_ms || 0,
+          end_time_ms: endChar.end_time_ms || (startChar.start_time_ms || 0) + 200
         });
+        charIdx = wordEndCharIdx + 1; // Move past this word
       } else {
-        // Fallback: estimate timing
+        // Fallback: estimate timing based on previous word or average
         const estimatedDuration = durationMs ? (durationMs / tokens.length) : 200;
         const lastEnd = wordTimingsFinal.length > 0 
           ? wordTimingsFinal[wordTimingsFinal.length - 1].end_time_ms 
@@ -359,38 +369,40 @@ export async function buildKaraokeASSFromTimestamps({ text, timestamps, duration
           start_time_ms: lastEnd,
           end_time_ms: lastEnd + estimatedDuration
         });
+        // Don't advance charIdx on fallback to avoid getting stuck
       }
-      
-      textPos = wordEndPos + 1; // Move past word and space
     }
+    
+    console.log('[karaoke] Reconstructed word timings from character timings:', wordTimingsFinal.length, 'words');
   }
 
   // Build ASS karaoke parts with word-level highlighting
-  // ASS karaoke: {\k} tags control timing - text before {\k} is PrimaryColour (unread),
-  // text after {\k} is SecondaryColour (read/highlighted)
-  // The highlight effect comes from the color change to SecondaryColour
+  // ASS karaoke: {\k} tags control timing - the number is centiseconds from dialogue start
+  // when the word should change from PrimaryColour to SecondaryColour (highlight)
+  // Format: {\k50}word means: wait 50 centiseconds from start, then highlight this word
   const parts = [];
-  let cumulativeTimeMs = 0;
   
   for (let i = 0; i < tokens.length; i++) {
     const word = tokens[i];
     const timing = wordTimingsFinal[i];
     
     if (!timing) {
-      // Fallback timing
+      // Fallback timing - estimate start time based on previous words
       const estimatedDuration = durationMs ? (durationMs / tokens.length) : 200;
-      const duration = Math.max(50, estimatedDuration); // Minimum 50ms
-      const cs = Math.max(1, Math.round(duration / 10)); // Convert to centiseconds
-      // Add karaoke timing - word will highlight for 'cs' centiseconds
+      const lastEnd = i > 0 && wordTimingsFinal[i - 1] 
+        ? wordTimingsFinal[i - 1].end_time_ms 
+        : 0;
+      const wordStartMs = lastEnd;
+      const cs = Math.max(1, Math.round(wordStartMs / 10)); // Convert to centiseconds
+      // Add karaoke timing - word highlights at 'cs' centiseconds from start
       parts.push(`{\\k${cs}}${word}`);
-      cumulativeTimeMs += duration;
     } else {
-      const duration = timing.end_time_ms - timing.start_time_ms;
-      const cs = Math.max(1, Math.round(duration / 10)); // Convert to centiseconds
-      // Add karaoke timing - word highlights as it's spoken
-      // The {\k} tag makes the word change from PrimaryColour to SecondaryColour
+      // Use the word's start time (when it begins being spoken)
+      const wordStartMs = timing.start_time_ms || 0;
+      const cs = Math.max(1, Math.round(wordStartMs / 10)); // Convert to centiseconds
+      // Add karaoke timing - word highlights when it starts being spoken
+      // The {\k} tag value is the time from dialogue start to when this word highlights
       parts.push(`{\\k${cs}}${word}`);
-      cumulativeTimeMs = timing.end_time_ms;
     }
     
     if (i < tokens.length - 1) parts.push(" ");
@@ -470,8 +482,21 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
   const dialogue = `Dialogue: 0,${start},${end},QMain,,0,0,0,,${parts.join("")}\n`;
   const ass = header + dialogue;
 
+  // Debug: Log first few words and their timing
+  if (wordTimingsFinal && wordTimingsFinal.length > 0) {
+    const sampleWords = wordTimingsFinal.slice(0, 3).map((t, i) => ({
+      word: tokens[i],
+      start: t.start_time_ms,
+      end: t.end_time_ms,
+      duration: t.end_time_ms - t.start_time_ms
+    }));
+    console.log('[karaoke] Sample word timings:', JSON.stringify(sampleWords));
+    console.log('[karaoke] ASS dialogue preview:', parts.slice(0, 3).join(''));
+  }
+
   const outPath = join(tmpdir(), `vaiform-${randomUUID()}.ass`);
   await writeFile(outPath, ass, "utf8");
+  console.log('[karaoke] Generated ASS file:', outPath, `(${wordTimingsFinal?.length || tokens.length} words)`);
   return outPath;
 }
 
