@@ -4479,7 +4479,9 @@
                 // --- OPTIONAL overlay / debug work below. Must never block a successful save. ---
 
                 // Hide Save Preview button and show success indicator
-                saveBtn.style.display = 'none';
+                if (saveBtn) {
+                    saveBtn.style.display = 'none';
+                }
                 
                 // Show success indicator
                 if (typeof window.showPreviewSavedIndicator === 'function') {
