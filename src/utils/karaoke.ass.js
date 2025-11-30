@@ -2,6 +2,7 @@ import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
+import { normalizeWeight } from "./font.registry.js";
 
 function tokenize(text) {
   return String(text || "").trim().split(/\s+/);
@@ -15,6 +16,165 @@ function msToHMS(ms) {
   const h  = Math.floor(t/3600000);
   const pad = (n,w=2)=>String(n).padStart(w,"0");
   return `${pad(h)}:${pad(m)}:${pad(s)}.${pad(cs)}`;
+}
+
+/**
+ * Convert hex/rgb color to ASS BGR format (&H00BBGGRR)
+ * @param {string} color - Hex color (#ffffff) or rgb/rgba string
+ * @param {number} [alpha] - Alpha value 0-1 (default: 1.0)
+ * @returns {string} ASS color format
+ */
+function colorToASS(color, alpha = 1.0) {
+  if (!color) return "&H00FFFFFF";
+  
+  let r = 255, g = 255, b = 255;
+  const c = String(color).trim();
+  
+  // Hex format: #ffffff or #fff
+  if (c.startsWith('#')) {
+    const hex = c.slice(1);
+    if (hex.length === 6) {
+      r = parseInt(hex.slice(0, 2), 16);
+      g = parseInt(hex.slice(2, 4), 16);
+      b = parseInt(hex.slice(4, 6), 16);
+    } else if (hex.length === 3) {
+      r = parseInt(hex[0] + hex[0], 16);
+      g = parseInt(hex[1] + hex[1], 16);
+      b = parseInt(hex[2] + hex[2], 16);
+    }
+  } else {
+    // Parse rgb(R, G, B) or rgba(R, G, B, A)
+    const m = /rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/.exec(c);
+    if (m) {
+      r = parseInt(m[1], 10);
+      g = parseInt(m[2], 10);
+      b = parseInt(m[3], 10);
+    }
+  }
+  
+  // ASS format: &HAABBGGRR (AA=alpha, BB=blue, GG=green, RR=red)
+  const a = Math.round(alpha * 255);
+  return `&H${a.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${r.toString(16).padStart(2, '0')}`;
+}
+
+/**
+ * Map text alignment to ASS alignment number
+ * @param {string} align - 'left', 'center', 'right'
+ * @param {string} placement - 'top', 'center', 'bottom' (for vertical alignment)
+ * @returns {number} ASS alignment (1-9)
+ */
+function alignmentToASS(align = 'center', placement = 'center') {
+  // ASS alignment: 1=bottom-left, 2=bottom-center, 3=bottom-right
+  //                4=middle-left, 5=middle-center, 6=middle-right
+  //                7=top-left, 8=top-center, 9=top-right
+  const hAlign = align === 'left' ? 1 : (align === 'right' ? 3 : 2);
+  const vAlign = placement === 'top' ? 3 : (placement === 'bottom' ? 1 : 2);
+  return (vAlign - 1) * 3 + hAlign;
+}
+
+/**
+ * Convert overlay caption styling to ASS subtitle style format
+ * @param {object} overlayCaption - Overlay caption object with styling
+ * @param {number} width - Video width (default: 1080)
+ * @param {number} height - Video height (default: 1920)
+ * @returns {object} ASS style object
+ */
+export function convertOverlayToASSStyle(overlayCaption, width = 1080, height = 1920) {
+  if (!overlayCaption) {
+    return null;
+  }
+  
+  // Extract styling from overlay
+  const fontFamily = overlayCaption.fontFamily || 'DejaVu Sans';
+  const fontPx = overlayCaption.fontPx || overlayCaption.sizePx || 64;
+  const color = overlayCaption.color || '#ffffff';
+  const opacity = typeof overlayCaption.opacity === 'number' ? overlayCaption.opacity : 1.0;
+  const textAlign = overlayCaption.textAlign || overlayCaption.align || 'center';
+  const placement = overlayCaption.placement || 'center';
+  const weightCss = overlayCaption.weightCss || 'normal';
+  const fontStyle = overlayCaption.fontStyle || 'normal';
+  const yPct = typeof overlayCaption.yPct === 'number' ? overlayCaption.yPct : 0.5;
+  const xPct = typeof overlayCaption.xPct === 'number' ? overlayCaption.xPct : 0.5;
+  const wPct = typeof overlayCaption.wPct === 'number' ? overlayCaption.wPct : 0.8;
+  
+  // Convert color to ASS format
+  const primaryColor = colorToASS(color, opacity);
+  
+  // Create highlight color (brighter/more saturated version for active words)
+  // For white text, use yellow highlight. For colored text, increase brightness
+  let highlightColor;
+  if (color.toLowerCase() === '#ffffff' || color.toLowerCase() === 'white' || color.toLowerCase() === 'rgb(255, 255, 255)') {
+    // White text: use yellow highlight for visibility
+    highlightColor = colorToASS('#ffff00', opacity); // Yellow
+  } else {
+    // Colored text: increase brightness by ~40% and saturation
+    let r = 255, g = 255, b = 255;
+    if (color.startsWith('#')) {
+      const hex = color.slice(1);
+      if (hex.length === 6) {
+        r = parseInt(hex.slice(0, 2), 16);
+        g = parseInt(hex.slice(2, 4), 16);
+        b = parseInt(hex.slice(4, 6), 16);
+        // Increase brightness: move towards white
+        r = Math.min(255, Math.round(r + (255 - r) * 0.4));
+        g = Math.min(255, Math.round(g + (255 - g) * 0.4));
+        b = Math.min(255, Math.round(b + (255 - b) * 0.4));
+      }
+    } else {
+      // Parse rgb/rgba
+      const m = /rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/.exec(color);
+      if (m) {
+        r = parseInt(m[1], 10);
+        g = parseInt(m[2], 10);
+        b = parseInt(m[3], 10);
+        r = Math.min(255, Math.round(r + (255 - r) * 0.4));
+        g = Math.min(255, Math.round(g + (255 - g) * 0.4));
+        b = Math.min(255, Math.round(b + (255 - b) * 0.4));
+      }
+    }
+    highlightColor = colorToASS(`#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`, opacity);
+  }
+  
+  // Calculate margins based on position
+  // MarginV: vertical margin (top for top placement, bottom for bottom placement)
+  let marginV = 260; // default center
+  if (placement === 'top') {
+    marginV = Math.round(yPct * height * 0.1); // Top margin
+  } else if (placement === 'bottom') {
+    marginV = Math.round((1 - yPct) * height * 0.1); // Bottom margin
+  } else {
+    // Center: calculate from yPct
+    marginV = Math.round((1 - yPct) * height * 0.5);
+  }
+  marginV = Math.max(40, Math.min(800, marginV)); // Clamp to reasonable range
+  
+  // MarginL and MarginR: horizontal margins based on xPct and wPct
+  const marginL = Math.round((1 - xPct - wPct / 2) * width * 0.1);
+  const marginR = Math.round((xPct - wPct / 2) * width * 0.1);
+  
+  return {
+    Fontname: fontFamily,
+    Fontsize: Math.round(fontPx),
+    PrimaryColour: primaryColor,
+    SecondaryColour: highlightColor, // Brighter color for highlighted words
+    OutlineColour: "&H80202020", // Dark outline
+    BackColour: "&H00000000", // No background
+    Bold: normalizeWeight(weightCss) >= 600 ? 1 : 0,
+    Italic: fontStyle === 'italic' ? 1 : 0,
+    Underline: 0,
+    StrikeOut: 0,
+    ScaleX: 100,
+    ScaleY: 100,
+    Spacing: 0.5,
+    Angle: 0,
+    BorderStyle: 1,
+    Outline: 3, // Outline width
+    Shadow: 1, // Shadow depth
+    Alignment: alignmentToASS(textAlign, placement),
+    MarginL: Math.max(0, marginL),
+    MarginR: Math.max(0, marginR),
+    MarginV: marginV
+  };
 }
 
 export async function buildKaraokeASS({
@@ -100,10 +260,13 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
  * @param {string} params.text - Original text
  * @param {object} params.timestamps - ElevenLabs timestamp data with characters/words arrays
  * @param {number} [params.durationMs] - Total duration in ms (fallback if timestamps incomplete)
- * @param {object} [params.style] - ASS style configuration
+ * @param {object} [params.style] - ASS style configuration (legacy, use overlayCaption instead)
+ * @param {object} [params.overlayCaption] - Overlay caption object with styling (SSOT)
+ * @param {number} [params.width] - Video width for margin calculations (default: 1080)
+ * @param {number} [params.height] - Video height for margin calculations (default: 1920)
  * @returns {Promise<string>} Path to generated ASS file
  */
-export async function buildKaraokeASSFromTimestamps({ text, timestamps, durationMs, style = {} }) {
+export async function buildKaraokeASSFromTimestamps({ text, timestamps, durationMs, style = {}, overlayCaption = null, width = 1080, height = 1920 }) {
   if (!text || !timestamps) {
     throw new Error("KARAOKE_TIMESTAMPS: text and timestamps required");
   }
@@ -202,8 +365,13 @@ export async function buildKaraokeASSFromTimestamps({ text, timestamps, duration
     }
   }
 
-  // Build ASS karaoke parts
+  // Build ASS karaoke parts with word-level highlighting
+  // ASS karaoke: {\k} tags control timing - text before {\k} is PrimaryColour (unread),
+  // text after {\k} is SecondaryColour (read/highlighted)
+  // The highlight effect comes from the color change to SecondaryColour
   const parts = [];
+  let cumulativeTimeMs = 0;
+  
   for (let i = 0; i < tokens.length; i++) {
     const word = tokens[i];
     const timing = wordTimingsFinal[i];
@@ -211,16 +379,18 @@ export async function buildKaraokeASSFromTimestamps({ text, timestamps, duration
     if (!timing) {
       // Fallback timing
       const estimatedDuration = durationMs ? (durationMs / tokens.length) : 200;
-      const lastEnd = i > 0 && wordTimingsFinal[i - 1] 
-        ? wordTimingsFinal[i - 1].end_time_ms 
-        : 0;
       const duration = Math.max(50, estimatedDuration); // Minimum 50ms
       const cs = Math.max(1, Math.round(duration / 10)); // Convert to centiseconds
+      // Add karaoke timing - word will highlight for 'cs' centiseconds
       parts.push(`{\\k${cs}}${word}`);
+      cumulativeTimeMs += duration;
     } else {
       const duration = timing.end_time_ms - timing.start_time_ms;
       const cs = Math.max(1, Math.round(duration / 10)); // Convert to centiseconds
+      // Add karaoke timing - word highlights as it's spoken
+      // The {\k} tag makes the word change from PrimaryColour to SecondaryColour
       parts.push(`{\\k${cs}}${word}`);
+      cumulativeTimeMs = timing.end_time_ms;
     }
     
     if (i < tokens.length - 1) parts.push(" ");
@@ -234,22 +404,51 @@ export async function buildKaraokeASSFromTimestamps({ text, timestamps, duration
   const start = msToHMS(0);
   const end = msToHMS(totalDurationMs);
 
-  // Use provided style or defaults
-  const defaultStyle = {
-    Fontname: "DejaVu Sans",
-    Fontsize: 64,
-    PrimaryColour: "&H00FFFFFF",
-    OutlineColour: "&H80202020",
-    BackColour: "&H00000000",
-    SecondaryColour: "&H00000000",
-    Bold: 0, Italic: 0, Underline: 0, StrikeOut: 0,
-    ScaleX: 100, ScaleY: 100, Spacing: 0.5, Angle: 0,
-    BorderStyle: 1, Outline: 3, Shadow: 1,
-    Alignment: 2,
-    MarginL: 40, MarginR: 40, MarginV: 260
-  };
-
-  const finalStyle = { ...defaultStyle, ...style };
+  // Convert overlay caption styling to ASS format (SSOT)
+  let finalStyle;
+  if (overlayCaption) {
+    const overlayStyle = convertOverlayToASSStyle(overlayCaption, width, height);
+    if (overlayStyle) {
+      finalStyle = overlayStyle;
+      console.log('[karaoke] Using overlay SSOT styling:', {
+        fontPx: overlayCaption.fontPx,
+        color: overlayCaption.color,
+        placement: overlayCaption.placement,
+        alignment: overlayStyle.Alignment
+      });
+    } else {
+      // Fallback to defaults if conversion fails
+      finalStyle = {
+        Fontname: "DejaVu Sans",
+        Fontsize: 64,
+        PrimaryColour: "&H00FFFFFF",
+        OutlineColour: "&H80202020",
+        BackColour: "&H00000000",
+        SecondaryColour: "&H00FFFF00", // Yellow highlight
+        Bold: 0, Italic: 0, Underline: 0, StrikeOut: 0,
+        ScaleX: 100, ScaleY: 100, Spacing: 0.5, Angle: 0,
+        BorderStyle: 1, Outline: 3, Shadow: 1,
+        Alignment: 2,
+        MarginL: 40, MarginR: 40, MarginV: 260
+      };
+    }
+  } else {
+    // Use provided style or defaults (legacy mode)
+    const defaultStyle = {
+      Fontname: "DejaVu Sans",
+      Fontsize: 64,
+      PrimaryColour: "&H00FFFFFF",
+      OutlineColour: "&H80202020",
+      BackColour: "&H00000000",
+      SecondaryColour: "&H00FFFF00", // Yellow highlight for karaoke
+      Bold: 0, Italic: 0, Underline: 0, StrikeOut: 0,
+      ScaleX: 100, ScaleY: 100, Spacing: 0.5, Angle: 0,
+      BorderStyle: 1, Outline: 3, Shadow: 1,
+      Alignment: 2,
+      MarginL: 40, MarginR: 40, MarginV: 260
+    };
+    finalStyle = { ...defaultStyle, ...style };
+  }
 
   const header =
 `[Script Info]

@@ -531,14 +531,16 @@ function buildVideoChain({ width, height, videoVignette, drawLayers, captionImag
     let filter = `${baseChain};${pngPrep};${overlayExpr}`;
     
     // Add ASS subtitles if provided (for karaoke word highlighting)
+    // ASS overlays on top of caption PNG to provide word-level highlighting
+    // The ASS file should match the caption styling exactly so it appears as highlighting only
     if (assPath && fs.existsSync(assPath)) {
-      console.log('[render] Adding ASS subtitles for karaoke highlighting:', assPath);
+      console.log('[render] Adding ASS subtitles for karaoke highlighting (raster overlay mode):', assPath);
       // Escape path for FFmpeg
       const escAssPath = assPath.replace(/\\/g, '/').replace(/:/g, '\\:').replace(/'/g, "\\'");
       // Apply subtitles after overlay - replace [vout] with intermediate, then add subtitles
       filter = filter.replace('[vout]', '[vsub]');
-      filter = `${filter};[vsub]subtitles='${escAssPath}':force_style='Alignment=2'[vout]`;
-      console.log('[render] ASS subtitles added to filter chain');
+      filter = `${filter};[vsub]subtitles='${escAssPath}'[vout]`;
+      console.log('[render] ASS subtitles added to filter chain as overlay');
     }
     
     // Sanity check: ensure colorspace filter is NOT in raster chain
@@ -580,16 +582,17 @@ function buildVideoChain({ width, height, videoVignette, drawLayers, captionImag
     let vchain = makeChain('0:v', [ ...core, ...drawLayers, endFormat, 'colorspace=all=bt709:fast=1' ].filter(Boolean), 'vout');
     
     // Add ASS subtitles if provided (for karaoke word highlighting)
-    // When ASS is used, it replaces drawtext captions with animated karaoke highlighting
+    // ASS overlays on top of existing captions to provide word-level highlighting
+    // The ASS file should match the caption styling exactly so it appears as highlighting only
     if (assPath && fs.existsSync(assPath)) {
-      console.log('[render] Adding ASS subtitles for karaoke highlighting:', assPath);
+      console.log('[render] Adding ASS subtitles for karaoke highlighting (overlay mode):', assPath);
       // Escape path for FFmpeg
       const escAssPath = assPath.replace(/\\/g, '/').replace(/:/g, '\\:').replace(/'/g, "\\'");
-      // Apply subtitles after all drawtext layers
+      // Apply subtitles after all drawtext layers as an overlay
       // Replace vout with intermediate, then add subtitles as separate filter
       vchain = vchain.replace('[vout]', '[vsub]');
-      vchain = `${vchain};[vsub]subtitles='${escAssPath}':force_style='Alignment=2'[vout]`;
-      console.log('[render] ASS subtitles added to drawtext chain');
+      vchain = `${vchain};[vsub]subtitles='${escAssPath}'[vout]`;
+      console.log('[render] ASS subtitles added to drawtext chain as overlay');
     }
     
     return vchain;
@@ -1473,8 +1476,14 @@ export async function renderVideoQuoteOverlay({
     });
   }
 
-  // If ASS subtitles are provided, skip drawCaption since ASS will handle text rendering with karaoke highlighting
-  const shouldUseDrawCaption = !assPath && drawCaption;
+  // ASS subtitles overlay on top of existing captions (not replacement)
+  // When using overlay mode, ASS provides word-level highlighting on top of the caption
+  // The ASS file matches the caption styling exactly, so unhighlighted words are invisible
+  // and only the highlight effect (color change) is visible
+  // When using raster mode, ASS overlays on top of the caption PNG
+  // When using drawtext mode, ASS overlays on top of the drawtext caption
+  // Always render the base caption when using overlay/raster mode, even with ASS
+  const shouldUseDrawCaption = drawCaption && (overlayCaption || usingCaptionPng || !assPath);
   const vchain = buildVideoChain({ 
     width: W, 
     height: H, 
@@ -1485,7 +1494,7 @@ export async function renderVideoQuoteOverlay({
     captionPngPath,
     rasterPlacement,
     overlayCaption,
-    assPath  // ASS subtitle file for karaoke word highlighting
+    assPath  // ASS subtitle file for karaoke word highlighting (overlays on top)
   });
   // If includeBottomCaption flag is passed via captionStyle, honor it
 

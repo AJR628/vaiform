@@ -375,14 +375,31 @@ export async function renderStory({ uid, sessionId }) {
         if (ttsResult.audioPath && ttsResult.timestamps) {
           ttsPath = ttsResult.audioPath;
           
-          // Build ASS file from timestamps
+          // Build ASS file from timestamps with overlay styling (SSOT)
           try {
+            // Check if session has overlay caption styling
+            const overlayCaption = session.overlayCaption || session.captionStyle;
+            
+            // Get TTS duration for accurate timing
+            let ttsDurationMs = ttsResult.durationMs;
+            if (!ttsDurationMs && ttsPath) {
+              try {
+                const { getDurationMsFromMedia } = await import('../utils/media.duration.js');
+                ttsDurationMs = await getDurationMsFromMedia(ttsPath);
+              } catch (err) {
+                console.warn(`[story.service] Could not get TTS duration:`, err?.message);
+              }
+            }
+            
             assPath = await buildKaraokeASSFromTimestamps({
               text: caption.text,
               timestamps: ttsResult.timestamps,
-              durationMs: ttsResult.durationMs
+              durationMs: ttsDurationMs,
+              overlayCaption: overlayCaption, // Pass overlay styling (SSOT)
+              width: 1080,
+              height: 1920
             });
-            console.log(`[story.service] Generated ASS file for segment ${i}`);
+            console.log(`[story.service] Generated ASS file for segment ${i}${overlayCaption ? ' with overlay styling' : ' with default styling'}`);
           } catch (assError) {
             console.warn(`[story.service] Failed to generate ASS file for segment ${i}:`, assError.message);
             // Continue without ASS highlighting
@@ -430,6 +447,10 @@ export async function renderStory({ uid, sessionId }) {
       
       // Render segment with caption, TTS, and ASS highlighting
       const segmentPath = path.join(tmpDir, `segment_${i}.mp4`);
+      
+      // Check if session has overlay caption styling to pass to render
+      const overlayCaption = session.overlayCaption || session.captionStyle;
+      
       await renderVideoQuoteOverlay({
         videoPath: fetched.path,
         outPath: segmentPath,
@@ -440,7 +461,8 @@ export async function renderStory({ uid, sessionId }) {
         text: caption.text,
         captionText: caption.text,
         ttsPath: ttsPath,
-        assPath: assPath, // ASS file for word highlighting
+        assPath: assPath, // ASS file for word highlighting (overlays on top of existing captions)
+        overlayCaption: overlayCaption, // Pass overlay styling for caption rendering
         keepVideoAudio: true, // Keep background audio (will auto-detect if audio exists)
         bgAudioVolume: 0.5,
         watermark: true
