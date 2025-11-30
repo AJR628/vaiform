@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
 import { buildTtsPayload } from "../builders/tts.builder.js";
-import { elevenLabsSynthesize } from "../adapters/elevenlabs.adapter.js";
+import { elevenLabsSynthesize, elevenLabsSynthesizeWithTimestamps } from "../adapters/elevenlabs.adapter.js";
 import { normalizeVoiceSettings, logNormalizedSettings } from "../utils/voice.normalize.js";
 
 const TTS_PROVIDER = (process.env.TTS_PROVIDER || "openai").toLowerCase();
@@ -332,6 +332,75 @@ async function synthEleven({ text, k }){
   return { audioPath: diskPath, durationMs: null };
 }
 
-export default { synthVoice };
+/**
+ * Synthesize voice with word-level timestamps (ElevenLabs only)
+ * Returns audio path, duration, and timestamp data for word highlighting
+ */
+export async function synthVoiceWithTimestamps({ text, voiceId, modelId, outputFormat, voiceSettings }) {
+  try {
+    const t = String(text || "").replace(/\s+/g, ' ').trim();
+    if (t.length < 2) return { audioPath: null, durationMs: null, timestamps: null };
+
+    const provider = (process.env.TTS_PROVIDER || "openai").toLowerCase();
+    const isEleven = provider === "elevenlabs" && !!process.env.ELEVENLABS_API_KEY;
+    
+    if (!isEleven) {
+      console.warn("[tts.timestamps] Only ElevenLabs supports timestamps; falling back to regular synthesis");
+      const result = await synthVoice({ text, voiceId, modelId, outputFormat, voiceSettings });
+      return { ...result, timestamps: null };
+    }
+
+    if (Date.now() < quotaBlockedUntil) {
+      console.warn("[tts.timestamps] quota cooldown active; skipping");
+      return { audioPath: null, durationMs: null, timestamps: null };
+    }
+
+    // Build payload with normalized settings
+    const payload = buildTtsPayload({
+      text: t,
+      voiceId: voiceId || process.env.ELEVEN_VOICE_ID,
+      modelId: modelId || process.env.ELEVEN_TTS_MODEL || "eleven_flash_v2_5",
+      outputFormat: outputFormat || "mp3_44100_128",
+      voiceSettings
+    });
+
+    const normalizedSettings = normalizeVoiceSettings(payload.voiceSettings);
+    payload.voiceSettings = normalizedSettings;
+
+    logNormalizedSettings('[tts.timestamps]', voiceSettings, normalizedSettings);
+
+    // Generate with timestamps
+    return await withTtsSlot(async () => {
+      try {
+        const { buffer, timestamps } = await elevenLabsSynthesizeWithTimestamps(payload);
+
+        // Save audio to temp file
+        const dir = await mkdtemp(join(tmpdir(), "vaiform-tts-"));
+        const audioPath = join(dir, "quote.mp3");
+        await writeFile(audioPath, buffer);
+
+        // Get duration if possible
+        let durationMs = null;
+        try {
+          const { getDurationMsFromMedia } = await import('../utils/media.duration.js');
+          durationMs = await getDurationMsFromMedia(audioPath);
+          console.log('[tts.timestamps] Synthesis OK:', buffer.length, 'bytes, duration:', durationMs ? (durationMs/1000).toFixed(2) + 's' : 'unknown');
+        } catch (err) {
+          console.warn('[tts.timestamps] Could not get duration:', err.message);
+        }
+
+        return { audioPath, durationMs, timestamps };
+      } catch (err) {
+        console.warn("[tts.timestamps] soft-fail:", err?.message || err);
+        return { audioPath: null, durationMs: null, timestamps: null };
+      }
+    });
+  } catch (err) {
+    console.warn("[tts.timestamps] soft-fail:", err?.message || err);
+    return { audioPath: null, durationMs: null, timestamps: null };
+  }
+}
+
+export default { synthVoice, synthVoiceWithTimestamps };
 
 

@@ -379,7 +379,7 @@ function fitQuoteToBox({ text, boxWidthPx, baseFontSize = 72 }) {
   return { text: lines.join('\n'), fontsize: fz, lineSpacing };  // Use actual newlines, escapeForDrawtext will handle escaping
 }
 
-function buildVideoChain({ width, height, videoVignette, drawLayers, captionImage, usingCaptionPng, captionPngPath, rasterPlacement, overlayCaption }){
+function buildVideoChain({ width, height, videoVignette, drawLayers, captionImage, usingCaptionPng, captionPngPath, rasterPlacement, overlayCaption, assPath }){
   const W = Math.max(4, Number(width)||1080);
   const H = Math.max(4, Number(height)||1920);
   
@@ -528,13 +528,25 @@ function buildVideoChain({ width, height, videoVignette, drawLayers, captionImag
       });
     }
     
-    const filter = `${baseChain};${pngPrep};${overlayExpr}`;
+    let filter = `${baseChain};${pngPrep};${overlayExpr}`;
+    
+    // Add ASS subtitles if provided (for karaoke word highlighting)
+    if (assPath && fs.existsSync(assPath)) {
+      console.log('[render] Adding ASS subtitles for karaoke highlighting:', assPath);
+      // Escape path for FFmpeg
+      const escAssPath = assPath.replace(/\\/g, '/').replace(/:/g, '\\:').replace(/'/g, "\\'");
+      // Apply subtitles after overlay
+      filter = filter.replace('[vout]', `[vout]`); // Keep vout label
+      filter = `${filter},subtitles='${escAssPath}':force_style='Alignment=2'[vout]`;
+      console.log('[render] ASS subtitles added to filter chain');
+    }
     
     // Sanity check: ensure colorspace filter is NOT in raster chain
     console.log('[v3:filter-chain]', {
       mode: 'raster',
       pixelFmt: use444 ? 'yuv444p' : 'yuv420p',
       hasColorspaceFilter: filter.includes('colorspace='),
+      hasSubtitles: filter.includes('subtitles='),
       filterLength: filter.length
     });
     
@@ -565,7 +577,21 @@ function buildVideoChain({ width, height, videoVignette, drawLayers, captionImag
     // Colorspace handling for crisp text output
     const endFormat = pixelFmtFilter;
     
-    const vchain = makeChain('0:v', [ ...core, ...drawLayers, endFormat, 'colorspace=all=bt709:fast=1' ].filter(Boolean), 'vout');
+    let vchain = makeChain('0:v', [ ...core, ...drawLayers, endFormat, 'colorspace=all=bt709:fast=1' ].filter(Boolean), 'vout');
+    
+    // Add ASS subtitles if provided (for karaoke word highlighting)
+    // When ASS is used, it replaces drawtext captions with animated karaoke highlighting
+    if (assPath && fs.existsSync(assPath)) {
+      console.log('[render] Adding ASS subtitles for karaoke highlighting:', assPath);
+      // Escape path for FFmpeg
+      const escAssPath = assPath.replace(/\\/g, '/').replace(/:/g, '\\:').replace(/'/g, "\\'");
+      // Apply subtitles after all drawtext layers
+      // Replace vout with intermediate, then add subtitles
+      vchain = vchain.replace('[vout]', '[vtemp]');
+      vchain = `${vchain},subtitles='${escAssPath}':force_style='Alignment=2'[vout]`;
+      console.log('[render] ASS subtitles added to drawtext chain');
+    }
+    
     return vchain;
   }
 }
@@ -640,6 +666,8 @@ export async function renderVideoQuoteOverlay({
   ttsDelayMs,
   tailPadSec,
   voiceoverDelaySec,
+  // subtitles
+  assPath, // ASS subtitle file for karaoke word highlighting
   // visual polish
   videoStartSec = 0,
   videoVignette = false,
@@ -1445,16 +1473,19 @@ export async function renderVideoQuoteOverlay({
     });
   }
 
+  // If ASS subtitles are provided, skip drawCaption since ASS will handle text rendering with karaoke highlighting
+  const shouldUseDrawCaption = !assPath && drawCaption;
   const vchain = buildVideoChain({ 
     width: W, 
     height: H, 
     videoVignette, 
-    drawLayers: usingCaptionPng ? [drawMain, drawAuthor, drawWatermark].filter(Boolean) : [drawMain, drawAuthor, drawWatermark, drawCaption].filter(Boolean),
+    drawLayers: usingCaptionPng ? [drawMain, drawAuthor, drawWatermark].filter(Boolean) : [drawMain, drawAuthor, drawWatermark, shouldUseDrawCaption ? drawCaption : null].filter(Boolean),
     captionImage: CAPTION_OVERLAY ? captionImage : null,
     usingCaptionPng,
     captionPngPath,
     rasterPlacement,
-    overlayCaption  // ← ADD THIS
+    overlayCaption,
+    assPath  // ASS subtitle file for karaoke word highlighting
   });
   // If includeBottomCaption flag is passed via captionStyle, honor it
 

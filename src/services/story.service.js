@@ -16,6 +16,9 @@ import { fetchVideoToTmp } from '../utils/video.fetch.js';
 import { uploadPublic } from '../utils/storage.js';
 import { calculateReadingDuration } from '../utils/text.duration.js';
 import admin from '../config/firebase.js';
+import { synthVoiceWithTimestamps } from './tts.service.js';
+import { getVoicePreset, getDefaultVoicePreset } from '../constants/voice.presets.js';
+import { buildKaraokeASSFromTimestamps } from '../utils/karaoke.ass.js';
 
 const TTL_HOURS = Number(process.env.STORY_TTL_HOURS || 48);
 
@@ -334,6 +337,11 @@ export async function renderStory({ uid, sessionId }) {
     throw new Error('NO_CLIPS_SELECTED');
   }
   
+  // Get voice preset (default to calm male if not set)
+  const voicePresetKey = session.voicePreset || 'male_calm';
+  const voicePreset = getVoicePreset(voicePresetKey);
+  console.log(`[story.service] Using voice preset: ${voicePreset.name} (${voicePresetKey})`);
+  
   // Create temp directory for rendered segments
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'vaiform-story-render-'));
   const renderedSegments = [];
@@ -350,14 +358,67 @@ export async function renderStory({ uid, sessionId }) {
     }
     
     try {
+      // Generate TTS with timestamps for this caption
+      let ttsPath = null;
+      let assPath = null;
+      
+      try {
+        console.log(`[story.service] Generating TTS for segment ${i}: "${caption.text.substring(0, 50)}..."`);
+        const ttsResult = await synthVoiceWithTimestamps({
+          text: caption.text,
+          voiceId: voicePreset.voiceId,
+          modelId: process.env.ELEVEN_TTS_MODEL || "eleven_flash_v2_5",
+          outputFormat: "mp3_44100_128",
+          voiceSettings: voicePreset.voiceSettings
+        });
+        
+        if (ttsResult.audioPath && ttsResult.timestamps) {
+          ttsPath = ttsResult.audioPath;
+          
+          // Build ASS file from timestamps
+          try {
+            assPath = await buildKaraokeASSFromTimestamps({
+              text: caption.text,
+              timestamps: ttsResult.timestamps,
+              durationMs: ttsResult.durationMs
+            });
+            console.log(`[story.service] Generated ASS file for segment ${i}`);
+          } catch (assError) {
+            console.warn(`[story.service] Failed to generate ASS file for segment ${i}:`, assError.message);
+            // Continue without ASS highlighting
+          }
+        } else {
+          console.warn(`[story.service] TTS generation failed or returned no timestamps for segment ${i}`);
+        }
+      } catch (ttsError) {
+        console.warn(`[story.service] TTS generation error for segment ${i}:`, ttsError.message);
+        // Continue without TTS
+      }
+      
       // Fetch clip to temp file
       const fetched = await fetchVideoToTmp(shot.selectedClip.url);
       
-      // Calculate duration from caption timing (uses text-based calculation)
-      const captionDuration = caption.endTimeSec - caption.startTimeSec;
-      const durationSec = captionDuration > 0 ? captionDuration : (shot.durationSec || 3);
+      // Calculate duration from caption timing or TTS duration
+      let durationSec = caption.endTimeSec - caption.startTimeSec;
+      if (durationSec <= 0) {
+        durationSec = shot.durationSec || 3;
+      }
+      // If we have TTS, use its duration (with some padding)
+      if (ttsPath) {
+        try {
+          const { getDurationMsFromMedia } = await import('../utils/media.duration.js');
+          const ttsDurationMs = await getDurationMsFromMedia(ttsPath);
+          if (ttsDurationMs) {
+            const ttsDurationSec = ttsDurationMs / 1000;
+            // Use TTS duration + 0.5s padding, but respect minimum
+            durationSec = Math.max(durationSec, ttsDurationSec + 0.5);
+          }
+        } catch (err) {
+          // Ignore duration probe errors
+        }
+      }
       
-      // Render segment with caption
+      // Render segment with caption, TTS, and ASS highlighting
       const segmentPath = path.join(tmpDir, `segment_${i}.mp4`);
       await renderVideoQuoteOverlay({
         videoPath: fetched.path,
@@ -368,7 +429,8 @@ export async function renderStory({ uid, sessionId }) {
         fps: 24,
         text: caption.text,
         captionText: caption.text,
-        ttsPath: null, // No TTS for now
+        ttsPath: ttsPath,
+        assPath: assPath, // ASS file for word highlighting
         keepVideoAudio: true, // Keep background audio (will auto-detect if audio exists)
         bgAudioVolume: 0.5,
         watermark: true
@@ -436,7 +498,7 @@ export async function renderStory({ uid, sessionId }) {
       quoteText: joinedText,
       mode: 'story',
       template: 'story',
-      voiceover: false,
+      voiceover: true, // TTS is now enabled
       wantAttribution: false,
       captionMode: 'overlay',
       watermark: true,
