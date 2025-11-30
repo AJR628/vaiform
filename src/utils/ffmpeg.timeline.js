@@ -47,14 +47,8 @@ export async function concatenateClips({ clips, outPath, options = {} }) {
   const filterComplex = `${scaleFilters};${concatFilter}`;
   
   // Build FFmpeg args
-  const inputArgs = validClips.flatMap((clip, i) => {
-    const args = ['-i', clip.path];
-    // Trim to exact duration if needed
-    if (clip.durationSec) {
-      args.push('-t', String(clip.durationSec));
-    }
-    return args;
-  });
+  // Note: Segments are already rendered to correct duration, so no need to trim inputs
+  const inputArgs = validClips.flatMap((clip) => ['-i', clip.path]);
   
   const args = [
     ...inputArgs,
