@@ -473,12 +473,32 @@ export async function buildKaraokeASSFromTimestamps({ text, timestamps, duration
   }
 
   // Calculate total duration first (needed for style determination)
-  const totalDurationMs = wordTimingsFinal.length > 0
-    ? wordTimingsFinal[wordTimingsFinal.length - 1].end_time_ms
-    : (durationMs || 3000);
+  // Use actual TTS audio duration (durationMs) as primary source to ensure captions
+  // stay visible until speech is completely finished, not just until last word ends.
+  // The last word's end_time_ms can be shorter than the actual audio file duration
+  // which includes trailing silence. Fall back to last word's end time only if
+  // durationMs is not available.
+  const BUFFER_MS = 200; // 0.2s buffer to allow speech to fade naturally
+  const totalDurationMs = durationMs
+    ? durationMs + BUFFER_MS
+    : (wordTimingsFinal.length > 0
+      ? wordTimingsFinal[wordTimingsFinal.length - 1].end_time_ms + BUFFER_MS
+      : 3000);
 
   const start = msToHMS(0);
   const end = msToHMS(totalDurationMs);
+  
+  // Log timing verification for debugging
+  const lastWordEndMs = wordTimingsFinal.length > 0
+    ? wordTimingsFinal[wordTimingsFinal.length - 1].end_time_ms
+    : null;
+  console.log('[karaoke] ASS dialogue timing:', {
+    actualAudioDurationMs: durationMs || 'not provided',
+    lastWordEndMs: lastWordEndMs,
+    dialogueEndMs: totalDurationMs,
+    dialogueEndSec: (totalDurationMs / 1000).toFixed(2),
+    usingAudioDuration: !!durationMs
+  });
 
   // Convert overlay caption styling to ASS format (SSOT)
   let finalStyle;
