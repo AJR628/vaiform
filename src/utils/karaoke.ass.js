@@ -286,27 +286,16 @@ export async function buildKaraokeASS({
   // Map tokens to wrapped lines if wrappedText is provided
   const wrapMap = wrappedText ? mapTokensToWrappedLines(tokens, wrappedText) : null;
   
-  // Get primary color for reset from style
-  const primaryColorReset = style.PrimaryColour || "&H00FFFFFF";
-  
   const parts = [];
-  let cumulativeTimeMs = 0; // Track cumulative time from start
   
   for (let i=0;i<tokens.length;i++) {
     const wordDurationMs = alloc[i];
-    const wordStartMs = cumulativeTimeMs;
-    const wordEndMs = wordStartMs + wordDurationMs;
     
-    const startCs = Math.max(1, Math.round(wordStartMs / 10)); // Convert to centiseconds
-    const endCs = Math.max(1, Math.round(wordEndMs / 10)); // Convert to centiseconds
+    // Compute duration in centiseconds for \k tag
+    const durCs = Math.max(1, Math.round(wordDurationMs / 10));
     
-    // Add karaoke timing - use {\t} transform to highlight word independently
-    // Word starts in PrimaryColour, changes to SecondaryColour at start time, then back to PrimaryColour at end time
-    // Each word's highlighting is independent and doesn't affect other words
-    parts.push(`{\\t(${startCs},${endCs},\\c${style.SecondaryColour})}${tokens[i]}{\\t(${endCs},${endCs + 1},\\c${primaryColorReset})}`);
-    
-    // Update cumulative time for next word
-    cumulativeTimeMs = wordEndMs;
+    // Add karaoke timing using \k tag - wait durCs centiseconds, then change from PrimaryColour to SecondaryColour
+    parts.push(`{\\k${durCs}}${tokens[i]}`);
     
     if (i < tokens.length - 1) {
       // Check if next word starts a new line
@@ -551,49 +540,35 @@ export async function buildKaraokeASSFromTimestamps({ text, timestamps, duration
     finalStyle = { ...defaultStyle, ...style };
   }
 
-  // Build ASS karaoke parts with word-level highlighting
-  // Use {\t} transform tags for independent per-word highlighting
-  // Each word starts in PrimaryColour (white), changes to SecondaryColour (blue/green) at start time,
-  // then returns to PrimaryColour at end time. This ensures each word highlights independently
-  // following actual TTS speech timing without affecting other words.
+  // Build ASS karaoke parts with word-level highlighting using \k tags
+  // \k tags work by: wait NN centiseconds, then change from PrimaryColour to SecondaryColour
+  // Each word gets its own \k tag with duration calculated from TTS word timings
   
   // Map tokens to wrapped lines if wrappedText is provided
   const wrapMap = wrappedText ? mapTokensToWrappedLines(tokens, wrappedText) : null;
   
   const parts = [];
   
-  // Get primary color for reset from finalStyle
-  const primaryColorReset = finalStyle.PrimaryColour || "&H00FFFFFF";
-  
   for (let i = 0; i < tokens.length; i++) {
     const word = tokens[i];
     const timing = wordTimingsFinal[i];
     
+    let durMs;
     if (!timing) {
-      // Fallback timing - estimate start time based on previous words
-      const estimatedDuration = durationMs ? (durationMs / tokens.length) : 200;
-      const lastEnd = i > 0 && wordTimingsFinal[i - 1] 
-        ? wordTimingsFinal[i - 1].end_time_ms 
-        : 0;
-      const wordStartMs = lastEnd;
-      const wordEndMs = wordStartMs + estimatedDuration;
-      const startCs = Math.max(1, Math.round(wordStartMs / 10)); // Convert to centiseconds
-      const endCs = Math.max(1, Math.round(wordEndMs / 10)); // Convert to centiseconds
-      // Add karaoke timing - use {\t} transform to highlight word independently
-      // Word starts in PrimaryColour, changes to SecondaryColour at start time, then back to PrimaryColour at end time
-      // Each word's highlighting is independent and doesn't affect other words
-      parts.push(`{\\t(${startCs},${endCs},\\c${finalStyle.SecondaryColour})}${word}{\\t(${endCs},${endCs + 1},\\c${primaryColorReset})}`);
+      // Fallback timing - estimate duration based on total duration and number of tokens
+      durMs = durationMs ? (durationMs / tokens.length) : 200;
     } else {
-      // Use the word's start time (when it begins being spoken)
+      // Use the word's actual timing from TTS
       const wordStartMs = timing.start_time_ms || 0;
       const wordEndMs = timing.end_time_ms || (wordStartMs + 200);
-      const startCs = Math.max(1, Math.round(wordStartMs / 10)); // Convert to centiseconds
-      const endCs = Math.max(1, Math.round(wordEndMs / 10)); // Convert to centiseconds
-      // Add karaoke timing - use {\t} transform to highlight word independently based on TTS timing
-      // Word starts in PrimaryColour, changes to SecondaryColour at word start time, then back to PrimaryColour at word end time
-      // Each word's highlighting is independent and follows actual speech timing
-      parts.push(`{\\t(${startCs},${endCs},\\c${finalStyle.SecondaryColour})}${word}{\\t(${endCs},${endCs + 1},\\c${primaryColorReset})}`);
+      durMs = wordEndMs - wordStartMs;
     }
+    
+    // Compute duration in centiseconds for \k tag
+    const durCs = Math.max(1, Math.round(durMs / 10));
+    
+    // Add karaoke timing using \k tag - wait durCs centiseconds, then change from PrimaryColour to SecondaryColour
+    parts.push(`{\\k${durCs}}${word}`);
     
     if (i < tokens.length - 1) {
       // Check if next word starts a new line
@@ -629,6 +604,17 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
   const dialogue = `Dialogue: 0,${start},${end},QMain,,0,0,0,,${parts.join("")}\n`;
   const ass = header + dialogue;
 
+  // Debug: Log full Dialogue line for verification
+  console.log('[karaoke] Dialogue preview:', dialogue.trim());
+  
+  // Debug: Log style verification
+  console.log('[karaoke] Style verification:', {
+    styleName: 'QMain',
+    primaryColour: finalStyle.PrimaryColour,
+    secondaryColour: finalStyle.SecondaryColour,
+    note: 'PrimaryColour should be white, SecondaryColour should be cyan highlight'
+  });
+  
   // Debug: Log first few words and their timing
   if (wordTimingsFinal && wordTimingsFinal.length > 0) {
     const sampleWords = wordTimingsFinal.slice(0, 3).map((t, i) => ({
@@ -638,7 +624,6 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
       duration: t.end_time_ms - t.start_time_ms
     }));
     console.log('[karaoke] Sample word timings:', JSON.stringify(sampleWords));
-    console.log('[karaoke] ASS dialogue preview:', parts.slice(0, 3).join(''));
   }
 
   const outPath = join(tmpdir(), `vaiform-${randomUUID()}.ass`);
