@@ -300,10 +300,10 @@ export async function buildKaraokeASS({
     const startCs = Math.max(1, Math.round(wordStartMs / 10)); // Convert to centiseconds
     const endCs = Math.max(1, Math.round(wordEndMs / 10)); // Convert to centiseconds
     
-    // Add karaoke timing - word highlights at 'startCs' centiseconds from start
-    // Then reset color back to primary at word end time using {\t} transform
-    // Use very short transform (1cs) at end time to make reset appear instant
-    parts.push(`{\\k${startCs}}${tokens[i]}{\\t(${endCs},${endCs + 1},\\c${primaryColorReset})}`);
+    // Add karaoke timing - use {\t} transform to highlight word independently
+    // Word starts in PrimaryColour, changes to SecondaryColour at start time, then back to PrimaryColour at end time
+    // Each word's highlighting is independent and doesn't affect other words
+    parts.push(`{\\t(${startCs},${endCs},\\c${style.SecondaryColour})}${tokens[i]}{\\t(${endCs},${endCs + 1},\\c${primaryColorReset})}`);
     
     // Update cumulative time for next word
     cumulativeTimeMs = wordEndMs;
@@ -552,10 +552,10 @@ export async function buildKaraokeASSFromTimestamps({ text, timestamps, duration
   }
 
   // Build ASS karaoke parts with word-level highlighting
-  // ASS karaoke: {\k} tags control timing - the number is centiseconds from dialogue start
-  // when the word should change from PrimaryColour to SecondaryColour (highlight)
-  // Format: {\k50}word means: wait 50 centiseconds from start, then highlight this word
-  // To reset color back to white after word is read, use {\c&H00FFFFFF} at word end time
+  // Use {\t} transform tags for independent per-word highlighting
+  // Each word starts in PrimaryColour (white), changes to SecondaryColour (blue/green) at start time,
+  // then returns to PrimaryColour at end time. This ensures each word highlights independently
+  // following actual TTS speech timing without affecting other words.
   
   // Map tokens to wrapped lines if wrappedText is provided
   const wrapMap = wrappedText ? mapTokensToWrappedLines(tokens, wrappedText) : null;
@@ -579,21 +579,20 @@ export async function buildKaraokeASSFromTimestamps({ text, timestamps, duration
       const wordEndMs = wordStartMs + estimatedDuration;
       const startCs = Math.max(1, Math.round(wordStartMs / 10)); // Convert to centiseconds
       const endCs = Math.max(1, Math.round(wordEndMs / 10)); // Convert to centiseconds
-      // Add karaoke timing - word highlights at 'startCs' centiseconds from start
-      // Then reset color back to primary at word end time using {\t} transform
-      // Use very short transform (1cs) at end time to make reset appear instant
-      parts.push(`{\\k${startCs}}${word}{\\t(${endCs},${endCs + 1},\\c${primaryColorReset})}`);
+      // Add karaoke timing - use {\t} transform to highlight word independently
+      // Word starts in PrimaryColour, changes to SecondaryColour at start time, then back to PrimaryColour at end time
+      // Each word's highlighting is independent and doesn't affect other words
+      parts.push(`{\\t(${startCs},${endCs},\\c${finalStyle.SecondaryColour})}${word}{\\t(${endCs},${endCs + 1},\\c${primaryColorReset})}`);
     } else {
       // Use the word's start time (when it begins being spoken)
       const wordStartMs = timing.start_time_ms || 0;
       const wordEndMs = timing.end_time_ms || (wordStartMs + 200);
       const startCs = Math.max(1, Math.round(wordStartMs / 10)); // Convert to centiseconds
       const endCs = Math.max(1, Math.round(wordEndMs / 10)); // Convert to centiseconds
-      // Add karaoke timing - word highlights when it starts being spoken
-      // The {\k} tag value is the time from dialogue start to when this word highlights
-      // Then reset color back to primary at word end time using {\t} transform
-      // Use very short transform (1cs) at end time to make reset appear instant
-      parts.push(`{\\k${startCs}}${word}{\\t(${endCs},${endCs + 1},\\c${primaryColorReset})}`);
+      // Add karaoke timing - use {\t} transform to highlight word independently based on TTS timing
+      // Word starts in PrimaryColour, changes to SecondaryColour at word start time, then back to PrimaryColour at word end time
+      // Each word's highlighting is independent and follows actual speech timing
+      parts.push(`{\\t(${startCs},${endCs},\\c${finalStyle.SecondaryColour})}${word}{\\t(${endCs},${endCs + 1},\\c${primaryColorReset})}`);
     }
     
     if (i < tokens.length - 1) {
