@@ -438,7 +438,7 @@ export async function renderStory({ uid, sessionId }) {
             });
             console.log(`[story.service] Generated ASS file for segment ${i}${overlayCaption ? ' with overlay styling' : ' with default styling'}`);
             if (ttsDurationMs) {
-              console.log(`[story.service] Segment ${i} ASS dialogue will end at: ${((ttsDurationMs + 50) / 1000).toFixed(2)}s (TTS: ${(ttsDurationMs / 1000).toFixed(2)}s + 50ms fade-out)`);
+              console.log(`[story.service] Segment ${i} ASS dialogue will end at: ${((ttsDurationMs + 150) / 1000).toFixed(2)}s (TTS: ${(ttsDurationMs / 1000).toFixed(2)}s + 150ms fade-out)`);
             }
           } catch (assError) {
             console.warn(`[story.service] Failed to generate ASS file for segment ${i}:`, assError.message);

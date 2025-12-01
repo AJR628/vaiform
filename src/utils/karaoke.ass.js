@@ -477,8 +477,9 @@ export async function buildKaraokeASSFromTimestamps({ text, timestamps, duration
   // disappear when speech finishes, not with a buffer. This allows captions to disappear
   // during the breath gap between sentences. Fall back to last word's end time only if
   // durationMs is not available.
-  // Use a tiny fade-out buffer (~50ms) for smooth caption disappearance
-  const FADE_OUT_MS = 50; // Tiny buffer for smooth caption fade-out
+  // Use a buffer to ensure captions stay visible until TTS fully ends
+  // Buffer allows caption to remain visible until speech completely finishes
+  const FADE_OUT_MS = 150; // Buffer to keep captions visible until TTS fully ends
   const totalDurationMs = durationMs
     ? durationMs + FADE_OUT_MS
     : (wordTimingsFinal.length > 0
@@ -497,7 +498,7 @@ export async function buildKaraokeASSFromTimestamps({ text, timestamps, duration
     lastWordEndMs: lastWordEndMs,
     dialogueEndMs: totalDurationMs,
     dialogueEndSec: (totalDurationMs / 1000).toFixed(2),
-    fadeOutBufferMs: 50,
+    fadeOutBufferMs: 150,
     usingAudioDuration: !!durationMs,
     note: 'Caption ends when speech finishes, allowing disappearance during breath gap'
   });
