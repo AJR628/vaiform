@@ -438,7 +438,7 @@ export async function renderStory({ uid, sessionId }) {
             });
             console.log(`[story.service] Generated ASS file for segment ${i}${overlayCaption ? ' with overlay styling' : ' with default styling'}`);
             if (ttsDurationMs) {
-              console.log(`[story.service] Segment ${i} ASS dialogue will end at: ${((ttsDurationMs + 200) / 1000).toFixed(2)}s (TTS: ${(ttsDurationMs / 1000).toFixed(2)}s + 0.2s buffer)`);
+              console.log(`[story.service] Segment ${i} ASS dialogue will end at: ${((ttsDurationMs + 50) / 1000).toFixed(2)}s (TTS: ${(ttsDurationMs / 1000).toFixed(2)}s + 50ms fade-out)`);
             }
           } catch (assError) {
             console.warn(`[story.service] Failed to generate ASS file for segment ${i}:`, assError.message);
@@ -464,10 +464,11 @@ export async function renderStory({ uid, sessionId }) {
           const ttsDurationMs = await getDurationMsFromMedia(ttsPath);
           if (ttsDurationMs) {
             const ttsDurationSec = ttsDurationMs / 1000;
-            // Use TTS duration with minimal padding (0.2s for smooth transitions)
-            // This matches the ASS dialogue end time buffer to keep captions visible until speech finishes
-            durationSec = ttsDurationSec + 0.2;
-            console.log(`[story.service] Segment ${i} duration from TTS: ${ttsDurationSec.toFixed(2)}s + 0.2s buffer = ${durationSec.toFixed(2)}s (should match ASS dialogue end time)`);
+            // Use TTS duration directly without buffer to allow natural breath gaps between segments.
+            // Clips will continue showing during the gap since segments are concatenated sequentially.
+            // Caption disappears when speech finishes (no buffer), allowing clip to remain visible during breath gap.
+            durationSec = ttsDurationSec;
+            console.log(`[story.service] Segment ${i} duration from TTS: ${ttsDurationSec.toFixed(2)}s (no buffer, allows natural breath gaps)`);
           } else {
             // Fallback if duration probe fails
             durationSec = caption.endTimeSec - caption.startTimeSec || shot.durationSec || 3;

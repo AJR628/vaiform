@@ -474,15 +474,15 @@ export async function buildKaraokeASSFromTimestamps({ text, timestamps, duration
 
   // Calculate total duration first (needed for style determination)
   // Use actual TTS audio duration (durationMs) as primary source to ensure captions
-  // stay visible until speech is completely finished, not just until last word ends.
-  // The last word's end_time_ms can be shorter than the actual audio file duration
-  // which includes trailing silence. Fall back to last word's end time only if
+  // disappear when speech finishes, not with a buffer. This allows captions to disappear
+  // during the breath gap between sentences. Fall back to last word's end time only if
   // durationMs is not available.
-  const BUFFER_MS = 200; // 0.2s buffer to allow speech to fade naturally
+  // Use a tiny fade-out buffer (~50ms) for smooth caption disappearance
+  const FADE_OUT_MS = 50; // Tiny buffer for smooth caption fade-out
   const totalDurationMs = durationMs
-    ? durationMs + BUFFER_MS
+    ? durationMs + FADE_OUT_MS
     : (wordTimingsFinal.length > 0
-      ? wordTimingsFinal[wordTimingsFinal.length - 1].end_time_ms + BUFFER_MS
+      ? wordTimingsFinal[wordTimingsFinal.length - 1].end_time_ms + FADE_OUT_MS
       : 3000);
 
   const start = msToHMS(0);
@@ -497,7 +497,9 @@ export async function buildKaraokeASSFromTimestamps({ text, timestamps, duration
     lastWordEndMs: lastWordEndMs,
     dialogueEndMs: totalDurationMs,
     dialogueEndSec: (totalDurationMs / 1000).toFixed(2),
-    usingAudioDuration: !!durationMs
+    fadeOutBufferMs: 50,
+    usingAudioDuration: !!durationMs,
+    note: 'Caption ends when speech finishes, allowing disappearance during breath gap'
   });
 
   // Convert overlay caption styling to ASS format (SSOT)
