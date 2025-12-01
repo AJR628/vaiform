@@ -1664,13 +1664,15 @@ export async function renderVideoQuoteOverlay({
   }
 
   // Accurate seek: place -ss after input to avoid black frames on sparse keyframes
+  // Skip video start offset when ASS/karaoke is present to align with ASS dialogue start at 0:00:00.00
+  const hasKaraoke = !!assPath && fs.existsSync(assPath);
   const args = [
     '-y',
     '-i', videoPath,
     ...(usingCaptionPng && captionPngPath && fs.existsSync(captionPngPath) && fs.statSync(captionPngPath).size > 0 ? ['-i', captionPngPath] : []),
     ...(CAPTION_OVERLAY && captionImage && !usingCaptionPng ? ['-i', captionImage.pngPath || captionImage.localPath] : []),
     ...(ttsPath ? ['-i', ttsPath] : []),
-    '-ss', '0.5',
+    ...(hasKaraoke ? [] : ['-ss', '0.5']),
     '-filter_complex', finalFilter,
     '-map', '[vout]', '-map', '[aout]',
     '-c:v', 'libx264', '-crf', '23', '-preset', 'veryfast',

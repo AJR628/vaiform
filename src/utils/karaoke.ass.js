@@ -294,7 +294,7 @@ export async function buildKaraokeASS({
     // Compute duration in centiseconds for \k tag
     const durCs = Math.max(1, Math.round(wordDurationMs / 10));
     
-    // Add karaoke timing using \k tag - wait durCs centiseconds, then change from PrimaryColour to SecondaryColour
+    // Add karaoke timing using \k tag - wait durCs centiseconds, then change from SecondaryColour (cyan) to PrimaryColour (white)
     parts.push(`{\\k${durCs}}${tokens[i]}`);
     
     if (i < tokens.length - 1) {
@@ -567,7 +567,7 @@ export async function buildKaraokeASSFromTimestamps({ text, timestamps, duration
     // Compute duration in centiseconds for \k tag
     const durCs = Math.max(1, Math.round(durMs / 10));
     
-    // Add karaoke timing using \k tag - wait durCs centiseconds, then change from PrimaryColour to SecondaryColour
+    // Add karaoke timing using \k tag - wait durCs centiseconds, then change from SecondaryColour (cyan) to PrimaryColour (white)
     parts.push(`{\\k${durCs}}${word}`);
     
     if (i < tokens.length - 1) {
