@@ -581,19 +581,12 @@ function buildVideoChain({ width, height, videoVignette, drawLayers, captionImag
     
     let vchain = makeChain('0:v', [ ...core, ...drawLayers, endFormat, 'colorspace=all=bt709:fast=1' ].filter(Boolean), 'vout');
     
-    // Add ASS subtitles if provided (for karaoke word highlighting)
-    // ASS overlays on top of existing captions to provide word-level highlighting
-    // The ASS file should match the caption styling exactly so it appears as highlighting only
-    if (assPath && fs.existsSync(assPath)) {
-      console.log('[render] Adding ASS subtitles for karaoke highlighting (overlay mode):', assPath);
-      // Escape path for FFmpeg
-      const escAssPath = assPath.replace(/\\/g, '/').replace(/:/g, '\\:').replace(/'/g, "\\'");
-      // Apply subtitles after all drawtext layers as an overlay
-      // Replace vout with intermediate, then add subtitles as separate filter
-      vchain = vchain.replace('[vout]', '[vsub]');
-      vchain = `${vchain};[vsub]subtitles='${escAssPath}'[vout]`;
-      console.log('[render] ASS subtitles added to drawtext chain as overlay');
-    }
+    // NOTE: ASS subtitles are NOT added in drawtext mode to avoid duplicate captions
+    // ASS subtitles inherently render text, which would duplicate the drawtext output
+    // ASS subtitles should only be used with PNG overlay mode (raster mode) where they
+    // add highlighting on top of the pre-rendered caption PNG
+    // For drawtext mode, word-by-word highlighting would require a different approach
+    // (e.g., using ASS subtitles INSTEAD of drawtext, or timed drawtext filters)
     
     return vchain;
   }
