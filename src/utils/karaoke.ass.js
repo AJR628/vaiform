@@ -155,11 +155,11 @@ export function convertOverlayToASSStyle(overlayCaption, width = 1080, height = 
   const primaryColor = colorToASS(color, opacity);
   
   // Create highlight color (brighter/more saturated version for active words)
-  // For white text, use yellow highlight. For colored text, increase brightness
+  // For white text, use blue-green/cyan highlight. For colored text, increase brightness
   let highlightColor;
   if (color.toLowerCase() === '#ffffff' || color.toLowerCase() === 'white' || color.toLowerCase() === 'rgb(255, 255, 255)') {
-    // White text: use yellow highlight for visibility
-    highlightColor = colorToASS('#ffff00', opacity); // Yellow
+    // White text: use blue-green/cyan highlight for visibility
+    highlightColor = colorToASS('#00ffff', opacity); // Cyan/blue-green
   } else {
     // Colored text: increase brightness by ~40% and saturation
     let r = 255, g = 255, b = 255;
@@ -250,7 +250,7 @@ export async function buildKaraokeASS({
     PrimaryColour: "&H00FFFFFF",
     OutlineColour: "&H80202020",
     BackColour: "&H00000000",
-    SecondaryColour: "&H00FFFF00", // Yellow highlight for karaoke
+    SecondaryColour: "&H00FFFF00", // Cyan/blue-green highlight for karaoke
     Bold: 0, Italic: 0, Underline: 0, StrikeOut: 0,
     ScaleX: 100, ScaleY: 100, Spacing: 0.5, Angle: 0,
     BorderStyle: 1, Outline: 3, Shadow: 1,
@@ -286,10 +286,27 @@ export async function buildKaraokeASS({
   // Map tokens to wrapped lines if wrappedText is provided
   const wrapMap = wrappedText ? mapTokensToWrappedLines(tokens, wrappedText) : null;
   
+  // Get primary color for reset from style
+  const primaryColorReset = style.PrimaryColour || "&H00FFFFFF";
+  
   const parts = [];
+  let cumulativeTimeMs = 0; // Track cumulative time from start
+  
   for (let i=0;i<tokens.length;i++) {
-    const cs = Math.max(1, Math.round(alloc[i] / 10));
-    parts.push(`{\\k${cs}}${tokens[i]}`);
+    const wordDurationMs = alloc[i];
+    const wordStartMs = cumulativeTimeMs;
+    const wordEndMs = wordStartMs + wordDurationMs;
+    
+    const startCs = Math.max(1, Math.round(wordStartMs / 10)); // Convert to centiseconds
+    const endCs = Math.max(1, Math.round(wordEndMs / 10)); // Convert to centiseconds
+    
+    // Add karaoke timing - word highlights at 'startCs' centiseconds from start
+    // Then reset color back to primary at word end time using {\t} transform
+    // Use very short transform (1cs) at end time to make reset appear instant
+    parts.push(`{\\k${startCs}}${tokens[i]}{\\t(${endCs},${endCs + 1},\\c${primaryColorReset})}`);
+    
+    // Update cumulative time for next word
+    cumulativeTimeMs = wordEndMs;
     
     if (i < tokens.length - 1) {
       // Check if next word starts a new line
@@ -455,54 +472,7 @@ export async function buildKaraokeASSFromTimestamps({ text, timestamps, duration
     console.log('[karaoke] Reconstructed word timings from character timings:', wordTimingsFinal.length, 'words');
   }
 
-  // Build ASS karaoke parts with word-level highlighting
-  // ASS karaoke: {\k} tags control timing - the number is centiseconds from dialogue start
-  // when the word should change from PrimaryColour to SecondaryColour (highlight)
-  // Format: {\k50}word means: wait 50 centiseconds from start, then highlight this word
-  
-  // Map tokens to wrapped lines if wrappedText is provided
-  const wrapMap = wrappedText ? mapTokensToWrappedLines(tokens, wrappedText) : null;
-  
-  const parts = [];
-  
-  for (let i = 0; i < tokens.length; i++) {
-    const word = tokens[i];
-    const timing = wordTimingsFinal[i];
-    
-    if (!timing) {
-      // Fallback timing - estimate start time based on previous words
-      const estimatedDuration = durationMs ? (durationMs / tokens.length) : 200;
-      const lastEnd = i > 0 && wordTimingsFinal[i - 1] 
-        ? wordTimingsFinal[i - 1].end_time_ms 
-        : 0;
-      const wordStartMs = lastEnd;
-      const cs = Math.max(1, Math.round(wordStartMs / 10)); // Convert to centiseconds
-      // Add karaoke timing - word highlights at 'cs' centiseconds from start
-      parts.push(`{\\k${cs}}${word}`);
-    } else {
-      // Use the word's start time (when it begins being spoken)
-      const wordStartMs = timing.start_time_ms || 0;
-      const cs = Math.max(1, Math.round(wordStartMs / 10)); // Convert to centiseconds
-      // Add karaoke timing - word highlights when it starts being spoken
-      // The {\k} tag value is the time from dialogue start to when this word highlights
-      parts.push(`{\\k${cs}}${word}`);
-    }
-    
-    if (i < tokens.length - 1) {
-      // Check if next word starts a new line
-      if (wrapMap && wrapMap.tokenToLine[i] !== undefined && wrapMap.tokenToLine[i + 1] !== undefined) {
-        if (wrapMap.tokenToLine[i] !== wrapMap.tokenToLine[i + 1]) {
-          parts.push("\\N"); // ASS newline
-        } else {
-          parts.push(" "); // Space between words on same line
-        }
-      } else {
-        parts.push(" "); // Default: space between words
-      }
-    }
-  }
-
-  // Calculate total duration
+  // Calculate total duration first (needed for style determination)
   const totalDurationMs = wordTimingsFinal.length > 0
     ? wordTimingsFinal[wordTimingsFinal.length - 1].end_time_ms
     : (durationMs || 3000);
@@ -531,7 +501,7 @@ export async function buildKaraokeASSFromTimestamps({ text, timestamps, duration
         PrimaryColour: "&H00FFFFFF",
         OutlineColour: "&H80202020",
         BackColour: "&H00000000",
-        SecondaryColour: "&H00FFFF00", // Yellow highlight
+        SecondaryColour: "&H00FFFF00", // Cyan/blue-green highlight
         Bold: 0, Italic: 0, Underline: 0, StrikeOut: 0,
         ScaleX: 100, ScaleY: 100, Spacing: 0.5, Angle: 0,
         BorderStyle: 1, Outline: 3, Shadow: 1,
@@ -548,7 +518,7 @@ export async function buildKaraokeASSFromTimestamps({ text, timestamps, duration
       PrimaryColour: "&H00FFFFFF",
       OutlineColour: "&H80202020",
       BackColour: "&H00000000",
-      SecondaryColour: "&H00FFFF00", // Yellow highlight for karaoke
+      SecondaryColour: "&H00FFFF00", // Cyan/blue-green highlight for karaoke
       Bold: 0, Italic: 0, Underline: 0, StrikeOut: 0,
       ScaleX: 100, ScaleY: 100, Spacing: 0.5, Angle: 0,
       BorderStyle: 1, Outline: 3, Shadow: 1,
@@ -556,6 +526,65 @@ export async function buildKaraokeASSFromTimestamps({ text, timestamps, duration
       MarginL: 40, MarginR: 40, MarginV: 0 // Center vertically (was 260 = bottom margin)
     };
     finalStyle = { ...defaultStyle, ...style };
+  }
+
+  // Build ASS karaoke parts with word-level highlighting
+  // ASS karaoke: {\k} tags control timing - the number is centiseconds from dialogue start
+  // when the word should change from PrimaryColour to SecondaryColour (highlight)
+  // Format: {\k50}word means: wait 50 centiseconds from start, then highlight this word
+  // To reset color back to white after word is read, use {\c&H00FFFFFF} at word end time
+  
+  // Map tokens to wrapped lines if wrappedText is provided
+  const wrapMap = wrappedText ? mapTokensToWrappedLines(tokens, wrappedText) : null;
+  
+  const parts = [];
+  
+  // Get primary color for reset from finalStyle
+  const primaryColorReset = finalStyle.PrimaryColour || "&H00FFFFFF";
+  
+  for (let i = 0; i < tokens.length; i++) {
+    const word = tokens[i];
+    const timing = wordTimingsFinal[i];
+    
+    if (!timing) {
+      // Fallback timing - estimate start time based on previous words
+      const estimatedDuration = durationMs ? (durationMs / tokens.length) : 200;
+      const lastEnd = i > 0 && wordTimingsFinal[i - 1] 
+        ? wordTimingsFinal[i - 1].end_time_ms 
+        : 0;
+      const wordStartMs = lastEnd;
+      const wordEndMs = wordStartMs + estimatedDuration;
+      const startCs = Math.max(1, Math.round(wordStartMs / 10)); // Convert to centiseconds
+      const endCs = Math.max(1, Math.round(wordEndMs / 10)); // Convert to centiseconds
+      // Add karaoke timing - word highlights at 'startCs' centiseconds from start
+      // Then reset color back to primary at word end time using {\t} transform
+      // Use very short transform (1cs) at end time to make reset appear instant
+      parts.push(`{\\k${startCs}}${word}{\\t(${endCs},${endCs + 1},\\c${primaryColorReset})}`);
+    } else {
+      // Use the word's start time (when it begins being spoken)
+      const wordStartMs = timing.start_time_ms || 0;
+      const wordEndMs = timing.end_time_ms || (wordStartMs + 200);
+      const startCs = Math.max(1, Math.round(wordStartMs / 10)); // Convert to centiseconds
+      const endCs = Math.max(1, Math.round(wordEndMs / 10)); // Convert to centiseconds
+      // Add karaoke timing - word highlights when it starts being spoken
+      // The {\k} tag value is the time from dialogue start to when this word highlights
+      // Then reset color back to primary at word end time using {\t} transform
+      // Use very short transform (1cs) at end time to make reset appear instant
+      parts.push(`{\\k${startCs}}${word}{\\t(${endCs},${endCs + 1},\\c${primaryColorReset})}`);
+    }
+    
+    if (i < tokens.length - 1) {
+      // Check if next word starts a new line
+      if (wrapMap && wrapMap.tokenToLine[i] !== undefined && wrapMap.tokenToLine[i + 1] !== undefined) {
+        if (wrapMap.tokenToLine[i] !== wrapMap.tokenToLine[i + 1]) {
+          parts.push("\\N"); // ASS newline
+        } else {
+          parts.push(" "); // Space between words on same line
+        }
+      } else {
+        parts.push(" "); // Default: space between words
+      }
+    }
   }
 
   const header =
