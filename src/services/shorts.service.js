@@ -174,7 +174,45 @@ export async function createShortService({ ownerUid, mode, text, template, durat
           karaokeDurationMs = await getDurationMsFromMedia(audioPath);
         }
         if (!karaokeDurationMs) karaokeDurationMs = durationSec * 1000;
-        assPath = await buildKaraokeASS({ text: usedQuote.text, durationMs: karaokeDurationMs });
+        
+        // Extract wrapped text from overlayCaption.lines or compute it
+        let wrappedText = null;
+        if (overlayCaption?.lines && Array.isArray(overlayCaption.lines)) {
+          wrappedText = overlayCaption.lines.join('\n');
+          console.log(`[shorts] Using wrapped text from overlayCaption.lines: ${overlayCaption.lines.length} lines`);
+        } else if (usedQuote?.text) {
+          // Compute wrapped text using same logic as renderVideoQuoteOverlay
+          try {
+            const fontPx = overlayCaption?.fontPx || overlayCaption?.sizePx || captionStyle?.fontSizePx || 64;
+            const boxWidthPx = 1080 - 120; // Same as renderVideoQuoteOverlay
+            // Simple word wrapping approximation
+            const words = String(usedQuote.text).trim().split(/\s+/);
+            const approxCharW = fontPx * 0.55;
+            const maxChars = Math.max(12, Math.floor(boxWidthPx / approxCharW));
+            const lines = [];
+            let line = '';
+            for (const w of words) {
+              const next = line ? line + ' ' + w : w;
+              if (next.length <= maxChars) {
+                line = next;
+              } else {
+                if (line) lines.push(line);
+                line = w;
+              }
+            }
+            if (line) lines.push(line);
+            wrappedText = lines.join('\n');
+            console.log(`[shorts] Computed wrapped text: ${lines.length} lines`);
+          } catch (wrapErr) {
+            console.warn(`[shorts] Could not compute wrapped text:`, wrapErr?.message);
+          }
+        }
+        
+        assPath = await buildKaraokeASS({ 
+          text: usedQuote.text, 
+          durationMs: karaokeDurationMs,
+          wrappedText: wrappedText // Pass wrapped text for line breaks
+        });
       }
     } catch (e) {
       console.warn("[karaoke] probe/build failed:", e?.message || e);

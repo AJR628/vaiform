@@ -391,10 +391,47 @@ export async function renderStory({ uid, sessionId }) {
               }
             }
             
+            // Extract wrapped text from overlayCaption.lines or compute it
+            let wrappedText = null;
+            if (overlayCaption?.lines && Array.isArray(overlayCaption.lines)) {
+              wrappedText = overlayCaption.lines.join('\n');
+              console.log(`[story.service] Using wrapped text from overlayCaption.lines: ${overlayCaption.lines.length} lines`);
+            } else if (caption?.text) {
+              // Compute wrapped text using same logic as renderVideoQuoteOverlay
+              try {
+                const ffmpegVideo = await import('../utils/ffmpeg.video.js');
+                // fitQuoteToBox is not exported, so we'll use a simple approach
+                // or extract from overlayCaption if available
+                const fontPx = overlayCaption?.fontPx || overlayCaption?.sizePx || 64;
+                const boxWidthPx = 1080 - 120; // Same as renderVideoQuoteOverlay
+                // Simple word wrapping approximation
+                const words = String(caption.text).trim().split(/\s+/);
+                const approxCharW = fontPx * 0.55;
+                const maxChars = Math.max(12, Math.floor(boxWidthPx / approxCharW));
+                const lines = [];
+                let line = '';
+                for (const w of words) {
+                  const next = line ? line + ' ' + w : w;
+                  if (next.length <= maxChars) {
+                    line = next;
+                  } else {
+                    if (line) lines.push(line);
+                    line = w;
+                  }
+                }
+                if (line) lines.push(line);
+                wrappedText = lines.join('\n');
+                console.log(`[story.service] Computed wrapped text: ${lines.length} lines`);
+              } catch (wrapErr) {
+                console.warn(`[story.service] Could not compute wrapped text:`, wrapErr?.message);
+              }
+            }
+            
             assPath = await buildKaraokeASSFromTimestamps({
               text: caption.text,
               timestamps: ttsResult.timestamps,
               durationMs: ttsDurationMs,
+              wrappedText: wrappedText, // Pass wrapped text for line breaks
               overlayCaption: overlayCaption, // Pass overlay styling (SSOT)
               width: 1080,
               height: 1920

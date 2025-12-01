@@ -1530,11 +1530,30 @@ export async function renderVideoQuoteOverlay({
     hasAssPath: !!assPath
   });
   
+  // Exclude drawMain when ASS is present (non-raster mode) to avoid double captions
+  // In raster mode, ASS is an overlay for highlighting, so keep drawMain
+  const shouldExcludeDrawMain = assPath && 
+    !usingCaptionPng && 
+    overlayCaption?.mode !== 'raster' &&
+    fs.existsSync(assPath);
+  
+  if (shouldExcludeDrawMain) {
+    console.log('[story-segment] Excluding drawMain because ASS subtitles are present');
+  }
+  
+  const drawLayersForChain = shouldExcludeDrawMain
+    ? (usingCaptionPng 
+        ? [drawAuthor, drawWatermark].filter(Boolean)
+        : [drawAuthor, drawWatermark, shouldUseDrawCaption ? drawCaption : null].filter(Boolean))
+    : (usingCaptionPng 
+        ? [drawMain, drawAuthor, drawWatermark].filter(Boolean)
+        : [drawMain, drawAuthor, drawWatermark, shouldUseDrawCaption ? drawCaption : null].filter(Boolean));
+  
   const vchain = buildVideoChain({ 
     width: W, 
     height: H, 
     videoVignette, 
-    drawLayers: usingCaptionPng ? [drawMain, drawAuthor, drawWatermark].filter(Boolean) : [drawMain, drawAuthor, drawWatermark, shouldUseDrawCaption ? drawCaption : null].filter(Boolean),
+    drawLayers: drawLayersForChain,
     captionImage: CAPTION_OVERLAY ? captionImage : null,
     usingCaptionPng,
     captionPngPath,

@@ -8,6 +8,60 @@ function tokenize(text) {
   return String(text || "").trim().split(/\s+/);
 }
 
+/**
+ * Map raw text tokens to wrapped text structure
+ * @param {string[]} rawTokens - Tokens from raw text
+ * @param {string} wrappedText - Text with \n line breaks
+ * @returns {object|null} Mapping of token indices to line indices, or null if no wrapping
+ */
+function mapTokensToWrappedLines(rawTokens, wrappedText) {
+  if (!wrappedText || !wrappedText.includes('\n')) {
+    return null; // No wrapping needed
+  }
+  
+  // Split wrapped text into lines and then into words per line
+  const wrappedLines = wrappedText.split('\n').map(line => line.trim().split(/\s+/).filter(w => w.length > 0));
+  const flatWrapped = wrappedLines.flat();
+  
+  // Map: for each raw token index, which line does it belong to?
+  const tokenToLine = [];
+  let wrappedIdx = 0;
+  
+  for (let i = 0; i < rawTokens.length; i++) {
+    // Find matching word in wrapped structure (case-insensitive, ignore punctuation)
+    const rawWord = rawTokens[i].toLowerCase().replace(/[^\w]/g, '');
+    
+    while (wrappedIdx < flatWrapped.length) {
+      const wrappedWord = flatWrapped[wrappedIdx].toLowerCase().replace(/[^\w]/g, '');
+      if (wrappedWord === rawWord || (rawWord && wrappedWord.includes(rawWord)) || (wrappedWord && rawWord.includes(wrappedWord))) {
+        break;
+      }
+      wrappedIdx++;
+    }
+    
+    // Find which line this word belongs to
+    let lineIdx = 0;
+    let wordCount = 0;
+    for (const line of wrappedLines) {
+      if (wrappedIdx < wordCount + line.length) {
+        tokenToLine[i] = lineIdx;
+        break;
+      }
+      wordCount += line.length;
+      lineIdx++;
+    }
+    
+    // If we couldn't find a match, assign to last line
+    if (tokenToLine[i] === undefined) {
+      tokenToLine[i] = wrappedLines.length - 1;
+    }
+    
+    wrappedIdx++;
+  }
+  
+  return { tokenToLine, wrappedLines };
+}
+
 function msToHMS(ms) {
   const t = Math.max(0, Math.floor(ms));
   const cs = Math.floor((t % 1000) / 10);
@@ -137,20 +191,29 @@ export function convertOverlayToASSStyle(overlayCaption, width = 1080, height = 
   
   // Calculate margins based on position
   // MarginV: vertical margin (top for top placement, bottom for bottom placement)
-  let marginV = 260; // default center
+  // For center placement, use 0 to center vertically
+  let marginV = 0; // default center (was 260)
   if (placement === 'top') {
     marginV = Math.round(yPct * height * 0.1); // Top margin
   } else if (placement === 'bottom') {
     marginV = Math.round((1 - yPct) * height * 0.1); // Bottom margin
   } else {
-    // Center: calculate from yPct
-    marginV = Math.round((1 - yPct) * height * 0.5);
+    // Center: use 0 for vertical centering
+    marginV = 0;
   }
-  marginV = Math.max(40, Math.min(800, marginV)); // Clamp to reasonable range
+  marginV = Math.max(0, Math.min(800, marginV)); // Clamp to reasonable range (min 0 for center)
   
   // MarginL and MarginR: horizontal margins based on xPct and wPct
-  const marginL = Math.round((1 - xPct - wPct / 2) * width * 0.1);
-  const marginR = Math.round((xPct - wPct / 2) * width * 0.1);
+  // For center alignment, use equal margins
+  let marginL, marginR;
+  if (textAlign === 'center' && placement === 'center') {
+    // Center alignment: use equal margins (e.g., 120px each)
+    marginL = 120;
+    marginR = 120;
+  } else {
+    marginL = Math.round((1 - xPct - wPct / 2) * width * 0.1);
+    marginR = Math.round((xPct - wPct / 2) * width * 0.1);
+  }
   
   return {
     Fontname: fontFamily,
@@ -180,18 +243,19 @@ export function convertOverlayToASSStyle(overlayCaption, width = 1080, height = 
 export async function buildKaraokeASS({
   text,
   durationMs,
+  wrappedText = null,
   style = {
     Fontname: "DejaVu Sans",
     Fontsize: 64,
     PrimaryColour: "&H00FFFFFF",
     OutlineColour: "&H80202020",
     BackColour: "&H00000000",
-    SecondaryColour: "&H00000000",
+    SecondaryColour: "&H00FFFF00", // Yellow highlight for karaoke
     Bold: 0, Italic: 0, Underline: 0, StrikeOut: 0,
     ScaleX: 100, ScaleY: 100, Spacing: 0.5, Angle: 0,
     BorderStyle: 1, Outline: 3, Shadow: 1,
-    Alignment: 2,
-    MarginL: 40, MarginR: 40, MarginV: 260
+    Alignment: 5, // Center-middle (was 2 = center-bottom)
+    MarginL: 120, MarginR: 120, MarginV: 0 // Center vertically (was 260 = bottom margin)
   }
 }) {
   const tokens = tokenize(text);
@@ -219,11 +283,26 @@ export async function buildKaraokeASS({
     }
   }
 
+  // Map tokens to wrapped lines if wrappedText is provided
+  const wrapMap = wrappedText ? mapTokensToWrappedLines(tokens, wrappedText) : null;
+  
   const parts = [];
   for (let i=0;i<tokens.length;i++) {
     const cs = Math.max(1, Math.round(alloc[i] / 10));
     parts.push(`{\\k${cs}}${tokens[i]}`);
-    if (i < tokens.length - 1) parts.push(" ");
+    
+    if (i < tokens.length - 1) {
+      // Check if next word starts a new line
+      if (wrapMap && wrapMap.tokenToLine[i] !== undefined && wrapMap.tokenToLine[i + 1] !== undefined) {
+        if (wrapMap.tokenToLine[i] !== wrapMap.tokenToLine[i + 1]) {
+          parts.push("\\N"); // ASS newline
+        } else {
+          parts.push(" "); // Space between words on same line
+        }
+      } else {
+        parts.push(" "); // Default: space between words
+      }
+    }
   }
 
   const start = msToHMS(0);
@@ -266,7 +345,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
  * @param {number} [params.height] - Video height for margin calculations (default: 1920)
  * @returns {Promise<string>} Path to generated ASS file
  */
-export async function buildKaraokeASSFromTimestamps({ text, timestamps, durationMs, style = {}, overlayCaption = null, width = 1080, height = 1920 }) {
+export async function buildKaraokeASSFromTimestamps({ text, timestamps, durationMs, wrappedText = null, style = {}, overlayCaption = null, width = 1080, height = 1920 }) {
   if (!text || !timestamps) {
     throw new Error("KARAOKE_TIMESTAMPS: text and timestamps required");
   }
@@ -380,6 +459,10 @@ export async function buildKaraokeASSFromTimestamps({ text, timestamps, duration
   // ASS karaoke: {\k} tags control timing - the number is centiseconds from dialogue start
   // when the word should change from PrimaryColour to SecondaryColour (highlight)
   // Format: {\k50}word means: wait 50 centiseconds from start, then highlight this word
+  
+  // Map tokens to wrapped lines if wrappedText is provided
+  const wrapMap = wrappedText ? mapTokensToWrappedLines(tokens, wrappedText) : null;
+  
   const parts = [];
   
   for (let i = 0; i < tokens.length; i++) {
@@ -405,7 +488,18 @@ export async function buildKaraokeASSFromTimestamps({ text, timestamps, duration
       parts.push(`{\\k${cs}}${word}`);
     }
     
-    if (i < tokens.length - 1) parts.push(" ");
+    if (i < tokens.length - 1) {
+      // Check if next word starts a new line
+      if (wrapMap && wrapMap.tokenToLine[i] !== undefined && wrapMap.tokenToLine[i + 1] !== undefined) {
+        if (wrapMap.tokenToLine[i] !== wrapMap.tokenToLine[i + 1]) {
+          parts.push("\\N"); // ASS newline
+        } else {
+          parts.push(" "); // Space between words on same line
+        }
+      } else {
+        parts.push(" "); // Default: space between words
+      }
+    }
   }
 
   // Calculate total duration
