@@ -579,14 +579,55 @@ function buildVideoChain({ width, height, videoVignette, drawLayers, captionImag
     // Colorspace handling for crisp text output
     const endFormat = pixelFmtFilter;
     
-    let vchain = makeChain('0:v', [ ...core, ...drawLayers, endFormat, 'colorspace=all=bt709:fast=1' ].filter(Boolean), 'vout');
+    // Check if we should use ASS subtitles INSTEAD of drawtext for karaoke
+    if (assPath && fs.existsSync(assPath) && !usingCaptionPng && overlayCaption?.mode !== 'raster') {
+      console.log('[karaoke] ASS file present, using subtitles filter instead of drawtext');
+      console.log('[karaoke] ASS file path:', assPath);
+      
+      // Build base chain ending with [base]
+      const baseChain = makeChain('0:v', core, 'base');
+      
+      // Escape path for FFmpeg (same as raster mode)
+      const escAssPath = assPath.replace(/\\/g, '/').replace(/:/g, '\\:').replace(/'/g, "\\'");
+      
+      // Try to resolve fonts directory for fontsdir parameter
+      let fontsDir = null;
+      try {
+        const fontPath1 = path.resolve(process.cwd(), 'assets', 'fonts');
+        const fontPath2 = path.resolve(process.cwd(), 'src', 'assets', 'fonts');
+        if (fs.existsSync(fontPath1)) {
+          fontsDir = fontPath1;
+        } else if (fs.existsSync(fontPath2)) {
+          fontsDir = fontPath2;
+        }
+      } catch (e) {
+        // Ignore errors, fontsdir is optional
+      }
+      
+      // Build subtitles filter with optional fontsdir
+      const fontsDirParam = fontsDir ? `:fontsdir='${fontsDir.replace(/\\/g, '/').replace(/:/g, '\\:').replace(/'/g, "\\'")}'` : '';
+      const subtitlesFilter = `[base]subtitles='${escAssPath}'${fontsDirParam}[vsub]`;
+      
+      console.log('[karaoke] subtitles filter:', subtitlesFilter);
+      if (fontsDir) {
+        console.log('[karaoke] Using fontsdir:', fontsDir);
+      }
+      
+      // Apply other drawLayers (watermark, etc.) to [vsub], then format and colorspace
+      const otherLayers = drawLayers.filter(Boolean);
+      const postSubtitlesChain = makeChain('vsub', [ ...otherLayers, endFormat, 'colorspace=all=bt709:fast=1' ].filter(Boolean), 'vout');
+      
+      // Combine: base chain -> subtitles -> other layers -> output
+      const vchain = `${baseChain};${subtitlesFilter};${postSubtitlesChain}`;
+      
+      console.log('[karaoke] Skipping drawtext because assPath is present');
+      console.log('[karaoke] Final video chain includes subtitles filter');
+      
+      return vchain;
+    }
     
-    // NOTE: ASS subtitles are NOT added in drawtext mode to avoid duplicate captions
-    // ASS subtitles inherently render text, which would duplicate the drawtext output
-    // ASS subtitles should only be used with PNG overlay mode (raster mode) where they
-    // add highlighting on top of the pre-rendered caption PNG
-    // For drawtext mode, word-by-word highlighting would require a different approach
-    // (e.g., using ASS subtitles INSTEAD of drawtext, or timed drawtext filters)
+    // Default: use drawtext (no ASS subtitles)
+    let vchain = makeChain('0:v', [ ...core, ...drawLayers, endFormat, 'colorspace=all=bt709:fast=1' ].filter(Boolean), 'vout');
     
     return vchain;
   }
@@ -1469,14 +1510,26 @@ export async function renderVideoQuoteOverlay({
     });
   }
 
-  // ASS subtitles overlay on top of existing captions (not replacement)
-  // When using overlay mode, ASS provides word-level highlighting on top of the caption
-  // The ASS file matches the caption styling exactly, so unhighlighted words are invisible
-  // and only the highlight effect (color change) is visible
-  // When using raster mode, ASS overlays on top of the caption PNG
-  // When using drawtext mode, ASS overlays on top of the drawtext caption
-  // Always render the base caption when using overlay/raster mode, even with ASS
-  const shouldUseDrawCaption = drawCaption && (overlayCaption || usingCaptionPng || !assPath);
+  // ASS subtitles behavior:
+  // - In raster mode: ASS overlays on top of the caption PNG (highlighting only)
+  // - In drawtext mode: ASS subtitles REPLACE drawtext (full caption + highlighting)
+  // When assPath exists in drawtext mode, skip drawtext to avoid duplicates
+  // When assPath exists in raster mode, keep both (ASS is highlighting overlay)
+  const shouldUseDrawCaption = drawCaption && (
+    (usingCaptionPng || overlayCaption?.mode === 'raster') 
+    ? true  // In raster/PNG mode, always render base caption even with ASS (ASS is overlay)
+    : !assPath  // In drawtext mode, skip drawtext when ASS is present (ASS replaces it)
+  );
+  
+  // Debug logging for karaoke ASS support
+  console.log('[story-segment] karaokeAssPath:', assPath ? `present (${assPath})` : 'missing');
+  console.log('[story-segment] shouldUseDrawCaption:', shouldUseDrawCaption, {
+    hasDrawCaption: !!drawCaption,
+    usingCaptionPng,
+    isRasterMode: overlayCaption?.mode === 'raster',
+    hasAssPath: !!assPath
+  });
+  
   const vchain = buildVideoChain({ 
     width: W, 
     height: H, 
@@ -1560,6 +1613,17 @@ export async function renderVideoQuoteOverlay({
   }
   if (!finalFilter.includes('[vout]') || !finalFilter.includes('[aout]')) {
     console.warn('[ffmpeg][warn] expected [vout] and [aout] labels present?');
+  }
+  
+  // Log final filter chain for karaoke debugging
+  const hasSubtitles = finalFilter.includes('subtitles=');
+  console.log('[story-segment] Final filter_complex includes subtitles:', hasSubtitles);
+  if (hasSubtitles && assPath) {
+    // Extract the subtitles filter portion for debugging
+    const subtitlesMatch = finalFilter.match(/subtitles='[^']+'/);
+    if (subtitlesMatch) {
+      console.log('[story-segment] Subtitles filter in final chain:', subtitlesMatch[0].substring(0, 100) + '...');
+    }
   }
 
   // Accurate seek: place -ss after input to avoid black frames on sparse keyframes
