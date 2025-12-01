@@ -633,7 +633,7 @@ function buildVideoChain({ width, height, videoVignette, drawLayers, captionImag
   }
 }
 
-function buildAudioChain({ outSec, keepVideoAudio, haveBgAudio, ttsPath, leadInMs, tailSec, bgVol, ttsInputIndex = 1 }){
+function buildAudioChain({ outSec, keepVideoAudio, haveBgAudio, ttsPath, leadInMs, tailSec, bgVol, ttsInputIndex = 1, skipDelayForKaraoke = false }){
   let aChain = '';
   if (ttsPath && keepVideoAudio && haveBgAudio) {
     const bg = makeChain('0:a', [
@@ -642,23 +642,39 @@ function buildAudioChain({ outSec, keepVideoAudio, haveBgAudio, ttsPath, leadInM
       'aresample=48000',
       'aformat=sample_fmts=fltp:channel_layouts=stereo'
     ], 'bg');
-    const tts1 = makeChain(`${ttsInputIndex}:a`, [
-      `adelay=${leadInMs}|${leadInMs}`,
-      'aresample=48000',
-      'pan=stereo|c0=c0|c1=c0',
-      'aformat=sample_fmts=fltp:channel_layouts=stereo',
-      'asetpts=PTS-STARTPTS'
-    ], 'tts1');
+    const ttsFilters = skipDelayForKaraoke
+      ? [
+          'aresample=48000',
+          'pan=stereo|c0=c0|c1=c0',
+          'aformat=sample_fmts=fltp:channel_layouts=stereo',
+          'asetpts=PTS-STARTPTS'
+        ]
+      : [
+          `adelay=${leadInMs}|${leadInMs}`,
+          'aresample=48000',
+          'pan=stereo|c0=c0|c1=c0',
+          'aformat=sample_fmts=fltp:channel_layouts=stereo',
+          'asetpts=PTS-STARTPTS'
+        ];
+    const tts1 = makeChain(`${ttsInputIndex}:a`, ttsFilters, 'tts1');
     const mix = `[bg][tts1]amix=inputs=2:duration=longest:dropout_transition=0 [aout]`;
     aChain = [bg, tts1, mix].join(';');
   } else if (ttsPath) {
-    const tts1 = makeChain(`${ttsInputIndex}:a`, [
-      `adelay=${leadInMs}|${leadInMs}`,
-      'aresample=48000',
-      'pan=stereo|c0=c0|c1=c0',
-      'aformat=sample_fmts=fltp:channel_layouts=stereo',
-      'asetpts=PTS-STARTPTS'
-    ], 'tts1');
+    const ttsFilters = skipDelayForKaraoke
+      ? [
+          'aresample=48000',
+          'pan=stereo|c0=c0|c1=c0',
+          'aformat=sample_fmts=fltp:channel_layouts=stereo',
+          'asetpts=PTS-STARTPTS'
+        ]
+      : [
+          `adelay=${leadInMs}|${leadInMs}`,
+          'aresample=48000',
+          'pan=stereo|c0=c0|c1=c0',
+          'aformat=sample_fmts=fltp:channel_layouts=stereo',
+          'asetpts=PTS-STARTPTS'
+        ];
+    const tts1 = makeChain(`${ttsInputIndex}:a`, ttsFilters, 'tts1');
     const sil = makeChain(null, [`anullsrc=r=48000:cl=stereo:d=${tailSec}`], 'sil');
     const concat = `[tts1][sil]concat=n=2:v=0:a=1 [aout]`;
     aChain = [tts1, sil, concat].join(';');
@@ -1599,7 +1615,9 @@ export async function renderVideoQuoteOverlay({
   
   // Calculate correct TTS input index (PNG input shifts audio index)
   const ttsInputIndex = usingCaptionPng ? 2 : 1;
-  const aChain = buildAudioChain({ outSec, keepVideoAudio, haveBgAudio: detectedHaveBgAudio, ttsPath, leadInMs, tailSec, bgVol, ttsInputIndex });
+  // Skip delay for karaoke when ASS subtitles are present to align audio with ASS dialogue start at 0:00:00.00
+  const skipDelayForKaraoke = !!assPath && fs.existsSync(assPath);
+  const aChain = buildAudioChain({ outSec, keepVideoAudio, haveBgAudio: detectedHaveBgAudio, ttsPath, leadInMs, tailSec, bgVol, ttsInputIndex, skipDelayForKaraoke });
 
   // Assemble and log RAW vs FINAL filter_complex
   const rawFilter = [vchain, aChain].filter(Boolean).join(';');
