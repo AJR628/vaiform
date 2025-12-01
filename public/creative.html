@@ -239,13 +239,33 @@
             <h1 class="text-3xl font-bold">Creative Studio</h1>
         </div>
 
+        <!-- Mode Toggle Tabs -->
+        <div class="flex gap-2 mb-4">
+            <button
+                id="mode-quotes-tab"
+                data-action="setModeQuotes"
+                type="button"
+                class="px-4 py-2 rounded bg-blue-600 text-white font-medium"
+            >
+                Quotes
+            </button>
+            <button
+                id="mode-articles-tab"
+                data-action="setModeArticles"
+                type="button"
+                class="px-4 py-2 rounded bg-gray-600 dark:bg-gray-700 text-white font-medium"
+            >
+                Articles
+            </button>
+        </div>
+
         <!-- Accordion Layout -->
         <!-- Mobile order: quote → CTA → preview. Desktop: preview → quote → CTA -->
         <div class="studio-accordion-layout flex flex-col md:grid md:grid-cols-2">
             <!-- Left: Accordion Sections -->
             <div class="studio-accordion-left order-1 md:order-2">
                 <!-- Quote Section -->
-                <div class="accordion-section">
+                <div class="accordion-section" data-mode="quotes">
                     <div class="accordion-header active" data-section="quote">
                         <div class="accordion-title">
                             <span class="accordion-icon">▼</span>
@@ -330,7 +350,7 @@
                 </div>
 
                 <!-- Media Section -->
-                <div class="accordion-section">
+                <div class="accordion-section" data-mode="quotes">
                     <div class="accordion-header" data-section="media">
                         <div class="accordion-title">
                             <span class="accordion-icon">▶</span>
@@ -623,7 +643,7 @@
             </div>
             
             <!-- TTS Settings -->
-            <div class="grid grid-cols-2 gap-4 mt-4">
+            <div class="grid grid-cols-2 gap-4 mt-4" data-mode="quotes">
                 <div>
                     <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Stability</label>
                     <input type="range" id="tts-stability" min="0" max="1" step="0.1" value="0.5" class="w-full">
@@ -650,12 +670,89 @@
                         </div>
                     </div>
                 </div>
+
+                <!-- Article Mode Section -->
+                <div data-mode="articles" class="content-box bg-white dark:bg-gray-800 rounded-lg p-4 md:p-6 space-y-4 border border-gray-200 dark:border-gray-600 w-full" style="display: none;">
+                    <h2 class="text-xl font-semibold text-gray-900 dark:text-white">Article Explainer</h2>
+                    <p class="text-sm text-gray-600 dark:text-gray-400">Paste an article link or text to create an explainer video.</p>
+                    
+                    <!-- Input Section -->
+                    <div class="space-y-2">
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Paste article link or text</label>
+                        <textarea
+                            id="article-input"
+                            rows="6"
+                            placeholder="Paste article URL or text here..."
+                            class="w-full bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-3 py-2 text-gray-900 dark:text-white"
+                        ></textarea>
+                        <button
+                            id="summarize-article-btn"
+                            data-action="summarizeArticle"
+                            type="button"
+                            class="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-600 rounded text-white"
+                        >
+                            Summarize into script
+                        </button>
+                        <div id="article-error" class="error text-sm hidden"></div>
+                    </div>
+
+                    <!-- Script Preview Section -->
+                    <div class="space-y-2 mt-4">
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Script Preview</label>
+                        <p class="text-xs text-gray-500 dark:text-gray-400">Each line will become one clip.</p>
+                        <textarea
+                            id="article-script-preview"
+                            rows="8"
+                            readonly
+                            placeholder="Script will appear here after summarization..."
+                            class="w-full bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-3 py-2 text-gray-900 dark:text-white"
+                        ></textarea>
+                    </div>
+
+                    <!-- Voice Selection -->
+                    <div class="space-y-2 mt-4">
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Voice</label>
+                        <select
+                            id="article-voice-preset"
+                            class="w-full bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-3 py-2 text-gray-900 dark:text-white"
+                        >
+                            <option value="male_calm">Neutral</option>
+                            <option value="male_friendly">Warm</option>
+                            <option value="male_energetic">Energetic</option>
+                        </select>
+                    </div>
+
+                    <!-- Render Button -->
+                    <div class="mt-4">
+                        <button
+                            id="render-article-btn"
+                            data-action="renderArticle"
+                            type="button"
+                            class="w-full px-6 py-3 bg-green-600 hover:bg-green-500 disabled:bg-gray-400 disabled:cursor-not-allowed rounded-lg text-base font-semibold text-white shadow-md transition-colors"
+                        >
+                            Render video
+                        </button>
+                    </div>
+
+                    <!-- Last Render Video Player -->
+                    <div id="article-render-result" class="mt-4 hidden">
+                        <h3 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Last render</h3>
+                        <video
+                            id="article-render-video"
+                            controls
+                            class="w-full rounded border border-gray-300 dark:border-gray-700"
+                        ></video>
+                        <div id="article-render-links" class="mt-2 space-y-1">
+                            <a id="article-video-url" href="#" target="_blank" class="text-sm text-blue-600 dark:text-blue-400 hover:underline">Open video</a>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <!-- Right: Preview Section -->
             <div class="studio-accordion-right order-3 md:order-1">
                 <!-- Render Section -->
-                <div class="content-box bg-white dark:bg-gray-800 rounded-lg p-4 md:p-6 space-y-4 border border-gray-200 dark:border-gray-600 w-full">
+                <div class="content-box bg-white dark:bg-gray-800 rounded-lg p-4 md:p-6 space-y-4 border border-gray-200 dark:border-gray-600 w-full" data-mode="quotes">
                     <h2 class="text-xl font-semibold text-gray-900 dark:text-white">Live Preview</h2>
             
             <!-- Caption Toolbar Container (docked) -->
@@ -748,7 +845,7 @@
                     <div id="preview-status" class="hidden"></div>
                     
                     <!-- Action Buttons -->
-                    <div class="flex gap-3">
+                    <div class="flex gap-3" data-mode="quotes">
                         <!-- Create Button (combines Save Preview + Render) -->
                         <button
                             id="render-btn"
@@ -1219,6 +1316,31 @@
         let currentStoryUrl = null;
         // SSOT: Use window scope so ui-actions.js can update it
         window.currentAssetType = window.currentAssetType || 'images';
+
+        // Mode switching SSOT function
+        window.setStudioMode = function(mode) {
+            document.querySelectorAll('[data-mode]').forEach(el => {
+                el.style.display = el.dataset.mode === mode ? '' : 'none';
+            });
+            window.currentStudioMode = mode; // optional, handy for debugging
+            
+            // Update tab styles
+            const quotesTab = document.getElementById('mode-quotes-tab');
+            const articlesTab = document.getElementById('mode-articles-tab');
+            if (quotesTab && articlesTab) {
+                if (mode === 'quotes') {
+                    quotesTab.classList.remove('bg-gray-600', 'dark:bg-gray-700');
+                    quotesTab.classList.add('bg-blue-600');
+                    articlesTab.classList.remove('bg-blue-600');
+                    articlesTab.classList.add('bg-gray-600', 'dark:bg-gray-700');
+                } else {
+                    articlesTab.classList.remove('bg-gray-600', 'dark:bg-gray-700');
+                    articlesTab.classList.add('bg-blue-600');
+                    quotesTab.classList.remove('bg-blue-600');
+                    quotesTab.classList.add('bg-gray-600', 'dark:bg-gray-700');
+                }
+            }
+        };
         let currentAssetPage = 1;
         let hasMoreAssets = false;
         let currentCredits = 0;
@@ -3067,6 +3189,14 @@
         
         // --- robust page bootstrap (run after DOM is ready)
         document.addEventListener('DOMContentLoaded', async () => {
+            // Initialize studio mode to quotes (default)
+            if (typeof window.setStudioMode === 'function') {
+                window.setStudioMode('quotes');
+            }
+            // Initialize studio mode to quotes (default)
+            if (typeof window.setStudioMode === 'function') {
+                window.setStudioMode('quotes');
+            }
           // Wrap each init so one failure doesn't stop the others
           const safe = (label, fn) => { try { fn && fn(); } catch (e) { console.error(`[init] ${label} failed`, e); } };
           
@@ -5557,6 +5687,182 @@
         
         // Expose to window scope for ui-actions.js
         window.oneClickShort = oneClickShort;
+
+        // Article mode functions
+        async function summarizeArticle() {
+            const inputEl = document.getElementById('article-input');
+            const errorEl = document.getElementById('article-error');
+            const scriptPreviewEl = document.getElementById('article-script-preview');
+            const summarizeBtn = document.getElementById('summarize-article-btn');
+            
+            if (!inputEl || !scriptPreviewEl) {
+                console.error('[article] Missing required elements');
+                return;
+            }
+            
+            const inputText = inputEl.value.trim();
+            if (!inputText) {
+                showError('article-error', 'Please paste an article link or text');
+                return;
+            }
+            
+            setLoading('summarize-article-btn', true);
+            hideError('article-error');
+            
+            try {
+                const { apiFetch } = await import('./api.mjs');
+                
+                // Detect if input is URL or text
+                const inputType = isUrl(inputText) ? 'link' : 'paragraph';
+                
+                // Step 1: Create story session
+                const startResp = await apiFetch('/story/start', {
+                    method: 'POST',
+                    body: {
+                        input: inputText,
+                        inputType: inputType
+                    }
+                });
+                
+                if (!startResp.success || !startResp.data?.id) {
+                    throw new Error(startResp.error || 'Failed to create story session');
+                }
+                
+                const sessionId = startResp.data.id;
+                window.currentStorySessionId = sessionId; // Reuse existing global
+                
+                // Step 2: Generate story
+                const generateResp = await apiFetch('/story/generate', {
+                    method: 'POST',
+                    body: {
+                        sessionId: sessionId
+                    }
+                });
+                
+                if (!generateResp.success || !generateResp.data?.story?.sentences) {
+                    throw new Error(generateResp.error || 'Failed to generate story');
+                }
+                
+                // Display sentences in script preview (one per line)
+                const sentences = generateResp.data.story.sentences;
+                const scriptText = Array.isArray(sentences) ? sentences.join('\n') : String(sentences);
+                scriptPreviewEl.value = scriptText;
+                
+                console.log('[article] Story generated successfully:', sentences.length, 'sentences');
+                
+            } catch (error) {
+                console.error('[article] Summarize failed:', error);
+                showError('article-error', error.message || 'Failed to summarize article');
+            } finally {
+                setLoading('summarize-article-btn', false);
+            }
+        }
+        
+        async function renderArticle() {
+            const errorEl = document.getElementById('article-error');
+            const renderBtn = document.getElementById('render-article-btn');
+            const voicePresetEl = document.getElementById('article-voice-preset');
+            const resultDiv = document.getElementById('article-render-result');
+            const videoEl = document.getElementById('article-render-video');
+            const videoUrlEl = document.getElementById('article-video-url');
+            
+            if (!window.currentStorySessionId) {
+                showError('article-error', 'Please summarize the article first');
+                return;
+            }
+            
+            const voicePreset = voicePresetEl?.value || 'male_calm';
+            
+            setLoading('render-article-btn', true);
+            hideError('article-error');
+            
+            try {
+                const { apiFetch } = await import('./api.mjs');
+                
+                // Call finalize with voice preset
+                const finalizeResp = await apiFetch('/story/finalize', {
+                    method: 'POST',
+                    body: {
+                        sessionId: window.currentStorySessionId,
+                        options: {
+                            voicePreset: voicePreset
+                        }
+                    }
+                });
+                
+                if (!finalizeResp.success) {
+                    throw new Error(finalizeResp.error || finalizeResp.detail || 'Failed to finalize story');
+                }
+                
+                const session = finalizeResp.data;
+                
+                // Check if video is already ready
+                if (session.finalVideo?.url) {
+                    // Render complete immediately!
+                    if (videoEl) {
+                        videoEl.src = session.finalVideo.url;
+                    }
+                    if (videoUrlEl) {
+                        videoUrlEl.href = session.finalVideo.url;
+                    }
+                    if (resultDiv) {
+                        resultDiv.classList.remove('hidden');
+                    }
+                    console.log('[article] Render complete:', session.finalVideo.url);
+                } else {
+                    // Poll for completion (similar to oneClickShortFromLink)
+                    const sessionId = window.currentStorySessionId;
+                    let attempts = 0;
+                    const maxAttempts = 60; // 5 minutes max
+                    
+                    while (attempts < maxAttempts) {
+                        await new Promise(resolve => setTimeout(resolve, 5000)); // Poll every 5 seconds
+                        
+                        const statusResp = await apiFetch(`/story/${sessionId}`, {
+                            method: 'GET'
+                        });
+                        
+                        if (!statusResp.success || !statusResp.data) {
+                            throw new Error('Failed to check render status');
+                        }
+                        
+                        const polledSession = statusResp.data;
+                        
+                        if (polledSession.finalVideo?.url) {
+                            // Render complete!
+                            if (videoEl) {
+                                videoEl.src = polledSession.finalVideo.url;
+                            }
+                            if (videoUrlEl) {
+                                videoUrlEl.href = polledSession.finalVideo.url;
+                            }
+                            if (resultDiv) {
+                                resultDiv.classList.remove('hidden');
+                            }
+                            
+                            console.log('[article] Render complete:', polledSession.finalVideo.url);
+                            break;
+                        }
+                        
+                        attempts++;
+                    }
+                    
+                    if (attempts >= maxAttempts) {
+                        throw new Error('Render timed out - please try again');
+                    }
+                }
+                
+            } catch (error) {
+                console.error('[article] Render failed:', error);
+                showError('article-error', error.message || 'Failed to render video');
+            } finally {
+                setLoading('render-article-btn', false);
+            }
+        }
+        
+        // Expose to window scope for ui-actions.js
+        window.summarizeArticle = summarizeArticle;
+        window.renderArticle = renderArticle;
 
         // Remix quote function
         async function remixQuote(mode) {

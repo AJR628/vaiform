@@ -123,6 +123,44 @@ const ACTIONS = {
     } else {
       console.error('[ui-actions] oneClickShort function not found');
     }
+  },
+
+  // Mode switching actions
+  setModeQuotes: () => {
+    console.log('[ui-actions] setModeQuotes triggered');
+    if (typeof window.setStudioMode === 'function') {
+      window.setStudioMode('quotes');
+    } else {
+      console.error('[ui-actions] setStudioMode function not found');
+    }
+  },
+
+  setModeArticles: () => {
+    console.log('[ui-actions] setModeArticles triggered');
+    if (typeof window.setStudioMode === 'function') {
+      window.setStudioMode('articles');
+    } else {
+      console.error('[ui-actions] setStudioMode function not found');
+    }
+  },
+
+  // Article actions
+  summarizeArticle: () => {
+    console.log('[ui-actions] summarizeArticle triggered');
+    if (typeof window.summarizeArticle === 'function') {
+      window.summarizeArticle();
+    } else {
+      console.error('[ui-actions] summarizeArticle function not found');
+    }
+  },
+
+  renderArticle: () => {
+    console.log('[ui-actions] renderArticle triggered');
+    if (typeof window.renderArticle === 'function') {
+      window.renderArticle();
+    } else {
+      console.error('[ui-actions] renderArticle function not found');
+    }
   }
 };
 
