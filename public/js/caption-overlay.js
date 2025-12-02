@@ -407,6 +407,11 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
   
   // Click outside to exit editing mode (clean preview)
   document.addEventListener('click', (e) => {
+    // Skip action buttons (handled by ui-actions.js delegated router)
+    if (e.target.dataset?.action || e.target.closest('[data-action]')) {
+      return;
+    }
+    
     // Don't exit editing if clicking on toolbar or its container
     const container = document.getElementById('caption-toolbar-container');
     if (container && container.contains(e.target)) {
