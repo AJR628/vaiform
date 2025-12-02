@@ -725,14 +725,6 @@
                 <div id="storyboard" class="mt-6 hidden">
                     <h3 class="text-lg font-semibold mb-2 text-gray-900 dark:text-white">Storyboard</h3>
                     <div id="storyboard-row" class="flex gap-3 overflow-x-auto pb-2"></div>
-                    <button
-                        id="preview-full-video-btn"
-                        data-action="previewFullVideo"
-                        type="button"
-                        class="mt-4 w-full px-6 py-3 bg-green-600 hover:bg-green-500 disabled:bg-gray-400 disabled:cursor-not-allowed rounded-lg text-base font-semibold text-white shadow-md transition-colors"
-                    >
-                        Preview full video
-                    </button>
                 </div>
 
                 <!-- Voice Selection -->
@@ -771,6 +763,17 @@
                     <div id="article-render-links" class="mt-2 space-y-1">
                         <a id="article-video-url" href="#" target="_blank" class="text-sm text-blue-600 dark:text-blue-400 hover:underline">Open video</a>
                     </div>
+                </div>
+            </div>
+
+            <!-- Clip Picker Drawer -->
+            <div id="clip-picker" class="fixed inset-x-0 bottom-0 bg-slate-900 border-t border-slate-700 hidden z-50 max-h-[60vh] overflow-y-auto">
+                <div class="max-w-5xl mx-auto px-4 py-3">
+                    <div class="flex justify-between items-center mb-2">
+                        <h3 class="text-sm font-semibold text-white">Choose a clip for this line</h3>
+                        <button id="clip-picker-close" class="text-xs text-gray-400 hover:text-white px-2 py-1">Close</button>
+                    </div>
+                    <div id="clip-picker-grid" class="grid grid-cols-2 md:grid-cols-4 gap-3"></div>
                 </div>
             </div>
 
@@ -5865,6 +5868,9 @@
                 
                 const session = searchResp.data;
                 
+                // Store session for clip picker access
+                window.currentStorySession = session;
+                
                 // Render storyboard
                 renderStoryboard(session);
                 
@@ -5922,9 +5928,8 @@
                             ${sentence}
                         </div>
                         <button
-                            class="mt-1 mx-2 mb-2 w-[calc(100%-1rem)] text-xs py-1 rounded bg-gray-700 text-gray-400 cursor-not-allowed"
-                            disabled
-                            title="Coming soon"
+                            class="swap-clip-btn mt-1 mx-2 mb-2 w-[calc(100%-1rem)] text-xs py-1 rounded bg-slate-700 hover:bg-slate-600 text-white"
+                            data-sentence-index="${idx}"
                         >
                             Swap clip
                         </button>
@@ -5951,9 +5956,8 @@
                             ${sentence}
                         </div>
                         <button
-                            class="mt-1 mx-2 mb-2 w-[calc(100%-1rem)] text-xs py-1 rounded bg-gray-700 text-gray-400 cursor-not-allowed"
-                            disabled
-                            title="Coming soon"
+                            class="swap-clip-btn mt-1 mx-2 mb-2 w-[calc(100%-1rem)] text-xs py-1 rounded bg-slate-700 hover:bg-slate-600 text-white"
+                            data-sentence-index="${idx}"
                         >
                             Swap clip
                         </button>
@@ -5968,6 +5972,231 @@
             
             // Setup hover interactions (desktop-only)
             setupStoryboardHover();
+            
+            // Setup swap button click handlers
+            setupSwapButtonHandlers();
+        }
+        
+        function setupSwapButtonHandlers() {
+            const storyboardRow = document.getElementById('storyboard-row');
+            if (!storyboardRow) return;
+            
+            // Remove existing listener to avoid duplicates
+            storyboardRow.removeEventListener('click', handleSwapButtonClick);
+            
+            // Add click handler
+            storyboardRow.addEventListener('click', handleSwapButtonClick);
+        }
+        
+        function handleSwapButtonClick(e) {
+            const btn = e.target.closest('.swap-clip-btn');
+            if (!btn) return;
+            
+            const sentenceIndex = Number(btn.dataset.sentenceIndex);
+            if (isNaN(sentenceIndex)) {
+                console.error('[article] Invalid sentence index:', btn.dataset.sentenceIndex);
+                return;
+            }
+            
+            openClipPicker(sentenceIndex);
+        }
+        
+        function openClipPicker(sentenceIndex) {
+            const session = window.currentStorySession;
+            if (!session || !session.shots) {
+                console.error('[article] No session or shots available');
+                showError('article-error', 'Please prepare the storyboard first');
+                return;
+            }
+            
+            const shot = session.shots.find(s => s.sentenceIndex === sentenceIndex);
+            if (!shot) {
+                console.error('[article] Shot not found for sentence index:', sentenceIndex);
+                return;
+            }
+            
+            const candidates = shot.candidates || [];
+            if (candidates.length === 0) {
+                showError('article-error', 'No alternative clips available for this sentence');
+                return;
+            }
+            
+            // Store current sentence index for swap handler
+            window.currentClipPickerSentence = sentenceIndex;
+            
+            // Get picker elements
+            const picker = document.getElementById('clip-picker');
+            const grid = document.getElementById('clip-picker-grid');
+            const closeBtn = document.getElementById('clip-picker-close');
+            
+            if (!picker || !grid) {
+                console.error('[article] Clip picker elements not found');
+                return;
+            }
+            
+            // Clear grid
+            grid.innerHTML = '';
+            
+            // Render each candidate
+            candidates.forEach((clip, idx) => {
+                const button = document.createElement('button');
+                button.className = 'clip-option group relative';
+                button.dataset.clipId = clip.id;
+                
+                const videoUrl = clip.url || '';
+                const thumbUrl = clip.thumbUrl || '';
+                const isSelected = shot.selectedClip?.id === clip.id;
+                
+                button.innerHTML = `
+                    <div class="relative rounded overflow-hidden ${isSelected ? 'ring-2 ring-blue-500' : ''}">
+                        <video
+                            src="${videoUrl}"
+                            ${thumbUrl ? `poster="${thumbUrl}"` : ''}
+                            muted
+                            playsinline
+                            preload="none"
+                            class="w-full aspect-video object-cover group-hover:scale-105 transition-transform duration-150 clip-picker-video"
+                            data-clip-id="${clip.id}"
+                        ></video>
+                        ${isSelected ? '<div class="absolute top-1 right-1 bg-blue-500 text-white text-xs px-1 rounded">Selected</div>' : ''}
+                    </div>
+                `;
+                
+                grid.appendChild(button);
+            });
+            
+            // Show picker
+            picker.classList.remove('hidden');
+            
+            // Setup close button
+            if (closeBtn) {
+                closeBtn.onclick = () => {
+                    picker.classList.add('hidden');
+                    window.currentClipPickerSentence = null;
+                };
+            }
+            
+            // Setup click handler for candidate selection (remove old one first)
+            grid.removeEventListener('click', handleClipOptionClick);
+            grid.addEventListener('click', handleClipOptionClick);
+            
+            // Setup hover interactions for candidate videos
+            setupClipPickerHover();
+        }
+        
+        function setupClipPickerHover() {
+            const videos = document.querySelectorAll('.clip-picker-video');
+            
+            videos.forEach(vid => {
+                // Only enable hover on desktop
+                if (window.innerWidth >= 768) {
+                    vid.addEventListener('mouseenter', () => {
+                        vid.play().catch(e => console.warn('[article] Clip picker video play failed:', e));
+                    });
+                    
+                    vid.addEventListener('mouseleave', () => {
+                        vid.pause();
+                        vid.currentTime = 0;
+                    });
+                } else {
+                    // Mobile: tap to play/pause
+                    vid.addEventListener('click', (e) => {
+                        e.stopPropagation(); // Don't trigger parent button click
+                        if (vid.paused) {
+                            vid.play().catch(e => console.warn('[article] Clip picker video play failed:', e));
+                        } else {
+                            vid.pause();
+                        }
+                    });
+                }
+            });
+        }
+        
+        async function handleClipOptionClick(e) {
+            const btn = e.target.closest('.clip-option');
+            if (!btn) return;
+            
+            const clipId = btn.dataset.clipId;
+            const sentenceIndex = window.currentClipPickerSentence;
+            
+            if (!clipId || sentenceIndex === undefined || sentenceIndex === null) {
+                console.error('[article] Missing clipId or sentenceIndex');
+                return;
+            }
+            
+            const sessionId = window.currentStorySessionId;
+            if (!sessionId) {
+                showError('article-error', 'Session not found');
+                return;
+            }
+            
+            try {
+                const { apiFetch } = await import('./api.mjs');
+                
+                // Call API to update selected clip
+                const resp = await apiFetch('/story/update-shot', {
+                    method: 'POST',
+                    body: {
+                        sessionId: sessionId,
+                        sentenceIndex: sentenceIndex,
+                        clipId: clipId
+                    }
+                });
+                
+                if (!resp.success) {
+                    throw new Error(resp.error || 'Failed to update clip');
+                }
+                
+                // Update local session
+                if (window.currentStorySession && window.currentStorySession.shots) {
+                    const shot = window.currentStorySession.shots.find(s => s.sentenceIndex === sentenceIndex);
+                    if (shot) {
+                        const candidate = shot.candidates.find(c => c.id === clipId);
+                        if (candidate) {
+                            shot.selectedClip = candidate;
+                        }
+                    }
+                }
+                
+                // Update storyboard card video
+                updateStoryboardCardVideo(sentenceIndex, clipId);
+                
+                // Close picker
+                const picker = document.getElementById('clip-picker');
+                if (picker) {
+                    picker.classList.add('hidden');
+                }
+                window.currentClipPickerSentence = null;
+                
+                console.log('[article] Clip swapped successfully');
+                
+            } catch (error) {
+                console.error('[article] Swap clip failed:', error);
+                showError('article-error', error.message || 'Failed to swap clip');
+            }
+        }
+        
+        function updateStoryboardCardVideo(sentenceIndex, clipId) {
+            const session = window.currentStorySession;
+            if (!session || !session.shots) return;
+            
+            const shot = session.shots.find(s => s.sentenceIndex === sentenceIndex);
+            if (!shot || !shot.selectedClip) return;
+            
+            // Find the storyboard card by data-index
+            const cards = document.querySelectorAll('#storyboard-row > div');
+            cards.forEach(card => {
+                const video = card.querySelector(`video[data-index="${sentenceIndex}"]`);
+                if (video) {
+                    const clip = shot.selectedClip;
+                    video.src = clip.url || '';
+                    if (clip.thumbUrl) {
+                        video.poster = clip.thumbUrl;
+                    }
+                    // Reset video
+                    video.load();
+                }
+            });
         }
         
         function setupStoryboardHover() {
@@ -6002,108 +6231,6 @@
                     });
                 }
             });
-        }
-        
-        async function previewFullVideo() {
-            const sessionId = window.currentStorySessionId;
-            if (!sessionId) {
-                showError('article-error', 'Please prepare the storyboard first');
-                return;
-            }
-            
-            const errorEl = document.getElementById('article-error');
-            const previewBtn = document.getElementById('preview-full-video-btn');
-            const voicePresetEl = document.getElementById('article-voice-preset');
-            const resultDiv = document.getElementById('article-render-result');
-            const videoEl = document.getElementById('article-render-video');
-            const videoUrlEl = document.getElementById('article-video-url');
-            
-            const voicePreset = voicePresetEl?.value || 'male_calm';
-            
-            setLoading('preview-full-video-btn', true);
-            hideError('article-error');
-            
-            try {
-                const { apiFetch } = await import('./api.mjs');
-                
-                // Call finalize with voice preset
-                const finalizeResp = await apiFetch('/story/finalize', {
-                    method: 'POST',
-                    body: {
-                        sessionId: sessionId,
-                        options: {
-                            voicePreset: voicePreset
-                        }
-                    }
-                });
-                
-                if (!finalizeResp.success) {
-                    throw new Error(finalizeResp.error || finalizeResp.detail || 'Failed to finalize story');
-                }
-                
-                const session = finalizeResp.data;
-                
-                // Check if video is already ready
-                if (session.finalVideo?.url) {
-                    // Render complete immediately!
-                    if (videoEl) {
-                        videoEl.src = session.finalVideo.url;
-                    }
-                    if (videoUrlEl) {
-                        videoUrlEl.href = session.finalVideo.url;
-                    }
-                    if (resultDiv) {
-                        resultDiv.classList.remove('hidden');
-                    }
-                    console.log('[article] Render complete:', session.finalVideo.url);
-                } else {
-                    // Poll for completion (similar to renderArticle)
-                    let attempts = 0;
-                    const maxAttempts = 60; // 5 minutes max
-                    
-                    while (attempts < maxAttempts) {
-                        await new Promise(resolve => setTimeout(resolve, 5000)); // Poll every 5 seconds
-                        
-                        const statusResp = await apiFetch(`/story/${sessionId}`, {
-                            method: 'GET'
-                        });
-                        
-                        if (!statusResp.success || !statusResp.data) {
-                            throw new Error('Failed to check render status');
-                        }
-                        
-                        const polledSession = statusResp.data;
-                        
-                        if (polledSession.finalVideo?.url) {
-                            // Render complete!
-                            if (videoEl) {
-                                videoEl.src = polledSession.finalVideo.url;
-                            }
-                            if (videoUrlEl) {
-                                videoUrlEl.href = polledSession.finalVideo.url;
-                            }
-                            if (resultDiv) {
-                                resultDiv.classList.remove('hidden');
-                            }
-                            
-                            console.log('[article] Render complete:', polledSession.finalVideo.url);
-                            break;
-                        }
-                        
-                        attempts++;
-                    }
-                    
-                    if (attempts >= maxAttempts) {
-                        throw new Error('Render timed out - please try again');
-                    }
-                }
-                
-            } catch (error) {
-                console.error('[article] Preview failed:', error);
-                showError('article-error', error.message || 'Failed to preview video');
-            } finally {
-                setLoading('preview-full-video-btn', false);
-            }
         }
         
         async function renderArticle() {
@@ -6212,7 +6339,6 @@
         window.summarizeArticle = summarizeArticle;
         window.renderArticle = renderArticle;
         window.prepareStoryboard = prepareStoryboard;
-        window.previewFullVideo = previewFullVideo;
 
         // Remix quote function
         async function remixQuote(mode) {

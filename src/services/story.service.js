@@ -191,12 +191,24 @@ export async function searchShots({ uid, sessionId }) {
       // Search for clips matching the shot's search query
       const searchResult = await pexelsSearchVideos({
         query: shot.searchQuery,
-        perPage: 3,
+        perPage: 6,
         targetDur: shot.durationSec,
         page: 1
       });
       
       if (searchResult.ok && searchResult.items.length > 0) {
+        // Normalize all candidates to same structure as selectedClip
+        const candidates = searchResult.items.map(item => ({
+          id: item.id,
+          url: item.fileUrl,
+          thumbUrl: item.thumbUrl || null,
+          duration: item.duration,
+          width: item.width,
+          height: item.height,
+          photographer: item.photographer,
+          sourceUrl: item.sourceUrl
+        }));
+        
         // Pick best match: closest duration to target, portrait orientation
         let bestClip = null;
         let bestScore = Infinity;
@@ -212,31 +224,37 @@ export async function searchShots({ uid, sessionId }) {
           }
         }
         
+        // Normalize best clip
+        const selectedClip = bestClip ? {
+          id: bestClip.id,
+          url: bestClip.fileUrl,
+          thumbUrl: bestClip.thumbUrl || null,
+          duration: bestClip.duration,
+          width: bestClip.width,
+          height: bestClip.height,
+          photographer: bestClip.photographer,
+          sourceUrl: bestClip.sourceUrl
+        } : null;
+        
         shots.push({
           ...shot,
-          selectedClip: bestClip ? {
-            id: bestClip.id,
-            url: bestClip.fileUrl,
-            thumbUrl: bestClip.thumbUrl || null,
-            duration: bestClip.duration,
-            width: bestClip.width,
-            height: bestClip.height,
-            photographer: bestClip.photographer,
-            sourceUrl: bestClip.sourceUrl
-          } : null
+          selectedClip: selectedClip,
+          candidates: candidates
         });
       } else {
         // No results found, keep shot without clip
         shots.push({
           ...shot,
-          selectedClip: null
+          selectedClip: null,
+          candidates: []
         });
       }
     } catch (error) {
       console.warn(`[story.service] Search failed for shot ${shot.sentenceIndex}:`, error?.message);
       shots.push({
         ...shot,
-        selectedClip: null
+        selectedClip: null,
+        candidates: []
       });
     }
   }
@@ -247,6 +265,33 @@ export async function searchShots({ uid, sessionId }) {
   
   await saveStorySession({ uid, sessionId, data: session });
   return session;
+}
+
+/**
+ * Update selected clip for a shot (Phase 2 - Clip Swap)
+ */
+export async function updateShotSelectedClip({ uid, sessionId, sentenceIndex, clipId }) {
+  const session = await loadStorySession({ uid, sessionId });
+  if (!session) throw new Error('SESSION_NOT_FOUND');
+  if (!session.shots) throw new Error('SHOTS_REQUIRED');
+  
+  const shot = session.shots.find(s => s.sentenceIndex === sentenceIndex);
+  if (!shot) throw new Error('SHOT_NOT_FOUND');
+  
+  if (!shot.candidates || shot.candidates.length === 0) {
+    throw new Error('NO_CANDIDATES_AVAILABLE');
+  }
+  
+  const candidate = shot.candidates.find(c => c.id === clipId);
+  if (!candidate) throw new Error('CLIP_NOT_FOUND_IN_CANDIDATES');
+  
+  // Update selectedClip
+  shot.selectedClip = candidate;
+  session.updatedAt = new Date().toISOString();
+  
+  await saveStorySession({ uid, sessionId, data: session });
+  
+  return { shots: session.shots };
 }
 
 /**

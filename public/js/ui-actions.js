@@ -170,15 +170,6 @@ const ACTIONS = {
     } else {
       console.error('[ui-actions] prepareStoryboard function not found');
     }
-  },
-
-  previewFullVideo: () => {
-    console.log('[ui-actions] previewFullVideo triggered');
-    if (typeof window.previewFullVideo === 'function') {
-      window.previewFullVideo();
-    } else {
-      console.error('[ui-actions] previewFullVideo function not found');
-    }
   }
 };
 
