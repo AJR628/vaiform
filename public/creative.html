@@ -604,7 +604,7 @@
                 </div>
 
                 <!-- Voiceover Section -->
-                <div class="accordion-section">
+                <div class="accordion-section md:hidden">
                     <div class="accordion-header" data-section="voice">
                         <div class="accordion-title">
                             <span class="accordion-icon">▶</span>
@@ -670,81 +670,81 @@
                         </div>
                     </div>
                 </div>
+            </div>
 
-                <!-- Article Mode Section -->
-                <div data-mode="articles" class="content-box bg-white dark:bg-gray-800 rounded-lg p-4 md:p-6 space-y-4 border border-gray-200 dark:border-gray-600 w-full" style="display: none;">
-                    <h2 class="text-xl font-semibold text-gray-900 dark:text-white">Article Explainer</h2>
-                    <p class="text-sm text-gray-600 dark:text-gray-400">Paste an article link or text to create an explainer video.</p>
-                    
-                    <!-- Input Section -->
-                    <div class="space-y-2">
-                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Paste article link or text</label>
-                        <textarea
-                            id="article-input"
-                            rows="6"
-                            placeholder="Paste article URL or text here..."
-                            class="w-full bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-3 py-2 text-gray-900 dark:text-white"
-                        ></textarea>
-                        <button
-                            id="summarize-article-btn"
-                            data-action="summarizeArticle"
-                            type="button"
-                            class="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-600 rounded text-white"
-                        >
-                            Summarize into script
-                        </button>
-                        <div id="article-error" class="error text-sm hidden"></div>
-                    </div>
+            <!-- Article Mode Section (full width on desktop) -->
+            <div data-mode="articles" class="content-box bg-white dark:bg-gray-800 rounded-lg p-4 md:p-6 space-y-4 border border-gray-200 dark:border-gray-600 w-full md:col-span-2" style="display: none;">
+                <h2 class="text-xl font-semibold text-gray-900 dark:text-white">Article Explainer</h2>
+                <p class="text-sm text-gray-600 dark:text-gray-400">Paste an article link or text to create an explainer video.</p>
+                
+                <!-- Input Section -->
+                <div class="space-y-2">
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Paste article link or text</label>
+                    <textarea
+                        id="article-input"
+                        rows="6"
+                        placeholder="Paste article URL or text here..."
+                        class="w-full bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-3 py-2 text-gray-900 dark:text-white"
+                    ></textarea>
+                    <button
+                        id="summarize-article-btn"
+                        data-action="summarizeArticle"
+                        type="button"
+                        class="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-600 rounded text-white"
+                    >
+                        Summarize into script
+                    </button>
+                    <div id="article-error" class="error text-sm hidden"></div>
+                </div>
 
-                    <!-- Script Preview Section -->
-                    <div class="space-y-2 mt-4">
-                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Script Preview</label>
-                        <p class="text-xs text-gray-500 dark:text-gray-400">Each line will become one clip.</p>
-                        <textarea
-                            id="article-script-preview"
-                            rows="8"
-                            readonly
-                            placeholder="Script will appear here after summarization..."
-                            class="w-full bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-3 py-2 text-gray-900 dark:text-white"
-                        ></textarea>
-                    </div>
+                <!-- Script Preview Section -->
+                <div class="space-y-2 mt-4">
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Script Preview</label>
+                    <p class="text-xs text-gray-500 dark:text-gray-400">Each line will become one clip.</p>
+                    <textarea
+                        id="article-script-preview"
+                        rows="8"
+                        readonly
+                        placeholder="Script will appear here after summarization..."
+                        class="w-full bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-3 py-2 text-gray-900 dark:text-white"
+                    ></textarea>
+                </div>
 
-                    <!-- Voice Selection -->
-                    <div class="space-y-2 mt-4">
-                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Voice</label>
-                        <select
-                            id="article-voice-preset"
-                            class="w-full bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-3 py-2 text-gray-900 dark:text-white"
-                        >
-                            <option value="male_calm">Neutral</option>
-                            <option value="male_friendly">Warm</option>
-                            <option value="male_energetic">Energetic</option>
-                        </select>
-                    </div>
+                <!-- Voice Selection -->
+                <div class="space-y-2 mt-4">
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Voice</label>
+                    <select
+                        id="article-voice-preset"
+                        class="w-full bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-3 py-2 text-gray-900 dark:text-white"
+                    >
+                        <option value="male_calm">Neutral</option>
+                        <option value="male_friendly">Warm</option>
+                        <option value="male_energetic">Energetic</option>
+                    </select>
+                </div>
 
-                    <!-- Render Button -->
-                    <div class="mt-4">
-                        <button
-                            id="render-article-btn"
-                            data-action="renderArticle"
-                            type="button"
-                            class="w-full px-6 py-3 bg-green-600 hover:bg-green-500 disabled:bg-gray-400 disabled:cursor-not-allowed rounded-lg text-base font-semibold text-white shadow-md transition-colors"
-                        >
-                            Render video
-                        </button>
-                    </div>
+                <!-- Render Button -->
+                <div class="mt-4">
+                    <button
+                        id="render-article-btn"
+                        data-action="renderArticle"
+                        type="button"
+                        class="w-full px-6 py-3 bg-green-600 hover:bg-green-500 disabled:bg-gray-400 disabled:cursor-not-allowed rounded-lg text-base font-semibold text-white shadow-md transition-colors"
+                    >
+                        Render video
+                    </button>
+                </div>
 
-                    <!-- Last Render Video Player -->
-                    <div id="article-render-result" class="mt-4 hidden">
-                        <h3 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Last render</h3>
-                        <video
-                            id="article-render-video"
-                            controls
-                            class="w-full rounded border border-gray-300 dark:border-gray-700"
-                        ></video>
-                        <div id="article-render-links" class="mt-2 space-y-1">
-                            <a id="article-video-url" href="#" target="_blank" class="text-sm text-blue-600 dark:text-blue-400 hover:underline">Open video</a>
-                        </div>
+                <!-- Last Render Video Player -->
+                <div id="article-render-result" class="mt-4 hidden">
+                    <h3 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Last render</h3>
+                    <video
+                        id="article-render-video"
+                        controls
+                        class="w-full rounded border border-gray-300 dark:border-gray-700"
+                    ></video>
+                    <div id="article-render-links" class="mt-2 space-y-1">
+                        <a id="article-video-url" href="#" target="_blank" class="text-sm text-blue-600 dark:text-blue-400 hover:underline">Open video</a>
                     </div>
                 </div>
             </div>
@@ -867,7 +867,7 @@
             </div>
             
             <!-- One-Click Short Button (reordered for mobile) -->
-            <div class="order-2 md:order-3 md:col-start-2 flex justify-center md:justify-start">
+            <div class="order-2 md:order-3 md:col-start-2 flex justify-center md:justify-start md:hidden">
                 <button
                     id="one-click-btn"
                     data-action="oneClickShort"
