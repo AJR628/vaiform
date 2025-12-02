@@ -6093,6 +6093,8 @@
                 closeBtn.onclick = () => {
                     picker.classList.add('hidden');
                     window.currentClipPickerSentence = null;
+                    // Remove click handler when picker is closed
+                    picker.removeEventListener('click', handleClipOptionClick);
                 };
             }
             
@@ -6173,8 +6175,17 @@
         }
         
         async function handleClipOptionClick(e) {
+            // Only handle clicks when picker is visible
+            const picker = document.getElementById('clip-picker');
+            if (!picker || picker.classList.contains('hidden')) {
+                return;
+            }
+            
             const card = e.target.closest('.clip-option[data-clip-id]');
             if (!card) return;
+            
+            // Stop propagation to prevent interfering with other click handlers
+            e.stopPropagation();
             
             const clipId = card.getAttribute('data-clip-id');
             const sentenceIndex = window.currentClipPickerSentence;
