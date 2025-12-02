@@ -389,6 +389,49 @@ export async function synthVoiceWithTimestamps({ text, voiceId, modelId, outputF
           console.warn('[tts.timestamps] Could not get duration:', err.message);
         }
 
+        // Log timing summary for karaoke verification
+        if (timestamps && (timestamps.words || timestamps.characters)) {
+          const words = timestamps.words || [];
+          const chars = timestamps.characters || [];
+          
+          // Log text and first few word timestamps
+          console.log('[tts.timestamps] Text sent to ElevenLabs:', t.substring(0, 100) + (t.length > 100 ? '...' : ''));
+          console.log('[tts.timestamps] durationMs:', durationMs);
+          
+          if (words.length > 0) {
+            const firstFew = words.slice(0, Math.min(5, words.length));
+            console.log('[tts.timestamps] First few word timestamps:', JSON.stringify(firstFew.map(w => ({
+              word: w.word,
+              start: w.start_time_ms,
+              end: w.end_time_ms
+            }))));
+            
+            // Compute timing summary
+            const firstStart = words[0]?.start_time_ms || 0;
+            const lastEnd = words[words.length - 1]?.end_time_ms || 0;
+            const sumDurMs = words.reduce((sum, w) => {
+              const start = w.start_time_ms || 0;
+              const end = w.end_time_ms || (start + 200);
+              return sum + (end - start);
+            }, 0);
+            
+            console.log('[tts.timestamps] Timing summary:', {
+              firstStart,
+              lastEnd,
+              sumDurMs,
+              durationMs,
+              wordCount: words.length
+            });
+          } else if (chars.length > 0) {
+            const firstFew = chars.slice(0, Math.min(10, chars.length));
+            console.log('[tts.timestamps] First few character timestamps:', JSON.stringify(firstFew.map(c => ({
+              char: c.character,
+              start: c.start_time_ms,
+              end: c.end_time_ms
+            }))));
+          }
+        }
+
         return { audioPath, durationMs, timestamps };
       } catch (err) {
         console.warn("[tts.timestamps] soft-fail:", err?.message || err);

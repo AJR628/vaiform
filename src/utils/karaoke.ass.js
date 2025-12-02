@@ -378,6 +378,19 @@ export async function buildKaraokeASSFromTimestamps({ text, timestamps, duration
   const tokens = tokenize(text);
   if (!tokens.length) throw new Error("KARAOKE_NO_TOKENS");
 
+  // Text/timestamp mismatch guard
+  const wordCount = wordTimings ? wordTimings.length : (charTimings ? charTimings.length : 0);
+  const tokenCount = tokens.length;
+  if (Math.abs(tokenCount - wordCount) > 2) {
+    console.warn(`[karaoke] text/timestamps mismatch: ${tokenCount} tokens vs ${wordCount} words`);
+  } else {
+    console.log(`[karaoke] text/timestamps match: ${tokenCount} tokens vs ${wordCount} words`);
+  }
+
+  // Log text used for ASS
+  const assText = wrappedText || text;
+  console.log('[karaoke] Text used for ASS:', assText.substring(0, 100) + (assText.length > 100 ? '...' : ''));
+
   // Build word-level timing from character timings if needed
   let wordTimingsFinal = wordTimings;
   if (!wordTimingsFinal && charTimings && charTimings.length > 0) {
@@ -461,13 +474,9 @@ export async function buildKaraokeASSFromTimestamps({ text, timestamps, duration
     console.log('[karaoke] Reconstructed word timings from character timings:', wordTimingsFinal.length, 'words');
   }
 
-  // Calculate total duration first (needed for style determination)
-  // Use actual TTS audio duration (durationMs) as primary source to ensure captions
-  // disappear when speech finishes, not with a buffer. This allows captions to disappear
-  // during the breath gap between sentences. Fall back to last word's end time only if
-  // durationMs is not available.
-  // Use a buffer to ensure captions stay visible until TTS fully ends
-  // Buffer allows caption to remain visible until speech completely finishes
+  // Calculate total duration for ASS dialogue end time
+  // Use actual TTS audio duration (durationMs) as the single source of truth
+  // No global scaling - use durationMs directly
   const FADE_OUT_MS = 150; // Buffer to keep captions visible until TTS fully ends
   const totalDurationMs = durationMs
     ? durationMs + FADE_OUT_MS
@@ -476,7 +485,9 @@ export async function buildKaraokeASSFromTimestamps({ text, timestamps, duration
       : 3000);
 
   const start = msToHMS(0);
-  const end = msToHMS(totalDurationMs);
+  // Use durationMs directly for end time (plan requirement: TTS durationMs is single source of truth)
+  // Fall back to totalDurationMs only if durationMs is not available
+  const end = msToHMS(durationMs !== null && durationMs !== undefined ? durationMs : totalDurationMs);
   
   // Log timing verification for debugging
   const lastWordEndMs = wordTimingsFinal.length > 0
@@ -541,13 +552,15 @@ export async function buildKaraokeASSFromTimestamps({ text, timestamps, duration
   }
 
   // Build ASS karaoke parts with word-level highlighting using \k tags
-  // \k tags work by: wait NN centiseconds, then change from PrimaryColour to SecondaryColour
-  // Each word gets its own \k tag with duration calculated from TTS word timings
+  // \k tags work by: wait NN centiseconds, then change from SecondaryColour (highlight) to PrimaryColour (normal)
+  // Each word gets its own \k tag with duration calculated directly from TTS word timings
+  // NO GLOBAL SCALING - use timestamps verbatim as single source of truth
   
   // Map tokens to wrapped lines if wrappedText is provided
   const wrapMap = wrappedText ? mapTokensToWrappedLines(tokens, wrappedText) : null;
   
   const parts = [];
+  const kValues = []; // Track all \k values for verification
   
   for (let i = 0; i < tokens.length; i++) {
     const word = tokens[i];
@@ -558,17 +571,20 @@ export async function buildKaraokeASSFromTimestamps({ text, timestamps, duration
       // Fallback timing - estimate duration based on total duration and number of tokens
       durMs = durationMs ? (durationMs / tokens.length) : 200;
     } else {
-      // Use the word's actual timing from TTS
+      // Use the word's actual timing from TTS - NO SCALING
+      // wordDurMs = end_time_ms - start_time_ms (direct from timestamps)
       const wordStartMs = timing.start_time_ms || 0;
       const wordEndMs = timing.end_time_ms || (wordStartMs + 200);
       durMs = wordEndMs - wordStartMs;
     }
     
     // Compute duration in centiseconds for \k tag
-    const durCs = Math.max(1, Math.round(durMs / 10));
+    // k = Math.max(1, Math.round(wordDurMs / 10)) - direct conversion, no scaling
+    const k = Math.max(1, Math.round(durMs / 10));
+    kValues.push(k);
     
-    // Add karaoke timing using \k tag - wait durCs centiseconds, then change from SecondaryColour (cyan) to PrimaryColour (white)
-    parts.push(`{\\k${durCs}}${word}`);
+    // Add karaoke timing using \k tag - wait k centiseconds, then change from SecondaryColour (cyan) to PrimaryColour (white)
+    parts.push(`{\\k${k}}${word}`);
     
     if (i < tokens.length - 1) {
       // Check if next word starts a new line
@@ -583,6 +599,21 @@ export async function buildKaraokeASSFromTimestamps({ text, timestamps, duration
       }
     }
   }
+  
+  // Verification logging: \k values and sum
+  const first10K = kValues.slice(0, Math.min(10, kValues.length));
+  const sumKCs = kValues.reduce((sum, k) => sum + k, 0);
+  const sumKMs = sumKCs * 10; // Convert centiseconds to milliseconds
+  const diff = sumKMs - (durationMs || 0);
+  
+  console.log('[karaoke] First 10 \\k values:', first10K);
+  console.log('[karaoke] \\k sum verification:', {
+    sumKCs,
+    sumKMs,
+    durationMs: durationMs || 'not provided',
+    diff,
+    wordCount: kValues.length
+  });
 
   const header =
 `[Script Info]
@@ -625,6 +656,15 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     }));
     console.log('[karaoke] Sample word timings:', JSON.stringify(sampleWords));
   }
+  
+  // Log ASS dialogue timing summary
+  console.log('[karaoke] ASS dialogue timing summary:', {
+    start: start,
+    end: end,
+    durationMs: durationMs || 'not provided',
+    totalDurationMs: totalDurationMs,
+    note: 'End time uses durationMs directly (no scaling)'
+  });
 
   const outPath = join(tmpdir(), `vaiform-${randomUUID()}.ass`);
   await writeFile(outPath, ass, "utf8");

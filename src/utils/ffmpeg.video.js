@@ -659,6 +659,23 @@ function buildAudioChain({ outSec, keepVideoAudio, haveBgAudio, ttsPath, leadInM
     const tts1 = makeChain(`${ttsInputIndex}:a`, ttsFilters, 'tts1');
     const mix = `[bg][tts1]amix=inputs=2:duration=longest:dropout_transition=0 [aout]`;
     aChain = [bg, tts1, mix].join(';');
+    
+    // Log TTS audio chain for karaoke verification
+    if (skipDelayForKaraoke) {
+      const ttsChainStr = ttsFilters.join(';');
+      console.log('[ffmpeg.audio] TTS chain for karaoke:', ttsChainStr);
+      // Verify no delay/trim/tempo filters
+      if (ttsChainStr.includes('adelay')) {
+        console.warn('[ffmpeg.audio] WARNING: adelay found in karaoke TTS chain!');
+      }
+      if (ttsChainStr.includes('atrim')) {
+        console.warn('[ffmpeg.audio] WARNING: atrim found in karaoke TTS chain!');
+      }
+      if (ttsChainStr.includes('atempo')) {
+        console.warn('[ffmpeg.audio] WARNING: atempo found in karaoke TTS chain!');
+      }
+      // asetpts=PTS-STARTPTS is OK - it resets PTS, doesn't delay
+    }
   } else if (ttsPath) {
     const ttsFilters = skipDelayForKaraoke
       ? [
@@ -678,6 +695,22 @@ function buildAudioChain({ outSec, keepVideoAudio, haveBgAudio, ttsPath, leadInM
     const sil = makeChain(null, [`anullsrc=r=48000:cl=stereo:d=${tailSec}`], 'sil');
     const concat = `[tts1][sil]concat=n=2:v=0:a=1 [aout]`;
     aChain = [tts1, sil, concat].join(';');
+    
+    // Log TTS audio chain for karaoke verification
+    if (skipDelayForKaraoke) {
+      const ttsChainStr = ttsFilters.join(';');
+      console.log('[ffmpeg.audio] TTS chain for karaoke:', ttsChainStr);
+      // Verify no delay/trim/tempo filters
+      if (ttsChainStr.includes('adelay')) {
+        console.warn('[ffmpeg.audio] WARNING: adelay found in karaoke TTS chain!');
+      }
+      if (ttsChainStr.includes('atrim')) {
+        console.warn('[ffmpeg.audio] WARNING: atrim found in karaoke TTS chain!');
+      }
+      if (ttsChainStr.includes('atempo')) {
+        console.warn('[ffmpeg.audio] WARNING: atempo found in karaoke TTS chain!');
+      }
+    }
   } else if (keepVideoAudio && haveBgAudio) {
     aChain = makeChain('0:a', [
       `adelay=${leadInMs}|${leadInMs}`,
