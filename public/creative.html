@@ -6102,7 +6102,7 @@
             setupClipPickerHover();
             
             // Setup click handler on drawer (not grid) for clip selection
-            const picker = document.getElementById('clip-picker');
+            // (picker already declared above at line 6071)
             if (picker) {
                 picker.removeEventListener('click', handleClipOptionClick);
                 picker.addEventListener('click', handleClipOptionClick);
@@ -6235,7 +6235,7 @@
                 }
                 
                 // Close picker
-                const picker = document.getElementById('clip-picker');
+                // (picker already declared above at line 6179)
                 if (picker) {
                     picker.classList.add('hidden');
                 }
