@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
 import { normalizeWeight } from "./font.registry.js";
+import { getDurationMsFromMedia } from "./media.duration.js";
 
 function tokenize(text) {
   return String(text || "").trim().split(/\s+/);
@@ -344,14 +345,15 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
  * @param {object} params
  * @param {string} params.text - Original text
  * @param {object} params.timestamps - ElevenLabs timestamp data with characters/words arrays
- * @param {number} [params.durationMs] - Total duration in ms (fallback if timestamps incomplete)
+ * @param {number} [params.durationMs] - Total duration in ms from ElevenLabs API (fallback if timestamps incomplete)
+ * @param {string} [params.audioPath] - Path to actual audio file for duration verification and scaling
  * @param {object} [params.style] - ASS style configuration (legacy, use overlayCaption instead)
  * @param {object} [params.overlayCaption] - Overlay caption object with styling (SSOT)
  * @param {number} [params.width] - Video width for margin calculations (default: 1080)
  * @param {number} [params.height] - Video height for margin calculations (default: 1920)
  * @returns {Promise<string>} Path to generated ASS file
  */
-export async function buildKaraokeASSFromTimestamps({ text, timestamps, durationMs, wrappedText = null, style = {}, overlayCaption = null, width = 1080, height = 1920 }) {
+export async function buildKaraokeASSFromTimestamps({ text, timestamps, durationMs, audioPath = null, wrappedText = null, style = {}, overlayCaption = null, width = 1080, height = 1920 }) {
   if (!text || !timestamps) {
     throw new Error("KARAOKE_TIMESTAMPS: text and timestamps required");
   }
@@ -474,33 +476,101 @@ export async function buildKaraokeASSFromTimestamps({ text, timestamps, duration
     console.log('[karaoke] Reconstructed word timings from character timings:', wordTimingsFinal.length, 'words');
   }
 
+  // Get actual audio file duration via ffprobe if audioPath is provided
+  let ffprobeDurationMs = null;
+  if (audioPath) {
+    try {
+      ffprobeDurationMs = await getDurationMsFromMedia(audioPath);
+      if (ffprobeDurationMs) {
+        console.log('[karaoke] ffprobe audio duration:', ffprobeDurationMs, 'ms');
+      } else {
+        console.warn('[karaoke] Could not get duration from audio file via ffprobe');
+      }
+    } catch (err) {
+      console.warn('[karaoke] Failed to get audio duration via ffprobe:', err?.message);
+    }
+  }
+
+  // Calculate sum of word durations from timestamps (base for scaling)
+  let sumDurMs = 0;
+  if (wordTimingsFinal && wordTimingsFinal.length > 0) {
+    sumDurMs = wordTimingsFinal.reduce((sum, timing) => {
+      const wordStartMs = timing.start_time_ms || 0;
+      const wordEndMs = timing.end_time_ms || (wordStartMs + 200);
+      return sum + (wordEndMs - wordStartMs);
+    }, 0);
+  }
+
+  // Log duration comparison
+  console.log('[karaoke] Duration comparison:', {
+    sumDurMs: sumDurMs || 'not calculated',
+    durationMs: durationMs || 'not provided (ElevenLabs API)',
+    ffprobeDurationMs: ffprobeDurationMs || 'not available',
+    note: 'sumDurMs = sum of word durations from timestamps'
+  });
+
+  // Determine if scaling is needed and calculate scale factor
+  // Use ffprobe duration as ground truth if available, otherwise use durationMs from API
+  const targetDurationMs = ffprobeDurationMs || durationMs;
+  let scale = 1.0;
+  let shouldScale = false;
+
+  if (targetDurationMs && sumDurMs > 0) {
+    const diff = Math.abs(targetDurationMs - sumDurMs);
+    // Scale if difference is significant (>50ms threshold)
+    if (diff > 50) {
+      scale = targetDurationMs / sumDurMs;
+      shouldScale = true;
+      console.log('[karaoke] Duration mismatch detected - applying scaling:', {
+        sumDurMs,
+        targetDurationMs,
+        diff,
+        scale: scale.toFixed(4),
+        note: 'Word durations will be scaled proportionally'
+      });
+    } else {
+      console.log('[karaoke] Duration match - no scaling needed:', {
+        sumDurMs,
+        targetDurationMs,
+        diff,
+        note: 'Difference is within tolerance'
+      });
+    }
+  } else if (!targetDurationMs) {
+    console.warn('[karaoke] No target duration available - cannot verify or scale timing');
+  }
+
   // Calculate total duration for ASS dialogue end time
-  // Use actual TTS audio duration (durationMs) as the single source of truth
-  // No global scaling - use durationMs directly
+  // Use ffprobe duration as ground truth if available, otherwise fall back to durationMs or sumDurMs
   const FADE_OUT_MS = 150; // Buffer to keep captions visible until TTS fully ends
-  const totalDurationMs = durationMs
-    ? durationMs + FADE_OUT_MS
+  const effectiveDurationMs = ffprobeDurationMs || durationMs || (sumDurMs > 0 ? sumDurMs : null);
+  const totalDurationMs = effectiveDurationMs
+    ? effectiveDurationMs + FADE_OUT_MS
     : (wordTimingsFinal.length > 0
       ? wordTimingsFinal[wordTimingsFinal.length - 1].end_time_ms + FADE_OUT_MS
       : 3000);
 
   const start = msToHMS(0);
-  // Use durationMs directly for end time (plan requirement: TTS durationMs is single source of truth)
-  // Fall back to totalDurationMs only if durationMs is not available
-  const end = msToHMS(durationMs !== null && durationMs !== undefined ? durationMs : totalDurationMs);
+  // Use effectiveDurationMs (ffprobe if available, else durationMs) for end time
+  // This ensures dialogue end matches actual audio duration
+  const end = msToHMS(effectiveDurationMs !== null && effectiveDurationMs !== undefined ? effectiveDurationMs : totalDurationMs);
   
   // Log timing verification for debugging
   const lastWordEndMs = wordTimingsFinal.length > 0
     ? wordTimingsFinal[wordTimingsFinal.length - 1].end_time_ms
     : null;
   console.log('[karaoke] ASS dialogue timing:', {
-    actualAudioDurationMs: durationMs || 'not provided',
+    sumDurMs: sumDurMs || 'not calculated',
+    durationMs: durationMs || 'not provided (ElevenLabs API)',
+    ffprobeDurationMs: ffprobeDurationMs || 'not available',
+    effectiveDurationMs: effectiveDurationMs || 'not available',
     lastWordEndMs: lastWordEndMs,
     dialogueEndMs: totalDurationMs,
     dialogueEndSec: (totalDurationMs / 1000).toFixed(2),
     fadeOutBufferMs: 150,
-    usingAudioDuration: !!durationMs,
-    note: 'Caption ends when speech finishes, allowing disappearance during breath gap'
+    scale: shouldScale ? scale.toFixed(4) : 'none (1.0)',
+    usingFfprobeDuration: !!ffprobeDurationMs,
+    note: 'Dialogue end uses ffprobe duration when available to match actual audio'
   });
 
   // Convert overlay caption styling to ASS format (SSOT)
@@ -553,14 +623,14 @@ export async function buildKaraokeASSFromTimestamps({ text, timestamps, duration
 
   // Build ASS karaoke parts with word-level highlighting using \k tags
   // \k tags work by: wait NN centiseconds, then change from SecondaryColour (highlight) to PrimaryColour (normal)
-  // Each word gets its own \k tag with duration calculated directly from TTS word timings
-  // NO GLOBAL SCALING - use timestamps verbatim as single source of truth
+  // Each word gets its own \k tag with duration from TTS word timings, scaled if needed to match actual audio duration
   
   // Map tokens to wrapped lines if wrappedText is provided
   const wrapMap = wrappedText ? mapTokensToWrappedLines(tokens, wrappedText) : null;
   
   const parts = [];
   const kValues = []; // Track all \k values for verification
+  const scaledDurations = []; // Track scaled durations for logging
   
   for (let i = 0; i < tokens.length; i++) {
     const word = tokens[i];
@@ -569,17 +639,21 @@ export async function buildKaraokeASSFromTimestamps({ text, timestamps, duration
     let durMs;
     if (!timing) {
       // Fallback timing - estimate duration based on total duration and number of tokens
-      durMs = durationMs ? (durationMs / tokens.length) : 200;
+      durMs = effectiveDurationMs ? (effectiveDurationMs / tokens.length) : 200;
     } else {
-      // Use the word's actual timing from TTS - NO SCALING
-      // wordDurMs = end_time_ms - start_time_ms (direct from timestamps)
+      // Use the word's actual timing from TTS timestamps
       const wordStartMs = timing.start_time_ms || 0;
       const wordEndMs = timing.end_time_ms || (wordStartMs + 200);
       durMs = wordEndMs - wordStartMs;
+      
+      // Apply scaling if needed to match actual audio duration
+      if (shouldScale && scale !== 1.0) {
+        durMs = durMs * scale;
+        scaledDurations.push({ word, original: wordEndMs - wordStartMs, scaled: durMs });
+      }
     }
     
     // Compute duration in centiseconds for \k tag
-    // k = Math.max(1, Math.round(wordDurMs / 10)) - direct conversion, no scaling
     const k = Math.max(1, Math.round(durMs / 10));
     kValues.push(k);
     
@@ -604,15 +678,22 @@ export async function buildKaraokeASSFromTimestamps({ text, timestamps, duration
   const first10K = kValues.slice(0, Math.min(10, kValues.length));
   const sumKCs = kValues.reduce((sum, k) => sum + k, 0);
   const sumKMs = sumKCs * 10; // Convert centiseconds to milliseconds
-  const diff = sumKMs - (durationMs || 0);
+  const targetForComparison = ffprobeDurationMs || durationMs || sumDurMs;
+  const diff = targetForComparison ? (sumKMs - targetForComparison) : null;
   
   console.log('[karaoke] First 10 \\k values:', first10K);
+  if (shouldScale && scaledDurations.length > 0) {
+    const sampleScaled = scaledDurations.slice(0, Math.min(3, scaledDurations.length));
+    console.log('[karaoke] Sample scaled word durations:', JSON.stringify(sampleScaled));
+  }
   console.log('[karaoke] \\k sum verification:', {
     sumKCs,
     sumKMs,
-    durationMs: durationMs || 'not provided',
-    diff,
-    wordCount: kValues.length
+    targetDurationMs: targetForComparison || 'not available',
+    diff: diff !== null ? diff : 'not calculated',
+    scale: shouldScale ? scale.toFixed(4) : 'none (1.0)',
+    wordCount: kValues.length,
+    note: 'Sum should match targetDurationMs after scaling'
   });
 
   const header =
@@ -661,9 +742,13 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
   console.log('[karaoke] ASS dialogue timing summary:', {
     start: start,
     end: end,
-    durationMs: durationMs || 'not provided',
+    sumDurMs: sumDurMs || 'not calculated',
+    durationMs: durationMs || 'not provided (ElevenLabs API)',
+    ffprobeDurationMs: ffprobeDurationMs || 'not available',
+    effectiveDurationMs: effectiveDurationMs || 'not available',
     totalDurationMs: totalDurationMs,
-    note: 'End time uses durationMs directly (no scaling)'
+    scale: shouldScale ? scale.toFixed(4) : 'none (1.0)',
+    note: 'End time uses ffprobe duration when available to match actual audio file'
   });
 
   const outPath = join(tmpdir(), `vaiform-${randomUUID()}.ass`);

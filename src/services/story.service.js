@@ -555,6 +555,7 @@ export async function renderStory({ uid, sessionId }) {
               text: caption.text,
               timestamps: ttsResult.timestamps,
               durationMs: ttsDurationMs,
+              audioPath: ttsPath, // Pass audio path for duration verification and scaling
               wrappedText: wrappedText, // Pass wrapped text for line breaks
               overlayCaption: overlayCaption, // Pass overlay styling (SSOT)
               width: 1080,
