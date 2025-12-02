@@ -10,7 +10,7 @@ const OPENAI_BASE = process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1';
 const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
 
 /**
- * Generate a 4-6 sentence story from input
+ * Generate a 4-8 sentence video script from input
  * @param {string} input - User input (link content, idea, or paragraph)
  * @param {string} inputType - 'link' | 'idea' | 'paragraph'
  * @returns {Promise<{sentences: string[], totalDurationSec: number}>}
@@ -37,20 +37,32 @@ export async function generateStoryFromInput({ input, inputType }) {
       {
         role: 'system',
         content: [
-          'You create engaging short-form video stories. Output a cohesive 4-6 sentence narrative.',
-          'Each sentence: 8-12 words, clear and visual. Sentences should flow together as a complete story.',
-          'For link content: Tell a story about the topic in your own words. Do not mention "the article", "this article", or reference the article itself. Write original sentences - never copy text word-for-word from the source. The story should be about the subject matter itself, written as if narrating the events or concepts directly.',
-          'Total story should be 12-30 seconds when spoken (estimate ~2-3 words per second).',
+          'You turn articles into scripts for short vertical videos (Reels/TikTok/Shorts). The goal is to keep a viewer watching all the way through.',
+          'Requirements:',
+          'Audience: general, curious but busy.',
+          'Length: 4-8 sentences total. Aim for ~30-45 seconds of speech.',
+          'Format: return ONLY the final script, one sentence per line. No numbering, no bullet points, no commentary.',
+          'Style: clear, conversational, present tense where possible.',
+          'Each line should be a strong caption that can sit on screen with a single clip.',
+          'Story structure:',
+          'Hook (line 1): surprising or intriguing statement that makes people want to know more.',
+          'Context (1-2 lines): briefly set the scene / what this is about.',
+          'Build (2-4 lines): reveal the key ideas or events in an order that builds curiosity or tension.',
+          'Payoff (last 1-2 lines): satisfying conclusion or key lesson. No new open questions at the very end.',
+          'Avoid:',
+          'Long, complex sentences (aim for 12-22 words per line).',
+          'Jargon from the original article.',
+          'Starting the first line with "In this video" or "This article explains".',
           'Return ONLY valid JSON: {"sentences":["sentence1","sentence2",...],"totalDurationSec":number}'
-        ].join(' ')
+        ].join('\n')
       },
       {
         role: 'user',
         content: inputType === 'idea' 
-          ? `Expand this idea into a 4-6 sentence cohesive story: "${input}"`
+          ? `Turn this into a 30-45 second vertical video script with a hook, rising tension, payoff, and a clean ending. Each line is one caption/clip:\n\n"${input}"`
           : inputType === 'link'
-          ? `Tell a 4-6 sentence story about this topic. Write it as a flowing narrative in your own words. Do not reference "the article" or copy sentences verbatim. Tell the story directly about the subject matter:\n\n${sourceContent}`
-          : `Create a 4-6 sentence cohesive story from this text:\n\n${input}`
+          ? `Now, using this article, write the script in that format:\n\n${sourceContent}`
+          : `Turn this into a 30-45 second vertical video script with a hook, rising tension, payoff, and a clean ending. Each line is one caption/clip:\n\n${input}`
       }
     ]
   };
@@ -90,7 +102,7 @@ export async function generateStoryFromInput({ input, inputType }) {
       .split(/[.!?]+/)
       .map(s => s.trim())
       .filter(s => s.length > 10 && s.length < 150)
-      .slice(0, 6);
+      .slice(0, 8);
     
     if (sentences.length < 4) {
       // Split long sentences
@@ -101,17 +113,17 @@ export async function generateStoryFromInput({ input, inputType }) {
         const chunk = words.slice(i, i + wordsPerSentence).join(' ');
         if (chunk.length > 10) sentences.push(chunk);
       }
-      sentences = sentences.slice(0, 6);
+      sentences = sentences.slice(0, 8);
     }
   }
-  
+
   // Normalize sentences
   sentences = sentences
     .map(s => String(s).replace(/\s+/g, ' ').trim())
     .filter(s => s.length >= 8 && s.length <= 150)
-    .slice(0, 6);
-  
-  // Ensure we have 4-6 sentences
+    .slice(0, 8);
+
+  // Ensure we have 4-8 sentences
   if (sentences.length < 4) {
     // Pad with variations
     while (sentences.length < 4 && sentences.length > 0) {
@@ -122,12 +134,12 @@ export async function generateStoryFromInput({ input, inputType }) {
   // Calculate duration if not provided (estimate 2.5 words per second)
   if (!totalDurationSec || totalDurationSec <= 0) {
     const totalWords = sentences.join(' ').split(/\s+/).length;
-    totalDurationSec = Math.max(12, Math.min(30, Math.ceil(totalWords / 2.5)));
+    totalDurationSec = Math.max(30, Math.min(45, Math.ceil(totalWords / 2.5)));
   }
-  
+
   return {
-    sentences: sentences.slice(0, 6),
-    totalDurationSec: Math.max(12, Math.min(30, totalDurationSec))
+    sentences: sentences.slice(0, 8),
+    totalDurationSec: Math.max(30, Math.min(45, totalDurationSec))
   };
 }
 
