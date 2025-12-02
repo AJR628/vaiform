@@ -5,6 +5,7 @@ import {
   createStorySession,
   getStorySession,
   generateStory,
+  updateStorySentences,
   planShots,
   searchShots,
   buildTimeline,
@@ -88,6 +89,41 @@ r.post("/generate", async (req, res) => {
       success: false,
       error: "STORY_GENERATE_FAILED",
       detail: e?.message || "Failed to generate story"
+    });
+  }
+});
+
+// POST /api/story/update-script - Update story sentences (when user edits script)
+r.post("/update-script", async (req, res) => {
+  try {
+    const UpdateScriptSchema = z.object({
+      sessionId: z.string().min(3),
+      sentences: z.array(z.string().min(1)).min(1)
+    });
+    
+    const parsed = UpdateScriptSchema.safeParse(req.body || {});
+    if (!parsed.success) {
+      return res.status(400).json({
+        success: false,
+        error: "INVALID_INPUT",
+        detail: parsed.error.flatten()
+      });
+    }
+    
+    const { sessionId, sentences } = parsed.data;
+    const session = await updateStorySentences({
+      uid: req.user.uid,
+      sessionId,
+      sentences
+    });
+    
+    return res.json({ success: true, data: session });
+  } catch (e) {
+    console.error("[story][update-script] error:", e);
+    return res.status(500).json({
+      success: false,
+      error: "STORY_UPDATE_SCRIPT_FAILED",
+      detail: e?.message || "Failed to update story script"
     });
   }
 });

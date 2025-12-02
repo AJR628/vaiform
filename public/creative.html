@@ -698,16 +698,41 @@
                 </div>
 
                 <!-- Script Preview Section -->
-                <div class="space-y-2 mt-4">
+                <div id="article-script-section" class="space-y-2 mt-4">
                     <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Script Preview</label>
                     <p class="text-xs text-gray-500 dark:text-gray-400">Each line will become one clip.</p>
                     <textarea
                         id="article-script-preview"
                         rows="8"
-                        readonly
                         placeholder="Script will appear here after summarization..."
                         class="w-full bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-3 py-2 text-gray-900 dark:text-white"
                     ></textarea>
+                </div>
+
+                <!-- Prepare Storyboard Button -->
+                <div class="mt-4">
+                    <button
+                        id="prepare-storyboard-btn"
+                        data-action="prepareStoryboard"
+                        type="button"
+                        class="w-full px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-600 disabled:cursor-not-allowed rounded text-white"
+                    >
+                        Prepare storyboard
+                    </button>
+                </div>
+
+                <!-- Storyboard Section -->
+                <div id="storyboard" class="mt-6 hidden">
+                    <h3 class="text-lg font-semibold mb-2 text-gray-900 dark:text-white">Storyboard</h3>
+                    <div id="storyboard-row" class="flex gap-3 overflow-x-auto pb-2"></div>
+                    <button
+                        id="preview-full-video-btn"
+                        data-action="previewFullVideo"
+                        type="button"
+                        class="mt-4 w-full px-6 py-3 bg-green-600 hover:bg-green-500 disabled:bg-gray-400 disabled:cursor-not-allowed rounded-lg text-base font-semibold text-white shadow-md transition-colors"
+                    >
+                        Preview full video
+                    </button>
                 </div>
 
                 <!-- Voice Selection -->
@@ -5748,6 +5773,9 @@
                 const scriptText = Array.isArray(sentences) ? sentences.join('\n') : String(sentences);
                 scriptPreviewEl.value = scriptText;
                 
+                // Store original sentences to detect edits
+                window.currentStoryOriginalSentences = Array.isArray(sentences) ? [...sentences] : [String(sentences)];
+                
                 console.log('[article] Story generated successfully:', sentences.length, 'sentences');
                 
             } catch (error) {
@@ -5755,6 +5783,326 @@
                 showError('article-error', error.message || 'Failed to summarize article');
             } finally {
                 setLoading('summarize-article-btn', false);
+            }
+        }
+        
+        async function prepareStoryboard() {
+            const sessionId = window.currentStorySessionId;
+            if (!sessionId) {
+                showError('article-error', 'Please summarize the article first');
+                return;
+            }
+            
+                const scriptPreviewEl = document.getElementById('article-script-preview');
+                const prepareBtn = document.getElementById('prepare-storyboard-btn');
+                const storyboardEl = document.getElementById('storyboard');
+                const scriptSection = document.getElementById('article-script-section');
+            
+            if (!scriptPreviewEl || !prepareBtn) {
+                console.error('[article] Missing required elements');
+                return;
+            }
+            
+            setLoading('prepare-storyboard-btn', true);
+            hideError('article-error');
+            
+            try {
+                const { apiFetch } = await import('./api.mjs');
+                
+                // Get current script from textarea
+                const currentScript = scriptPreviewEl.value.trim();
+                const currentSentences = currentScript.split('\n')
+                    .map(s => s.trim())
+                    .filter(s => s.length > 0);
+                
+                if (currentSentences.length === 0) {
+                    throw new Error('Script is empty');
+                }
+                
+                // Check if script was edited
+                const originalSentences = window.currentStoryOriginalSentences || [];
+                const sentencesChanged = originalSentences.length !== currentSentences.length ||
+                    originalSentences.some((s, i) => s !== currentSentences[i]);
+                
+                // Update script if changed
+                if (sentencesChanged) {
+                    console.log('[article] Script was edited, updating...');
+                    const updateResp = await apiFetch('/story/update-script', {
+                        method: 'POST',
+                        body: {
+                            sessionId: sessionId,
+                            sentences: currentSentences
+                        }
+                    });
+                    
+                    if (!updateResp.success) {
+                        throw new Error(updateResp.error || 'Failed to update script');
+                    }
+                    
+                    // Update stored original
+                    window.currentStoryOriginalSentences = [...currentSentences];
+                }
+                
+                // Step 1: Plan shots
+                const planResp = await apiFetch('/story/plan', {
+                    method: 'POST',
+                    body: { sessionId: sessionId }
+                });
+                
+                if (!planResp.success) {
+                    throw new Error(planResp.error || 'Failed to plan shots');
+                }
+                
+                // Step 2: Search clips
+                const searchResp = await apiFetch('/story/search', {
+                    method: 'POST',
+                    body: { sessionId: sessionId }
+                });
+                
+                if (!searchResp.success) {
+                    throw new Error(searchResp.error || 'Failed to search clips');
+                }
+                
+                const session = searchResp.data;
+                
+                // Render storyboard
+                renderStoryboard(session);
+                
+                // Mobile: collapse script, expand storyboard
+                if (window.innerWidth < 768) {
+                    if (scriptSection) {
+                        scriptSection.classList.add('hidden');
+                    }
+                }
+                
+                console.log('[article] Storyboard prepared successfully');
+                
+            } catch (error) {
+                console.error('[article] Prepare storyboard failed:', error);
+                showError('article-error', error.message || 'Failed to prepare storyboard');
+            } finally {
+                setLoading('prepare-storyboard-btn', false);
+            }
+        }
+        
+        function renderStoryboard(session) {
+            const storyboardRow = document.getElementById('storyboard-row');
+            const storyboardEl = document.getElementById('storyboard');
+            
+            if (!storyboardRow || !storyboardEl) {
+                console.error('[article] Storyboard elements not found');
+                return;
+            }
+            
+            // Clear existing cards
+            storyboardRow.innerHTML = '';
+            
+            const sentences = session.story?.sentences || [];
+            const shots = session.shots || [];
+            
+            // Guard: handle mismatched counts gracefully
+            if (sentences.length !== shots.length) {
+                console.warn(`[article] Mismatched counts: ${sentences.length} sentences, ${shots.length} shots`);
+            }
+            
+            sentences.forEach((sentence, idx) => {
+                // Find matching shot by sentenceIndex
+                const shot = shots.find(s => s.sentenceIndex === idx) || shots[idx];
+                
+                const card = document.createElement('div');
+                card.className = 'relative w-40 h-72 flex-shrink-0 bg-black rounded-lg overflow-hidden border border-gray-700';
+                
+                if (!shot || !shot.selectedClip) {
+                    // Placeholder for missing clip
+                    card.innerHTML = `
+                        <div class="relative w-full h-40 bg-gray-800 flex items-center justify-center">
+                            <p class="text-xs text-gray-400 text-center px-2">No clip found</p>
+                        </div>
+                        <div class="p-2 text-xs text-gray-200 h-24 overflow-hidden">
+                            ${sentence}
+                        </div>
+                        <button
+                            class="mt-1 mx-2 mb-2 w-[calc(100%-1rem)] text-xs py-1 rounded bg-gray-700 text-gray-400 cursor-not-allowed"
+                            disabled
+                            title="Coming soon"
+                        >
+                            Swap clip
+                        </button>
+                    `;
+                } else {
+                    const clip = shot.selectedClip;
+                    const videoUrl = clip.url || '';
+                    const thumbUrl = clip.thumbUrl || '';
+                    
+                    card.innerHTML = `
+                        <div class="relative w-full h-40 overflow-hidden">
+                            <video
+                                src="${videoUrl}"
+                                ${thumbUrl ? `poster="${thumbUrl}"` : ''}
+                                muted
+                                loop
+                                preload="none"
+                                class="w-full h-full object-cover transition-transform duration-150 storyboard-video"
+                                data-index="${idx}"
+                                aria-label="Preview for: ${sentence.substring(0, 50)}"
+                            ></video>
+                        </div>
+                        <div class="p-2 text-xs text-gray-200 h-24 overflow-hidden">
+                            ${sentence}
+                        </div>
+                        <button
+                            class="mt-1 mx-2 mb-2 w-[calc(100%-1rem)] text-xs py-1 rounded bg-gray-700 text-gray-400 cursor-not-allowed"
+                            disabled
+                            title="Coming soon"
+                        >
+                            Swap clip
+                        </button>
+                    `;
+                }
+                
+                storyboardRow.appendChild(card);
+            });
+            
+            // Show storyboard
+            storyboardEl.classList.remove('hidden');
+            
+            // Setup hover interactions (desktop-only)
+            setupStoryboardHover();
+        }
+        
+        function setupStoryboardHover() {
+            // Remove existing listeners to avoid duplicates
+            const videos = document.querySelectorAll('.storyboard-video');
+            
+            videos.forEach(vid => {
+                // Remove old listeners by cloning
+                const newVid = vid.cloneNode(true);
+                vid.parentNode.replaceChild(newVid, vid);
+                
+                // Only enable hover on desktop
+                if (window.innerWidth >= 768) {
+                    newVid.addEventListener('mouseenter', () => {
+                        newVid.play().catch(e => console.warn('[article] Video play failed:', e));
+                        newVid.classList.add('scale-110');
+                    });
+                    
+                    newVid.addEventListener('mouseleave', () => {
+                        newVid.pause();
+                        newVid.currentTime = 0;
+                        newVid.classList.remove('scale-110');
+                    });
+                } else {
+                    // Mobile: tap to play/pause
+                    newVid.addEventListener('click', () => {
+                        if (newVid.paused) {
+                            newVid.play().catch(e => console.warn('[article] Video play failed:', e));
+                        } else {
+                            newVid.pause();
+                        }
+                    });
+                }
+            });
+        }
+        
+        async function previewFullVideo() {
+            const sessionId = window.currentStorySessionId;
+            if (!sessionId) {
+                showError('article-error', 'Please prepare the storyboard first');
+                return;
+            }
+            
+            const errorEl = document.getElementById('article-error');
+            const previewBtn = document.getElementById('preview-full-video-btn');
+            const voicePresetEl = document.getElementById('article-voice-preset');
+            const resultDiv = document.getElementById('article-render-result');
+            const videoEl = document.getElementById('article-render-video');
+            const videoUrlEl = document.getElementById('article-video-url');
+            
+            const voicePreset = voicePresetEl?.value || 'male_calm';
+            
+            setLoading('preview-full-video-btn', true);
+            hideError('article-error');
+            
+            try {
+                const { apiFetch } = await import('./api.mjs');
+                
+                // Call finalize with voice preset
+                const finalizeResp = await apiFetch('/story/finalize', {
+                    method: 'POST',
+                    body: {
+                        sessionId: sessionId,
+                        options: {
+                            voicePreset: voicePreset
+                        }
+                    }
+                });
+                
+                if (!finalizeResp.success) {
+                    throw new Error(finalizeResp.error || finalizeResp.detail || 'Failed to finalize story');
+                }
+                
+                const session = finalizeResp.data;
+                
+                // Check if video is already ready
+                if (session.finalVideo?.url) {
+                    // Render complete immediately!
+                    if (videoEl) {
+                        videoEl.src = session.finalVideo.url;
+                    }
+                    if (videoUrlEl) {
+                        videoUrlEl.href = session.finalVideo.url;
+                    }
+                    if (resultDiv) {
+                        resultDiv.classList.remove('hidden');
+                    }
+                    console.log('[article] Render complete:', session.finalVideo.url);
+                } else {
+                    // Poll for completion (similar to renderArticle)
+                    let attempts = 0;
+                    const maxAttempts = 60; // 5 minutes max
+                    
+                    while (attempts < maxAttempts) {
+                        await new Promise(resolve => setTimeout(resolve, 5000)); // Poll every 5 seconds
+                        
+                        const statusResp = await apiFetch(`/story/${sessionId}`, {
+                            method: 'GET'
+                        });
+                        
+                        if (!statusResp.success || !statusResp.data) {
+                            throw new Error('Failed to check render status');
+                        }
+                        
+                        const polledSession = statusResp.data;
+                        
+                        if (polledSession.finalVideo?.url) {
+                            // Render complete!
+                            if (videoEl) {
+                                videoEl.src = polledSession.finalVideo.url;
+                            }
+                            if (videoUrlEl) {
+                                videoUrlEl.href = polledSession.finalVideo.url;
+                            }
+                            if (resultDiv) {
+                                resultDiv.classList.remove('hidden');
+                            }
+                            
+                            console.log('[article] Render complete:', polledSession.finalVideo.url);
+                            break;
+                        }
+                        
+                        attempts++;
+                    }
+                    
+                    if (attempts >= maxAttempts) {
+                        throw new Error('Render timed out - please try again');
+                    }
+                }
+                
+            } catch (error) {
+                console.error('[article] Preview failed:', error);
+                showError('article-error', error.message || 'Failed to preview video');
+            } finally {
+                setLoading('preview-full-video-btn', false);
             }
         }
         
@@ -5863,6 +6211,8 @@
         // Expose to window scope for ui-actions.js
         window.summarizeArticle = summarizeArticle;
         window.renderArticle = renderArticle;
+        window.prepareStoryboard = prepareStoryboard;
+        window.previewFullVideo = previewFullVideo;
 
         // Remix quote function
         async function remixQuote(mode) {

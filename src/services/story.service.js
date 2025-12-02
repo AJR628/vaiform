@@ -131,6 +131,34 @@ export async function generateStory({ uid, sessionId, input, inputType }) {
 }
 
 /**
+ * Update story sentences (when user edits script)
+ */
+export async function updateStorySentences({ uid, sessionId, sentences }) {
+  const session = await loadStorySession({ uid, sessionId });
+  if (!session) throw new Error('SESSION_NOT_FOUND');
+  
+  if (!Array.isArray(sentences) || sentences.length === 0) {
+    throw new Error('INVALID_SENTENCES');
+  }
+  
+  // Update story sentences
+  if (!session.story) {
+    session.story = {};
+  }
+  session.story.sentences = sentences.map(s => String(s).trim()).filter(s => s.length > 0);
+  
+  // Clear plan and shots to force re-plan with new sentences
+  if (session.plan) delete session.plan;
+  if (session.shots) delete session.shots;
+  
+  session.status = 'story_generated';
+  session.updatedAt = new Date().toISOString();
+  
+  await saveStorySession({ uid, sessionId, data: session });
+  return session;
+}
+
+/**
  * Plan visual shots for the story
  */
 export async function planShots({ uid, sessionId }) {
@@ -189,6 +217,7 @@ export async function searchShots({ uid, sessionId }) {
           selectedClip: bestClip ? {
             id: bestClip.id,
             url: bestClip.fileUrl,
+            thumbUrl: bestClip.thumbUrl || null,
             duration: bestClip.duration,
             width: bestClip.width,
             height: bestClip.height,

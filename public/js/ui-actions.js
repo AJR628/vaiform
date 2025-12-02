@@ -161,6 +161,24 @@ const ACTIONS = {
     } else {
       console.error('[ui-actions] renderArticle function not found');
     }
+  },
+
+  prepareStoryboard: () => {
+    console.log('[ui-actions] prepareStoryboard triggered');
+    if (typeof window.prepareStoryboard === 'function') {
+      window.prepareStoryboard();
+    } else {
+      console.error('[ui-actions] prepareStoryboard function not found');
+    }
+  },
+
+  previewFullVideo: () => {
+    console.log('[ui-actions] previewFullVideo triggered');
+    if (typeof window.previewFullVideo === 'function') {
+      window.previewFullVideo();
+    } else {
+      console.error('[ui-actions] previewFullVideo function not found');
+    }
   }
 };
 
