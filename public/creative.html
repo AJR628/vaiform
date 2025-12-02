@@ -773,7 +773,21 @@
                         <h3 class="text-sm font-semibold text-white">Choose a clip for this line</h3>
                         <button id="clip-picker-close" class="text-xs text-gray-400 hover:text-white px-2 py-1">Close</button>
                     </div>
-                    <div id="clip-picker-grid" class="grid grid-cols-2 md:grid-cols-4 gap-3"></div>
+                    <div class="flex items-center gap-2 mb-3">
+                        <input
+                            id="clip-search-input"
+                            type="text"
+                            class="flex-1 px-2 py-1 rounded bg-slate-800 border border-slate-600 text-sm text-white placeholder-gray-400"
+                            placeholder="Search clips for this sentence..."
+                        />
+                        <button
+                            id="clip-search-btn"
+                            class="px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-sm font-medium text-white"
+                        >
+                            Search
+                        </button>
+                    </div>
+                    <div id="clip-picker-grid" class="grid grid-cols-2 md:grid-cols-4 gap-2 max-h-72 overflow-y-auto"></div>
                 </div>
             </div>
 
@@ -5917,6 +5931,7 @@
                 
                 const card = document.createElement('div');
                 card.className = 'relative w-40 h-72 flex-shrink-0 bg-black rounded-lg overflow-hidden border border-gray-700';
+                card.setAttribute('data-sentence-index', idx);
                 
                 if (!shot || !shot.selectedClip) {
                     // Placeholder for missing clip
@@ -6001,6 +6016,40 @@
             openClipPicker(sentenceIndex);
         }
         
+        function renderClipPickerGrid(shot) {
+            const grid = document.getElementById('clip-picker-grid');
+            if (!grid) return;
+            
+            const candidates = (shot.candidates || []).slice(0, 8);
+            
+            if (candidates.length === 0) {
+                grid.innerHTML = '<div class="text-sm text-slate-400 col-span-full text-center py-4">No clips found. Try a different search.</div>';
+                return;
+            }
+            
+            grid.innerHTML = candidates.map(clip => {
+                const isSelected = shot.selectedClip?.id === clip.id;
+                return `
+                    <div
+                        class="clip-option rounded overflow-hidden bg-slate-800 border ${isSelected ? 'border-blue-500' : 'border-slate-700'} cursor-pointer hover:border-blue-500 transition"
+                        data-clip-id="${clip.id}"
+                    >
+                        <video
+                            class="w-full h-24 object-cover pointer-events-none"
+                            src="${clip.url || ''}"
+                            ${clip.thumbUrl ? `poster="${clip.thumbUrl}"` : ''}
+                            playsinline
+                            muted
+                            preload="none"
+                        ></video>
+                        <div class="p-1 text-[11px] truncate text-gray-300">
+                            ${clip.photographer || ''}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+        
         function openClipPicker(sentenceIndex) {
             const session = window.currentStorySession;
             if (!session || !session.shots) {
@@ -6015,55 +6064,26 @@
                 return;
             }
             
-            const candidates = shot.candidates || [];
-            if (candidates.length === 0) {
-                showError('article-error', 'No alternative clips available for this sentence');
-                return;
-            }
-            
             // Store current sentence index for swap handler
             window.currentClipPickerSentence = sentenceIndex;
             
             // Get picker elements
             const picker = document.getElementById('clip-picker');
-            const grid = document.getElementById('clip-picker-grid');
+            const searchInput = document.getElementById('clip-search-input');
             const closeBtn = document.getElementById('clip-picker-close');
             
-            if (!picker || !grid) {
-                console.error('[article] Clip picker elements not found');
+            if (!picker) {
+                console.error('[article] Clip picker element not found');
                 return;
             }
             
-            // Clear grid
-            grid.innerHTML = '';
+            // Clear search input
+            if (searchInput) {
+                searchInput.value = '';
+            }
             
-            // Render each candidate
-            candidates.forEach((clip, idx) => {
-                const button = document.createElement('button');
-                button.className = 'clip-option group relative';
-                button.dataset.clipId = clip.id;
-                
-                const videoUrl = clip.url || '';
-                const thumbUrl = clip.thumbUrl || '';
-                const isSelected = shot.selectedClip?.id === clip.id;
-                
-                button.innerHTML = `
-                    <div class="relative rounded overflow-hidden ${isSelected ? 'ring-2 ring-blue-500' : ''}">
-                        <video
-                            src="${videoUrl}"
-                            ${thumbUrl ? `poster="${thumbUrl}"` : ''}
-                            muted
-                            playsinline
-                            preload="none"
-                            class="w-full aspect-video object-cover group-hover:scale-105 transition-transform duration-150 clip-picker-video"
-                            data-clip-id="${clip.id}"
-                        ></video>
-                        ${isSelected ? '<div class="absolute top-1 right-1 bg-blue-500 text-white text-xs px-1 rounded">Selected</div>' : ''}
-                    </div>
-                `;
-                
-                grid.appendChild(button);
-            });
+            // Render grid
+            renderClipPickerGrid(shot);
             
             // Show picker
             picker.classList.remove('hidden');
@@ -6076,47 +6096,87 @@
                 };
             }
             
-            // Setup click handler for candidate selection (remove old one first)
-            grid.removeEventListener('click', handleClipOptionClick);
-            grid.addEventListener('click', handleClipOptionClick);
-            
-            // Setup hover interactions for candidate videos
+            // Setup hover interactions (delegated on drawer)
             setupClipPickerHover();
+            
+            // Setup click handler on drawer (not grid) for clip selection
+            const picker = document.getElementById('clip-picker');
+            if (picker) {
+                picker.removeEventListener('click', handleClipOptionClick);
+                picker.addEventListener('click', handleClipOptionClick);
+            }
+            
+            // Setup search button and Enter key
+            const searchBtn = document.getElementById('clip-search-btn');
+            const searchInput = document.getElementById('clip-search-input');
+            
+            if (searchBtn) {
+                searchBtn.onclick = runClipSearch;
+            }
+            
+            if (searchInput) {
+                searchInput.onkeydown = (e) => {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        runClipSearch();
+                    }
+                };
+            }
         }
         
         function setupClipPickerHover() {
-            const videos = document.querySelectorAll('.clip-picker-video');
+            const picker = document.getElementById('clip-picker');
+            if (!picker) return;
             
-            videos.forEach(vid => {
-                // Only enable hover on desktop
-                if (window.innerWidth >= 768) {
-                    vid.addEventListener('mouseenter', () => {
-                        vid.play().catch(e => console.warn('[article] Clip picker video play failed:', e));
-                    });
-                    
-                    vid.addEventListener('mouseleave', () => {
-                        vid.pause();
-                        vid.currentTime = 0;
-                    });
+            // Remove existing listeners to avoid duplicates
+            picker.removeEventListener('mouseenter', handleClipPickerMouseEnter, true);
+            picker.removeEventListener('mouseleave', handleClipPickerMouseLeave, true);
+            
+            // Only enable hover on desktop
+            if (window.innerWidth >= 768) {
+                picker.addEventListener('mouseenter', handleClipPickerMouseEnter, true);
+                picker.addEventListener('mouseleave', handleClipPickerMouseLeave, true);
+            }
+        }
+        
+        function handleClipPickerMouseEnter(e) {
+            const card = e.target.closest('.clip-option');
+            if (!card) return;
+            const video = card.querySelector('video');
+            if (!video) return;
+            video.play().catch(() => {});
+        }
+        
+        function handleClipPickerMouseLeave(e) {
+            const card = e.target.closest('.clip-option');
+            if (!card) return;
+            const video = card.querySelector('video');
+            if (!video) return;
+            video.pause();
+            video.currentTime = 0;
+        }
+        
+        function setClipPickerBusy(busy) {
+            const drawer = document.getElementById('clip-picker');
+            if (!drawer) return;
+            drawer.dataset.busy = busy ? '1' : '0';
+            
+            const buttons = drawer.querySelectorAll('button, .clip-option');
+            buttons.forEach((el) => {
+                el.toggleAttribute('disabled', busy);
+                if (busy) {
+                    el.classList.add('opacity-60', 'pointer-events-none');
                 } else {
-                    // Mobile: tap to play/pause
-                    vid.addEventListener('click', (e) => {
-                        e.stopPropagation(); // Don't trigger parent button click
-                        if (vid.paused) {
-                            vid.play().catch(e => console.warn('[article] Clip picker video play failed:', e));
-                        } else {
-                            vid.pause();
-                        }
-                    });
+                    el.classList.remove('opacity-60', 'pointer-events-none');
                 }
             });
         }
         
         async function handleClipOptionClick(e) {
-            const btn = e.target.closest('.clip-option');
-            if (!btn) return;
+            const card = e.target.closest('.clip-option[data-clip-id]');
+            if (!card) return;
             
-            const clipId = btn.dataset.clipId;
+            const clipId = card.getAttribute('data-clip-id');
             const sentenceIndex = window.currentClipPickerSentence;
             
             if (!clipId || sentenceIndex === undefined || sentenceIndex === null) {
@@ -6131,6 +6191,8 @@
             }
             
             try {
+                setClipPickerBusy(true);
+                
                 const { apiFetch } = await import('./api.mjs');
                 
                 // Call API to update selected clip
@@ -6148,18 +6210,18 @@
                 }
                 
                 // Update local session
-                if (window.currentStorySession && window.currentStorySession.shots) {
-                    const shot = window.currentStorySession.shots.find(s => s.sentenceIndex === sentenceIndex);
-                    if (shot) {
-                        const candidate = shot.candidates.find(c => c.id === clipId);
-                        if (candidate) {
-                            shot.selectedClip = candidate;
-                        }
+                const updatedShot = resp.data.shots?.find(s => s.sentenceIndex === sentenceIndex);
+                if (updatedShot && window.currentStorySession && window.currentStorySession.shots) {
+                    const idx = window.currentStorySession.shots.findIndex(s => s.sentenceIndex === sentenceIndex);
+                    if (idx !== -1) {
+                        window.currentStorySession.shots[idx] = updatedShot;
                     }
                 }
                 
-                // Update storyboard card video
-                updateStoryboardCardVideo(sentenceIndex, clipId);
+                // Update storyboard card
+                if (updatedShot) {
+                    updateStoryboardCardForSentence(updatedShot);
+                }
                 
                 // Close picker
                 const picker = document.getElementById('clip-picker');
@@ -6173,30 +6235,83 @@
             } catch (error) {
                 console.error('[article] Swap clip failed:', error);
                 showError('article-error', error.message || 'Failed to swap clip');
+            } finally {
+                setClipPickerBusy(false);
             }
         }
         
-        function updateStoryboardCardVideo(sentenceIndex, clipId) {
-            const session = window.currentStorySession;
-            if (!session || !session.shots) return;
-            
-            const shot = session.shots.find(s => s.sentenceIndex === sentenceIndex);
+        function updateStoryboardCardForSentence(shot) {
             if (!shot || !shot.selectedClip) return;
             
-            // Find the storyboard card by data-index
-            const cards = document.querySelectorAll('#storyboard-row > div');
-            cards.forEach(card => {
-                const video = card.querySelector(`video[data-index="${sentenceIndex}"]`);
-                if (video) {
-                    const clip = shot.selectedClip;
-                    video.src = clip.url || '';
-                    if (clip.thumbUrl) {
-                        video.poster = clip.thumbUrl;
+            const card = document.querySelector(`#storyboard-row [data-sentence-index="${shot.sentenceIndex}"]`);
+            if (!card) return;
+            
+            const video = card.querySelector('video');
+            if (!video) return;
+            
+            const clip = shot.selectedClip;
+            video.src = clip.url || '';
+            if (clip.thumbUrl) {
+                video.setAttribute('poster', clip.thumbUrl);
+            } else {
+                video.removeAttribute('poster');
+            }
+            video.load();
+        }
+        
+        async function runClipSearch() {
+            const input = document.getElementById('clip-search-input');
+            const query = input?.value.trim() || '';
+            const sentenceIndex = window.currentClipPickerSentence;
+            
+            if (sentenceIndex === undefined || sentenceIndex === null) {
+                console.error('[article] No sentence index for search');
+                return;
+            }
+            
+            const sessionId = window.currentStorySessionId;
+            if (!sessionId) {
+                showError('article-error', 'Session not found');
+                return;
+            }
+            
+            try {
+                setClipPickerBusy(true);
+                
+                const { apiFetch } = await import('./api.mjs');
+                
+                const resp = await apiFetch('/story/search-shot', {
+                    method: 'POST',
+                    body: {
+                        sessionId: sessionId,
+                        sentenceIndex: sentenceIndex,
+                        query: query // can be empty = use original sentence
                     }
-                    // Reset video
-                    video.load();
+                });
+                
+                if (!resp.success) {
+                    throw new Error(resp.error || 'Search failed');
                 }
-            });
+                
+                const shot = resp.data.shot;
+                
+                // Update session model
+                if (window.currentStorySession && window.currentStorySession.shots) {
+                    const idx = window.currentStorySession.shots.findIndex(s => s.sentenceIndex === shot.sentenceIndex);
+                    if (idx !== -1) {
+                        window.currentStorySession.shots[idx] = shot;
+                    }
+                }
+                
+                // Re-render candidate grid
+                renderClipPickerGrid(shot);
+                
+            } catch (error) {
+                console.error('[article] Search failed:', error);
+                showError('article-error', error.message || 'Could not search clips. Please try again.');
+            } finally {
+                setClipPickerBusy(false);
+            }
         }
         
         function setupStoryboardHover() {

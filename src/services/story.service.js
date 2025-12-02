@@ -177,6 +177,66 @@ export async function planShots({ uid, sessionId }) {
 }
 
 /**
+ * Search and normalize clips for a single shot (helper function)
+ * Returns normalized candidates and best match
+ */
+async function searchSingleShot(query, options = {}) {
+  const { perPage = 6, targetDur = 8 } = options;
+  
+  const searchResult = await pexelsSearchVideos({
+    query: query,
+    perPage: perPage,
+    targetDur: targetDur,
+    page: 1
+  });
+  
+  if (!searchResult.ok || searchResult.items.length === 0) {
+    return { candidates: [], best: null };
+  }
+  
+  // Normalize all candidates to same structure
+  const candidates = searchResult.items.map(item => ({
+    id: item.id,
+    url: item.fileUrl,
+    thumbUrl: item.thumbUrl || null,
+    duration: item.duration,
+    width: item.width,
+    height: item.height,
+    photographer: item.photographer,
+    sourceUrl: item.sourceUrl
+  }));
+  
+  // Pick best match: closest duration to target, portrait orientation
+  let bestClip = null;
+  let bestScore = Infinity;
+  
+  for (const item of searchResult.items) {
+    const durationDelta = Math.abs((item.duration || 0) - targetDur);
+    const isPortrait = item.height > item.width;
+    const score = durationDelta + (isPortrait ? 0 : 10); // Penalize landscape
+    
+    if (score < bestScore) {
+      bestScore = score;
+      bestClip = item;
+    }
+  }
+  
+  // Normalize best clip
+  const best = bestClip ? {
+    id: bestClip.id,
+    url: bestClip.fileUrl,
+    thumbUrl: bestClip.thumbUrl || null,
+    duration: bestClip.duration,
+    width: bestClip.width,
+    height: bestClip.height,
+    photographer: bestClip.photographer,
+    sourceUrl: bestClip.sourceUrl
+  } : null;
+  
+  return { candidates, best };
+}
+
+/**
  * Search stock videos for each shot (Phase 3)
  */
 export async function searchShots({ uid, sessionId }) {
@@ -188,67 +248,17 @@ export async function searchShots({ uid, sessionId }) {
   
   for (const shot of session.plan) {
     try {
-      // Search for clips matching the shot's search query
-      const searchResult = await pexelsSearchVideos({
-        query: shot.searchQuery,
+      // Use helper function to search and normalize
+      const { candidates, best } = await searchSingleShot(shot.searchQuery, {
         perPage: 6,
-        targetDur: shot.durationSec,
-        page: 1
+        targetDur: shot.durationSec
       });
       
-      if (searchResult.ok && searchResult.items.length > 0) {
-        // Normalize all candidates to same structure as selectedClip
-        const candidates = searchResult.items.map(item => ({
-          id: item.id,
-          url: item.fileUrl,
-          thumbUrl: item.thumbUrl || null,
-          duration: item.duration,
-          width: item.width,
-          height: item.height,
-          photographer: item.photographer,
-          sourceUrl: item.sourceUrl
-        }));
-        
-        // Pick best match: closest duration to target, portrait orientation
-        let bestClip = null;
-        let bestScore = Infinity;
-        
-        for (const item of searchResult.items) {
-          const durationDelta = Math.abs((item.duration || 0) - shot.durationSec);
-          const isPortrait = item.height > item.width;
-          const score = durationDelta + (isPortrait ? 0 : 10); // Penalize landscape
-          
-          if (score < bestScore) {
-            bestScore = score;
-            bestClip = item;
-          }
-        }
-        
-        // Normalize best clip
-        const selectedClip = bestClip ? {
-          id: bestClip.id,
-          url: bestClip.fileUrl,
-          thumbUrl: bestClip.thumbUrl || null,
-          duration: bestClip.duration,
-          width: bestClip.width,
-          height: bestClip.height,
-          photographer: bestClip.photographer,
-          sourceUrl: bestClip.sourceUrl
-        } : null;
-        
-        shots.push({
-          ...shot,
-          selectedClip: selectedClip,
-          candidates: candidates
-        });
-      } else {
-        // No results found, keep shot without clip
-        shots.push({
-          ...shot,
-          selectedClip: null,
-          candidates: []
-        });
-      }
+      shots.push({
+        ...shot,
+        selectedClip: best,
+        candidates: candidates
+      });
     } catch (error) {
       console.warn(`[story.service] Search failed for shot ${shot.sentenceIndex}:`, error?.message);
       shots.push({
@@ -265,6 +275,46 @@ export async function searchShots({ uid, sessionId }) {
   
   await saveStorySession({ uid, sessionId, data: session });
   return session;
+}
+
+/**
+ * Search clips for a single shot (Phase 3 - Clip Search)
+ */
+export async function searchClipsForShot({ uid, sessionId, sentenceIndex, query }) {
+  const session = await loadStorySession({ uid, sessionId });
+  if (!session) throw new Error('SESSION_NOT_FOUND');
+  if (!session.shots) throw new Error('SHOTS_REQUIRED');
+  
+  const shot = session.shots.find(s => s.sentenceIndex === sentenceIndex);
+  if (!shot) {
+    throw new Error(`SHOT_NOT_FOUND: sentenceIndex=${sentenceIndex}`);
+  }
+  
+  // Determine search query: use provided query, or fall back to shot.searchQuery, or sentence text
+  const searchQuery = query?.trim() || shot.searchQuery || session.story?.sentences?.[sentenceIndex] || '';
+  
+  if (!searchQuery) {
+    throw new Error('NO_SEARCH_QUERY_AVAILABLE');
+  }
+  
+  // Search with perPage 12 for frontend to show 8 nicely
+  const { candidates, best } = await searchSingleShot(searchQuery, {
+    perPage: 12,
+    targetDur: shot.durationSec || 8
+  });
+  
+  // Update candidates
+  shot.candidates = candidates;
+  
+  // Keep current selectedClip if it's still in the new candidates; otherwise use best
+  const maybeKeep = shot.selectedClip && candidates.find(c => c.id === shot.selectedClip.id);
+  shot.selectedClip = maybeKeep || best || null;
+  
+  session.updatedAt = new Date().toISOString();
+  
+  await saveStorySession({ uid, sessionId, data: session });
+  
+  return shot;
 }
 
 /**

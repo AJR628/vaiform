@@ -8,6 +8,7 @@ import {
   updateStorySentences,
   planShots,
   searchShots,
+  searchClipsForShot,
   updateShotSelectedClip,
   buildTimeline,
   generateCaptionTimings,
@@ -220,6 +221,43 @@ r.post("/update-shot", async (req, res) => {
       success: false,
       error: "STORY_UPDATE_SHOT_FAILED",
       detail: e?.message || "Failed to update shot"
+    });
+  }
+});
+
+// POST /api/story/search-shot - Search clips for a single shot (Phase 3 - Clip Search)
+r.post("/search-shot", async (req, res) => {
+  try {
+    const SearchShotSchema = z.object({
+      sessionId: z.string().min(3),
+      sentenceIndex: z.number().int().min(0),
+      query: z.string().optional()
+    });
+    
+    const parsed = SearchShotSchema.safeParse(req.body || {});
+    if (!parsed.success) {
+      return res.status(400).json({
+        success: false,
+        error: "INVALID_INPUT",
+        detail: parsed.error.flatten()
+      });
+    }
+    
+    const { sessionId, sentenceIndex, query } = parsed.data;
+    const shot = await searchClipsForShot({
+      uid: req.user.uid,
+      sessionId,
+      sentenceIndex,
+      query
+    });
+    
+    return res.json({ success: true, data: { shot } });
+  } catch (e) {
+    console.error("[story][search-shot] error:", e);
+    return res.status(500).json({
+      success: false,
+      error: "STORY_SEARCH_SHOT_FAILED",
+      detail: e?.message || "Failed to search clips for shot"
     });
   }
 });
