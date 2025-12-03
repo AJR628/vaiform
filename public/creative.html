@@ -727,6 +727,29 @@
                     <div id="storyboard-row" class="flex gap-3 overflow-x-auto pb-2"></div>
                 </div>
 
+                <!-- Clip Picker Drawer -->
+                <div id="clip-picker" class="mt-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg p-4 hidden max-h-[75vh] overflow-y-auto">
+                    <div class="flex justify-between items-center mb-2">
+                        <h3 class="text-sm font-semibold text-gray-900 dark:text-white">Choose a clip for this line</h3>
+                        <button id="clip-picker-close" class="text-xs text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white px-2 py-1">Close</button>
+                    </div>
+                    <div class="flex items-center gap-2 mb-3">
+                        <input
+                            id="clip-search-input"
+                            type="text"
+                            class="flex-1 px-2 py-1 rounded bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 text-sm text-gray-900 dark:text-white placeholder-gray-400"
+                            placeholder="Search clips for this sentence..."
+                        />
+                        <button
+                            id="clip-search-btn"
+                            class="px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-sm font-medium text-white"
+                        >
+                            Search
+                        </button>
+                    </div>
+                    <div id="clip-picker-grid" class="grid grid-cols-2 md:grid-cols-4 gap-2 max-h-96 overflow-y-auto"></div>
+                </div>
+
                 <!-- Voice Selection -->
                 <div class="space-y-2 mt-2">
                     <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Voice</label>
@@ -763,31 +786,6 @@
                     <div id="article-render-links" class="mt-2 space-y-1">
                         <a id="article-video-url" href="#" target="_blank" class="text-sm text-blue-600 dark:text-blue-400 hover:underline">Open video</a>
                     </div>
-                </div>
-            </div>
-
-            <!-- Clip Picker Drawer -->
-            <div id="clip-picker" class="fixed inset-x-0 bottom-0 bg-slate-900 border-t border-slate-700 hidden z-50 max-h-[75vh] overflow-y-auto">
-                <div class="max-w-5xl mx-auto px-4 pt-2 pb-3">
-                    <div class="flex justify-between items-center mb-2">
-                        <h3 class="text-sm font-semibold text-white">Choose a clip for this line</h3>
-                        <button id="clip-picker-close" class="text-xs text-gray-400 hover:text-white px-2 py-1">Close</button>
-                    </div>
-                    <div class="flex items-center gap-2 mb-3">
-                        <input
-                            id="clip-search-input"
-                            type="text"
-                            class="flex-1 px-2 py-1 rounded bg-slate-800 border border-slate-600 text-sm text-white placeholder-gray-400"
-                            placeholder="Search clips for this sentence..."
-                        />
-                        <button
-                            id="clip-search-btn"
-                            class="px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-sm font-medium text-white"
-                        >
-                            Search
-                        </button>
-                    </div>
-                    <div id="clip-picker-grid" class="grid grid-cols-2 md:grid-cols-4 gap-2 max-h-96 overflow-y-auto"></div>
                 </div>
             </div>
 
@@ -6024,7 +6022,7 @@
             const candidates = (shot.candidates || []).slice(0, maxClips);
             
             if (candidates.length === 0) {
-                grid.innerHTML = '<div class="text-sm text-slate-400 col-span-full text-center py-4">No clips found. Try a different search.</div>';
+                grid.innerHTML = '<div class="text-sm text-gray-500 dark:text-gray-400 col-span-full text-center py-4">No clips found. Try a different search.</div>';
                 return;
             }
             
@@ -6032,7 +6030,7 @@
                 const isSelected = shot.selectedClip?.id === clip.id;
                 return `
                     <div
-                        class="clip-option rounded overflow-hidden bg-slate-800 border ${isSelected ? 'border-blue-500' : 'border-slate-700'} cursor-pointer hover:border-blue-500 transition"
+                        class="clip-option rounded overflow-hidden bg-gray-100 dark:bg-gray-800 border ${isSelected ? 'border-blue-500' : 'border-gray-300 dark:border-gray-700'} cursor-pointer hover:border-blue-500 transition"
                         data-clip-id="${clip.id}"
                     >
                         <video
@@ -6043,7 +6041,7 @@
                             muted
                             preload="none"
                         ></video>
-                        <div class="p-1 text-[11px] truncate text-gray-300">
+                        <div class="p-1 text-[11px] truncate text-gray-600 dark:text-gray-300">
                             ${clip.photographer || ''}
                         </div>
                     </div>
