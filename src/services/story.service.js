@@ -557,6 +557,46 @@ export async function deleteBeat({ uid, sessionId, sentenceIndex }) {
 }
 
 /**
+ * Update beat text (sentence text only, does not change clip)
+ */
+export async function updateBeatText({ uid, sessionId, sentenceIndex, text }) {
+  const session = await loadStorySession({ uid, sessionId });
+  
+  const sentences = session.story?.sentences || [];
+  const shots = session.shots || [];
+  
+  if (
+    typeof sentenceIndex !== "number" ||
+    sentenceIndex < 0 ||
+    sentenceIndex >= sentences.length
+  ) {
+    throw new Error(`Invalid sentenceIndex ${sentenceIndex}`);
+  }
+  
+  // Update sentence text
+  sentences[sentenceIndex] = text;
+  
+  // Keep shot.searchQuery in sync if a shot exists, but DON'T touch selectedClip/candidates
+  const shot = shots.find((s) => s.sentenceIndex === sentenceIndex);
+  if (shot) {
+    shot.searchQuery = text;
+  }
+  
+  await saveStorySession({ uid, sessionId, data: session });
+  
+  console.log(
+    "[story.service] updateBeatText: sentenceIndex=%s, newText=%s",
+    sentenceIndex,
+    text.slice(0, 80)
+  );
+  
+  return {
+    sentences,
+    shots,
+  };
+}
+
+/**
  * Build timeline from selected clips (Phase 4)
  */
 export async function buildTimeline({ uid, sessionId }) {
@@ -997,6 +1037,7 @@ export default {
   buildTimeline,
   generateCaptionTimings,
   renderStory,
-  finalizeStory
+  finalizeStory,
+  updateBeatText
 };
 

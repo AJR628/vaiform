@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { z } from "zod";
+import { z, ZodError } from "zod";
 import requireAuth from "../middleware/requireAuth.js";
 import {
   createStorySession,
@@ -12,6 +12,7 @@ import {
   updateShotSelectedClip,
   insertBeatWithSearch,
   deleteBeat,
+  updateBeatText,
   buildTimeline,
   generateCaptionTimings,
   renderStory,
@@ -332,6 +333,46 @@ r.post("/delete-beat", async (req, res) => {
       success: false,
       error: "STORY_DELETE_BEAT_FAILED",
       detail: e?.message || "Failed to delete beat"
+    });
+  }
+});
+
+// POST /api/story/update-beat-text - Update beat text
+const UpdateBeatTextSchema = z.object({
+  sessionId: z.string().min(3),
+  sentenceIndex: z.number().int().min(0),
+  text: z.string().min(1),
+});
+
+r.post("/update-beat-text", async (req, res) => {
+  try {
+    const { sessionId, sentenceIndex, text } = UpdateBeatTextSchema.parse(req.body);
+    const uid = req.user.uid;
+    
+    const { sentences, shots } = await updateBeatText({
+      uid,
+      sessionId,
+      sentenceIndex,
+      text,
+    });
+    
+    return res.json({
+      success: true,
+      data: { sentences, shots },
+    });
+  } catch (e) {
+    const isZod = e instanceof ZodError;
+    const status = isZod ? 400 : 500;
+    const errorCode = isZod
+      ? "STORY_UPDATE_BEAT_TEXT_INVALID"
+      : "STORY_UPDATE_BEAT_TEXT_FAILED";
+    
+    console.error("[story][update-beat-text] error:", e);
+    
+    return res.status(status).json({
+      success: false,
+      error: errorCode,
+      detail: e?.message,
     });
   }
 });

@@ -227,6 +227,12 @@
         .add-beat-btn:hover {
             transform: scale(1.2);
         }
+        .beat-text-editing {
+            outline: 2px solid #3b82f6;
+            outline-offset: -2px;
+            background-color: rgba(59, 130, 246, 0.1);
+            border-radius: 4px;
+        }
     </style>
     <!-- Respect saved theme before paint - default to dark -->
     <script>
@@ -5912,6 +5918,12 @@
             }
         }
         
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
         function renderStoryboard(session) {
             const storyboardRow = document.getElementById('storyboard-row');
             const storyboardEl = document.getElementById('storyboard');
@@ -5951,8 +5963,12 @@
                         <div class="relative w-full h-40 bg-gray-800 flex items-center justify-center">
                             <p class="text-xs text-gray-400 text-center px-2">No clip found</p>
                         </div>
-                        <div class="p-2 text-xs text-gray-200 h-24 overflow-hidden">
-                            ${sentence}
+                        <div 
+                            class="beat-text p-2 text-xs text-gray-200 h-24 overflow-hidden cursor-text"
+                            data-sentence-index="${idx}"
+                            title="Click to edit"
+                        >
+                            ${escapeHtml(sentence)}
                         </div>
                         <button
                             class="swap-clip-btn mt-1 mx-2 mb-2 w-[calc(100%-1rem)] text-xs py-1 rounded bg-slate-700 hover:bg-slate-600 text-white"
@@ -5984,8 +6000,12 @@
                                 aria-label="Preview for: ${sentence.substring(0, 50)}"
                             ></video>
                         </div>
-                        <div class="p-2 text-xs text-gray-200 h-24 overflow-hidden">
-                            ${sentence}
+                        <div 
+                            class="beat-text p-2 text-xs text-gray-200 h-24 overflow-hidden cursor-text"
+                            data-sentence-index="${idx}"
+                            title="Click to edit"
+                        >
+                            ${escapeHtml(sentence)}
                         </div>
                         <button
                             class="swap-clip-btn mt-1 mx-2 mb-2 w-[calc(100%-1rem)] text-xs py-1 rounded bg-slate-700 hover:bg-slate-600 text-white"
@@ -6085,6 +6105,13 @@
                 handleDeleteBeat(sentenceIndex);
                 return;
             }
+            
+            // Handle click on beat text (NEW)
+            const textEl = e.target.closest('.beat-text');
+            if (textEl) {
+                handleEditBeatInline(textEl);
+                return;
+            }
         }
         
         async function handleInsertBeat(insertAfterIndex, text) {
@@ -6168,6 +6195,129 @@
                 console.error('[article] Delete beat failed:', error);
                 showError('article-error', error.message || 'Failed to delete beat');
             }
+        }
+        
+        // Inline editing state
+        let currentBeatEditing = null; // { el, sentenceIndex, originalText } or null
+        
+        function handleEditBeatInline(textEl) {
+            // Avoid starting multiple edits at once
+            if (currentBeatEditing && currentBeatEditing.el !== textEl) {
+                // Finish or cancel the other one first
+                currentBeatEditing.el.blur();
+            }
+            
+            const sentenceIndex = Number(textEl.dataset.sentenceIndex ?? -1);
+            if (sentenceIndex < 0) return;
+            
+            const sentences = window.currentStorySession?.story?.sentences || [];
+            const currentText = sentences[sentenceIndex] ?? textEl.textContent ?? "";
+            
+            currentBeatEditing = {
+                el: textEl,
+                sentenceIndex,
+                originalText: currentText,
+            };
+            
+            textEl.contentEditable = "true";
+            textEl.classList.add("beat-text-editing");
+            textEl.focus();
+            
+            // Place caret at end
+            const range = document.createRange();
+            range.selectNodeContents(textEl);
+            range.collapse(false);
+            const sel = window.getSelection();
+            sel.removeAllRanges();
+            sel.addRange(range);
+            
+            // Attach key handler once
+            textEl.addEventListener("keydown", handleBeatTextKeydown);
+            textEl.addEventListener("blur", handleBeatTextBlur);
+        }
+        
+        async function commitBeatTextEdit() {
+            if (!currentBeatEditing) return;
+            
+            const { el, sentenceIndex, originalText } = currentBeatEditing;
+            const newText = (el.textContent || "").trim();
+            
+            // Clean up editing state UI
+            el.contentEditable = "false";
+            el.classList.remove("beat-text-editing");
+            el.removeEventListener("keydown", handleBeatTextKeydown);
+            el.removeEventListener("blur", handleBeatTextBlur);
+            
+            currentBeatEditing = null;
+            
+            if (!newText || newText === originalText) {
+                // No change → nothing to do
+                el.textContent = originalText;
+                return;
+            }
+            
+            try {
+                const { apiFetch } = await import('./api.mjs');
+                
+                const resp = await apiFetch('/story/update-beat-text', {
+                    method: 'POST',
+                    body: {
+                        sessionId: window.currentStorySessionId,
+                        sentenceIndex,
+                        text: newText,
+                    }
+                });
+                
+                if (!resp.success) {
+                    console.error("[article] Update beat failed:", resp);
+                    showError("article-error", resp.detail || "Failed to update beat");
+                    // Revert text if backend failed
+                    el.textContent = originalText;
+                    return;
+                }
+                
+                const { sentences, shots } = resp.data;
+                
+                // Keep session in sync
+                if (!window.currentStorySession.story) {
+                    window.currentStorySession.story = {};
+                }
+                window.currentStorySession.story.sentences = sentences;
+                window.currentStorySession.shots = shots;
+                
+                console.log(
+                    "[article] Update beat: sentenceIndex=%d, newText=%s",
+                    sentenceIndex,
+                    newText.slice(0, 80)
+                );
+                
+                // Re-render storyboard from canonical data
+                renderStoryboard(window.currentStorySession);
+            } catch (err) {
+                console.error("[article] Update beat error:", err);
+                showError("article-error", "Could not update beat. Please try again.");
+                el.textContent = originalText;
+            }
+        }
+        
+        function handleBeatTextKeydown(e) {
+            if (!currentBeatEditing) return;
+            
+            if (e.key === "Enter") {
+                e.preventDefault();
+                commitBeatTextEdit();
+            } else if (e.key === "Escape") {
+                e.preventDefault();
+                // Cancel and revert
+                const { el, originalText } = currentBeatEditing;
+                el.textContent = originalText;
+                el.blur(); // will trigger blur handler cleanup
+            }
+        }
+        
+        function handleBeatTextBlur(e) {
+            // When focus leaves, commit the change
+            commitBeatTextEdit();
         }
         
         function renderClipPickerGrid(shot) {
