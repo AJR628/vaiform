@@ -6101,7 +6101,10 @@
                 
                 // Update local session
                 if (window.currentStorySession) {
-                    window.currentStorySession.sentences = resp.data.sentences;
+                    if (!window.currentStorySession.story) {
+                        window.currentStorySession.story = {};
+                    }
+                    window.currentStorySession.story.sentences = resp.data.sentences;
                     window.currentStorySession.shots = resp.data.shots;
                 }
                 
@@ -6139,7 +6142,10 @@
                 
                 // Update local session
                 if (window.currentStorySession) {
-                    window.currentStorySession.sentences = resp.data.sentences;
+                    if (!window.currentStorySession.story) {
+                        window.currentStorySession.story = {};
+                    }
+                    window.currentStorySession.story.sentences = resp.data.sentences;
                     window.currentStorySession.shots = resp.data.shots;
                 }
                 

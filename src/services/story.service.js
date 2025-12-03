@@ -487,14 +487,18 @@ export async function insertBeatWithSearch({ uid, sessionId, insertAfterIndex, t
   }
   
   // Search for clips using the text as query
+  // After reindexing, get the shot from the array to ensure we're updating the correct object
+  const insertedShot = session.shots[newIndex];
   try {
     const { candidates, best } = await searchSingleShot(text.trim(), {
       perPage: 12,
       targetDur: durationSec
     });
     
-    newShot.candidates = candidates;
-    newShot.selectedClip = best;
+    insertedShot.candidates = candidates;
+    insertedShot.selectedClip = best;
+    
+    console.log(`[story.service] insertBeatWithSearch: search completed, candidates=${candidates.length}, best=${best ? 'found' : 'null'}`);
   } catch (error) {
     console.warn(`[story.service] Search failed for new beat at index ${newIndex}:`, error?.message);
     // Continue with empty candidates
