@@ -10,6 +10,7 @@ import path from 'path';
 import { loadJSON, saveJSON } from '../utils/json.store.js';
 import { generateStoryFromInput, planVisualShots } from './story.llm.service.js';
 import { pexelsSearchVideos } from './pexels.videos.provider.js';
+import { pixabaySearchVideos } from './pixabay.videos.provider.js';
 import { concatenateClips, fetchClipsToTmp } from '../utils/ffmpeg.timeline.js';
 import { renderVideoQuoteOverlay } from '../utils/ffmpeg.video.js';
 import { fetchVideoToTmp } from '../utils/video.fetch.js';
@@ -183,34 +184,61 @@ export async function planShots({ uid, sessionId }) {
 async function searchSingleShot(query, options = {}) {
   const { perPage = 6, targetDur = 8 } = options;
   
-  const searchResult = await pexelsSearchVideos({
-    query: query,
-    perPage: perPage,
-    targetDur: targetDur,
-    page: 1
+  // Search both providers in parallel
+  const [pexelsResult, pixabayResult] = await Promise.all([
+    pexelsSearchVideos({
+      query: query,
+      perPage: perPage,
+      targetDur: targetDur,
+      page: 1
+    }),
+    pixabaySearchVideos({
+      query: query,
+      perPage: perPage,
+      page: 1
+    }).catch(() => ({ ok: false, items: [] })) // Silent failure for Pixabay
+  ]);
+  
+  // Merge results from both providers
+  const allItems = [...(pexelsResult.items || []), ...(pixabayResult.items || [])];
+  
+  // Log provider usage for debugging
+  console.log('[story.searchShots] providers used:', {
+    query,
+    pexels: pexelsResult.items?.length || 0,
+    pixabay: pixabayResult.items?.length || 0
   });
   
-  if (!searchResult.ok || searchResult.items.length === 0) {
+  if (allItems.length === 0) {
     return { candidates: [], best: null };
   }
   
   // Normalize all candidates to same structure
-  const candidates = searchResult.items.map(item => ({
-    id: item.id,
-    url: item.fileUrl,
-    thumbUrl: item.thumbUrl || null,
-    duration: item.duration,
-    width: item.width,
-    height: item.height,
-    photographer: item.photographer,
-    sourceUrl: item.sourceUrl
-  }));
+  const candidates = allItems.map(item => {
+    // Extract providerId from id if not present
+    const providerId = item.providerId || item.id?.replace(/^(pexels|pixabay)-video-/, '');
+    
+    return {
+      id: item.id,
+      url: item.fileUrl || item.url, // Support both formats
+      thumbUrl: item.thumbUrl || null,
+      duration: item.duration, // Already in seconds for both providers
+      width: item.width,
+      height: item.height,
+      photographer: item.photographer,
+      sourceUrl: item.sourceUrl,
+      // New optional fields
+      provider: item.provider || 'pexels',
+      providerId: providerId,
+      license: item.license || item.provider || 'pexels'
+    };
+  });
   
   // Pick best match: closest duration to target, portrait orientation
   let bestClip = null;
   let bestScore = Infinity;
   
-  for (const item of searchResult.items) {
+  for (const item of allItems) {
     const durationDelta = Math.abs((item.duration || 0) - targetDur);
     const isPortrait = item.height > item.width;
     const score = durationDelta + (isPortrait ? 0 : 10); // Penalize landscape
@@ -224,13 +252,16 @@ async function searchSingleShot(query, options = {}) {
   // Normalize best clip
   const best = bestClip ? {
     id: bestClip.id,
-    url: bestClip.fileUrl,
+    url: bestClip.fileUrl || bestClip.url,
     thumbUrl: bestClip.thumbUrl || null,
     duration: bestClip.duration,
     width: bestClip.width,
     height: bestClip.height,
     photographer: bestClip.photographer,
-    sourceUrl: bestClip.sourceUrl
+    sourceUrl: bestClip.sourceUrl,
+    provider: bestClip.provider || 'pexels',
+    providerId: bestClip.providerId || bestClip.id?.replace(/^(pexels|pixabay)-video-/, ''),
+    license: bestClip.license || bestClip.provider || 'pexels'
   } : null;
   
   return { candidates, best };
