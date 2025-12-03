@@ -673,7 +673,7 @@
             </div>
 
             <!-- Article Mode Section (full width on desktop) -->
-            <div data-mode="articles" class="content-box bg-white dark:bg-gray-800 rounded-lg p-4 md:p-6 space-y-4 border border-gray-200 dark:border-gray-600 w-full md:col-span-2" style="display: none;">
+            <div data-mode="articles" class="content-box bg-white dark:bg-gray-800 rounded-lg p-4 md:p-6 space-y-2 border border-gray-200 dark:border-gray-600 w-full md:col-span-2" style="display: none;">
                 <h2 class="text-xl font-semibold text-gray-900 dark:text-white">Article Explainer</h2>
                 <p class="text-sm text-gray-600 dark:text-gray-400">Paste an article link or text to create an explainer video.</p>
                 
@@ -698,7 +698,7 @@
                 </div>
 
                 <!-- Script Preview Section -->
-                <div id="article-script-section" class="space-y-2 mt-4">
+                <div id="article-script-section" class="space-y-2 mt-2">
                     <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Script Preview</label>
                     <p class="text-xs text-gray-500 dark:text-gray-400">Each line will become one clip.</p>
                     <textarea
@@ -710,7 +710,7 @@
                 </div>
 
                 <!-- Prepare Storyboard Button -->
-                <div class="mt-4 mb-1">
+                <div class="mt-2 mb-1">
                     <button
                         id="prepare-storyboard-btn"
                         data-action="prepareStoryboard"
@@ -728,7 +728,7 @@
                 </div>
 
                 <!-- Voice Selection -->
-                <div class="space-y-2 mt-4">
+                <div class="space-y-2 mt-2">
                     <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Voice</label>
                     <select
                         id="article-voice-preset"
@@ -741,7 +741,7 @@
                 </div>
 
                 <!-- Render Button -->
-                <div class="mt-4">
+                <div class="mt-2">
                     <button
                         id="render-article-btn"
                         data-action="renderArticle"
@@ -753,7 +753,7 @@
                 </div>
 
                 <!-- Last Render Video Player -->
-                <div id="article-render-result" class="mt-4 hidden">
+                <div id="article-render-result" class="mt-2 hidden">
                     <h3 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Last render</h3>
                     <video
                         id="article-render-video"
@@ -767,7 +767,7 @@
             </div>
 
             <!-- Clip Picker Drawer -->
-            <div id="clip-picker" class="fixed inset-x-0 bottom-0 bg-slate-900 border-t border-slate-700 hidden z-50 max-h-[60vh] overflow-y-auto">
+            <div id="clip-picker" class="fixed inset-x-0 bottom-0 bg-slate-900 border-t border-slate-700 hidden z-50 max-h-[75vh] overflow-y-auto">
                 <div class="max-w-5xl mx-auto px-4 pt-2 pb-3">
                     <div class="flex justify-between items-center mb-2">
                         <h3 class="text-sm font-semibold text-white">Choose a clip for this line</h3>
@@ -787,7 +787,7 @@
                             Search
                         </button>
                     </div>
-                    <div id="clip-picker-grid" class="grid grid-cols-2 md:grid-cols-4 gap-2 max-h-72 overflow-y-auto"></div>
+                    <div id="clip-picker-grid" class="grid grid-cols-2 md:grid-cols-4 gap-2 max-h-96 overflow-y-auto"></div>
                 </div>
             </div>
 
