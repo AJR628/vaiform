@@ -6664,6 +6664,78 @@
             });
         }
         
+        // ========================================
+        // Render Status Banner Management
+        // ========================================
+        // Shows a 3-step progress banner during /api/story/finalize execution:
+        // - Immediately: "Preparing video..."
+        // - After 3s: "Adding speech..."
+        // - After 6s: "Finalizing video..."
+        // 
+        // To modify timing or messages, update:
+        // - showRenderStatus() timeout values (3000ms, 6000ms)
+        // - Status text strings in showRenderStatus()
+        // - Banner HTML element (#render-status-banner) near end of body
+        // ========================================
+        
+        let renderStatusTimeouts = [];
+        let renderStatusActive = false;
+        
+        function showRenderStatus() {
+            // Clear any existing timeouts
+            hideRenderStatus();
+            
+            const banner = document.getElementById('render-status-banner');
+            const textEl = document.getElementById('render-status-text');
+            
+            if (!banner || !textEl) {
+                console.warn('[render-status] Banner elements not found');
+                return;
+            }
+            
+            renderStatusActive = true;
+            
+            // Show banner and set initial text
+            banner.classList.remove('hidden');
+            textEl.textContent = 'Preparing video...';
+            
+            // After 3 seconds, change to "Adding speech..."
+            const timeout1 = setTimeout(() => {
+                if (renderStatusActive && textEl) {
+                    textEl.textContent = 'Adding speech...';
+                }
+            }, 3000);
+            renderStatusTimeouts.push(timeout1);
+            
+            // After 6 seconds, change to "Finalizing video..."
+            const timeout2 = setTimeout(() => {
+                if (renderStatusActive && textEl) {
+                    textEl.textContent = 'Finalizing video...';
+                }
+            }, 6000);
+            renderStatusTimeouts.push(timeout2);
+        }
+        
+        function hideRenderStatus() {
+            renderStatusActive = false;
+            
+            // Clear all timeouts
+            renderStatusTimeouts.forEach(timeoutId => clearTimeout(timeoutId));
+            renderStatusTimeouts = [];
+            
+            // Hide banner
+            const banner = document.getElementById('render-status-banner');
+            if (banner) {
+                banner.classList.add('hidden');
+            }
+            
+            // Reset text
+            const textEl = document.getElementById('render-status-text');
+            if (textEl) {
+                textEl.textContent = 'Preparing video...';
+            }
+        }
+        
         async function renderArticle() {
             const errorEl = document.getElementById('article-error');
             const renderBtn = document.getElementById('render-article-btn');
@@ -6681,6 +6753,7 @@
             
             setLoading('render-article-btn', true);
             hideError('article-error');
+            showRenderStatus();
             
             try {
                 const { apiFetch } = await import('./api.mjs');
@@ -6762,6 +6835,7 @@
                 console.error('[article] Render failed:', error);
                 showError('article-error', error.message || 'Failed to render video');
             } finally {
+                hideRenderStatus();
                 setLoading('render-article-btn', false);
             }
         }
@@ -7886,6 +7960,14 @@
       };
     </script>
 
+    <!-- Render Status Banner -->
+    <div id="render-status-banner" class="hidden fixed bottom-8 left-1/2 transform -translate-x-1/2 z-50 bg-gray-900/90 dark:bg-gray-800/90 backdrop-blur-sm text-white px-6 py-3 rounded-lg shadow-lg flex items-center gap-3">
+        <svg id="render-status-spinner" class="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+        </svg>
+        <span id="render-status-text" class="text-sm font-medium">Preparing video...</span>
+    </div>
 
 </body>
 </html>
