@@ -11,6 +11,7 @@ import { loadJSON, saveJSON } from '../utils/json.store.js';
 import { generateStoryFromInput, planVisualShots } from './story.llm.service.js';
 import { pexelsSearchVideos } from './pexels.videos.provider.js';
 import { pixabaySearchVideos } from './pixabay.videos.provider.js';
+import { nasaSearchVideos } from './nasa.videos.provider.js';
 import { concatenateClips, fetchClipsToTmp } from '../utils/ffmpeg.timeline.js';
 import { renderVideoQuoteOverlay } from '../utils/ffmpeg.video.js';
 import { fetchVideoToTmp } from '../utils/video.fetch.js';
@@ -177,6 +178,55 @@ export async function planShots({ uid, sessionId }) {
   return session;
 }
 
+// NASA affinity detection constants
+const NASA_STRONG_KEYWORDS = [
+  'space', 'nasa', 'galaxy', 'galaxies', 'nebula', 'nebulae',
+  'cosmos', 'cosmic', 'astronomy', 'astronaut', 'astronauts',
+  'planet', 'planets', 'solar system', 'black hole', 'black holes',
+  'supernova', 'supernovae', 'universe', 'milky way',
+  'mars', 'moon', 'lunar', 'saturn', 'jupiter',
+  'eclipse', 'telescope', 'deep space',
+];
+
+const NASA_SOFT_KEYWORDS = [
+  'starlight', 'stars', 'night sky', 'sky full of stars',
+  'dreamy sky', 'cosmic vibes', 'dreamy universe',
+  'galactic', 'interstellar', 'celestial',
+];
+
+const NASA_MAX_CLIPS_STRONG = 12;
+const NASA_MAX_CLIPS_SOFT = 6;
+
+/**
+ * Determine NASA affinity level for a query
+ * @param {string} queryRaw - Search query
+ * @returns {'strong'|'soft'|'none'}
+ */
+function getNasaAffinity(queryRaw = '') {
+  const query = queryRaw.toLowerCase();
+  const hasStrong = NASA_STRONG_KEYWORDS.some(k => query.includes(k));
+  if (hasStrong) return 'strong';
+  const hasSoft = NASA_SOFT_KEYWORDS.some(k => query.includes(k));
+  if (hasSoft) return 'soft';
+  return 'none';
+}
+
+/**
+ * Get provider weight for scoring (higher weight = better score when dividing)
+ * @param {string} provider - Provider name
+ * @param {'strong'|'soft'|'none'} nasaAffinity - NASA affinity level
+ * @returns {number} Weight multiplier
+ */
+function getProviderWeight(provider, nasaAffinity) {
+  if (provider === 'nasa') {
+    if (nasaAffinity === 'strong') return 1.4;   // strongly favor NASA
+    if (nasaAffinity === 'soft') return 1.15;   // mild boost
+    return 0.85;                                 // slightly down-weight otherwise
+  }
+  // Pexels & Pixabay neutral
+  return 1.0;
+}
+
 /**
  * Search and normalize clips for a single shot (helper function)
  * Returns normalized candidates and best match
@@ -184,8 +234,11 @@ export async function planShots({ uid, sessionId }) {
 async function searchSingleShot(query, options = {}) {
   const { perPage = 6, targetDur = 8 } = options;
   
-  // Search both providers in parallel
-  const [pexelsResult, pixabayResult] = await Promise.all([
+  // Determine NASA affinity
+  const nasaAffinity = getNasaAffinity(query);
+  
+  // Search all providers in parallel (NASA only if affinity !== 'none')
+  const [pexelsResult, pixabayResult, nasaResult] = await Promise.all([
     pexelsSearchVideos({
       query: query,
       perPage: perPage,
@@ -196,17 +249,37 @@ async function searchSingleShot(query, options = {}) {
       query: query,
       perPage: perPage,
       page: 1
-    }).catch(() => ({ ok: false, items: [] })) // Silent failure for Pixabay
+    }).catch(() => ({ ok: false, items: [] })), // Silent failure for Pixabay
+    nasaAffinity === 'none'
+      ? Promise.resolve({ ok: false, items: [] })
+      : nasaSearchVideos({ query, perPage, page: 1 })
+          .catch(() => ({ ok: false, items: [] }))
   ]);
   
-  // Merge results from both providers
-  const allItems = [...(pexelsResult.items || []), ...(pixabayResult.items || [])];
+  // Cap NASA items based on affinity
+  let nasaItems = nasaResult.items || [];
+  if (nasaItems.length) {
+    const nasaLimit = nasaAffinity === 'strong'
+      ? NASA_MAX_CLIPS_STRONG
+      : nasaAffinity === 'soft'
+        ? NASA_MAX_CLIPS_SOFT
+        : 0; // Shouldn't happen since we don't call NASA for 'none'
+    nasaItems = nasaItems.slice(0, nasaLimit);
+  }
+  
+  const pexelsItems = pexelsResult.items || [];
+  const pixabayItems = pixabayResult.items || [];
+  
+  // Merge results from all providers
+  const allItems = [...nasaItems, ...pexelsItems, ...pixabayItems];
   
   // Log provider usage for debugging
   console.log('[story.searchShots] providers used:', {
     query,
-    pexels: pexelsResult.items?.length || 0,
-    pixabay: pixabayResult.items?.length || 0
+    nasaAffinity,
+    nasa: nasaItems.length,
+    pexels: pexelsItems.length,
+    pixabay: pixabayItems.length
   });
   
   if (allItems.length === 0) {
@@ -216,7 +289,7 @@ async function searchSingleShot(query, options = {}) {
   // Normalize all candidates to same structure
   const candidates = allItems.map(item => {
     // Extract providerId from id if not present
-    const providerId = item.providerId || item.id?.replace(/^(pexels|pixabay)-video-/, '');
+    const providerId = item.providerId || item.id?.replace(/^(pexels|pixabay|nasa)-video-/, '');
     
     return {
       id: item.id,
@@ -234,14 +307,16 @@ async function searchSingleShot(query, options = {}) {
     };
   });
   
-  // Pick best match: closest duration to target, portrait orientation
+  // Pick best match: closest duration to target, portrait orientation, with provider-aware scoring
   let bestClip = null;
   let bestScore = Infinity;
   
   for (const item of allItems) {
     const durationDelta = Math.abs((item.duration || 0) - targetDur);
     const isPortrait = item.height > item.width;
-    const score = durationDelta + (isPortrait ? 0 : 10); // Penalize landscape
+    const baseScore = durationDelta + (isPortrait ? 0 : 10); // Penalize landscape
+    const providerWeight = getProviderWeight(item.provider, nasaAffinity);
+    const score = baseScore / providerWeight; // Division: higher weight = lower score = better
     
     if (score < bestScore) {
       bestScore = score;
@@ -260,7 +335,7 @@ async function searchSingleShot(query, options = {}) {
     photographer: bestClip.photographer,
     sourceUrl: bestClip.sourceUrl,
     provider: bestClip.provider || 'pexels',
-    providerId: bestClip.providerId || bestClip.id?.replace(/^(pexels|pixabay)-video-/, ''),
+    providerId: bestClip.providerId || bestClip.id?.replace(/^(pexels|pixabay|nasa)-video-/, ''),
     license: bestClip.license || bestClip.provider || 'pexels'
   } : null;
   
