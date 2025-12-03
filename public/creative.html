@@ -710,7 +710,7 @@
                 </div>
 
                 <!-- Prepare Storyboard Button -->
-                <div class="mt-4">
+                <div class="mt-4 mb-1">
                     <button
                         id="prepare-storyboard-btn"
                         data-action="prepareStoryboard"
@@ -722,7 +722,7 @@
                 </div>
 
                 <!-- Storyboard Section -->
-                <div id="storyboard" class="mt-6 hidden">
+                <div id="storyboard" class="mt-2 hidden">
                     <h3 class="text-lg font-semibold mb-2 text-gray-900 dark:text-white">Storyboard</h3>
                     <div id="storyboard-row" class="flex gap-3 overflow-x-auto pb-2"></div>
                 </div>
@@ -768,7 +768,7 @@
 
             <!-- Clip Picker Drawer -->
             <div id="clip-picker" class="fixed inset-x-0 bottom-0 bg-slate-900 border-t border-slate-700 hidden z-50 max-h-[60vh] overflow-y-auto">
-                <div class="max-w-5xl mx-auto px-4 py-3">
+                <div class="max-w-5xl mx-auto px-4 pt-2 pb-3">
                     <div class="flex justify-between items-center mb-2">
                         <h3 class="text-sm font-semibold text-white">Choose a clip for this line</h3>
                         <button id="clip-picker-close" class="text-xs text-gray-400 hover:text-white px-2 py-1">Close</button>
@@ -6020,7 +6020,8 @@
             const grid = document.getElementById('clip-picker-grid');
             if (!grid) return;
             
-            const candidates = (shot.candidates || []).slice(0, 8);
+            const maxClips = window.innerWidth < 768 ? 4 : 8;
+            const candidates = (shot.candidates || []).slice(0, maxClips);
             
             if (candidates.length === 0) {
                 grid.innerHTML = '<div class="text-sm text-slate-400 col-span-full text-center py-4">No clips found. Try a different search.</div>';
