@@ -451,6 +451,108 @@ export async function updateShotSelectedClip({ uid, sessionId, sentenceIndex, cl
 }
 
 /**
+ * Insert a new beat with automatic clip search
+ */
+export async function insertBeatWithSearch({ uid, sessionId, insertAfterIndex, text }) {
+  const session = await loadStorySession({ uid, sessionId });
+  if (!session) throw new Error('SESSION_NOT_FOUND');
+  if (!session.story) throw new Error('STORY_REQUIRED');
+  if (!session.story.sentences) session.story.sentences = [];
+  if (!session.shots) session.shots = [];
+  
+  // Handle insert at beginning (insertAfterIndex < 0)
+  const newIndex = insertAfterIndex < 0 ? 0 : insertAfterIndex + 1;
+  
+  // Insert sentence at newIndex
+  session.story.sentences.splice(newIndex, 0, text.trim());
+  
+  // Calculate duration from text
+  const durationSec = calculateReadingDuration(text);
+  
+  // Create new shot object
+  const newShot = {
+    sentenceIndex: newIndex,
+    searchQuery: text.trim(),
+    durationSec: durationSec,
+    selectedClip: null,
+    candidates: []
+  };
+  
+  // Insert shot at same position
+  session.shots.splice(newIndex, 0, newShot);
+  
+  // Reindex all shots to maintain invariant: shots[i].sentenceIndex === i
+  for (let i = 0; i < session.shots.length; i++) {
+    session.shots[i].sentenceIndex = i;
+  }
+  
+  // Search for clips using the text as query
+  try {
+    const { candidates, best } = await searchSingleShot(text.trim(), {
+      perPage: 12,
+      targetDur: durationSec
+    });
+    
+    newShot.candidates = candidates;
+    newShot.selectedClip = best;
+  } catch (error) {
+    console.warn(`[story.service] Search failed for new beat at index ${newIndex}:`, error?.message);
+    // Continue with empty candidates
+  }
+  
+  session.updatedAt = new Date().toISOString();
+  
+  await saveStorySession({ uid, sessionId, data: session });
+  
+  console.log(`[story.service] insertBeatWithSearch: insertAfterIndex=${insertAfterIndex}, newIndex=${newIndex}, sentences.length=${session.story.sentences.length}, shots.length=${session.shots.length}`);
+  
+  return {
+    sentences: session.story.sentences,
+    shots: session.shots
+  };
+}
+
+/**
+ * Delete a beat (sentence + shot)
+ */
+export async function deleteBeat({ uid, sessionId, sentenceIndex }) {
+  const session = await loadStorySession({ uid, sessionId });
+  if (!session) throw new Error('SESSION_NOT_FOUND');
+  if (!session.story?.sentences) throw new Error('STORY_REQUIRED');
+  if (!session.shots) throw new Error('SHOTS_REQUIRED');
+  
+  // Validate sentenceIndex
+  if (sentenceIndex < 0 || sentenceIndex >= session.story.sentences.length) {
+    throw new Error('INVALID_SENTENCE_INDEX');
+  }
+  
+  // Remove sentence
+  session.story.sentences.splice(sentenceIndex, 1);
+  
+  // Find and remove matching shot
+  const shotIndex = session.shots.findIndex(s => s.sentenceIndex === sentenceIndex);
+  if (shotIndex !== -1) {
+    session.shots.splice(shotIndex, 1);
+  }
+  
+  // Reindex all remaining shots to maintain invariant: shots[i].sentenceIndex === i
+  for (let i = 0; i < session.shots.length; i++) {
+    session.shots[i].sentenceIndex = i;
+  }
+  
+  session.updatedAt = new Date().toISOString();
+  
+  await saveStorySession({ uid, sessionId, data: session });
+  
+  console.log(`[story.service] deleteBeat: sentenceIndex=${sentenceIndex}, remaining sentences.length=${session.story.sentences.length}, shots.length=${session.shots.length}`);
+  
+  return {
+    sentences: session.story.sentences,
+    shots: session.shots
+  };
+}
+
+/**
  * Build timeline from selected clips (Phase 4)
  */
 export async function buildTimeline({ uid, sessionId }) {

@@ -10,6 +10,8 @@ import {
   searchShots,
   searchClipsForShot,
   updateShotSelectedClip,
+  insertBeatWithSearch,
+  deleteBeat,
   buildTimeline,
   generateCaptionTimings,
   renderStory,
@@ -258,6 +260,78 @@ r.post("/search-shot", async (req, res) => {
       success: false,
       error: "STORY_SEARCH_SHOT_FAILED",
       detail: e?.message || "Failed to search clips for shot"
+    });
+  }
+});
+
+// POST /api/story/insert-beat - Insert a new beat with automatic clip search
+r.post("/insert-beat", async (req, res) => {
+  try {
+    const InsertBeatSchema = z.object({
+      sessionId: z.string().min(3),
+      insertAfterIndex: z.number().int().min(-1),
+      text: z.string().min(1)
+    });
+    
+    const parsed = InsertBeatSchema.safeParse(req.body || {});
+    if (!parsed.success) {
+      return res.status(400).json({
+        success: false,
+        error: "INVALID_INPUT",
+        detail: parsed.error.flatten()
+      });
+    }
+    
+    const { sessionId, insertAfterIndex, text } = parsed.data;
+    const result = await insertBeatWithSearch({
+      uid: req.user.uid,
+      sessionId,
+      insertAfterIndex,
+      text
+    });
+    
+    return res.json({ success: true, data: result });
+  } catch (e) {
+    console.error("[story][insert-beat] error:", e);
+    return res.status(500).json({
+      success: false,
+      error: "STORY_INSERT_BEAT_FAILED",
+      detail: e?.message || "Failed to insert beat"
+    });
+  }
+});
+
+// POST /api/story/delete-beat - Delete a beat (sentence + shot)
+r.post("/delete-beat", async (req, res) => {
+  try {
+    const DeleteBeatSchema = z.object({
+      sessionId: z.string().min(3),
+      sentenceIndex: z.number().int().min(0)
+    });
+    
+    const parsed = DeleteBeatSchema.safeParse(req.body || {});
+    if (!parsed.success) {
+      return res.status(400).json({
+        success: false,
+        error: "INVALID_INPUT",
+        detail: parsed.error.flatten()
+      });
+    }
+    
+    const { sessionId, sentenceIndex } = parsed.data;
+    const result = await deleteBeat({
+      uid: req.user.uid,
+      sessionId,
+      sentenceIndex
+    });
+    
+    return res.json({ success: true, data: result });
+  } catch (e) {
+    console.error("[story][delete-beat] error:", e);
+    return res.status(500).json({
+      success: false,
+      error: "STORY_DELETE_BEAT_FAILED",
+      detail: e?.message || "Failed to delete beat"
     });
   }
 });

@@ -5934,6 +5934,11 @@
                 if (!shot || !shot.selectedClip) {
                     // Placeholder for missing clip
                     card.innerHTML = `
+                        <button
+                            class="delete-beat-btn absolute top-1 right-1 w-6 h-6 rounded-full bg-red-600 hover:bg-red-700 text-white text-xs flex items-center justify-center z-10"
+                            data-sentence-index="${idx}"
+                            title="Delete beat"
+                        >✕</button>
                         <div class="relative w-full h-40 bg-gray-800 flex items-center justify-center">
                             <p class="text-xs text-gray-400 text-center px-2">No clip found</p>
                         </div>
@@ -5953,6 +5958,11 @@
                     const thumbUrl = clip.thumbUrl || '';
                     
                     card.innerHTML = `
+                        <button
+                            class="delete-beat-btn absolute top-1 right-1 w-6 h-6 rounded-full bg-red-600 hover:bg-red-700 text-white text-xs flex items-center justify-center z-10"
+                            data-sentence-index="${idx}"
+                            title="Delete beat"
+                        >✕</button>
                         <div class="relative w-full h-40 overflow-hidden">
                             <video
                                 src="${videoUrl}"
@@ -5978,7 +5988,23 @@
                 }
                 
                 storyboardRow.appendChild(card);
+                
+                // Add "Add beat" button after each card
+                const addBtn = document.createElement('button');
+                addBtn.className = 'add-beat-btn mx-2 text-xs py-1 px-2 rounded bg-green-600 hover:bg-green-700 text-white flex-shrink-0';
+                addBtn.setAttribute('data-insert-after-index', idx);
+                addBtn.textContent = '+ Add beat';
+                storyboardRow.appendChild(addBtn);
             });
+            
+            // Add final "Add beat" button after the last card
+            if (sentences.length > 0) {
+                const finalAddBtn = document.createElement('button');
+                finalAddBtn.className = 'add-beat-btn mx-2 text-xs py-1 px-2 rounded bg-green-600 hover:bg-green-700 text-white flex-shrink-0';
+                finalAddBtn.setAttribute('data-insert-after-index', sentences.length - 1);
+                finalAddBtn.textContent = '+ Add beat';
+                storyboardRow.appendChild(finalAddBtn);
+            }
             
             // Show storyboard
             storyboardEl.classList.remove('hidden');
@@ -6002,16 +6028,129 @@
         }
         
         function handleSwapButtonClick(e) {
-            const btn = e.target.closest('.swap-clip-btn');
-            if (!btn) return;
-            
-            const sentenceIndex = Number(btn.dataset.sentenceIndex);
-            if (isNaN(sentenceIndex)) {
-                console.error('[article] Invalid sentence index:', btn.dataset.sentenceIndex);
+            // Handle swap clip button
+            const swapBtn = e.target.closest('.swap-clip-btn');
+            if (swapBtn) {
+                const sentenceIndex = Number(swapBtn.dataset.sentenceIndex);
+                if (isNaN(sentenceIndex)) {
+                    console.error('[article] Invalid sentence index:', swapBtn.dataset.sentenceIndex);
+                    return;
+                }
+                openClipPicker(sentenceIndex);
                 return;
             }
             
-            openClipPicker(sentenceIndex);
+            // Handle add beat button
+            const addBtn = e.target.closest('.add-beat-btn');
+            if (addBtn) {
+                const insertAfterIndex = Number(addBtn.dataset.insertAfterIndex);
+                if (isNaN(insertAfterIndex)) {
+                    console.error('[article] Invalid insert after index:', addBtn.dataset.insertAfterIndex);
+                    return;
+                }
+                
+                const text = prompt('New beat text:');
+                if (!text || !text.trim()) {
+                    return;
+                }
+                
+                handleInsertBeat(insertAfterIndex, text.trim());
+                return;
+            }
+            
+            // Handle delete beat button
+            const deleteBtn = e.target.closest('.delete-beat-btn');
+            if (deleteBtn) {
+                const sentenceIndex = Number(deleteBtn.dataset.sentenceIndex);
+                if (isNaN(sentenceIndex)) {
+                    console.error('[article] Invalid sentence index:', deleteBtn.dataset.sentenceIndex);
+                    return;
+                }
+                
+                if (!confirm('Delete this beat?')) {
+                    return;
+                }
+                
+                handleDeleteBeat(sentenceIndex);
+                return;
+            }
+        }
+        
+        async function handleInsertBeat(insertAfterIndex, text) {
+            const sessionId = window.currentStorySessionId;
+            if (!sessionId) {
+                showError('article-error', 'Session not found');
+                return;
+            }
+            
+            try {
+                const { apiFetch } = await import('./api.mjs');
+                
+                const resp = await apiFetch('/story/insert-beat', {
+                    method: 'POST',
+                    body: {
+                        sessionId: sessionId,
+                        insertAfterIndex: insertAfterIndex,
+                        text: text
+                    }
+                });
+                
+                if (!resp.success) {
+                    throw new Error(resp.error || 'Failed to insert beat');
+                }
+                
+                // Update local session
+                if (window.currentStorySession) {
+                    window.currentStorySession.sentences = resp.data.sentences;
+                    window.currentStorySession.shots = resp.data.shots;
+                }
+                
+                // Re-render storyboard
+                renderStoryboard(window.currentStorySession);
+                
+                console.log(`[article] Insert beat: insertAfterIndex=${insertAfterIndex}, new length=${resp.data.sentences.length}`);
+            } catch (error) {
+                console.error('[article] Insert beat failed:', error);
+                showError('article-error', error.message || 'Failed to insert beat');
+            }
+        }
+        
+        async function handleDeleteBeat(sentenceIndex) {
+            const sessionId = window.currentStorySessionId;
+            if (!sessionId) {
+                showError('article-error', 'Session not found');
+                return;
+            }
+            
+            try {
+                const { apiFetch } = await import('./api.mjs');
+                
+                const resp = await apiFetch('/story/delete-beat', {
+                    method: 'POST',
+                    body: {
+                        sessionId: sessionId,
+                        sentenceIndex: sentenceIndex
+                    }
+                });
+                
+                if (!resp.success) {
+                    throw new Error(resp.error || 'Failed to delete beat');
+                }
+                
+                // Update local session
+                if (window.currentStorySession) {
+                    window.currentStorySession.sentences = resp.data.sentences;
+                    window.currentStorySession.shots = resp.data.shots;
+                }
+                
+                // Re-render storyboard
+                renderStoryboard(window.currentStorySession);
+                
+                console.log(`[article] Delete beat: sentenceIndex=${sentenceIndex}, new length=${resp.data.sentences.length}`);
+            } catch (error) {
+                console.error('[article] Delete beat failed:', error);
+                showError('article-error', error.message || 'Failed to delete beat');
+            }
         }
         
         function renderClipPickerGrid(shot) {
