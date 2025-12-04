@@ -6730,8 +6730,11 @@
                 window.clipPickerPagination.currentPage = page;
                 window.clipPickerPagination.hasMore = hasMore;
                 
-                // Log search completion
-                console.log(`[swap.search] sentenceIndex=${sentenceIndex} query="${query}" page=${page} hasMore=${hasMore}`);
+                // Log search completion with detailed info
+                console.log(`[swap.search] sentenceIndex=${sentenceIndex} query="${query}" page=${page} hasMore=${hasMore}`, {
+                    responseData: resp.data,
+                    paginationState: window.clipPickerPagination
+                });
                 
                 // Update session model
                 if (window.currentStorySession && window.currentStorySession.shots) {

@@ -249,7 +249,7 @@ async function searchSingleShot(query, options = {}) {
       query: query,
       perPage: perPage,
       page: page
-    }).catch(() => ({ ok: false, items: [] })), // Silent failure for Pixabay
+    }).catch(() => ({ ok: false, items: [], nextPage: null })), // Silent failure for Pixabay
     nasaAffinity === 'none'
       ? Promise.resolve({ ok: false, items: [], nextPage: null })
       : nasaSearchVideos({ query, perPage, page: page })
@@ -275,17 +275,25 @@ async function searchSingleShot(query, options = {}) {
   
   // Aggregate pagination info from providers
   // If any provider has more pages, we have more results
-  const hasMore = (pexelsResult.nextPage !== null) || 
-                  (pixabayResult.nextPage !== null) || 
-                  (nasaResult.nextPage !== null);
+  // Check if nextPage is a number (not null/undefined) to handle failed providers correctly
+  const hasMore = (typeof pexelsResult.nextPage === 'number') || 
+                  (typeof pixabayResult.nextPage === 'number') || 
+                  (typeof nasaResult.nextPage === 'number');
   
-  // Log provider usage for debugging
+  // Log provider usage and pagination for debugging
   console.log('[story.searchShots] providers used:', {
     query,
+    page,
     nasaAffinity,
     nasa: nasaItems.length,
     pexels: pexelsItems.length,
-    pixabay: pixabayItems.length
+    pixabay: pixabayItems.length,
+    pagination: {
+      pexelsNextPage: pexelsResult.nextPage,
+      pixabayNextPage: pixabayResult.nextPage,
+      nasaNextPage: nasaResult.nextPage,
+      hasMore
+    }
   });
   
   if (allItems.length === 0) {
