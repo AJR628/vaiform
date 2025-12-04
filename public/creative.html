@@ -285,14 +285,36 @@
     <!-- Unified Header -->
     <div id="unified-header"></div>
 
-    <div class="w-full md:max-w-6xl md:mx-auto px-0 md:px-6 py-6 space-y-8">
-        <!-- Header -->
-        <div class="flex items-center justify-between">
-            <h1 class="text-3xl font-bold">Creative Studio</h1>
+    <!-- Hero Section -->
+    <section class="w-full md:max-w-5xl md:mx-auto px-4 sm:px-6 lg:px-8 py-8 md:py-12">
+        <div class="flex flex-col md:flex-row md:items-start md:justify-between md:gap-8">
+            <div class="flex-1">
+                <p class="text-sm text-gray-500 dark:text-gray-400 mb-3">Articles → Shorts</p>
+                <h1 class="text-3xl md:text-4xl font-bold text-gray-900 dark:text-white mb-4">Turn articles into vertical explainers in minutes.</h1>
+                <p class="text-base text-gray-600 dark:text-gray-400 leading-relaxed">Transform long-form content into engaging short-form videos with AI-powered scripting, storyboarding, and voiceover.</p>
+            </div>
+            <div class="mt-6 md:mt-0 md:flex-shrink-0">
+                <div class="space-y-3 text-sm text-gray-600 dark:text-gray-400">
+                    <div class="flex items-start gap-2">
+                        <span class="text-lg">①</span>
+                        <span>Paste article</span>
+                    </div>
+                    <div class="flex items-start gap-2">
+                        <span class="text-lg">②</span>
+                        <span>Edit script & storyboard</span>
+                    </div>
+                    <div class="flex items-start gap-2">
+                        <span class="text-lg">③</span>
+                        <span>Render short</span>
+                    </div>
+                </div>
+            </div>
         </div>
+    </section>
 
+    <main class="w-full md:max-w-5xl md:mx-auto px-4 sm:px-6 lg:px-8 pb-16 space-y-6">
         <!-- Mode Toggle Tabs -->
-        <div class="flex gap-2 mb-4">
+        <div class="flex gap-2 mb-2 md:mb-4">
             <button
                 id="mode-quotes-tab"
                 data-action="setModeQuotes"
@@ -328,9 +350,10 @@
                     <div class="accordion-body active" id="quote-body">
 
                         <!-- Quote Generation Section -->
-                        <div id="section-quote" class="content-box bg-white dark:bg-gray-800 rounded-lg p-4 md:p-6 space-y-4 border border-gray-200 dark:border-gray-600 w-full">
+                        <div id="section-quote" class="content-box bg-gray-50/80 dark:bg-slate-900/60 border border-gray-200/50 dark:border-white/5 rounded-2xl p-4 md:p-6 space-y-4 shadow-sm w-full">
+                            <div class="text-xs text-gray-400 dark:text-gray-500 mb-2">Step 1 · Your quote</div>
                             <h2 class="text-xl font-semibold text-gray-900 dark:text-white">Generate Quote</h2>
-                            <p class="text-sm text-gray-600 dark:text-gray-400">Describe the kind of quote you want, or type your own.</p>
+                            <p class="text-sm text-gray-600 dark:text-gray-400 leading-tight">Describe the kind of quote you want, or type your own.</p>
             
             <div class="flex flex-col gap-2 md:flex-row md:items-center md:gap-4">
                 <input
@@ -367,7 +390,7 @@
                 <div class="flex items-start justify-between gap-3">
                     <div class="flex-1">
                         <div id="quote-text-display" class="text-lg font-medium text-gray-900 dark:text-white hidden"></div>
-                        <textarea id="quote-edit" class="w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded px-3 py-2 text-sm text-gray-900 dark:text-white" style="min-height: 100px;" placeholder="Enter your quote here or generate one above..."></textarea>
+                        <textarea id="quote-edit" class="w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded px-3 py-2 text-sm text-gray-900 dark:text-white" rows="4" placeholder="Enter your quote here or generate one above..."></textarea>
                         <!-- Primary actions row -->
                         <div class="flex gap-2 mt-2">
                             <button id="save-quote-btn" data-action="saveQuote" type="button" class="px-4 py-2 bg-green-600 hover:bg-green-500 rounded text-base font-medium text-white">Save</button>
@@ -412,7 +435,8 @@
                     </div>
                     <div class="accordion-body" id="media-body">
                         <!-- Asset Selection Section -->
-                        <div id="section-media" class="content-box bg-white dark:bg-gray-800 rounded-lg p-6 space-y-4 border border-gray-200 dark:border-gray-600">
+                        <div id="section-media" class="content-box bg-gray-50/80 dark:bg-slate-900/60 border border-gray-200/50 dark:border-white/5 rounded-2xl p-4 md:p-6 space-y-4 shadow-sm">
+                            <div class="text-xs text-gray-400 dark:text-gray-500 mb-2">Step 2 · Background</div>
                             <h2 class="text-xl font-semibold text-gray-900 dark:text-white">Background</h2>
             
             <!-- Asset Type Tabs -->
@@ -666,9 +690,10 @@
                     </div>
                     <div class="accordion-body" id="voice-body">
                         <!-- Voiceover Section -->
-                        <div id="section-voice" class="content-box bg-white dark:bg-gray-800 rounded-lg p-6 space-y-4 border border-gray-200 dark:border-gray-600">
+                        <div id="section-voice" class="content-box bg-gray-50/80 dark:bg-slate-900/60 border border-gray-200/50 dark:border-white/5 rounded-2xl p-4 md:p-6 space-y-4 shadow-sm">
+                            <div class="text-xs text-gray-400 dark:text-gray-500 mb-2">Step 3 · Voiceover</div>
                             <h2 class="text-xl font-semibold text-gray-900 dark:text-white">Voiceover</h2>
-                            <p class="text-sm text-gray-600 dark:text-gray-400">Add AI voice if you want audio, or leave this empty for a silent image or video.</p>
+                            <p class="text-sm text-gray-600 dark:text-gray-400 leading-tight">Add AI voice if you want audio, or leave this empty for a silent image or video.</p>
             
             <div class="grid grid-cols-2 gap-4">
                 <div>
@@ -725,16 +750,17 @@
             </div>
 
             <!-- Article Mode Section (full width on desktop) -->
-            <div data-mode="articles" class="content-box bg-white dark:bg-gray-800 rounded-lg p-4 md:p-6 space-y-2 border border-gray-200 dark:border-gray-600 w-full md:col-span-2" style="display: none;">
+            <div data-mode="articles" class="content-box bg-gray-50/80 dark:bg-slate-900/60 border border-gray-200/50 dark:border-white/5 rounded-2xl p-4 md:p-6 space-y-2 shadow-sm w-full md:col-span-2" style="display: none;">
+                <div class="text-xs text-gray-400 dark:text-gray-500 mb-2">Step 1 · Article explainer</div>
                 <h2 class="text-xl font-semibold text-gray-900 dark:text-white">Article Explainer</h2>
-                <p class="text-sm text-gray-600 dark:text-gray-400">Paste an article link or text to create an explainer video.</p>
+                <p class="text-sm text-gray-600 dark:text-gray-400 leading-tight">Paste an article link or text to create an explainer video.</p>
                 
                 <!-- Input Section -->
                 <div class="space-y-2">
                     <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Paste article link or text</label>
                     <textarea
                         id="article-input"
-                        rows="6"
+                        rows="4"
                         placeholder="Paste article URL or text here..."
                         class="w-full bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-3 py-2 text-gray-900 dark:text-white"
                     ></textarea>
@@ -752,10 +778,10 @@
                 <!-- Script Preview Section -->
                 <div id="article-script-section" class="space-y-2 mt-2">
                     <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Script Preview</label>
-                    <p class="text-xs text-gray-500 dark:text-gray-400">Each line will become one clip.</p>
+                    <p class="text-xs text-gray-500 dark:text-gray-400 leading-tight">Each line will become one clip.</p>
                     <textarea
                         id="article-script-preview"
-                        rows="8"
+                        rows="4"
                         placeholder="Script will appear here after summarization..."
                         class="w-full bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-3 py-2 text-gray-900 dark:text-white"
                     ></textarea>
@@ -775,6 +801,7 @@
 
                 <!-- Storyboard Section -->
                 <div id="storyboard" class="mt-2 hidden">
+                    <div class="text-xs text-gray-400 dark:text-gray-500 mb-2">Step 2 · Storyboard</div>
                     <h3 class="text-lg font-semibold mb-2 text-gray-900 dark:text-white">Storyboard</h3>
                     <div id="storyboard-row" class="flex gap-3 overflow-x-auto pb-2"></div>
                 </div>
@@ -818,6 +845,7 @@
 
                 <!-- Voice Selection -->
                 <div class="space-y-2 mt-2">
+                    <div class="text-xs text-gray-400 dark:text-gray-500 mb-2">Step 3 · Voice & render</div>
                     <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Voice</label>
                     <select
                         id="article-voice-preset"
