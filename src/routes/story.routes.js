@@ -234,7 +234,8 @@ r.post("/search-shot", async (req, res) => {
     const SearchShotSchema = z.object({
       sessionId: z.string().min(3),
       sentenceIndex: z.number().int().min(0),
-      query: z.string().optional()
+      query: z.string().optional(),
+      page: z.number().int().min(1).optional()
     });
     
     const parsed = SearchShotSchema.safeParse(req.body || {});
@@ -246,15 +247,23 @@ r.post("/search-shot", async (req, res) => {
       });
     }
     
-    const { sessionId, sentenceIndex, query } = parsed.data;
-    const shot = await searchClipsForShot({
+    const { sessionId, sentenceIndex, query, page = 1 } = parsed.data;
+    const result = await searchClipsForShot({
       uid: req.user.uid,
       sessionId,
       sentenceIndex,
-      query
+      query,
+      page
     });
     
-    return res.json({ success: true, data: { shot } });
+    return res.json({ 
+      success: true, 
+      data: { 
+        shot: result.shot, 
+        page: result.page, 
+        hasMore: result.hasMore 
+      } 
+    });
   } catch (e) {
     console.error("[story][search-shot] error:", e);
     return res.status(500).json({

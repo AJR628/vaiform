@@ -763,6 +763,20 @@
                         </button>
                     </div>
                     <div id="clip-picker-grid" class="grid grid-cols-2 md:grid-cols-4 gap-2 max-h-96 overflow-y-auto"></div>
+                    <div id="clip-picker-pagination" class="flex justify-center items-center gap-2 mt-3 hidden">
+                        <button
+                            id="clip-picker-prev"
+                            class="px-3 py-1 rounded bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-sm font-medium text-gray-900 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            Previous
+                        </button>
+                        <button
+                            id="clip-picker-more"
+                            class="px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-sm font-medium text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            More clips
+                        </button>
+                    </div>
                 </div>
 
                 <!-- Voice Selection -->
@@ -6320,15 +6334,20 @@
             commitBeatTextEdit();
         }
         
-        function renderClipPickerGrid(shot) {
+        function renderClipPickerGrid(shot, pageInfo = null) {
             const grid = document.getElementById('clip-picker-grid');
             if (!grid) return;
             
-            const maxClips = window.innerWidth < 768 ? 4 : 8;
-            const candidates = (shot.candidates || []).slice(0, maxClips);
+            // Show all candidates from current page (backend returns 12 per page)
+            const candidates = shot.candidates || [];
             
             if (candidates.length === 0) {
                 grid.innerHTML = '<div class="text-sm text-gray-500 dark:text-gray-400 col-span-full text-center py-4">No clips found. Try a different search.</div>';
+                // Hide pagination if no results
+                const paginationBar = document.getElementById('clip-picker-pagination');
+                if (paginationBar) {
+                    paginationBar.classList.add('hidden');
+                }
                 return;
             }
             
@@ -6353,6 +6372,48 @@
                     </div>
                 `;
             }).join('');
+            
+            // Update pagination controls
+            updatePaginationControls(pageInfo);
+        }
+        
+        function updatePaginationControls(pageInfo) {
+            const paginationBar = document.getElementById('clip-picker-pagination');
+            if (!paginationBar) return;
+            
+            if (!pageInfo) {
+                paginationBar.classList.add('hidden');
+                return;
+            }
+            
+            const { currentPage, hasMore } = pageInfo;
+            const prevBtn = document.getElementById('clip-picker-prev');
+            const nextBtn = document.getElementById('clip-picker-more');
+            
+            // Show pagination bar
+            paginationBar.classList.remove('hidden');
+            
+            // Update Previous button
+            if (prevBtn) {
+                if (currentPage === 1) {
+                    prevBtn.disabled = true;
+                    prevBtn.classList.add('opacity-50', 'cursor-not-allowed');
+                } else {
+                    prevBtn.disabled = false;
+                    prevBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+                }
+            }
+            
+            // Update More clips button
+            if (nextBtn) {
+                if (!hasMore) {
+                    nextBtn.disabled = true;
+                    nextBtn.classList.add('opacity-50', 'cursor-not-allowed');
+                } else {
+                    nextBtn.disabled = false;
+                    nextBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+                }
+            }
         }
         
         function openClipPicker(sentenceIndex) {
@@ -6372,6 +6433,9 @@
             // Store current sentence index for swap handler
             window.currentClipPickerSentence = sentenceIndex;
             
+            // Initialize pagination state
+            window.clipPickerPagination = { currentPage: 1, hasMore: false };
+            
             // Get picker elements
             const picker = document.getElementById('clip-picker');
             const searchInput = document.getElementById('clip-search-input');
@@ -6387,8 +6451,8 @@
                 searchInput.value = '';
             }
             
-            // Render grid
-            renderClipPickerGrid(shot);
+            // Render grid with existing candidates if available
+            renderClipPickerGrid(shot, window.clipPickerPagination);
             
             // Show picker
             picker.classList.remove('hidden');
@@ -6418,14 +6482,46 @@
             // (searchInput already declared above at line 6072)
             
             if (searchBtn) {
-                searchBtn.onclick = runClipSearch;
+                searchBtn.onclick = () => {
+                    // Reset to page 1 for new search
+                    if (window.clipPickerPagination) {
+                        window.clipPickerPagination.currentPage = 1;
+                    }
+                    runClipSearch(1);
+                };
             }
             
             if (searchInput) {
                 searchInput.onkeydown = (e) => {
                     if (e.key === 'Enter') {
                         e.preventDefault();
-                        runClipSearch();
+                        // Reset to page 1 for new search
+                        if (window.clipPickerPagination) {
+                            window.clipPickerPagination.currentPage = 1;
+                        }
+                        runClipSearch(1);
+                    }
+                };
+            }
+            
+            // Setup pagination buttons
+            const prevBtn = document.getElementById('clip-picker-prev');
+            const nextBtn = document.getElementById('clip-picker-more');
+            
+            if (prevBtn) {
+                prevBtn.onclick = () => {
+                    if (window.clipPickerPagination && window.clipPickerPagination.currentPage > 1) {
+                        window.clipPickerPagination.currentPage--;
+                        runClipSearch(window.clipPickerPagination.currentPage);
+                    }
+                };
+            }
+            
+            if (nextBtn) {
+                nextBtn.onclick = () => {
+                    if (window.clipPickerPagination && window.clipPickerPagination.hasMore) {
+                        window.clipPickerPagination.currentPage++;
+                        runClipSearch(window.clipPickerPagination.currentPage);
                     }
                 };
             }
@@ -6575,7 +6671,7 @@
             video.load();
         }
         
-        async function runClipSearch() {
+        async function runClipSearch(pageOverride = null) {
             const input = document.getElementById('clip-search-input');
             const query = input?.value.trim() || '';
             const sentenceIndex = window.currentClipPickerSentence;
@@ -6591,6 +6687,22 @@
                 return;
             }
             
+            // Initialize pagination state if not exists
+            if (!window.clipPickerPagination) {
+                window.clipPickerPagination = { currentPage: 1, hasMore: false, lastQuery: null };
+            }
+            
+            // Reset to page 1 if query changed (new search)
+            const lastQuery = window.clipPickerPagination.lastQuery;
+            if (lastQuery !== null && lastQuery !== query) {
+                window.clipPickerPagination.currentPage = 1;
+                window.clipPickerPagination.hasMore = false;
+            }
+            window.clipPickerPagination.lastQuery = query;
+            
+            // Use override page if provided, otherwise use current page
+            const currentPage = pageOverride !== null ? pageOverride : window.clipPickerPagination.currentPage;
+            
             try {
                 setClipPickerBusy(true);
                 
@@ -6601,7 +6713,8 @@
                     body: {
                         sessionId: sessionId,
                         sentenceIndex: sentenceIndex,
-                        query: query // can be empty = use original sentence
+                        query: query, // can be empty = use original sentence
+                        page: currentPage
                     }
                 });
                 
@@ -6610,6 +6723,15 @@
                 }
                 
                 const shot = resp.data.shot;
+                const page = resp.data.page || currentPage;
+                const hasMore = resp.data.hasMore || false;
+                
+                // Update pagination state
+                window.clipPickerPagination.currentPage = page;
+                window.clipPickerPagination.hasMore = hasMore;
+                
+                // Log search completion
+                console.log(`[swap.search] sentenceIndex=${sentenceIndex} query="${query}" page=${page} hasMore=${hasMore}`);
                 
                 // Update session model
                 if (window.currentStorySession && window.currentStorySession.shots) {
@@ -6619,8 +6741,8 @@
                     }
                 }
                 
-                // Re-render candidate grid
-                renderClipPickerGrid(shot);
+                // Re-render candidate grid with pagination info
+                renderClipPickerGrid(shot, window.clipPickerPagination);
                 
             } catch (error) {
                 console.error('[article] Search failed:', error);

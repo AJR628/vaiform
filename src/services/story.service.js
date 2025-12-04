@@ -232,7 +232,7 @@ function getProviderWeight(provider, nasaAffinity) {
  * Returns normalized candidates and best match
  */
 async function searchSingleShot(query, options = {}) {
-  const { perPage = 6, targetDur = 8 } = options;
+  const { perPage = 6, targetDur = 8, page = 1 } = options;
   
   // Determine NASA affinity
   const nasaAffinity = getNasaAffinity(query);
@@ -243,17 +243,17 @@ async function searchSingleShot(query, options = {}) {
       query: query,
       perPage: perPage,
       targetDur: targetDur,
-      page: 1
+      page: page
     }),
     pixabaySearchVideos({
       query: query,
       perPage: perPage,
-      page: 1
+      page: page
     }).catch(() => ({ ok: false, items: [] })), // Silent failure for Pixabay
     nasaAffinity === 'none'
-      ? Promise.resolve({ ok: false, items: [] })
-      : nasaSearchVideos({ query, perPage, page: 1 })
-          .catch(() => ({ ok: false, items: [] }))
+      ? Promise.resolve({ ok: false, items: [], nextPage: null })
+      : nasaSearchVideos({ query, perPage, page: page })
+          .catch(() => ({ ok: false, items: [], nextPage: null }))
   ]);
   
   // Cap NASA items based on affinity
@@ -273,6 +273,12 @@ async function searchSingleShot(query, options = {}) {
   // Merge results from all providers
   const allItems = [...nasaItems, ...pexelsItems, ...pixabayItems];
   
+  // Aggregate pagination info from providers
+  // If any provider has more pages, we have more results
+  const hasMore = (pexelsResult.nextPage !== null) || 
+                  (pixabayResult.nextPage !== null) || 
+                  (nasaResult.nextPage !== null);
+  
   // Log provider usage for debugging
   console.log('[story.searchShots] providers used:', {
     query,
@@ -283,7 +289,7 @@ async function searchSingleShot(query, options = {}) {
   });
   
   if (allItems.length === 0) {
-    return { candidates: [], best: null };
+    return { candidates: [], best: null, page, hasMore: false };
   }
   
   // Normalize all candidates to same structure
@@ -339,7 +345,7 @@ async function searchSingleShot(query, options = {}) {
     license: bestClip.license || bestClip.provider || 'pexels'
   } : null;
   
-  return { candidates, best };
+  return { candidates, best, page, hasMore };
 }
 
 /**
@@ -386,7 +392,7 @@ export async function searchShots({ uid, sessionId }) {
 /**
  * Search clips for a single shot (Phase 3 - Clip Search)
  */
-export async function searchClipsForShot({ uid, sessionId, sentenceIndex, query }) {
+export async function searchClipsForShot({ uid, sessionId, sentenceIndex, query, page = 1 }) {
   const session = await loadStorySession({ uid, sessionId });
   if (!session) throw new Error('SESSION_NOT_FOUND');
   if (!session.shots) throw new Error('SHOTS_REQUIRED');
@@ -404,9 +410,10 @@ export async function searchClipsForShot({ uid, sessionId, sentenceIndex, query 
   }
   
   // Search with perPage 12 for frontend to show 8 nicely
-  const { candidates, best } = await searchSingleShot(searchQuery, {
+  const { candidates, best, page: resultPage, hasMore } = await searchSingleShot(searchQuery, {
     perPage: 12,
-    targetDur: shot.durationSec || 8
+    targetDur: shot.durationSec || 8,
+    page: page
   });
   
   // Update candidates
@@ -420,7 +427,8 @@ export async function searchClipsForShot({ uid, sessionId, sentenceIndex, query 
   
   await saveStorySession({ uid, sessionId, data: session });
   
-  return shot;
+  // Return shot with pagination info
+  return { shot, page: resultPage, hasMore };
 }
 
 /**
