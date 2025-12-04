@@ -6338,6 +6338,12 @@
             const grid = document.getElementById('clip-picker-grid');
             if (!grid) return;
             
+            // Remove existing sentinel if present
+            const existingSentinel = document.getElementById('clip-picker-sentinel');
+            if (existingSentinel) {
+                existingSentinel.remove();
+            }
+            
             // Show all candidates from current page (backend returns 12 per page)
             const candidates = shot.candidates || [];
             
@@ -6372,6 +6378,14 @@
                     </div>
                 `;
             }).join('');
+            
+            // Add sentinel element if there are more pages
+            if (pageInfo && pageInfo.hasMore) {
+                const sentinel = document.createElement('div');
+                sentinel.id = 'clip-picker-sentinel';
+                sentinel.className = 'h-4 w-full';
+                grid.appendChild(sentinel);
+            }
             
             // Update pagination controls
             updatePaginationControls(pageInfo);
@@ -6457,7 +6471,12 @@
             // Trigger initial search to get pagination metadata (hasMore)
             // This ensures buttons are correctly enabled/disabled from the start
             if (shot.searchQuery && shot.searchQuery.trim()) {
-                runClipSearch(1);
+                runClipSearch(1, { append: false });
+            } else {
+                // Even without initial search, setup observer if sentinel exists
+                if (document.getElementById('clip-picker-sentinel')) {
+                    setupClipPickerInfiniteScroll();
+                }
             }
             
             // Show picker
@@ -6466,6 +6485,11 @@
             // Setup close button
             if (closeBtn) {
                 closeBtn.onclick = () => {
+                    // Clean up infinite scroll observer
+                    if (window.clipPickerInfinite?.observer) {
+                        window.clipPickerInfinite.observer.disconnect();
+                        window.clipPickerInfinite.observer = null;
+                    }
                     picker.classList.add('hidden');
                     window.currentClipPickerSentence = null;
                     // Remove click handler when picker is closed
@@ -6493,7 +6517,7 @@
                     if (window.clipPickerPagination) {
                         window.clipPickerPagination.currentPage = 1;
                     }
-                    runClipSearch(1);
+                    runClipSearch(1, { append: false });
                 };
             }
             
@@ -6505,7 +6529,7 @@
                         if (window.clipPickerPagination) {
                             window.clipPickerPagination.currentPage = 1;
                         }
-                        runClipSearch(1);
+                        runClipSearch(1, { append: false });
                     }
                 };
             }
@@ -6526,8 +6550,8 @@
             if (nextBtn) {
                 nextBtn.onclick = () => {
                     if (window.clipPickerPagination && window.clipPickerPagination.hasMore) {
-                        window.clipPickerPagination.currentPage++;
-                        runClipSearch(window.clipPickerPagination.currentPage);
+                        const nextPage = window.clipPickerPagination.currentPage + 1;
+                        runClipSearch(nextPage, { append: true });
                     }
                 };
             }
@@ -6580,6 +6604,43 @@
                     el.classList.remove('opacity-60', 'pointer-events-none');
                 }
             });
+        }
+        
+        function setupClipPickerInfiniteScroll() {
+            const grid = document.getElementById('clip-picker-grid');
+            const sentinel = document.getElementById('clip-picker-sentinel');
+            const drawer = document.getElementById('clip-picker');
+            if (!grid || !sentinel || !drawer) return;
+            
+            // Clean up any old observer
+            if (window.clipPickerInfinite?.observer) {
+                window.clipPickerInfinite.observer.disconnect();
+            }
+            
+            const state = window.clipPickerInfinite || (window.clipPickerInfinite = { loadingNext: false, observer: null });
+            
+            const observer = new IntersectionObserver((entries) => {
+                const entry = entries[0];
+                if (!entry.isIntersecting) return;
+                
+                const busy = drawer.dataset.busy === '1';
+                const pagination = window.clipPickerPagination || { currentPage: 1, hasMore: false };
+                if (busy || state.loadingNext || !pagination.hasMore) return;
+                
+                state.loadingNext = true;
+                const nextPage = (pagination.currentPage || 1) + 1;
+                console.log('[clip-picker] infinite scroll → loading page', nextPage);
+                runClipSearch(nextPage, { append: true }).finally(() => {
+                    state.loadingNext = false;
+                });
+            }, {
+                root: grid,
+                rootMargin: '0px 0px 200px 0px',
+                threshold: 0.1,
+            });
+            
+            observer.observe(sentinel);
+            state.observer = observer;
         }
         
         async function handleClipOptionClick(e) {
@@ -6678,7 +6739,8 @@
             video.load();
         }
         
-        async function runClipSearch(pageOverride = null) {
+        async function runClipSearch(pageOverride = null, options = {}) {
+            const { append = false } = options;
             const input = document.getElementById('clip-search-input');
             const query = input?.value.trim() || '';
             const sentenceIndex = window.currentClipPickerSentence;
@@ -6699,9 +6761,9 @@
                 window.clipPickerPagination = { currentPage: 1, hasMore: false, lastQuery: null };
             }
             
-            // Reset to page 1 if query changed (new search)
+            // Reset to page 1 if query changed (new search) - but only if not appending
             const lastQuery = window.clipPickerPagination.lastQuery;
-            if (lastQuery !== null && lastQuery !== query) {
+            if (!append && lastQuery !== null && lastQuery !== query) {
                 window.clipPickerPagination.currentPage = 1;
                 window.clipPickerPagination.hasMore = false;
             }
@@ -6709,6 +6771,15 @@
             
             // Use override page if provided, otherwise use current page
             const currentPage = pageOverride !== null ? pageOverride : window.clipPickerPagination.currentPage;
+            
+            // If appending, save existing candidates before API call
+            let existingCandidates = [];
+            if (append && window.currentStorySession && window.currentStorySession.shots) {
+                const existingShot = window.currentStorySession.shots.find(s => s.sentenceIndex === sentenceIndex);
+                if (existingShot && existingShot.candidates) {
+                    existingCandidates = existingShot.candidates;
+                }
+            }
             
             try {
                 setClipPickerBusy(true);
@@ -6733,12 +6804,19 @@
                 const page = resp.data.page || currentPage;
                 const hasMore = resp.data.hasMore || false;
                 
+                // If append mode, merge new candidates with existing ones (dedupe by id)
+                if (append && existingCandidates.length > 0) {
+                    const existingIds = new Set(existingCandidates.map(c => c.id).filter(id => id != null));
+                    const newCandidates = (shot.candidates || []).filter(c => c.id == null || !existingIds.has(c.id));
+                    shot.candidates = [...existingCandidates, ...newCandidates];
+                }
+                
                 // Update pagination state
                 window.clipPickerPagination.currentPage = page;
                 window.clipPickerPagination.hasMore = hasMore;
                 
                 // Log pagination state for debugging
-                console.log(`[clip-picker] page=${page} hasMore=${hasMore}`);
+                console.log(`[clip-picker] page=${page} hasMore=${hasMore} append=${append}`);
                 
                 // Update session model
                 if (window.currentStorySession && window.currentStorySession.shots) {
@@ -6753,6 +6831,11 @@
                 
                 // Update pagination controls after rendering
                 updatePaginationControls(window.clipPickerPagination);
+                
+                // Re-setup infinite scroll observer if sentinel exists (it may have been removed/re-added)
+                if (document.getElementById('clip-picker-sentinel')) {
+                    setupClipPickerInfiniteScroll();
+                }
                 
             } catch (error) {
                 console.error('[article] Search failed:', error);
