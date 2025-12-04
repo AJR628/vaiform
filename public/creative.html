@@ -6454,6 +6454,12 @@
             // Render grid with existing candidates if available
             renderClipPickerGrid(shot, window.clipPickerPagination);
             
+            // Trigger initial search to get pagination metadata (hasMore)
+            // This ensures buttons are correctly enabled/disabled from the start
+            if (shot.searchQuery && shot.searchQuery.trim()) {
+                runClipSearch(1);
+            }
+            
             // Show picker
             picker.classList.remove('hidden');
             
@@ -6564,7 +6570,8 @@
             if (!drawer) return;
             drawer.dataset.busy = busy ? '1' : '0';
             
-            const buttons = drawer.querySelectorAll('button, .clip-option');
+            // Exclude pagination buttons - they are managed exclusively by updatePaginationControls
+            const buttons = drawer.querySelectorAll('button:not(#clip-picker-prev):not(#clip-picker-more), .clip-option');
             buttons.forEach((el) => {
                 el.toggleAttribute('disabled', busy);
                 if (busy) {
@@ -6730,11 +6737,8 @@
                 window.clipPickerPagination.currentPage = page;
                 window.clipPickerPagination.hasMore = hasMore;
                 
-                // Log search completion with detailed info
-                console.log(`[swap.search] sentenceIndex=${sentenceIndex} query="${query}" page=${page} hasMore=${hasMore}`, {
-                    responseData: resp.data,
-                    paginationState: window.clipPickerPagination
-                });
+                // Log pagination state for debugging
+                console.log(`[clip-picker] page=${page} hasMore=${hasMore}`);
                 
                 // Update session model
                 if (window.currentStorySession && window.currentStorySession.shots) {
@@ -6746,6 +6750,9 @@
                 
                 // Re-render candidate grid with pagination info
                 renderClipPickerGrid(shot, window.clipPickerPagination);
+                
+                // Update pagination controls after rendering
+                updatePaginationControls(window.clipPickerPagination);
                 
             } catch (error) {
                 console.error('[article] Search failed:', error);
