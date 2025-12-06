@@ -9,60 +9,117 @@ import { calculateReadingDuration } from '../utils/text.duration.js';
 const OPENAI_BASE = process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1';
 const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
 
+const SCRIPT_STYLES = {
+  default: 'Write in a clear, conversational tone. Be informative but engaging.',
+  hype: 'Write with high energy and excitement. Use strong, punchy language. Create urgency and momentum.',
+  cozy: 'Write in a warm, friendly, relaxed tone. Use gentle language. Make it feel personal and comforting.'
+};
+
 /**
  * Generate a 4-8 sentence video script from input
  * @param {string} input - User input (link content, idea, or paragraph)
  * @param {string} inputType - 'link' | 'idea' | 'paragraph'
+ * @param {string} styleKey - Style key ('default', 'hype', 'cozy')
  * @returns {Promise<{sentences: string[], totalDurationSec: number}>}
  */
-export async function generateStoryFromInput({ input, inputType }) {
+export async function generateStoryFromInput({ input, inputType, styleKey = 'default' }) {
   let sourceContent = input;
   
+  // Get style instructions
+  const styleInstructions = SCRIPT_STYLES[styleKey] || SCRIPT_STYLES.default;
+  
   // If link, extract content first
+  let extracted = null;
   if (inputType === 'link') {
     try {
-      const extracted = await extractContentFromUrl(input);
-      sourceContent = `${extracted.title}\n\n${extracted.summary}\n\n${extracted.keyPoints.join('. ')}`;
+      extracted = await extractContentFromUrl(input);
     } catch (error) {
       console.warn('[story.llm] Link extraction failed, using URL as-is:', error?.message);
-      sourceContent = `URL: ${input}`;
+      extracted = null;
     }
   }
   
   const url = `${OPENAI_BASE}/chat/completions`;
+  
+  // Build system message with HOOK/BEATS/OUTRO structure
+  const systemMessage = [
+    'You are a short-form video scriptwriter.',
+    '',
+    'You will be given structured info about content to turn into a script.',
+    '',
+    'Your job is NOT to summarize the content.',
+    'Your job is to write a short, engaging VO script for a vertical video (20–40 seconds) that:',
+    '- hooks attention in the first 1–2 seconds,',
+    '- tells a mini story around a few of the strongest ideas,',
+    '- ends with a satisfying payoff or question.',
+    '',
+    'Rules for the HOOK (first lines):',
+    '- Start with a pattern-breaking line, a bold claim, or a surprising question.',
+    '- Do NOT start with generic phrases like:',
+    '  "In this video…", "Today we\'re going to talk about…", "This content explains…"',
+    '- You can directly address the viewer as "you" to pull them in.',
+    '',
+    'Rules for the BODY (beats):',
+    '- Choose 3–6 of the most interesting points and weave them into a story.',
+    '- Use your own words to connect them (cause/effect, before/after, problem/solution, etc.).',
+    '- Keep sentences short and conversational.',
+    '- Avoid meta commentary about "the content" – just tell the story.',
+    '',
+    'Rules for the OUTRO:',
+    '- End with either:',
+    '  - a concise payoff ("…and that\'s why X matters"), OR',
+    '  - a curiosity hook / question that makes the viewer think or want more.',
+    '',
+    `Target style: ${styleInstructions}`,
+    '',
+    'Output format (JSON only):',
+    '{',
+    '  "hook": ["sentence1", "sentence2?"],',
+    '  "beats": ["beat1", "beat2", "beat3", ...],',
+    '  "outro": ["outro1", "outro2?"],',
+    '  "totalDurationSec": number',
+    '}',
+    '',
+    'Total script length: about 80–160 words.',
+    'Use ONLY information that could reasonably come from the provided content. Do not invent facts.'
+  ].join('\n');
+  
+  // Build user message based on input type
+  let userMessage = '';
+  if (inputType === 'link' && extracted) {
+    userMessage = [
+      'Article information:',
+      `- Title: ${extracted.title}`,
+      `- Summary: ${extracted.summary}`,
+      `- Key Points: ${extracted.keyPoints.join(', ')}`,
+      '',
+      'Write the script using the HOOK/BEATS/OUTRO structure.'
+    ].join('\n');
+  } else if (inputType === 'paragraph') {
+    userMessage = [
+      'Content:',
+      input,
+      '',
+      'Write the script using the HOOK/BEATS/OUTRO structure.'
+    ].join('\n');
+  } else if (inputType === 'idea') {
+    userMessage = `Turn this into a 30-45 second vertical video script with a hook, rising tension, payoff, and a clean ending. Each line is one caption/clip:\n\n"${input}"`;
+  } else {
+    // Fallback for link without extraction
+    userMessage = `Now, using this content, write the script in that format:\n\n${sourceContent}`;
+  }
+  
   const body = {
     model: OPENAI_MODEL,
     temperature: 0.8,
     messages: [
       {
         role: 'system',
-        content: [
-          'You turn articles into scripts for short vertical videos (Reels/TikTok/Shorts). The goal is to keep a viewer watching all the way through.',
-          'Requirements:',
-          'Audience: general, curious but busy.',
-          'Length: 4-8 sentences total. Aim for ~30-45 seconds of speech.',
-          'Format: return ONLY the final script, one sentence per line. No numbering, no bullet points, no commentary.',
-          'Style: clear, conversational, present tense where possible.',
-          'Each line should be a strong caption that can sit on screen with a single clip.',
-          'Story structure:',
-          'Hook (line 1): surprising or intriguing statement that makes people want to know more.',
-          'Context (1-2 lines): briefly set the scene / what this is about.',
-          'Build (2-4 lines): reveal the key ideas or events in an order that builds curiosity or tension.',
-          'Payoff (last 1-2 lines): satisfying conclusion or key lesson. No new open questions at the very end.',
-          'Avoid:',
-          'Long, complex sentences (aim for 12-22 words per line).',
-          'Jargon from the original article.',
-          'Starting the first line with "In this video" or "This article explains".',
-          'Return ONLY valid JSON: {"sentences":["sentence1","sentence2",...],"totalDurationSec":number}'
-        ].join('\n')
+        content: systemMessage
       },
       {
         role: 'user',
-        content: inputType === 'idea' 
-          ? `Turn this into a 30-45 second vertical video script with a hook, rising tension, payoff, and a clean ending. Each line is one caption/clip:\n\n"${input}"`
-          : inputType === 'link'
-          ? `Now, using this article, write the script in that format:\n\n${sourceContent}`
-          : `Turn this into a 30-45 second vertical video script with a hook, rising tension, payoff, and a clean ending. Each line is one caption/clip:\n\n${input}`
+        content: userMessage
       }
     ]
   };
@@ -81,7 +138,7 @@ export async function generateStoryFromInput({ input, inputType }) {
   const data = await r.json();
   const content = data?.choices?.[0]?.message?.content || '';
   
-  // Parse JSON
+  // Parse JSON with three-tier fallback
   let parsed = null;
   try {
     const jsonMatch = content.match(/\{[\s\S]*\}/);
@@ -91,13 +148,30 @@ export async function generateStoryFromInput({ input, inputType }) {
     parsed = null;
   }
   
-  // Validate and normalize
-  let sentences = Array.isArray(parsed?.sentences) ? parsed.sentences : [];
-  let totalDurationSec = Number(parsed?.totalDurationSec) || 0;
+  let sentences = [];
+  let totalDurationSec = 0;
   
-  // Fallback: split input into sentences if LLM failed
-  if (sentences.length === 0) {
-    const text = inputType === 'link' ? sourceContent : input;
+  // Primary: Try new hook/beats/outro structure
+  if (parsed && parsed.hook && Array.isArray(parsed.hook) && parsed.beats && Array.isArray(parsed.beats)) {
+    const hook = parsed.hook || [];
+    const beats = parsed.beats || [];
+    const outro = parsed.outro || [];
+    sentences = [...hook, ...beats, ...outro].filter(Boolean);
+    totalDurationSec = Number(parsed.totalDurationSec) || 0;
+    console.log('[story.llm] using new hook/beats/outro structure');
+  }
+  // Fallback 1: Legacy sentences structure
+  else if (parsed && parsed.sentences && Array.isArray(parsed.sentences)) {
+    sentences = parsed.sentences;
+    totalDurationSec = Number(parsed.totalDurationSec) || 0;
+    console.log('[story.llm] using legacy sentences structure');
+  }
+  // Fallback 2: Sentence splitting
+  else {
+    console.log('[story.llm] falling back to sentence-splitting');
+    const text = inputType === 'link' && extracted 
+      ? `${extracted.title}\n\n${extracted.summary}\n\n${extracted.keyPoints.join('. ')}`
+      : input;
     sentences = text
       .split(/[.!?]+/)
       .map(s => s.trim())

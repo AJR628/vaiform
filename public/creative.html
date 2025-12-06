@@ -757,6 +757,15 @@
                 
                 <!-- Input Section -->
                 <div class="space-y-2">
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Style</label>
+                    <select
+                        id="article-style-select"
+                        class="w-full bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-3 py-2 text-gray-900 dark:text-white"
+                    >
+                        <option value="default">Default (Explainer)</option>
+                        <option value="hype">Hype</option>
+                        <option value="cozy">Cozy</option>
+                    </select>
                     <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Paste article link or text</label>
                     <textarea
                         id="article-input"
@@ -5849,12 +5858,16 @@
                 // Detect if input is URL or text
                 const inputType = isUrl(inputText) ? 'link' : 'paragraph';
                 
+                // Read style from dropdown
+                const styleKey = document.getElementById('article-style-select')?.value || 'default';
+                
                 // Step 1: Create story session
                 const startResp = await apiFetch('/story/start', {
                     method: 'POST',
                     body: {
                         input: inputText,
-                        inputType: inputType
+                        inputType: inputType,
+                        styleKey: styleKey
                     }
                 });
                 

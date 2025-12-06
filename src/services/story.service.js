@@ -70,7 +70,7 @@ async function loadStorySession({ uid, sessionId }) {
 /**
  * Create a new story session
  */
-export async function createStorySession({ uid, input, inputType = 'paragraph' }) {
+export async function createStorySession({ uid, input, inputType = 'paragraph', styleKey = 'default' }) {
   const sessionId = `story-${crypto.randomUUID()}`;
   const now = new Date().toISOString();
   
@@ -82,6 +82,7 @@ export async function createStorySession({ uid, input, inputType = 'paragraph' }
       type: inputType,
       url: inputType === 'link' ? input : undefined
     },
+    styleKey: styleKey || 'default',
     status: 'draft',
     createdAt: now,
     updatedAt: now
@@ -119,9 +120,11 @@ export async function generateStory({ uid, sessionId, input, inputType }) {
   }
   
   // Generate story using LLM
+  const styleKey = session.styleKey || 'default';
   const story = await generateStoryFromInput({
     input: session.input.text,
-    inputType: session.input.type
+    inputType: session.input.type,
+    styleKey: styleKey
   });
   
   session.story = story;

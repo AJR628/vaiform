@@ -25,6 +25,7 @@ r.use(requireAuth);
 const StartSchema = z.object({
   input: z.string().min(1).max(2000),
   inputType: z.enum(["link", "idea", "paragraph"]).default("paragraph"),
+  styleKey: z.enum(["default", "hype", "cozy"]).optional().default("default"),
 });
 
 const SessionSchema = z.object({
@@ -49,11 +50,12 @@ r.post("/start", async (req, res) => {
       });
     }
     
-    const { input, inputType } = parsed.data;
+    const { input, inputType, styleKey } = parsed.data;
     const session = await createStorySession({
       uid: req.user.uid,
       input,
-      inputType
+      inputType,
+      styleKey
     });
     
     return res.json({ success: true, data: session });
