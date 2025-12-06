@@ -430,11 +430,22 @@ export async function searchClipsForShot({ uid, sessionId, sentenceIndex, query,
     page: page
   });
   
-  // Update candidates
-  shot.candidates = candidates;
+  // Update candidates: append new candidates with deduplication by id
+  // For page 1, replace existing candidates (new search). For page > 1, append.
+  if (page === 1) {
+    // First page: replace candidates (new search)
+    shot.candidates = candidates;
+  } else {
+    // Subsequent pages: append new candidates, deduplicating by id
+    const existingCandidates = shot.candidates || [];
+    const existingIds = new Set(existingCandidates.map(c => c.id).filter(id => id != null));
+    const newCandidates = candidates.filter(c => c.id == null || !existingIds.has(c.id));
+    shot.candidates = [...existingCandidates, ...newCandidates];
+  }
   
-  // Keep current selectedClip if it's still in the new candidates; otherwise use best
-  const maybeKeep = shot.selectedClip && candidates.find(c => c.id === shot.selectedClip.id);
+  // Keep current selectedClip if it's still in the merged candidates; otherwise use best
+  const mergedCandidates = shot.candidates || [];
+  const maybeKeep = shot.selectedClip && mergedCandidates.find(c => c.id === shot.selectedClip.id);
   shot.selectedClip = maybeKeep || best || null;
   
   session.updatedAt = new Date().toISOString();
