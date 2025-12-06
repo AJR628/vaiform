@@ -13,17 +13,23 @@ const mem = new Map();
  * @returns {Promise<{ok: boolean, reason: string, items: Array, nextPage: number|null}>}
  */
 export async function nasaSearchVideos({ query, perPage = 12, page = 1 }) {
+  console.log(`[nasa] nasaSearchVideos called: query="${query}", perPage=${perPage}, page=${page}`);
   const key = process.env.NASA_API_KEY;
+  console.log(`[nasa] API key present: ${!!key}`);
   if (!key) {
     // Silent failure - return empty array, no error
-    return { ok: false, reason: "NOT_CONFIGURED", items: [] };
+    const result = { ok: false, reason: "NOT_CONFIGURED", items: [] };
+    console.log(`[nasa] Returning: ok=${result.ok}, reason="${result.reason}", items.length=${result.items.length}`);
+    return result;
   }
 
   const cacheKey = `nasa:videos|${query}|${perPage}|${page}`;
   const now = Date.now();
   const entry = mem.get(cacheKey);
   if (entry && now - entry.at < entry.ttl) {
-    return { ok: true, reason: "CACHE", items: entry.items };
+    const result = { ok: true, reason: "CACHE", items: entry.items };
+    console.log(`[nasa] Returning: ok=${result.ok}, reason="${result.reason}", items.length=${result.items.length}`);
+    return result;
   }
 
   // Truncate query to 100 chars to be safe
@@ -46,7 +52,9 @@ export async function nasaSearchVideos({ query, perPage = 12, page = 1 }) {
       
       // Short negative cache on error
       mem.set(cacheKey, { at: now, ttl: 60_000, items: [] });
-      return { ok: false, reason: `HTTP_${res.status}`, items: [] };
+      const result = { ok: false, reason: `HTTP_${res.status}`, items: [] };
+      console.log(`[nasa] Returning: ok=${result.ok}, reason="${result.reason}", items.length=${result.items.length}`);
+      return result;
     }
 
     const data = await res.json();
@@ -119,12 +127,16 @@ export async function nasaSearchVideos({ query, perPage = 12, page = 1 }) {
     const hitsPerPage = perPage;
     const nextPage = (currentPage * hitsPerPage < totalHits) ? currentPage + 1 : null;
 
-    return { ok: true, reason: "OK", items, nextPage };
+    const result = { ok: true, reason: "OK", items, nextPage };
+    console.log(`[nasa] Returning: ok=${result.ok}, reason="${result.reason}", items.length=${result.items.length}`);
+    return result;
   } catch (error) {
     // Log error but don't throw - return empty array
     console.warn('[nasa] Search error:', error?.message || String(error));
     mem.set(cacheKey, { at: now, ttl: 60_000, items: [] });
-    return { ok: false, reason: "ERROR", items: [] };
+    const result = { ok: false, reason: "ERROR", items: [] };
+    console.log(`[nasa] Returning: ok=${result.ok}, reason="${result.reason}", items.length=${result.items.length}`);
+    return result;
   }
 }
 

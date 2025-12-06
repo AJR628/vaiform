@@ -259,6 +259,9 @@ async function searchSingleShot(query, options = {}) {
           .catch(() => ({ ok: false, items: [], nextPage: null }))
   ]);
   
+  // Log NASA result details
+  console.log(`[story] nasaResult: ok=${nasaResult.ok}, reason="${nasaResult.reason || 'N/A'}", items.length=${nasaResult.items?.length || 0}`);
+  
   // Cap NASA items based on affinity
   let nasaItems = nasaResult.items || [];
   if (nasaItems.length) {

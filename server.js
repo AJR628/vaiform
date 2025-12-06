@@ -2,6 +2,9 @@
 import dotenv from "dotenv";
 dotenv.config();
 
+// Check NASA API key configuration at boot
+console.log(`[nasa] API key present: ${!!process.env.NASA_API_KEY}`);
+
 import app from "./src/app.js";
 import { registerDejaVuFonts } from "./src/caption/canvas-fonts.js";
 
