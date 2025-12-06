@@ -58,13 +58,20 @@ export async function nasaSearchVideos({ query, perPage = 12, page = 1 }) {
     }
 
     const data = await res.json();
+    const rawItemsCount = data?.collection?.items?.length || 0;
+    const totalHits = data?.collection?.metadata?.total_hits || 0;
+    console.log(`[nasa] raw search: status=${res.status}, total_items=${rawItemsCount}, total_hits=${totalHits}, media_type_filter=video`);
     const items = [];
 
     // Process each item in the collection
     for (const item of data?.collection?.items || []) {
       try {
         const nasaId = item?.data?.[0]?.nasa_id;
-        if (!nasaId) continue;
+        const mediaType = item?.data?.[0]?.media_type;
+        if (!nasaId) {
+          console.log(`[nasa] drop: no nasa_id (media_type=${mediaType || 'N/A'})`);
+          continue;
+        }
 
         // Make secondary API call to get asset details
         const assetUrl = `${NASA_ASSET}/${nasaId}`;
@@ -73,7 +80,7 @@ export async function nasaSearchVideos({ query, perPage = 12, page = 1 }) {
         });
 
         if (!assetRes.ok) {
-          console.warn(`[nasa] Asset ${nasaId} HTTP ${assetRes.status}, skipping`);
+          console.warn(`[nasa] drop: asset fetch failed for ${nasaId} (HTTP ${assetRes.status})`);
           continue;
         }
 
@@ -82,6 +89,7 @@ export async function nasaSearchVideos({ query, perPage = 12, page = 1 }) {
         // Find first .mp4 URL in the asset collection
         let mp4Url = null;
         const collection = assetData?.collection?.items || [];
+        console.log(`[nasa] checking asset collection for mp4 (${collection.length} items) for nasa_id=${nasaId}`);
         for (const assetItem of collection) {
           const href = assetItem?.href;
           if (href && typeof href === 'string' && href.toLowerCase().endsWith('.mp4')) {
@@ -92,10 +100,14 @@ export async function nasaSearchVideos({ query, perPage = 12, page = 1 }) {
 
         // Skip if no .mp4 found
         if (!mp4Url) {
+          const sampleHrefs = collection.slice(0, 3).map(item => item?.href?.substring(0, 60) || 'N/A').join(', ');
+          console.log(`[nasa] drop: no mp4 found in asset list (checked ${collection.length} items, sample hrefs: ${sampleHrefs}...)`);
           continue;
         }
 
         const dataItem = item.data[0];
+        const title = dataItem?.title?.substring(0, 50) || 'N/A';
+        const urlPreview = mp4Url.substring(0, 80);
         items.push({
           id: `nasa-video-${nasaId}`,
           provider: "nasa",
@@ -111,6 +123,7 @@ export async function nasaSearchVideos({ query, perPage = 12, page = 1 }) {
           sourceUrl: item.href || null,
           license: "nasa-public-domain"
         });
+        console.log(`[nasa] keep: nasa_id=${nasaId}, title="${title}", url=${urlPreview}...`);
       } catch (itemError) {
         console.warn(`[nasa] Error processing item:`, itemError?.message || String(itemError));
         // Continue with next item
@@ -122,11 +135,11 @@ export async function nasaSearchVideos({ query, perPage = 12, page = 1 }) {
     mem.set(cacheKey, { at: now, ttl: 24 * 60 * 60 * 1000, items });
 
     // Calculate nextPage if available
-    const totalHits = data?.collection?.metadata?.total_hits || 0;
     const currentPage = page;
     const hitsPerPage = perPage;
     const nextPage = (currentPage * hitsPerPage < totalHits) ? currentPage + 1 : null;
 
+    console.log(`[nasa] final normalized items.length=${items.length} (from ${rawItemsCount} raw items)`);
     const result = { ok: true, reason: "OK", items, nextPage };
     console.log(`[nasa] Returning: ok=${result.ok}, reason="${result.reason}", items.length=${result.items.length}`);
     return result;
