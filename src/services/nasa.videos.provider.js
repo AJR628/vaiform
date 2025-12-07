@@ -34,11 +34,13 @@ export async function nasaSearchVideos({ query, perPage = 12, page = 1 }) {
 
   // Truncate query to 100 chars to be safe
   const normalizedQuery = String(query || '').trim().substring(0, 100);
+  const targetCount = perPage || 12;
 
   const url = new URL(NASA_SEARCH);
   url.searchParams.set("q", encodeURIComponent(normalizedQuery));
   url.searchParams.set("media_type", "video");
   url.searchParams.set("page", String(Math.max(1, page)));
+  url.searchParams.set("page_size", "30");
 
   try {
     const res = await fetch(url, {
@@ -62,9 +64,11 @@ export async function nasaSearchVideos({ query, perPage = 12, page = 1 }) {
     const totalHits = data?.collection?.metadata?.total_hits || 0;
     console.log(`[nasa] raw search: status=${res.status}, total_items=${rawItemsCount}, total_hits=${totalHits}, media_type_filter=video`);
     const items = [];
+    let processedCount = 0;
 
     // Process each item in the collection
     for (const item of data?.collection?.items || []) {
+      processedCount++;
       try {
         const nasaId = item?.data?.[0]?.nasa_id;
         const mediaType = item?.data?.[0]?.media_type;
@@ -124,12 +128,19 @@ export async function nasaSearchVideos({ query, perPage = 12, page = 1 }) {
           license: "nasa-public-domain"
         });
         console.log(`[nasa] keep: nasa_id=${nasaId}, title="${title}", url=${urlPreview}...`);
+        
+        // Early exit if we have enough normalized items
+        if (items.length >= targetCount) {
+          break;
+        }
       } catch (itemError) {
         console.warn(`[nasa] Error processing item:`, itemError?.message || String(itemError));
         // Continue with next item
         continue;
       }
     }
+
+    console.log(`[nasa] processed ${processedCount} raw items, returned ${items.length} normalized items (target was ${targetCount})`);
 
     // Cache for 24 hours
     mem.set(cacheKey, { at: now, ttl: 24 * 60 * 60 * 1000, items });
