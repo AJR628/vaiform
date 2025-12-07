@@ -37,7 +37,7 @@ export async function concatenateClips({ clips, outPath, options = {} }) {
   // Build filter_complex for concatenation
   // Scale all clips to same dimensions, then concat
   const scaleFilters = validClips.map((clip, i) => {
-    return `[${i}:v]scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2,setpts=PTS-STARTPTS[v${i}]`;
+    return `[${i}:v]scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2,setsar=1,setpts=PTS-STARTPTS[v${i}]`;
   }).join(';');
   
   // Video concatenation (video only)
@@ -62,6 +62,8 @@ export async function concatenateClips({ clips, outPath, options = {} }) {
   // Log filter complex for debugging
   console.log('[ffmpeg.timeline] Concatenating', validClips.length, 'clips with audio');
   console.log('[ffmpeg.timeline] Filter complex length:', filterComplex.length);
+  console.log('[ffmpeg.timeline] Filter complex:', filterComplex);
+  console.log('[ffmpeg.timeline] Input files:', validClips.map(c => c.path));
   
   // Build FFmpeg args
   // Note: Segments are already rendered to correct duration, so no need to trim inputs
