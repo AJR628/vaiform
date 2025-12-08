@@ -67,6 +67,62 @@ export function enforceFreeDailyShortLimit(limit = 4) {
 }
 
 /**
+ * Enforce free lifetime short limit (4 shorts total for free users)
+ * Blocks both script generation and final rendering once limit is reached.
+ */
+export function enforceFreeLifetimeShortLimit(maxFree = 4) {
+  return async (req, res, next) => {
+    // Fail-safe: require authentication
+    const uid = req.user?.uid || req.authUid;
+    if (!uid) {
+      return res.status(401).json({
+        success: false,
+        error: "AUTH_REQUIRED",
+        message: "You need to sign in to create shorts."
+      });
+    }
+
+    // Fetch user document from Firestore
+    const userRef = admin.firestore().collection("users").doc(uid);
+    const snap = await userRef.get();
+    if (!snap.exists) {
+      return res.status(401).json({
+        success: false,
+        error: "AUTH_REQUIRED",
+        message: "You need to sign in to create shorts."
+      });
+    }
+
+    const doc = snap.data() || {};
+
+    // Determine if user is "Free"
+    const isMember = doc.isMember === true;
+    const credits = doc.credits || 0;
+    const subscriptionStatus = doc.subscriptionStatus;
+    const isPaid = isMember || credits > 0 || subscriptionStatus === 'active';
+
+    // If user is NOT free (paid/has credits), skip limit
+    if (isPaid) {
+      return next();
+    }
+
+    // User IS free - check lifetime limit
+    const freeShortsUsed = doc.freeShortsUsed || 0;
+
+    if (freeShortsUsed >= maxFree) {
+      return res.status(403).json({
+        success: false,
+        error: "FREE_LIMIT_REACHED",
+        message: "You've used your 4 free shorts. Upgrade to keep creating."
+      });
+    }
+
+    // User is free and under limit - allow request
+    next();
+  };
+}
+
+/**
  * Block AI quotes for free users (requires membership)
  */
 export function blockAIQuotesForFree() {

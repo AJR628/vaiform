@@ -1,6 +1,8 @@
 import { Router } from "express";
 import { z, ZodError } from "zod";
 import requireAuth from "../middleware/requireAuth.js";
+import { enforceFreeLifetimeShortLimit } from "../middleware/planGuards.js";
+import { incrementFreeShortsUsed } from "../services/user.service.js";
 import {
   createStorySession,
   getStorySession,
@@ -70,7 +72,7 @@ r.post("/start", async (req, res) => {
 });
 
 // POST /api/story/generate - Generate story from input
-r.post("/generate", async (req, res) => {
+r.post("/generate", enforceFreeLifetimeShortLimit(4), async (req, res) => {
   try {
     const parsed = GenerateSchema.safeParse(req.body || {});
     if (!parsed.success) {
@@ -476,7 +478,7 @@ r.post("/render", async (req, res) => {
 });
 
 // POST /api/story/finalize - Run full pipeline (Phase 7)
-r.post("/finalize", async (req, res) => {
+r.post("/finalize", enforceFreeLifetimeShortLimit(4), async (req, res) => {
   try {
     const parsed = SessionSchema.safeParse(req.body || {});
     if (!parsed.success) {
@@ -493,6 +495,16 @@ r.post("/finalize", async (req, res) => {
       sessionId,
       options: req.body.options || {}
     });
+    
+    // Increment free shorts counter if render succeeded
+    if (session?.finalVideo?.url) {
+      try {
+        await incrementFreeShortsUsed(req.user.uid);
+      } catch (err) {
+        console.error("[story][finalize] Failed to increment free shorts counter:", err);
+        // Don't fail the request - this is just tracking
+      }
+    }
     
     return res.json({ success: true, data: session });
   } catch (e) {

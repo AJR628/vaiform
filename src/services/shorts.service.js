@@ -659,6 +659,17 @@ export async function createShortService({ ownerUid, mode, text, template, durat
       }
     });
     console.log(`[shorts] Updated Firestore doc to ready: ${jobId}`);
+    
+    // Increment free shorts counter if render succeeded
+    if (audioOk || !voiceover) {
+      try {
+        const { incrementFreeShortsUsed } = await import('./user.service.js');
+        await incrementFreeShortsUsed(ownerUid);
+      } catch (err) {
+        console.error("[shorts] Failed to increment free shorts counter:", err);
+        // Don't fail the request - this is just tracking
+      }
+    }
   } catch (error) {
     console.warn(`[shorts] Failed to update Firestore doc: ${error.message}`);
   }

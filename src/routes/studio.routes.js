@@ -1,6 +1,8 @@
 import { Router } from "express";
 import { z } from "zod";
 import requireAuth from "../middleware/requireAuth.js";
+import { enforceFreeLifetimeShortLimit } from "../middleware/planGuards.js";
+import { incrementFreeShortsUsed } from "../services/user.service.js";
 import { startStudio, getStudio, generateQuoteCandidates, generateImageCandidates, chooseCandidate, finalizeStudio, listStudios, deleteStudio, generateVideoCandidates, finalizeStudioMulti, createRemix, listRemixes, generateSocialImage, generateCaption } from "../services/studio.service.js";
 import crypto from "node:crypto";
 import { bus, sendEvent } from "../utils/events.js";
@@ -152,7 +154,7 @@ r.post("/choose", ensureStudio(true), async (req, res) => {
   }
 });
 
-r.post("/finalize", ensureStudio(true), async (req, res) => {
+r.post("/finalize", ensureStudio(true), enforceFreeLifetimeShortLimit(4), async (req, res) => {
   const parsed = FinalizeSchema.safeParse(req.body || {});
   if (!parsed.success) return res.status(400).json({ success: false, error: "INVALID_INPUT", detail: parsed.error.flatten() });
   const { studioId, voiceover = false, wantAttribution = true, captionMode = "progress", renderSpec, formats, wantImage = true, wantAudio = true } = parsed.data;
@@ -160,6 +162,15 @@ r.post("/finalize", ensureStudio(true), async (req, res) => {
     if (!renderSpec && !formats && !wantImage && !wantAudio) {
       // Back-compat: old finalize single format path
       const out = await finalizeStudio({ uid: req.user.uid, studioId, voiceover, wantAttribution, captionMode });
+      // Increment free shorts counter if render succeeded
+      if (out?.url || out?.videoUrl) {
+        try {
+          await incrementFreeShortsUsed(req.user.uid);
+        } catch (err) {
+          console.error("[studio][finalize] Failed to increment free shorts counter:", err);
+          // Don't fail the request - this is just tracking
+        }
+      }
       return res.json({ success: true, data: out });
     }
     // New path: multi-format → run and emit events via bus, return JSON fallback
@@ -180,6 +191,15 @@ r.post("/finalize", ensureStudio(true), async (req, res) => {
     sendEvent(studioId, 'video_ready', { url: publicUrl, durationSec: renderSpec?.output?.durationSec || undefined });
     sendEvent(studioId, 'done', { url: publicUrl });
     console.log('[studio][finalize] emitted: video_ready, done');
+    // Increment free shorts counter if render succeeded
+    if (publicUrl || Object.keys(urls).length > 0) {
+      try {
+        await incrementFreeShortsUsed(req.user.uid);
+      } catch (err) {
+        console.error("[studio][finalize] Failed to increment free shorts counter:", err);
+        // Don't fail the request - this is just tracking
+      }
+    }
     return res.json({ success: true, url: publicUrl, durationSec: renderSpec?.output?.durationSec || undefined, urls });
   } catch (e) {
     if (e?.message === "NEED_IMAGE_OR_VIDEO") {
