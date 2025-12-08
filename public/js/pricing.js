@@ -1,9 +1,7 @@
 // public/js/pricing.js
 import { auth, db, ensureUserDoc } from "/js/firebaseClient.js";
-import { uiSignIn, uiSignUp, uiGoogle, routeAfterAuth } from "/js/pricingAuthHandlers.js";
 import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { doc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import { API_BASE } from "/js/apiBase.js";
 
 // Use backend URL directly to bypass Netlify redirects
 const API = window.location.hostname.includes('localhost') 
@@ -19,6 +17,29 @@ onAuthStateChanged(auth, async (user) => {
   currentUser = user;
   if (user) {
     await ensureUserDoc(user); // Ensure free plan setup
+    
+    // Check for pending plan selection after authentication
+    const pendingRaw = localStorage.getItem("pendingPlan");
+    if (pendingRaw) {
+      try {
+        const { plan, billing } = JSON.parse(pendingRaw);
+        localStorage.removeItem("pendingPlan");
+        
+        if (plan === "free") {
+          // Free plan: redirect to creative
+          window.location.href = "/creative.html";
+          return;
+        } else if (plan === "creator" || plan === "pro") {
+          // Creator/Pro: start checkout
+          await proceedWithCheckout(plan, billing || "onetime");
+          return;
+        }
+      } catch (e) {
+        console.warn("[pricing] Failed to parse pendingPlan", e);
+        localStorage.removeItem("pendingPlan");
+      }
+    }
+    
     setupFirestoreListener(user);
   } else {
     hideUserInfo();
@@ -58,76 +79,26 @@ function hideUserInfo() {
   userInfo.style.display = 'none';
 }
 
-// Store selected plan for after authentication
-let selectedPlan = null;
-let selectedBilling = null;
-
-// Checkout functions
-async function startCheckout(plan, billing) {
+// Unified plan selection handler
+async function handlePlanSelection(plan, billing) {
   const user = auth.currentUser;
+  
   if (!user) {
-    // Store the plan selection and show auth modal
-    selectedPlan = plan;
-    selectedBilling = billing;
-    showAuthModal();
+    // Store intent in localStorage, then redirect to login
+    localStorage.setItem("pendingPlan", JSON.stringify({ plan, billing }));
+    window.location.href = "/login.html";
     return;
   }
   
-  // User is authenticated, proceed with checkout
+  // User is logged in
+  if (plan === "free") {
+    // Free: just go to creative; /api/users/ensure will already grant 100 credits
+    window.location.href = "/creative.html";
+    return;
+  }
+  
+  // Creator / Pro: use existing checkout helper
   await proceedWithCheckout(plan, billing);
-}
-
-// Auth modal functions
-function showAuthModal() {
-  const modal = document.getElementById('authModal');
-  modal.classList.add('show');
-}
-
-function hideAuthModal() {
-  const modal = document.getElementById('authModal');
-  modal.classList.remove('show');
-}
-
-async function signIn() {
-  const email = document.getElementById('authEmail').value;
-  const password = document.getElementById('authPassword').value;
-
-  try {
-    const user = await uiSignIn(email, password);
-    hideAuthModal();
-    
-    // If user selected a paid plan before auth, proceed to checkout
-    if (selectedPlan && selectedBilling) {
-      await proceedWithCheckout(selectedPlan, selectedBilling);
-      selectedPlan = null;
-      selectedBilling = null;
-    } else {
-      await routeAfterAuth(user);
-    }
-  } catch (error) {
-    alert(error.message);
-  }
-}
-
-async function signUp() {
-  const email = document.getElementById('authEmail').value;
-  const password = document.getElementById('authPassword').value;
-
-  try {
-    const user = await uiSignUp(email, password);
-    hideAuthModal();
-    
-    // If user selected a paid plan before auth, proceed to checkout
-    if (selectedPlan && selectedBilling) {
-      await proceedWithCheckout(selectedPlan, selectedBilling);
-      selectedPlan = null;
-      selectedBilling = null;
-    } else {
-      await routeAfterAuth(user);
-    }
-  } catch (error) {
-    alert(error.message);
-  }
 }
 
 // Proceed with checkout after authentication
@@ -168,77 +139,15 @@ async function proceedWithCheckout(plan, billing) {
   }
 }
 
-// Event listeners
-document.addEventListener('DOMContentLoaded', () => {
-  // Don't auto-open auth modal - let users choose plans first
-  // const params = new URLSearchParams(location.search);
-  // if (params.get("auth") === "open") {
-  //   showAuthModal();
-  // }
-
-  // Free plan button
-  document.getElementById('startFreeBtn').addEventListener('click', () => {
-    if (currentUser) {
-      // User is already signed in, redirect to creative
-      window.location.href = '/creative.html';
-    } else {
-      showAuthModal();
-    }
-  });
+// Delegated click handler for all plan buttons
+document.addEventListener('click', (e) => {
+  const btn = e.target.closest('.plan-signup');
+  if (!btn) return;
   
-  // Creator plan buttons
-  document.getElementById('startCreatorMonthlyBtn').addEventListener('click', () => {
-    startCheckout('creator', 'monthly');
-  });
+  e.preventDefault();
   
-  document.getElementById('startCreatorPassBtn').addEventListener('click', () => {
-    startCheckout('creator', 'onetime');
-  });
+  const plan = btn.getAttribute('data-plan');
+  const billing = btn.getAttribute('data-billing') || 'onetime';
   
-  // Pro plan buttons
-  document.getElementById('startProMonthlyBtn').addEventListener('click', () => {
-    startCheckout('pro', 'monthly');
-  });
-  
-  document.getElementById('startProPassBtn').addEventListener('click', () => {
-    startCheckout('pro', 'onetime');
-  });
-  
-  // Auth modal close (only if element exists)
-  const closeAuthModal = document.getElementById('closeAuthModal');
-  if (closeAuthModal) {
-    closeAuthModal.addEventListener('click', hideAuthModal);
-  }
-  
-  // Close modal on outside click (only if element exists)
-  const authModal = document.getElementById('authModal');
-  if (authModal) {
-    authModal.addEventListener('click', (e) => {
-      if (e.target.id === 'authModal') {
-        hideAuthModal();
-      }
-    });
-  }
-
-  // Google sign-in button (only if element exists)
-  const googleSignInBtn = document.getElementById('googleSignInBtn');
-  if (googleSignInBtn) {
-    googleSignInBtn.addEventListener('click', async () => {
-    try {
-      const user = await uiGoogle();
-      hideAuthModal();
-      
-      // If user selected a paid plan before auth, proceed to checkout
-      if (selectedPlan && selectedBilling) {
-        await proceedWithCheckout(selectedPlan, selectedBilling);
-        selectedPlan = null;
-        selectedBilling = null;
-      } else {
-        await routeAfterAuth(user);
-      }
-    } catch (error) {
-      alert(error.message);
-    }
-    });
-  }
+  handlePlanSelection(plan, billing);
 });

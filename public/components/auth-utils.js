@@ -47,7 +47,7 @@ export function initializeAuth() {
 
     if (signupBtn) {
       signupBtn.addEventListener('click', () => {
-        window.location.href = '/login.html';
+        window.location.href = '/pricing.html';
       });
     }
   });

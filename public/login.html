@@ -121,11 +121,22 @@
       statusEl.textContent = msg || "";
     }
 
+    // Helper function to determine redirect destination
+    function getRedirectDestination() {
+      const pendingRaw = localStorage.getItem("pendingPlan");
+      if (pendingRaw) {
+        // User came from pricing page with a plan selection, redirect back there
+        return "/pricing.html";
+      }
+      // Default redirect
+      return "/";
+    }
+
     // If already logged in, bounce home with a toast
     onAuthStateChanged(auth, (user) => {
       if (user) {
-        sessionStorage.setItem("vaiform_toast", "You’re already signed in.");
-        window.location.href = "/";
+        sessionStorage.setItem("vaiform_toast", "You're already signed in.");
+        window.location.href = getRedirectDestination();
       }
     });
 
@@ -135,7 +146,7 @@
       try {
         await signInWithPopup(auth, provider);
         sessionStorage.setItem("vaiform_toast", "Welcome back! 🎉");
-        window.location.href = "/";
+        window.location.href = getRedirectDestination();
       } catch (err) {
         console.error(err);
         setStatus("Google login failed. Please try again.");
@@ -157,13 +168,13 @@
       try {
         await signInWithEmailAndPassword(auth, email, password);
         sessionStorage.setItem("vaiform_toast", "Welcome back! 🎉");
-        window.location.href = "/";
+        window.location.href = getRedirectDestination();
       } catch (err) {
         if (err?.code === "auth/user-not-found") {
           try {
             await createUserWithEmailAndPassword(auth, email, password);
             sessionStorage.setItem("vaiform_toast", "Account created! 🎉");
-            window.location.href = "/";
+            window.location.href = getRedirectDestination();
           } catch (signupErr) {
             console.error(signupErr);
             setStatus("Signup failed. " + (signupErr?.message || "Please try again."));
