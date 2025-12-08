@@ -26,33 +26,68 @@ r.post("/ensure", requireAuth, async (req, res) => {
     }
 
     const db = admin.firestore();
-    const usersRef = db.collection("users");
+    const userRef = db.collection("users").doc(uid);
     
-    // Create/merge user doc with defaults (merge: true is idempotent)
-    await usersRef.doc(uid).set({
-      uid,
-      email,
-      isMember: false,
-      subscriptionStatus: null,
-      credits: 0,
-      freeShortsUsed: 0,
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-    }, { merge: true });
-
-    console.log(`[users/ensure] User doc ensured: ${uid} (${email})`);
-
-    return res.json({
-      success: true,
-      data: {
+    // Check if user doc already exists
+    const userSnap = await userRef.get();
+    const docExists = userSnap.exists;
+    
+    if (!docExists) {
+      // New user: create doc with all defaults
+      await userRef.set({
         uid,
         email,
         isMember: false,
         subscriptionStatus: null,
         credits: 0,
         freeShortsUsed: 0,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      }, { merge: true });
+
+      console.log(`[users/ensure] User doc created: ${uid} (${email})`);
+      
+      return res.json({
+        success: true,
+        data: {
+          uid,
+          email,
+          isMember: false,
+          subscriptionStatus: null,
+          credits: 0,
+          freeShortsUsed: 0,
+        }
+      });
+    } else {
+      // Existing user: only update email and updatedAt, preserve all other fields
+      const updateData = {
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      };
+      
+      // Only update email if it's different or missing
+      const existingData = userSnap.data() || {};
+      if (email && existingData.email !== email) {
+        updateData.email = email;
       }
-    });
+      
+      await userRef.update(updateData);
+      
+      console.log(`[users/ensure] User doc updated (preserved credits/membership): ${uid} (${email})`);
+      
+      // Return existing data (preserving credits, membership, etc.)
+      const currentData = (await userRef.get()).data() || {};
+      return res.json({
+        success: true,
+        data: {
+          uid,
+          email: currentData.email || email,
+          isMember: currentData.isMember ?? false,
+          subscriptionStatus: currentData.subscriptionStatus ?? null,
+          credits: currentData.credits ?? 0,
+          freeShortsUsed: currentData.freeShortsUsed ?? 0,
+        }
+      });
+    }
   } catch (e) {
     console.error("[users/ensure] error:", e);
     return res.status(500).json({
