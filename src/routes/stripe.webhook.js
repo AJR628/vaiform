@@ -1,6 +1,7 @@
 import express from "express";
 import Stripe from "stripe";
 import admin from "../config/firebase.js";
+import { PLAN_CREDITS_MAP, getCreditsForPlan } from "../services/credit.service.js";
 
 const router = express.Router();
 const stripe = process.env.STRIPE_SECRET_KEY ? new Stripe(process.env.STRIPE_SECRET_KEY, {
@@ -34,7 +35,7 @@ router.post("/", express.raw({ type: "application/json" }), async (req, res) => 
         
         if (session.metadata?.uid && session.metadata?.plan) {
           try {
-            await grantCreditsAndUpdatePlan(session.metadata);
+            await grantCreditsAndUpdatePlan(session.metadata, event.id, event.type);
             console.log(`[webhook] Successfully processed payment for uid=${session.metadata.uid}`);
           } catch (error) {
             console.error(`[webhook] Failed to process payment for uid=${session.metadata.uid}:`, error);
@@ -66,7 +67,7 @@ router.post("/", express.raw({ type: "application/json" }), async (req, res) => 
   }
 });
 
-async function grantCreditsAndUpdatePlan(metadata) {
+async function grantCreditsAndUpdatePlan(metadata, eventId, eventType) {
   const { uid, plan, billing, email } = metadata;
   
   if (!uid || !plan) {
@@ -74,11 +75,29 @@ async function grantCreditsAndUpdatePlan(metadata) {
     return;
   }
 
+  if (!eventId || !eventType) {
+    console.error("[webhook] Missing eventId or eventType for idempotency check");
+    return;
+  }
+
   const db = admin.firestore();
   const userRef = db.collection("users").doc(uid);
+  const eventRef = userRef.collection("stripe_webhook_events").doc(eventId);
   
-  // Calculate credits outside transaction for logging
-  const creditsToAdd = plan === "creator" ? 1000 : plan === "pro" ? 2500 : 0;
+  // Check idempotency: if this event was already processed, skip
+  const eventSnap = await eventRef.get();
+  if (eventSnap.exists) {
+    const eventData = eventSnap.data();
+    console.log(`[webhook] Event ${eventId} already processed at ${eventData.processedAt?.toDate()}, skipping`);
+    return;
+  }
+  
+  // Calculate credits using PLAN_CREDITS_MAP
+  const creditsToAdd = getCreditsForPlan(plan);
+  
+  if (creditsToAdd === 0) {
+    console.warn(`[webhook] Unknown plan "${plan}", no credits granted`);
+  }
   
   try {
     await db.runTransaction(async (t) => {
@@ -104,7 +123,18 @@ async function grantCreditsAndUpdatePlan(metadata) {
       }, { merge: true });
     });
     
-    console.log(`[plan] Upgraded uid=${uid} -> ${plan}, credits +${creditsToAdd}`);
+    // Record successful event processing (outside transaction for simplicity)
+    await eventRef.set({
+      eventId,
+      eventType,
+      processedAt: admin.firestore.FieldValue.serverTimestamp(),
+      uid,
+      plan,
+      creditsGranted: creditsToAdd,
+      billing,
+    });
+    
+    console.log(`[plan] Upgraded uid=${uid} -> ${plan}, credits +${creditsToAdd} (event: ${eventId})`);
   } catch (error) {
     console.error(`[webhook] Failed to update user ${uid}:`, error);
     throw error;

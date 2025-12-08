@@ -57,6 +57,18 @@ export function getCreditsForStripePrice(priceId) {
   return CREDIT_PRICE_MAP[priceId] ?? 0;
 }
 
+/** -------- Plan → Credits mapping --------
+ * Maps plan names to credit amounts granted on purchase.
+ */
+export const PLAN_CREDITS_MAP = {
+  creator: 2500,
+  pro: 5000,
+};
+
+export function getCreditsForPlan(planName) {
+  return PLAN_CREDITS_MAP[planName] ?? 0;
+}
+
 /** -------- Core pricing used by generators -------- */
 export function computeCost(n = 1) {
   // Adjust if your pricing differs
