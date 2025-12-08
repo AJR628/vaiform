@@ -197,6 +197,91 @@ export function enforceCreditsForRender(required = RENDER_CREDIT_COST) {
 }
 
 /**
+ * Enforce daily script generation cap (prevents LLM abuse)
+ * Uses Firestore transaction for atomic increment
+ * Must be used after requireAuth middleware
+ */
+export function enforceScriptDailyCap(maxPerDay = 300) {
+  return async (req, res, next) => {
+    // Require authentication
+    const uid = req.user?.uid || req.authUid;
+    if (!uid) {
+      return res.status(401).json({
+        success: false,
+        error: "AUTH_REQUIRED",
+        message: "You need to sign in to generate scripts."
+      });
+    }
+
+    const db = admin.firestore();
+    const userRef = db.collection("users").doc(uid);
+    const todayKey = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+
+    try {
+      await db.runTransaction(async (t) => {
+        const snap = await t.get(userRef);
+        
+        if (!snap.exists) {
+          const err = new Error("USER_NOT_FOUND_TX");
+          throw err;
+        }
+
+        const doc = snap.data() || {};
+        let scriptDayKey = doc.scriptDayKey || null;
+        let scriptCountToday = doc.scriptCountToday || 0;
+
+        // Reset if day changed
+        if (scriptDayKey !== todayKey) {
+          scriptDayKey = todayKey;
+          scriptCountToday = 0;
+        }
+
+        // Check limit
+        if (scriptCountToday >= maxPerDay) {
+          const err = new Error("SCRIPT_LIMIT_REACHED_TX");
+          throw err;
+        }
+
+        // Increment count atomically
+        t.update(userRef, {
+          scriptDayKey: todayKey,
+          scriptCountToday: scriptCountToday + 1,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+      });
+
+      // Transaction succeeded - allow request
+      next();
+    } catch (error) {
+      // Handle transaction errors
+      if (error?.message === "USER_NOT_FOUND_TX") {
+        return res.status(404).json({
+          success: false,
+          error: "USER_NOT_FOUND",
+          detail: "User account not found."
+        });
+      }
+
+      if (error?.message === "SCRIPT_LIMIT_REACHED_TX") {
+        return res.status(429).json({
+          success: false,
+          error: "SCRIPT_LIMIT_REACHED",
+          detail: "Daily script generation limit reached. Try again tomorrow."
+        });
+      }
+
+      // Other errors
+      console.error("[planGuards] Script cap check failed:", error);
+      return res.status(500).json({
+        success: false,
+        error: "SCRIPT_LIMIT_ERROR",
+        detail: "Something went wrong while checking script limits."
+      });
+    }
+  };
+}
+
+/**
  * Optional auth middleware that attaches user data if token present
  */
 export async function requireAuthOptional(req, res, next) {

@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { z, ZodError } from "zod";
 import requireAuth from "../middleware/requireAuth.js";
-import { enforceCreditsForRender } from "../middleware/planGuards.js";
+import { enforceCreditsForRender, enforceScriptDailyCap } from "../middleware/planGuards.js";
 import { spendCredits, RENDER_CREDIT_COST } from "../services/credit.service.js";
 import {
   createStorySession,
@@ -72,7 +72,7 @@ r.post("/start", async (req, res) => {
 });
 
 // POST /api/story/generate - Generate story from input
-r.post("/generate", async (req, res) => {
+r.post("/generate", enforceScriptDailyCap(300), async (req, res) => {
   try {
     const parsed = GenerateSchema.safeParse(req.body || {});
     if (!parsed.success) {
@@ -138,7 +138,7 @@ r.post("/update-script", async (req, res) => {
 });
 
 // POST /api/story/plan - Generate visual plan
-r.post("/plan", async (req, res) => {
+r.post("/plan", enforceScriptDailyCap(300), async (req, res) => {
   try {
     const parsed = SessionSchema.safeParse(req.body || {});
     if (!parsed.success) {
