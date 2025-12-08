@@ -1,7 +1,7 @@
 // public/js/firebaseClient.js
 import { initializeApp, getApps } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, GoogleAuthProvider } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { getFirestore, doc, setDoc, getDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { getFirestore } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 // ✅ Firebase Web SDK config (from console) - using EXACT same config as working config.js
 const firebaseConfig = {
@@ -19,36 +19,24 @@ export const auth = getAuth(app);
 export const db = getFirestore(app);
 export const provider = new GoogleAuthProvider();
 
-// initialize user profile for every new login/signup - ONLY if document doesn't exist
+// initialize user profile for every new login/signup - calls server-side /api/users/ensure
 export async function ensureUserDoc(user) {
   if (!user || !user.uid) return;
   
   try {
-    const ref = doc(db, "users", user.uid);
-    const snap = await getDoc(ref);
+    // Call server-side endpoint instead of direct Firestore writes
+    const { apiFetch } = await import("../api.mjs");
+    const resp = await apiFetch("/users/ensure", {
+      method: "POST"
+    });
 
-    if (!snap.exists()) {
-      // Only create document if it doesn't exist - with free plan defaults
-      await setDoc(ref, {
-        uid: user.uid,
-        email: user.email || null,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-        isMember: false,
-        membership: { kind: null, billing: null, startedAt: null, expiresAt: null, nextPaymentAt: null },
-        shortDayKey: new Date().toISOString().slice(0,10),
-        shortCountToday: 0,
-      }, { merge: true });
-      console.log(`[firebaseClient] User doc created: ${user.uid} (${user.email})`);
+    if (resp.success) {
+      console.log(`[firebaseClient] User doc ensured via API: ${user.uid} (${user.email})`);
     } else {
-      // Only update email and timestamp for existing documents - don't overwrite plan/credits/membership
-      await setDoc(ref, {
-        email: user.email || null,
-        updatedAt: serverTimestamp(),
-      }, { merge: true });
-      console.log(`[firebaseClient] User doc updated (email only): ${user.uid}`);
+      console.warn(`[firebaseClient] Failed to ensure user doc via API:`, resp.error || resp.detail);
     }
   } catch (error) {
-    console.error("Failed to ensure user doc:", error);
+    // Log warning but don't throw - page should still work if this fails
+    console.warn("[firebaseClient] Failed to ensure user doc:", error?.message || error);
   }
 }

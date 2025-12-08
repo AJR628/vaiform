@@ -8,8 +8,9 @@ export default async function requireAuth(req, res, next) {
     if (!m) {
       return res.status(401).json({
         success: false,
+        error: "AUTH_REQUIRED",
         code: "UNAUTHENTICATED",
-        message: "Authentication required",
+        message: "You need to sign in to create shorts.",
       });
     }
     const idToken = m[1];
@@ -20,8 +21,9 @@ export default async function requireAuth(req, res, next) {
     console.error("requireAuth verifyIdToken error:", err?.message || err);
     return res.status(401).json({
       success: false,
+      error: "AUTH_REQUIRED",
       code: "UNAUTHENTICATED",
-      message: "Invalid or expired token",
+      message: "You need to sign in to create shorts.",
     });
   }
 }

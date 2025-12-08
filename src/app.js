@@ -257,6 +257,11 @@ import userRoutes from "./routes/user.routes.js";
 app.use("/api/user", userRoutes);
 console.log("✅ Mounted user routes at /api/user");
 
+// Mount users routes (plural) for /api/users/ensure
+import usersRoutes from "./routes/users.routes.js";
+app.use("/api/users", usersRoutes);
+console.log("✅ Mounted users routes at /api/users");
+
 // Optional no-op alias for legacy /api/user/setup calls (frontend now uses Firestore)
 app.post("/api/user/setup", (req, res) => {
   console.log("[legacy] /api/user/setup called - no-op (frontend uses Firestore)");

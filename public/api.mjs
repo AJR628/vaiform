@@ -123,7 +123,8 @@ export async function apiFetch(path, opts = {}) {
     path.startsWith("/quotes/") ||
     path.startsWith("/assets/") ||
     path.startsWith("/caption/") ||
-    path.startsWith("/story/");
+    path.startsWith("/story/") ||
+    path.startsWith("/users/");
 
   if (!headers["Authorization"]) {
     const tok = await resolveIdToken(!!needsAuth);
@@ -164,10 +165,32 @@ export async function apiFetch(path, opts = {}) {
   }
 
   if (!res.ok) {
-    let detail = "";
-    try { detail = await res.text(); } catch {}
-    dlog("apiFetch error:", res.status, detail?.slice?.(0, 200));
-    throw new Error(`HTTP ${res.status}${detail ? `: ${detail}` : ""}`);
+    const ct = res.headers.get("content-type") || "";
+    if (ct.includes("application/json")) {
+      try {
+        const errorJson = await res.json();
+        dlog("apiFetch error:", res.status, errorJson);
+        // Return error object so callers can check resp.error or resp.code
+        return errorJson;
+      } catch {
+        // Fallback if JSON parsing fails
+        const detail = await res.text().catch(() => "");
+        dlog("apiFetch error (non-JSON):", res.status, detail?.slice?.(0, 200));
+        return {
+          success: false,
+          error: `HTTP_${res.status}`,
+          detail: detail || `HTTP ${res.status}`,
+        };
+      }
+    } else {
+      const detail = await res.text().catch(() => "");
+      dlog("apiFetch error:", res.status, detail?.slice?.(0, 200));
+      return {
+        success: false,
+        error: `HTTP_${res.status}`,
+        detail: detail || `HTTP ${res.status}`,
+      };
+    }
   }
   const ct = res.headers.get("content-type") || "";
   return ct.includes("application/json") ? res.json() : res.text();
