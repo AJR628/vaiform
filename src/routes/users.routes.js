@@ -33,28 +33,30 @@ r.post("/ensure", requireAuth, async (req, res) => {
     const docExists = userSnap.exists;
     
     if (!docExists) {
-      // New user: create doc with all defaults
+      // New user: create doc with welcome credits
       await userRef.set({
         uid,
         email,
+        plan: "free",
         isMember: false,
         subscriptionStatus: null,
-        credits: 0,
+        credits: 100,
         freeShortsUsed: 0,
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       }, { merge: true });
 
-      console.log(`[users/ensure] User doc created: ${uid} (${email})`);
+      console.log(`[users/ensure] User doc created with 100 welcome credits: ${uid} (${email})`);
       
       return res.json({
         success: true,
         data: {
           uid,
           email,
+          plan: "free",
           isMember: false,
           subscriptionStatus: null,
-          credits: 0,
+          credits: 100,
           freeShortsUsed: 0,
         }
       });

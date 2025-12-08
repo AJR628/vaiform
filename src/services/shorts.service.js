@@ -14,6 +14,7 @@ import { generateAIImage } from "./ai.image.provider.js";
 import { fetchVideoToTmp } from "../utils/video.fetch.js";
 import { renderVideoQuoteOverlay } from "../utils/ffmpeg.video.js";
 import admin from "../config/firebase.js";
+import { spendCredits, RENDER_CREDIT_COST } from "./credit.service.js";
 
 export function finalizeQuoteText(mode, text) {
   const t = (text || "").trim();
@@ -660,14 +661,13 @@ export async function createShortService({ ownerUid, mode, text, template, durat
     });
     console.log(`[shorts] Updated Firestore doc to ready: ${jobId}`);
     
-    // Increment free shorts counter if render succeeded
-    if (audioOk || !voiceover) {
+    // Spend credits only if render succeeded
+    if (publicUrl) {
       try {
-        const { incrementFreeShortsUsed } = await import('./user.service.js');
-        await incrementFreeShortsUsed(ownerUid);
+        await spendCredits(ownerUid, RENDER_CREDIT_COST);
       } catch (err) {
-        console.error("[shorts] Failed to increment free shorts counter:", err);
-        // Don't fail the request - this is just tracking
+        console.error("[shorts] Failed to spend credits:", err);
+        // Don't fail the request - credits were already checked by middleware
       }
     }
   } catch (error) {

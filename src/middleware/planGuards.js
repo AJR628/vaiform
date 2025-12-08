@@ -1,5 +1,6 @@
 // src/middleware/planGuards.js
 import admin from "../config/firebase.js";
+import { RENDER_CREDIT_COST } from "../services/credit.service.js";
 
 /**
  * Require membership (blocks free users from premium features)
@@ -146,6 +147,51 @@ export function enforceWatermarkFlag() {
     if (!req.user?.isMember) {
       req.body.forceWatermark = true;
     }
+    next();
+  };
+}
+
+/**
+ * Enforce sufficient credits before render
+ * Pre-check only - does not spend credits
+ * Must be used after requireAuth middleware
+ */
+export function enforceCreditsForRender(required = RENDER_CREDIT_COST) {
+  return async (req, res, next) => {
+    // Require authentication
+    const uid = req.user?.uid;
+    if (!uid) {
+      return res.status(401).json({
+        success: false,
+        error: "AUTH_REQUIRED",
+        message: "You need to sign in to create shorts."
+      });
+    }
+
+    // Fetch user document from Firestore
+    const userRef = admin.firestore().collection("users").doc(uid);
+    const snap = await userRef.get();
+    
+    if (!snap.exists) {
+      return res.status(401).json({
+        success: false,
+        error: "AUTH_REQUIRED",
+        message: "You need to sign in to create shorts."
+      });
+    }
+
+    const doc = snap.data() || {};
+    const credits = doc.credits || 0;
+
+    if (credits < required) {
+      return res.status(402).json({
+        success: false,
+        error: "INSUFFICIENT_CREDITS",
+        detail: `Insufficient credits. You need ${required} credits to render.`
+      });
+    }
+
+    // User has sufficient credits - allow request
     next();
   };
 }

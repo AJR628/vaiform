@@ -69,6 +69,9 @@ export function getCreditsForPlan(planName) {
   return PLAN_CREDITS_MAP[planName] ?? 0;
 }
 
+/** -------- Render credit cost -------- */
+export const RENDER_CREDIT_COST = 20;
+
 /** -------- Core pricing used by generators -------- */
 export function computeCost(n = 1) {
   // Adjust if your pricing differs
@@ -211,4 +214,47 @@ export async function debitCreditsTx(uid, amount) {
 export async function refundCredits(uid, amount) {
   await db.collection('users').doc(uid)
     .update({ credits: admin.firestore.FieldValue.increment(amount) });
+}
+
+/**
+ * Spend credits for a render operation
+ * Uses Firestore transaction to atomically check and deduct credits
+ * @param {string} uid - User ID
+ * @param {number} amount - Amount of credits to spend
+ * @throws {Error} USER_NOT_FOUND if user doc doesn't exist
+ * @throws {Error} INSUFFICIENT_CREDITS if credits < amount
+ */
+export async function spendCredits(uid, amount) {
+  if (!uid) {
+    const err = new Error('User ID required');
+    err.code = 'USER_NOT_FOUND';
+    throw err;
+  }
+
+  return db.runTransaction(async (tx) => {
+    const userRef = db.collection('users').doc(uid);
+    const snap = await tx.get(userRef);
+    
+    if (!snap.exists) {
+      const err = new Error('User not found');
+      err.code = 'USER_NOT_FOUND';
+      throw err;
+    }
+
+    const doc = snap.data() || {};
+    const credits = doc.credits || 0;
+
+    if (credits < amount) {
+      const err = new Error('Insufficient credits');
+      err.code = 'INSUFFICIENT_CREDITS';
+      throw err;
+    }
+
+    tx.update(userRef, {
+      credits: admin.firestore.FieldValue.increment(-amount),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    });
+
+    return { before: credits, after: credits - amount };
+  });
 }
