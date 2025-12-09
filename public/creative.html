@@ -1026,6 +1026,9 @@
     <script type="module">
         import { BACKEND as BACKEND_FROM_CONFIG } from '/config.js';
 
+        // [STUDIO] Legacy quote/asset studio disabled for v1 - only Article Explainer is core
+        const ENABLE_LEGACY_STUDIO = false;
+
         const API_BASE_FALLBACK = "https://17e0d1d1-e327-483d-b1ea-c41bea08fb59-00-1ef93t84nlhq6.janeway.replit.dev";
         // Hard-force the backend origin to Replit to avoid Netlify handling /cdn
         const API_BASE_FIXED = "https://17e0d1d1-e327-483d-b1ea-c41bea08fb59-00-1ef93t84nlhq6.janeway.replit.dev";
@@ -1462,6 +1465,12 @@
 
         // Mode switching SSOT function
         window.setStudioMode = function(mode) {
+            // [STUDIO] Block switching to quotes mode if legacy studio is disabled
+            if (!ENABLE_LEGACY_STUDIO && mode === 'quotes') {
+                console.warn('[studio] Legacy quotes mode disabled - staying in articles mode');
+                mode = 'articles';
+            }
+            
             document.querySelectorAll('[data-mode]').forEach(el => {
                 el.style.display = el.dataset.mode === mode ? '' : 'none';
             });
@@ -2421,12 +2430,18 @@
 
         // Quote generation
         async function generateQuote() {
+            // [STUDIO] Block non-URL quote generation if legacy studio is disabled
+            const text = document.getElementById('quote-text')?.value || '';
+            if (!ENABLE_LEGACY_STUDIO && !isUrl(text)) {
+                showError('quote-error', 'Legacy quote studio is disabled. Use Article Explainer for URL-based content.');
+                return;
+            }
+            
             if (!window.auth?.currentUser) {
                 showError('quote-error', 'Please log in to generate quotes');
                 return;
             }
             
-            const text = document.getElementById('quote-text').value;
             const tone = document.getElementById('quote-tone').value;
             
             if (!text.trim()) return;
@@ -2581,6 +2596,12 @@
 
         // Asset loading with pagination and caching
         async function loadAssets(page = 1) {
+            // [STUDIO] Block asset search if legacy studio is disabled
+            if (!ENABLE_LEGACY_STUDIO) {
+                showError('asset-error', 'Legacy asset search is disabled. Use Article Explainer instead.');
+                return;
+            }
+            
             if (currentAssetType === 'ai') return;
             if (!window.auth?.currentUser) {
                 showError('asset-error', 'Please log in to load assets');
@@ -3403,13 +3424,26 @@
         
         // --- robust page bootstrap (run after DOM is ready)
         document.addEventListener('DOMContentLoaded', async () => {
-            // Initialize studio mode to quotes (default)
-            if (typeof window.setStudioMode === 'function') {
-                window.setStudioMode('quotes');
-            }
-            // Initialize studio mode to quotes (default)
-            if (typeof window.setStudioMode === 'function') {
-                window.setStudioMode('quotes');
+            // [STUDIO] Hide legacy quote/asset studio UI if disabled
+            if (!ENABLE_LEGACY_STUDIO) {
+                // Hide quotes tab button
+                const quotesTab = document.getElementById('mode-quotes-tab');
+                if (quotesTab) quotesTab.style.display = 'none';
+                
+                // Hide all quote-mode UI elements
+                document.querySelectorAll('[data-mode="quotes"]').forEach(el => {
+                    el.style.display = 'none';
+                });
+                
+                // Initialize to articles mode (core feature)
+                if (typeof window.setStudioMode === 'function') {
+                    window.setStudioMode('articles');
+                }
+            } else {
+                // Legacy: Initialize studio mode to quotes (default)
+                if (typeof window.setStudioMode === 'function') {
+                    window.setStudioMode('quotes');
+                }
             }
           // Wrap each init so one failure doesn't stop the others
           const safe = (label, fn) => { try { fn && fn(); } catch (e) { console.error(`[init] ${label} failed`, e); } };
@@ -5011,6 +5045,12 @@
 
         // Render short function
         async function renderShort() {
+            // [STUDIO] Block legacy render if studio is disabled
+            if (!ENABLE_LEGACY_STUDIO) {
+                alert('Legacy quote studio is disabled. Please use the Article Explainer feature instead.');
+                return;
+            }
+            
             // Require at least one feature (quote, asset, or voiceover)
             if (!currentQuote && !selectedAsset && !currentVoiceId) {
                 alert('Please add a quote, select media, or choose a voiceover first');
@@ -7252,6 +7292,12 @@
 
         // Remix quote function
         async function remixQuote(mode) {
+            // [STUDIO] Block remix if legacy studio is disabled
+            if (!ENABLE_LEGACY_STUDIO) {
+                showError('quote-error', 'Legacy quote remix is disabled. Use Article Explainer instead.');
+                return;
+            }
+            
             if (!currentQuote) return;
             if (!window.auth?.currentUser) {
                 showError('quote-error', 'Please log in to remix quotes');
@@ -7403,6 +7449,12 @@
             const t = e.target;
             if (!t || t.id !== 'remix-generate-btn') return;
             e.preventDefault();
+            
+            // [STUDIO] Block AI image generation if legacy studio is disabled
+            if (!ENABLE_LEGACY_STUDIO) {
+                showError('ai-error', 'Legacy AI image generation is disabled. Use Article Explainer instead.');
+                return;
+            }
             
             // Check if user is logged in
             if (!window.auth?.currentUser) {
