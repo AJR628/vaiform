@@ -5,9 +5,14 @@ import { createShort, getShortById, getMyShorts, deleteShort } from "../controll
 
 const r = Router();
 
-r.post("/create", requireAuth, enforceCreditsForRender(), enforceWatermarkFlag(), createShort);
+// PHASE 1: Unmounted legacy shorts creation endpoint (code preserved)
+// r.post("/create", requireAuth, enforceCreditsForRender(), enforceWatermarkFlag(), createShort);
+
+// Core My Shorts library endpoints (KEEP MOUNTED)
 r.get("/mine", requireAuth, getMyShorts);
 r.get("/:jobId", requireAuth, getShortById);
-r.delete("/:jobId", requireAuth, deleteShort);
+
+// PHASE 1: Unmounted optional cleanup endpoint (code preserved)
+// r.delete("/:jobId", requireAuth, deleteShort);
 
 export default r;

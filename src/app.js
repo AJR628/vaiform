@@ -202,19 +202,22 @@ if (routes?.uploads) {
   app.use("/api", routes.uploads);
   console.log("✅ Mounted uploads at /api/uploads");
 }
-if (routes?.studio) {
-  app.use("/api/studio", routes.studio);
-  console.log("✅ Mounted studio at /api/studio");
-}
-if (routes?.quotes) {
-  app.use("/api/quotes", routes.quotes);
-  app.use("/quotes", routes.quotes);
-  console.log("✅ Mounted quotes at /quotes and /api/quotes");
-}
-if (routes?.assets) {
-  app.use("/api/assets", routes.assets);
-  console.log("✅ Mounted assets API at /api/assets");
-}
+// PHASE 1: Unmounted non-core studio routes (code preserved)
+// if (routes?.studio) {
+//   app.use("/api/studio", routes.studio);
+//   console.log("✅ Mounted studio at /api/studio");
+// }
+// PHASE 1: Unmounted non-core quotes routes (code preserved)
+// if (routes?.quotes) {
+//   app.use("/api/quotes", routes.quotes);
+//   app.use("/quotes", routes.quotes);
+//   console.log("✅ Mounted quotes at /quotes and /api/quotes");
+// }
+// PHASE 1: Unmounted non-core assets routes (code preserved)
+// if (routes?.assets) {
+//   app.use("/api/assets", routes.assets);
+//   console.log("✅ Mounted assets API at /api/assets");
+// }
 if (routes?.limits) {
   app.use("/api/limits", routes.limits);
   app.use("/limits", routes.limits);
@@ -229,10 +232,12 @@ if (routes?.creative) {
   app.use("/creative", routes.creative);
   console.log("✅ Mounted creative at /creative");
 }
-if (routes?.preview) {
-  app.use("/api/preview", routes.preview);
-  console.log("✅ Mounted preview at /api/preview");
-}
+// PHASE 1: Unmounted legacy preview routes (code preserved)
+// Legacy /api/preview/caption replaced by /api/caption/preview (V3 raster mode)
+// if (routes?.preview) {
+//   app.use("/api/preview", routes.preview);
+//   console.log("✅ Mounted preview at /api/preview");
+// }
 if (routes?.tts) {
   app.use("/api/tts", routes.tts);
   console.log("✅ Mounted tts at /api/tts");
@@ -267,6 +272,9 @@ app.post("/api/user/setup", (req, res) => {
   console.log("[legacy] /api/user/setup called - no-op (frontend uses Firestore)");
   res.status(204).end(); // no content – frontend no longer relies on this
 });
+
+// PHASE 1: Core routers summary
+console.log("📋 Mounted core routes: story, caption (preview/render), tts, voice, checkout, credits (GET only), users, user, shorts-readonly");
 
 // ---------- STATIC LAST (disable directory redirects like /dir -> /dir/) ----------
 // --- SPA static hosting (after API routes) ---

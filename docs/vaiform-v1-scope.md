@@ -2,11 +2,11 @@
 
 **Purpose**: This document defines what Vaiform v1 *is* at launch. Everything documented here should be preserved. Anything not listed can be safely removed later.
 
-**Last Updated**: December 8, 2025
+**Last Updated**: December 2025
 
 ---
 
-## Core Feature: Article Explainer / Shorts Studio Pipeline
+## Core Feature: Article Explainer Pipeline
 
 ### Story Generation & Planning
 
@@ -118,7 +118,7 @@
 - **Handler**: `finalizeStory`
 - **Services**: `story.service.js → finalizeStory()` (runs full pipeline)
 - **Middleware**: `requireAuth`, `enforceCreditsForRender()`
-- **Credit Cost**: 1 credit per render
+- **Credit Cost**: 20 credits per render
 - **Purpose**: One-click render from any state
 
 **GET /api/story/:sessionId**
@@ -129,7 +129,9 @@
 
 ---
 
-## Core Feature: Quote-to-Short Studio
+## Non-Core Feature: Quote-to-Short Studio (Can Be Removed Later)
+
+> **Note**: This feature is documented for completeness but is **not part of the core v1 product**. The core product is the Article Explainer pipeline. Studio routes can be removed after launch if not actively used.
 
 **POST /api/studio/start**
 - **File**: `src/routes/studio.routes.js`
@@ -182,7 +184,7 @@
   - `ffmpeg.video.js → renderAllFormats()`
   - `tts.service.js → synthVoice()`
 - **Middleware**: `requireAuth`, `ensureStudio(true)`, `enforceCreditsForRender()`
-- **Credit Cost**: 1 credit per render
+- **Credit Cost**: 20 credits per render
 - **Purpose**: Render final short (9:16, 1:1, 16:9)
 
 **POST /api/studio/remix**
@@ -305,12 +307,12 @@
 - **Middleware**: `requireAuth`
 - **Purpose**: Get user credit balance
 
-**GET /credits/balance** (Legacy)
+**GET /credits/balance** (Legacy - Can Be Removed)
 - **File**: `src/routes/credits.routes.js`
 - **Handler**: `balance`
 - **Purpose**: Query balance by email
 
-**POST /credits/grant** (Legacy/Admin)
+**POST /credits/grant** (Legacy/Admin - Can Be Removed)
 - **File**: `src/routes/credits.routes.js`
 - **Handler**: `grant`
 - **Purpose**: Grant credits manually
@@ -342,7 +344,26 @@
 
 ---
 
-## Core Feature: Asset & Quote Helpers
+## Core Feature: My Shorts Library
+
+**GET /api/shorts/mine**
+- **File**: `src/routes/shorts.routes.js`
+- **Handler**: `getMyShorts`
+- **Controller**: `shorts.controller.js → getMyShorts()`
+- **Middleware**: `requireAuth`
+- **Purpose**: List the current user's rendered shorts for the "My Shorts" page
+
+**GET /api/shorts/:jobId**
+- **File**: `src/routes/shorts.routes.js`
+- **Handler**: `getShortById`
+- **Middleware**: `requireAuth`
+- **Purpose**: Fetch a single short's details (used by the library / detail view)
+
+---
+
+## Non-Core Feature: Asset & Quote Helpers (Can Be Removed Later)
+
+> **Note**: These routes support the Quote-to-Short Studio feature and are **not part of the core v1 product**.
 
 **POST /api/assets/options**
 - **File**: `src/routes/assets.routes.js`
@@ -374,7 +395,9 @@
 
 ---
 
-## Core Feature: Legacy Shorts (Deprecated but Active)
+## Non-Core Feature: Legacy Shorts (Can Be Removed Later)
+
+> **Note**: These routes are legacy endpoints and are **not part of the core v1 product**. The core product uses the Article Explainer pipeline (`/api/story/*`) for creation.
 
 **POST /api/shorts/create**
 - **File**: `src/routes/shorts.routes.js`
@@ -382,23 +405,13 @@
 - **Controller**: `shorts.controller.js → createShort()`
 - **Services**: `shorts.service.js → createShortService()`
 - **Middleware**: `requireAuth`, `enforceCreditsForRender()`, `enforceWatermarkFlag()`
-- **Purpose**: Legacy short creation endpoint
-
-**GET /api/shorts/mine**
-- **File**: `src/routes/shorts.routes.js`
-- **Handler**: `getMyShorts`
-- **Controller**: `shorts.controller.js → getMyShorts()`
-- **Purpose**: List user's shorts
-
-**GET /api/shorts/:jobId**
-- **File**: `src/routes/shorts.routes.js`
-- **Handler**: `getShortById`
-- **Purpose**: Get short by ID
+- **Purpose**: Legacy short creation endpoint not used by the main Article Explainer flow
 
 **DELETE /api/shorts/:jobId**
 - **File**: `src/routes/shorts.routes.js`
 - **Handler**: `deleteShort`
-- **Purpose**: Delete short
+- **Middleware**: `requireAuth`
+- **Purpose**: Delete short (optional cleanup, not required for v1 launch)
 
 ---
 
@@ -409,7 +422,7 @@
 - Sets `req.user = { uid, email }`
 
 **enforceCreditsForRender()** (`src/middleware/planGuards.js`)
-- Checks user has >= 1 credit before render
+- Checks user has >= 20 credits before render
 - Does NOT spend credits (spending happens after success)
 - Returns 402 if insufficient
 
@@ -428,7 +441,7 @@
 
 **planGuard('pro')** (`src/middleware/planGuard.js`)
 - Requires specific plan tier
-- Used for Pro-only features (AI images)
+- Used for Pro-only features (AI images - non-core feature)
 
 ---
 
@@ -461,7 +474,7 @@
 - `spendCredits(uid, amount)` - Atomic credit deduction
 - `grantCredits(uid, amount)` - Add credits
 - `getCreditsForPlan(plan)` - Plan → credits mapping
-- `RENDER_CREDIT_COST = 1` - Cost per render
+- `RENDER_CREDIT_COST = 20` - Cost per render
 
 **quote.engine.js**
 - `getQuote()` - Quote generation orchestrator
@@ -511,12 +524,11 @@
 - Portrait: 1080×1920
 
 **Credit Costs**:
-- Render: 1 credit (`RENDER_CREDIT_COST`)
-- Welcome credits: 100 (new users)
+- Render: 20 credits (`RENDER_CREDIT_COST`)
+- Welcome credits: 100 (new users via `/api/users/ensure`)
 
 **Rate Limits**:
 - Script generation: 300/day per user
-- Free shorts: 4 lifetime (legacy)
 
 **Plan Tiers**:
 - `free` - 100 welcome credits, watermarked
@@ -524,8 +536,11 @@
 - `pro` - Monthly/one-time, AI features
 
 **Plan Credits** (`PLAN_CREDITS_MAP`):
-- `creator`: 50 credits
-- `pro`: 200 credits
+- `creator`: 2500 credits
+- `pro`: 5000 credits
+
+**Legacy Behavior (No Longer Used)**:
+- Free shorts: 4 lifetime limit - This limit exists in code (`freeShortsUsed`, `enforceFreeLifetimeShortLimit`) but is **not wired** into any active routes. The current free experience uses the credit system (100 welcome credits, 20 credits per render).
 
 ---
 
@@ -594,21 +609,71 @@
 
 ## What NOT to Delete (Summary)
 
-✅ **Keep**:
-- All `/api/story/*` routes (article explainer)
-- All `/api/studio/*` routes (quote studio)
-- `/api/caption/preview` (V3 raster mode)
-- `/api/tts/preview` (voiceover)
-- `/checkout/*`, `/stripe/webhook` (payments)
-- `/credits`, `/api/users/ensure` (auth/credits)
-- `requireAuth`, `enforceCreditsForRender`, `enforceScriptDailyCap` (middleware)
-- `ffmpeg.video.js` (render pipeline)
-- `story.llm.service.js`, `tts.service.js`, `credit.service.js` (core services)
+### ✅ Core Features (Keep)
 
-❌ **Can Delete Later** (not documented above):
+**Article Explainer Pipeline**:
+- All `/api/story/*` routes (article explainer)
+- `story.service.js`, `story.llm.service.js` (core services)
+
+**Caption System**:
+- `/api/caption/preview` (V3 raster mode)
+- `/api/caption/render`
+
+**Text-to-Speech**:
+- `/api/tts/preview` (voiceover)
+- `/api/voice/voices`, `/api/voice/preview`
+- `tts.service.js` (core service)
+
+**Payments & Credits**:
+- `/checkout/*` (especially `/checkout/start`)
+- `/stripe/webhook`
+- `/credits` (GET endpoint - "get my credits")
+- `/api/users/ensure`
+- `/api/user/me`, `/api/user/setup` (if actively used by frontend)
+- `credit.service.js` (core service)
+
+**My Shorts Library**:
+- `GET /api/shorts/mine` and `GET /api/shorts/:jobId` (My Shorts Library)
+
+**Middleware**:
+- `requireAuth`
+- `enforceCreditsForRender`
+- `enforceScriptDailyCap`
+- `enforceWatermarkFlag` (if still used in active routes)
+
+**Render Pipeline**:
+- `ffmpeg.video.js` (critical render orchestrator)
+
+### 🚧 Non-Core Features (Candidates for Removal After Launch)
+
+**Quote-to-Short Studio**:
+- All `/api/studio/*` routes
+- `studio.service.js`
+
+**Quote & Asset Helpers**:
+- `/api/quotes/*` routes
+- `/api/assets/*` routes (including AI images)
+- `quote.engine.js`, `llmQuotes.service.js`, `quotes.curated.js`
+
+**Legacy Shorts**:
+- `POST /api/shorts/create` (legacy creation endpoint)
+- `DELETE /api/shorts/:jobId` (optional cleanup)
+- `shorts.service.js` (used by legacy creation)
+
+**Legacy Credits Endpoints**:
+- `/credits/balance` (legacy query by email)
+- `/credits/grant` (admin manual grant)
+
+**Non-Core Middleware**:
+- `planGuard('pro')` (only used for AI images - non-core)
+- `blockAIQuotesForFree()` (only used for quotes - non-core)
+
+**Legacy Caption Modes**:
+- `/api/preview/caption` (v1/v2 legacy formats, non-V3 raster)
+
+### ❌ Can Delete (Not Documented Above)
 - Old experimental routes
 - Unused middleware
-- Legacy caption modes (non-V3 raster)
 - Test/debug routes (unless in production)
 
 ---

@@ -17,11 +17,11 @@ const router = Router();
 router.get("/", requireAuth, getCredits);
 
 /**
- * Legacy helpers (keep for testing/backwards-compat)
+ * PHASE 1: Unmounted legacy helpers (code preserved)
  * GET  /credits/balance?email=you@example.com
  * POST /credits/grant { email, credits }
  */
-router.get("/balance", validate(balanceQuerySchema, 'query'), balance);
-router.post("/grant", validate(grantBodySchema), grant);
+// router.get("/balance", validate(balanceQuerySchema, 'query'), balance);
+// router.post("/grant", validate(grantBodySchema), grant);
 
 export default router;
