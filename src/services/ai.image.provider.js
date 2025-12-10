@@ -6,6 +6,11 @@ import { saveImageFromUrl } from './storage.service.js';
  * Returns { url } or, if uid/jobId provided, persists to storage and returns { url: publicUrl }.
  */
 export async function generateAIImage({ prompt, style = 'realistic', params = {}, uid = null, jobId = null, index = 0 }) {
+  // [AI_IMAGES] Provider disabled for v1 – should not be used
+  throw new Error("AI_IMAGES_DISABLED: AI image generation is disabled in this version of Vaiform.");
+  
+  // [AI_IMAGES] Legacy implementation (disabled for v1)
+  /* eslint-disable no-unreachable */
   const hasKey = !!(process.env.REPLICATE_API_TOKEN);
   if (!hasKey) {
     return { url: null, reason: "NOT_CONFIGURED" };

@@ -257,6 +257,12 @@ onAuthStateChanged(auth, async (user) => {
 
 /* ========================= ENHANCE PROMPT ========================= */
 enhanceBtn?.addEventListener("click", async () => {
+  // [AI_IMAGES] Kill-switch guard
+  if (window.VAIFORM_FEATURES && !window.VAIFORM_FEATURES.ENABLE_IMAGE_CREATOR) {
+    showToast('Image prompt enhancement is disabled in this version of Vaiform.');
+    return;
+  }
+  
   const original = promptInput?.value.trim();
   if (!original) return showToast("Please enter a prompt to enhance.");
   if (!auth.currentUser) return showToast("Please log in to enhance prompts.");
@@ -430,6 +436,12 @@ styleSelect?.addEventListener("change", () => {
 /* ========================= GENERATE ========================= */
 generateForm?.addEventListener("submit", async (e) => {
   e.preventDefault();
+  // [AI_IMAGES] Kill-switch guard
+  if (window.VAIFORM_FEATURES && !window.VAIFORM_FEATURES.ENABLE_IMAGE_CREATOR) {
+    showToast('AI image generation is disabled in this version of Vaiform.');
+    return;
+  }
+  
   if (!auth.currentUser) return showToast("Please log in first.");
 
   // ✅ Minimal schema-aligned payload for /generate
@@ -523,6 +535,12 @@ generateForm?.addEventListener("submit", async (e) => {
 
 /* ========================= UPSCALE ========================= */
 async function requestUpscale(imageUrl, btnEl) {
+  // [AI_IMAGES] Kill-switch guard
+  if (window.VAIFORM_FEATURES && !window.VAIFORM_FEATURES.ENABLE_IMAGE_UPSCALE) {
+    showToast('Upscaling is disabled in this version of Vaiform.');
+    return;
+  }
+  
   try {
     btnEl && (btnEl.disabled = true);
     const { images, upscaledUrl, cost, alreadyUpscaled } = await apiFetch("/generate/upscale", {

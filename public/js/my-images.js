@@ -12,6 +12,10 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { apiFetch, setTokenProvider } from "../api.mjs";
 
+// [AI_IMAGES] Feature flags - read from window object
+const IMAGE_CREATOR_ENABLED = window.VAIFORM_FEATURES?.ENABLE_IMAGE_CREATOR ?? false;
+const IMAGE_UPSCALE_ENABLED = window.VAIFORM_FEATURES?.ENABLE_IMAGE_UPSCALE ?? false;
+
 /* ========== DOM ========== */
 const gallery             = document.getElementById("gallery");
 const toastEl             = document.getElementById("toast");
@@ -206,6 +210,12 @@ function makeTile({ url, upscaledUrl, genId, index }) {
     action.className = "text-sm px-3 py-1 rounded bg-indigo-600 hover:bg-indigo-700 text-white";
     action.onclick = async (e) => {
       e.stopPropagation();
+      // [AI_IMAGES] Kill-switch guard
+      if (!IMAGE_UPSCALE_ENABLED) {
+        showToast('Upscaling is disabled in this version of Vaiform.');
+        return;
+      }
+      
       action.disabled = true;
       const old = action.textContent;
       action.textContent = "Upscaling…";
@@ -384,6 +394,12 @@ try {
   }
 
   async function poll(jobId){
+    // [AI_IMAGES] Kill-switch guard
+    if (!IMAGE_CREATOR_ENABLED) {
+      console.warn('[AI_IMAGES] Job status polling is disabled');
+      return;
+    }
+    
     const card = document.querySelector(`[data-pending-id="${jobId}"]`);
     if (!card) return;
     card._t0 = card._t0 || Date.now();

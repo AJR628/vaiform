@@ -9,6 +9,9 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <script>tailwind.config = { darkMode: 'class' };</script>
   
+  <!-- [AI_IMAGES] Feature flags must load before modules -->
+  <script src="./js/feature-flags.js"></script>
+  
   <!-- Custom styles for generating placeholders -->
   <style>
     .card.generating { 
@@ -71,6 +74,10 @@
 
   <!-- Main -->
   <main class="max-w-6xl mx-auto px-4 py-8">
+    <!-- [AI_IMAGES] Read-only notice -->
+    <div id="read-only-banner" class="bg-yellow-600 text-white px-4 py-2 text-center text-sm mb-4">
+      Image generation is disabled. This page shows your past images only.
+    </div>
     <div class="flex justify-between items-center mb-4">
       <h2 class="text-3xl font-semibold">🖼️ Your AI Generated Images</h2>
       <button id="download-selected" class="bg-indigo-600 text-white px-4 py-2 rounded hidden">

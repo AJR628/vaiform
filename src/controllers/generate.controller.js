@@ -82,6 +82,15 @@ export async function enhance(req, res) {
  *    - header x-diag-bad-model=1      (or ?diag=badmodel or BAD_MODEL=1)
  * =========================== */
 export async function generate(req, res) {
+  // [AI_IMAGES] Kill-switch - AI image generation disabled for v1
+  return res.status(410).json({
+    success: false,
+    error: 'FEATURE_DISABLED',
+    detail: 'AI image generation is not available in this version of Vaiform.'
+  });
+  
+  // [AI_IMAGES] Legacy implementation (disabled for v1)
+  /* eslint-disable no-unreachable */
   if (DBG) {
     console.log("→ /generate hit");
     console.log("CT:", req.headers["content-type"]);
@@ -583,6 +592,15 @@ export async function generate(req, res) {
  * - Same timeout/retry diagnostics as /generate
  * =========================== */
 export async function imageToImage(req, res) {
+  // [AI_IMAGES] Kill-switch - image-to-image disabled for v1
+  return res.status(410).json({
+    success: false,
+    error: 'FEATURE_DISABLED',
+    detail: 'AI image generation is not available in this version of Vaiform.'
+  });
+  
+  // [AI_IMAGES] Legacy implementation (disabled for v1)
+  /* eslint-disable no-unreachable */
   const startedAt = Date.now();
   try {
     const uid = req.user?.uid;
@@ -769,6 +787,15 @@ export async function imageToImage(req, res) {
  * - Timeout/retry on invoke + poll
  * =========================== */
 export async function upscale(req, res) {
+  // [AI_IMAGES] Kill-switch - image upscaling disabled for v1
+  return res.status(410).json({
+    success: false,
+    error: 'FEATURE_DISABLED',
+    detail: 'Image upscaling is not available in this version of Vaiform.'
+  });
+  
+  // [AI_IMAGES] Legacy implementation (disabled for v1)
+  /* eslint-disable no-unreachable */
   const reqId = (req.headers['x-request-id'] || '').toString();
 
   try {
@@ -1069,6 +1096,15 @@ async function runGenerationInBackground({ uid, style, prompt, count, imageInput
  * GET /job/:jobId - Get job status
  * =========================== */
 export async function jobStatus(req, res) {
+  // [AI_IMAGES] Kill-switch - image job polling disabled for v1
+  return res.status(410).json({
+    success: false,
+    error: 'FEATURE_DISABLED',
+    detail: 'Image job polling is not available in this version of Vaiform.'
+  });
+  
+  // [AI_IMAGES] Legacy implementation (disabled for v1)
+  /* eslint-disable no-unreachable */
   try {
     const uid = req.user?.uid;
     if (!uid) {

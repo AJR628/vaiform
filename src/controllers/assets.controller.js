@@ -88,6 +88,15 @@ export async function getAssetsOptions(req, res) {
 }
 
 export async function generateAiImages(req, res) {
+  // [AI_IMAGES] Kill-switch - AI image generation disabled for v1
+  return res.status(410).json({
+    success: false,
+    error: "FEATURE_DISABLED",
+    detail: "AI image generation is disabled in this version of Vaiform.",
+  });
+  
+  // [AI_IMAGES] Legacy implementation (disabled for v1)
+  /* eslint-disable no-unreachable */
   try {
     const parsed = AiImagesSchema.safeParse(req.body || {});
     if (!parsed.success) {

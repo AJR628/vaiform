@@ -19,6 +19,8 @@
   <script>
     tailwind.config = { darkMode: 'class' };
   </script>
+  <!-- [AI_IMAGES] Feature flags must load before modules -->
+  <script src="./js/feature-flags.js"></script>
   <!-- Initial visibility is controlled by classes (logged-in / logged-out + hidden). -->
   <!-- Removed ID-based display overrides that blocked JS toggling. -->
 </head>
@@ -296,6 +298,23 @@
     })();
   </script>
 
+  <!-- [AI_IMAGES] Kill-switch guard - must run before module scripts -->
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      if (window.VAIFORM_FEATURES && !window.VAIFORM_FEATURES.ENABLE_IMAGE_CREATOR) {
+        const root = document.body;
+        root.innerHTML = `
+          <div style="padding: 2rem; text-align: center; color: white;">
+            <h2>Image Creator is not available</h2>
+            <p>You can still use Vaiform's Article Explainer to create shorts.</p>
+            <a href="/creative.html" style="color: #818cf8;">Go to Article Explainer</a>
+          </div>
+        `;
+        return;
+      }
+    });
+  </script>
+  
   <!-- Unified Header and Auth -->
   <script type="module">
     import { createUnifiedHeader, initializeHeader } from "./components/header.js";

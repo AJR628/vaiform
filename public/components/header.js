@@ -44,6 +44,12 @@ export function createUnifiedHeader() {
 }
 
 export function initializeHeader() {
+  // [AI_IMAGES] Hide Image Creator nav if disabled
+  if (window.VAIFORM_FEATURES && !window.VAIFORM_FEATURES.ENABLE_IMAGE_CREATOR) {
+    const link = document.querySelector('a[data-page="image-creator"], a[href="/image-creator.html"]');
+    if (link) link.style.display = 'none';
+  }
+  
   // Set active navigation link based on current page
   const currentPath = window.location.pathname;
   const navLinks = document.querySelectorAll('.nav-link');

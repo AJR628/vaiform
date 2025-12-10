@@ -14,6 +14,15 @@ import { ENHANCE_COST } from "../config/pricing.js";
  * so this controller assumes valid types/ranges.
  */
 export async function enhanceController(req, res) {
+  // [AI_IMAGES] Kill-switch - image prompt enhancement disabled for v1
+  return res.status(410).json({
+    success: false,
+    error: 'FEATURE_DISABLED',
+    detail: 'Image prompt enhancement is not available in this version of Vaiform.'
+  });
+  
+  // [AI_IMAGES] Legacy implementation (disabled for v1)
+  /* eslint-disable no-unreachable */
   try {
     const { prompt, strength = 0.6 } = req.body || {};
     const { uid, email } = req.user || {};
