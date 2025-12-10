@@ -1,13 +1,30 @@
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
-    // Users can only access their own artifacts
+
+    function isSignedIn() { return request.auth != null; }
+    function isSelf(uid)  { return isSignedIn() && request.auth.uid == uid; }
+
+    // Artifacts uploaded by the server (Admin SDK bypasses rules).
+    // Files live under: artifacts/{uid}/{jobId}/(short.mp4|cover.jpg|meta.json|...)
     match /artifacts/{uid}/{jobId}/{fileName} {
-      allow read: if request.auth != null && request.auth.uid == uid;
-      allow write: if false; // Server-only uploads via Admin SDK
+      // Owner-only SDK access (e.g. my shorts library, in-app playback).
+      // Sharing uses Firebase "download tokens" which bypass rules and are
+      // stored in the file's metadata.
+      allow read: if isSelf(uid);
+
+      // Block client writes; only server should write artifacts.
+      allow write: if false;
     }
-    
-    // Deny access to all other paths
+
+    // Optional: legacy user uploads (if still in use)
+    match /userUploads/{userEmail}/{fileName} {
+      allow read, write: if request.auth != null
+        && request.auth.token.email != null
+        && request.auth.token.email.replace('.', '_') == userEmail;
+    }
+
+    // Deny everything else by default
     match /{allPaths=**} {
       allow read, write: if false;
     }

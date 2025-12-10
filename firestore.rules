@@ -10,13 +10,12 @@ service cloud.firestore {
     match /users/{uid} {
       allow read: if isSignedIn() && request.auth.uid == uid;
       allow create: if isSignedIn() && request.auth.uid == uid
-        && !(("plan" in request.resource.data) || ("credits" in request.resource.data) || ("membership" in request.resource.data));
+        && !(("plan" in request.resource.data) || ("credits" in request.resource.data) || ("membership" in request.resource.data) || ("isMember" in request.resource.data));
       allow update: if isSignedIn() && request.auth.uid == uid
-        && !(
-          ("plan" in request.resource.data.diff().changedKeys())
-          || ("credits" in request.resource.data.diff().changedKeys())
-          || ("membership" in request.resource.data.diff().changedKeys())
-        );
+        && !request.resource.data
+              .diff(resource.data)
+              .changedKeys()
+              .hasAny(["plan","credits","membership","isMember"]);
 
       match /generations/{genId} {
         allow read, write: if isSelf(uid);
@@ -37,6 +36,28 @@ service cloud.firestore {
     // Private server-only collections
     match /pending_credits_by_email/{emailDoc} {
       allow read, write: if false;
+    }
+
+    // --- Shorts library (owner-locked) ---
+    match /shorts/{id} {
+      // Create: must create for themselves
+      allow create: if isSignedIn() &&
+                    request.resource.data.ownerId == request.auth.uid;
+
+      // Read: only owner can view
+      allow read: if isSignedIn() &&
+                  resource.data.ownerId == request.auth.uid;
+
+      // Update: only owner AND cannot change ownerId/createdAt
+      allow update: if isSignedIn() &&
+                    resource.data.ownerId == request.auth.uid &&
+                    request.resource.data.ownerId == resource.data.ownerId &&
+                    (!('createdAt' in resource.data) ||
+                      request.resource.data.createdAt == resource.data.createdAt);
+
+      // Delete: only owner can delete
+      allow delete: if isSignedIn() &&
+                    resource.data.ownerId == request.auth.uid;
     }
   }
 }
