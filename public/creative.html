@@ -13,13 +13,13 @@
         document.documentElement.classList.add("dark");
       }
     </script>
-    <!-- Tailwind config MUST come before the CDN script -->
+    <!-- Tailwind CDN must load before config -->
+    <script src="https://cdn.tailwindcss.com"></script>
     <script>
       tailwind.config = {
         darkMode: 'class',
       };
     </script>
-    <script src="https://cdn.tailwindcss.com"></script>
     <!-- Unified Header and Auth -->
     <script type="module">
         import { createUnifiedHeader, initializeHeader } from "/components/header.js";
@@ -286,15 +286,6 @@
             border-radius: 4px;
         }
     </style>
-    <!-- Respect saved theme before paint - default to dark -->
-    <script>
-        const savedTheme = localStorage.getItem("theme");
-        if (savedTheme === "light") {
-            document.documentElement.classList.remove("dark");
-        } else {
-            document.documentElement.classList.add("dark");
-        }
-    </script>
 </head>
 <body class="bg-gray-50 text-gray-800 dark:bg-gray-900 dark:text-gray-100 min-h-screen transition-colors duration-300">
     <!-- Unified Header -->

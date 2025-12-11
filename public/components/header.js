@@ -93,17 +93,9 @@ export function initializeHeader() {
         }
       });
       
-      // Set initial theme - default to dark
-      const savedTheme = localStorage.getItem('theme');
-      const shouldBeDark = savedTheme !== 'light'; // Default to dark unless explicitly set to light
-      
-      if (shouldBeDark) {
-        document.documentElement.classList.add('dark');
-        newThemeToggle.textContent = '🌙';
-      } else {
-        document.documentElement.classList.remove('dark');
-        newThemeToggle.textContent = '☀️';
-      }
+      // Set toggle button icon based on current theme state (early script already set the class)
+      const isCurrentlyDark = document.documentElement.classList.contains('dark');
+      newThemeToggle.textContent = isCurrentlyDark ? '🌙' : '☀️';
     }
   }, 100);
 }
