@@ -329,14 +329,6 @@
             >
                 Quotes
             </button>
-            <button
-                id="mode-articles-tab"
-                data-action="setModeArticles"
-                type="button"
-                class="px-4 py-2 rounded bg-gray-600 dark:bg-gray-700 text-white font-medium"
-            >
-                Articles
-            </button>
         </div>
 
         <!-- Accordion Layout -->
@@ -1485,15 +1477,19 @@
             // Update tab styles
             const quotesTab = document.getElementById('mode-quotes-tab');
             const articlesTab = document.getElementById('mode-articles-tab');
-            if (quotesTab && articlesTab) {
+            if (quotesTab) {
                 if (mode === 'quotes') {
                     quotesTab.classList.remove('bg-gray-600', 'dark:bg-gray-700');
                     quotesTab.classList.add('bg-blue-600');
-                    articlesTab.classList.remove('bg-blue-600');
-                    articlesTab.classList.add('bg-gray-600', 'dark:bg-gray-700');
+                    if (articlesTab) {
+                        articlesTab.classList.remove('bg-blue-600');
+                        articlesTab.classList.add('bg-gray-600', 'dark:bg-gray-700');
+                    }
                 } else {
-                    articlesTab.classList.remove('bg-gray-600', 'dark:bg-gray-700');
-                    articlesTab.classList.add('bg-blue-600');
+                    if (articlesTab) {
+                        articlesTab.classList.remove('bg-gray-600', 'dark:bg-gray-700');
+                        articlesTab.classList.add('bg-blue-600');
+                    }
                     quotesTab.classList.remove('bg-blue-600');
                     quotesTab.classList.add('bg-gray-600', 'dark:bg-gray-700');
                 }
