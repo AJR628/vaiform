@@ -194,7 +194,7 @@ r.post("/finalize", ensureStudio(true), enforceCreditsForRender(), async (req, r
       }
     }
     
-    return res.json({ success: true, url: publicUrl, durationSec: renderSpec?.output?.durationSec || undefined, urls });
+    return res.json({ success: true, url: publicUrl, durationSec: renderSpec?.output?.durationSec || undefined, urls, shortId: out?.shortId, thumbUrl: out?.thumbUrl });
   } catch (e) {
     if (e?.message === "NEED_IMAGE_OR_VIDEO") {
       return res.status(400).json({ success: false, error: "IMAGE_OR_VIDEO_REQUIRED" });

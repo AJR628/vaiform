@@ -230,7 +230,17 @@ function RenderStep({ studioId, captionMode, watermark, onDone }:{ studioId:stri
     setLoading(true)
     const r = await api.studioFinalize({ studioId, voiceover, wantAttribution, captionMode, watermark })
     console.log('[ui] finalize response', r)
-    if (r.ok){ setResult(r.data); handlePreviewPayload(r.data) }
+    if (r.ok){ 
+      setResult(r.data); 
+      handlePreviewPayload(r.data);
+      // Redirect to My Shorts after successful render
+      const shortId = (r.data as any)?.shortId || (r.data as any)?.renderId;
+      if (shortId) {
+        window.location.href = `/my-shorts.html?id=${encodeURIComponent(shortId)}`;
+      } else {
+        window.location.href = '/my-shorts.html';
+      }
+    }
     setLoading(false)
   }
   return (

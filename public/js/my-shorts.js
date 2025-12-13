@@ -160,7 +160,8 @@ function resolveCover(s){
   const ts = (s.completedAt || s.createdAt || new Date()).toString();
   // Prefer the stored cover URL directly to avoid /cdn/meta.json churn
   const fallbacks = [];
-  const raw = s.coverImageUrl || '';
+  // Support both coverImageUrl (legacy) and thumbUrl (new)
+  const raw = s.coverImageUrl || s.thumbUrl || '';
   const first = raw ? withCache(raw, ts) : '';
   return { src: first, fallbacks, videoUrl: s.videoUrl || '', ts };
 }
@@ -227,6 +228,8 @@ function loadPoster(img, item){
     // The user can still see the quote text and click to open
   };
 
-  if (item.coverImageUrl) setSrc(withCache(item.coverImageUrl, Date.now()));
+  // Support both coverImageUrl (legacy) and thumbUrl (new)
+  const coverUrl = item.coverImageUrl || item.thumbUrl;
+  if (coverUrl) setSrc(withCache(coverUrl, Date.now()));
   else tryVideoPoster();
 }
