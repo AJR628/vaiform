@@ -7235,6 +7235,22 @@
                         resultDiv.classList.remove('hidden');
                     }
                     console.log('[article] Render complete:', session.finalVideo.url);
+                    
+                    // Redirect to My Shorts after brief preview
+                    const jobId = session.finalVideo?.jobId;
+                    if (jobId) {
+                        setTimeout(() => {
+                            window.location.assign(`/my-shorts.html?id=${encodeURIComponent(jobId)}`);
+                        }, 800);
+                    } else {
+                        // Fallback: try to extract from URL path
+                        const urlMatch = session.finalVideo?.url?.match(/artifacts\/[^/]+\/([^/]+)\//);
+                        if (urlMatch) {
+                            setTimeout(() => {
+                                window.location.assign(`/my-shorts.html?id=${encodeURIComponent(urlMatch[1])}`);
+                            }, 800);
+                        }
+                    }
                 } else {
                     // Poll for completion (similar to oneClickShortFromLink)
                     const sessionId = window.currentStorySessionId;
@@ -7267,6 +7283,22 @@
                             }
                             
                             console.log('[article] Render complete:', polledSession.finalVideo.url);
+                            
+                            // Redirect to My Shorts after brief preview
+                            const jobId = polledSession.finalVideo?.jobId;
+                            if (jobId) {
+                                setTimeout(() => {
+                                    window.location.assign(`/my-shorts.html?id=${encodeURIComponent(jobId)}`);
+                                }, 800);
+                            } else {
+                                // Fallback: try to extract from URL path
+                                const urlMatch = polledSession.finalVideo?.url?.match(/artifacts\/[^/]+\/([^/]+)\//);
+                                if (urlMatch) {
+                                    setTimeout(() => {
+                                        window.location.assign(`/my-shorts.html?id=${encodeURIComponent(urlMatch[1])}`);
+                                    }, 800);
+                                }
+                            }
                             break;
                         }
                         

@@ -18,6 +18,7 @@ import { fetchVideoToTmp } from '../utils/video.fetch.js';
 import { uploadPublic } from '../utils/storage.js';
 import { calculateReadingDuration } from '../utils/text.duration.js';
 import admin from '../config/firebase.js';
+import { extractCoverJpeg } from '../utils/ffmpeg.cover.js';
 import { synthVoiceWithTimestamps } from './tts.service.js';
 import { getVoicePreset, getDefaultVoicePreset } from '../constants/voice.presets.js';
 import { buildKaraokeASSFromTimestamps } from '../utils/karaoke.ass.js';
@@ -968,6 +969,29 @@ export async function renderStory({ uid, sessionId }) {
   const durationSec = renderedSegments.reduce((sum, s) => sum + s.durationSec, 0);
   const joinedText = session.story?.sentences?.join(' ') || '';
   
+  // Extract and upload thumbnail (best-effort)
+  let thumbUrl = null;
+  if (fs.existsSync(finalPath)) {
+    try {
+      const thumbLocal = path.join(tmpDir, 'thumb.jpg');
+      const ok = await extractCoverJpeg({ 
+        inPath: finalPath, 
+        outPath: thumbLocal, 
+        durationSec: durationSec || 8,
+        width: 720 
+      });
+      if (ok && fs.existsSync(thumbLocal)) {
+        const thumbDest = `artifacts/${uid}/${jobId}/thumb.jpg`;
+        const { publicUrl: thumbPublicUrl } = await uploadPublic(thumbLocal, thumbDest, 'image/jpeg');
+        thumbUrl = thumbPublicUrl;
+        console.log(`[story.service] Thumbnail uploaded: ${thumbUrl}`);
+      }
+    } catch (e) {
+      console.warn(`[story.service] Thumbnail extraction failed: ${e?.message || e}`);
+      // Continue without thumbnail
+    }
+  }
+  
   // Create Firestore document in 'shorts' collection so it appears in My Shorts
   const db = admin.firestore();
   const shortsRef = db.collection('shorts').doc(jobId);
@@ -978,6 +1002,8 @@ export async function renderStory({ uid, sessionId }) {
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       status: 'ready',
       videoUrl: publicUrl,
+      thumbUrl: thumbUrl,
+      coverImageUrl: thumbUrl, // Backward compatibility
       durationSec: durationSec,
       quoteText: joinedText,
       mode: 'story',

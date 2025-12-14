@@ -506,7 +506,12 @@ r.post("/finalize", enforceCreditsForRender(), async (req, res) => {
       }
     }
     
-    return res.json({ success: true, data: session });
+    const shortId = session?.finalVideo?.jobId || null;
+    return res.json({ 
+      success: true, 
+      data: session,
+      shortId: shortId  // Top-level for convenience
+    });
   } catch (e) {
     console.error("[story][finalize] error:", e);
     return res.status(500).json({
