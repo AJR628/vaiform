@@ -792,6 +792,9 @@
                         placeholder="Script will appear here after summarization..."
                         class="w-full bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-3 py-2 text-gray-900 dark:text-white"
                     ></textarea>
+                    <div id="script-preview-counters" class="text-xs text-gray-500 dark:text-gray-400">
+                        Beats: 0 / 8 | Total: 0 / 850
+                    </div>
                 </div>
 
                 <!-- Prepare Storyboard Button -->
@@ -2337,6 +2340,22 @@
 
         function hideError(elementId) {
             document.getElementById(elementId).classList.add('hidden');
+        }
+
+        function showToast(message, durationMs = 3000) {
+            // Create toast element if it doesn't exist
+            let toastEl = document.getElementById('article-toast');
+            if (!toastEl) {
+                toastEl = document.createElement('div');
+                toastEl.id = 'article-toast';
+                toastEl.className = 'fixed bottom-5 left-1/2 transform -translate-x-1/2 bg-gray-900 dark:bg-gray-800 text-white px-4 py-2 rounded-lg text-sm shadow-lg z-50 hidden';
+                document.body.appendChild(toastEl);
+            }
+            toastEl.textContent = message;
+            toastEl.classList.remove('hidden');
+            setTimeout(() => {
+                toastEl.classList.add('hidden');
+            }, durationMs);
         }
 
         // Show free limit reached modal with upgrade option
@@ -5965,6 +5984,127 @@
         // Expose to window scope for ui-actions.js
         window.oneClickShort = oneClickShort;
 
+        // Article mode constants
+        const MAX_BEATS = 8;
+        const MAX_BEAT_CHARS = 160;
+        const MAX_TOTAL_CHARS = 850;
+
+        // Normalize script text into beats with caps
+        function normalizeScript(originalText) {
+            let didSplitLongBeat = false;
+            let didTruncateBeats = false;
+            
+            // Split by newlines, trim, drop empty
+            let beats = originalText.split('\n')
+                .map(s => s.trim())
+                .filter(s => s.length > 0);
+            
+            // Split long beats
+            const splitBeats = [];
+            for (const beat of beats) {
+                if (beat.length > MAX_BEAT_CHARS) {
+                    didSplitLongBeat = true;
+                    // Try splitting by sentence boundaries first
+                    const sentences = beat.split(/([.!?]+)/).filter(s => s.trim().length > 0);
+                    const grouped = [];
+                    let current = '';
+                    
+                    for (let i = 0; i < sentences.length; i++) {
+                        const test = current + sentences[i];
+                        if (test.length <= MAX_BEAT_CHARS) {
+                            current = test;
+                        } else {
+                            if (current) grouped.push(current.trim());
+                            current = sentences[i];
+                        }
+                    }
+                    if (current) grouped.push(current.trim());
+                    
+                    // If still too long, split by comma/space
+                    const finalSplit = [];
+                    for (const part of grouped) {
+                        if (part.length <= MAX_BEAT_CHARS) {
+                            finalSplit.push(part);
+                        } else {
+                            // Split by comma, then space
+                            const commaParts = part.split(',').map(s => s.trim()).filter(s => s.length > 0);
+                            for (const commaPart of commaParts) {
+                                if (commaPart.length <= MAX_BEAT_CHARS) {
+                                    finalSplit.push(commaPart);
+                                } else {
+                                    // Split by space
+                                    const words = commaPart.split(/\s+/);
+                                    let line = '';
+                                    for (const word of words) {
+                                        const test = line ? line + ' ' + word : word;
+                                        if (test.length <= MAX_BEAT_CHARS) {
+                                            line = test;
+                                        } else {
+                                            if (line) finalSplit.push(line);
+                                            line = word;
+                                        }
+                                    }
+                                    if (line) finalSplit.push(line);
+                                }
+                            }
+                        }
+                    }
+                    splitBeats.push(...finalSplit);
+                } else {
+                    splitBeats.push(beat);
+                }
+            }
+            
+            beats = splitBeats;
+            
+            // Truncate to max beats
+            if (beats.length > MAX_BEATS) {
+                didTruncateBeats = true;
+                beats = beats.slice(0, MAX_BEATS);
+            }
+            
+            // Enforce total char limit (truncate last beat if needed)
+            const normalizedText = beats.join('\n');
+            if (normalizedText.length > MAX_TOTAL_CHARS) {
+                const lastBeat = beats[beats.length - 1];
+                const allowedLength = MAX_TOTAL_CHARS - (beats.slice(0, -1).join('\n').length + 1); // +1 for newline
+                beats[beats.length - 1] = lastBeat.substring(0, Math.max(0, allowedLength)).trim();
+                didTruncateBeats = true;
+            }
+            
+            const finalNormalizedText = beats.join('\n');
+            const originalLength = originalText.length;
+            const trimmedChars = Math.max(0, originalLength - finalNormalizedText.length);
+            
+            return {
+                normalizedBeats: beats,
+                trimmedChars,
+                didSplitLongBeat,
+                didTruncateBeats
+            };
+        }
+        
+        // Update script preview counters
+        function updateScriptCounters() {
+            const textarea = document.getElementById('article-script-preview');
+            const countersEl = document.getElementById('script-preview-counters');
+            if (!textarea || !countersEl) return;
+            
+            const text = textarea.value;
+            const beats = text.split('\n')
+                .map(s => s.trim())
+                .filter(s => s.length > 0);
+            const totalChars = text.length;
+            
+            countersEl.textContent = `Beats: ${beats.length} / ${MAX_BEATS} | Total: ${totalChars} / ${MAX_TOTAL_CHARS}`;
+            
+            // Update button state (only disable if empty)
+            const prepareBtn = document.getElementById('prepare-storyboard-btn');
+            if (prepareBtn) {
+                prepareBtn.disabled = beats.length === 0;
+            }
+        }
+        
         // Article mode functions
         async function summarizeArticle() {
             const inputEl = document.getElementById('article-input');
@@ -6044,6 +6184,12 @@
                 // Store original sentences to detect edits
                 window.currentStoryOriginalSentences = Array.isArray(sentences) ? [...sentences] : [String(sentences)];
                 
+                // Set script source flag
+                window.scriptSource = 'llm';
+                
+                // Update counters
+                updateScriptCounters();
+                
                 console.log('[article] Story generated successfully:', sentences.length, 'sentences');
                 
             } catch (error) {
@@ -6055,16 +6201,10 @@
         }
         
         async function prepareStoryboard() {
-            const sessionId = window.currentStorySessionId;
-            if (!sessionId) {
-                showError('article-error', 'Please summarize the article first');
-                return;
-            }
-            
-                const scriptPreviewEl = document.getElementById('article-script-preview');
-                const prepareBtn = document.getElementById('prepare-storyboard-btn');
-                const storyboardEl = document.getElementById('storyboard');
-                const scriptSection = document.getElementById('article-script-section');
+            const scriptPreviewEl = document.getElementById('article-script-preview');
+            const prepareBtn = document.getElementById('prepare-storyboard-btn');
+            const storyboardEl = document.getElementById('storyboard');
+            const scriptSection = document.getElementById('article-script-section');
             
             if (!scriptPreviewEl || !prepareBtn) {
                 console.error('[article] Missing required elements');
@@ -6077,76 +6217,176 @@
             try {
                 const { apiFetch } = await import('./api.mjs');
                 
-                // Get current script from textarea
-                const currentScript = scriptPreviewEl.value.trim();
-                const currentSentences = currentScript.split('\n')
-                    .map(s => s.trim())
-                    .filter(s => s.length > 0);
+                // Explicit priority order
+                const sessionId = window.currentStorySessionId;
+                const scriptSource = window.scriptSource;
+                const scriptText = scriptPreviewEl.value.trim();
                 
-                if (currentSentences.length === 0) {
-                    throw new Error('Script is empty');
+                // Priority 1: LLM + Session
+                if (scriptSource === 'llm' && sessionId) {
+                    // Keep existing LLM flow unchanged
+                    const currentSentences = scriptText.split('\n')
+                        .map(s => s.trim())
+                        .filter(s => s.length > 0);
+                    
+                    if (currentSentences.length === 0) {
+                        throw new Error('Script is empty');
+                    }
+                    
+                    // Check if script was edited
+                    const originalSentences = window.currentStoryOriginalSentences || [];
+                    const sentencesChanged = originalSentences.length !== currentSentences.length ||
+                        originalSentences.some((s, i) => s !== currentSentences[i]);
+                    
+                    // Update script if changed
+                    if (sentencesChanged) {
+                        console.log('[article] Script was edited, updating...');
+                        const updateResp = await apiFetch('/story/update-script', {
+                            method: 'POST',
+                            body: {
+                                sessionId: sessionId,
+                                sentences: currentSentences
+                            }
+                        });
+                        
+                        if (!updateResp.success) {
+                            throw new Error(updateResp.error || 'Failed to update script');
+                        }
+                        
+                        // Update stored original
+                        window.currentStoryOriginalSentences = [...currentSentences];
+                    }
+                    
+                    // Step 1: Plan shots
+                    const planResp = await apiFetch('/story/plan', {
+                        method: 'POST',
+                        body: { sessionId: sessionId }
+                    });
+                    
+                    if (!planResp.success) {
+                        throw new Error(planResp.error || 'Failed to plan shots');
+                    }
+                    
+                    // Step 2: Search clips
+                    const searchResp = await apiFetch('/story/search', {
+                        method: 'POST',
+                        body: { sessionId: sessionId }
+                    });
+                    
+                    if (!searchResp.success) {
+                        throw new Error(searchResp.error || 'Failed to search clips');
+                    }
+                    
+                    const session = searchResp.data;
+                    
+                    // Store session for clip picker access
+                    window.currentStorySession = session;
+                    
+                    // Render storyboard
+                    renderStoryboard(session);
+                    
+                    // Mobile: collapse script, expand storyboard
+                    if (window.innerWidth < 768) {
+                        if (scriptSection) {
+                            scriptSection.classList.add('hidden');
+                        }
+                    }
+                    
+                    console.log('[article] Storyboard prepared successfully');
+                    return;
                 }
                 
-                // Check if script was edited
-                const originalSentences = window.currentStoryOriginalSentences || [];
-                const sentencesChanged = originalSentences.length !== currentSentences.length ||
-                    originalSentences.some((s, i) => s !== currentSentences[i]);
-                
-                // Update script if changed
-                if (sentencesChanged) {
-                    console.log('[article] Script was edited, updating...');
-                    const updateResp = await apiFetch('/story/update-script', {
+                // Priority 2: Manual Script (textarea has text)
+                if (scriptText.length > 0) {
+                    // Get original text before normalization
+                    const originalText = scriptText;
+                    
+                    // Normalize script
+                    const { normalizedBeats, trimmedChars, didSplitLongBeat, didTruncateBeats } = normalizeScript(originalText);
+                    
+                    // Write normalized beats back into textarea
+                    const normalizedText = normalizedBeats.join('\n');
+                    scriptPreviewEl.value = normalizedText;
+                    
+                    // Update counters
+                    updateScriptCounters();
+                    
+                    // Show toast if normalization occurred
+                    if (trimmedChars > 0 || didSplitLongBeat || didTruncateBeats) {
+                        let message = 'Auto-formatted: ';
+                        if (trimmedChars > 0) {
+                            message += `trimmed ${trimmedChars} characters `;
+                        }
+                        message += 'to fit the max length (8 beats / 850 chars for <1 minute).';
+                        showToast(message);
+                    }
+                    
+                    // Validate
+                    if (normalizedBeats.length === 0) {
+                        throw new Error('Script is empty after normalization');
+                    }
+                    
+                    // Call manual endpoint
+                    const manualResp = await apiFetch('/story/manual', {
                         method: 'POST',
                         body: {
-                            sessionId: sessionId,
-                            sentences: currentSentences
+                            scriptText: normalizedText
                         }
                     });
                     
-                    if (!updateResp.success) {
-                        throw new Error(updateResp.error || 'Failed to update script');
+                    if (!manualResp.success) {
+                        throw new Error(manualResp.error || 'Failed to create manual story session');
                     }
                     
-                    // Update stored original
-                    window.currentStoryOriginalSentences = [...currentSentences];
-                }
-                
-                // Step 1: Plan shots
-                const planResp = await apiFetch('/story/plan', {
-                    method: 'POST',
-                    body: { sessionId: sessionId }
-                });
-                
-                if (!planResp.success) {
-                    throw new Error(planResp.error || 'Failed to plan shots');
-                }
-                
-                // Step 2: Search clips
-                const searchResp = await apiFetch('/story/search', {
-                    method: 'POST',
-                    body: { sessionId: sessionId }
-                });
-                
-                if (!searchResp.success) {
-                    throw new Error(searchResp.error || 'Failed to search clips');
-                }
-                
-                const session = searchResp.data;
-                
-                // Store session for clip picker access
-                window.currentStorySession = session;
-                
-                // Render storyboard
-                renderStoryboard(session);
-                
-                // Mobile: collapse script, expand storyboard
-                if (window.innerWidth < 768) {
-                    if (scriptSection) {
-                        scriptSection.classList.add('hidden');
+                    const newSessionId = manualResp.data.sessionId;
+                    window.currentStorySessionId = newSessionId;
+                    window.scriptSource = 'llm'; // Session now exists, treat as LLM path
+                    
+                    // Store original sentences
+                    window.currentStoryOriginalSentences = [...normalizedBeats];
+                    
+                    // Step 1: Plan shots
+                    const planResp = await apiFetch('/story/plan', {
+                        method: 'POST',
+                        body: { sessionId: newSessionId }
+                    });
+                    
+                    if (!planResp.success) {
+                        throw new Error(planResp.error || 'Failed to plan shots');
                     }
+                    
+                    // Step 2: Search clips
+                    const searchResp = await apiFetch('/story/search', {
+                        method: 'POST',
+                        body: { sessionId: newSessionId }
+                    });
+                    
+                    if (!searchResp.success) {
+                        throw new Error(searchResp.error || 'Failed to search clips');
+                    }
+                    
+                    const session = searchResp.data;
+                    
+                    // Store session for clip picker access
+                    window.currentStorySession = session;
+                    
+                    // Render storyboard
+                    renderStoryboard(session);
+                    
+                    // Mobile: collapse script, expand storyboard
+                    if (window.innerWidth < 768) {
+                        if (scriptSection) {
+                            scriptSection.classList.add('hidden');
+                        }
+                    }
+                    
+                    console.log('[article] Storyboard prepared successfully (manual mode)');
+                    return;
                 }
                 
-                console.log('[article] Storyboard prepared successfully');
+                // Priority 3: Empty
+                showError('article-error', 'Please enter a script or summarize an article first');
+                return;
                 
             } catch (error) {
                 console.error('[article] Prepare storyboard failed:', error);
@@ -7319,6 +7559,27 @@
             }
         }
         
+        // Initialize script preview input handler
+        (function() {
+            const scriptPreviewEl = document.getElementById('article-script-preview');
+            if (scriptPreviewEl) {
+                let debounceTimer = null;
+                scriptPreviewEl.addEventListener('input', () => {
+                    // Debounce updates
+                    if (debounceTimer) clearTimeout(debounceTimer);
+                    debounceTimer = setTimeout(() => {
+                        updateScriptCounters();
+                        window.scriptSource = 'manual';
+                    }, 300);
+                });
+                
+                // Update counters on page load if textarea has content
+                if (scriptPreviewEl.value.trim()) {
+                    updateScriptCounters();
+                }
+            }
+        })();
+
         // Expose to window scope for ui-actions.js
         window.summarizeArticle = summarizeArticle;
         window.renderArticle = renderArticle;

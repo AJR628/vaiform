@@ -25,6 +25,11 @@ import { buildKaraokeASSFromTimestamps } from '../utils/karaoke.ass.js';
 
 const TTL_HOURS = Number(process.env.STORY_TTL_HOURS || 48);
 
+// Manual script mode constants
+const MAX_BEATS = 8;
+const MAX_BEAT_CHARS = 160;
+const MAX_TOTAL_CHARS = 850;
+
 /**
  * Ensure session has default structure
  */
@@ -1037,6 +1042,50 @@ export async function renderStory({ uid, sessionId }) {
 }
 
 /**
+ * Create story session from manual script (manual mode)
+ */
+export async function createManualStorySession({ uid, scriptText }) {
+  // Split scriptText by newlines, trim, drop empty
+  const beats = scriptText.split('\n')
+    .map(s => String(s).trim())
+    .filter(s => s.length > 0);
+  
+  // Validate server-side
+  if (beats.length > MAX_BEATS) {
+    throw new Error(`Script exceeds maximum of ${MAX_BEATS} beats (got ${beats.length})`);
+  }
+  
+  for (let i = 0; i < beats.length; i++) {
+    if (beats[i].length > MAX_BEAT_CHARS) {
+      throw new Error(`Beat ${i + 1} exceeds maximum of ${MAX_BEAT_CHARS} characters (got ${beats[i].length})`);
+    }
+  }
+  
+  const totalChars = scriptText.length;
+  if (totalChars > MAX_TOTAL_CHARS) {
+    throw new Error(`Script exceeds maximum of ${MAX_TOTAL_CHARS} total characters (got ${totalChars})`);
+  }
+  
+  // Create session via createStorySession
+  const session = await createStorySession({
+    uid,
+    input: 'manual',
+    inputType: 'paragraph',
+    styleKey: 'default'
+  });
+  
+  // Set story sentences (same structure as generateStory output)
+  session.story = { sentences: beats };
+  session.status = 'story_generated';
+  session.updatedAt = new Date().toISOString();
+  
+  // Save session
+  await saveStorySession({ uid, sessionId: session.id, data: session });
+  
+  return session;
+}
+
+/**
  * Finalize story - run full pipeline (Phase 7)
  */
 export async function finalizeStory({ uid, sessionId, options = {} }) {
@@ -1091,6 +1140,7 @@ export default {
   createStorySession,
   getStorySession,
   generateStory,
+  createManualStorySession,
   planShots,
   searchShots,
   buildTimeline,

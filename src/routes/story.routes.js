@@ -7,6 +7,7 @@ import {
   createStorySession,
   getStorySession,
   generateStory,
+  createManualStorySession,
   updateStorySentences,
   planShots,
   searchShots,
@@ -518,6 +519,40 @@ r.post("/finalize", enforceCreditsForRender(), async (req, res) => {
       success: false,
       error: "STORY_FINALIZE_FAILED",
       detail: e?.message || "Failed to finalize story"
+    });
+  }
+});
+
+// POST /api/story/manual - Create story session from manual script
+r.post("/manual", async (req, res) => {
+  try {
+    const MAX_TOTAL_CHARS = 850;
+    const ManualSchema = z.object({
+      scriptText: z.string().min(1).max(MAX_TOTAL_CHARS)
+    });
+    
+    const parsed = ManualSchema.safeParse(req.body || {});
+    if (!parsed.success) {
+      return res.status(400).json({
+        success: false,
+        error: "INVALID_INPUT",
+        detail: parsed.error.flatten()
+      });
+    }
+    
+    const { scriptText } = parsed.data;
+    const session = await createManualStorySession({
+      uid: req.user.uid,
+      scriptText
+    });
+    
+    return res.json({ success: true, data: { sessionId: session.id } });
+  } catch (e) {
+    console.error("[story][manual] error:", e);
+    return res.status(500).json({
+      success: false,
+      error: "STORY_MANUAL_FAILED",
+      detail: e?.message || "Failed to create manual story session"
     });
   }
 });
