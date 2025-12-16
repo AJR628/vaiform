@@ -3460,6 +3460,7 @@
                 
                 // Initialize to articles mode (core feature)
                 if (typeof window.setStudioMode === 'function') {
+                    console.log('[mode-init] Calling setStudioMode("articles")');
                     window.setStudioMode('articles');
                 }
             } else {
@@ -6871,7 +6872,7 @@
             } else {
                 // Session mode: read from session
                 const sentences = window.currentStorySession?.story?.sentences || [];
-                currentText = sentences[sentenceIndex] ?? textEl.textContent || "";
+                currentText = sentences[sentenceIndex] ?? textEl.textContent ?? "";
             }
             
             currentBeatEditing = {
@@ -7141,7 +7142,7 @@
             // Render grid - draft or session mode
             if (window.clipPickerIsDraft) {
                 // Draft mode: create fake shot object for renderClipPickerGrid
-                const beat = window.draftStoryboard?.beats?.[sentenceIndex];
+                const beat = window.draftStoryboard?.beats?.[window.clipPickerSentenceIndex];
                 const fakeShot = {
                     candidates: window.draftClipPickerCandidates || [],
                     selectedClip: beat?.selectedClip || null
