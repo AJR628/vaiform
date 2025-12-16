@@ -1460,6 +1460,11 @@
         let currentStoryUrl = null;
         // SSOT: Use window scope so ui-actions.js can update it
         window.currentAssetType = window.currentAssetType || 'images';
+        
+        // Draft storyboard state (client-only, no API calls)
+        window.draftStoryboard = window.draftStoryboard || {
+            beats: Array(8).fill(null).map(() => ({ text: '', selectedClip: null }))
+        };
 
         // Mode switching SSOT function
         window.setStudioMode = function(mode) {
@@ -3561,6 +3566,15 @@
 
           // Asset browser setup is now handled above in priority section
           // Tab switching is now handled by the delegated router in ui-actions.js
+          
+          // Initialize draft storyboard on page load if no session exists
+          if (!window.currentStorySessionId) {
+              if (!window.draftStoryboard) {
+                  window.draftStoryboard = { beats: Array(8).fill(null).map(() => ({ text: '', selectedClip: null })) };
+              }
+              renderDraftStoryboard();
+              updateRenderArticleButtonState();
+          }
         });
 
         // Update render button state based on validation
@@ -6208,6 +6222,15 @@
                 return;
             }
             
+            // Check if storyboard is dirty and show confirm if needed
+            const dirty = isStoryboardDirty();
+            if (dirty) {
+                const confirmed = window.confirm("Auto-fill will replace your current storyboard and overwrite any manual changes. Continue?");
+                if (!confirmed) {
+                    return;
+                }
+            }
+            
             setLoading('prepare-storyboard-btn', true);
             hideError('article-error');
             
@@ -6282,12 +6305,18 @@
                     // Render storyboard
                     renderStoryboard(session);
                     
+                    // Clear draft state (session is now source of truth)
+                    window.draftStoryboard = { beats: Array(8).fill(null).map(() => ({ text: '', selectedClip: null })) };
+                    
                     // Mobile: collapse script, expand storyboard
                     if (window.innerWidth < 768) {
                         if (scriptSection) {
                             scriptSection.classList.add('hidden');
                         }
                     }
+                    
+                    // Update render button state (session now exists)
+                    updateRenderArticleButtonState();
                     
                     console.log('[article] Storyboard prepared successfully');
                     return;
@@ -6370,12 +6399,18 @@
                     // Render storyboard
                     renderStoryboard(session);
                     
+                    // Clear draft state (session is now source of truth)
+                    window.draftStoryboard = { beats: Array(8).fill(null).map(() => ({ text: '', selectedClip: null })) };
+                    
                     // Mobile: collapse script, expand storyboard
                     if (window.innerWidth < 768) {
                         if (scriptSection) {
                             scriptSection.classList.add('hidden');
                         }
                     }
+                    
+                    // Update render button state (session now exists)
+                    updateRenderArticleButtonState();
                     
                     console.log('[article] Storyboard prepared successfully (manual mode)');
                     return;
@@ -6520,6 +6555,103 @@
             
             // Setup swap button click handlers
             setupSwapButtonHandlers();
+            
+            // Update render button state (session exists)
+            updateRenderArticleButtonState();
+        }
+        
+        function renderDraftStoryboard() {
+            const storyboardRow = document.getElementById('storyboard-row');
+            const storyboardEl = document.getElementById('storyboard');
+            
+            if (!storyboardRow || !storyboardEl) {
+                console.error('[article] Storyboard elements not found');
+                return;
+            }
+            
+            // Clear existing cards
+            storyboardRow.innerHTML = '';
+            
+            const beats = window.draftStoryboard.beats || [];
+            
+            beats.forEach((beat, idx) => {
+                const card = document.createElement('div');
+                card.className = 'relative w-40 h-72 flex-shrink-0 bg-black rounded-lg overflow-hidden border border-gray-700';
+                card.setAttribute('data-sentence-index', idx);
+                card.setAttribute('data-draft', 'true');
+                
+                if (!beat.selectedClip) {
+                    // Placeholder for missing clip
+                    card.innerHTML = `
+                        <div class="relative w-full h-40 bg-gray-800 flex items-center justify-center">
+                            <p class="text-xs text-gray-400 text-center px-2">+ Add clip</p>
+                        </div>
+                        <div 
+                            class="beat-text p-2 text-xs text-gray-200 h-24 overflow-hidden cursor-text"
+                            data-sentence-index="${idx}"
+                            data-draft="true"
+                            title="Click to edit"
+                        >
+                            ${escapeHtml(beat.text || 'Add text…')}
+                        </div>
+                        <button
+                            class="swap-clip-btn mt-1 mx-2 mb-2 w-[calc(100%-1rem)] text-xs py-1 rounded bg-slate-700 hover:bg-slate-600 text-white"
+                            data-sentence-index="${idx}"
+                            data-draft="true"
+                        >
+                            Swap clip
+                        </button>
+                    `;
+                } else {
+                    const clip = beat.selectedClip;
+                    const videoUrl = clip.url || '';
+                    const thumbUrl = clip.thumbUrl || '';
+                    
+                    card.innerHTML = `
+                        <div class="relative w-full h-40 overflow-hidden">
+                            <video
+                                src="${videoUrl}"
+                                ${thumbUrl ? `poster="${thumbUrl}"` : ''}
+                                muted
+                                loop
+                                preload="none"
+                                class="w-full h-full object-cover transition-transform duration-150 storyboard-video"
+                                data-index="${idx}"
+                                aria-label="Preview for: ${(beat.text || '').substring(0, 50)}"
+                            ></video>
+                        </div>
+                        <div 
+                            class="beat-text p-2 text-xs text-gray-200 h-24 overflow-hidden cursor-text"
+                            data-sentence-index="${idx}"
+                            data-draft="true"
+                            title="Click to edit"
+                        >
+                            ${escapeHtml(beat.text || 'Add text…')}
+                        </div>
+                        <button
+                            class="swap-clip-btn mt-1 mx-2 mb-2 w-[calc(100%-1rem)] text-xs py-1 rounded bg-slate-700 hover:bg-slate-600 text-white"
+                            data-sentence-index="${idx}"
+                            data-draft="true"
+                        >
+                            Swap clip
+                        </button>
+                    `;
+                }
+                
+                storyboardRow.appendChild(card);
+            });
+            
+            // Show storyboard
+            storyboardEl.classList.remove('hidden');
+            
+            // Setup hover interactions (desktop-only)
+            setupStoryboardHover();
+            
+            // Setup swap button click handlers
+            setupSwapButtonHandlers();
+            
+            // Update render button state (draft mode)
+            updateRenderArticleButtonState();
         }
         
         function setupSwapButtonHandlers() {
@@ -6675,6 +6807,50 @@
         // Inline editing state
         let currentBeatEditing = null; // { el, sentenceIndex, originalText } or null
         
+        function isStoryboardDirty() {
+            // If session exists, check session beats
+            if (window.currentStorySessionId && window.currentStorySession) {
+                const shots = window.currentStorySession.shots || [];
+                const sentences = window.currentStorySession.story?.sentences || [];
+                
+                for (let i = 0; i < Math.max(shots.length, sentences.length); i++) {
+                    const shot = shots.find(s => s.sentenceIndex === i) || shots[i];
+                    const sentence = sentences[i] || '';
+                    
+                    if (shot?.selectedClip || (sentence && sentence.trim().length > 0)) {
+                        return true;
+                    }
+                }
+                return false;
+            }
+            
+            // Draft mode: check draftStoryboard
+            const beats = window.draftStoryboard?.beats || [];
+            for (const beat of beats) {
+                if (beat.selectedClip || (beat.text && beat.text.trim().length > 0)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        
+        function updateRenderArticleButtonState() {
+            const renderBtn = document.getElementById('render-article-btn');
+            if (!renderBtn) return;
+            
+            // Enable if session exists OR draft is dirty
+            const hasSession = !!window.currentStorySessionId;
+            const draftDirty = isStoryboardDirty();
+            
+            if (hasSession || draftDirty) {
+                renderBtn.disabled = false;
+                renderBtn.title = '';
+            } else {
+                renderBtn.disabled = true;
+                renderBtn.title = 'Please add at least one clip or text to render';
+            }
+        }
+        
         function handleEditBeatInline(textEl) {
             // Avoid starting multiple edits at once
             if (currentBeatEditing && currentBeatEditing.el !== textEl) {
@@ -6685,8 +6861,18 @@
             const sentenceIndex = Number(textEl.dataset.sentenceIndex ?? -1);
             if (sentenceIndex < 0) return;
             
-            const sentences = window.currentStorySession?.story?.sentences || [];
-            const currentText = sentences[sentenceIndex] ?? textEl.textContent ?? "";
+            const isDraft = textEl.dataset.draft === 'true';
+            let currentText = "";
+            
+            if (isDraft && !window.currentStorySessionId) {
+                // Draft mode: read from draftStoryboard
+                const beat = window.draftStoryboard?.beats?.[sentenceIndex];
+                currentText = beat?.text || textEl.textContent || "";
+            } else {
+                // Session mode: read from session
+                const sentences = window.currentStorySession?.story?.sentences || [];
+                currentText = sentences[sentenceIndex] ?? textEl.textContent || "";
+            }
             
             currentBeatEditing = {
                 el: textEl,
@@ -6723,6 +6909,7 @@
             el.removeEventListener("keydown", handleBeatTextKeydown);
             el.removeEventListener("blur", handleBeatTextBlur);
             
+            const isDraft = el.dataset.draft === 'true';
             currentBeatEditing = null;
             
             if (!newText || newText === originalText) {
@@ -6731,6 +6918,18 @@
                 return;
             }
             
+            // Draft mode: update draftStoryboard directly, no API call
+            if (isDraft && !window.currentStorySessionId) {
+                if (!window.draftStoryboard || !window.draftStoryboard.beats) {
+                    window.draftStoryboard = { beats: Array(8).fill(null).map(() => ({ text: '', selectedClip: null })) };
+                }
+                window.draftStoryboard.beats[sentenceIndex].text = newText;
+                el.textContent = newText;
+                updateRenderArticleButtonState();
+                return;
+            }
+            
+            // Session mode: use existing API flow
             try {
                 const { apiFetch } = await import('./api.mjs');
                 
@@ -6768,6 +6967,7 @@
                 
                 // Re-render storyboard from canonical data
                 renderStoryboard(window.currentStorySession);
+                updateRenderArticleButtonState();
             } catch (err) {
                 console.error("[article] Update beat error:", err);
                 showError("article-error", "Could not update beat. Please try again.");
@@ -6892,24 +7092,36 @@
         }
         
         function openClipPicker(sentenceIndex) {
-            const session = window.currentStorySession;
-            if (!session || !session.shots) {
-                console.error('[article] No session or shots available');
-                showError('article-error', 'Please prepare the storyboard first');
-                return;
+            // Check if draft mode
+            const isDraft = !window.currentStorySessionId;
+            
+            if (isDraft) {
+                // Draft mode: use draftStoryboard
+                window.clipPickerIsDraft = true;
+                window.clipPickerSentenceIndex = sentenceIndex;
+                window.draftClipPickerPage = 1;
+                window.draftClipPickerCandidates = [];
+            } else {
+                // Session mode: use existing flow
+                const session = window.currentStorySession;
+                if (!session || !session.shots) {
+                    console.error('[article] No session or shots available');
+                    showError('article-error', 'Please prepare the storyboard first');
+                    return;
+                }
+                
+                const shot = session.shots.find(s => s.sentenceIndex === sentenceIndex);
+                if (!shot) {
+                    console.error('[article] Shot not found for sentence index:', sentenceIndex);
+                    return;
+                }
+                
+                window.clipPickerIsDraft = false;
+                window.currentClipPickerSentence = sentenceIndex;
+                
+                // Initialize pagination state
+                window.clipPickerPagination = { currentPage: 1, hasMore: false };
             }
-            
-            const shot = session.shots.find(s => s.sentenceIndex === sentenceIndex);
-            if (!shot) {
-                console.error('[article] Shot not found for sentence index:', sentenceIndex);
-                return;
-            }
-            
-            // Store current sentence index for swap handler
-            window.currentClipPickerSentence = sentenceIndex;
-            
-            // Initialize pagination state
-            window.clipPickerPagination = { currentPage: 1, hasMore: false };
             
             // Get picker elements
             const picker = document.getElementById('clip-picker');
@@ -6926,17 +7138,28 @@
                 searchInput.value = '';
             }
             
-            // Render grid with existing candidates if available
-            renderClipPickerGrid(shot, window.clipPickerPagination);
-            
-            // Trigger initial search to get pagination metadata (hasMore)
-            // This ensures buttons are correctly enabled/disabled from the start
-            if (shot.searchQuery && shot.searchQuery.trim()) {
-                runClipSearch(1, { append: false });
+            // Render grid - draft or session mode
+            if (window.clipPickerIsDraft) {
+                // Draft mode: create fake shot object for renderClipPickerGrid
+                const beat = window.draftStoryboard?.beats?.[sentenceIndex];
+                const fakeShot = {
+                    candidates: window.draftClipPickerCandidates || [],
+                    selectedClip: beat?.selectedClip || null
+                };
+                renderClipPickerGrid(fakeShot, { currentPage: window.draftClipPickerPage || 1, hasMore: false });
             } else {
-                // Even without initial search, setup observer if sentinel exists
-                if (document.getElementById('clip-picker-sentinel')) {
-                    setupClipPickerInfiniteScroll();
+                // Session mode: use existing shot
+                const shot = window.currentStorySession.shots.find(s => s.sentenceIndex === sentenceIndex);
+                renderClipPickerGrid(shot, window.clipPickerPagination);
+                
+                // Trigger initial search to get pagination metadata (hasMore)
+                if (shot.searchQuery && shot.searchQuery.trim()) {
+                    runClipSearch(1, { append: false });
+                } else {
+                    // Even without initial search, setup observer if sentinel exists
+                    if (document.getElementById('clip-picker-sentinel')) {
+                        setupClipPickerInfiniteScroll();
+                    }
                 }
             }
             
@@ -6953,6 +7176,8 @@
                     }
                     picker.classList.add('hidden');
                     window.currentClipPickerSentence = null;
+                    window.clipPickerIsDraft = false;
+                    window.clipPickerSentenceIndex = null;
                     // Remove click handler when picker is closed
                     picker.removeEventListener('click', handleClipOptionClick);
                 };
@@ -6974,11 +7199,16 @@
             
             if (searchBtn) {
                 searchBtn.onclick = () => {
-                    // Reset to page 1 for new search
-                    if (window.clipPickerPagination) {
-                        window.clipPickerPagination.currentPage = 1;
+                    if (window.clipPickerIsDraft) {
+                        window.draftClipPickerPage = 1;
+                        runDraftClipSearch(1, { append: false });
+                    } else {
+                        // Reset to page 1 for new search
+                        if (window.clipPickerPagination) {
+                            window.clipPickerPagination.currentPage = 1;
+                        }
+                        runClipSearch(1, { append: false });
                     }
-                    runClipSearch(1, { append: false });
                 };
             }
             
@@ -6986,11 +7216,16 @@
                 searchInput.onkeydown = (e) => {
                     if (e.key === 'Enter') {
                         e.preventDefault();
-                        // Reset to page 1 for new search
-                        if (window.clipPickerPagination) {
-                            window.clipPickerPagination.currentPage = 1;
+                        if (window.clipPickerIsDraft) {
+                            window.draftClipPickerPage = 1;
+                            runDraftClipSearch(1, { append: false });
+                        } else {
+                            // Reset to page 1 for new search
+                            if (window.clipPickerPagination) {
+                                window.clipPickerPagination.currentPage = 1;
+                            }
+                            runClipSearch(1, { append: false });
                         }
-                        runClipSearch(1, { append: false });
                     }
                 };
             }
@@ -7001,18 +7236,30 @@
             
             if (prevBtn) {
                 prevBtn.onclick = () => {
-                    if (window.clipPickerPagination && window.clipPickerPagination.currentPage > 1) {
-                        window.clipPickerPagination.currentPage--;
-                        runClipSearch(window.clipPickerPagination.currentPage);
+                    if (window.clipPickerIsDraft) {
+                        if (window.draftClipPickerPage > 1) {
+                            window.draftClipPickerPage--;
+                            runDraftClipSearch(window.draftClipPickerPage);
+                        }
+                    } else {
+                        if (window.clipPickerPagination && window.clipPickerPagination.currentPage > 1) {
+                            window.clipPickerPagination.currentPage--;
+                            runClipSearch(window.clipPickerPagination.currentPage);
+                        }
                     }
                 };
             }
             
             if (nextBtn) {
                 nextBtn.onclick = () => {
-                    if (window.clipPickerPagination && window.clipPickerPagination.hasMore) {
-                        const nextPage = window.clipPickerPagination.currentPage + 1;
-                        runClipSearch(nextPage, { append: true });
+                    if (window.clipPickerIsDraft) {
+                        const nextPage = (window.draftClipPickerPage || 1) + 1;
+                        runDraftClipSearch(nextPage, { append: true });
+                    } else {
+                        if (window.clipPickerPagination && window.clipPickerPagination.hasMore) {
+                            const nextPage = window.clipPickerPagination.currentPage + 1;
+                            runClipSearch(nextPage, { append: true });
+                        }
                     }
                 };
             }
@@ -7118,13 +7365,74 @@
             e.stopPropagation();
             
             const clipId = card.getAttribute('data-clip-id');
-            const sentenceIndex = window.currentClipPickerSentence;
+            const isDraft = window.clipPickerIsDraft;
+            const sentenceIndex = isDraft ? window.clipPickerSentenceIndex : window.currentClipPickerSentence;
             
             if (!clipId || sentenceIndex === undefined || sentenceIndex === null) {
                 console.error('[article] Missing clipId or sentenceIndex');
                 return;
             }
             
+            // Draft mode: update draftStoryboard directly, no API call
+            if (isDraft) {
+                // Find clip from candidates
+                const clip = window.draftClipPickerCandidates?.find(c => c.id === clipId);
+                if (!clip) {
+                    console.error('[article] Clip not found in draft candidates');
+                    return;
+                }
+                
+                // Update draftStoryboard
+                if (!window.draftStoryboard || !window.draftStoryboard.beats) {
+                    window.draftStoryboard = { beats: Array(8).fill(null).map(() => ({ text: '', selectedClip: null })) };
+                }
+                window.draftStoryboard.beats[sentenceIndex].selectedClip = clip;
+                
+                // Update draft card UI in place
+                const draftCard = document.querySelector(`#storyboard-row [data-sentence-index="${sentenceIndex}"][data-draft="true"]`);
+                if (draftCard) {
+                    const video = draftCard.querySelector('video');
+                    const textEl = draftCard.querySelector('.beat-text');
+                    if (video) {
+                        video.src = clip.url || '';
+                        if (clip.thumbUrl) {
+                            video.setAttribute('poster', clip.thumbUrl);
+                        } else {
+                            video.removeAttribute('poster');
+                        }
+                    }
+                    // Update placeholder if needed
+                    const placeholder = draftCard.querySelector('.bg-gray-800');
+                    if (placeholder && clip.url) {
+                        placeholder.outerHTML = `
+                            <div class="relative w-full h-40 overflow-hidden">
+                                <video
+                                    src="${clip.url}"
+                                    ${clip.thumbUrl ? `poster="${clip.thumbUrl}"` : ''}
+                                    muted
+                                    loop
+                                    preload="none"
+                                    class="w-full h-full object-cover transition-transform duration-150 storyboard-video"
+                                    data-index="${sentenceIndex}"
+                                    aria-label="Preview for: ${(window.draftStoryboard.beats[sentenceIndex].text || '').substring(0, 50)}"
+                                ></video>
+                            </div>
+                        `;
+                        setupStoryboardHover();
+                    }
+                }
+                
+                // Close picker
+                picker.classList.add('hidden');
+                window.clipPickerIsDraft = false;
+                window.clipPickerSentenceIndex = null;
+                
+                // Update render button state
+                updateRenderArticleButtonState();
+                return;
+            }
+            
+            // Session mode: use existing API flow
             const sessionId = window.currentStorySessionId;
             if (!sessionId) {
                 showError('article-error', 'Session not found');
@@ -7169,6 +7477,9 @@
                 if (picker) {
                     picker.classList.add('hidden');
                 }
+                
+                // Update render button state
+                updateRenderArticleButtonState();
                 window.currentClipPickerSentence = null;
                 
                 console.log('[article] Clip swapped successfully');
@@ -7306,6 +7617,98 @@
             }
         }
         
+        async function runDraftClipSearch(pageOverride = null, options = {}) {
+            const { append = false } = options;
+            const input = document.getElementById('clip-search-input');
+            const query = input?.value.trim() || '';
+            const sentenceIndex = window.clipPickerSentenceIndex;
+            
+            if (sentenceIndex === undefined || sentenceIndex === null) {
+                console.error('[article] No sentence index for draft search');
+                return;
+            }
+            
+            // Use override page if provided, otherwise use current page
+            const currentPage = pageOverride !== null ? pageOverride : (window.draftClipPickerPage || 1);
+            window.draftClipPickerPage = currentPage;
+            
+            // If appending, save existing candidates before API call
+            let existingCandidates = [];
+            if (append && window.draftClipPickerCandidates) {
+                existingCandidates = window.draftClipPickerCandidates;
+            }
+            
+            try {
+                setClipPickerBusy(true);
+                
+                const { apiFetch } = await import('./api.mjs');
+                
+                // Use /api/assets/options for draft mode (session-free)
+                const resp = await apiFetch('/assets/options', {
+                    method: 'POST',
+                    body: {
+                        type: 'videos',
+                        query: query || (window.draftStoryboard?.beats?.[sentenceIndex]?.text || '').trim(),
+                        page: currentPage,
+                        perPage: 12
+                    }
+                });
+                
+                if (!resp.success) {
+                    throw new Error(resp.error || 'Search failed');
+                }
+                
+                // Map response to candidate shape expected by renderClipPickerGrid
+                const candidates = (resp.data.items || []).map(item => ({
+                    id: item.id,
+                    url: item.fileUrl,  // CRITICAL: renderClipPickerGrid expects 'url', not 'fileUrl'
+                    thumbUrl: item.thumbUrl,
+                    photographer: item.photographer || '',
+                    duration: item.duration,
+                    width: item.width,
+                    height: item.height,
+                    sourceUrl: item.sourceUrl,
+                    provider: item.provider || 'pexels'
+                }));
+                
+                // Map pagination
+                const pageInfo = {
+                    currentPage: currentPage,
+                    hasMore: resp.data.nextPage !== null
+                };
+                
+                // If append mode, merge new candidates with existing ones (dedupe by id)
+                let finalCandidates = candidates;
+                if (append && existingCandidates.length > 0) {
+                    const existingIds = new Set(existingCandidates.map(c => c.id).filter(id => id != null));
+                    const newCandidates = candidates.filter(c => c.id == null || !existingIds.has(c.id));
+                    finalCandidates = [...existingCandidates, ...newCandidates];
+                }
+                
+                // Store candidates
+                window.draftClipPickerCandidates = finalCandidates;
+                
+                // Get current beat for selectedClip
+                const beat = window.draftStoryboard?.beats?.[sentenceIndex];
+                const fakeShot = {
+                    candidates: finalCandidates,
+                    selectedClip: beat?.selectedClip || null
+                };
+                
+                // Re-render candidate grid with pagination info
+                renderClipPickerGrid(fakeShot, pageInfo);
+                
+                // Update pagination controls after rendering
+                updatePaginationControls(pageInfo);
+                
+            } catch (error) {
+                console.error('[article] Draft search failed:', error);
+                showError('article-error', error.message || 'Could not search clips. Please try again.');
+            } finally {
+                setClipPickerBusy(false);
+            }
+        }
+        
         function setupStoryboardHover() {
             // Remove existing listeners to avoid duplicates
             const videos = document.querySelectorAll('.storyboard-video');
@@ -7412,6 +7815,65 @@
             }
         }
         
+        async function ensureSessionFromDraft() {
+            // Validate draft is dirty
+            if (!isStoryboardDirty()) {
+                throw new Error('Please add at least one clip or text to render');
+            }
+            
+            try {
+                const { apiFetch } = await import('./api.mjs');
+                
+                // Show loading
+                const renderBtn = document.getElementById('render-article-btn');
+                const originalText = renderBtn?.textContent || '';
+                if (renderBtn) {
+                    renderBtn.textContent = 'Creating storyboard…';
+                    renderBtn.disabled = true;
+                }
+                
+                // Call backend to create session from draft
+                const resp = await apiFetch('/story/create-manual-session', {
+                    method: 'POST',
+                    body: {
+                        beats: window.draftStoryboard.beats.map(b => ({
+                            text: b.text || '',
+                            selectedClip: b.selectedClip || null
+                        }))
+                    }
+                });
+                
+                if (!resp.success) {
+                    throw new Error(resp.error || resp.detail || 'Failed to create session');
+                }
+                
+                const { sessionId, session } = resp.data;
+                
+                // Set globals
+                window.currentStorySessionId = sessionId;
+                window.currentStorySession = session;
+                
+                // Replace draft UI with session UI
+                renderStoryboard(session);
+                
+                // Clear draft state (session is now source of truth)
+                window.draftStoryboard = { beats: Array(8).fill(null).map(() => ({ text: '', selectedClip: null })) };
+                
+                // Update render button state
+                updateRenderArticleButtonState();
+                
+                // Restore button text
+                if (renderBtn) {
+                    renderBtn.textContent = originalText;
+                }
+                
+                return sessionId;
+            } catch (error) {
+                console.error('[article] ensureSessionFromDraft failed:', error);
+                throw error;
+            }
+        }
+        
         async function renderArticle() {
             const errorEl = document.getElementById('article-error');
             const renderBtn = document.getElementById('render-article-btn');
@@ -7420,9 +7882,14 @@
             const videoEl = document.getElementById('article-render-video');
             const videoUrlEl = document.getElementById('article-video-url');
             
+            // Manual-first render: auto-create session from draft if no sessionId exists
             if (!window.currentStorySessionId) {
-                showError('article-error', 'Please summarize the article first');
-                return;
+                try {
+                    await ensureSessionFromDraft();
+                } catch (error) {
+                    showError('article-error', error.message || 'Failed to create storyboard');
+                    return;
+                }
             }
             
             const voicePreset = voicePresetEl?.value || 'male_calm';

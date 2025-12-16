@@ -557,6 +557,94 @@ r.post("/manual", async (req, res) => {
   }
 });
 
+// POST /api/story/create-manual-session - Create session from draft beats (manual-first render)
+r.post("/create-manual-session", async (req, res) => {
+  try {
+    const CreateManualSessionSchema = z.object({
+      beats: z.array(z.object({
+        text: z.string(),
+        selectedClip: z.object({
+          id: z.string(),
+          url: z.string(),
+          thumbUrl: z.string().optional(),
+          photographer: z.string().optional()
+        }).nullable()
+      })).length(8) // Fixed 8 beats
+    });
+    
+    const parsed = CreateManualSessionSchema.safeParse(req.body || {});
+    if (!parsed.success) {
+      return res.status(400).json({
+        success: false,
+        error: "INVALID_INPUT",
+        detail: parsed.error.flatten()
+      });
+    }
+    
+    const { beats } = parsed.data;
+    const uid = req.user.uid;
+    
+    // Validate at least one beat has content
+    const hasContent = beats.some(b => (b.text && b.text.trim().length > 0) || b.selectedClip !== null);
+    if (!hasContent) {
+      return res.status(400).json({
+        success: false,
+        error: "INVALID_INPUT",
+        detail: "At least one beat must have text or selectedClip"
+      });
+    }
+    
+    // Import required utilities
+    const { calculateReadingDuration } = await import('../utils/text.duration.js');
+    const { createStorySession, saveStorySession } = await import('../services/story.service.js');
+    
+    // Create session
+    const session = await createStorySession({
+      uid,
+      input: 'manual',
+      inputType: 'paragraph'
+    });
+    
+    // Build story sentences
+    session.story = {
+      sentences: beats.map(b => b.text || '')
+    };
+    
+    // Build shots from beats (matching session contract from audit)
+    session.shots = beats.map((b, i) => ({
+      sentenceIndex: i,
+      selectedClip: b.selectedClip || null,
+      candidates: b.selectedClip ? [b.selectedClip] : [],
+      searchQuery: (b.text || '').trim(),
+      durationSec: calculateReadingDuration(b.text || '') || 8,
+      visualDescription: '', // Optional, will be generated if needed
+      startTimeSec: 0 // Will be recalculated if needed
+    }));
+    
+    // Set status to clips_searched (skip plan/search steps since clips already selected)
+    session.status = 'clips_searched';
+    session.updatedAt = new Date().toISOString();
+    
+    // Save session
+    await saveStorySession({ uid, sessionId: session.id, data: session });
+    
+    return res.json({
+      success: true,
+      data: {
+        sessionId: session.id,
+        session
+      }
+    });
+  } catch (e) {
+    console.error("[story][create-manual-session] error:", e);
+    return res.status(500).json({
+      success: false,
+      error: "STORY_CREATE_MANUAL_SESSION_FAILED",
+      detail: e?.message || "Failed to create manual session"
+    });
+  }
+});
+
 // GET /api/story/:sessionId - Get story session
 r.get("/:sessionId", async (req, res) => {
   try {
