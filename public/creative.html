@@ -6311,13 +6311,6 @@
                     // Clear draft state (session is now source of truth)
                     window.draftStoryboard = { beats: Array(8).fill(null).map(() => ({ text: '', selectedClip: null })) };
                     
-                    // Mobile: collapse script, expand storyboard
-                    if (window.innerWidth < 768) {
-                        if (scriptSection) {
-                            scriptSection.classList.add('hidden');
-                        }
-                    }
-                    
                     // Update render button state (session now exists)
                     updateRenderArticleButtonState();
                     
@@ -6404,13 +6397,6 @@
                     
                     // Clear draft state (session is now source of truth)
                     window.draftStoryboard = { beats: Array(8).fill(null).map(() => ({ text: '', selectedClip: null })) };
-                    
-                    // Mobile: collapse script, expand storyboard
-                    if (window.innerWidth < 768) {
-                        if (scriptSection) {
-                            scriptSection.classList.add('hidden');
-                        }
-                    }
                     
                     // Update render button state (session now exists)
                     updateRenderArticleButtonState();
@@ -7290,15 +7276,21 @@
             const picker = document.getElementById('clip-picker');
             if (!picker) return;
             
+            // Robustness guard: prevent double-binding
+            const grid = document.getElementById('clip-picker-grid');
+            if (grid?.dataset?.hoverBound === '1') return;
+            if (grid) grid.dataset.hoverBound = '1';
+            
+            // Check hover capability (desktop only)
+            const canHover = window.matchMedia('(hover: hover) and (pointer: fine)').matches;
+            if (!canHover) return;
+            
             // Remove existing listeners to avoid duplicates
             picker.removeEventListener('mouseenter', handleClipPickerMouseEnter, true);
             picker.removeEventListener('mouseleave', handleClipPickerMouseLeave, true);
             
-            // Only enable hover on desktop
-            if (window.innerWidth >= 768) {
-                picker.addEventListener('mouseenter', handleClipPickerMouseEnter, true);
-                picker.addEventListener('mouseleave', handleClipPickerMouseLeave, true);
-            }
+            picker.addEventListener('mouseenter', handleClipPickerMouseEnter, true);
+            picker.addEventListener('mouseleave', handleClipPickerMouseLeave, true);
         }
         
         function handleClipPickerMouseEnter(e) {
@@ -7742,6 +7734,15 @@
         }
         
         function setupStoryboardHover() {
+            // Robustness guard: prevent double-binding
+            const container = document.getElementById('storyboard-row');
+            if (container?.dataset?.hoverBound === '1') return;
+            if (container) container.dataset.hoverBound = '1';
+            
+            // Check hover capability (desktop only)
+            const canHover = window.matchMedia('(hover: hover) and (pointer: fine)').matches;
+            if (!canHover) return;
+            
             // Remove existing listeners to avoid duplicates
             const videos = document.querySelectorAll('.storyboard-video');
             
@@ -7750,28 +7751,16 @@
                 const newVid = vid.cloneNode(true);
                 vid.parentNode.replaceChild(newVid, vid);
                 
-                // Only enable hover on desktop
-                if (window.innerWidth >= 768) {
-                    newVid.addEventListener('mouseenter', () => {
-                        newVid.play().catch(e => console.warn('[article] Video play failed:', e));
-                        newVid.classList.add('scale-110');
-                    });
-                    
-                    newVid.addEventListener('mouseleave', () => {
-                        newVid.pause();
-                        newVid.currentTime = 0;
-                        newVid.classList.remove('scale-110');
-                    });
-                } else {
-                    // Mobile: tap to play/pause
-                    newVid.addEventListener('click', () => {
-                        if (newVid.paused) {
-                            newVid.play().catch(e => console.warn('[article] Video play failed:', e));
-                        } else {
-                            newVid.pause();
-                        }
-                    });
-                }
+                newVid.addEventListener('mouseenter', () => {
+                    newVid.play().catch(e => console.warn('[article] Video play failed:', e));
+                    newVid.classList.add('scale-110');
+                });
+                
+                newVid.addEventListener('mouseleave', () => {
+                    newVid.pause();
+                    newVid.currentTime = 0;
+                    newVid.classList.remove('scale-110');
+                });
             });
         }
         
