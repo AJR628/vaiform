@@ -1026,6 +1026,9 @@
 
         // [STUDIO] Legacy quote/asset studio disabled for v1 - only Article Explainer is core
         const ENABLE_LEGACY_STUDIO = false;
+        
+        // Guard rule: Do not mix ?? with || / && without parentheses (it can throw a SyntaxError).
+        // Use ?? consistently or add parentheses.
 
         const API_BASE_FALLBACK = "https://17e0d1d1-e327-483d-b1ea-c41bea08fb59-00-1ef93t84nlhq6.janeway.replit.dev";
         // Hard-force the backend origin to Replit to avoid Netlify handling /cdn
@@ -3460,7 +3463,6 @@
                 
                 // Initialize to articles mode (core feature)
                 if (typeof window.setStudioMode === 'function') {
-                    console.log('[mode-init] Calling setStudioMode("articles")');
                     window.setStudioMode('articles');
                 }
             } else {
