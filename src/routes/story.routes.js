@@ -560,6 +560,7 @@ r.post("/manual", async (req, res) => {
 // POST /api/story/create-manual-session - Create session from draft beats (manual-first render)
 r.post("/create-manual-session", async (req, res) => {
   try {
+    // Phase 0: Accept variable-length array (max 8 beats)
     const CreateManualSessionSchema = z.object({
       beats: z.array(z.object({
         text: z.string(),
@@ -569,7 +570,7 @@ r.post("/create-manual-session", async (req, res) => {
           thumbUrl: z.string().optional(),
           photographer: z.string().optional()
         }).nullable()
-      })).length(8) // Fixed 8 beats
+      })).max(8) // Max 8 beats, but can be fewer
     });
     
     const parsed = CreateManualSessionSchema.safeParse(req.body || {});
@@ -581,18 +582,36 @@ r.post("/create-manual-session", async (req, res) => {
       });
     }
     
-    const { beats } = parsed.data;
+    let { beats } = parsed.data;
     const uid = req.user.uid;
     
-    // Validate at least one beat has content
-    const hasContent = beats.some(b => (b.text && b.text.trim().length > 0) || b.selectedClip !== null);
-    if (!hasContent) {
+    // Phase 0: Helper to detect placeholder text
+    function isPlaceholderText(text) {
+      if (!text || typeof text !== 'string') return true;
+      const trimmed = text.trim();
+      return trimmed === '' || 
+             trimmed === 'Add text…' || 
+             trimmed === 'Add text' ||
+             trimmed.toLowerCase() === 'add text…';
+    }
+    
+    // Phase 0: Filter out invalid beats (must have both text and clip)
+    const validBeats = beats.filter(b => {
+      const hasText = b.text && !isPlaceholderText(b.text);
+      const hasClip = b.selectedClip && b.selectedClip.url;
+      return hasText && hasClip;
+    });
+    
+    if (validBeats.length === 0) {
       return res.status(400).json({
         success: false,
         error: "INVALID_INPUT",
-        detail: "At least one beat must have text or selectedClip"
+        detail: "At least one beat must have both text and selectedClip. Empty or placeholder beats cannot be rendered."
       });
     }
+    
+    // Use only valid beats for session creation
+    beats = validBeats;
     
     // Import required utilities
     const { calculateReadingDuration } = await import('../utils/text.duration.js');

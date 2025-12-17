@@ -1465,8 +1465,9 @@
         window.currentAssetType = window.currentAssetType || 'images';
         
         // Draft storyboard state (client-only, no API calls)
+        // Phase 1: Start with 1 empty beat instead of 8
         window.draftStoryboard = window.draftStoryboard || {
-            beats: Array(8).fill(null).map(() => ({ text: '', selectedClip: null }))
+            beats: [{ id: generateBeatId(), text: '', selectedClip: null }]
         };
 
         // Mode switching SSOT function
@@ -3573,7 +3574,8 @@
           // Initialize draft storyboard on page load if no session exists
           if (!window.currentStorySessionId) {
               if (!window.draftStoryboard) {
-                  window.draftStoryboard = { beats: Array(8).fill(null).map(() => ({ text: '', selectedClip: null })) };
+                  // Phase 1: Start with 1 empty beat instead of 8
+                  window.draftStoryboard = { beats: [{ id: generateBeatId(), text: '', selectedClip: null }] };
               }
               renderDraftStoryboard();
               updateRenderArticleButtonState();
@@ -6003,6 +6005,29 @@
         const MAX_BEAT_CHARS = 160;
         const MAX_TOTAL_CHARS = 850;
 
+        // Phase 0: Helper to detect placeholder text
+        function isPlaceholderText(text) {
+            if (!text || typeof text !== 'string') return true;
+            const trimmed = text.trim();
+            return trimmed === '' || 
+                   trimmed === 'Add text…' || 
+                   trimmed === 'Add text' ||
+                   trimmed.toLowerCase() === 'add text…';
+        }
+
+        // Phase 0: Helper to check if beat is valid (has both text and clip)
+        function isValidBeat(beat) {
+            if (!beat) return false;
+            const hasText = beat.text && !isPlaceholderText(beat.text);
+            const hasClip = beat.selectedClip && beat.selectedClip.url;
+            return hasText && hasClip;
+        }
+
+        // Phase 1: Generate stable ID for beats
+        function generateBeatId() {
+            return 'beat-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+        }
+
         // Normalize script text into beats with caps
         function normalizeScript(originalText) {
             let didSplitLongBeat = false;
@@ -6309,7 +6334,8 @@
                     renderStoryboard(session);
                     
                     // Clear draft state (session is now source of truth)
-                    window.draftStoryboard = { beats: Array(8).fill(null).map(() => ({ text: '', selectedClip: null })) };
+                    // Phase 1: Reset to 1 empty beat
+                    window.draftStoryboard = { beats: [{ id: generateBeatId(), text: '', selectedClip: null }] };
                     
                     // Update render button state (session now exists)
                     updateRenderArticleButtonState();
@@ -6396,7 +6422,8 @@
                     renderStoryboard(session);
                     
                     // Clear draft state (session is now source of truth)
-                    window.draftStoryboard = { beats: Array(8).fill(null).map(() => ({ text: '', selectedClip: null })) };
+                    // Phase 1: Reset to 1 empty beat
+                    window.draftStoryboard = { beats: [{ id: generateBeatId(), text: '', selectedClip: null }] };
                     
                     // Update render button state (session now exists)
                     updateRenderArticleButtonState();
@@ -6563,18 +6590,30 @@
             
             const beats = window.draftStoryboard.beats || [];
             
-            beats.forEach((beat, idx) => {
+            // Phase 1: Use beat IDs instead of indices
+            beats.forEach((beat) => {
+                if (!beat.id) {
+                    // Migrate old beats without IDs
+                    beat.id = generateBeatId();
+                }
+                
                 const card = document.createElement('div');
                 card.className = 'relative w-40 h-72 flex-shrink-0 bg-black rounded-lg overflow-hidden border border-gray-700';
-                card.setAttribute('data-sentence-index', idx);
+                card.setAttribute('data-beat-id', beat.id);
                 card.setAttribute('data-draft', 'true');
                 
                 if (!beat.selectedClip) {
                     // Placeholder for missing clip
                     card.innerHTML = `
+                        <button
+                            class="delete-beat-btn absolute top-1 right-1 w-6 h-6 rounded-full bg-red-600 hover:bg-red-700 text-white text-xs flex items-center justify-center z-10"
+                            data-beat-id="${beat.id}"
+                            data-draft="true"
+                            title="Delete beat"
+                        >✕</button>
                         <div 
                             class="relative w-full h-40 bg-gray-800 flex items-center justify-center cursor-pointer hover:bg-gray-700 transition"
-                            data-sentence-index="${idx}"
+                            data-beat-id="${beat.id}"
                             data-draft="true"
                             data-add-clip="true"
                             title="Click to add clip"
@@ -6583,7 +6622,7 @@
                         </div>
                         <div 
                             class="beat-text p-2 text-xs text-gray-200 h-24 overflow-hidden cursor-text"
-                            data-sentence-index="${idx}"
+                            data-beat-id="${beat.id}"
                             data-draft="true"
                             title="Click to edit"
                         >
@@ -6591,7 +6630,7 @@
                         </div>
                         <button
                             class="swap-clip-btn mt-1 mx-2 mb-2 w-[calc(100%-1rem)] text-xs py-1 rounded bg-slate-700 hover:bg-slate-600 text-white"
-                            data-sentence-index="${idx}"
+                            data-beat-id="${beat.id}"
                             data-draft="true"
                         >
                             Swap clip
@@ -6603,6 +6642,12 @@
                     const thumbUrl = clip.thumbUrl || '';
                     
                     card.innerHTML = `
+                        <button
+                            class="delete-beat-btn absolute top-1 right-1 w-6 h-6 rounded-full bg-red-600 hover:bg-red-700 text-white text-xs flex items-center justify-center z-10"
+                            data-beat-id="${beat.id}"
+                            data-draft="true"
+                            title="Delete beat"
+                        >✕</button>
                         <div class="relative w-full h-40 overflow-hidden">
                             <video
                                 src="${videoUrl}"
@@ -6611,13 +6656,13 @@
                                 loop
                                 preload="none"
                                 class="w-full h-full object-cover transition-transform duration-150 storyboard-video"
-                                data-index="${idx}"
+                                data-beat-id="${beat.id}"
                                 aria-label="Preview for: ${(beat.text || '').substring(0, 50)}"
                             ></video>
                         </div>
                         <div 
                             class="beat-text p-2 text-xs text-gray-200 h-24 overflow-hidden cursor-text"
-                            data-sentence-index="${idx}"
+                            data-beat-id="${beat.id}"
                             data-draft="true"
                             title="Click to edit"
                         >
@@ -6625,7 +6670,7 @@
                         </div>
                         <button
                             class="swap-clip-btn mt-1 mx-2 mb-2 w-[calc(100%-1rem)] text-xs py-1 rounded bg-slate-700 hover:bg-slate-600 text-white"
-                            data-sentence-index="${idx}"
+                            data-beat-id="${beat.id}"
                             data-draft="true"
                         >
                             Swap clip
@@ -6635,6 +6680,16 @@
                 
                 storyboardRow.appendChild(card);
             });
+            
+            // Phase 1: Add "+ Add beat" button after last beat (if under max)
+            if (beats.length < MAX_BEATS) {
+                const addBtn = document.createElement('button');
+                addBtn.className = 'add-beat-btn mx-2 flex-shrink-0 w-10 h-10 rounded-full bg-blue-600 hover:bg-blue-700 text-white text-lg flex items-center justify-center';
+                addBtn.setAttribute('data-draft', 'true');
+                addBtn.setAttribute('title', 'Add beat');
+                addBtn.textContent = '+';
+                storyboardRow.appendChild(addBtn);
+            }
             
             // Show storyboard
             storyboardEl.classList.remove('hidden');
@@ -6661,33 +6716,67 @@
         }
         
         function handleSwapButtonClick(e) {
+            const isDraft = !window.currentStorySessionId;
+            
             // Handle swap clip button
             const swapBtn = e.target.closest('.swap-clip-btn');
             if (swapBtn) {
-                const sentenceIndex = Number(swapBtn.dataset.sentenceIndex);
-                if (isNaN(sentenceIndex)) {
-                    console.error('[article] Invalid sentence index:', swapBtn.dataset.sentenceIndex);
-                    return;
+                if (isDraft) {
+                    // Phase 1: Draft mode uses beatId
+                    const beatId = swapBtn.dataset.beatId;
+                    if (!beatId) {
+                        console.error('[article] Invalid beat ID:', swapBtn.dataset.beatId);
+                        return;
+                    }
+                    openClipPicker(beatId, true);
+                } else {
+                    // Session mode uses sentenceIndex
+                    const sentenceIndex = Number(swapBtn.dataset.sentenceIndex);
+                    if (isNaN(sentenceIndex)) {
+                        console.error('[article] Invalid sentence index:', swapBtn.dataset.sentenceIndex);
+                        return;
+                    }
+                    openClipPicker(sentenceIndex, false);
                 }
-                openClipPicker(sentenceIndex);
                 return;
             }
             
             // Handle "+ Add clip" placeholder click
             const addClipPlaceholder = e.target.closest('[data-add-clip="true"]');
             if (addClipPlaceholder) {
-                const sentenceIndex = Number(addClipPlaceholder.dataset.sentenceIndex);
-                if (isNaN(sentenceIndex)) {
-                    console.error('[article] Invalid sentence index:', addClipPlaceholder.dataset.sentenceIndex);
-                    return;
+                if (isDraft) {
+                    // Phase 1: Draft mode uses beatId
+                    const beatId = addClipPlaceholder.dataset.beatId;
+                    if (!beatId) {
+                        console.error('[article] Invalid beat ID:', addClipPlaceholder.dataset.beatId);
+                        return;
+                    }
+                    openClipPicker(beatId, true);
+                } else {
+                    // Session mode uses sentenceIndex
+                    const sentenceIndex = Number(addClipPlaceholder.dataset.sentenceIndex);
+                    if (isNaN(sentenceIndex)) {
+                        console.error('[article] Invalid sentence index:', addClipPlaceholder.dataset.sentenceIndex);
+                        return;
+                    }
+                    openClipPicker(sentenceIndex, false);
                 }
-                openClipPicker(sentenceIndex);
                 return;
             }
             
-            // Handle add beat button
+            // Phase 1: Handle add beat button (draft mode only)
             const addBtn = e.target.closest('.add-beat-btn');
-            if (addBtn) {
+            if (addBtn && addBtn.dataset.draft === 'true') {
+                if (window.draftStoryboard.beats.length >= MAX_BEATS) {
+                    alert(`Maximum of ${MAX_BEATS} beats allowed`);
+                    return;
+                }
+                handleAddDraftBeat();
+                return;
+            }
+            
+            // Handle add beat button (session mode)
+            if (addBtn && !isDraft) {
                 const insertAfterIndex = Number(addBtn.dataset.insertAfterIndex);
                 if (isNaN(insertAfterIndex)) {
                     console.error('[article] Invalid insert after index:', addBtn.dataset.insertAfterIndex);
@@ -6703,9 +6792,25 @@
                 return;
             }
             
-            // Handle delete beat button
+            // Phase 1: Handle delete beat button (draft mode)
             const deleteBtn = e.target.closest('.delete-beat-btn');
-            if (deleteBtn) {
+            if (deleteBtn && deleteBtn.dataset.draft === 'true') {
+                const beatId = deleteBtn.dataset.beatId;
+                if (!beatId) {
+                    console.error('[article] Invalid beat ID:', deleteBtn.dataset.beatId);
+                    return;
+                }
+                
+                if (!confirm('Delete this beat?')) {
+                    return;
+                }
+                
+                handleDeleteDraftBeat(beatId);
+                return;
+            }
+            
+            // Handle delete beat button (session mode)
+            if (deleteBtn && !isDraft) {
                 const sentenceIndex = Number(deleteBtn.dataset.sentenceIndex);
                 if (isNaN(sentenceIndex)) {
                     console.error('[article] Invalid sentence index:', deleteBtn.dataset.sentenceIndex);
@@ -6726,6 +6831,58 @@
                 handleEditBeatInline(textEl);
                 return;
             }
+        }
+        
+        // Phase 1: Add beat to draft storyboard
+        function handleAddDraftBeat() {
+            if (!window.draftStoryboard || !window.draftStoryboard.beats) {
+                window.draftStoryboard = { beats: [{ id: generateBeatId(), text: '', selectedClip: null }] };
+            }
+            
+            if (window.draftStoryboard.beats.length >= MAX_BEATS) {
+                alert(`Maximum of ${MAX_BEATS} beats allowed`);
+                return;
+            }
+            
+            // Add new beat at the end
+            window.draftStoryboard.beats.push({
+                id: generateBeatId(),
+                text: '',
+                selectedClip: null
+            });
+            
+            // Re-render draft storyboard
+            renderDraftStoryboard();
+            updateRenderArticleButtonState();
+        }
+        
+        // Phase 1: Delete beat from draft storyboard
+        function handleDeleteDraftBeat(beatId) {
+            if (!window.draftStoryboard || !window.draftStoryboard.beats) {
+                return;
+            }
+            
+            // Remove beat by ID
+            const index = window.draftStoryboard.beats.findIndex(b => b.id === beatId);
+            if (index === -1) {
+                console.error('[article] Beat not found:', beatId);
+                return;
+            }
+            
+            window.draftStoryboard.beats.splice(index, 1);
+            
+            // If no beats left, add one empty beat
+            if (window.draftStoryboard.beats.length === 0) {
+                window.draftStoryboard.beats.push({
+                    id: generateBeatId(),
+                    text: '',
+                    selectedClip: null
+                });
+            }
+            
+            // Re-render draft storyboard
+            renderDraftStoryboard();
+            updateRenderArticleButtonState();
         }
         
         async function handleInsertBeat(insertAfterIndex, text) {
@@ -6865,25 +7022,33 @@
                 currentBeatEditing.el.blur();
             }
             
-            const sentenceIndex = Number(textEl.dataset.sentenceIndex ?? -1);
-            if (sentenceIndex < 0) return;
-            
             const isDraft = textEl.dataset.draft === 'true';
             let currentText = "";
+            let identifier = null;
             
             if (isDraft && !window.currentStorySessionId) {
-                // Draft mode: read from draftStoryboard
-                const beat = window.draftStoryboard?.beats?.[sentenceIndex];
+                // Phase 1: Draft mode uses beatId
+                const beatId = textEl.dataset.beatId;
+                if (!beatId) {
+                    console.error('[article] Missing beatId in draft mode');
+                    return;
+                }
+                const beat = window.draftStoryboard?.beats?.find(b => b.id === beatId);
                 currentText = beat?.text ?? textEl.textContent ?? "";
+                identifier = beatId;
             } else {
-                // Session mode: read from session
+                // Session mode uses sentenceIndex
+                const sentenceIndex = Number(textEl.dataset.sentenceIndex ?? -1);
+                if (sentenceIndex < 0) return;
                 const sentences = window.currentStorySession?.story?.sentences || [];
                 currentText = sentences[sentenceIndex] ?? textEl.textContent ?? "";
+                identifier = sentenceIndex;
             }
             
             currentBeatEditing = {
                 el: textEl,
-                sentenceIndex,
+                identifier, // Phase 1: Can be beatId (string) or sentenceIndex (number)
+                isDraft,
                 originalText: currentText,
             };
             
@@ -6907,7 +7072,7 @@
         async function commitBeatTextEdit() {
             if (!currentBeatEditing) return;
             
-            const { el, sentenceIndex, originalText } = currentBeatEditing;
+            const { el, identifier, isDraft, originalText } = currentBeatEditing;
             const newText = (el.textContent || "").trim();
             
             // Clean up editing state UI
@@ -6916,7 +7081,6 @@
             el.removeEventListener("keydown", handleBeatTextKeydown);
             el.removeEventListener("blur", handleBeatTextBlur);
             
-            const isDraft = el.dataset.draft === 'true';
             currentBeatEditing = null;
             
             if (!newText || newText === originalText) {
@@ -6928,9 +7092,16 @@
             // Draft mode: update draftStoryboard directly, no API call
             if (isDraft && !window.currentStorySessionId) {
                 if (!window.draftStoryboard || !window.draftStoryboard.beats) {
-                    window.draftStoryboard = { beats: Array(8).fill(null).map(() => ({ text: '', selectedClip: null })) };
+                    // Phase 1: Initialize with 1 empty beat if missing
+                    window.draftStoryboard = { beats: [{ id: generateBeatId(), text: '', selectedClip: null }] };
                 }
-                window.draftStoryboard.beats[sentenceIndex].text = newText;
+                // Phase 1: Find beat by ID
+                const beat = window.draftStoryboard.beats.find(b => b.id === identifier);
+                if (beat) {
+                    beat.text = newText;
+                } else {
+                    console.error('[article] Beat not found:', identifier);
+                }
                 el.textContent = newText;
                 updateRenderArticleButtonState();
                 return;
@@ -6944,7 +7115,7 @@
                     method: 'POST',
                     body: {
                         sessionId: window.currentStorySessionId,
-                        sentenceIndex,
+                        sentenceIndex: identifier, // Phase 1: identifier is sentenceIndex in session mode
                         text: newText,
                     }
                 });
@@ -6968,7 +7139,7 @@
                 
                 console.log(
                     "[article] Update beat: sentenceIndex=%d, newText=%s",
-                    sentenceIndex,
+                    identifier,
                     newText.slice(0, 80)
                 );
                 
@@ -7098,14 +7269,17 @@
             }
         }
         
-        function openClipPicker(sentenceIndex) {
-            // Check if draft mode
-            const isDraft = !window.currentStorySessionId;
+        // Phase 1: Updated to accept beatId (string) for draft mode or sentenceIndex (number) for session mode
+        function openClipPicker(beatIdOrIndex, isDraft = null) {
+            // Auto-detect draft mode if not specified
+            if (isDraft === null) {
+                isDraft = !window.currentStorySessionId;
+            }
             
             if (isDraft) {
-                // Draft mode: use draftStoryboard
+                // Phase 1: Draft mode uses beatId (string)
                 window.clipPickerIsDraft = true;
-                window.clipPickerSentenceIndex = sentenceIndex;
+                window.clipPickerBeatId = beatIdOrIndex; // Now expects string ID
                 window.draftClipPickerPage = 1;
                 window.draftClipPickerCandidates = [];
             } else {
@@ -7117,14 +7291,14 @@
                     return;
                 }
                 
-                const shot = session.shots.find(s => s.sentenceIndex === sentenceIndex);
+                const shot = session.shots.find(s => s.sentenceIndex === beatIdOrIndex);
                 if (!shot) {
-                    console.error('[article] Shot not found for sentence index:', sentenceIndex);
+                    console.error('[article] Shot not found for sentence index:', beatIdOrIndex);
                     return;
                 }
                 
                 window.clipPickerIsDraft = false;
-                window.currentClipPickerSentence = sentenceIndex;
+                window.currentClipPickerSentence = beatIdOrIndex;
                 
                 // Initialize pagination state
                 window.clipPickerPagination = { currentPage: 1, hasMore: false };
@@ -7147,8 +7321,8 @@
             
             // Render grid - draft or session mode
             if (window.clipPickerIsDraft) {
-                // Draft mode: create fake shot object for renderClipPickerGrid
-                const beat = window.draftStoryboard?.beats?.[window.clipPickerSentenceIndex];
+                // Phase 1: Draft mode: find beat by ID
+                const beat = window.draftStoryboard?.beats?.find(b => b.id === window.clipPickerBeatId);
                 const fakeShot = {
                     candidates: window.draftClipPickerCandidates || [],
                     selectedClip: beat?.selectedClip || null
@@ -7156,11 +7330,11 @@
                 renderClipPickerGrid(fakeShot, { currentPage: window.draftClipPickerPage || 1, hasMore: false });
             } else {
                 // Session mode: use existing shot
-                const shot = window.currentStorySession.shots.find(s => s.sentenceIndex === sentenceIndex);
+                const shot = window.currentStorySession.shots.find(s => s.sentenceIndex === beatIdOrIndex);
                 renderClipPickerGrid(shot, window.clipPickerPagination);
                 
                 // Trigger initial search to get pagination metadata (hasMore)
-                if (shot.searchQuery && shot.searchQuery.trim()) {
+                if (shot && shot.searchQuery && shot.searchQuery.trim()) {
                     runClipSearch(1, { append: false });
                 } else {
                     // Even without initial search, setup observer if sentinel exists
@@ -7184,7 +7358,7 @@
                     picker.classList.add('hidden');
                     window.currentClipPickerSentence = null;
                     window.clipPickerIsDraft = false;
-                    window.clipPickerSentenceIndex = null;
+                    window.clipPickerBeatId = null; // Phase 1: Clear beatId instead of sentenceIndex
                     // Remove click handler when picker is closed
                     picker.removeEventListener('click', handleClipOptionClick);
                 };
@@ -7379,15 +7553,21 @@
             
             const clipId = card.getAttribute('data-clip-id');
             const isDraft = window.clipPickerIsDraft;
-            const sentenceIndex = isDraft ? window.clipPickerSentenceIndex : window.currentClipPickerSentence;
             
-            if (!clipId || sentenceIndex === undefined || sentenceIndex === null) {
-                console.error('[article] Missing clipId or sentenceIndex');
+            if (!clipId) {
+                console.error('[article] Missing clipId');
                 return;
             }
             
             // Draft mode: update draftStoryboard directly, no API call
             if (isDraft) {
+                // Phase 1: Use beatId instead of sentenceIndex
+                const beatId = window.clipPickerBeatId;
+                if (!beatId) {
+                    console.error('[article] Missing beatId in draft mode');
+                    return;
+                }
+                
                 // Find clip from candidates
                 const clip = window.draftClipPickerCandidates?.find(c => c.id === clipId);
                 if (!clip) {
@@ -7397,9 +7577,17 @@
                 
                 // Update draftStoryboard
                 if (!window.draftStoryboard || !window.draftStoryboard.beats) {
-                    window.draftStoryboard = { beats: Array(8).fill(null).map(() => ({ text: '', selectedClip: null })) };
+                    // Phase 1: Initialize with 1 empty beat if missing
+                    window.draftStoryboard = { beats: [{ id: generateBeatId(), text: '', selectedClip: null }] };
                 }
-                window.draftStoryboard.beats[sentenceIndex].selectedClip = clip;
+                // Phase 1: Find beat by ID
+                const beat = window.draftStoryboard.beats.find(b => b.id === beatId);
+                if (beat) {
+                    beat.selectedClip = clip;
+                } else {
+                    console.error('[article] Beat not found:', beatId);
+                    return;
+                }
                 
                 // Update draft card UI in place
                 const draftCard = document.querySelector(`#storyboard-row [data-sentence-index="${sentenceIndex}"][data-draft="true"]`);
@@ -7438,7 +7626,7 @@
                 // Close picker
                 picker.classList.add('hidden');
                 window.clipPickerIsDraft = false;
-                window.clipPickerSentenceIndex = null;
+                window.clipPickerBeatId = null; // Phase 1: Clear beatId
                 
                 // Update render button state
                 updateRenderArticleButtonState();
@@ -7634,10 +7822,11 @@
             const { append = false } = options;
             const input = document.getElementById('clip-search-input');
             const query = input?.value.trim() || '';
-            const sentenceIndex = window.clipPickerSentenceIndex;
+            // Phase 1: Use beatId instead of sentenceIndex
+            const beatId = window.clipPickerBeatId;
             
-            if (sentenceIndex === undefined || sentenceIndex === null) {
-                console.error('[article] No sentence index for draft search');
+            if (!beatId) {
+                console.error('[article] No beatId for draft search');
                 return;
             }
             
@@ -7661,7 +7850,7 @@
                     method: 'POST',
                     body: {
                         type: 'videos',
-                        query: query || (window.draftStoryboard?.beats?.[sentenceIndex]?.text || '').trim(),
+                        query: query || (window.draftStoryboard?.beats?.find(b => b.id === beatId)?.text || '').trim(),
                         page: currentPage,
                         perPage: 12
                     }
@@ -7712,8 +7901,8 @@
                 // Store candidates
                 window.draftClipPickerCandidates = finalCandidates;
                 
-                // Get current beat for selectedClip
-                const beat = window.draftStoryboard?.beats?.[sentenceIndex];
+                // Phase 1: Get current beat by ID
+                const beat = window.draftStoryboard?.beats?.find(b => b.id === beatId);
                 const fakeShot = {
                     candidates: finalCandidates,
                     selectedClip: beat?.selectedClip || null
@@ -7853,11 +8042,18 @@
                     renderBtn.disabled = true;
                 }
                 
-                // Call backend to create session from draft
+                // Phase 0: Filter out invalid beats before sending to backend
+                const validBeats = window.draftStoryboard.beats.filter(isValidBeat);
+                
+                if (validBeats.length === 0) {
+                    throw new Error('Please add text and clip to at least one beat. Empty or incomplete beats cannot be rendered.');
+                }
+                
+                // Call backend to create session from draft (only valid beats)
                 const resp = await apiFetch('/story/create-manual-session', {
                     method: 'POST',
                     body: {
-                        beats: window.draftStoryboard.beats.map(b => ({
+                        beats: validBeats.map(b => ({
                             text: b.text || '',
                             selectedClip: b.selectedClip || null
                         }))
@@ -7878,7 +8074,8 @@
                 renderStoryboard(session);
                 
                 // Clear draft state (session is now source of truth)
-                window.draftStoryboard = { beats: Array(8).fill(null).map(() => ({ text: '', selectedClip: null })) };
+                // Phase 1: Reset to 1 empty beat
+                window.draftStoryboard = { beats: [{ id: generateBeatId(), text: '', selectedClip: null }] };
                 
                 // Update render button state
                 updateRenderArticleButtonState();
