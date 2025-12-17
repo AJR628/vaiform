@@ -213,11 +213,10 @@ if (routes?.uploads) {
 //   app.use("/quotes", routes.quotes);
 //   console.log("✅ Mounted quotes at /quotes and /api/quotes");
 // }
-// PHASE 1: Unmounted non-core assets routes (code preserved)
-// if (routes?.assets) {
-//   app.use("/api/assets", routes.assets);
-//   console.log("✅ Mounted assets API at /api/assets");
-// }
+if (routes?.assets) {
+  app.use("/api/assets", routes.assets);
+  console.log("✅ Mounted assets API at /api/assets");
+}
 if (routes?.limits) {
   app.use("/api/limits", routes.limits);
   app.use("/limits", routes.limits);

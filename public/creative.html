@@ -6586,7 +6586,13 @@
                 if (!beat.selectedClip) {
                     // Placeholder for missing clip
                     card.innerHTML = `
-                        <div class="relative w-full h-40 bg-gray-800 flex items-center justify-center">
+                        <div 
+                            class="relative w-full h-40 bg-gray-800 flex items-center justify-center cursor-pointer hover:bg-gray-700 transition"
+                            data-sentence-index="${idx}"
+                            data-draft="true"
+                            data-add-clip="true"
+                            title="Click to add clip"
+                        >
                             <p class="text-xs text-gray-400 text-center px-2">+ Add clip</p>
                         </div>
                         <div 
@@ -6675,6 +6681,18 @@
                 const sentenceIndex = Number(swapBtn.dataset.sentenceIndex);
                 if (isNaN(sentenceIndex)) {
                     console.error('[article] Invalid sentence index:', swapBtn.dataset.sentenceIndex);
+                    return;
+                }
+                openClipPicker(sentenceIndex);
+                return;
+            }
+            
+            // Handle "+ Add clip" placeholder click
+            const addClipPlaceholder = e.target.closest('[data-add-clip="true"]');
+            if (addClipPlaceholder) {
+                const sentenceIndex = Number(addClipPlaceholder.dataset.sentenceIndex);
+                if (isNaN(sentenceIndex)) {
+                    console.error('[article] Invalid sentence index:', addClipPlaceholder.dataset.sentenceIndex);
                     return;
                 }
                 openClipPicker(sentenceIndex);
