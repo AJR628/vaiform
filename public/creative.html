@@ -7282,6 +7282,9 @@
                 window.clipPickerBeatId = beatIdOrIndex; // Now expects string ID
                 window.draftClipPickerPage = 1;
                 window.draftClipPickerCandidates = [];
+                
+                // TEMP: Log for debugging
+                console.log('[clip-picker][draft] open', { beatId: beatIdOrIndex });
             } else {
                 // Session mode: use existing flow
                 const session = window.currentStorySession;
@@ -7564,7 +7567,7 @@
                 // Phase 1: Use beatId instead of sentenceIndex
                 const beatId = window.clipPickerBeatId;
                 if (!beatId) {
-                    console.error('[article] Missing beatId in draft mode');
+                    console.error('[clip-picker][draft] Missing clipPickerBeatId in draft mode');
                     return;
                 }
                 
@@ -7575,6 +7578,9 @@
                     return;
                 }
                 
+                // TEMP: Log for debugging
+                console.log('[clip-picker][draft] select', { beatId, clipId: clip?.id });
+                
                 // Update draftStoryboard
                 if (!window.draftStoryboard || !window.draftStoryboard.beats) {
                     // Phase 1: Initialize with 1 empty beat if missing
@@ -7582,46 +7588,16 @@
                 }
                 // Phase 1: Find beat by ID
                 const beat = window.draftStoryboard.beats.find(b => b.id === beatId);
-                if (beat) {
-                    beat.selectedClip = clip;
-                } else {
-                    console.error('[article] Beat not found:', beatId);
+                if (!beat) {
+                    console.error('[clip-picker][draft] Beat not found:', beatId);
                     return;
                 }
                 
-                // Update draft card UI in place
-                const draftCard = document.querySelector(`#storyboard-row [data-sentence-index="${sentenceIndex}"][data-draft="true"]`);
-                if (draftCard) {
-                    const video = draftCard.querySelector('video');
-                    const textEl = draftCard.querySelector('.beat-text');
-                    if (video) {
-                        video.src = clip.url || '';
-                        if (clip.thumbUrl) {
-                            video.setAttribute('poster', clip.thumbUrl);
-                        } else {
-                            video.removeAttribute('poster');
-                        }
-                    }
-                    // Update placeholder if needed
-                    const placeholder = draftCard.querySelector('.bg-gray-800');
-                    if (placeholder && clip.url) {
-                        placeholder.outerHTML = `
-                            <div class="relative w-full h-40 overflow-hidden">
-                                <video
-                                    src="${clip.url}"
-                                    ${clip.thumbUrl ? `poster="${clip.thumbUrl}"` : ''}
-                                    muted
-                                    loop
-                                    preload="none"
-                                    class="w-full h-full object-cover transition-transform duration-150 storyboard-video"
-                                    data-index="${sentenceIndex}"
-                                    aria-label="Preview for: ${(window.draftStoryboard.beats[sentenceIndex].text || '').substring(0, 50)}"
-                                ></video>
-                            </div>
-                        `;
-                        setupStoryboardHover();
-                    }
-                }
+                // Update beat with selected clip
+                beat.selectedClip = clip;
+                
+                // Re-render draft storyboard immediately to show the change
+                renderDraftStoryboard();
                 
                 // Close picker
                 picker.classList.add('hidden');
