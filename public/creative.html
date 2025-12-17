@@ -6888,7 +6888,7 @@
             if (isDraft && !window.currentStorySessionId) {
                 // Draft mode: read from draftStoryboard
                 const beat = window.draftStoryboard?.beats?.[sentenceIndex];
-                currentText = beat?.text || textEl.textContent || "";
+                currentText = beat?.text ?? textEl.textContent ?? "";
             } else {
                 // Session mode: read from session
                 const sentences = window.currentStorySession?.story?.sentences || [];
@@ -7675,8 +7675,19 @@
                     }
                 });
                 
-                if (!resp.success) {
-                    throw new Error(resp.error || 'Search failed');
+                // Robust check: handle both { ok: true } (success) and { success: false } (error) response shapes
+                const ok = resp?.ok ?? resp?.success;
+                if (!ok) {
+                    throw new Error(resp?.error || resp?.reason || resp?.message || 'Search failed');
+                }
+                
+                // Temporary diagnostic log (gated)
+                if (window.__DEBUG_DRAFT_SEARCH) {
+                    console.log('[draft-search] Response:', {
+                        ok: resp?.ok,
+                        itemsCount: resp?.data?.items?.length || 0,
+                        nextPage: resp?.data?.nextPage ?? null
+                    });
                 }
                 
                 // Map response to candidate shape expected by renderClipPickerGrid
