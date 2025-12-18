@@ -52,7 +52,7 @@ function ensureSessionDefaults(session) {
 /**
  * Save story session
  */
-async function saveStorySession({ uid, sessionId, data }) {
+export async function saveStorySession({ uid, sessionId, data }) {
   await saveJSON({ uid, studioId: sessionId, file: 'story.json', data });
 }
 
@@ -1147,6 +1147,7 @@ export default {
   generateCaptionTimings,
   renderStory,
   finalizeStory,
-  updateBeatText
+  updateBeatText,
+  saveStorySession
 };
 

@@ -19,7 +19,8 @@ import {
   buildTimeline,
   generateCaptionTimings,
   renderStory,
-  finalizeStory
+  finalizeStory,
+  saveStorySession
 } from "../services/story.service.js";
 
 const r = Router();
@@ -615,7 +616,6 @@ r.post("/create-manual-session", async (req, res) => {
     
     // Import required utilities
     const { calculateReadingDuration } = await import('../utils/text.duration.js');
-    const { createStorySession, saveStorySession } = await import('../services/story.service.js');
     
     // Create session
     const session = await createStorySession({
@@ -645,6 +645,7 @@ r.post("/create-manual-session", async (req, res) => {
     session.updatedAt = new Date().toISOString();
     
     // Save session
+    console.log('[story][create-manual-session] Saving session:', session.id);
     await saveStorySession({ uid, sessionId: session.id, data: session });
     
     return res.json({
