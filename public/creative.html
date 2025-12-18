@@ -2348,6 +2348,10 @@
             document.getElementById(elementId).classList.add('hidden');
         }
 
+        function showBlockingError(title, msg) {
+            alert(`${title}\n\n${msg}`);
+        }
+
         function showToast(message, durationMs = 3000) {
             // Create toast element if it doesn't exist
             let toastEl = document.getElementById('article-toast');
@@ -8002,97 +8006,86 @@
         }
         
         async function ensureSessionFromDraft() {
-            // Validate draft is dirty
+            // Validate draft is dirty (before any API calls or UI changes)
             if (!isStoryboardDirty()) {
                 throw new Error('Please add at least one clip or text to render');
             }
             
-            try {
-                const { apiFetch } = await import('./api.mjs');
-                
-                // Show loading
-                const renderBtn = document.getElementById('render-article-btn');
-                const originalText = renderBtn?.textContent || '';
-                if (renderBtn) {
-                    renderBtn.textContent = 'Creating storyboard…';
-                    renderBtn.disabled = true;
-                }
-                
-                // Phase 0: Filter out invalid beats before sending to backend
-                const validBeats = window.draftStoryboard.beats.filter(isValidBeat);
-                
-                if (validBeats.length === 0) {
-                    throw new Error('Please add text and clip to at least one beat. Empty or incomplete beats cannot be rendered.');
-                }
-                
-                // Call backend to create session from draft (only valid beats)
-                const resp = await apiFetch('/story/create-manual-session', {
-                    method: 'POST',
-                    body: {
-                        beats: validBeats.map(b => ({
-                            text: b.text || '',
-                            selectedClip: b.selectedClip || null
-                        }))
-                    }
-                });
-                
-                if (!resp.success) {
-                    throw new Error(resp.error || resp.detail || 'Failed to create session');
-                }
-                
-                const { sessionId, session } = resp.data;
-                
-                // Set globals
-                window.currentStorySessionId = sessionId;
-                window.currentStorySession = session;
-                
-                // Replace draft UI with session UI
-                renderStoryboard(session);
-                
-                // Clear draft state (session is now source of truth)
-                // Phase 1: Reset to 1 empty beat
-                window.draftStoryboard = { beats: [{ id: generateBeatId(), text: '', selectedClip: null }] };
-                
-                // Update render button state
-                updateRenderArticleButtonState();
-                
-                // Restore button text
-                if (renderBtn) {
-                    renderBtn.textContent = originalText;
-                }
-                
-                return sessionId;
-            } catch (error) {
-                console.error('[article] ensureSessionFromDraft failed:', error);
-                throw error;
+            // Filter valid beats early (before any API calls)
+            const validBeats = window.draftStoryboard.beats.filter(isValidBeat);
+            
+            if (validBeats.length === 0) {
+                throw new Error('Add text + a clip to at least one beat to render. (Clip-only beats aren\'t supported yet.)');
             }
+            
+            // Pure session creation - NO UI mutations
+            const { apiFetch } = await import('./api.mjs');
+            
+            // Call backend to create session from draft (only valid beats)
+            const resp = await apiFetch('/story/create-manual-session', {
+                method: 'POST',
+                body: {
+                    beats: validBeats.map(b => ({
+                        text: b.text || '',
+                        selectedClip: b.selectedClip || null
+                    }))
+                }
+            });
+            
+            if (!resp.success) {
+                throw new Error(resp.error || resp.detail || 'Failed to create session');
+            }
+            
+            const { sessionId, session } = resp.data;
+            
+            // Set globals
+            window.currentStorySessionId = sessionId;
+            window.currentStorySession = session;
+            
+            // Replace draft UI with session UI
+            renderStoryboard(session);
+            
+            // Clear draft state (session is now source of truth)
+            // Phase 1: Reset to 1 empty beat
+            window.draftStoryboard = { beats: [{ id: generateBeatId(), text: '', selectedClip: null }] };
+            
+            return sessionId;
         }
         
         async function renderArticle() {
             const errorEl = document.getElementById('article-error');
             const renderBtn = document.getElementById('render-article-btn');
+            const originalText = renderBtn?.textContent || 'Render video';
             const voicePresetEl = document.getElementById('article-voice-preset');
             const resultDiv = document.getElementById('article-render-result');
             const videoEl = document.getElementById('article-render-video');
             const videoUrlEl = document.getElementById('article-video-url');
             
-            // Manual-first render: auto-create session from draft if no sessionId exists
-            if (!window.currentStorySessionId) {
-                try {
-                    await ensureSessionFromDraft();
-                } catch (error) {
-                    showError('article-error', error.message || 'Failed to create storyboard');
-                    return;
-                }
-            }
-            
-            const voicePreset = voicePresetEl?.value || 'male_calm';
-            
-            setLoading('render-article-btn', true);
-            hideError('article-error');
-            showRenderStatus();
-            
             try {
+                // Set loading state INSIDE try (ensures finally always runs)
+                setLoading('render-article-btn', true);
+                hideError('article-error');
+                
+                // Manual-first render: auto-create session from draft if no sessionId exists
+                if (!window.currentStorySessionId) {
+                    try {
+                        await ensureSessionFromDraft();
+                    } catch (error) {
+                        // Ensure no partial session state
+                        window.currentStorySessionId = null;
+                        window.currentStorySession = null;
+                        
+                        showBlockingError(
+                            'Can\'t render yet',
+                            error?.message || 'Please complete at least one beat before rendering.'
+                        );
+                        return; // Exit early, but finally will still run
+                    }
+                }
+                
+                showRenderStatus();
+                const voicePreset = voicePresetEl?.value || 'male_calm';
+                
                 const { apiFetch } = await import('./api.mjs');
                 
                 // Call finalize with voice preset
@@ -8212,8 +8205,19 @@
                 console.error('[article] Render failed:', error);
                 showError('article-error', error.message || 'Failed to render video');
             } finally {
+                // ALWAYS restore button state (runs even on early returns)
+                // Order matters: setLoading(false) first, then restore text, then restore disabled state
                 hideRenderStatus();
                 setLoading('render-article-btn', false);
+                
+                if (renderBtn) {
+                    renderBtn.textContent = originalText;
+                }
+                
+                // Use centralized button state function (handles disabled state intelligently)
+                if (typeof updateRenderArticleButtonState === 'function') {
+                    updateRenderArticleButtonState();
+                }
             }
         }
         
