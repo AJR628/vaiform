@@ -300,7 +300,7 @@ export async function generateCaptionPreview(opts) {
         // Browser-rendered line data (REQUIRED)
         lines: overlayMeta.lines,
         totalTextH: overlayMeta.totalTextH,
-        yPxFirstLine: overlayMeta.yPxFirstLine || (overlayMeta.yPx_png + overlayMeta.rasterPadding),
+        yPxFirstLine: overlayMeta.yPxFirstLine,
         
         // Font string for parity validation
         previewFontString: overlayMeta.previewFontString || (
@@ -331,6 +331,25 @@ export async function generateCaptionPreview(opts) {
         };
       })();
 
+  // Conditional audit logging (behind __parityAudit flag)
+  if (window.__parityAudit && overlayV2 && hasRasterFields) {
+    if (!overlayMeta.yPxFirstLine) {
+      console.warn('[__parityAudit] missing yPxFirstLine in overlayMeta; preview request may fail schema');
+    }
+    console.log('[__parityAudit] payload:', {
+      linesCount: payload.lines?.length || 0,
+      rasterW: payload.rasterW,
+      rasterH: payload.rasterH,
+      rasterPadding: payload.rasterPadding,
+      totalTextH: payload.totalTextH,
+      yPx_png: payload.yPx_png,
+      yPxFirstLine: payload.yPxFirstLine,
+      previewFontString: payload.previewFontString,
+      frameW: payload.frameW,
+      frameH: payload.frameH
+    });
+  }
+
   console.log("[caption-overlay] POST /preview/caption with placement:", opts.placement, "yPct:", opts.yPct);
   console.log("[caption-overlay] payload:", payload); // Log full payload for debugging
   
@@ -348,6 +367,23 @@ export async function generateCaptionPreview(opts) {
     body: payload
   });
   if (!data?.ok) throw new Error(data?.detail || data?.reason || "Preview generation failed");
+
+  // Conditional audit logging (response)
+  if (window.__parityAudit && data?.data?.meta) {
+    const meta = data.data.meta;
+    console.log('[__parityAudit] response:', {
+      ok: data.ok,
+      linesCount: meta.lines?.length || 0,
+      rasterW: meta.rasterW,
+      rasterH: meta.rasterH,
+      rasterPadding: meta.rasterPadding,
+      totalTextH: meta.totalTextH,
+      yPx_png: meta.yPx_png,
+      previewFontString: meta.previewFontString,
+      frameW: meta.frameW,
+      frameH: meta.frameH
+    });
+  }
 
   // Convert the response to the expected format
   // V3 raster mode returns PNG in meta.rasterUrl, not data.imageUrl

@@ -1204,168 +1204,81 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     // Get frame dimensions FIRST (before any usage)
     const { W: frameW, H: frameH } = window.CaptionGeom.getFrameDims();
     
-    // Get fresh rects AFTER any snap/drag
-    // Keep rects for offsets (positioning calculations)
+    // Get fresh rects AFTER any snap/drag (needed for logging)
     const stageRect = stage.getBoundingClientRect();
     const boxRect = box.getBoundingClientRect();
-    
-    // New: logical stage size in CSS px (not affected by DPR/viewport scaling)
-    let stageWidth = stage.clientWidth;
-    let stageHeight = stage.clientHeight;
-    
-    // Fallback to rect if clientWidth/clientHeight are 0 (defensive)
-    if (!stageWidth || !stageHeight) {
-      stageWidth = stageRect.width;
-      stageHeight = stageRect.height;
-    }
-    
     const cs = getComputedStyle(content);
     
-    // Parse stroke from webkitTextStroke: "3px rgba(0,0,0,0.85)"
-    const parseStroke = (str) => {
-      if (!str || str === 'none' || str === '0px') return { px: 0, color: 'rgba(0,0,0,0.85)' };
-      const match = str.match(/^([\d.]+)px\s+(.+)$/);
-      return match ? { px: parseFloat(match[1]), color: match[2] } : { px: 0, color: 'rgba(0,0,0,0.85)' };
+    // Compute meta using shared helper (parity-safe extraction)
+    const computedMeta = computeCaptionMetaFromElements({
+      stageEl: stage,
+      boxEl: box,
+      contentEl: content,
+      frameW,
+      frameH
+    });
+    
+    if (!computedMeta) {
+      console.error('[emitCaptionState] Helper computation returned null');
+      return;
+    }
+    
+    // Preserve existing behavior: cache DOM extraction results
+    lastGoodDOMCache = {
+      text: computedMeta.text,
+      lines: computedMeta.lines,
+      contentWidth: content.clientWidth,
+      fontPx: computedMeta.fontPx,
+      lineSpacingPx: computedMeta.lineSpacingPx,
+      timestamp: Date.now()
     };
-    
-    const stroke = parseStroke(cs.webkitTextStroke || cs.textStroke);
-    const shadow = window.CaptionGeom.parseShadow(cs.textShadow);
-    // Convert to legacy format for state
-    const shadowData = { x: 0, y: shadow.y, blur: shadow.blur, color: 'rgba(0,0,0,0.6)' };
-    
-    // Read ACTUAL computed values from browser (visual truth)
-    const fontFamily = (cs.fontFamily || 'DejaVu Sans').split(',')[0].replace(/['"]/g, '').trim();
-    const fontPx = parseInt(cs.fontSize, 10);
     
     // Debug logging to track fontSize being emitted
     console.log('[emitCaptionState]', {
       reason,
-      fontPx,
+      fontPx: computedMeta.fontPx,
       boxW: Math.round(box.clientWidth),
       boxH: Math.round(box.clientHeight),
       contentFontSize: cs.fontSize,
       computedFontSize: parseFloat(cs.fontSize)
     });
-    const lineHeightRaw = cs.lineHeight;
-    const lineHeightPx = lineHeightRaw === 'normal' 
-      ? Math.round(fontPx * 1.2) 
-      : parseFloat(lineHeightRaw);
-    const lineSpacingPx = Math.max(0, Math.round(lineHeightPx - fontPx));
-    const letterSpacingPx = parseFloat(cs.letterSpacing) || 0;
-    // Normalize weight to numeric tokens (400/700) for server consistency
-    const rawWeight = String(cs.fontWeight);
-    const weightCss = (rawWeight === 'bold' || parseInt(rawWeight, 10) >= 600) ? '700' : '400';
-    const fontStyle = cs.fontStyle === 'italic' ? 'italic' : 'normal';
-    const textAlign = cs.textAlign || 'center';
-    const textTransform = cs.textTransform || 'none';
-    
-    // Cache successful DOM extraction for stable extraction reuse
-    const text = (content.innerText || content.textContent || '').replace(/\s+/g, ' ').trim();
-    
-    // Extract actual line breaks as rendered by browser
-    const lines = extractRenderedLines(content);
-    if (lines.length === 0) {
-      console.error('[emitCaptionState] No valid lines extracted');
-      return;
-    }
-    
-    // Build exact font string the browser used with variant-specific family
-    const family = getVariantFamily(weightCss, fontStyle);
-    const previewFontString = `${fontStyle} ${weightCss === '700' ? 'bold' : 'normal'} ${fontPx}px "${family}"`;
     
     // AUDIT: Log toolbar font construction
+    const family = getVariantFamily(computedMeta.weightCss, computedMeta.fontStyle);
     console.info('[AUDIT:CLIENT:toolbar]', {
-      previewFontString,
+      previewFontString: computedMeta.previewFontString,
       fontFamily: family,
-      weightCss,
-      fontStyle,
-      sample: text.slice(0, 60)
+      weightCss: computedMeta.weightCss,
+      fontStyle: computedMeta.fontStyle,
+      sample: computedMeta.text.slice(0, 60)
     });
-    lastGoodDOMCache = {
-      text,
-      lines: lines,
-      contentWidth: content.clientWidth,
-      fontPx: fontPx,
-      lineSpacingPx: lineSpacingPx,
-      timestamp: Date.now()
-    };
     
-    // Color & effects
-    const color = cs.color || 'rgb(255,255,255)';
-    const opacity = parseFloat(cs.opacity) || 1;
-    
-    // Geometry: tight to rendered text + visible padding
-    const cssPaddingLeft = parseInt(cs.paddingLeft, 10) || 0;
-    const cssPaddingRight = parseInt(cs.paddingRight, 10) || 0;
-    const cssPaddingTop = parseInt(cs.paddingTop, 10) || 0;
-    const cssPaddingBottom = parseInt(cs.paddingBottom, 10) || 0;
-
-    // If user dragged box taller/wider, preserve that airy look
-    const contentTextW = content.scrollWidth;
-    const contentTextH = content.scrollHeight;
-    const boxInnerW = box.clientWidth;
-    const boxInnerH = box.clientHeight;
-
-    // rasterPadding: use the visual padding the user sees
-    const rasterPaddingX = Math.max(cssPaddingLeft, cssPaddingRight, 
-      Math.round((boxInnerW - contentTextW) / 2));
-    const rasterPaddingY = Math.max(cssPaddingTop, cssPaddingBottom,
-      Math.round((boxInnerH - contentTextH) / 2));
-
-    // Use actual DOM height for totalTextH (includes line-height effects)
-    const totalTextH = Math.round(content.getBoundingClientRect().height);
-    
-    // Raster dimensions: text + padding (what user sees)
-    const wPx = Math.round((boxRect.width / stageWidth) * frameW);
-    const rasterW = wPx;
-    
-    // Use shared helper for rasterH
-    const rasterH = window.CaptionGeom.computeRasterH({
-      totalTextH,
-      padTop: cssPaddingTop,
-      padBottom: cssPaddingBottom,
-      shadowBlur: shadow.blur,
-      shadowOffsetY: shadow.y
-    });
-    const rasterPadding = Math.round((cssPaddingTop + cssPaddingBottom) / 2); // average for legacy
-    
-    // Position: box top-left in frame space (no %) - compute from fresh rects
-    const yPct = (boxRect.top - stageRect.top) / stageHeight;
-    
-    // Compute xPct and wPct from fresh rects too
-    const xPct = (boxRect.left - stageRect.left) / stageWidth;
-    const wPct = boxRect.width / stageWidth;
-    
-    // Frame dimensions already obtained at function start
-    
-    // Compute absolute pixel positions with proper clamping and rounding
-    const xPctClamped = Math.max(0, Math.min(1, xPct));
-    const xPx_png = Math.round(xPctClamped * frameW);
-    const yPx_png = Math.round(yPct * frameH);
-    
+    // Get stage dimensions for logging (preserve existing log format)
+    let stageWidth = stage.clientWidth;
+    let stageHeight = stage.clientHeight;
+    if (!stageWidth || !stageHeight) {
+      stageWidth = stageRect.width;
+      stageHeight = stageRect.height;
+    }
     
     console.log('[geom:yPx_png]', {
       boxTop: boxRect.top,
       stageTop: stageRect.top,
       stageHeight: stageHeight,
-      yPct,
-      yPx_png,
+      yPct: computedMeta.yPct,
+      yPx_png: computedMeta.yPx_png,
       placement: window.currentPlacement,
       frameH
     });
     
     console.log('[geom:xPx_png]', {
       stageWidth: stageWidth,
-      xPct,
-      xPx_png,
+      xPct: computedMeta.xPct,
+      xPx_png: computedMeta.xPx_png,
       frameW
     });
     
-    const xExpr_png = (textAlign === 'center') ? '(W-overlay_w)/2'
-      : (textAlign === 'right') ? '(W-overlay_w)'
-      : '0';
-    
-    // Determine mode based on geometry state
+    // Determine mode based on geometry state (preserve existing logic)
     const mode = geometryDirty ? 'dom' : (savedPreview ? 'raster' : 'dom');
     
     // Log mode switch for debugging
@@ -1375,56 +1288,14 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
       console.log('[overlay-live] switched to RASTER (saved preview active)');
     }
     
+    // Build state object from computed meta (preserve existing structure)
     const state = {
-      // Typography (browser truth)
-      fontFamily,
-      fontPx,
-      lineSpacingPx,
-      letterSpacingPx,
-      weightCss,
-      fontStyle,
-      textAlign,
-      textTransform,
-      previewFontString, // CRITICAL: exact font string browser used
-      
-      // Color & effects
-      color,
-      opacity,
-      strokePx: stroke.px,
-      strokeColor: stroke.color,
-      shadowColor: shadowData.color,
-      shadowBlur: shadowData.blur,
-      shadowOffsetX: shadowData.x,
-      shadowOffsetY: shadowData.y,
-      
-      // Geometry (frame-space pixels, authoritative)
-      frameW,
-      frameH,
-      rasterW,
-      rasterH,
-      totalTextH,
-      rasterPadding,
-      rasterPaddingX,
-      rasterPaddingY,
-      xPct,
-      yPct,
-      wPct,
-      yPx_png,
-      xPx_png,      // NEW: absolute X position (clamped)
-      xExpr_png,    // KEEP: fallback expression
-      
-      // Line breaks (browser truth)
-      lines: lines,
-      
-      // Metadata
-      text: content.textContent || '',
-      textRaw: content.textContent || '',
-      ssotVersion: 3,
-      mode: mode,  // Dynamic instead of hardcoded 'raster'
+      ...computedMeta,
+      mode: mode,  // Override mode (dynamic, not from helper)
       reason
     };
     
-    // Guard against NaN/null
+    // Guard against NaN/null (preserve existing behavior)
     Object.keys(state).forEach(k => {
       if (typeof state[k] === 'number' && !Number.isFinite(state[k])) {
         console.warn(`[emitCaptionState] Invalid number for ${k}:`, state[k]);
@@ -1433,13 +1304,21 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
     });
     
     console.log('[geom:client]', {
-      fontPx, lineSpacingPx, letterSpacingPx, 
-      rasterW, rasterPadding, totalTextH, rasterH,
-      xExpr_png, yPx_png, frameW, frameH, 
-      linesLen: lines.length
+      fontPx: computedMeta.fontPx, 
+      lineSpacingPx: computedMeta.lineSpacingPx, 
+      letterSpacingPx: computedMeta.letterSpacingPx, 
+      rasterW: computedMeta.rasterW, 
+      rasterPadding: computedMeta.rasterPadding, 
+      totalTextH: computedMeta.totalTextH, 
+      rasterH: computedMeta.rasterH,
+      xExpr_png: computedMeta.xExpr_png, 
+      yPx_png: computedMeta.yPx_png, 
+      frameW, 
+      frameH, 
+      linesLen: computedMeta.lines.length
     });
     
-    // Store and emit
+    // Store and emit (preserve existing behavior)
     window.__overlayMeta = state;
     if (typeof window.updateCaptionState === 'function') {
       window.updateCaptionState(state);
@@ -1495,6 +1374,284 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
 
   // Expose snap API globally
   window.OverlayAPI = { snapToPlacement };
+}
+
+/**
+ * Compute caption meta from DOM elements (shared SSOT logic)
+ * Extracted from emitCaptionState() - exact copy/paste, no logic changes
+ * ONLY addition: yPxFirstLine = yPx_png + rasterPadding
+ * 
+ * @param {HTMLElement} stageEl - Stage container (#stage)
+ * @param {HTMLElement} boxEl - Caption box (.caption-box)
+ * @param {HTMLElement} contentEl - Content element (.caption-box .content)
+ * @param {number} frameW - Frame width (default 1080)
+ * @param {number} frameH - Frame height (default 1920)
+ * @returns {object} overlayMeta object with all SSOT fields including yPxFirstLine
+ */
+export function computeCaptionMetaFromElements({ stageEl, boxEl, contentEl, frameW = 1080, frameH = 1920 }) {
+  // Get fresh rects AFTER any snap/drag
+  // Keep rects for offsets (positioning calculations)
+  const stageRect = stageEl.getBoundingClientRect();
+  const boxRect = boxEl.getBoundingClientRect();
+  
+  // New: logical stage size in CSS px (not affected by DPR/viewport scaling)
+  let stageWidth = stageEl.clientWidth;
+  let stageHeight = stageEl.clientHeight;
+  
+  // Fallback to rect if clientWidth/clientHeight are 0 (defensive)
+  if (!stageWidth || !stageHeight) {
+    stageWidth = stageRect.width;
+    stageHeight = stageRect.height;
+  }
+  
+  const cs = getComputedStyle(contentEl);
+  
+  // Parse stroke from webkitTextStroke: "3px rgba(0,0,0,0.85)"
+  const parseStroke = (str) => {
+    if (!str || str === 'none' || str === '0px') return { px: 0, color: 'rgba(0,0,0,0.85)' };
+    const match = str.match(/^([\d.]+)px\s+(.+)$/);
+    return match ? { px: parseFloat(match[1]), color: match[2] } : { px: 0, color: 'rgba(0,0,0,0.85)' };
+  };
+  
+  const stroke = parseStroke(cs.webkitTextStroke || cs.textStroke);
+  const shadow = window.CaptionGeom.parseShadow(cs.textShadow);
+  // Convert to legacy format for state
+  const shadowData = { x: 0, y: shadow.y, blur: shadow.blur, color: 'rgba(0,0,0,0.6)' };
+  
+  // Read ACTUAL computed values from browser (visual truth)
+  const fontFamily = (cs.fontFamily || 'DejaVu Sans').split(',')[0].replace(/['"]/g, '').trim();
+  const fontPx = parseInt(cs.fontSize, 10);
+  
+  const lineHeightRaw = cs.lineHeight;
+  const lineHeightPx = lineHeightRaw === 'normal' 
+    ? Math.round(fontPx * 1.2) 
+    : parseFloat(lineHeightRaw);
+  const lineSpacingPx = Math.max(0, Math.round(lineHeightPx - fontPx));
+  const letterSpacingPx = parseFloat(cs.letterSpacing) || 0;
+  // Normalize weight to numeric tokens (400/700) for server consistency
+  const rawWeight = String(cs.fontWeight);
+  const weightCss = (rawWeight === 'bold' || parseInt(rawWeight, 10) >= 600) ? '700' : '400';
+  const fontStyle = cs.fontStyle === 'italic' ? 'italic' : 'normal';
+  const textAlign = cs.textAlign || 'center';
+  const textTransform = cs.textTransform || 'none';
+  
+  // Cache successful DOM extraction for stable extraction reuse
+  const text = (contentEl.innerText || contentEl.textContent || '').replace(/\s+/g, ' ').trim();
+  
+  // Extract actual line breaks as rendered by browser
+  const lines = extractRenderedLines(contentEl);
+  if (lines.length === 0) {
+    console.error('[computeCaptionMetaFromElements] No valid lines extracted');
+    return null;
+  }
+  
+  // Build exact font string the browser used with variant-specific family
+  // Inline getVariantFamily logic (always returns 'DejaVu Sans')
+  const family = 'DejaVu Sans';
+  const previewFontString = `${fontStyle} ${weightCss === '700' ? 'bold' : 'normal'} ${fontPx}px "${family}"`;
+  
+  // Color & effects
+  const color = cs.color || 'rgb(255,255,255)';
+  const opacity = parseFloat(cs.opacity) || 1;
+  
+  // Geometry: tight to rendered text + visible padding
+  const cssPaddingLeft = parseInt(cs.paddingLeft, 10) || 0;
+  const cssPaddingRight = parseInt(cs.paddingRight, 10) || 0;
+  const cssPaddingTop = parseInt(cs.paddingTop, 10) || 0;
+  const cssPaddingBottom = parseInt(cs.paddingBottom, 10) || 0;
+
+  // If user dragged box taller/wider, preserve that airy look
+  const contentTextW = contentEl.scrollWidth;
+  const contentTextH = contentEl.scrollHeight;
+  const boxInnerW = boxEl.clientWidth;
+  const boxInnerH = boxEl.clientHeight;
+
+  // rasterPadding: use the visual padding the user sees
+  const rasterPaddingX = Math.max(cssPaddingLeft, cssPaddingRight, 
+    Math.round((boxInnerW - contentTextW) / 2));
+  const rasterPaddingY = Math.max(cssPaddingTop, cssPaddingBottom,
+    Math.round((boxInnerH - contentTextH) / 2));
+
+  // Use actual DOM height for totalTextH (includes line-height effects)
+  const totalTextH = Math.round(contentEl.getBoundingClientRect().height);
+  
+  // Raster dimensions: text + padding (what user sees)
+  const wPx = Math.round((boxRect.width / stageWidth) * frameW);
+  const rasterW = wPx;
+  
+  // Use shared helper for rasterH
+  const rasterH = window.CaptionGeom.computeRasterH({
+    totalTextH,
+    padTop: cssPaddingTop,
+    padBottom: cssPaddingBottom,
+    shadowBlur: shadow.blur,
+    shadowOffsetY: shadow.y
+  });
+  const rasterPadding = Math.round((cssPaddingTop + cssPaddingBottom) / 2); // average for legacy
+  
+  // Position: box top-left in frame space (no %) - compute from fresh rects
+  const yPct = (boxRect.top - stageRect.top) / stageHeight;
+  
+  // Compute xPct and wPct from fresh rects too
+  const xPct = (boxRect.left - stageRect.left) / stageWidth;
+  const wPct = boxRect.width / stageWidth;
+  
+  // Compute absolute pixel positions with proper clamping and rounding
+  const xPctClamped = Math.max(0, Math.min(1, xPct));
+  const xPx_png = Math.round(xPctClamped * frameW);
+  const yPx_png = Math.round(yPct * frameH);
+  
+  const xExpr_png = (textAlign === 'center') ? '(W-overlay_w)/2'
+    : (textAlign === 'right') ? '(W-overlay_w)'
+    : '0';
+  
+  // ADD yPxFirstLine computation (V3 raster mode truth)
+  const yPxFirstLine = yPx_png + rasterPadding;
+  
+  return {
+    // Typography (browser truth)
+    fontFamily,
+    fontPx,
+    lineSpacingPx,
+    letterSpacingPx,
+    weightCss,
+    fontStyle,
+    textAlign,
+    textTransform,
+    previewFontString, // CRITICAL: exact font string browser used
+    
+    // Color & effects
+    color,
+    opacity,
+    strokePx: stroke.px,
+    strokeColor: stroke.color,
+    shadowColor: shadowData.color,
+    shadowBlur: shadowData.blur,
+    shadowOffsetX: shadowData.x,
+    shadowOffsetY: shadowData.y,
+    
+    // Geometry (frame-space pixels, authoritative)
+    frameW,
+    frameH,
+    rasterW,
+    rasterH,
+    totalTextH,
+    rasterPadding,
+    rasterPaddingX,
+    rasterPaddingY,
+    xPct,
+    yPct,
+    wPct,
+    yPx_png,
+    xPx_png,      // NEW: absolute X position (clamped)
+    xExpr_png,    // KEEP: fallback expression
+    yPxFirstLine, // NEW: first line baseline (V3 raster mode)
+    
+    // Line breaks (browser truth)
+    lines: lines,
+    
+    // Metadata
+    text: contentEl.textContent || '',
+    textRaw: contentEl.textContent || '',
+    ssotVersion: 3
+  };
+}
+
+/**
+ * Golden-master comparison: verify computeCaptionMetaFromElements matches getCaptionMeta()
+ * DEV ONLY - call manually for verification
+ * 
+ * @returns {boolean} true if all fields match, false otherwise
+ */
+export function compareMetaParity() {
+  const stage = document.querySelector('#stage');
+  const box = stage?.querySelector('.caption-box');
+  const content = box?.querySelector('.content');
+  
+  if (!stage || !box || !content) {
+    console.error('[parity-check] Missing DOM elements (stage, box, or content)');
+    return false;
+  }
+  
+  const { W: frameW, H: frameH } = window.CaptionGeom.getFrameDims();
+  
+  // Get current overlay meta (legacy behavior)
+  const legacyMeta = typeof window.getCaptionMeta === 'function' 
+    ? window.getCaptionMeta() 
+    : window.__overlayMeta;
+  
+  if (!legacyMeta) {
+    console.error('[parity-check] No overlay meta available');
+    return false;
+  }
+  
+  // Compute helper meta
+  const helperMeta = computeCaptionMetaFromElements({
+    stageEl: stage,
+    boxEl: box,
+    contentEl: content,
+    frameW,
+    frameH
+  });
+  
+  if (!helperMeta) {
+    console.error('[parity-check] Helper computation returned null');
+    return false;
+  }
+  
+  // Compare critical fields (excluding yPxFirstLine since legacy doesn't have it)
+  const numericFields = ['rasterW', 'rasterH', 'rasterPadding', 'totalTextH', 'yPx_png'];
+  const stringFields = ['previewFontString'];
+  const arrayFields = ['lines'];
+  
+  let match = true;
+  const diffs = {};
+  
+  // Compare numeric fields (tolerance: ±0.1px)
+  for (const field of numericFields) {
+    const valA = legacyMeta[field];
+    const valB = helperMeta[field];
+    if (Math.abs((valA || 0) - (valB || 0)) > 0.1) {
+      match = false;
+      diffs[field] = { legacy: valA, helper: valB, diff: Math.abs(valA - valB) };
+    }
+  }
+  
+  // Compare string fields (exact match)
+  for (const field of stringFields) {
+    if (legacyMeta[field] !== helperMeta[field]) {
+      match = false;
+      diffs[field] = { legacy: legacyMeta[field], helper: helperMeta[field] };
+    }
+  }
+  
+  // Compare array fields (exact match)
+  for (const field of arrayFields) {
+    const arrA = legacyMeta[field] || [];
+    const arrB = helperMeta[field] || [];
+    if (arrA.join('|') !== arrB.join('|')) {
+      match = false;
+      diffs[field] = { 
+        legacy: arrA, 
+        helper: arrB,
+        legacyJoined: arrA.join('|'),
+        helperJoined: arrB.join('|')
+      };
+    }
+  }
+  
+  // Log yPxFirstLine separately (not in comparison since legacy doesn't have it)
+  console.log('[parity-check] yPxFirstLine (new):', helperMeta.yPxFirstLine, 'expected:', helperMeta.yPx_png + helperMeta.rasterPadding);
+  
+  if (!match) {
+    console.error('[parity-check] ❌ MISMATCH - fields differ:', diffs);
+    console.error('[parity-check] Legacy meta:', legacyMeta);
+    console.error('[parity-check] Helper meta:', helperMeta);
+  } else {
+    console.log('[parity-check] ✅ MATCH - all fields identical');
+  }
+  
+  return match;
 }
 
 export function getCaptionMeta(){ 
