@@ -1565,20 +1565,38 @@ export function computeCaptionMetaFromElements({ stageEl, boxEl, contentEl, fram
  */
 export function compareMetaParity() {
   const stage = document.querySelector('#stage');
+  if (!stage) {
+    console.warn('[parity-check] SKIP: #stage not found');
+    return 'SKIP';
+  }
+
+  const r = stage.getBoundingClientRect();
+  if (!r.width || !r.height) {
+    console.warn('[parity-check] SKIP: #stage has 0×0 size; parity requires a visible/measurable stage');
+    return 'SKIP';
+  }
+
   const box = stage?.querySelector('.caption-box');
   const content = box?.querySelector('.content');
   
-  if (!stage || !box || !content) {
-    console.error('[parity-check] Missing DOM elements (stage, box, or content)');
+  if (!box || !content) {
+    console.error('[parity-check] Missing DOM elements (box, or content)');
     return false;
   }
   
   const { W: frameW, H: frameH } = window.CaptionGeom.getFrameDims();
   
   // Get current overlay meta (legacy behavior)
-  const legacyMeta = typeof window.getCaptionMeta === 'function' 
-    ? window.getCaptionMeta() 
-    : window.__overlayMeta;
+  // Prefer module's own getter (may have additional logic)
+  let legacyMeta = null;
+  try {
+    legacyMeta = getCaptionMeta(); // Use exported function from same module
+  } catch (e) {
+    // Fallback to window if module getter fails
+    legacyMeta = typeof window.getCaptionMeta === 'function' 
+      ? window.getCaptionMeta() 
+      : window.__overlayMeta;
+  }
   
   if (!legacyMeta) {
     console.error('[parity-check] No overlay meta available');
@@ -1611,6 +1629,17 @@ export function compareMetaParity() {
   for (const field of numericFields) {
     const valA = legacyMeta[field];
     const valB = helperMeta[field];
+    
+    // Check for NaN values (indicates geometry computation failure)
+    if (Number.isNaN(valA) || Number.isNaN(valB)) {
+      match = false;
+      const reason = Number.isNaN(valA) && Number.isNaN(valB) 
+        ? 'geometry NaN — stage likely not measurable' 
+        : `geometry NaN in ${Number.isNaN(valA) ? 'legacy' : 'helper'} — stage likely not measurable`;
+      diffs[field] = { legacy: valA, helper: valB, reason };
+      continue;
+    }
+    
     if (Math.abs((valA || 0) - (valB || 0)) > 0.1) {
       match = false;
       diffs[field] = { legacy: valA, helper: valB, diff: Math.abs(valA - valB) };
@@ -1644,9 +1673,14 @@ export function compareMetaParity() {
   console.log('[parity-check] yPxFirstLine (new):', helperMeta.yPxFirstLine, 'expected:', helperMeta.yPx_png + helperMeta.rasterPadding);
   
   if (!match) {
+    const hasNaN = Object.values(diffs).some(d => d.reason);
+    const reasonNote = hasNaN ? ' (geometry NaN — stage likely not measurable)' : '';
     console.error('[parity-check] ❌ MISMATCH - fields differ:', diffs);
     console.error('[parity-check] Legacy meta:', legacyMeta);
     console.error('[parity-check] Helper meta:', helperMeta);
+    if (hasNaN) {
+      console.error('[parity-check] Note: NaN values indicate stage geometry not measurable' + reasonNote);
+    }
   } else {
     console.log('[parity-check] ✅ MATCH - all fields identical');
   }
