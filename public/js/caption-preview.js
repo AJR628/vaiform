@@ -834,6 +834,10 @@ export function generateBeatCaptionPreviewDebounced(beatId, text, style, delay =
     return;
   }
   
+  if (window.__beatPreviewDebug) {
+    console.log('[beat-preview] Debounce triggered:', { identifier: beatId, textLength: text?.length || 0 });
+  }
+  
   // Clear existing timer
   const existingTimer = beatPreviewDebounceTimers.get(beatId);
   if (existingTimer) {
@@ -841,11 +845,89 @@ export function generateBeatCaptionPreviewDebounced(beatId, text, style, delay =
   }
   
   const timer = setTimeout(async () => {
-    await generateBeatCaptionPreview(beatId, text, style);
+    const result = await generateBeatCaptionPreview(beatId, text, style);
     beatPreviewDebounceTimers.delete(beatId);
+    
+    // Apply preview to DOM
+    if (result && result.rasterUrl) {
+      // Find beat card: try both selector patterns (draft vs session mode)
+      const beatCardEl = document.querySelector(`[data-beat-id="${beatId}"]`) || 
+                         document.querySelector(`[data-sentence-index="${beatId}"]`);
+      
+      if (beatCardEl) {
+        if (window.__beatPreviewDebug) {
+          console.log('[beat-preview] Card found:', { identifier: beatId, found: true });
+        }
+        applyPreviewResultToBeatCard(beatCardEl, result);
+      } else {
+        if (window.__beatPreviewDebug) {
+          console.warn('[beat-preview] Card not found:', { identifier: beatId, found: false });
+        }
+      }
+    }
   }, delay);
   
   beatPreviewDebounceTimers.set(beatId, timer);
+}
+
+/**
+ * Apply preview result to beat card DOM (shared SSOT logic)
+ * Extracted from BeatPreviewManager.applyPreview() - single source of truth
+ * 
+ * @param {HTMLElement} beatCardEl - Beat card DOM element
+ * @param {object} result - Preview result from generateBeatCaptionPreview
+ * @returns {void}
+ */
+export function applyPreviewResultToBeatCard(beatCardEl, result) {
+  if (!result || !result.rasterUrl) {
+    if (window.__beatPreviewDebug) {
+      console.warn('[beat-preview] No result or rasterUrl to apply');
+    }
+    return;
+  }
+  
+  if (!beatCardEl) {
+    if (window.__beatPreviewDebug) {
+      console.warn('[beat-preview] beatCardEl is null/undefined');
+    }
+    return;
+  }
+  
+  // Find or create overlay img element
+  let overlayImg = beatCardEl.querySelector('.beat-caption-overlay');
+  if (!overlayImg) {
+    overlayImg = document.createElement('img');
+    overlayImg.className = 'beat-caption-overlay';
+    // Insert into video container (reuse exact selector from BeatPreviewManager)
+    const videoContainer = beatCardEl.querySelector('.relative.w-full.h-40');
+    if (videoContainer) {
+      videoContainer.appendChild(overlayImg);
+    } else {
+      beatCardEl.appendChild(overlayImg);
+    }
+  }
+  
+  // Set CSS variables for positioning
+  const meta = result.meta;
+  // Prefer server meta.yPct if present, else derive from yPx_png/frameH
+  const yPct = Number.isFinite(meta.yPct) ? meta.yPct : (meta.yPx_png / meta.frameH);
+  const rasterWRatio = meta.rasterW / meta.frameW;
+  const rasterHRatio = meta.rasterH / meta.frameH;
+  
+  overlayImg.style.setProperty('--y-pct', yPct);
+  overlayImg.style.setProperty('--raster-w-ratio', rasterWRatio);
+  overlayImg.style.setProperty('--raster-h-ratio', rasterHRatio);
+  
+  // Set image source
+  overlayImg.src = result.rasterUrl;
+  overlayImg.style.display = 'block';
+  
+  if (window.__beatPreviewDebug) {
+    console.log('[beat-preview] Overlay applied:', {
+      identifier: beatCardEl.getAttribute('data-beat-id') || beatCardEl.getAttribute('data-sentence-index'),
+      rasterUrl: result.rasterUrl.substring(0, 50) + '...'
+    });
+  }
 }
 
 /**
