@@ -366,6 +366,8 @@ export async function generateCaptionPreview(opts) {
         // Legacy payload branch - should not execute in overlay mode
         console.warn('[caption-preview] Building payload without V3 raster fields - overlayV2:', overlayV2, 'hasRasterFields:', hasRasterFields);
         return {
+          ssotVersion: 3,
+          mode: 'raster',
           style: {
             text: opts.text,
             fontFamily: opts.fontFamily || "DejaVu Sans",
@@ -375,7 +377,6 @@ export async function generateCaptionPreview(opts) {
             opacity: Number(opts.opacity ?? 0.85),
             placement: opts.placement || 'center',
             yPct: Number.isFinite(opts?.yPct) ? Number(opts.yPct) : 0.5,
-            ssotVersion: 3,
             _cacheBuster: Date.now()
           }
         };

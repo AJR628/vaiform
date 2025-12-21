@@ -1688,6 +1688,69 @@ export function compareMetaParity() {
   return match;
 }
 
+/**
+ * Minimal deterministic smoke test for yPxFirstLine computation
+ * Uses exact production path (same as preview payload)
+ * @returns {Object} { ok, reason, yPxFirstLine, yPx_png, rasterPadding, stageRect }
+ */
+export function runYpxFirstLineSmoke() {
+  const stage = document.querySelector('#stage');
+  if (!stage) {
+    return { ok: false, reason: 'SKIP: #stage missing' };
+  }
+  
+  const stageRect = stage.getBoundingClientRect();
+  if (!stageRect.width || !stageRect.height) {
+    return { ok: false, reason: 'SKIP: #stage has 0×0 size' };
+  }
+  
+  // Use exact production path: window.__overlayMeta || window.getCaptionMeta()
+  const meta = window.__overlayMeta || 
+    (typeof window.getCaptionMeta === 'function' ? window.getCaptionMeta() : null);
+  
+  if (!meta) {
+    return { ok: false, reason: 'No overlay meta available' };
+  }
+  
+  const yPxFirstLine = meta.yPxFirstLine;
+  const yPx_png = meta.yPx_png;
+  const rasterPadding = meta.rasterPadding;
+  
+  if (typeof yPxFirstLine !== 'number' || typeof yPx_png !== 'number' || typeof rasterPadding !== 'number') {
+    return {
+      ok: false,
+      reason: 'Missing required fields',
+      yPxFirstLine,
+      yPx_png,
+      rasterPadding,
+      stageRect: { width: stageRect.width, height: stageRect.height }
+    };
+  }
+  
+  const expected = yPx_png + rasterPadding;
+  const equationHolds = Math.abs(yPxFirstLine - expected) < 0.1;
+  
+  const result = {
+    ok: equationHolds,
+    reason: equationHolds ? 'Equation holds' : `Equation fails: ${yPxFirstLine} !== ${yPx_png} + ${rasterPadding}`,
+    yPxFirstLine,
+    yPx_png,
+    rasterPadding,
+    stageRect: { width: stageRect.width, height: stageRect.height }
+  };
+  
+  if (window.__parityDebug) {
+    console.table(result);
+  }
+  
+  return result;
+}
+
+// Expose on window for console use
+if (typeof window !== 'undefined') {
+  window.runYpxFirstLineSmoke = runYpxFirstLineSmoke;
+}
+
 // DEBUG ONLY: used for console parity testing
 /**
  * Run caption parity test - ensures stage is measurable, sets text, generates preview, and compares parity
