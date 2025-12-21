@@ -786,8 +786,7 @@ export async function generateBeatCaptionPreview(beatId, text, style) {
     // Build payload using helper
     const payload = buildBeatPreviewPayload(text, overlayMeta);
     
-    // Call preview endpoint
-    const { apiFetch } = await import('./api.mjs');
+    // Call preview endpoint (using already-imported apiFetch from line 7)
     const data = await apiFetch('/caption/preview', {
       method: 'POST',
       body: payload,

@@ -6542,6 +6542,11 @@
             window.BEAT_PREVIEW_ENABLED = false;
         }
         
+        // Optional debug exposure (only if flag is set)
+        if (window.__beatPreviewDebug === true) {
+            window.BeatPreviewManager = BeatPreviewManager;
+        }
+        
         function renderStoryboard(session) {
             const storyboardRow = document.getElementById('storyboard-row');
             const storyboardEl = document.getElementById('storyboard');
