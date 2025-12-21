@@ -1688,6 +1688,178 @@ export function compareMetaParity() {
   return match;
 }
 
+// DEBUG ONLY: used for console parity testing
+/**
+ * Run caption parity test - ensures stage is measurable, sets text, generates preview, and compares parity
+ * @param {Object} opts - Options
+ * @param {string} opts.text - Text to use (default: 'Parity test text')
+ * @returns {Promise<Object>} Result with stageRect, previewOk, parityResult
+ */
+export async function runCaptionParityTest({ text = 'Parity test text' } = {}) {
+  // Ensure overlay system is initialized
+  let overlayInitialized = false;
+  try {
+    const { getCaptionMeta } = await import('./caption-overlay.js');
+    const meta = getCaptionMeta();
+    if (meta) overlayInitialized = true;
+  } catch (e) {
+    // Try window fallback
+    if (typeof window.getCaptionMeta === 'function') {
+      const meta = window.getCaptionMeta();
+      if (meta) overlayInitialized = true;
+    }
+  }
+  
+  if (!overlayInitialized) {
+    // Try to initialize overlay system
+    try {
+      // Check if initOverlaySystem exists in creative.html scope
+      if (typeof window.initOverlaySystem === 'function') {
+        await window.initOverlaySystem();
+      } else if (typeof window.ensureOverlayActive === 'function') {
+        await window.ensureOverlayActive();
+      } else {
+        // Direct import and init
+        const { initCaptionOverlay } = await import('./caption-overlay.js');
+        initCaptionOverlay({ stageSel: '#stage', mediaSel: '#previewMedia' });
+      }
+    } catch (e) {
+      console.warn('[parity-test] Failed to initialize overlay:', e);
+    }
+  }
+  
+  // Ensure #stage is measurable
+  let stage = document.querySelector('#stage');
+  let stageRect = stage?.getBoundingClientRect();
+  let tempWrapper = null;
+  let originalStageParent = null;
+  let originalStageStyle = null;
+  
+  if (!stage || !stageRect || !stageRect.width || !stageRect.height) {
+    // Create temporary wrapper if stage is 0x0 or missing
+    console.log('[parity-test] Stage not measurable, creating temporary wrapper');
+    tempWrapper = document.createElement('div');
+    tempWrapper.id = '__captionDebugWrap';
+    tempWrapper.style.cssText = 'position: fixed; top: 0; left: 0; width: 360px; height: 640px; z-index: 9999; background: #000;';
+    document.body.appendChild(tempWrapper);
+    
+    if (!stage) {
+      // Create temporary stage
+      stage = document.createElement('div');
+      stage.id = 'stage';
+      stage.style.cssText = 'width: 100%; height: 100%; position: relative;';
+      tempWrapper.appendChild(stage);
+      
+      // Initialize overlay in temp stage
+      try {
+        const { initCaptionOverlay } = await import('./caption-overlay.js');
+        initCaptionOverlay({ stageSel: '#stage', mediaSel: '#previewMedia' });
+      } catch (e) {
+        console.warn('[parity-test] Failed to init overlay in temp stage:', e);
+      }
+    } else {
+      // Move existing stage into wrapper temporarily
+      originalStageParent = stage.parentNode;
+      originalStageStyle = stage.style.cssText;
+      stage.style.cssText = 'width: 100%; height: 100%; position: relative;';
+      tempWrapper.appendChild(stage);
+    }
+    
+    // Force layout
+    void stage.offsetHeight;
+    stageRect = stage.getBoundingClientRect();
+  }
+  
+  if (!stageRect || !stageRect.width || !stageRect.height) {
+    const result = {
+      stageRect: { width: 0, height: 0 },
+      previewOk: false,
+      parityResult: 'SKIP: stage not measurable after setup'
+    };
+    // Cleanup
+    if (tempWrapper && originalStageParent && stage) {
+      originalStageParent.appendChild(stage);
+      stage.style.cssText = originalStageStyle || '';
+      tempWrapper.remove();
+    } else if (tempWrapper) {
+      tempWrapper.remove();
+    }
+    return result;
+  }
+  
+  // Set overlay caption box text
+  const content = stage.querySelector('.caption-box .content');
+  if (!content) {
+    const result = {
+      stageRect: { width: stageRect.width, height: stageRect.height },
+      previewOk: false,
+      parityResult: 'SKIP: no caption box content element'
+    };
+    // Cleanup
+    if (tempWrapper && originalStageParent && stage) {
+      originalStageParent.appendChild(stage);
+      stage.style.cssText = originalStageStyle || '';
+      tempWrapper.remove();
+    } else if (tempWrapper) {
+      tempWrapper.remove();
+    }
+    return result;
+  }
+  
+  content.textContent = text;
+  content.dispatchEvent(new Event('input', { bubbles: true }));
+  
+  // Wait a tick for DOM to update
+  await new Promise(resolve => setTimeout(resolve, 50));
+  
+  // Call generateCaptionPreview (now safe with no args)
+  let previewOk = false;
+  try {
+    const { generateCaptionPreview } = await import('./caption-preview.js');
+    const previewResult = await generateCaptionPreview();
+    previewOk = previewResult?.ok !== false;
+  } catch (e) {
+    console.error('[parity-test] Preview generation failed:', e);
+  }
+  
+  // Run parity comparison
+  let parityResult = null;
+  try {
+    const { compareMetaParity } = await import('./caption-overlay.js');
+    parityResult = compareMetaParity();
+    
+    // If parity check needs server meta, use stored preview
+    if (parityResult === 'SKIP' && window.__lastCaptionPreview?.meta) {
+      // Could enhance compareMetaParity to use server meta, but for now just note it
+      console.log('[parity-test] Server meta available:', window.__lastCaptionPreview.meta);
+    }
+  } catch (e) {
+    console.error('[parity-test] Parity comparison failed:', e);
+    parityResult = `ERROR: ${e.message}`;
+  }
+  
+  // Cleanup: restore stage if we moved it
+  if (tempWrapper && originalStageParent && stage) {
+    originalStageParent.appendChild(stage);
+    stage.style.cssText = originalStageStyle || '';
+    tempWrapper.remove();
+  } else if (tempWrapper && !originalStageParent) {
+    // We created the stage, so just remove wrapper
+    tempWrapper.remove();
+  }
+  
+  return {
+    stageRect: { width: stageRect.width, height: stageRect.height },
+    previewOk,
+    parityResult
+  };
+}
+
+// Expose on window for console access
+if (typeof window !== 'undefined') {
+  window.runCaptionParityTest = runCaptionParityTest;
+}
+
 export function getCaptionMeta(){ 
   if (typeof window.getCaptionMeta === 'function') {
     return window.getCaptionMeta(); 

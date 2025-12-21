@@ -129,12 +129,62 @@ function validateTotalTextHFormula(meta) {
 }
 
 export async function generateCaptionPreview(opts) {
+  // DEBUG ONLY: If called with no args, read from DOM
+  if (!opts || Object.keys(opts).length === 0) {
+    const stage = document.querySelector('#stage');
+    const content = stage?.querySelector('.caption-box .content');
+    const text = content?.textContent?.trim() || '';
+    
+    if (!stage) {
+      const result = { ok: false, reason: 'No #stage element found' };
+      if (typeof window !== 'undefined') window.__lastCaptionPreview = result;
+      return result;
+    }
+    
+    if (!text) {
+      const result = { ok: false, reason: 'No text in overlay caption box' };
+      if (typeof window !== 'undefined') window.__lastCaptionPreview = result;
+      return result;
+    }
+    
+    // Get overlay meta
+    let overlayMeta = null;
+    try {
+      const { getCaptionMeta } = await import('./caption-overlay.js');
+      overlayMeta = getCaptionMeta();
+    } catch (e) {
+      overlayMeta = typeof window.getCaptionMeta === 'function' ? window.getCaptionMeta() : null;
+    }
+    
+    if (!overlayMeta) {
+      const result = { ok: false, reason: 'No overlay meta available (overlay not initialized)' };
+      if (typeof window !== 'undefined') window.__lastCaptionPreview = result;
+      return result;
+    }
+    
+    // Build opts from DOM + meta
+    opts = {
+      text: text,
+      fontFamily: overlayMeta.fontFamily,
+      weight: overlayMeta.weightCss,
+      fontPx: overlayMeta.fontPx,
+      lineSpacingPx: overlayMeta.lineSpacingPx,
+      color: overlayMeta.color,
+      opacity: overlayMeta.opacity,
+      xPct: overlayMeta.xPct,
+      yPct: overlayMeta.yPct,
+      wPct: overlayMeta.wPct,
+      placement: overlayMeta.placement || 'custom'
+    };
+  }
+  
   // Clear overlay if text is empty
   if (!opts.text || !opts.text.trim()) {
     if (typeof window !== 'undefined') {
       window.__lastCaptionOverlay = null;
+      window.__lastCaptionPreview = { ok: false, reason: 'Empty text' };
     }
-    return;
+    return { ok: false, reason: 'Empty text' };
   }
 
   // Clear previous caption to force regeneration
@@ -536,6 +586,13 @@ export async function generateCaptionPreview(opts) {
     // Store server meta for live preview system
     window.__serverCaptionMeta = normalizedMeta;
     
+    // Store for parity testing (DEBUG ONLY)
+    window.__lastCaptionPreview = {
+      ok: true,
+      meta: data.data?.meta || normalizedMeta,
+      response: data
+    };
+    
     // Also keep legacy reference for backward compatibility
     window.__lastCaptionOverlay = {
       dataUrl: imageUrl,
@@ -586,6 +643,13 @@ export async function generateCaptionPreview(opts) {
   if (typeof window !== 'undefined') {
     window.__vaiform_previewHeightPx = data.data?.hPx || 1920;
   }
+  
+  // Return success result (for parity testing)
+  return {
+    ok: true,
+    meta: normalizedMeta,
+    imageUrl
+  };
 }
 
 export function getLastCaptionPNG(){ return lastCaptionPNG; }
