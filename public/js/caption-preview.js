@@ -655,6 +655,200 @@ export async function generateCaptionPreview(opts) {
 
 export function getLastCaptionPNG(){ return lastCaptionPNG; }
 
+// Beat preview cache and controllers (behind feature flag)
+const beatPreviewCache = new Map(); // hash(style+text) -> { meta, rasterUrl, timestamp }
+const beatPreviewControllers = new Map(); // beatId -> AbortController
+const beatPreviewDebounceTimers = new Map(); // beatId -> timeoutId
+
+function hashStyleAndText(style, text) {
+  const styleStr = JSON.stringify(style, Object.keys(style).sort());
+  return `${styleStr}|${text}`;
+}
+
+function getCachedBeatPreview(style, text) {
+  const key = hashStyleAndText(style, text);
+  const cached = beatPreviewCache.get(key);
+  if (cached && Date.now() - cached.timestamp < 60000) { // 1min TTL
+    return cached;
+  }
+  return null;
+}
+
+function setCachedBeatPreview(style, text, result) {
+  const key = hashStyleAndText(style, text);
+  beatPreviewCache.set(key, {
+    ...result,
+    timestamp: Date.now()
+  });
+}
+
+/**
+ * Build V3 raster preview payload from overlayMeta (reuses existing logic)
+ * @param {string} text - Caption text
+ * @param {object} overlayMeta - overlayMeta object from measureBeatCaptionGeometry()
+ * @returns {object} Payload ready for POST /api/caption/preview
+ */
+function buildBeatPreviewPayload(text, overlayMeta) {
+  return {
+    ssotVersion: 3,
+    mode: 'raster',
+    text: overlayMeta.text || text,
+    placement: 'custom',
+    xPct: overlayMeta.xPct ?? 0.5,
+    yPct: overlayMeta.yPct ?? 0.5,
+    wPct: overlayMeta.wPct ?? 0.8,
+    
+    // Typography
+    fontPx: overlayMeta.fontPx,
+    lineSpacingPx: overlayMeta.lineSpacingPx,
+    fontFamily: overlayMeta.fontFamily,
+    weightCss: overlayMeta.weightCss,
+    fontStyle: overlayMeta.fontStyle,
+    textAlign: overlayMeta.textAlign,
+    letterSpacingPx: overlayMeta.letterSpacingPx,
+    textTransform: overlayMeta.textTransform,
+    
+    // Color & effects
+    color: overlayMeta.color,
+    opacity: overlayMeta.opacity,
+    strokePx: overlayMeta.strokePx,
+    strokeColor: overlayMeta.strokeColor,
+    shadowColor: overlayMeta.shadowColor,
+    shadowBlur: overlayMeta.shadowBlur,
+    shadowOffsetX: overlayMeta.shadowOffsetX,
+    shadowOffsetY: overlayMeta.shadowOffsetY,
+    
+    // Geometry - required V3 raster fields
+    frameW: overlayMeta.frameW || 1080,
+    frameH: overlayMeta.frameH || 1920,
+    rasterW: overlayMeta.rasterW,
+    rasterH: overlayMeta.rasterH,
+    rasterPadding: overlayMeta.rasterPadding,
+    xPx_png: overlayMeta.xPx_png,
+    yPx_png: overlayMeta.yPx_png,
+    xExpr_png: overlayMeta.xExpr_png || '(W-overlay_w)/2',
+    
+    // Browser-rendered line data (REQUIRED)
+    lines: overlayMeta.lines,
+    totalTextH: overlayMeta.totalTextH,
+    yPxFirstLine: overlayMeta.yPxFirstLine, // Now always present from helper
+    
+    // Font string for parity validation
+    previewFontString: overlayMeta.previewFontString,
+    
+    // Optional textRaw
+    textRaw: overlayMeta.textRaw || text
+  };
+}
+
+/**
+ * Generate caption preview for a beat card (parity-only, uses SSOT measurement)
+ * @param {string} beatId - Beat identifier
+ * @param {string} text - Beat text
+ * @param {object} style - Session-level caption style
+ * @returns {Promise<object|null>} Preview result with meta and rasterUrl, or null if disabled/skipped
+ */
+export async function generateBeatCaptionPreview(beatId, text, style) {
+  // Feature flag check
+  if (!window.BEAT_PREVIEW_ENABLED) {
+    return null;
+  }
+  
+  if (!text || !text.trim()) {
+    return null;
+  }
+  
+  // Check cache first
+  const cached = getCachedBeatPreview(style, text);
+  if (cached) {
+    return { beatId, ...cached };
+  }
+  
+  // Cancel previous request for this beat
+  const prevController = beatPreviewControllers.get(beatId);
+  if (prevController) {
+    prevController.abort();
+  }
+  
+  const controller = new AbortController();
+  beatPreviewControllers.set(beatId, controller);
+  
+  try {
+    // Import offscreen measurement function
+    const { measureBeatCaptionGeometry } = await import('./caption-overlay.js');
+    
+    // Measure geometry using offscreen DOM (reuses SSOT logic)
+    const overlayMeta = measureBeatCaptionGeometry(text, style);
+    if (!overlayMeta) {
+      return null;
+    }
+    
+    // Build payload using helper
+    const payload = buildBeatPreviewPayload(text, overlayMeta);
+    
+    // Call preview endpoint
+    const { apiFetch } = await import('./api.mjs');
+    const data = await apiFetch('/caption/preview', {
+      method: 'POST',
+      body: payload,
+      signal: controller.signal // AbortController supported
+    });
+    
+    if (!data?.ok) {
+      throw new Error(data?.detail || data?.reason || 'Preview generation failed');
+    }
+    
+    const result = {
+      beatId,
+      meta: data.data.meta,
+      rasterUrl: data.data.meta.rasterUrl
+    };
+    
+    // Cache result
+    setCachedBeatPreview(style, text, result);
+    
+    return result;
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      // Request cancelled, ignore
+      return null;
+    }
+    if (window.__parityAudit || window.__parityDebug) {
+      console.warn('[beat-preview] Failed:', err);
+    }
+    // Graceful degradation - don't block UI
+    return null;
+  } finally {
+    beatPreviewControllers.delete(beatId);
+  }
+}
+
+/**
+ * Debounced beat preview generation
+ * @param {string} beatId - Beat identifier
+ * @param {string} text - Beat text
+ * @param {object} style - Session-level caption style
+ * @param {number} delay - Debounce delay in ms (default 300)
+ */
+export function generateBeatCaptionPreviewDebounced(beatId, text, style, delay = 300) {
+  if (!window.BEAT_PREVIEW_ENABLED) {
+    return;
+  }
+  
+  // Clear existing timer
+  const existingTimer = beatPreviewDebounceTimers.get(beatId);
+  if (existingTimer) {
+    clearTimeout(existingTimer);
+  }
+  
+  const timer = setTimeout(async () => {
+    await generateBeatCaptionPreview(beatId, text, style);
+    beatPreviewDebounceTimers.delete(beatId);
+  }, delay);
+  
+  beatPreviewDebounceTimers.set(beatId, timer);
+}
+
 /**
  * Get saved overlay meta (from memory or localStorage)
  * @returns {Object|null} Saved overlay meta or null if none exists

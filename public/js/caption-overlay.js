@@ -1689,6 +1689,128 @@ export function compareMetaParity() {
 }
 
 /**
+ * Measure beat caption geometry using offscreen DOM (reuses SSOT logic)
+ * CRITICAL: Uses real stage dimensions if available to ensure wrapping parity
+ * 
+ * @param {string} text - Beat text
+ * @param {object} style - Session-level caption style (includes yPct, wPct, fontPx, etc.)
+ * @returns {object|null} overlayMeta object matching computeCaptionMetaFromElements() shape, or null if invalid
+ */
+export function measureBeatCaptionGeometry(text, style) {
+  if (!text || !text.trim()) {
+    return null;
+  }
+  
+  // CRITICAL DRIFT PREVENTION: Use real stage dimensions if available
+  const realStage = document.querySelector('#stage');
+  let stageWidth, stageHeight;
+  
+  if (realStage) {
+    const stageRect = realStage.getBoundingClientRect();
+    if (stageRect.width > 0 && stageRect.height > 0) {
+      stageWidth = realStage.clientWidth || stageRect.width;
+      stageHeight = realStage.clientHeight || stageRect.height;
+    }
+  }
+  
+  // Fallback to window.__overlayMeta?.stageRect if available
+  if (!stageWidth || !stageHeight) {
+    const savedMeta = window.__overlayMeta;
+    if (savedMeta?.stageRect?.width > 0 && savedMeta?.stageRect?.height > 0) {
+      stageWidth = savedMeta.stageRect.width;
+      stageHeight = savedMeta.stageRect.height;
+    }
+  }
+  
+  // Final fallback: stable default (360×640 is common mobile size)
+  if (!stageWidth || !stageHeight) {
+    stageWidth = 360;
+    stageHeight = 640;
+  }
+  
+  // Get frame dimensions
+  const { W: frameW, H: frameH } = window.CaptionGeom?.getFrameDims() || { W: 1080, H: 1920 };
+  
+  // Create offscreen stage container (matching #stage structure)
+  const stageEl = document.createElement('div');
+  stageEl.style.cssText = `
+    position: fixed;
+    left: -99999px;
+    top: 0;
+    width: ${stageWidth}px;
+    height: ${stageHeight}px;
+    visibility: hidden;
+  `;
+  
+  // Create caption box (matching .caption-box structure)
+  const boxEl = document.createElement('div');
+  boxEl.className = 'caption-box';
+  const wPct = style.wPct ?? 0.8;
+  const yPct = style.yPct ?? 0.5;
+  boxEl.style.cssText = `
+    position: absolute;
+    width: ${wPct * 100}%;
+    top: ${yPct * 100}%;
+    left: ${((1 - wPct) / 2) * 100}%;
+    transform: translateY(-50%);
+  `;
+  
+  // Create content element (matching .caption-box .content structure)
+  const contentEl = document.createElement('div');
+  contentEl.className = 'content';
+  const internalPadding = style.internalPadding ?? style.rasterPadding ?? 24;
+  const fontPx = style.fontPx ?? 48;
+  contentEl.style.cssText = `
+    font-family: ${style.fontFamily || 'DejaVu Sans'};
+    font-weight: ${style.weightCss || 'bold'};
+    font-size: ${fontPx}px;
+    font-style: ${style.fontStyle || 'normal'};
+    letter-spacing: ${style.letterSpacingPx || 0}px;
+    text-align: ${style.textAlign || 'center'};
+    color: ${style.color || '#FFFFFF'};
+    opacity: ${style.opacity ?? 1};
+    padding: ${internalPadding}px;
+    line-height: ${(style.lineHeight ?? 1.15) * fontPx}px;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    width: 100%;
+    box-sizing: border-box;
+  `;
+  contentEl.textContent = text;
+  
+  // Assemble DOM hierarchy
+  boxEl.appendChild(contentEl);
+  stageEl.appendChild(boxEl);
+  document.body.appendChild(stageEl);
+  
+  try {
+    // Force layout calculation
+    void stageEl.offsetHeight;
+    void boxEl.offsetHeight;
+    void contentEl.offsetHeight;
+    
+    // CRITICAL: Compute meta using shared helper (ensures parity)
+    const meta = computeCaptionMetaFromElements({
+      stageEl,
+      boxEl,
+      contentEl,
+      frameW,
+      frameH
+    });
+    
+    // DO NOT override meta.yPct or meta.yPx_png after compute
+    // Helper derives these from DOM position (same as live overlay)
+    
+    return meta;
+  } finally {
+    // Cleanup offscreen container
+    if (stageEl.parentNode) {
+      document.body.removeChild(stageEl);
+    }
+  }
+}
+
+/**
  * Minimal deterministic smoke test for yPxFirstLine computation
  * Uses exact production path (same as preview payload)
  * @returns {Object} { ok, reason, yPxFirstLine, yPx_png, rasterPadding, stageRect }

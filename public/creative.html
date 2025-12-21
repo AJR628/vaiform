@@ -285,6 +285,20 @@
             background-color: rgba(59, 130, 246, 0.1);
             border-radius: 4px;
         }
+        /* Beat caption preview overlay */
+        .beat-caption-overlay {
+            position: absolute;
+            left: 50%;
+            top: calc(var(--y-pct) * 100%);
+            width: calc(var(--raster-w-ratio) * 100%);
+            height: calc(var(--raster-h-ratio) * 100%);
+            transform: translateX(-50%) translateY(-50%);
+            pointer-events: none;
+            z-index: 10;
+            object-fit: contain;
+            image-rendering: -webkit-optimize-contrast;
+            image-rendering: crisp-edges;
+        }
     </style>
 </head>
 <body class="bg-gray-50 text-gray-800 dark:bg-gray-900 dark:text-gray-100 min-h-screen transition-colors duration-300">
@@ -6454,6 +6468,80 @@
             return div.innerHTML;
         }
         
+        // Beat preview manager (behind feature flag)
+        const BeatPreviewManager = {
+            /**
+             * Apply preview to beat card
+             */
+            async applyPreview(beatCardEl, beatId, text, style) {
+                if (!window.BEAT_PREVIEW_ENABLED) return;
+                
+                try {
+                    const { generateBeatCaptionPreview } = await import('./js/caption-preview.js');
+                    const result = await generateBeatCaptionPreview(beatId, text, style);
+                    
+                    if (!result || !result.rasterUrl) return;
+                    
+                    // Find or create overlay img element
+                    let overlayImg = beatCardEl.querySelector('.beat-caption-overlay');
+                    if (!overlayImg) {
+                        overlayImg = document.createElement('img');
+                        overlayImg.className = 'beat-caption-overlay';
+                        // Insert into video container (first .relative element)
+                        const videoContainer = beatCardEl.querySelector('.relative.w-full.h-40');
+                        if (videoContainer) {
+                            videoContainer.appendChild(overlayImg);
+                        } else {
+                            beatCardEl.appendChild(overlayImg);
+                        }
+                    }
+                    
+                    // Set CSS variables for positioning
+                    const meta = result.meta;
+                    const yPct = meta.yPx_png / meta.frameH;
+                    const rasterWRatio = meta.rasterW / meta.frameW;
+                    const rasterHRatio = meta.rasterH / meta.frameH;
+                    
+                    overlayImg.style.setProperty('--y-pct', yPct);
+                    overlayImg.style.setProperty('--raster-w-ratio', rasterWRatio);
+                    overlayImg.style.setProperty('--raster-h-ratio', rasterHRatio);
+                    
+                    // Set image source
+                    overlayImg.src = result.rasterUrl;
+                    overlayImg.style.display = 'block';
+                } catch (err) {
+                    if (window.__parityAudit || window.__parityDebug) {
+                        console.warn('[beat-preview] Failed to apply preview:', err);
+                    }
+                    // Graceful degradation - don't block UI
+                }
+            },
+            
+            /**
+             * Apply previews to all beats in storyboard
+             */
+            async applyAllPreviews(beats, style) {
+                if (!window.BEAT_PREVIEW_ENABLED) return;
+                
+                for (let idx = 0; idx < beats.length; idx++) {
+                    const beat = beats[idx];
+                    // Handle both draft beats (object with id/text) and session sentences (string)
+                    const beatId = beat.id || beat.sentenceIndex || idx;
+                    const text = beat.text || (typeof beat === 'string' ? beat : '');
+                    const beatCardEl = document.querySelector(`[data-beat-id="${beatId}"]`) || 
+                                      document.querySelector(`[data-sentence-index="${idx}"]`);
+                    if (beatCardEl && text) {
+                        await BeatPreviewManager.applyPreview(beatCardEl, beatId, text, style);
+                    }
+                }
+            }
+        };
+        
+        // Feature flag (default false)
+        if (typeof window.BEAT_PREVIEW_ENABLED === 'undefined') {
+            window.BEAT_PREVIEW_ENABLED = false;
+        }
+        
         function renderStoryboard(session) {
             const storyboardRow = document.getElementById('storyboard-row');
             const storyboardEl = document.getElementById('storyboard');
@@ -6578,6 +6666,20 @@
             
             // Update render button state (session exists)
             updateRenderArticleButtonState();
+            
+            // Apply beat previews (behind feature flag)
+            if (window.BEAT_PREVIEW_ENABLED) {
+                const style = session.overlayCaption || session.captionStyle || {
+                    fontFamily: 'DejaVu Sans',
+                    weightCss: 'bold',
+                    fontPx: 48,
+                    yPct: 0.5,
+                    wPct: 0.8,
+                    opacity: 1,
+                    color: '#FFFFFF'
+                };
+                BeatPreviewManager.applyAllPreviews(sentences, style);
+            }
         }
         
         function renderDraftStoryboard() {
@@ -6706,6 +6808,20 @@
             
             // Update render button state (draft mode)
             updateRenderArticleButtonState();
+            
+            // Apply beat previews (behind feature flag)
+            if (window.BEAT_PREVIEW_ENABLED) {
+                const style = window.draftStoryboard?.captionStyle || {
+                    fontFamily: 'DejaVu Sans',
+                    weightCss: 'bold',
+                    fontPx: 48,
+                    yPct: 0.5,
+                    wPct: 0.8,
+                    opacity: 1,
+                    color: '#FFFFFF'
+                };
+                BeatPreviewManager.applyAllPreviews(beats, style);
+            }
         }
         
         function setupSwapButtonHandlers() {
@@ -7108,6 +7224,21 @@
                 }
                 el.textContent = newText;
                 updateRenderArticleButtonState();
+                
+                // Trigger debounced preview (behind feature flag)
+                if (window.BEAT_PREVIEW_ENABLED) {
+                    const style = window.draftStoryboard?.captionStyle || {
+                        fontFamily: 'DejaVu Sans',
+                        weightCss: 'bold',
+                        fontPx: 48,
+                        yPct: 0.5,
+                        wPct: 0.8,
+                        opacity: 1,
+                        color: '#FFFFFF'
+                    };
+                    const { generateBeatCaptionPreviewDebounced } = await import('./js/caption-preview.js');
+                    generateBeatCaptionPreviewDebounced(identifier, newText, style);
+                }
                 return;
             }
             
@@ -7150,6 +7281,21 @@
                 // Re-render storyboard from canonical data
                 renderStoryboard(window.currentStorySession);
                 updateRenderArticleButtonState();
+                
+                // Trigger debounced preview (behind feature flag)
+                if (window.BEAT_PREVIEW_ENABLED) {
+                    const style = window.currentStorySession.overlayCaption || window.currentStorySession.captionStyle || {
+                        fontFamily: 'DejaVu Sans',
+                        weightCss: 'bold',
+                        fontPx: 48,
+                        yPct: 0.5,
+                        wPct: 0.8,
+                        opacity: 1,
+                        color: '#FFFFFF'
+                    };
+                    const { generateBeatCaptionPreviewDebounced } = await import('./js/caption-preview.js');
+                    generateBeatCaptionPreviewDebounced(identifier, newText, style);
+                }
             } catch (err) {
                 console.error("[article] Update beat error:", err);
                 showError("article-error", "Could not update beat. Please try again.");
