@@ -6537,9 +6537,9 @@
             }
         };
         
-        // Feature flag (default false)
+        // Feature flag (default true)
         if (typeof window.BEAT_PREVIEW_ENABLED === 'undefined') {
-            window.BEAT_PREVIEW_ENABLED = false;
+            window.BEAT_PREVIEW_ENABLED = true;  // Enable by default
         }
         
         // Preload caption-preview module at boot (deterministic init)
