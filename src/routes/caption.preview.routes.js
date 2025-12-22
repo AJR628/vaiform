@@ -357,6 +357,28 @@ router.post("/caption/preview", express.json(), async (req, res) => {
       willMatchPreview: true
     });
     
+    // DEBUG ONLY: Structured parity log before response
+    if (process.env.DEBUG_CAPTION_PARITY === '1') {
+      // Infer rewrap from line count (will be exact in Phase 2)
+      const clientLinesCount = data.lines?.length || 0;
+      const serverLinesCount = ssotMeta.lines?.length || 0;
+      const rewrapped = clientLinesCount !== serverLinesCount;
+      console.log('[PARITY:SERVER:RESPONSE]', JSON.stringify({
+        textLen: text?.length || 0,
+        clientLinesCount: clientLinesCount,
+        serverLinesCount: serverLinesCount,
+        rewrapped: rewrapped,
+        rasterW: ssotMeta.rasterW,
+        rasterH: ssotMeta.rasterH,
+        yPx_png: ssotMeta.yPx_png,
+        fontPx: ssotMeta.fontPx,
+        weightCss: ssotMeta.weightCss,
+        previewFontString: ssotMeta.previewFontString,
+        totalTextH: ssotMeta.totalTextH,
+        timestamp: Date.now()
+      }));
+    }
+    
     return res.status(200).json({
       ok: true,
       data: {

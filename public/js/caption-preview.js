@@ -786,6 +786,25 @@ export async function generateBeatCaptionPreview(beatId, text, style) {
     // Build payload using helper
     const payload = buildBeatPreviewPayload(text, overlayMeta);
     
+    // DEBUG ONLY: Structured parity log before POST
+    if (window.__beatPreviewDebug || window.__parityAudit) {
+      const linesPreview = payload.lines?.slice(0, 12).map(line => line.substring(0, 12)) || [];
+      console.log('[PARITY:CLIENT:REQUEST]', JSON.stringify({
+        textLen: text?.length || 0,
+        linesCount: payload.lines?.length || 0,
+        linesPreview: linesPreview,
+        rasterW: payload.rasterW,
+        rasterH: payload.rasterH,
+        yPct: payload.yPct,
+        yPx_png: payload.yPx_png,
+        fontPx: payload.fontPx,
+        weightCss: payload.weightCss,
+        previewFontString: payload.previewFontString,
+        totalTextH: payload.totalTextH,
+        timestamp: Date.now()
+      }));
+    }
+    
     // Call preview endpoint (using already-imported apiFetch from line 7)
     const data = await apiFetch('/caption/preview', {
       method: 'POST',

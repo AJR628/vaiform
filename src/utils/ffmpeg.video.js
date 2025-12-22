@@ -461,6 +461,23 @@ function buildVideoChain({ width, height, videoVignette, drawLayers, captionImag
       yPx_png: placement.y,
       xExpr_png: placement.xExpr
     });
+    
+    // DEBUG ONLY: Structured parity log before FFmpeg
+    if (process.env.DEBUG_CAPTION_PARITY === '1') {
+      console.log('[PARITY:RENDER:FFMPEG]', JSON.stringify({
+        textLen: overlayCaption?.text?.length || 0,
+        linesCount: overlayCaption?.lines?.length || 0,
+        rasterW: placement.rasterW,
+        rasterH: placement.rasterH,
+        yPx_png: placement.y,
+        fontPx: overlayCaption?.fontPx,
+        weightCss: overlayCaption?.weightCss,
+        previewFontString: overlayCaption?.previewFontString,
+        totalTextH: overlayCaption?.totalTextH,
+        timestamp: Date.now()
+      }));
+    }
+    
     // Build filter graph: scale -> crop -> format -> [vmain], then overlay PNG
     // CRITICAL: Use persisted geometry from preview for exact parity
     let scale, crop;
