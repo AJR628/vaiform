@@ -234,11 +234,30 @@ router.post("/caption/preview", express.json(), async (req, res) => {
     const pngBuffer = Buffer.from(rasterResult.rasterUrl.split(',')[1], 'base64');
     const rasterHash = crypto.createHash('sha256').update(pngBuffer).digest('hex').slice(0, 16);
     
-    // ✅ Use client SSOT values - NO RECOMPUTATION
-    console.log('[geom:server] Using client SSOT (no recomputation):', {
-      fontPx, lineSpacingPx, letterSpacingPx, rasterW, rasterH,
-      yPx_png, rasterPadding, previewFontString: data.previewFontString
-    });
+    // ✅ FIX: Use server-computed values if rewrap occurred, otherwise use client SSOT values
+    const finalLines = rasterResult.rewrapped ? rasterResult.finalLines : lines;
+    const finalRasterH = rasterResult.rewrapped ? rasterResult.serverRasterH : rasterH;
+    const finalTotalTextH = rasterResult.rewrapped ? rasterResult.serverTotalTextH : totalTextH;
+    // Keep yPx_png as-is (no positioning policy change, only geometry recomputation)
+    const finalYPx_png = yPx_png;
+    
+    if (rasterResult.rewrapped) {
+      console.log('[geom:server] Using server-recomputed values (rewrap occurred):', {
+        fontPx, lineSpacingPx, letterSpacingPx, rasterW,
+        oldRasterH: rasterH,
+        newRasterH: finalRasterH,
+        oldTotalTextH: totalTextH,
+        newTotalTextH: finalTotalTextH,
+        oldLinesCount: lines.length,
+        newLinesCount: finalLines.length,
+        yPx_png: finalYPx_png, rasterPadding, previewFontString: data.previewFontString
+      });
+    } else {
+      console.log('[geom:server] Using client SSOT (no recomputation):', {
+        fontPx, lineSpacingPx, letterSpacingPx, rasterW, rasterH: finalRasterH,
+        yPx_png: finalYPx_png, rasterPadding, previewFontString: data.previewFontString
+      });
+    }
     
     // ✅ VALIDATION: Ensure all numeric fields are finite
     const numericFields = { fontPx, lineSpacingPx, letterSpacingPx, rasterW, rasterH, yPx_png, rasterPadding };
@@ -266,13 +285,13 @@ router.post("/caption/preview", express.json(), async (req, res) => {
       bgScaleExpr: "scale='if(gt(a,1080/1920),-2,1080)':'if(gt(a,1080/1920),1920,-2)'",
       bgCropExpr: "crop=1080:1920",
       
-      // ✅ Echo client pixels (unchanged) - TRUST CLIENT SSOT
+      // ✅ FIX: Use server-computed values if rewrap occurred, otherwise echo client SSOT
       rasterUrl: rasterResult.rasterUrl,
-      rasterW: data.rasterW,  // ✅ Client canonical value
-      rasterH: data.rasterH,  // ✅ Client canonical value  
+      rasterW: data.rasterW,  // ✅ Client canonical value (width doesn't change on rewrap)
+      rasterH: finalRasterH,  // ✅ Server-recomputed if rewrap, else client canonical
       rasterPadding: data.rasterPadding,  // ✅ Client canonical value
       xExpr_png: data.xExpr_png,  // ✅ Client canonical value
-      yPx_png: data.yPx_png,  // ✅ Client canonical value
+      yPx_png: finalYPx_png,  // ✅ Keep client value (no positioning policy change)
       
       // Verification hashes - echo back actual server values
       rasterHash,
@@ -300,27 +319,31 @@ router.post("/caption/preview", express.json(), async (req, res) => {
       shadowOffsetX: data.shadowOffsetX,
       shadowOffsetY: data.shadowOffsetY,
       
-      // Debug info - include lines for client
-      lines: lines,  // ✅ Return exact lines used
+      // ✅ FIX: Return server-wrapped lines if rewrap occurred, otherwise client lines
+      lines: finalLines,  // ✅ Server-wrapped lines if rewrap, else client lines
       lineSpacingPx,
-      totalTextH: totalTextH,  // ✅ Use server-computed value for verification
+      totalTextH: finalTotalTextH,  // ✅ Server-recomputed if rewrap, else client value
       // yPxFirstLine removed - debug only, not used for positioning
     };
     
-    // Validate echo integrity
-    const echoErrors = [];
-    if (ssotMeta.rasterW !== data.rasterW) echoErrors.push('rasterW');
-    if (ssotMeta.rasterH !== data.rasterH) echoErrors.push('rasterH');
-    if (ssotMeta.yPx_png !== data.yPx_png) echoErrors.push('yPx_png');
-    if (ssotMeta.fontPx !== data.fontPx) echoErrors.push('fontPx');
+    // Validate echo integrity (only for non-rewrap case)
+    if (!rasterResult.rewrapped) {
+      const echoErrors = [];
+      if (ssotMeta.rasterW !== data.rasterW) echoErrors.push('rasterW');
+      if (ssotMeta.rasterH !== data.rasterH) echoErrors.push('rasterH');
+      if (ssotMeta.yPx_png !== data.yPx_png) echoErrors.push('yPx_png');
+      if (ssotMeta.fontPx !== data.fontPx) echoErrors.push('fontPx');
 
-    if (echoErrors.length > 0) {
-      console.error('[raster:echo] Failed to echo client values:', echoErrors);
-      return res.status(500).json({
-        ok: false,
-        reason: "ECHO_INTEGRITY_FAILED",
-        detail: `Server modified: ${echoErrors.join(', ')}`
-      });
+      if (echoErrors.length > 0) {
+        console.error('[raster:echo] Failed to echo client values:', echoErrors);
+        return res.status(500).json({
+          ok: false,
+          reason: "ECHO_INTEGRITY_FAILED",
+          detail: `Server modified: ${echoErrors.join(', ')}`
+        });
+      }
+    } else {
+      console.log('[raster:rewrap] Server recomputed geometry - echo integrity check skipped');
     }
     
     // Log for verification
@@ -359,10 +382,9 @@ router.post("/caption/preview", express.json(), async (req, res) => {
     
     // DEBUG ONLY: Structured parity log before response
     if (process.env.DEBUG_CAPTION_PARITY === '1') {
-      // Infer rewrap from line count (will be exact in Phase 2)
       const clientLinesCount = data.lines?.length || 0;
       const serverLinesCount = ssotMeta.lines?.length || 0;
-      const rewrapped = clientLinesCount !== serverLinesCount;
+      const rewrapped = rasterResult.rewrapped || (clientLinesCount !== serverLinesCount);
       console.log('[PARITY:SERVER:RESPONSE]', JSON.stringify({
         textLen: text?.length || 0,
         clientLinesCount: clientLinesCount,
@@ -1206,6 +1228,9 @@ async function renderCaptionRaster(meta) {
   }
   
   // Server-side rewrap if client lines overflow or have broken words
+  let serverTotalTextH = meta.totalTextH;
+  let serverRasterH = meta.rasterH;
+  
   if (needsRewrap) {
     console.log('[parity:server-rewrap] Client lines overflow or broken words detected, rewrapping with server font');
     console.log('[parity:server-rewrap] Preserving font:', {
@@ -1219,12 +1244,40 @@ async function renderCaptionRaster(meta) {
       newLines: serverWrappedLines.length,
       maxLineWidth: Math.round(maxLineWidth)
     });
+    
+    // ✅ FIX: Recompute geometry from server-wrapped lines
+    serverTotalTextH = serverWrappedLines.length * fontPx + (serverWrappedLines.length - 1) * lineSpacingPx;
+    
+    // Recompute rasterH using same logic as client (server-side equivalent)
+    const cssPaddingTop = meta.padTop || meta.rasterPadding || 24;
+    const cssPaddingBottom = meta.padBottom || meta.rasterPadding || 24;
+    const shadowBlur = meta.shadowBlur || 12;
+    const shadowOffsetY = meta.shadowOffsetY || 2;
+    
+    // Server-side computeRasterH equivalent
+    serverRasterH = Math.round(
+      serverTotalTextH + 
+      cssPaddingTop + 
+      cssPaddingBottom + 
+      Math.max(0, shadowBlur * 2) + 
+      Math.max(0, shadowOffsetY)
+    );
+    
+    console.log('[parity:server-rewrap:geometry]', {
+      oldRasterH: meta.rasterH,
+      newRasterH: serverRasterH,
+      oldTotalTextH: meta.totalTextH,
+      newTotalTextH: serverTotalTextH,
+      oldLines: lines.length,
+      newLines: serverWrappedLines.length
+    });
   }
   
   // ✅ Use raster dimensions directly (schema validation ensures these exist)
+  // Use recomputed values if rewrap occurred
   const padding = meta.rasterPadding;
   const rasterW = meta.rasterW;
-  const rasterH = meta.rasterH;
+  const rasterH = needsRewrap ? serverRasterH : meta.rasterH;
 
   console.log('[raster] Using client canonical values (no computation):', { 
     padding, rasterW, rasterH 
@@ -1451,6 +1504,11 @@ async function renderCaptionRaster(meta) {
     padding,  // CRITICAL: actual padding used (for parity verification)
     previewFontString,
     previewFontHash,
+    // ✅ FIX: Return rewrap info for route handler
+    rewrapped: needsRewrap,
+    finalLines: serverWrappedLines,
+    serverTotalTextH: needsRewrap ? serverTotalTextH : meta.totalTextH,
+    serverRasterH: needsRewrap ? serverRasterH : meta.rasterH,
     // Echo back all styles used (helps debugging)
     fontPx,
     lineSpacingPx: meta.lineSpacingPx,
