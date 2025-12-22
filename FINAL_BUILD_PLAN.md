@@ -515,3 +515,4 @@ Only after `compareMetaParity()` returns `true`:
 5. Test beat preview generation with sample text
 6. Verify preview PNG displays correctly on beat card
 
+

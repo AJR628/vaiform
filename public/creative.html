@@ -6542,6 +6542,11 @@
             window.BEAT_PREVIEW_ENABLED = false;
         }
         
+        // Preload caption-preview module at boot (deterministic init)
+        window.__beatPreviewModulePromise = import('./js/caption-preview.js')
+            .then(m => (window.__beatPreviewModule = m, m))
+            .catch(err => (console.warn('[beat-preview] Module load failed:', err), null));
+        
         // Optional debug exposure (only if flag is set)
         if (window.__beatPreviewDebug === true) {
             window.BeatPreviewManager = BeatPreviewManager;
@@ -7241,8 +7246,10 @@
                         opacity: 1,
                         color: '#FFFFFF'
                     };
-                    const { generateBeatCaptionPreviewDebounced } = await import('./js/caption-preview.js');
-                    generateBeatCaptionPreviewDebounced(identifier, newText, style);
+                    const m = window.__beatPreviewModule || await window.__beatPreviewModulePromise;
+                    if (m) {
+                        m.generateBeatCaptionPreviewDebounced(identifier, newText, style);
+                    }
                 }
                 return;
             }
@@ -7287,7 +7294,7 @@
                 renderStoryboard(window.currentStorySession);
                 updateRenderArticleButtonState();
                 
-                // Trigger debounced preview (behind feature flag)
+                // Trigger debounced preview (behind feature flag) - schedule after DOM update
                 if (window.BEAT_PREVIEW_ENABLED) {
                     const style = window.currentStorySession.overlayCaption || window.currentStorySession.captionStyle || {
                         fontFamily: 'DejaVu Sans',
@@ -7298,8 +7305,12 @@
                         opacity: 1,
                         color: '#FFFFFF'
                     };
-                    const { generateBeatCaptionPreviewDebounced } = await import('./js/caption-preview.js');
-                    generateBeatCaptionPreviewDebounced(identifier, newText, style);
+                    requestAnimationFrame(async () => {
+                        const m = window.__beatPreviewModule || await window.__beatPreviewModulePromise;
+                        if (m) {
+                            m.generateBeatCaptionPreviewDebounced(identifier, newText, style);
+                        }
+                    });
                 }
             } catch (err) {
                 console.error("[article] Update beat error:", err);

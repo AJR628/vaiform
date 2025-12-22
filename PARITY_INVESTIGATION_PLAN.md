@@ -219,3 +219,4 @@ yPxFirstLine: overlayMeta.yPxFirstLine,  // Remove fallback
 6. Test golden-master comparison passes
 7. THEN proceed with caption-preview.js helpers + wiring
 
+

@@ -283,3 +283,4 @@ const yPxFirstLine = yPx_png + rasterPadding;
 | `rasterPadding` | ✅ Yes (avg padding) | ✅ Yes | `(cssPaddingTop + cssPaddingBottom) / 2` |
 | `previewFontString` | ✅ Yes (manual) | ✅ Yes | `"${fontStyle} ${weight} ${fontPx}px \"${family}\""` |
 
+

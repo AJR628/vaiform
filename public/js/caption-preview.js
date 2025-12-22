@@ -834,40 +834,43 @@ export function generateBeatCaptionPreviewDebounced(beatId, text, style, delay =
     return;
   }
   
+  // Normalize identifier to string
+  const id = String(beatId);
+  
   if (window.__beatPreviewDebug) {
-    console.log('[beat-preview] Debounce triggered:', { identifier: beatId, textLength: text?.length || 0 });
+    console.log('[beat-preview] Debounce triggered:', { identifier: id, textLength: text?.length || 0 });
   }
   
   // Clear existing timer
-  const existingTimer = beatPreviewDebounceTimers.get(beatId);
+  const existingTimer = beatPreviewDebounceTimers.get(id);
   if (existingTimer) {
     clearTimeout(existingTimer);
   }
   
   const timer = setTimeout(async () => {
-    const result = await generateBeatCaptionPreview(beatId, text, style);
-    beatPreviewDebounceTimers.delete(beatId);
+    const result = await generateBeatCaptionPreview(id, text, style);
+    beatPreviewDebounceTimers.delete(id);
     
     // Apply preview to DOM
     if (result && result.rasterUrl) {
       // Find beat card: try both selector patterns (draft vs session mode)
-      const beatCardEl = document.querySelector(`[data-beat-id="${beatId}"]`) || 
-                         document.querySelector(`[data-sentence-index="${beatId}"]`);
+      const beatCardEl = document.querySelector(`[data-beat-id="${id}"]`) || 
+                         document.querySelector(`[data-sentence-index="${id}"]`);
       
       if (beatCardEl) {
         if (window.__beatPreviewDebug) {
-          console.log('[beat-preview] Card found:', { identifier: beatId, found: true });
+          console.log('[beat-preview] Card found:', { identifier: id, found: true });
         }
         applyPreviewResultToBeatCard(beatCardEl, result);
       } else {
         if (window.__beatPreviewDebug) {
-          console.warn('[beat-preview] Card not found:', { identifier: beatId, found: false });
+          console.warn('[beat-preview] Card not found:', { identifier: id, found: false });
         }
       }
     }
   }, delay);
   
-  beatPreviewDebounceTimers.set(beatId, timer);
+  beatPreviewDebounceTimers.set(id, timer);
 }
 
 /**

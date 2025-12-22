@@ -712,3 +712,4 @@ export function measureBeatCaptionGeometry(text, style) {
 - Box positioning happens BEFORE compute (ensures correct yPct/yPx_png derivation)
 - No server changes needed (server trusts client values)
 
+
