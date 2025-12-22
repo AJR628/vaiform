@@ -912,10 +912,23 @@ export function applyPreviewResultToBeatCard(beatCardEl, result) {
   
   // Set CSS variables for positioning
   const meta = result.meta;
-  // Prefer server meta.yPct if present, else derive from yPx_png/frameH
-  const yPct = Number.isFinite(meta.yPct) ? meta.yPct : (meta.yPx_png / meta.frameH);
+  // Prefer server meta.yPct if present, else derive CENTER from yPx_png (top) + rasterH/2
+  // CSS uses translateY(-50%) which centers the element, so yPct must represent center position
+  const yPct = Number.isFinite(meta.yPct) ? meta.yPct : ((meta.yPx_png + meta.rasterH / 2) / meta.frameH);
   const rasterWRatio = meta.rasterW / meta.frameW;
   const rasterHRatio = meta.rasterH / meta.frameH;
+  
+  if (window.__beatPreviewDebug) {
+    console.log('[beat-preview] yPct calculation:', {
+      hasMetaYPct: Number.isFinite(meta.yPct),
+      metaYPct: meta.yPct,
+      yPx_png: meta.yPx_png,
+      frameH: meta.frameH,
+      rasterH: meta.rasterH,
+      derivedYPct: (meta.yPx_png + meta.rasterH / 2) / meta.frameH,
+      finalYPct: yPct
+    });
+  }
   
   overlayImg.style.setProperty('--y-pct', yPct);
   overlayImg.style.setProperty('--raster-w-ratio', rasterWRatio);
@@ -930,6 +943,15 @@ export function applyPreviewResultToBeatCard(beatCardEl, result) {
       identifier: beatCardEl.getAttribute('data-beat-id') || beatCardEl.getAttribute('data-sentence-index'),
       rasterUrl: result.rasterUrl.substring(0, 50) + '...'
     });
+    
+    // Store meta for debugging (only if debug flag enabled)
+    if (!window.__lastBeatPreviewMeta) {
+      window.__lastBeatPreviewMeta = {};
+    }
+    const identifier = beatCardEl.getAttribute('data-beat-id') || beatCardEl.getAttribute('data-sentence-index');
+    if (identifier && result.meta) {
+      window.__lastBeatPreviewMeta[identifier] = result.meta;
+    }
   }
 }
 
