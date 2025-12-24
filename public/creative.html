@@ -339,16 +339,22 @@
         
         #beat-focus-video-container {
             position: relative;
-            width: 100%;
+            height: min(70vh, 720px);
             aspect-ratio: 9 / 16;
+            width: auto;
+            max-width: 80vw;
+            margin: 0 auto;
             background-color: #000;
             overflow: hidden;
         }
         
         #beat-focus-video {
+            position: absolute;
+            inset: 0;
             width: 100%;
             height: 100%;
             object-fit: cover;
+            object-position: center;
         }
         
         #beat-focus-overlay {
@@ -7111,11 +7117,22 @@
                 return;
             }
             
-            // Extract video source
+            // Extract video source and poster
             const cardVideo = card.querySelector('video.storyboard-video');
             if (cardVideo && cardVideo.src) {
                 videoEl.src = cardVideo.src;
+                
+                // Copy poster to match thumbnail still
+                const poster = cardVideo.getAttribute('poster');
+                if (poster) {
+                    videoEl.setAttribute('poster', poster);
+                } else {
+                    videoEl.removeAttribute('poster');
+                }
+                
                 videoEl.load();
+                videoEl.pause();  // Show poster initially
+                videoEl.currentTime = 0;
             } else {
                 if (window.__beatFocusDebug) {
                     console.warn('[beat-focus] No video source found');
@@ -7157,12 +7174,8 @@
             // Show modal
             modal.classList.add('show');
             
-            // Play video
-            videoEl.play().catch(e => {
-                if (window.__beatFocusDebug) {
-                    console.warn('[beat-focus] Video play failed:', e);
-                }
-            });
+            // Video is paused initially to show poster (matching thumbnail behavior)
+            // User can interact to play if desired
         }
         
         function hideBeatFocusPreview() {
