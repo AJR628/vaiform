@@ -1752,7 +1752,6 @@ export function measureBeatCaptionGeometry(text, style) {
     width: ${wPct * 100}%;
     top: ${yPct * 100}%;
     left: ${((1 - wPct) / 2) * 100}%;
-    transform: translateY(-50%);
   `;
   
   // Create content element (matching .caption-box .content structure)

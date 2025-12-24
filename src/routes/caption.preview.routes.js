@@ -259,7 +259,7 @@ router.post("/caption/preview", express.json(), async (req, res) => {
       });
     }
     
-    // ✅ VALIDATION: Ensure all numeric fields are finite
+    // ✅ VALIDATION: Ensure all numeric fields are finite (validate input values, recomputed values validated after render)
     const numericFields = { fontPx, lineSpacingPx, letterSpacingPx, rasterW, rasterH, yPx_png, rasterPadding };
     const invalidFields = Object.entries(numericFields)
       .filter(([key, value]) => !Number.isFinite(value))
@@ -1246,31 +1246,48 @@ async function renderCaptionRaster(meta) {
     });
     
     // ✅ FIX: Recompute geometry from server-wrapped lines
-    serverTotalTextH = serverWrappedLines.length * fontPx + (serverWrappedLines.length - 1) * lineSpacingPx;
-    
-    // Recompute rasterH using same logic as client (server-side equivalent)
-    const cssPaddingTop = meta.padTop || meta.rasterPadding || 24;
-    const cssPaddingBottom = meta.padBottom || meta.rasterPadding || 24;
-    const shadowBlur = meta.shadowBlur || 12;
-    const shadowOffsetY = meta.shadowOffsetY || 2;
-    
-    // Server-side computeRasterH equivalent
-    serverRasterH = Math.round(
-      serverTotalTextH + 
-      cssPaddingTop + 
-      cssPaddingBottom + 
-      Math.max(0, shadowBlur * 2) + 
-      Math.max(0, shadowOffsetY)
-    );
-    
-    console.log('[parity:server-rewrap:geometry]', {
-      oldRasterH: meta.rasterH,
-      newRasterH: serverRasterH,
-      oldTotalTextH: meta.totalTextH,
-      newTotalTextH: serverTotalTextH,
-      oldLines: lines.length,
-      newLines: serverWrappedLines.length
-    });
+    try {
+      const lineSpacingPx = meta.lineSpacingPx || 0;
+      serverTotalTextH = serverWrappedLines.length * fontPx + (serverWrappedLines.length - 1) * lineSpacingPx;
+      
+      // Recompute rasterH using same logic as client (server-side equivalent)
+      const cssPaddingTop = meta.padTop || meta.rasterPadding || 24;
+      const cssPaddingBottom = meta.padBottom || meta.rasterPadding || 24;
+      const shadowBlur = meta.shadowBlur || 12;
+      const shadowOffsetY = meta.shadowOffsetY || 2;
+      
+      // Server-side computeRasterH equivalent
+      serverRasterH = Math.round(
+        serverTotalTextH + 
+        cssPaddingTop + 
+        cssPaddingBottom + 
+        Math.max(0, shadowBlur * 2) + 
+        Math.max(0, shadowOffsetY)
+      );
+      
+      // Validate recomputed values
+      if (!Number.isFinite(serverTotalTextH) || serverTotalTextH <= 0) {
+        throw new Error(`Invalid serverTotalTextH: ${serverTotalTextH}`);
+      }
+      if (!Number.isFinite(serverRasterH) || serverRasterH <= 0) {
+        throw new Error(`Invalid serverRasterH: ${serverRasterH}`);
+      }
+      
+      console.log('[parity:server-rewrap:geometry]', {
+        oldRasterH: meta.rasterH,
+        newRasterH: serverRasterH,
+        oldTotalTextH: meta.totalTextH,
+        newTotalTextH: serverTotalTextH,
+        oldLines: lines.length,
+        newLines: serverWrappedLines.length
+      });
+    } catch (err) {
+      console.error('[parity:server-rewrap:ERROR] Geometry recomputation failed:', err);
+      // Fallback: use client values (better than crashing)
+      serverTotalTextH = meta.totalTextH;
+      serverRasterH = meta.rasterH;
+      console.warn('[parity:server-rewrap] Using client geometry as fallback due to recomputation error');
+    }
   }
   
   // ✅ Use raster dimensions directly (schema validation ensures these exist)

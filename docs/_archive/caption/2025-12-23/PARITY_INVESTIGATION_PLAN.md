@@ -220,3 +220,5 @@ yPxFirstLine: overlayMeta.yPxFirstLine,  // Remove fallback
 7. THEN proceed with caption-preview.js helpers + wiring
 
 
+
+

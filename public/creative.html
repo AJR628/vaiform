@@ -292,12 +292,109 @@
             top: calc(var(--y-pct) * 100%);
             width: calc(var(--raster-w-ratio) * 100%);
             height: calc(var(--raster-h-ratio) * 100%);
-            transform: translateX(-50%) translateY(-50%);
+            transform: translateX(-50%);
             pointer-events: none;
             z-index: 10;
             object-fit: contain;
             image-rendering: -webkit-optimize-contrast;
             image-rendering: crisp-edges;
+        }
+        
+        /* Beat Focus Preview Modal */
+        #beat-focus-modal {
+            position: fixed;
+            inset: 0;
+            z-index: 10000;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            background-color: rgba(0, 0, 0, 0.85);
+            backdrop-filter: blur(4px);
+        }
+        
+        #beat-focus-modal.show {
+            display: flex;
+        }
+        
+        #beat-focus-panel {
+            position: relative;
+            width: 90%;
+            max-width: 800px;
+            max-height: 90vh;
+            background-color: #1f2937;
+            border-radius: 12px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5);
+        }
+        
+        #beat-focus-video-container {
+            position: relative;
+            width: 100%;
+            aspect-ratio: 9 / 16;
+            background-color: #000;
+            overflow: hidden;
+        }
+        
+        #beat-focus-video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        
+        #beat-focus-overlay {
+            position: absolute;
+            left: 50%;
+            top: calc(var(--y-pct) * 100%);
+            width: calc(var(--raster-w-ratio) * 100%);
+            height: calc(var(--raster-h-ratio) * 100%);
+            transform: translateX(-50%);
+            pointer-events: none;
+            z-index: 10;
+            object-fit: contain;
+            image-rendering: -webkit-optimize-contrast;
+            image-rendering: crisp-edges;
+        }
+        
+        #beat-focus-text {
+            padding: 1.5rem;
+            color: #e5e7eb;
+            font-size: 1rem;
+            line-height: 1.5;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        
+        #beat-focus-close {
+            position: absolute;
+            top: 1rem;
+            right: 1rem;
+            width: 2.5rem;
+            height: 2.5rem;
+            border-radius: 50%;
+            background-color: rgba(0, 0, 0, 0.7);
+            border: none;
+            color: #fff;
+            font-size: 1.5rem;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 20;
+            transition: background-color 0.2s;
+        }
+        
+        #beat-focus-close:hover {
+            background-color: rgba(0, 0, 0, 0.9);
+        }
+        
+        #beat-focus-preview-note {
+            padding: 1rem;
+            text-align: center;
+            color: #9ca3af;
+            font-size: 0.875rem;
+            background-color: #374151;
         }
     </style>
 </head>
@@ -825,6 +922,21 @@
                     <div class="text-xs text-gray-400 dark:text-gray-500 mb-2">Step 2 · Storyboard</div>
                     <h3 class="text-lg font-semibold mb-2 text-gray-900 dark:text-white">Storyboard</h3>
                     <div id="storyboard-row" class="flex gap-3 overflow-x-auto pb-2"></div>
+                </div>
+                
+                <!-- Beat Focus Preview Modal -->
+                <div id="beat-focus-modal">
+                    <div id="beat-focus-panel">
+                        <button id="beat-focus-close" aria-label="Close preview">✕</button>
+                        <div id="beat-focus-video-container">
+                            <video id="beat-focus-video" muted loop preload="auto"></video>
+                            <img id="beat-focus-overlay" alt="Caption overlay" style="display: none;" />
+                        </div>
+                        <div id="beat-focus-preview-note" style="display: none;">
+                            Preview not ready yet
+                        </div>
+                        <div id="beat-focus-text"></div>
+                    </div>
                 </div>
 
                 <!-- Clip Picker Drawer -->
@@ -6498,7 +6610,7 @@
                     
                     // Set CSS variables for positioning
                     const meta = result.meta;
-                    const yPct = meta.yPx_png / meta.frameH;
+                    const yPct = Math.max(0, Math.min(1, meta.yPx_png / meta.frameH));
                     const rasterWRatio = meta.rasterW / meta.frameW;
                     const rasterHRatio = meta.rasterH / meta.frameH;
                     
@@ -6961,6 +7073,137 @@
                 handleEditBeatInline(textEl);
                 return;
             }
+            
+            // Handle click on beat card (Focus Preview)
+            const card = e.target.closest('[data-beat-id], [data-sentence-index]');
+            if (card) {
+                // Ignore clicks on interactive elements
+                const interactive = e.target.closest('button, .beat-text, input, textarea, select, [contenteditable="true"]');
+                if (!interactive) {
+                    showBeatFocusPreview(card);
+                    return;
+                }
+            }
+        }
+        
+        // Beat Focus Preview Modal
+        function showBeatFocusPreview(card) {
+            if (window.__beatFocusDebug) {
+                console.log('[beat-focus] Showing preview for card:', card);
+            }
+            
+            const modal = document.getElementById('beat-focus-modal');
+            const videoEl = document.getElementById('beat-focus-video');
+            const overlayImg = document.getElementById('beat-focus-overlay');
+            const textEl = document.getElementById('beat-focus-text');
+            const noteEl = document.getElementById('beat-focus-preview-note');
+            
+            if (!modal || !videoEl || !overlayImg || !textEl || !noteEl) {
+                console.error('[beat-focus] Modal elements not found');
+                return;
+            }
+            
+            // Extract video source
+            const cardVideo = card.querySelector('video.storyboard-video');
+            if (cardVideo && cardVideo.src) {
+                videoEl.src = cardVideo.src;
+                videoEl.load();
+            } else {
+                if (window.__beatFocusDebug) {
+                    console.warn('[beat-focus] No video source found');
+                }
+            }
+            
+            // Extract caption overlay if present
+            const cardOverlay = card.querySelector('.beat-caption-overlay');
+            if (cardOverlay && cardOverlay.src) {
+                overlayImg.src = cardOverlay.src;
+                overlayImg.style.display = 'block';
+                
+                // Copy CSS variables
+                const yPct = cardOverlay.style.getPropertyValue('--y-pct') || 
+                            getComputedStyle(cardOverlay).getPropertyValue('--y-pct');
+                const rasterWRatio = cardOverlay.style.getPropertyValue('--raster-w-ratio') || 
+                                    getComputedStyle(cardOverlay).getPropertyValue('--raster-w-ratio');
+                const rasterHRatio = cardOverlay.style.getPropertyValue('--raster-h-ratio') || 
+                                     getComputedStyle(cardOverlay).getPropertyValue('--raster-h-ratio');
+                
+                if (yPct) overlayImg.style.setProperty('--y-pct', yPct);
+                if (rasterWRatio) overlayImg.style.setProperty('--raster-w-ratio', rasterWRatio);
+                if (rasterHRatio) overlayImg.style.setProperty('--raster-h-ratio', rasterHRatio);
+                
+                noteEl.style.display = 'none';
+            } else {
+                overlayImg.style.display = 'none';
+                noteEl.style.display = 'block';
+            }
+            
+            // Extract text
+            const cardText = card.querySelector('.beat-text');
+            if (cardText) {
+                textEl.textContent = cardText.textContent || '';
+            } else {
+                textEl.textContent = '';
+            }
+            
+            // Show modal
+            modal.classList.add('show');
+            
+            // Play video
+            videoEl.play().catch(e => {
+                if (window.__beatFocusDebug) {
+                    console.warn('[beat-focus] Video play failed:', e);
+                }
+            });
+        }
+        
+        function hideBeatFocusPreview() {
+            const modal = document.getElementById('beat-focus-modal');
+            const videoEl = document.getElementById('beat-focus-video');
+            
+            if (modal) {
+                modal.classList.remove('show');
+            }
+            
+            if (videoEl) {
+                videoEl.pause();
+                videoEl.currentTime = 0;
+            }
+        }
+        
+        // Setup modal close handlers
+        function setupBeatFocusModal() {
+            const modal = document.getElementById('beat-focus-modal');
+            const closeBtn = document.getElementById('beat-focus-close');
+            
+            if (!modal || !closeBtn) return;
+            
+            // Close button
+            closeBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                hideBeatFocusPreview();
+            });
+            
+            // Backdrop click
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) {
+                    hideBeatFocusPreview();
+                }
+            });
+            
+            // ESC key
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape' && modal.classList.contains('show')) {
+                    hideBeatFocusPreview();
+                }
+            });
+        }
+        
+        // Initialize modal on DOM ready
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', setupBeatFocusModal);
+        } else {
+            setupBeatFocusModal();
         }
         
         // Phase 1: Add beat to draft storyboard

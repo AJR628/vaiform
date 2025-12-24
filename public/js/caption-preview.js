@@ -931,21 +931,17 @@ export function applyPreviewResultToBeatCard(beatCardEl, result) {
   
   // Set CSS variables for positioning
   const meta = result.meta;
-  // Prefer server meta.yPct if present, else derive CENTER from yPx_png (top) + rasterH/2
-  // CSS uses translateY(-50%) which centers the element, so yPct must represent center position
-  const yPct = Number.isFinite(meta.yPct) ? meta.yPct : ((meta.yPx_png + meta.rasterH / 2) / meta.frameH);
+  // Derive TOP yPct from yPx_png (TOP-anchored to match FFmpeg overlay placement)
+  const yPct = Math.max(0, Math.min(1, meta.yPx_png / meta.frameH));
   const rasterWRatio = meta.rasterW / meta.frameW;
   const rasterHRatio = meta.rasterH / meta.frameH;
   
   if (window.__beatPreviewDebug) {
     console.log('[beat-preview] yPct calculation:', {
-      hasMetaYPct: Number.isFinite(meta.yPct),
-      metaYPct: meta.yPct,
       yPx_png: meta.yPx_png,
       frameH: meta.frameH,
-      rasterH: meta.rasterH,
-      derivedYPct: (meta.yPx_png + meta.rasterH / 2) / meta.frameH,
-      finalYPct: yPct
+      derivedYPct: meta.yPx_png / meta.frameH,
+      clampedYPct: yPct
     });
   }
   

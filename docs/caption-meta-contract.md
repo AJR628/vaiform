@@ -1,5 +1,16 @@
 # Caption Preview API Contract
 
+**⚠️ DEPRECATED**: This document is legacy and does not cover V3 raster mode.
+
+**Current SSOT Documentation**:
+- [`caption/01-pipeline-overview.md`](caption/01-pipeline-overview.md) - Complete pipeline map (6 stages)
+- [`caption/02-meta-contract-v3-raster.md`](caption/02-meta-contract-v3-raster.md) - V3 raster mode contract
+- [`caption/03-debugging-parity.md`](caption/03-debugging-parity.md) - Parity debugging guide
+
+**Legacy Note**: This document defines the old caption preview API contract. The current system uses **SSOT v3 raster mode** with different field semantics. See the V3 contract docs above for current implementation details.
+
+---
+
 This document defines the client↔server contract for caption preview generation and overlay positioning.
 
 ## Request Body (captionStyle)
