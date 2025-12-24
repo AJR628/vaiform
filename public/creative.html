@@ -285,6 +285,14 @@
             background-color: rgba(59, 130, 246, 0.1);
             border-radius: 4px;
         }
+        /* Beat video container - 9:16 aspect ratio to match focus modal */
+        .beat-video-container {
+            aspect-ratio: 9 / 16;
+            height: auto !important;
+            background-color: #000;
+            overflow: hidden;
+        }
+        
         /* Beat caption preview overlay */
         .beat-caption-overlay {
             position: absolute;
@@ -6689,7 +6697,7 @@
                 const shot = shots.find(s => s.sentenceIndex === idx) || shots[idx];
                 
                 const card = document.createElement('div');
-                card.className = 'relative w-40 h-72 flex-shrink-0 bg-black rounded-lg overflow-hidden border border-gray-700';
+                card.className = 'relative w-40 h-[420px] flex-shrink-0 bg-black rounded-lg overflow-hidden border border-gray-700';
                 card.setAttribute('data-sentence-index', idx);
                 
                 if (!shot || !shot.selectedClip) {
@@ -6700,7 +6708,7 @@
                             data-sentence-index="${idx}"
                             title="Delete beat"
                         >✕</button>
-                        <div class="relative w-full h-40 bg-gray-800 flex items-center justify-center">
+                        <div class="relative w-full h-40 beat-video-container bg-gray-800 flex items-center justify-center">
                             <p class="text-xs text-gray-400 text-center px-2">No clip found</p>
                         </div>
                         <div 
@@ -6728,7 +6736,7 @@
                             data-sentence-index="${idx}"
                             title="Delete beat"
                         >✕</button>
-                        <div class="relative w-full h-40 overflow-hidden">
+                        <div class="relative w-full h-40 beat-video-container overflow-hidden">
                             <video
                                 src="${videoUrl}"
                                 ${thumbUrl ? `poster="${thumbUrl}"` : ''}
@@ -6826,7 +6834,7 @@
                 }
                 
                 const card = document.createElement('div');
-                card.className = 'relative w-40 h-72 flex-shrink-0 bg-black rounded-lg overflow-hidden border border-gray-700';
+                card.className = 'relative w-40 h-[420px] flex-shrink-0 bg-black rounded-lg overflow-hidden border border-gray-700';
                 card.setAttribute('data-beat-id', beat.id);
                 card.setAttribute('data-draft', 'true');
                 
@@ -6840,7 +6848,7 @@
                             title="Delete beat"
                         >✕</button>
                         <div 
-                            class="relative w-full h-40 bg-gray-800 flex items-center justify-center cursor-pointer hover:bg-gray-700 transition"
+                            class="relative w-full h-40 beat-video-container bg-gray-800 flex items-center justify-center cursor-pointer hover:bg-gray-700 transition"
                             data-beat-id="${beat.id}"
                             data-draft="true"
                             data-add-clip="true"
@@ -6876,7 +6884,7 @@
                             data-draft="true"
                             title="Delete beat"
                         >✕</button>
-                        <div class="relative w-full h-40 overflow-hidden">
+                        <div class="relative w-full h-40 beat-video-container overflow-hidden">
                             <video
                                 src="${videoUrl}"
                                 ${thumbUrl ? `poster="${thumbUrl}"` : ''}
