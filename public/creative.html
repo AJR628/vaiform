@@ -308,6 +308,33 @@
             image-rendering: crisp-edges;
         }
         
+        /* Beat card balloon hover styles */
+        .beat-card {
+            transition: transform 180ms cubic-bezier(0.4, 0, 0.2, 1);
+            will-change: transform;
+        }
+        
+        .beat-card.beat-hovered {
+            transform: scale(1.35);
+            z-index: 20;
+        }
+        
+        .beat-card.squish-left-1 {
+            transform: translateX(-20px);
+        }
+        
+        .beat-card.squish-left-2 {
+            transform: translateX(-10px);
+        }
+        
+        .beat-card.squish-right-1 {
+            transform: translateX(20px);
+        }
+        
+        .beat-card.squish-right-2 {
+            transform: translateX(10px);
+        }
+        
         /* Beat Focus Preview Modal */
         #beat-focus-modal {
             position: fixed;
@@ -6703,7 +6730,7 @@
                 const shot = shots.find(s => s.sentenceIndex === idx) || shots[idx];
                 
                 const card = document.createElement('div');
-                card.className = 'relative w-40 h-[420px] flex-shrink-0 bg-black rounded-lg overflow-hidden border border-gray-700';
+                card.className = 'beat-card relative w-40 h-[420px] flex-shrink-0 bg-black rounded-lg overflow-hidden border border-gray-700';
                 card.setAttribute('data-sentence-index', idx);
                 
                 if (!shot || !shot.selectedClip) {
@@ -6840,7 +6867,7 @@
                 }
                 
                 const card = document.createElement('div');
-                card.className = 'relative w-40 h-[420px] flex-shrink-0 bg-black rounded-lg overflow-hidden border border-gray-700';
+                card.className = 'beat-card relative w-40 h-[420px] flex-shrink-0 bg-black rounded-lg overflow-hidden border border-gray-700';
                 card.setAttribute('data-beat-id', beat.id);
                 card.setAttribute('data-draft', 'true');
                 
@@ -8329,34 +8356,118 @@
         }
         
         function setupStoryboardHover() {
-            // Robustness guard: prevent double-binding
-            const container = document.getElementById('storyboard-row');
-            if (container?.dataset?.hoverBound === '1') return;
-            if (container) container.dataset.hoverBound = '1';
+            // Idempotent guard: prevent duplicate listener binding
+            if (window.__beatBalloonHoverBound === true) return;
+            window.__beatBalloonHoverBound = true;
+            
+            const storyboardRow = document.getElementById('storyboard-row');
+            if (!storyboardRow) return;
             
             // Check hover capability (desktop only)
             const canHover = window.matchMedia('(hover: hover) and (pointer: fine)').matches;
             if (!canHover) return;
             
-            // Remove existing listeners to avoid duplicates
-            const videos = document.querySelectorAll('.storyboard-video');
+            // Track currently hovered card for cleanup
+            let activeHoveredCard = null;
             
-            videos.forEach(vid => {
-                // Remove old listeners by cloning
-                const newVid = vid.cloneNode(true);
-                vid.parentNode.replaceChild(newVid, vid);
-                
-                newVid.addEventListener('mouseenter', () => {
-                    newVid.play().catch(e => console.warn('[article] Video play failed:', e));
-                    newVid.classList.add('scale-110');
+            // Cleanup function: remove all hover and squish classes from a card
+            function cleanupCardState(card) {
+                if (!card) return;
+                card.classList.remove('beat-hovered', 'squish-left-1', 'squish-left-2', 'squish-right-1', 'squish-right-2');
+                const video = card.querySelector('.storyboard-video');
+                if (video) {
+                    video.pause();
+                    video.currentTime = 0;
+                }
+            }
+            
+            // Cleanup all cards: remove all squish classes from all cards
+            function cleanupAllSquish() {
+                const allCards = storyboardRow.querySelectorAll('[data-beat-id], [data-sentence-index]');
+                allCards.forEach(card => {
+                    card.classList.remove('squish-left-1', 'squish-left-2', 'squish-right-1', 'squish-right-2');
                 });
+            }
+            
+            // Apply hover state to a card and squish neighbors
+            function applyHoverState(card) {
+                if (activeHoveredCard === card) return; // Already hovering this card
                 
-                newVid.addEventListener('mouseleave', () => {
-                    newVid.pause();
-                    newVid.currentTime = 0;
-                    newVid.classList.remove('scale-110');
-                });
-            });
+                // Clean up previous hovered card if switching
+                if (activeHoveredCard && activeHoveredCard !== card) {
+                    cleanupCardState(activeHoveredCard);
+                }
+                
+                // Clean up all squish classes first to prevent collisions
+                cleanupAllSquish();
+                
+                // Get all beat cards (exclude add-beat buttons)
+                const allCards = Array.from(storyboardRow.querySelectorAll('[data-beat-id], [data-sentence-index]'));
+                const hoveredIndex = allCards.indexOf(card);
+                
+                if (hoveredIndex === -1) return;
+                
+                // Apply hover class to current card
+                card.classList.add('beat-hovered');
+                
+                // Apply squish classes to neighbors (with bounds checking)
+                if (hoveredIndex > 0) {
+                    allCards[hoveredIndex - 1].classList.add('squish-right-1');
+                }
+                if (hoveredIndex > 1) {
+                    allCards[hoveredIndex - 2].classList.add('squish-right-2');
+                }
+                if (hoveredIndex < allCards.length - 1) {
+                    allCards[hoveredIndex + 1].classList.add('squish-left-1');
+                }
+                if (hoveredIndex < allCards.length - 2) {
+                    allCards[hoveredIndex + 2].classList.add('squish-left-2');
+                }
+                
+                // Start video playback
+                const video = card.querySelector('.storyboard-video');
+                if (video) {
+                    video.play().catch(e => console.warn('[article] Video play failed:', e));
+                }
+                
+                activeHoveredCard = card;
+            }
+            
+            // Handle pointerover (entering card area)
+            function handleCardHover(e) {
+                // Find the card container
+                const card = e.target.closest('[data-beat-id], [data-sentence-index]');
+                if (!card) return;
+                
+                // Exclude interactive elements
+                if (e.target.closest('button, .beat-text, [contenteditable="true"]')) return;
+                
+                // Guard against internal child transitions
+                if (e.relatedTarget && card.contains(e.relatedTarget)) return;
+                
+                applyHoverState(card);
+            }
+            
+            // Handle pointerout (leaving card area)
+            function handleCardLeave(e) {
+                const card = e.target.closest('[data-beat-id], [data-sentence-index]');
+                if (!card) return;
+                
+                // Guard: if moving to child within same card, don't leave
+                if (e.relatedTarget && card.contains(e.relatedTarget)) return;
+                
+                // Clean up this card's hover state
+                cleanupCardState(card);
+                cleanupAllSquish();
+                
+                if (activeHoveredCard === card) {
+                    activeHoveredCard = null;
+                }
+            }
+            
+            // Use event delegation with pointerover/pointerout (they bubble, unlike mouseenter/mouseleave)
+            storyboardRow.addEventListener('pointerover', handleCardHover, true);
+            storyboardRow.addEventListener('pointerout', handleCardLeave, true);
         }
         
         // ========================================
