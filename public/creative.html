@@ -335,6 +335,25 @@
             transform: translateX(10px);
         }
         
+        /* Storyboard scroll wrapper - handles horizontal scrolling and allows vertical overflow */
+        .storyboard-scroll-wrapper {
+            overflow-x: auto;
+            overflow-y: visible;
+            padding-top: 24px;
+            padding-bottom: 140px;
+            width: 100%;
+        }
+        
+        /* Storyboard row - no overflow constraints, allows content to overflow vertically */
+        #storyboard-row {
+            overflow: visible;
+        }
+        
+        /* Extra padding when actively hovering a card */
+        #storyboard.storyboard-hovering .storyboard-scroll-wrapper {
+            padding-bottom: 160px;
+        }
+        
         /* Beat Focus Preview Modal */
         #beat-focus-modal {
             position: fixed;
@@ -962,7 +981,9 @@
                 <div id="storyboard" class="mt-2 hidden">
                     <div class="text-xs text-gray-400 dark:text-gray-500 mb-2">Step 2 · Storyboard</div>
                     <h3 class="text-lg font-semibold mb-2 text-gray-900 dark:text-white">Storyboard</h3>
-                    <div id="storyboard-row" class="flex gap-3 overflow-x-auto pb-2"></div>
+                    <div id="storyboard-scroll" class="storyboard-scroll-wrapper w-full">
+                        <div id="storyboard-row" class="flex gap-3 pb-2"></div>
+                    </div>
                 </div>
                 
                 <!-- Beat Focus Preview Modal -->
@@ -8361,6 +8382,7 @@
             window.__beatBalloonHoverBound = true;
             
             const storyboardRow = document.getElementById('storyboard-row');
+            const storyboardEl = document.getElementById('storyboard');
             if (!storyboardRow) return;
             
             // Check hover capability (desktop only)
@@ -8379,6 +8401,7 @@
                     video.pause();
                     video.currentTime = 0;
                 }
+                storyboardEl?.classList.remove('storyboard-hovering');
             }
             
             // Cleanup all cards: remove all squish classes from all cards
@@ -8409,6 +8432,9 @@
                 
                 // Apply hover class to current card
                 card.classList.add('beat-hovered');
+                
+                // Add hover class to storyboard wrapper for extra padding
+                storyboardEl?.classList.add('storyboard-hovering');
                 
                 // Apply squish classes to neighbors (with bounds checking)
                 if (hoveredIndex > 0) {
@@ -8459,6 +8485,9 @@
                 // Clean up this card's hover state
                 cleanupCardState(card);
                 cleanupAllSquish();
+                
+                // Ensure hover class is removed
+                storyboardEl?.classList.remove('storyboard-hovering');
                 
                 if (activeHoveredCard === card) {
                     activeHoveredCard = null;
