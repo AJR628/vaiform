@@ -7795,6 +7795,15 @@
                 return;
             }
             
+            // Store target context on picker element (single source of truth)
+            if (isDraft) {
+                picker.dataset.targetKind = "beat";
+                picker.dataset.targetId = String(beatIdOrIndex);
+            } else {
+                picker.dataset.targetKind = "sentence";
+                picker.dataset.targetId = String(beatIdOrIndex);
+            }
+            
             // Clear search input
             if (searchInput) {
                 searchInput.value = '';
@@ -7840,6 +7849,9 @@
                     window.currentClipPickerSentence = null;
                     window.clipPickerIsDraft = false;
                     window.clipPickerBeatId = null; // Phase 1: Clear beatId instead of sentenceIndex
+                    // Clear dataset
+                    delete picker.dataset.targetKind;
+                    delete picker.dataset.targetId;
                     // Remove click handler when picker is closed
                     picker.removeEventListener('click', handleClipOptionClick);
                 };
@@ -8040,12 +8052,22 @@
                 return;
             }
             
+            // Read target context from picker dataset (with fallback to legacy globals)
+            const kind = picker?.dataset?.targetKind;
+            const id = picker?.dataset?.targetId;
+            
+            // Optional debug log
+            if (window.__clipPickerDebug) {
+                console.log('[clip-picker] target', kind, id);
+            }
+            
             // Draft mode: update draftStoryboard directly, no API call
             if (isDraft) {
                 // Phase 1: Use beatId instead of sentenceIndex
-                const beatId = window.clipPickerBeatId;
+                // Prefer dataset, fallback to legacy global
+                const beatId = (kind === "beat" && id) ? id : window.clipPickerBeatId;
                 if (!beatId) {
-                    console.error('[clip-picker][draft] Missing clipPickerBeatId in draft mode');
+                    console.error('[clip-picker][draft] Missing beatId in draft mode');
                     return;
                 }
                 
@@ -8081,6 +8103,9 @@
                 picker.classList.add('hidden');
                 window.clipPickerIsDraft = false;
                 window.clipPickerBeatId = null; // Phase 1: Clear beatId
+                // Clear dataset
+                delete picker.dataset.targetKind;
+                delete picker.dataset.targetId;
                 
                 // Update render button state
                 updateRenderArticleButtonState();
@@ -8091,6 +8116,21 @@
             const sessionId = window.currentStorySessionId;
             if (!sessionId) {
                 showError('article-error', 'Session not found');
+                return;
+            }
+            
+            // Read sentenceIndex from dataset (with fallback to legacy global)
+            let sentenceIndex;
+            if (kind === "sentence" && id) {
+                sentenceIndex = Number(id);
+            } else {
+                // Fallback to legacy global
+                sentenceIndex = window.currentClipPickerSentence;
+            }
+            
+            if (sentenceIndex === undefined || sentenceIndex === null || isNaN(sentenceIndex)) {
+                console.error('[clip-picker] Invalid sentenceIndex context');
+                showError('article-error', 'Invalid clip selection context');
                 return;
             }
             
@@ -8131,6 +8171,9 @@
                 // (picker already declared above at line 6179)
                 if (picker) {
                     picker.classList.add('hidden');
+                    // Clear dataset
+                    delete picker.dataset.targetKind;
+                    delete picker.dataset.targetId;
                 }
                 
                 // Update render button state
