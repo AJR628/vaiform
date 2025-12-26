@@ -952,7 +952,16 @@
 
                 <!-- Script Preview Section -->
                 <div id="article-script-section" class="space-y-2 mt-2">
-                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Script Preview</label>
+                    <div class="flex justify-between items-center">
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Script Preview</label>
+                        <button
+                            id="toggle-view-btn"
+                            type="button"
+                            class="text-xs px-2 py-1 bg-gray-600 hover:bg-gray-500 rounded text-white"
+                        >
+                            Beat View
+                        </button>
+                    </div>
                     <p class="text-xs text-gray-500 dark:text-gray-400 leading-tight">Each line will become one clip.</p>
                     <textarea
                         id="article-script-preview"
@@ -960,6 +969,20 @@
                         placeholder="Script will appear here after summarization..."
                         class="w-full bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-3 py-2 text-gray-900 dark:text-white"
                     ></textarea>
+                    <!-- Beat Editor (initially hidden) -->
+                    <div id="beat-editor" class="space-y-2 hidden">
+                        <div id="beat-list" class="space-y-2"></div>
+                        <div class="flex justify-between items-center">
+                            <button
+                                id="add-beat-btn"
+                                type="button"
+                                class="text-xs px-2 py-1 bg-gray-600 hover:bg-gray-500 disabled:bg-gray-400 disabled:cursor-not-allowed rounded text-white"
+                            >
+                                + Add beat
+                            </button>
+                            <div id="beat-editor-counters" class="text-xs text-gray-500 dark:text-gray-400"></div>
+                        </div>
+                    </div>
                     <div id="script-preview-counters" class="text-xs text-gray-500 dark:text-gray-400">
                         Beats: 0 / 8 | Total: 0 / 850
                     </div>
@@ -6336,6 +6359,259 @@
             }
         }
         
+        // Beat Editor functions (Phase 1: Mirror mode)
+        let currentViewMode = 'raw'; // 'raw' or 'beats'
+        
+        // Sync textarea from beats array (with guard to prevent input handler firing)
+        function syncTextareaFromBeats(beats) {
+            const textarea = document.getElementById('article-script-preview');
+            if (!textarea) return;
+            
+            // Set guard flag to prevent input handler from firing
+            window._syncingTextarea = true;
+            
+            // Join beats with newlines (matching current semantics)
+            const text = beats.map(b => typeof b === 'string' ? b : b.text).join('\n');
+            textarea.value = text;
+            
+            // Reset guard flag after a brief delay to ensure input event doesn't fire
+            setTimeout(() => {
+                window._syncingTextarea = false;
+            }, 0);
+            
+            // Update counters
+            updateScriptCounters();
+        }
+        
+        // Parse textarea into beats array (exact newline semantics)
+        function parseBeatsFromTextarea(text) {
+            return text.split('\n')
+                .map(s => s.trim())
+                .filter(s => s.length > 0)
+                .map((text, idx) => ({ id: `beat-${idx}`, text }));
+        }
+        
+        // Render beat editor from current textarea value
+        function renderBeatEditor() {
+            const beatEditor = document.getElementById('beat-editor');
+            const beatList = document.getElementById('beat-list');
+            const addBeatBtn = document.getElementById('add-beat-btn');
+            const countersEl = document.getElementById('beat-editor-counters');
+            const textarea = document.getElementById('article-script-preview');
+            
+            if (!beatEditor || !beatList || !textarea) return;
+            
+            // Parse beats from textarea
+            const beats = parseBeatsFromTextarea(textarea.value);
+            
+            // Clear existing beats
+            beatList.innerHTML = '';
+            
+            // Render each beat
+            beats.forEach((beat, idx) => {
+                const beatRow = document.createElement('div');
+                beatRow.className = 'flex items-start gap-2 p-2 bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded';
+                beatRow.dataset.beatId = beat.id;
+                
+                // Beat number badge
+                const badge = document.createElement('div');
+                badge.className = 'flex-shrink-0 w-8 h-8 flex items-center justify-center bg-blue-600 text-white text-xs font-semibold rounded';
+                badge.textContent = String(idx + 1).padStart(2, '0');
+                
+                // Beat input container
+                const inputContainer = document.createElement('div');
+                inputContainer.className = 'flex-1 flex flex-col gap-1';
+                
+                // Beat text input
+                const input = document.createElement('input');
+                input.type = 'text';
+                input.value = beat.text;
+                input.className = 'w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded px-2 py-1 text-sm text-gray-900 dark:text-white';
+                input.style.wordWrap = 'break-word';
+                input.style.whiteSpace = 'normal';
+                
+                // Character counter
+                const charCounter = document.createElement('div');
+                charCounter.className = 'text-xs text-gray-500 dark:text-gray-400';
+                const charCount = beat.text.length;
+                const isOverLimit = charCount > MAX_BEAT_CHARS;
+                charCounter.textContent = `${charCount}/160`;
+                if (isOverLimit) {
+                    charCounter.className = 'text-xs text-orange-500 dark:text-orange-400';
+                }
+                
+                // Prevent Enter key
+                input.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                    }
+                });
+                
+                // Sanitize paste (replace newlines with spaces)
+                input.addEventListener('paste', (e) => {
+                    e.preventDefault();
+                    const pastedText = (e.clipboardData || window.clipboardData).getData('text');
+                    const sanitized = pastedText.replace(/[\r\n]+/g, ' ');
+                    const start = input.selectionStart;
+                    const end = input.selectionEnd;
+                    const currentValue = input.value;
+                    const newValue = currentValue.substring(0, start) + sanitized + currentValue.substring(end);
+                    input.value = newValue;
+                    
+                    // Update char counter
+                    const newCharCount = newValue.length;
+                    charCounter.textContent = `${newCharCount}/160`;
+                    if (newCharCount > MAX_BEAT_CHARS) {
+                        charCounter.className = 'text-xs text-orange-500 dark:text-orange-400';
+                    } else {
+                        charCounter.className = 'text-xs text-gray-500 dark:text-gray-400';
+                    }
+                    
+                    // Sync to textarea
+                    updateBeatInTextarea(beat.id, newValue);
+                });
+                
+                // Update on input
+                input.addEventListener('input', () => {
+                    const newValue = input.value;
+                    
+                    // Update char counter
+                    const newCharCount = newValue.length;
+                    charCounter.textContent = `${newCharCount}/160`;
+                    if (newCharCount > MAX_BEAT_CHARS) {
+                        charCounter.className = 'text-xs text-orange-500 dark:text-orange-400';
+                    } else {
+                        charCounter.className = 'text-xs text-gray-500 dark:text-gray-400';
+                    }
+                    
+                    // Sync to textarea
+                    updateBeatInTextarea(beat.id, newValue);
+                });
+                
+                inputContainer.appendChild(input);
+                inputContainer.appendChild(charCounter);
+                
+                beatRow.appendChild(badge);
+                beatRow.appendChild(inputContainer);
+                beatList.appendChild(beatRow);
+            });
+            
+            // Update add beat button state
+            if (addBeatBtn) {
+                addBeatBtn.disabled = beats.length >= MAX_BEATS;
+            }
+            
+            // Update beat editor counters
+            if (countersEl) {
+                const totalChars = beats.reduce((sum, b) => sum + b.text.length, 0);
+                countersEl.textContent = `Beats: ${beats.length} / ${MAX_BEATS} | Total: ${totalChars} / ${MAX_TOTAL_CHARS}`;
+            }
+        }
+        
+        // Update a specific beat in the textarea
+        function updateBeatInTextarea(beatId, newText) {
+            const beatList = document.getElementById('beat-list');
+            if (!beatList) return;
+            
+            // Collect all beat values in order
+            const beatRows = Array.from(beatList.children);
+            const beats = beatRows.map(row => {
+                const input = row.querySelector('input');
+                return input ? input.value : '';
+            });
+            
+            // Sync to textarea
+            syncTextareaFromBeats(beats);
+        }
+        
+        // Toggle between Raw and Beat views
+        function toggleViewMode() {
+            const textarea = document.getElementById('article-script-preview');
+            const beatEditor = document.getElementById('beat-editor');
+            const toggleBtn = document.getElementById('toggle-view-btn');
+            
+            if (!textarea || !beatEditor || !toggleBtn) return;
+            
+            if (currentViewMode === 'raw') {
+                // Switch to Beat view
+                currentViewMode = 'beats';
+                textarea.classList.add('hidden');
+                beatEditor.classList.remove('hidden');
+                toggleBtn.textContent = 'Raw';
+                
+                // Render beats from current textarea value
+                renderBeatEditor();
+            } else {
+                // Switch to Raw view
+                currentViewMode = 'raw';
+                textarea.classList.remove('hidden');
+                beatEditor.classList.add('hidden');
+                toggleBtn.textContent = 'Beat View';
+                
+                // Textarea is already up to date (beats sync to it on every edit)
+            }
+        }
+        
+        // Handle add beat button
+        function handleAddBeat() {
+            const textarea = document.getElementById('article-script-preview');
+            if (!textarea) return;
+            
+            // Check if at max beats
+            const currentBeats = parseBeatsFromTextarea(textarea.value);
+            if (currentBeats.length >= MAX_BEATS) {
+                return; // Button should be disabled, but guard anyway
+            }
+            
+            // Add newline to textarea (will create new beat)
+            const currentValue = textarea.value;
+            const newValue = currentValue + (currentValue && !currentValue.endsWith('\n') ? '\n' : '') + '\n';
+            
+            // Set guard flag
+            window._syncingTextarea = true;
+            textarea.value = newValue;
+            setTimeout(() => {
+                window._syncingTextarea = false;
+            }, 0);
+            
+            // Update counters
+            updateScriptCounters();
+            
+            // Re-render beat editor if in beat view
+            if (currentViewMode === 'beats') {
+                renderBeatEditor();
+            }
+        }
+        
+        // Wire up Beat Editor event listeners
+        (function() {
+            // Wait for DOM to be ready
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', () => {
+                    const toggleBtn = document.getElementById('toggle-view-btn');
+                    const addBeatBtn = document.getElementById('add-beat-btn');
+                    
+                    if (toggleBtn) {
+                        toggleBtn.addEventListener('click', toggleViewMode);
+                    }
+                    if (addBeatBtn) {
+                        addBeatBtn.addEventListener('click', handleAddBeat);
+                    }
+                });
+            } else {
+                // DOM already ready
+                const toggleBtn = document.getElementById('toggle-view-btn');
+                const addBeatBtn = document.getElementById('add-beat-btn');
+                
+                if (toggleBtn) {
+                    toggleBtn.addEventListener('click', toggleViewMode);
+                }
+                if (addBeatBtn) {
+                    addBeatBtn.addEventListener('click', handleAddBeat);
+                }
+            }
+        })();
+        
         // Article mode functions
         async function summarizeArticle() {
             const inputEl = document.getElementById('article-input');
@@ -6410,7 +6686,13 @@
                 // Display sentences in script preview (one per line)
                 const sentences = generateResp.data.story.sentences;
                 const scriptText = Array.isArray(sentences) ? sentences.join('\n') : String(sentences);
+                
+                // Set guard flag to prevent input handler from firing
+                window._syncingTextarea = true;
                 scriptPreviewEl.value = scriptText;
+                setTimeout(() => {
+                    window._syncingTextarea = false;
+                }, 0);
                 
                 // Store original sentences to detect edits
                 window.currentStoryOriginalSentences = Array.isArray(sentences) ? [...sentences] : [String(sentences)];
@@ -6420,6 +6702,11 @@
                 
                 // Update counters
                 updateScriptCounters();
+                
+                // If in beat view, render beat editor
+                if (currentViewMode === 'beats') {
+                    renderBeatEditor();
+                }
                 
                 console.log('[article] Story generated successfully:', sentences.length, 'sentences');
                 
@@ -8836,11 +9123,21 @@
             if (scriptPreviewEl) {
                 let debounceTimer = null;
                 scriptPreviewEl.addEventListener('input', () => {
+                    // Guard: Skip if syncing programmatically (prevents scriptSource flip)
+                    if (window._syncingTextarea) {
+                        return;
+                    }
+                    
                     // Debounce updates
                     if (debounceTimer) clearTimeout(debounceTimer);
                     debounceTimer = setTimeout(() => {
                         updateScriptCounters();
                         window.scriptSource = 'manual';
+                        
+                        // If in beat view, re-render to reflect textarea changes
+                        if (currentViewMode === 'beats') {
+                            renderBeatEditor();
+                        }
                     }, 300);
                 });
                 
