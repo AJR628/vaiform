@@ -962,7 +962,7 @@
                             Beat View
                         </button>
                     </div>
-                    <p class="text-xs text-gray-500 dark:text-gray-400 leading-tight">Each line will become one clip.</p>
+                    <p class="text-xs text-gray-500 dark:text-gray-400 leading-tight">Each numbered beat becomes one clip (beats can wrap to multiple lines).</p>
                     <textarea
                         id="article-script-preview"
                         rows="4"
@@ -983,6 +983,7 @@
                             <div id="beat-editor-counters" class="text-xs text-gray-500 dark:text-gray-400"></div>
                         </div>
                     </div>
+                    <!-- Counters: show only in raw view -->
                     <div id="script-preview-counters" class="text-xs text-gray-500 dark:text-gray-400">
                         Beats: 0 / 8 | Total: 0 / 850
                     </div>
@@ -6362,6 +6363,11 @@
         // Beat Editor functions (Phase 1: Mirror mode)
         let currentViewMode = 'raw'; // 'raw' or 'beats'
         
+        // Phase 2: Raw draft tracking
+        window.rawDraftText = '';
+        window.rawDirty = false;
+        window.pendingBeatParseResult = null;
+        
         // Sync textarea from beats array (with guard to prevent input handler firing)
         function syncTextareaFromBeats(beats) {
             const textarea = document.getElementById('article-script-preview');
@@ -6389,6 +6395,130 @@
                 .map(s => s.trim())
                 .filter(s => s.length > 0)
                 .map((text, idx) => ({ id: `beat-${idx}`, text }));
+        }
+        
+        // Phase 2: Check if applying beats will change the raw text
+        function willApplyChangeText(rawText) {
+            // Use normalizeScript() as the authority to determine if changes will occur
+            const { normalizedBeats, trimmedChars, didSplitLongBeat, didTruncateBeats } = normalizeScript(rawText);
+            const normalizedText = normalizedBeats.join('\n');
+            
+            // Compare original (after basic parse) vs normalized
+            const originalBeats = rawText.split('\n')
+                .map(s => s.trim())
+                .filter(s => s.length > 0);
+            const originalText = originalBeats.join('\n');
+            
+            // Check if anything changed
+            const willChange = 
+                normalizedText !== originalText ||
+                normalizedBeats.length !== originalBeats.length ||
+                trimmedChars > 0 ||
+                didSplitLongBeat ||
+                didTruncateBeats;
+            
+            return {
+                willChange,
+                normalizedBeats,
+                normalizedText,
+                originalBeats,
+                originalText,
+                trimmedChars,
+                didSplitLongBeat,
+                didTruncateBeats,
+                stats: {
+                    originalBeats: originalBeats.length,
+                    normalizedBeats: normalizedBeats.length,
+                    originalChars: originalText.length,
+                    normalizedChars: normalizedText.length
+                }
+            };
+        }
+        
+        // Phase 2: Show confirm UI for applying beats
+        function showApplyConfirmDialog(parseResult, onApply, onCancel) {
+            // Remove any existing confirm UI
+            const existing = document.getElementById('beat-apply-confirm');
+            if (existing) {
+                existing.remove();
+            }
+            
+            const scriptSection = document.getElementById('article-script-section');
+            if (!scriptSection) return;
+            
+            const confirmBanner = document.createElement('div');
+            confirmBanner.id = 'beat-apply-confirm';
+            confirmBanner.className = 'p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-300 dark:border-yellow-700 rounded mb-2';
+            
+            const { stats, didSplitLongBeat, didTruncateBeats, trimmedChars } = parseResult;
+            
+            let changesList = [];
+            if (stats.originalBeats !== stats.normalizedBeats) {
+                changesList.push(`${stats.originalBeats} → ${stats.normalizedBeats} beats`);
+            }
+            if (didSplitLongBeat) {
+                changesList.push('long beats will be split');
+            }
+            if (didTruncateBeats) {
+                changesList.push('beats will be truncated');
+            }
+            if (trimmedChars > 0) {
+                changesList.push(`${trimmedChars} characters will be trimmed`);
+            }
+            
+            const changesText = changesList.length > 0 
+                ? `Changes: ${changesList.join(', ')}.`
+                : 'Your script will be adjusted to fit limits.';
+            
+            confirmBanner.innerHTML = `
+                <div class="text-sm text-yellow-800 dark:text-yellow-200 mb-2">
+                    <strong>Applying Beats will adjust your script to fit limits.</strong>
+                </div>
+                <div class="text-xs text-yellow-700 dark:text-yellow-300 mb-3">
+                    ${changesText}
+                    <br>Limits: max 8 beats, 160 chars/beat, 850 total chars.
+                </div>
+                <div class="flex gap-2">
+                    <button
+                        id="beat-apply-confirm-btn"
+                        class="px-3 py-1 bg-blue-600 hover:bg-blue-500 text-white text-xs rounded"
+                    >
+                        Apply & Switch
+                    </button>
+                    <button
+                        id="beat-apply-cancel-btn"
+                        class="px-3 py-1 bg-gray-600 hover:bg-gray-500 text-white text-xs rounded"
+                    >
+                        Cancel
+                    </button>
+                </div>
+            `;
+            
+            // Insert before textarea
+            const textarea = document.getElementById('article-script-preview');
+            if (textarea && textarea.parentNode) {
+                textarea.parentNode.insertBefore(confirmBanner, textarea);
+            } else {
+                scriptSection.appendChild(confirmBanner);
+            }
+            
+            // Wire up buttons
+            const applyBtn = confirmBanner.querySelector('#beat-apply-confirm-btn');
+            const cancelBtn = confirmBanner.querySelector('#beat-apply-cancel-btn');
+            
+            if (applyBtn) {
+                applyBtn.addEventListener('click', () => {
+                    confirmBanner.remove();
+                    onApply();
+                });
+            }
+            
+            if (cancelBtn) {
+                cancelBtn.addEventListener('click', () => {
+                    confirmBanner.remove();
+                    onCancel();
+                });
+            }
         }
         
         // Render beat editor from current textarea value
@@ -6524,7 +6654,7 @@
             syncTextareaFromBeats(beats);
         }
         
-        // Toggle between Raw and Beat views
+        // Toggle between Raw and Beat views (Phase 2: with Apply semantics)
         function toggleViewMode() {
             const textarea = document.getElementById('article-script-preview');
             const beatEditor = document.getElementById('beat-editor');
@@ -6533,20 +6663,74 @@
             if (!textarea || !beatEditor || !toggleBtn) return;
             
             if (currentViewMode === 'raw') {
-                // Switch to Beat view
-                currentViewMode = 'beats';
-                textarea.classList.add('hidden');
-                beatEditor.classList.remove('hidden');
-                toggleBtn.textContent = 'Raw';
+                // Phase 2: Check if switching Raw → Beats will change the text
+                const rawText = window.rawDirty ? window.rawDraftText : textarea.value;
+                const parseResult = willApplyChangeText(rawText);
                 
-                // Render beats from current textarea value
-                renderBeatEditor();
+                if (parseResult.willChange) {
+                    // Show confirm UI
+                    window.pendingBeatParseResult = parseResult;
+                    showApplyConfirmDialog(parseResult, () => {
+                        // Apply: Update textarea with normalized text
+                        window._syncingTextarea = true;
+                        textarea.value = parseResult.normalizedText;
+                        setTimeout(() => {
+                            window._syncingTextarea = false;
+                        }, 0);
+                        
+                        // Update counters
+                        updateScriptCounters();
+                        
+                        // Clear dirty state
+                        window.rawDirty = false;
+                        window.rawDraftText = '';
+                        window.pendingBeatParseResult = null;
+                        
+                        // Switch to Beat view
+                        currentViewMode = 'beats';
+                        textarea.classList.add('hidden');
+                        beatEditor.classList.remove('hidden');
+                        const countersEl = document.getElementById('script-preview-counters');
+                        if (countersEl) countersEl.classList.add('hidden');
+                        toggleBtn.textContent = 'Raw';
+                        
+                        // Render beats from normalized textarea value
+                        renderBeatEditor();
+                    }, () => {
+                        // Cancel: Do nothing, stay in Raw view
+                        window.pendingBeatParseResult = null;
+                    });
+                } else {
+                    // No changes needed, switch immediately
+                    currentViewMode = 'beats';
+                    textarea.classList.add('hidden');
+                    beatEditor.classList.remove('hidden');
+                    const countersEl = document.getElementById('script-preview-counters');
+                    if (countersEl) countersEl.classList.add('hidden');
+                    toggleBtn.textContent = 'Raw';
+                    
+                    // Clear dirty state
+                    window.rawDirty = false;
+                    window.rawDraftText = '';
+                    
+                    // Render beats from current textarea value
+                    renderBeatEditor();
+                }
             } else {
-                // Switch to Raw view
+                // Switch to Raw view (always immediate)
                 currentViewMode = 'raw';
                 textarea.classList.remove('hidden');
                 beatEditor.classList.add('hidden');
+                const countersEl = document.getElementById('script-preview-counters');
+                if (countersEl) countersEl.classList.remove('hidden');
                 toggleBtn.textContent = 'Beat View';
+                
+                // Clear any pending confirm UI
+                const existing = document.getElementById('beat-apply-confirm');
+                if (existing) {
+                    existing.remove();
+                }
+                window.pendingBeatParseResult = null;
                 
                 // Textarea is already up to date (beats sync to it on every edit)
             }
@@ -6693,6 +6877,10 @@
                 setTimeout(() => {
                     window._syncingTextarea = false;
                 }, 0);
+                
+                // Phase 2: Clear raw draft state
+                window.rawDirty = false;
+                window.rawDraftText = '';
                 
                 // Store original sentences to detect edits
                 window.currentStoryOriginalSentences = Array.isArray(sentences) ? [...sentences] : [String(sentences)];
@@ -9128,6 +9316,12 @@
                         return;
                     }
                     
+                    // Phase 2: Track raw draft state (only in raw mode)
+                    if (currentViewMode === 'raw') {
+                        window.rawDraftText = scriptPreviewEl.value;
+                        window.rawDirty = true;
+                    }
+                    
                     // Debounce updates
                     if (debounceTimer) clearTimeout(debounceTimer);
                     debounceTimer = setTimeout(() => {
@@ -9145,6 +9339,10 @@
                 if (scriptPreviewEl.value.trim()) {
                     updateScriptCounters();
                 }
+                
+                // Phase 2: Initialize raw draft state
+                window.rawDraftText = scriptPreviewEl.value;
+                window.rawDirty = false;
             }
         })();
 
