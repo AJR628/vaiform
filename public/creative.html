@@ -6409,13 +6409,20 @@
                 .filter(s => s.length > 0);
             const originalText = originalBeats.join('\n');
             
-            // Check if anything changed
-            const willChange = 
-                normalizedText !== originalText ||
+            // Check for meaningful changes (beat count, truncation, splitting)
+            const hasMeaningfulChange = 
                 normalizedBeats.length !== originalBeats.length ||
-                trimmedChars > 0 ||
                 didSplitLongBeat ||
                 didTruncateBeats;
+            
+            // Check if only whitespace trimming changed (not meaningful)
+            const onlyWhitespaceChange = !hasMeaningfulChange && 
+                normalizedText !== originalText &&
+                normalizedBeats.length === originalBeats.length &&
+                normalizedBeats.every((beat, idx) => beat === originalBeats[idx].trim());
+            
+            // Show banner only for meaningful changes, not whitespace-only
+            const willChange = hasMeaningfulChange || (!onlyWhitespaceChange && normalizedText !== originalText);
             
             return {
                 willChange,
@@ -6426,6 +6433,7 @@
                 trimmedChars,
                 didSplitLongBeat,
                 didTruncateBeats,
+                onlyWhitespaceChange,
                 stats: {
                     originalBeats: originalBeats.length,
                     normalizedBeats: normalizedBeats.length,
@@ -6540,7 +6548,7 @@
             // Render each beat
             beats.forEach((beat, idx) => {
                 const beatRow = document.createElement('div');
-                beatRow.className = 'flex items-start gap-2 p-2 bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded';
+                beatRow.className = 'beat-row flex items-start gap-2 p-2 bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded';
                 beatRow.dataset.beatId = beat.id;
                 
                 // Beat number badge
@@ -6556,6 +6564,7 @@
                 const input = document.createElement('input');
                 input.type = 'text';
                 input.value = beat.text;
+                input.setAttribute('data-role', 'beat-input');
                 input.className = 'w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded px-2 py-1 text-sm text-gray-900 dark:text-white';
                 input.style.wordWrap = 'break-word';
                 input.style.whiteSpace = 'normal';
@@ -6570,10 +6579,15 @@
                     charCounter.className = 'text-xs text-orange-500 dark:text-orange-400';
                 }
                 
-                // Prevent Enter key
+                // Prevent Enter key and commit on Enter
                 input.addEventListener('keydown', (e) => {
                     if (e.key === 'Enter') {
                         e.preventDefault();
+                        // Commit: trigger update with filtering
+                        const newValue = input.value;
+                        updateBeatInTextarea(beat.id, newValue, true);
+                        // Blur to signal save
+                        input.blur();
                     }
                 });
                 
@@ -6597,8 +6611,8 @@
                         charCounter.className = 'text-xs text-gray-500 dark:text-gray-400';
                     }
                     
-                    // Sync to textarea
-                    updateBeatInTextarea(beat.id, newValue);
+                    // Sync to textarea (don't filter empties on paste)
+                    updateBeatInTextarea(beat.id, newValue, false);
                 });
                 
                 // Update on input
@@ -6614,8 +6628,14 @@
                         charCounter.className = 'text-xs text-gray-500 dark:text-gray-400';
                     }
                     
-                    // Sync to textarea
-                    updateBeatInTextarea(beat.id, newValue);
+                    // Sync to textarea (don't filter empties on input - preserve what user is typing)
+                    updateBeatInTextarea(beat.id, newValue, false);
+                });
+                
+                // Commit on blur (filter empties)
+                input.addEventListener('blur', () => {
+                    const newValue = input.value;
+                    updateBeatInTextarea(beat.id, newValue, true);
                 });
                 
                 inputContainer.appendChild(input);
@@ -6639,19 +6659,29 @@
         }
         
         // Update a specific beat in the textarea
-        function updateBeatInTextarea(beatId, newText) {
+        function updateBeatInTextarea(beatId, newText, filterEmpties = false) {
             const beatList = document.getElementById('beat-list');
             if (!beatList) return;
             
-            // Collect all beat values in order
-            const beatRows = Array.from(beatList.children);
-            const beats = beatRows.map(row => {
-                const input = row.querySelector('input');
+            // Collect all beat values in order (use .beat-row selector for safety)
+            const beatRows = Array.from(beatList.querySelectorAll('.beat-row'));
+            let beats = beatRows.map(row => {
+                const input = row.querySelector('[data-role="beat-input"]');
                 return input ? input.value : '';
             });
             
-            // Sync to textarea
+            // Only filter empty beats if explicitly requested (on commit)
+            if (filterEmpties) {
+                beats = beats.map(text => text.trim()).filter(text => text.length > 0);
+            }
+            
+            // Sync to textarea (guarded)
             syncTextareaFromBeats(beats);
+            
+            // Only re-render if filtering empties (commit) to update numbering and button state
+            if (filterEmpties && currentViewMode === 'beats') {
+                renderBeatEditor();
+            }
         }
         
         // Toggle between Raw and Beat views (Phase 2: with Apply semantics)
@@ -6683,7 +6713,7 @@
                         
                         // Clear dirty state
                         window.rawDirty = false;
-                        window.rawDraftText = '';
+                        window.rawDraftText = textarea.value;
                         window.pendingBeatParseResult = null;
                         
                         // Switch to Beat view
@@ -6882,6 +6912,13 @@
                 window.rawDirty = false;
                 window.rawDraftText = '';
                 
+                // Phase 2: Remove any pending confirm banner
+                const existingBanner = document.getElementById('beat-apply-confirm');
+                if (existingBanner) {
+                    existingBanner.remove();
+                }
+                window.pendingBeatParseResult = null;
+                
                 // Store original sentences to detect edits
                 window.currentStoryOriginalSentences = Array.isArray(sentences) ? [...sentences] : [String(sentences)];
                 
@@ -7019,9 +7056,13 @@
                     // Normalize script
                     const { normalizedBeats, trimmedChars, didSplitLongBeat, didTruncateBeats } = normalizeScript(originalText);
                     
-                    // Write normalized beats back into textarea
+                    // Write normalized beats back into textarea (guarded)
                     const normalizedText = normalizedBeats.join('\n');
+                    window._syncingTextarea = true;
                     scriptPreviewEl.value = normalizedText;
+                    setTimeout(() => {
+                        window._syncingTextarea = false;
+                    }, 0);
                     
                     // Update counters
                     updateScriptCounters();
