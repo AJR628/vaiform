@@ -6220,6 +6220,7 @@
         const MAX_BEATS = 8;
         const MAX_BEAT_CHARS = 160;
         const MAX_TOTAL_CHARS = 850;
+        const NEW_BEAT_PLACEHOLDER = '[New beat]';
 
         // Phase 0: Helper to detect placeholder text
         function isPlaceholderText(text) {
@@ -6646,48 +6647,20 @@
                 beatList.appendChild(beatRow);
             });
             
+            // Auto-focus last beat input if it contains placeholder (newly added)
+            const lastBeatRow = beatList.querySelector('.beat-row:last-child');
+            if (lastBeatRow) {
+                const lastInput = lastBeatRow.querySelector('[data-role="beat-input"]');
+                if (lastInput && lastInput.value.trim() === NEW_BEAT_PLACEHOLDER) {
+                    // Focus and select placeholder text for easy replacement
+                    lastInput.focus();
+                    lastInput.select();
+                }
+            }
+            
             // Update add beat button state
             if (addBeatBtn) {
-                // TEMP DIAG: Verify exactly one button element
-                const allAddBeatButtons = document.querySelectorAll('#add-beat-btn');
-                if (allAddBeatButtons.length !== 1) {
-                    console.warn('[TEMP-DIAG renderBeatEditor] WARNING: Found', allAddBeatButtons.length, 'elements with id="add-beat-btn"');
-                }
-                
-                // TEMP DIAG: Log before setting disabled
-                const textareaLineCount = textarea.value.split('\n').length;
-                const parsedBeats = parseBeatsFromTextarea(textarea.value);
-                const parsedBeatsCount = parsedBeats.length;
-                const parsedBeatsTexts = parsedBeats.map(b => JSON.stringify(b.text));
-                const buttonDisabledBefore = addBeatBtn.disabled;
-                const hasSession = !!window.currentStorySession;
-                
-                console.log('[TEMP-DIAG renderBeatEditor] BEFORE setting disabled:', {
-                    currentViewMode,
-                    hasSession,
-                    textareaLineCount,
-                    parsedBeatsCount,
-                    parsedBeatsTexts,
-                    beatsLength: beats.length,
-                    buttonDisabledBefore,
-                    maxBeats: MAX_BEATS,
-                    buttonElementCount: allAddBeatButtons.length
-                });
-                
                 addBeatBtn.disabled = beats.length >= MAX_BEATS;
-                
-                // TEMP DIAG: Log after setting disabled + visible rows
-                const buttonDisabledAfter = addBeatBtn.disabled;
-                const visibleBeatRows = document.querySelectorAll('#beat-list .beat-row').length;
-                
-                console.log('[TEMP-DIAG renderBeatEditor] AFTER setting disabled:', {
-                    buttonDisabledAfter,
-                    visibleBeatRows,
-                    beatsLength: beats.length,
-                    condition: `${beats.length} >= ${MAX_BEATS} = ${beats.length >= MAX_BEATS}`
-                });
-            } else {
-                console.warn('[TEMP-DIAG renderBeatEditor] WARNING: addBeatBtn element not found');
             }
             
             // Update beat editor counters
@@ -6807,43 +6780,31 @@
         
         // Handle add beat button
         function handleAddBeat() {
-            // TEMP DIAG: Log at start of handler
-            console.log('[TEMP-DIAG handleAddBeat] Click fired');
-            
             const textarea = document.getElementById('article-script-preview');
             const addBeatBtn = document.getElementById('add-beat-btn');
-            const hasSession = !!window.currentStorySession;
             
             if (!textarea) {
-                console.log('[TEMP-DIAG handleAddBeat] EARLY RETURN: textarea not found');
                 return;
             }
             
             // Check if at max beats
             const currentBeats = parseBeatsFromTextarea(textarea.value);
-            const parsedBeatsCount = currentBeats.length;
-            const buttonDisabled = addBeatBtn ? addBeatBtn.disabled : 'element not found';
-            
-            console.log('[TEMP-DIAG handleAddBeat] State check:', {
-                hasSession,
-                parsedBeatsCount,
-                buttonDisabled,
-                maxBeats: MAX_BEATS,
-                textareaValue: textarea.value,
-                textareaLines: textarea.value.split('\n')
-            });
             
             if (currentBeats.length >= MAX_BEATS) {
-                console.log('[TEMP-DIAG handleAddBeat] EARLY RETURN: at max beats', {
-                    currentBeatsCount: currentBeats.length,
-                    maxBeats: MAX_BEATS
-                });
                 return; // Button should be disabled, but guard anyway
             }
             
-            // Add newline to textarea (will create new beat)
-            const currentValue = textarea.value;
-            const newValue = currentValue + (currentValue && !currentValue.endsWith('\n') ? '\n' : '') + '\n';
+            // Add placeholder beat (non-empty so it creates visible row)
+            const currentValue = textarea.value.trim();
+            let newValue;
+            if (currentValue.length === 0) {
+                // Empty textarea: set placeholder directly
+                newValue = NEW_BEAT_PLACEHOLDER;
+            } else {
+                // Append newline + placeholder (ensure exactly one newline boundary)
+                const needsNewline = !currentValue.endsWith('\n');
+                newValue = currentValue + (needsNewline ? '\n' : '') + NEW_BEAT_PLACEHOLDER;
+            }
             
             // Set guard flag
             window._syncingTextarea = true;
@@ -7049,6 +7010,14 @@
                         throw new Error('Script is empty');
                     }
                     
+                    // Validate no placeholder beats before proceeding
+                    const hasPlaceholder = currentSentences.some(s => s.trim() === NEW_BEAT_PLACEHOLDER);
+                    if (hasPlaceholder) {
+                        setLoading('prepare-storyboard-btn', false);
+                        showToast(`Replace or delete the '${NEW_BEAT_PLACEHOLDER}' placeholder before building storyboard.`, 5000);
+                        return;
+                    }
+                    
                     // Check if script was edited
                     const originalSentences = window.currentStoryOriginalSentences || [];
                     const sentencesChanged = originalSentences.length !== currentSentences.length ||
@@ -7114,6 +7083,15 @@
                 
                 // Priority 2: Manual Script (textarea has text)
                 if (scriptText.length > 0) {
+                    // Validate no placeholder beats before normalization
+                    const rawLines = scriptText.split('\n').map(s => s.trim()).filter(s => s.length > 0);
+                    const hasPlaceholder = rawLines.some(s => s === NEW_BEAT_PLACEHOLDER);
+                    if (hasPlaceholder) {
+                        setLoading('prepare-storyboard-btn', false);
+                        showToast(`Replace or delete the '${NEW_BEAT_PLACEHOLDER}' placeholder before building storyboard.`, 5000);
+                        return;
+                    }
+                    
                     // Get original text before normalization
                     const originalText = scriptText;
                     
