@@ -6648,7 +6648,46 @@
             
             // Update add beat button state
             if (addBeatBtn) {
+                // TEMP DIAG: Verify exactly one button element
+                const allAddBeatButtons = document.querySelectorAll('#add-beat-btn');
+                if (allAddBeatButtons.length !== 1) {
+                    console.warn('[TEMP-DIAG renderBeatEditor] WARNING: Found', allAddBeatButtons.length, 'elements with id="add-beat-btn"');
+                }
+                
+                // TEMP DIAG: Log before setting disabled
+                const textareaLineCount = textarea.value.split('\n').length;
+                const parsedBeats = parseBeatsFromTextarea(textarea.value);
+                const parsedBeatsCount = parsedBeats.length;
+                const parsedBeatsTexts = parsedBeats.map(b => JSON.stringify(b.text));
+                const buttonDisabledBefore = addBeatBtn.disabled;
+                const hasSession = !!window.currentStorySession;
+                
+                console.log('[TEMP-DIAG renderBeatEditor] BEFORE setting disabled:', {
+                    currentViewMode,
+                    hasSession,
+                    textareaLineCount,
+                    parsedBeatsCount,
+                    parsedBeatsTexts,
+                    beatsLength: beats.length,
+                    buttonDisabledBefore,
+                    maxBeats: MAX_BEATS,
+                    buttonElementCount: allAddBeatButtons.length
+                });
+                
                 addBeatBtn.disabled = beats.length >= MAX_BEATS;
+                
+                // TEMP DIAG: Log after setting disabled + visible rows
+                const buttonDisabledAfter = addBeatBtn.disabled;
+                const visibleBeatRows = document.querySelectorAll('#beat-list .beat-row').length;
+                
+                console.log('[TEMP-DIAG renderBeatEditor] AFTER setting disabled:', {
+                    buttonDisabledAfter,
+                    visibleBeatRows,
+                    beatsLength: beats.length,
+                    condition: `${beats.length} >= ${MAX_BEATS} = ${beats.length >= MAX_BEATS}`
+                });
+            } else {
+                console.warn('[TEMP-DIAG renderBeatEditor] WARNING: addBeatBtn element not found');
             }
             
             // Update beat editor counters
@@ -6768,12 +6807,37 @@
         
         // Handle add beat button
         function handleAddBeat() {
+            // TEMP DIAG: Log at start of handler
+            console.log('[TEMP-DIAG handleAddBeat] Click fired');
+            
             const textarea = document.getElementById('article-script-preview');
-            if (!textarea) return;
+            const addBeatBtn = document.getElementById('add-beat-btn');
+            const hasSession = !!window.currentStorySession;
+            
+            if (!textarea) {
+                console.log('[TEMP-DIAG handleAddBeat] EARLY RETURN: textarea not found');
+                return;
+            }
             
             // Check if at max beats
             const currentBeats = parseBeatsFromTextarea(textarea.value);
+            const parsedBeatsCount = currentBeats.length;
+            const buttonDisabled = addBeatBtn ? addBeatBtn.disabled : 'element not found';
+            
+            console.log('[TEMP-DIAG handleAddBeat] State check:', {
+                hasSession,
+                parsedBeatsCount,
+                buttonDisabled,
+                maxBeats: MAX_BEATS,
+                textareaValue: textarea.value,
+                textareaLines: textarea.value.split('\n')
+            });
+            
             if (currentBeats.length >= MAX_BEATS) {
+                console.log('[TEMP-DIAG handleAddBeat] EARLY RETURN: at max beats', {
+                    currentBeatsCount: currentBeats.length,
+                    maxBeats: MAX_BEATS
+                });
                 return; // Button should be disabled, but guard anyway
             }
             
