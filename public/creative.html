@@ -6566,6 +6566,7 @@
                 input.type = 'text';
                 input.value = beat.text;
                 input.setAttribute('data-role', 'beat-input');
+                input.dataset.beatId = beat.id; // Stable identifier for session mode mapping
                 input.className = 'w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded px-2 py-1 text-sm text-gray-900 dark:text-white';
                 input.style.wordWrap = 'break-word';
                 input.style.whiteSpace = 'normal';
@@ -6675,6 +6676,42 @@
             const beatList = document.getElementById('beat-list');
             if (!beatList) return;
             
+            // ✅ Session mode: Update via API, preserve sentenceIndex alignment
+            if (window.currentStorySession && window.currentStorySessionId) {
+                // Trim text (match commitBeatTextEdit behavior)
+                const trimmedText = (newText || "").trim();
+                
+                // Block empty text commits in session mode (prevent beat deletion)
+                if (!trimmedText) {
+                    showToast('Cannot clear beat text after storyboard is created. Use storyboard card to edit or delete beats.');
+                    return;
+                }
+                
+                // Find sentenceIndex by locating the beat row containing this beatId
+                const beatRows = Array.from(beatList.querySelectorAll('.beat-row'));
+                let sentenceIndex = -1;
+                
+                for (let i = 0; i < beatRows.length; i++) {
+                    const input = beatRows[i].querySelector('[data-role="beat-input"][data-beat-id="' + beatId + '"]');
+                    if (input) {
+                        sentenceIndex = i;
+                        break;
+                    }
+                }
+                
+                // Validate sentenceIndex
+                if (sentenceIndex < 0 || sentenceIndex >= window.currentStorySession.story.sentences.length) {
+                    console.error('[beat-editor] Could not map beatId to sentenceIndex:', { beatId, sentenceIndex, sessionSentencesCount: window.currentStorySession.story.sentences.length });
+                    showToast('Could not update beat. Please refresh the page.');
+                    return;
+                }
+                
+                // Commit text update using same API as commitBeatTextEdit()
+                handleBeatEditorCommitInSessionMode(sentenceIndex, trimmedText);
+                return; // Early return - don't run pre-storyboard path
+            }
+            
+            // Pre-storyboard mode: Existing behavior (filter empties, sync textarea)
             // Collect all beat values in order (use .beat-row selector for safety)
             const beatRows = Array.from(beatList.querySelectorAll('.beat-row'));
             let beats = beatRows.map(row => {
@@ -6693,6 +6730,77 @@
             // Only re-render if filtering empties (commit) to update numbering and button state
             if (filterEmpties && currentViewMode === 'beats') {
                 renderBeatEditor();
+            }
+        }
+        
+        // Handle beat editor commit in session mode (reuses commitBeatTextEdit logic)
+        async function handleBeatEditorCommitInSessionMode(sentenceIndex, text) {
+            try {
+                const { apiFetch } = await import('./api.mjs');
+                
+                const resp = await apiFetch('/story/update-beat-text', {
+                    method: 'POST',
+                    body: {
+                        sessionId: window.currentStorySessionId,
+                        sentenceIndex: sentenceIndex,
+                        text: text,
+                    }
+                });
+                
+                if (!resp.success) {
+                    console.error("[beat-editor] Update beat failed:", resp);
+                    showToast(resp.detail || "Failed to update beat");
+                    return;
+                }
+                
+                const { sentences, shots } = resp.data;
+                
+                // Keep session in sync (match commitBeatTextEdit behavior)
+                if (!window.currentStorySession.story) {
+                    window.currentStorySession.story = {};
+                }
+                window.currentStorySession.story.sentences = sentences;
+                window.currentStorySession.shots = shots;
+                
+                console.log(
+                    "[beat-editor] Update beat: sentenceIndex=%d, newText=%s",
+                    sentenceIndex,
+                    text.slice(0, 80)
+                );
+                
+                // Re-render storyboard from canonical data
+                renderStoryboard(window.currentStorySession);
+                updateRenderArticleButtonState();
+                
+                // Sync textarea from returned sentences (guarded, won't trigger input handler)
+                syncTextareaFromBeats(sentences);
+                
+                // Re-render beat editor to keep Beat View consistent
+                if (currentViewMode === 'beats') {
+                    renderBeatEditor();
+                }
+                
+                // Trigger debounced preview (behind feature flag) - schedule after DOM update
+                if (window.BEAT_PREVIEW_ENABLED) {
+                    const style = window.currentStorySession.overlayCaption || window.currentStorySession.captionStyle || {
+                        fontFamily: 'DejaVu Sans',
+                        weightCss: 'bold',
+                        fontPx: 48,
+                        yPct: 0.5,
+                        wPct: 0.8,
+                        opacity: 1,
+                        color: '#FFFFFF'
+                    };
+                    requestAnimationFrame(async () => {
+                        const m = window.__beatPreviewModule || await window.__beatPreviewModulePromise;
+                        if (m) {
+                            m.generateBeatCaptionPreviewDebounced(String(sentenceIndex), text, style);
+                        }
+                    });
+                }
+            } catch (err) {
+                console.error("[beat-editor] Update beat error:", err);
+                showToast("Could not update beat. Please try again.");
             }
         }
         
