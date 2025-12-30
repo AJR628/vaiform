@@ -6585,9 +6585,9 @@
                 input.addEventListener('keydown', (e) => {
                     if (e.key === 'Enter') {
                         e.preventDefault();
-                        // Commit: trigger update with filtering
+                        // Commit: trigger update with filtering and commit flag
                         const newValue = input.value;
-                        updateBeatInTextarea(beat.id, newValue, true);
+                        updateBeatInTextarea(beat.id, newValue, true, true); // filterEmpties=true, commit=true
                         // Blur to signal save
                         input.blur();
                     }
@@ -6613,8 +6613,8 @@
                         charCounter.className = 'text-xs text-gray-500 dark:text-gray-400';
                     }
                     
-                    // Sync to textarea (don't filter empties on paste)
-                    updateBeatInTextarea(beat.id, newValue, false);
+                    // Sync to textarea (don't filter empties on paste, don't commit)
+                    updateBeatInTextarea(beat.id, newValue, false, false); // filterEmpties=false, commit=false
                 });
                 
                 // Update on input
@@ -6630,14 +6630,14 @@
                         charCounter.className = 'text-xs text-gray-500 dark:text-gray-400';
                     }
                     
-                    // Sync to textarea (don't filter empties on input - preserve what user is typing)
-                    updateBeatInTextarea(beat.id, newValue, false);
+                    // Sync to textarea (don't filter empties on input - preserve what user is typing, don't commit)
+                    updateBeatInTextarea(beat.id, newValue, false, false); // filterEmpties=false, commit=false
                 });
                 
-                // Commit on blur (filter empties)
+                // Commit on blur (filter empties, commit)
                 input.addEventListener('blur', () => {
                     const newValue = input.value;
-                    updateBeatInTextarea(beat.id, newValue, true);
+                    updateBeatInTextarea(beat.id, newValue, true, true); // filterEmpties=true, commit=true
                 });
                 
                 inputContainer.appendChild(input);
@@ -6672,16 +6672,30 @@
         }
         
         // Update a specific beat in the textarea
-        function updateBeatInTextarea(beatId, newText, filterEmpties = false) {
+        function updateBeatInTextarea(beatId, newText, filterEmpties = false, commit = false) {
             const beatList = document.getElementById('beat-list');
             if (!beatList) return;
             
-            // ✅ Session mode: Update via API, preserve sentenceIndex alignment
+            // ✅ Session mode: Update via API only on commit, preserve sentenceIndex alignment
             if (window.currentStorySession && window.currentStorySessionId) {
+                // If not committing, just sync textarea for Raw view consistency (no API, no renderStoryboard)
+                if (!commit) {
+                    // Option 2: Sync textarea from current beat inputs (guarded, no API call)
+                    const beatRows = Array.from(beatList.querySelectorAll('.beat-row'));
+                    const beats = beatRows.map(row => {
+                        const input = row.querySelector('[data-role="beat-input"]');
+                        return input ? input.value : '';
+                    });
+                    syncTextareaFromBeats(beats);
+                    return; // Early return - don't run pre-storyboard path
+                }
+                
+                // Commit path: Update via API, preserve sentenceIndex alignment
                 // Trim text (match commitBeatTextEdit behavior)
                 const trimmedText = (newText || "").trim();
                 
                 // Block empty text commits in session mode (prevent beat deletion)
+                // Only enforce when committing (allow empty temporarily while typing)
                 if (!trimmedText) {
                     showToast('Cannot clear beat text after storyboard is created. Use storyboard card to edit or delete beats.');
                     return;
