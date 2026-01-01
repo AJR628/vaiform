@@ -1,11 +1,12 @@
 import express from "express";
 import { CaptionMetaSchema } from '../schemas/caption.schema.js';
+import requireAuth from '../middleware/requireAuth.js';
 
 const router = express.Router();
 
 const SAFE_TOP = 0.10, SAFE_BOTTOM = 0.90;
 
-router.post("/caption/render", express.json(), async (req, res) => {
+router.post("/caption/render", express.json({ limit: "200kb" }), requireAuth, async (req, res) => {
   try {
     // Check if this is the new overlay format
     const isOverlayFormat = req.body.placement === 'custom' && req.body.yPct !== undefined;

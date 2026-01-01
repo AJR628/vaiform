@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { CaptionMetaSchema } from '../schemas/caption.schema.js';
 import { bufferToTmp } from '../utils/tmp.js';
 import { canvasFontString, normalizeWeight, normalizeFontStyle } from '../utils/font.registry.js';
+import requireAuth from '../middleware/requireAuth.js';
 const { createCanvas } = pkg;
 
 // V3 raster schema (pixel-based with frame coordinates)
@@ -62,7 +63,7 @@ const RasterSchema = z.object({
 
 const router = express.Router();
 
-router.post("/caption/preview", express.json(), async (req, res) => {
+router.post("/caption/preview", express.json({ limit: "200kb" }), requireAuth, async (req, res) => {
   try {
     // V3 Raster Detection Gate - Only allow V3 raster mode
     const isV3Raster = req.body.ssotVersion === 3 && req.body.mode === 'raster';
