@@ -75,6 +75,16 @@ import stripeWebhook from "./routes/stripe.webhook.js";
 app.use("/stripe/webhook", stripeWebhook);
 console.log("✅ Mounted stripe webhook at /stripe/webhook");
 
+// 1.5) Conditional 200kb JSON parser for specific routes (BEFORE global parser)
+const CAPTION_PREVIEW_PATHS = ["/api/caption/preview", "/api/caption/render", "/api/tts/preview"];
+const json200kb = express.json({ limit: "200kb" });
+app.use((req, res, next) => {
+  if (CAPTION_PREVIEW_PATHS.includes(req.path)) {
+    return json200kb(req, res, next);
+  }
+  next();
+});
+
 // 2) Then JSON for the rest
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
