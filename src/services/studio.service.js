@@ -438,106 +438,117 @@ export async function finalizeStudioMulti({ uid, studioId, renderSpec = {}, form
     durationSec: renderSpec?.output?.durationSec ?? s?.render?.durationSec ?? 8,
   });
   progress('render_done');
+  
+  try {
+    // Upload artifacts
+    const base = `artifacts/${uid}/${jobId}`;
+    const uploaded = {};
+    async function up(localPath, name, contentType) {
+      const dest = `${base}/${name}`;
+      const { publicUrl } = await uploadPublic(localPath, dest, contentType);
+      uploaded[name] = publicUrl;
+      return publicUrl;
+    }
 
-  // Upload artifacts
-  const base = `artifacts/${uid}/${jobId}`;
-  const uploaded = {};
-  async function up(localPath, name, contentType) {
-    const dest = `${base}/${name}`;
-    const { publicUrl } = await uploadPublic(localPath, dest, contentType);
-    uploaded[name] = publicUrl;
-    return publicUrl;
-  }
+    const want9x16 = !formats || formats.includes("9x16");
+    const want1x1 = !formats || formats.includes("1x1");
+    const want16x9 = !formats || formats.includes("16x9");
 
-  const want9x16 = !formats || formats.includes("9x16");
-  const want1x1 = !formats || formats.includes("1x1");
-  const want16x9 = !formats || formats.includes("16x9");
+    if (want9x16 && rr.files["9x16"]) { await up(rr.files["9x16"], `${jobId}_9x16.mp4`, "video/mp4"); progress('uploaded', { kind: 'video', format: '9x16' }); }
+    if (want1x1 && rr.files["1x1"]) { await up(rr.files["1x1"], `${jobId}_1x1.mp4`, "video/mp4"); progress('uploaded', { kind: 'video', format: '1x1' }); }
+    if (want16x9 && rr.files["16x9"]) { await up(rr.files["16x9"], `${jobId}_16x9.mp4`, "video/mp4"); progress('uploaded', { kind: 'video', format: '16x9' }); }
+    if (wantImage && rr.files.poster) { await up(rr.files.poster, `${jobId}_poster_9x16.png`, "image/png"); progress('uploaded', { kind: 'image', format: '9x16' }); }
+    if (wantAudio && rr.files.audio) { await up(rr.files.audio, `${jobId}.mp3`, "audio/mpeg"); progress('uploaded', { kind: 'audio' }); }
 
-  if (want9x16 && rr.files["9x16"]) { await up(rr.files["9x16"], `${jobId}_9x16.mp4`, "video/mp4"); progress('uploaded', { kind: 'video', format: '9x16' }); }
-  if (want1x1 && rr.files["1x1"]) { await up(rr.files["1x1"], `${jobId}_1x1.mp4`, "video/mp4"); progress('uploaded', { kind: 'video', format: '1x1' }); }
-  if (want16x9 && rr.files["16x9"]) { await up(rr.files["16x9"], `${jobId}_16x9.mp4`, "video/mp4"); progress('uploaded', { kind: 'video', format: '16x9' }); }
-  if (wantImage && rr.files.poster) { await up(rr.files.poster, `${jobId}_poster_9x16.png`, "image/png"); progress('uploaded', { kind: 'image', format: '9x16' }); }
-  if (wantAudio && rr.files.audio) { await up(rr.files.audio, `${jobId}.mp3`, "audio/mpeg"); progress('uploaded', { kind: 'audio' }); }
-
-  // Extract and upload thumbnail (best-effort)
-  let thumbUrl = null;
-  const durationSec = renderSpec?.output?.durationSec ?? s?.render?.durationSec ?? 8;
-  const preferredVideo = rr.files["9x16"] || rr.files["1x1"] || rr.files["16x9"] || null;
-  if (preferredVideo && fs.existsSync(preferredVideo)) {
-    try {
-      const thumbLocal = path.join(rr.tmpRoot, "thumb.jpg");
-      const ok = await extractCoverJpeg({ 
-        inPath: preferredVideo, 
-        outPath: thumbLocal, 
-        durationSec,
-        width: 720 
-      });
-      if (ok && fs.existsSync(thumbLocal)) {
-        const thumbDest = `${base}/thumb.jpg`;
-        const { publicUrl } = await uploadPublic(thumbLocal, thumbDest, "image/jpeg");
-        thumbUrl = publicUrl;
-        progress('uploaded', { kind: 'thumbnail' });
+    // Extract and upload thumbnail (best-effort)
+    let thumbUrl = null;
+    const durationSec = renderSpec?.output?.durationSec ?? s?.render?.durationSec ?? 8;
+    const preferredVideo = rr.files["9x16"] || rr.files["1x1"] || rr.files["16x9"] || null;
+    if (preferredVideo && fs.existsSync(preferredVideo)) {
+      try {
+        const thumbLocal = path.join(rr.tmpRoot, "thumb.jpg");
+        const ok = await extractCoverJpeg({ 
+          inPath: preferredVideo, 
+          outPath: thumbLocal, 
+          durationSec,
+          width: 720 
+        });
+        if (ok && fs.existsSync(thumbLocal)) {
+          const thumbDest = `${base}/thumb.jpg`;
+          const { publicUrl } = await uploadPublic(thumbLocal, thumbDest, "image/jpeg");
+          thumbUrl = publicUrl;
+          progress('uploaded', { kind: 'thumbnail' });
+        }
+      } catch (e) {
+        console.warn("[studio][finalize] Thumbnail extraction failed:", e?.message || e);
+        // Continue without thumbnail
       }
-    } catch (e) {
-      console.warn("[studio][finalize] Thumbnail extraction failed:", e?.message || e);
-      // Continue without thumbnail
+    }
+
+    // Write meta.json for convenience
+    try {
+      const meta = {
+        renderId: jobId,
+        studioId: studioId || null,
+        uid,
+        parentRenderId: parentRenderId || null,
+        createdAt: new Date().toISOString(),
+        text: usedText,
+        authorLine,
+        files: Object.keys(uploaded),
+        urls: uploaded,
+      };
+      const tmp = JSON.stringify(meta, null, 2);
+      const tmpPath = `${rr.tmpRoot}/meta.json`;
+      await import('node:fs/promises').then(m=>m.writeFile(tmpPath, tmp));
+      await uploadPublic(tmpPath, `${base}/meta.json`, "application/json");
+    } catch {}
+
+    // Choose preferred video URL for Firestore
+    const publicUrl = uploaded[`${jobId}_9x16.mp4`] || uploaded[`${jobId}_1x1.mp4`] || uploaded[`${jobId}_16x9.mp4`] || Object.values(uploaded).find(u => u?.endsWith('.mp4')) || null;
+
+    // Save short metadata to Firestore
+    const db = admin.firestore();
+    const shortsRef = db.collection('shorts').doc(jobId);
+    try {
+      await shortsRef.set({
+        ownerId: uid,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        status: 'ready',
+        videoUrl: publicUrl,
+        thumbUrl: thumbUrl,
+        coverImageUrl: thumbUrl, // Backward compatibility
+        durationSec: durationSec,
+        quoteText: usedText,
+        mode: 'studio',
+        template: s?.render?.template || 'minimal',
+        voiceover: voiceover,
+        wantAttribution: wantAttribution,
+        captionMode: renderSpec?.captionMode || 'progress',
+        watermark: (renderSpec?.style?.watermark ?? ((process.env.WATERMARK_ENABLED ?? "true") !== "false")),
+        background: {
+          kind: videoTmp ? 'stockVideo' : 'stock',
+          type: videoTmp ? 'video' : 'image'
+        },
+        completedAt: admin.firestore.FieldValue.serverTimestamp()
+      });
+      console.log(`[studio][finalize] Created Firestore doc in shorts collection: ${jobId}`);
+    } catch (error) {
+      console.warn(`[studio][finalize] Failed to create Firestore doc: ${error.message}`);
+    }
+
+    progress('done', { renderId: jobId });
+    return { renderId: jobId, shortId: jobId, urls: uploaded, thumbUrl };
+  } finally {
+    // Cleanup temp directory
+    try {
+      if (rr?.tmpRoot && fs.existsSync(rr.tmpRoot)) {
+        fs.rmSync(rr.tmpRoot, { recursive: true, force: true });
+      }
+    } catch (cleanupErr) {
+      console.warn('[studio.service] Cleanup failed:', cleanupErr.message);
     }
   }
-
-  // Write meta.json for convenience
-  try {
-    const meta = {
-      renderId: jobId,
-      studioId: studioId || null,
-      uid,
-      parentRenderId: parentRenderId || null,
-      createdAt: new Date().toISOString(),
-      text: usedText,
-      authorLine,
-      files: Object.keys(uploaded),
-      urls: uploaded,
-    };
-    const tmp = JSON.stringify(meta, null, 2);
-    const tmpPath = `${rr.tmpRoot}/meta.json`;
-    await import('node:fs/promises').then(m=>m.writeFile(tmpPath, tmp));
-    await uploadPublic(tmpPath, `${base}/meta.json`, "application/json");
-  } catch {}
-
-  // Choose preferred video URL for Firestore
-  const publicUrl = uploaded[`${jobId}_9x16.mp4`] || uploaded[`${jobId}_1x1.mp4`] || uploaded[`${jobId}_16x9.mp4`] || Object.values(uploaded).find(u => u?.endsWith('.mp4')) || null;
-
-  // Save short metadata to Firestore
-  const db = admin.firestore();
-  const shortsRef = db.collection('shorts').doc(jobId);
-  try {
-    await shortsRef.set({
-      ownerId: uid,
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
-      status: 'ready',
-      videoUrl: publicUrl,
-      thumbUrl: thumbUrl,
-      coverImageUrl: thumbUrl, // Backward compatibility
-      durationSec: durationSec,
-      quoteText: usedText,
-      mode: 'studio',
-      template: s?.render?.template || 'minimal',
-      voiceover: voiceover,
-      wantAttribution: wantAttribution,
-      captionMode: renderSpec?.captionMode || 'progress',
-      watermark: (renderSpec?.style?.watermark ?? ((process.env.WATERMARK_ENABLED ?? "true") !== "false")),
-      background: {
-        kind: videoTmp ? 'stockVideo' : 'stock',
-        type: videoTmp ? 'video' : 'image'
-      },
-      completedAt: admin.firestore.FieldValue.serverTimestamp()
-    });
-    console.log(`[studio][finalize] Created Firestore doc in shorts collection: ${jobId}`);
-  } catch (error) {
-    console.warn(`[studio][finalize] Failed to create Firestore doc: ${error.message}`);
-  }
-
-  progress('done', { renderId: jobId });
-  return { renderId: jobId, shortId: jobId, urls: uploaded, thumbUrl };
 }
 
 export async function createRemix({ uid, parentRenderId, renderSpec, formats = ["9x16","1x1","16x9"], wantImage = true, wantAudio = true, onProgress }) {

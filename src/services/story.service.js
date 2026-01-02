@@ -658,35 +658,46 @@ export async function buildTimeline({ uid, sessionId }) {
   // Fetch clips to temporary files
   const { clips: fetchedClips, tmpDir } = await fetchClipsToTmp(clipsToFetch);
   
-  if (fetchedClips.length === 0) {
-    throw new Error('NO_CLIPS_FETCHED');
-  }
-  
-  // Create output path
-  const outPath = path.join(tmpDir, 'timeline.mp4');
-  
-  // Concatenate clips
-  const result = await concatenateClips({
-    clips: fetchedClips,
-    outPath,
-    options: {
-      width: 1080,
-      height: 1920,
-      fps: 24
+  try {
+    if (fetchedClips.length === 0) {
+      throw new Error('NO_CLIPS_FETCHED');
     }
-  });
-  
-  session.timeline = {
-    videoPath: outPath,
-    durationSec: result.durationSec,
-    tmpDir // Keep reference for cleanup later
-  };
-  
-  session.status = 'timeline_built';
-  session.updatedAt = new Date().toISOString();
-  
-  await saveStorySession({ uid, sessionId, data: session });
-  return session;
+    
+    // Create output path
+    const outPath = path.join(tmpDir, 'timeline.mp4');
+    
+    // Concatenate clips
+    const result = await concatenateClips({
+      clips: fetchedClips,
+      outPath,
+      options: {
+        width: 1080,
+        height: 1920,
+        fps: 24
+      }
+    });
+    
+    session.timeline = {
+      videoPath: outPath,
+      durationSec: result.durationSec,
+      tmpDir // Keep reference for cleanup later
+    };
+    
+    session.status = 'timeline_built';
+    session.updatedAt = new Date().toISOString();
+    
+    await saveStorySession({ uid, sessionId, data: session });
+    return session;
+  } finally {
+    // Cleanup temp directory
+    try {
+      if (tmpDir && fs.existsSync(tmpDir)) {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+      }
+    } catch (cleanupErr) {
+      console.warn('[story.service] Cleanup failed:', cleanupErr.message);
+    }
+  }
 }
 
 /**
@@ -761,24 +772,25 @@ export async function renderStory({ uid, sessionId }) {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'vaiform-story-render-'));
   const renderedSegments = [];
   
-  // Render each segment
-  const segmentErrors = [];
-  for (let i = 0; i < shotsWithClips.length; i++) {
-    const shot = shotsWithClips[i];
-    const caption = session.captions.find(c => c.sentenceIndex === shot.sentenceIndex);
-    
-    if (!caption) {
-      console.warn(`[story.service] No caption found for shot ${i}, sentenceIndex ${shot.sentenceIndex}`);
-      continue;
-    }
-    
-    try {
-      // Generate TTS with timestamps for this caption
-      let ttsPath = null;
-      let assPath = null;
+  try {
+    // Render each segment
+    const segmentErrors = [];
+    for (let i = 0; i < shotsWithClips.length; i++) {
+      const shot = shotsWithClips[i];
+      const caption = session.captions.find(c => c.sentenceIndex === shot.sentenceIndex);
+      
+      if (!caption) {
+        console.warn(`[story.service] No caption found for shot ${i}, sentenceIndex ${shot.sentenceIndex}`);
+        continue;
+      }
       
       try {
-        console.log(`[story.service] Generating TTS for segment ${i}: "${caption.text.substring(0, 50)}..."`);
+        // Generate TTS with timestamps for this caption
+        let ttsPath = null;
+        let assPath = null;
+        
+        try {
+          console.log(`[story.service] Generating TTS for segment ${i}: "${caption.text.substring(0, 50)}..."`);
         const ttsResult = await synthVoiceWithTimestamps({
           text: caption.text,
           voiceId: voicePreset.voiceId,
@@ -1028,17 +1040,27 @@ export async function renderStory({ uid, sessionId }) {
     console.warn(`[story.service] Failed to create Firestore doc: ${error.message}`);
   }
   
-  session.renderedSegments = renderedSegments.map(s => s.path);
-  session.finalVideo = {
-    url: publicUrl,
-    durationSec: durationSec,
-    jobId: jobId // Store jobId for frontend redirect
-  };
-  session.status = 'rendered';
-  session.updatedAt = new Date().toISOString();
-  
-  await saveStorySession({ uid, sessionId, data: session });
-  return session;
+    session.renderedSegments = renderedSegments.map(s => s.path);
+    session.finalVideo = {
+      url: publicUrl,
+      durationSec: durationSec,
+      jobId: jobId // Store jobId for frontend redirect
+    };
+    session.status = 'rendered';
+    session.updatedAt = new Date().toISOString();
+    
+    await saveStorySession({ uid, sessionId, data: session });
+    return session;
+  } finally {
+    // Cleanup temp directory
+    try {
+      if (tmpDir && fs.existsSync(tmpDir)) {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+      }
+    } catch (cleanupErr) {
+      console.warn('[story.service] Cleanup failed:', cleanupErr.message);
+    }
+  }
 }
 
 /**
