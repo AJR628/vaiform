@@ -1547,7 +1547,7 @@ async function renderCaptionRaster(meta) {
 }
 
 // New overlay format renderer
-async function renderPreviewImage(meta) {
+export async function renderPreviewImage(meta) {
   const W = 1080, H = 1920; // Standard canvas dimensions
   const canvas = createCanvas(W, H);
   const ctx = canvas.getContext("2d");
