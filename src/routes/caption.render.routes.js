@@ -39,16 +39,40 @@ router.post("/caption/render", express.json({ limit: "200kb" }), requireAuth, as
       }
       
       try {
+        // Normalize fontPx → sizePx (renderPreviewImage requires sizePx)
+        const sizePx = Number(payload.sizePx ?? payload.fontPx ?? 48);
+        if (!Number.isFinite(sizePx) || sizePx < 8 || sizePx > 400) {
+          return res.status(400).json({ 
+            success: false, 
+            error: "INVALID_INPUT", 
+            detail: "fontPx/sizePx must be a number between 8 and 400" 
+          });
+        }
+
+        // Ensure sizePx is set (renderPreviewImage requires it)
+        const normalizedPayload = { 
+          ...payload, 
+          sizePx,
+          fontPx: sizePx  // Set both for consistency
+        };
+
+        // Ensure required defaults for renderPreviewImage
+        if (!normalizedPayload.fontStyle) normalizedPayload.fontStyle = 'normal';
+        if (!normalizedPayload.weightCss) normalizedPayload.weightCss = 'bold';
+        if (!normalizedPayload.lines && normalizedPayload.text) {
+          normalizedPayload.lines = [normalizedPayload.text]; // Fallback if lines missing
+        }
+
         // For now, return the same as preview - in production you'd integrate with your render pipeline
         const { renderPreviewImage } = await import('./caption.preview.routes.js');
-        const outputUrl = await renderPreviewImage(payload);
+        const outputUrl = await renderPreviewImage(normalizedPayload);
         const jobId = `caption_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
         
         return res.json({ 
           success: true, 
           jobId, 
           outputUrl, 
-          meta: payload 
+          meta: normalizedPayload 
         });
       } catch (e) {
         console.error('final render failed', e);
