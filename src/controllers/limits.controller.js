@@ -21,6 +21,7 @@ export async function getUsageLimits(req, res) {
     const generationsRef = userRef.collection('generations');
     const monthlyGens = await generationsRef
       .where('createdAt', '>=', admin.firestore.Timestamp.fromDate(monthStart))
+      .limit(500)  // Safety cap (2x pro plan limit of 250)
       .get();
 
     const monthlyCount = monthlyGens.size;

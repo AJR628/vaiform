@@ -304,8 +304,19 @@ r.get("/:studioId", async (req, res) => {
 // ---- Management ----
 r.get("/", async (req, res) => {
   try {
-    const list = await listStudios({ uid: req.user.uid });
-    return res.json({ success: true, data: list });
+    const result = await listStudios({ uid: req.user.uid });
+    // Backward compatibility: if result is array (old format), wrap it
+    // New format: { sessions, truncated, note }
+    if (Array.isArray(result)) {
+      return res.json({ success: true, data: result });
+    }
+    // New format: maintain backward compatibility by keeping data as array
+    return res.json({ 
+      success: true, 
+      data: result.sessions,  // Frontend expects resp.data to be array
+      truncated: result.truncated,
+      note: result.note
+    });
   } catch (e) {
     return res.status(500).json({ success: false, error: "STUDIO_LIST_FAILED" });
   }

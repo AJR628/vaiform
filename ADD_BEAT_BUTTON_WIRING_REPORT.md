@@ -367,3 +367,5 @@ if (addBeatBtn) {
 
 **Risk Level**: Low (additive changes, no refactoring)
 
+
+

@@ -384,6 +384,8 @@ export async function getMyShorts(req, res) {
       
       const nextCursor = items.length > 0 ? items[items.length - 1].createdAt : null;
       
+      console.log(`[shorts] PRIMARY path used for uid=${ownerUid}, loaded ${snapshot.docs.length} docs, limit=${limit}`);
+      
       return res.json({ 
         success: true, 
         data: { 
@@ -405,6 +407,7 @@ export async function getMyShorts(req, res) {
       // Fallback path: no orderBy (no index required). We sort in memory.
       const snapshot = await db.collection('shorts')
         .where('ownerId', '==', ownerUid)
+        .limit(1000)  // Hard cap for fallback path
         .get();
       
       const all = snapshot.docs.map(doc => ({ 
@@ -423,6 +426,8 @@ export async function getMyShorts(req, res) {
       
       const items = all.slice(0, limit);
       const nextCursor = null; // disable pagination until index exists
+      
+      console.log(`[shorts] FALLBACK path used for uid=${ownerUid}, loaded ${snapshot.docs.length} docs, returning ${items.length}, limit=${limit}`);
       
       return res.json({ 
         success: true, 

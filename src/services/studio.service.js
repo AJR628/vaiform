@@ -554,7 +554,7 @@ export async function finalizeStudioMulti({ uid, studioId, renderSpec = {}, form
 export async function createRemix({ uid, parentRenderId, renderSpec, formats = ["9x16","1x1","16x9"], wantImage = true, wantAudio = true, onProgress }) {
   // Enforce quota: first 5 remixes free per parent renderId
   const bucket = admin.storage().bucket();
-  const [files] = await bucket.getFiles({ prefix: `artifacts/${uid}/`, autoPaginate: true });
+  const [files] = await bucket.getFiles({ prefix: `artifacts/${uid}/`, autoPaginate: true, maxResults: 1000 });
   let count = 0;
   for (const f of files) {
     if (!f.name.endsWith('/meta.json')) continue;
@@ -575,7 +575,7 @@ export async function createRemix({ uid, parentRenderId, renderSpec, formats = [
 
 export async function listRemixes({ uid, renderId }) {
   const bucket = admin.storage().bucket();
-  const [files] = await bucket.getFiles({ prefix: `artifacts/${uid}/`, autoPaginate: true });
+  const [files] = await bucket.getFiles({ prefix: `artifacts/${uid}/`, autoPaginate: true, maxResults: 1000 });
   const out = [];
   for (const f of files) {
     if (!f.name.endsWith('/meta.json')) continue;
@@ -707,7 +707,11 @@ export async function generateCaption({ uid, quoteId, styleId, text, tone = 'def
 // ---- Management APIs ----
 export async function listStudios({ uid }) {
   const bucket = admin.storage().bucket();
-  const [files] = await bucket.getFiles({ prefix: `drafts/${uid}/`, autoPaginate: true });
+  const [files, nextQuery] = await bucket.getFiles({ 
+    prefix: `drafts/${uid}/`, 
+    autoPaginate: false,
+    maxResults: 1000
+  });
   const sessions = [];
   for (const f of files) {
     if (!f.name.endsWith("/session.json")) continue;
@@ -735,7 +739,12 @@ export async function listStudios({ uid }) {
     } catch {}
   }
   sessions.sort((a, b) => Date.parse(b.updatedAt || 0) - Date.parse(a.updatedAt || 0));
-  return sessions;
+  
+  // Detect truncation: if nextQuery exists, list was capped
+  const truncated = !!(nextQuery && nextQuery.pageToken);
+  const note = truncated ? 'List may be incomplete. Showing first 1000 studios.' : null;
+  
+  return { sessions, truncated, note };
 }
 
 export async function deleteStudio({ uid, studioId }) {
@@ -750,7 +759,7 @@ export function initStudioSweeper() {
   const bucket = admin.storage().bucket();
   setInterval(async () => {
     try {
-      const [files] = await bucket.getFiles({ prefix: `drafts/`, autoPaginate: true });
+      const [files] = await bucket.getFiles({ prefix: `drafts/`, autoPaginate: true, maxResults: 1000 });
       for (const f of files) {
         if (!f.name.endsWith("/session.json")) continue;
         try {
