@@ -9,6 +9,7 @@ import { bus, sendEvent } from "../utils/events.js";
 import { resolveStockVideo } from "../services/stock.video.provider.js";
 import { dump as storeDump, get as storeGet } from "../studio/store.js";
 import { ensureStudio } from "../studio/ensure.js";
+import { withRenderSlot } from "../utils/render.semaphore.js";
 
 const r = Router();
 r.use(requireAuth);
@@ -161,11 +162,11 @@ r.post("/finalize", ensureStudio(true), enforceCreditsForRender(), async (req, r
   try {
     if (!renderSpec && !formats && !wantImage && !wantAudio) {
       // Back-compat: old finalize single format path
-      const out = await finalizeStudio({ uid: req.user.uid, studioId, voiceover, wantAttribution, captionMode });
+      const out = await withRenderSlot(() => finalizeStudio({ uid: req.user.uid, studioId, voiceover, wantAttribution, captionMode }));
       return res.json({ success: true, data: out });
     }
     // New path: multi-format → run and emit events via bus, return JSON fallback
-    const out = await finalizeStudioMulti({
+    const out = await withRenderSlot(() => finalizeStudioMulti({
       uid: req.user.uid,
       studioId,
       renderSpec: renderSpec || {},
@@ -175,7 +176,7 @@ r.post("/finalize", ensureStudio(true), enforceCreditsForRender(), async (req, r
       voiceover,
       wantAttribution,
       onProgress: (e) => sendEvent(studioId, e.event || 'progress', e),
-    });
+    }));
     // Choose preferred URL (vertical if present)
     const urls = out?.urls || {};
     const publicUrl = urls[`${out.renderId}_9x16.mp4`] || urls[`${out.renderId}_1x1.mp4`] || urls[`${out.renderId}_16x9.mp4`] || Object.values(urls)[0];
@@ -196,6 +197,10 @@ r.post("/finalize", ensureStudio(true), enforceCreditsForRender(), async (req, r
     
     return res.json({ success: true, url: publicUrl, durationSec: renderSpec?.output?.durationSec || undefined, urls, shortId: out?.shortId, thumbUrl: out?.thumbUrl });
   } catch (e) {
+    if (e?.code === "SERVER_BUSY" || e?.message === "SERVER_BUSY") {
+      res.set("Retry-After", "30");
+      return res.status(503).json({ success: false, error: "SERVER_BUSY", retryAfter: 30 });
+    }
     if (e?.message === "NEED_IMAGE_OR_VIDEO") {
       return res.status(400).json({ success: false, error: "IMAGE_OR_VIDEO_REQUIRED" });
     }

@@ -3,6 +3,7 @@ import { z, ZodError } from "zod";
 import requireAuth from "../middleware/requireAuth.js";
 import { enforceCreditsForRender, enforceScriptDailyCap } from "../middleware/planGuards.js";
 import { spendCredits, RENDER_CREDIT_COST } from "../services/credit.service.js";
+import { withRenderSlot } from "../utils/render.semaphore.js";
 import {
   createStorySession,
   getStorySession,
@@ -492,11 +493,11 @@ r.post("/finalize", enforceCreditsForRender(), async (req, res) => {
     }
     
     const { sessionId } = parsed.data;
-    const session = await finalizeStory({
+    const session = await withRenderSlot(() => finalizeStory({
       uid: req.user.uid,
       sessionId,
       options: req.body.options || {}
-    });
+    }));
     
     // Spend credits only if render succeeded
     if (session?.finalVideo?.url) {
@@ -515,6 +516,10 @@ r.post("/finalize", enforceCreditsForRender(), async (req, res) => {
       shortId: shortId  // Top-level for convenience
     });
   } catch (e) {
+    if (e?.code === "SERVER_BUSY" || e?.message === "SERVER_BUSY") {
+      res.set("Retry-After", "30");
+      return res.status(503).json({ success: false, error: "SERVER_BUSY", retryAfter: 30 });
+    }
     console.error("[story][finalize] error:", e);
     return res.status(500).json({
       success: false,
