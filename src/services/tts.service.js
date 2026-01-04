@@ -5,6 +5,7 @@ import { createHash } from "node:crypto";
 import { buildTtsPayload } from "../builders/tts.builder.js";
 import { elevenLabsSynthesize, elevenLabsSynthesizeWithTimestamps } from "../adapters/elevenlabs.adapter.js";
 import { normalizeVoiceSettings, logNormalizedSettings } from "../utils/voice.normalize.js";
+import { withAbortTimeout } from '../utils/fetch.timeout.js';
 
 const TTS_PROVIDER = (process.env.TTS_PROVIDER || "openai").toLowerCase();
 const OPENAI_MODEL = process.env.OPENAI_TTS_MODEL || "gpt-4o-mini-tts";
@@ -233,33 +234,39 @@ async function fetchWithRetry(doFetch, key) {
 }
 
 async function doOpenAI({ text, model, voice }) {
-  const res = await fetch("https://api.openai.com/v1/audio/speech", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-      "Content-Type": "application/json",
-      ...(OPENAI_ORG ? { "OpenAI-Organization": OPENAI_ORG } : {}),
-    },
-    body: JSON.stringify({ model, voice, input: text, format: "mp3" }),
-  });
-  const ab = await res.arrayBuffer();
-  return { res, buf: Buffer.from(ab), headers: res.headers };
+  return await withAbortTimeout(async (signal) => {
+    const res = await fetch("https://api.openai.com/v1/audio/speech", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+        "Content-Type": "application/json",
+        ...(OPENAI_ORG ? { "OpenAI-Organization": OPENAI_ORG } : {}),
+      },
+      body: JSON.stringify({ model, voice, input: text, format: "mp3" }),
+      ...(signal ? { signal } : {}),
+    });
+    const ab = await res.arrayBuffer();
+    return { res, buf: Buffer.from(ab), headers: res.headers };
+  }, { timeoutMs: 30000, errorMessage: 'TTS_TIMEOUT' });
 }
 
 async function doEleven({ text, voiceId }) {
   const voice = voiceId || process.env.ELEVEN_VOICE_ID;
   const url = `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voice)}?output_format=mp3_44100_128`;
-  const res = await fetch(url, {
-    method: "POST",
-    headers: {
-      "xi-api-key": process.env.ELEVENLABS_API_KEY,
-      "Content-Type": "application/json",
-      Accept: "audio/mpeg",
-    },
-    body: JSON.stringify({ model_id: process.env.ELEVEN_TTS_MODEL || "eleven_flash_v2_5", text }),
-  });
-  const ab = await res.arrayBuffer();
-  return { res, buf: Buffer.from(ab), headers: res.headers };
+  return await withAbortTimeout(async (signal) => {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "xi-api-key": process.env.ELEVENLABS_API_KEY,
+        "Content-Type": "application/json",
+        Accept: "audio/mpeg",
+      },
+      body: JSON.stringify({ model_id: process.env.ELEVEN_TTS_MODEL || "eleven_flash_v2_5", text }),
+      ...(signal ? { signal } : {}),
+    });
+    const ab = await res.arrayBuffer();
+    return { res, buf: Buffer.from(ab), headers: res.headers };
+  }, { timeoutMs: 30000, errorMessage: 'TTS_TIMEOUT' });
 }
 
 // SSOT: Use the same adapter for both preview and render

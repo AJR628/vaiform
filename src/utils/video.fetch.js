@@ -2,6 +2,7 @@ import { createWriteStream, promises as fs } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
+import { withAbortTimeout } from "./fetch.timeout.js";
 
 // Allow larger remote sources (e.g., 4K portrait from Pexels). Default 200MB, overridable via env.
 const MAX_BYTES = Number(process.env.VIDEO_MAX_BYTES || 200 * 1024 * 1024);
@@ -18,26 +19,32 @@ export async function fetchVideoToTmp(url) {
       if (lenHead && lenHead > MAX_BYTES) throw new Error('VIDEO_SIZE');
     }
   } catch {}
-  const res = await fetch(url, { redirect: "follow" });
-  if (!res.ok) throw new Error(`VIDEO_FETCH_${res.status}`);
-  const type = res.headers.get("content-type")?.split(";")[0] || "";
-  const len = Number(res.headers.get("content-length") || 0);
-  if (!ALLOWED_TYPES.has(type)) throw new Error("VIDEO_TYPE");
-  if (len && len > MAX_BYTES) throw new Error("VIDEO_SIZE");
+  
+  return await withAbortTimeout(async (signal) => {
+    const res = await fetch(url, { redirect: "follow", ...(signal ? { signal } : {}) });
+    if (!res.ok) throw new Error(`VIDEO_FETCH_${res.status}`);
+    const type = res.headers.get("content-type")?.split(";")[0] || "";
+    const len = Number(res.headers.get("content-length") || 0);
+    if (!ALLOWED_TYPES.has(type)) throw new Error("VIDEO_TYPE");
+    if (len && len > MAX_BYTES) throw new Error("VIDEO_SIZE");
 
-  const tmpPath = join(tmpdir(), `vaiform-${randomUUID()}.vid`);
-  const file = createWriteStream(tmpPath);
-  let total = 0;
-  const reader = res.body.getReader();
-  while (true) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    total += value.byteLength;
-    if (total > MAX_BYTES) { file.destroy(); await fs.unlink(tmpPath).catch(()=>{}); throw new Error("VIDEO_SIZE"); }
-    file.write(Buffer.from(value));
-  }
-  file.end();
-  return { path: tmpPath, mime: type, bytes: total };
+    const tmpPath = join(tmpdir(), `vaiform-${randomUUID()}.vid`);
+    const file = createWriteStream(tmpPath);
+    let total = 0;
+    const reader = res.body.getReader();
+    try {
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        total += value.byteLength;
+        if (total > MAX_BYTES) { file.destroy(); await fs.unlink(tmpPath).catch(()=>{}); throw new Error("VIDEO_SIZE"); }
+        file.write(Buffer.from(value));
+      }
+    } finally {
+      file.end();
+    }
+    return { path: tmpPath, mime: type, bytes: total };
+  }, { timeoutMs: 60000, errorMessage: 'VIDEO_DOWNLOAD_TIMEOUT' });
 }
 
 export default { fetchVideoToTmp };
