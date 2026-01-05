@@ -29,12 +29,22 @@ function createCandidate(id) {
   };
 }
 
+// Helper to create an oversized candidate with controlled payload
+function createOversizedCandidate(id) {
+  const candidate = createCandidate(id);
+  // Add _payload field with ~200 bytes per candidate to guarantee exceeding 500KB
+  // 8 shots × 150 candidates × 200 bytes = 240KB extra, ensuring we exceed 500KB
+  candidate._payload = 'x'.repeat(200);
+  return candidate;
+}
+
 // Helper to create a shot with candidates
-function createShot(sentenceIndex, candidateCount) {
+function createShot(sentenceIndex, candidateCount, oversized = false) {
+  const candidateFactory = oversized ? createOversizedCandidate : createCandidate;
   return {
     sentenceIndex,
-    candidates: Array.from({ length: candidateCount }, (_, i) => createCandidate(i)),
-    selectedClip: createCandidate(0),
+    candidates: Array.from({ length: candidateCount }, (_, i) => candidateFactory(i)),
+    selectedClip: candidateFactory(0),
     searchQuery: 'test query',
     durationSec: 8,
     visualDescription: 'Test visual description',
@@ -79,7 +89,10 @@ async function testNormalSession() {
 async function testOversizedSession() {
   console.log('\nTest 2: Oversized session (should fail)');
   
-  // Create session with 8 shots, 150 candidates each (will exceed 500KB)
+  // Create session with 8 shots, 150 candidates each with _payload to guarantee exceeding 500KB
+  // Base: ~300KB (8 shots × 150 candidates × ~250 bytes base)
+  // Payload: ~240KB (8 shots × 150 candidates × 200 bytes _payload)
+  // Total: ~540KB (exceeds 500KB limit)
   const oversizedSession = {
     id: 'test-session-oversized',
     uid: TEST_UID,
@@ -89,11 +102,18 @@ async function testOversizedSession() {
     story: {
       sentences: Array.from({ length: 8 }, (_, i) => `Sentence ${i + 1}`)
     },
-    shots: Array.from({ length: 8 }, (_, i) => createShot(i, 150)),
+    shots: Array.from({ length: 8 }, (_, i) => createShot(i, 150, true)), // oversized = true
     plan: {
       shots: Array.from({ length: 8 }, (_, i) => ({ index: i, description: `Plan ${i}` }))
     }
   };
+  
+  // Diagnostic: Check actual size before save attempt
+  const json = JSON.stringify(oversizedSession);
+  const sizeBytes = Buffer.byteLength(json, 'utf8');
+  const sizeKB = (sizeBytes / 1024).toFixed(2);
+  const maxKB = (500 * 1024 / 1024).toFixed(2);
+  console.log(`   Diagnostic: Session size = ${sizeKB}KB (limit: ${maxKB}KB)`);
   
   try {
     await saveJSON({ 
@@ -102,6 +122,7 @@ async function testOversizedSession() {
       file: 'story.json', 
       data: oversizedSession 
     });
+    console.error(`   ⚠️  Session saved but should have been rejected (size ${sizeKB}KB)`);
     throw new Error('Should have thrown SESSION_TOO_LARGE');
   } catch (err) {
     if (err.message === 'SESSION_TOO_LARGE') {
@@ -111,10 +132,10 @@ async function testOversizedSession() {
       assert(err.sizeBytes > err.maxBytes, 'sizeBytes should exceed maxBytes');
       assert.strictEqual(err.maxBytes, 500 * 1024, 'maxBytes should be 500KB');
       
-      const sizeKB = (err.sizeBytes / 1024).toFixed(2);
-      const maxKB = (err.maxBytes / 1024).toFixed(2);
+      const errSizeKB = (err.sizeBytes / 1024).toFixed(2);
+      const errMaxKB = (err.maxBytes / 1024).toFixed(2);
       console.log(`✅ Oversized session correctly rejected`);
-      console.log(`   Size: ${sizeKB}KB (exceeds ${maxKB}KB limit)`);
+      console.log(`   Size: ${errSizeKB}KB (exceeds ${errMaxKB}KB limit)`);
       return true;
     } else {
       console.error('❌ Unexpected error:', err.message);
