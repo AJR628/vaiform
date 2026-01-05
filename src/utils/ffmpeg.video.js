@@ -379,7 +379,7 @@ function fitQuoteToBox({ text, boxWidthPx, baseFontSize = 72 }) {
   return { text: lines.join('\n'), fontsize: fz, lineSpacing };  // Use actual newlines, escapeForDrawtext will handle escaping
 }
 
-function buildVideoChain({ width, height, videoVignette, drawLayers, captionImage, usingCaptionPng, captionPngPath, rasterPlacement, overlayCaption, assPath }){
+function buildVideoChain({ width, height, videoVignette, drawLayers, captionImage, usingCaptionPng, captionPngPath, rasterPlacement, overlayCaption, assPath, padSec = 0 }){
   const W = Math.max(4, Number(width)||1080);
   const H = Math.max(4, Number(height)||1920);
   
@@ -495,7 +495,16 @@ function buildVideoChain({ width, height, videoVignette, drawLayers, captionImag
       }
     }
     const core = [ scale, crop, (videoVignette ? 'vignette=PI/4:0.5' : null), 'format=rgba' ].filter(Boolean);
-    const baseChain = makeChain('0:v', core, 'vmain');
+    
+    // Add tpad filter if padding needed (before scale/crop)
+    let videoInput = '0:v';
+    let tpadPrefix = '';
+    if (padSec > 0.25) {
+      tpadPrefix = `[0:v]tpad=stop_mode=clone:stop_duration=${padSec}[padded];`;
+      videoInput = 'padded';
+    }
+    
+    const baseChain = makeChain(videoInput, core, 'vmain');
     
     // 🔒 NO SCALING - use preview dimensions verbatim for perfect parity
     const pngPrep = `[1:v]format=rgba[ovr]`;
@@ -545,7 +554,7 @@ function buildVideoChain({ width, height, videoVignette, drawLayers, captionImag
       });
     }
     
-    let filter = `${baseChain};${pngPrep};${overlayExpr}`;
+    let filter = `${tpadPrefix}${baseChain};${pngPrep};${overlayExpr}`;
     
     // Add ASS subtitles if provided (for karaoke word highlighting)
     // ASS overlays on top of caption PNG to provide word-level highlighting
@@ -593,6 +602,14 @@ function buildVideoChain({ width, height, videoVignette, drawLayers, captionImag
     const crop = `crop=${W}:${H}`;
     const core = [ scale, crop, (videoVignette ? 'vignette=PI/4:0.5' : null), 'format=rgba' ].filter(Boolean);
     
+    // Add tpad filter if padding needed
+    let videoInput = '0:v';
+    let tpadPrefix = '';
+    if (padSec > 0.25) {
+      tpadPrefix = `[0:v]tpad=stop_mode=clone:stop_duration=${padSec}[padded];`;
+      videoInput = 'padded';
+    }
+    
     // Colorspace handling for crisp text output
     const endFormat = pixelFmtFilter;
     
@@ -602,7 +619,7 @@ function buildVideoChain({ width, height, videoVignette, drawLayers, captionImag
       console.log('[karaoke] ASS file path:', assPath);
       
       // Build base chain ending with [base]
-      const baseChain = makeChain('0:v', core, 'base');
+      const baseChain = makeChain(videoInput, core, 'base');
       
       // Escape path for FFmpeg (same as raster mode)
       const escAssPath = assPath.replace(/\\/g, '/').replace(/:/g, '\\:').replace(/'/g, "\\'");
@@ -634,8 +651,8 @@ function buildVideoChain({ width, height, videoVignette, drawLayers, captionImag
       const otherLayers = drawLayers.filter(Boolean);
       const postSubtitlesChain = makeChain('vsub', [ ...otherLayers, endFormat, 'colorspace=all=bt709:fast=1' ].filter(Boolean), 'vout');
       
-      // Combine: base chain -> subtitles -> other layers -> output
-      const vchain = `${baseChain};${subtitlesFilter};${postSubtitlesChain}`;
+      // Combine: tpad -> base chain -> subtitles -> other layers -> output
+      const vchain = `${tpadPrefix}${baseChain};${subtitlesFilter};${postSubtitlesChain}`;
       
       console.log('[karaoke] Skipping drawtext because assPath is present');
       console.log('[karaoke] Final video chain includes subtitles filter');
@@ -644,9 +661,9 @@ function buildVideoChain({ width, height, videoVignette, drawLayers, captionImag
     }
     
     // Default: use drawtext (no ASS subtitles)
-    let vchain = makeChain('0:v', [ ...core, ...drawLayers, endFormat, 'colorspace=all=bt709:fast=1' ].filter(Boolean), 'vout');
+    let vchain = makeChain(videoInput, [ ...core, ...drawLayers, endFormat, 'colorspace=all=bt709:fast=1' ].filter(Boolean), 'vout');
     
-    return vchain;
+    return tpadPrefix + vchain;
   }
 }
 
@@ -773,6 +790,7 @@ export async function renderVideoQuoteOverlay({
   assPath, // ASS subtitle file for karaoke word highlighting
   // visual polish
   videoStartSec = 0,
+  padSec = 0,  // Padding duration in seconds (extends video when clip < TTS duration)
   videoVignette = false,
   haveBgAudio = true,
 }) {
@@ -1625,7 +1643,8 @@ export async function renderVideoQuoteOverlay({
     captionPngPath,
     rasterPlacement,
     overlayCaption,
-    assPath  // ASS subtitle file for karaoke word highlighting (overlays on top)
+    assPath,  // ASS subtitle file for karaoke word highlighting (overlays on top)
+    padSec
   });
   // If includeBottomCaption flag is passed via captionStyle, honor it
 

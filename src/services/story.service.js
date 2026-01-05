@@ -915,6 +915,21 @@ export async function renderStory({ uid, sessionId }) {
         console.log(`[story.service] Segment ${i} duration from caption/shot (no TTS): ${durationSec.toFixed(2)}s`);
       }
       
+      // Probe clip duration and calculate deficit for padding
+      // CRITICAL: durationSec must be computed BEFORE this step
+      const { getDurationMsFromMedia } = await import('../utils/media.duration.js');
+      const clipDurMs = await getDurationMsFromMedia(fetched.path);
+      const clipDurSec = clipDurMs ? clipDurMs / 1000 : null;
+      const deficitSec = (Number.isFinite(clipDurSec) && Number.isFinite(durationSec))
+        ? Math.max(0, durationSec - clipDurSec)
+        : 0;
+      const rawPadSec = deficitSec > 0.25 ? deficitSec : 0;
+      const padSec = Math.min(rawPadSec, 5); // Cap at 5s to prevent pathological padding
+      
+      if (padSec > 0) {
+        console.log(`[story.service] Segment ${i} clipDur=${clipDurSec.toFixed(2)}s, audioDur=${durationSec.toFixed(2)}s, deficit=${deficitSec.toFixed(2)}s, padding=${padSec.toFixed(2)}s`);
+      }
+      
       // Render segment with caption, TTS, and ASS highlighting
       const segmentPath = path.join(tmpDir, `segment_${i}.mp4`);
       
@@ -935,7 +950,8 @@ export async function renderStory({ uid, sessionId }) {
         overlayCaption: overlayCaption, // Pass overlay styling for caption rendering
         keepVideoAudio: true, // Keep background audio (will auto-detect if audio exists)
         bgAudioVolume: 0.5,
-        watermark: true
+        watermark: true,
+        padSec: padSec
       });
       
       renderedSegments.push({
