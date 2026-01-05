@@ -201,11 +201,6 @@ r.post("/finalize", ensureStudio(true), enforceCreditsForRender(), async (req, r
     }
     
     try {
-      // TEMP TEST: force JSON serialization failure to test refund logic
-      const circularRef = {};
-      circularRef.self = circularRef;
-      out.__testCircular = circularRef;
-      
       return res.json({ success: true, url: publicUrl, durationSec: renderSpec?.output?.durationSec || undefined, urls, shortId: out?.shortId, thumbUrl: out?.thumbUrl });
     } catch (err) {
       // If response failed after credits were spent, refund defensively

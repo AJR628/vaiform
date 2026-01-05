@@ -516,11 +516,6 @@ r.post("/finalize", enforceCreditsForRender(), async (req, res) => {
     
     const shortId = session?.finalVideo?.jobId || null;
     try {
-      // TEMP TEST: force JSON serialization failure to test refund logic
-      const circularRef = {};
-      circularRef.self = circularRef;
-      session.__testCircular = circularRef;
-      
       return res.json({ 
         success: true, 
         data: session,
