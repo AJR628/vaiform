@@ -493,6 +493,9 @@ r.post("/finalize", enforceCreditsForRender(), async (req, res) => {
     }
     
     const { sessionId } = parsed.data;
+    // NOTE: finalizeStory() blocks the HTTP request until render completes (synchronous operation).
+    // Server timeout is set to 15 minutes to accommodate long renders. For scalability,
+    // background job queue is planned (P2).
     const session = await withRenderSlot(() => finalizeStory({
       uid: req.user.uid,
       sessionId,

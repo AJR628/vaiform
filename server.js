@@ -29,8 +29,12 @@ function start() {
     console.log(`🚀 Vaiform backend running on http://${HOST}:${PORT}`);
   });
   
-  // Set server timeouts to handle long-running image generation requests
-  server.timeout = 600000; // 10 minutes
+  // Set server timeout to 15 minutes to accommodate blocking render operations.
+  // Note: Render operations (finalizeStudio/finalizeStory) currently run synchronously
+  // inside HTTP request handlers, blocking the connection until completion. This timeout
+  // increase is a P0 mitigation to reduce false client timeouts; it is NOT a scalability fix.
+  // Full solution requires background job queue (P2).
+  server.timeout = 900000; // 15 minutes
   server.keepAliveTimeout = 65000; // 65 seconds
   server.headersTimeout = 66000; // 66 seconds
   

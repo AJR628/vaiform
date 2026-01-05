@@ -166,6 +166,9 @@ r.post("/finalize", ensureStudio(true), enforceCreditsForRender(), async (req, r
       return res.json({ success: true, data: out });
     }
     // New path: multi-format → run and emit events via bus, return JSON fallback
+    // NOTE: This blocks the HTTP request until render completes (synchronous operation).
+    // Server timeout is set to 15 minutes to accommodate long renders. For scalability,
+    // background job queue is planned (P2).
     const out = await withRenderSlot(() => finalizeStudioMulti({
       uid: req.user.uid,
       studioId,
