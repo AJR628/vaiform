@@ -17,7 +17,17 @@ export async function saveJSON({ uid, studioId, file = "session.json", data }) {
   const bucket = admin.storage().bucket();
   const path = `drafts/${uid}/${studioId}/${file}`;
   const f = bucket.file(path);
-  const buf = Buffer.from(JSON.stringify(data, null, 2), "utf8");
+  const json = JSON.stringify(data);
+  const sizeBytes = Buffer.byteLength(json, 'utf8');
+  const MAX_SESSION_BYTES = 500 * 1024; // 500KB
+  if (sizeBytes > MAX_SESSION_BYTES) {
+    const err = new Error('SESSION_TOO_LARGE');
+    err.code = 'SESSION_TOO_LARGE';
+    err.sizeBytes = sizeBytes;
+    err.maxBytes = MAX_SESSION_BYTES;
+    throw err;
+  }
+  const buf = Buffer.from(json, 'utf8');
   await f.save(buf, {
     contentType: "application/json",
     resumable: false,
