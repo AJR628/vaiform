@@ -2,7 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import requireAuth from "../middleware/requireAuth.js";
 import { enforceCreditsForRender } from "../middleware/planGuards.js";
-import { spendCredits, RENDER_CREDIT_COST } from "../services/credit.service.js";
+import { spendCredits, refundCredits, RENDER_CREDIT_COST } from "../services/credit.service.js";
 import { startStudio, getStudio, generateQuoteCandidates, generateImageCandidates, chooseCandidate, finalizeStudio, listStudios, deleteStudio, generateVideoCandidates, finalizeStudioMulti, createRemix, listRemixes, generateSocialImage, generateCaption } from "../services/studio.service.js";
 import crypto from "node:crypto";
 import { bus, sendEvent } from "../utils/events.js";
@@ -189,17 +189,33 @@ r.post("/finalize", ensureStudio(true), enforceCreditsForRender(), async (req, r
     
     // Spend credits only if render succeeded (multi-format path)
     // Note: old path (finalizeStudio) spends credits in createShortService
+    let creditsSpent = false;
     if (publicUrl || Object.keys(urls).length > 0) {
       try {
         await spendCredits(req.user.uid, RENDER_CREDIT_COST);
+        creditsSpent = true;
       } catch (err) {
         console.error("[studio][finalize] Failed to spend credits:", err);
         // Don't fail the request - credits were already checked by middleware
       }
     }
     
-    return res.json({ success: true, url: publicUrl, durationSec: renderSpec?.output?.durationSec || undefined, urls, shortId: out?.shortId, thumbUrl: out?.thumbUrl });
+    try {
+      return res.json({ success: true, url: publicUrl, durationSec: renderSpec?.output?.durationSec || undefined, urls, shortId: out?.shortId, thumbUrl: out?.thumbUrl });
+    } catch (err) {
+      // If response failed after credits were spent, refund defensively
+      if (creditsSpent && !res.headersSent) {
+        try {
+          await refundCredits(req.user.uid, RENDER_CREDIT_COST);
+          console.log("[studio][finalize] Refunded credits after response failure");
+        } catch (refundErr) {
+          console.error("[studio][finalize] Failed to refund credits after response failure:", refundErr);
+        }
+      }
+      throw err; // Re-throw so outer catch handles it
+    }
   } catch (e) {
+    if (res.headersSent) return;
     if (e?.code === "SERVER_BUSY" || e?.message === "SERVER_BUSY") {
       res.set("Retry-After", "30");
       return res.status(503).json({ success: false, error: "SERVER_BUSY", retryAfter: 30 });

@@ -2,7 +2,7 @@ import { Router } from "express";
 import { z, ZodError } from "zod";
 import requireAuth from "../middleware/requireAuth.js";
 import { enforceCreditsForRender, enforceScriptDailyCap } from "../middleware/planGuards.js";
-import { spendCredits, RENDER_CREDIT_COST } from "../services/credit.service.js";
+import { spendCredits, refundCredits, RENDER_CREDIT_COST } from "../services/credit.service.js";
 import { withRenderSlot } from "../utils/render.semaphore.js";
 import {
   createStorySession,
@@ -503,9 +503,11 @@ r.post("/finalize", enforceCreditsForRender(), async (req, res) => {
     }));
     
     // Spend credits only if render succeeded
+    let creditsSpent = false;
     if (session?.finalVideo?.url) {
       try {
         await spendCredits(req.user.uid, RENDER_CREDIT_COST);
+        creditsSpent = true;
       } catch (err) {
         console.error("[story][finalize] Failed to spend credits:", err);
         // Don't fail the request - credits were already checked by middleware
@@ -513,12 +515,26 @@ r.post("/finalize", enforceCreditsForRender(), async (req, res) => {
     }
     
     const shortId = session?.finalVideo?.jobId || null;
-    return res.json({ 
-      success: true, 
-      data: session,
-      shortId: shortId  // Top-level for convenience
-    });
+    try {
+      return res.json({ 
+        success: true, 
+        data: session,
+        shortId: shortId  // Top-level for convenience
+      });
+    } catch (err) {
+      // If response failed after credits were spent, refund defensively
+      if (creditsSpent && !res.headersSent) {
+        try {
+          await refundCredits(req.user.uid, RENDER_CREDIT_COST);
+          console.log("[story][finalize] Refunded credits after response failure");
+        } catch (refundErr) {
+          console.error("[story][finalize] Failed to refund credits after response failure:", refundErr);
+        }
+      }
+      throw err; // Re-throw so outer catch handles it
+    }
   } catch (e) {
+    if (res.headersSent) return;
     if (e?.code === "SERVER_BUSY" || e?.message === "SERVER_BUSY") {
       res.set("Retry-After", "30");
       return res.status(503).json({ success: false, error: "SERVER_BUSY", retryAfter: 30 });
