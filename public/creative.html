@@ -328,7 +328,9 @@
         
         .beat-card.beat-hovered {
             transform: scale(1.35);
+            transform-origin: top center;
             z-index: 80;
+            overflow: visible; /* Allow scaled content to overflow card bounds */
         }
         
         .beat-card.squish-left-1 {
