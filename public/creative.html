@@ -308,6 +308,18 @@
             image-rendering: crisp-edges;
         }
         
+        /* Beat controls overlay - contains delete button */
+        .beat-controls {
+            position: absolute;
+            inset: 0;
+            z-index: 50;
+            pointer-events: none;
+        }
+        
+        .beat-controls .delete-beat-btn {
+            pointer-events: auto;
+        }
+        
         /* Beat card balloon hover styles */
         .beat-card {
             transition: transform 180ms cubic-bezier(0.4, 0, 0.2, 1);
@@ -316,7 +328,7 @@
         
         .beat-card.beat-hovered {
             transform: scale(1.35);
-            z-index: 20;
+            z-index: 80;
         }
         
         .beat-card.squish-left-1 {
@@ -7437,13 +7449,15 @@
                 if (!shot || !shot.selectedClip) {
                     // Placeholder for missing clip
                     card.innerHTML = `
-                        <button
-                            class="delete-beat-btn absolute top-1 right-1 w-6 h-6 rounded-full bg-red-600 hover:bg-red-700 text-white text-xs flex items-center justify-center z-50"
-                            data-sentence-index="${idx}"
-                            title="Delete beat"
-                        >✕</button>
                         <div class="relative w-full h-40 beat-video-container bg-gray-800 flex items-center justify-center">
                             <p class="text-xs text-gray-400 text-center px-2">No clip found</p>
+                            <div class="beat-controls">
+                                <button
+                                    class="delete-beat-btn absolute top-1 right-1 w-6 h-6 rounded-full bg-red-600 hover:bg-red-700 text-white text-xs flex items-center justify-center z-50"
+                                    data-sentence-index="${idx}"
+                                    title="Delete beat"
+                                >✕</button>
+                            </div>
                         </div>
                         <div 
                             class="beat-text p-2 text-xs text-gray-200 h-24 overflow-hidden cursor-text"
@@ -7465,11 +7479,6 @@
                     const thumbUrl = clip.thumbUrl || '';
                     
                     card.innerHTML = `
-                        <button
-                            class="delete-beat-btn absolute top-1 right-1 w-6 h-6 rounded-full bg-red-600 hover:bg-red-700 text-white text-xs flex items-center justify-center z-50"
-                            data-sentence-index="${idx}"
-                            title="Delete beat"
-                        >✕</button>
                         <div class="relative w-full h-40 beat-video-container overflow-hidden">
                             <video
                                 src="${videoUrl}"
@@ -7481,6 +7490,13 @@
                                 data-index="${idx}"
                                 aria-label="Preview for: ${sentence.substring(0, 50)}"
                             ></video>
+                            <div class="beat-controls">
+                                <button
+                                    class="delete-beat-btn absolute top-1 right-1 w-6 h-6 rounded-full bg-red-600 hover:bg-red-700 text-white text-xs flex items-center justify-center z-50"
+                                    data-sentence-index="${idx}"
+                                    title="Delete beat"
+                                >✕</button>
+                            </div>
                         </div>
                         <div 
                             class="beat-text p-2 text-xs text-gray-200 h-24 overflow-hidden cursor-text"
@@ -7575,12 +7591,6 @@
                 if (!beat.selectedClip) {
                     // Placeholder for missing clip
                     card.innerHTML = `
-                        <button
-                            class="delete-beat-btn absolute top-1 right-1 w-6 h-6 rounded-full bg-red-600 hover:bg-red-700 text-white text-xs flex items-center justify-center z-50"
-                            data-beat-id="${beat.id}"
-                            data-draft="true"
-                            title="Delete beat"
-                        >✕</button>
                         <div 
                             class="relative w-full h-40 beat-video-container bg-gray-800 flex items-center justify-center cursor-pointer hover:bg-gray-700 transition"
                             data-beat-id="${beat.id}"
@@ -7589,6 +7599,14 @@
                             title="Click to add clip"
                         >
                             <p class="text-xs text-gray-400 text-center px-2">+ Add clip</p>
+                            <div class="beat-controls">
+                                <button
+                                    class="delete-beat-btn absolute top-1 right-1 w-6 h-6 rounded-full bg-red-600 hover:bg-red-700 text-white text-xs flex items-center justify-center z-50"
+                                    data-beat-id="${beat.id}"
+                                    data-draft="true"
+                                    title="Delete beat"
+                                >✕</button>
+                            </div>
                         </div>
                         <div 
                             class="beat-text p-2 text-xs text-gray-200 h-24 overflow-hidden cursor-text"
@@ -7612,12 +7630,6 @@
                     const thumbUrl = clip.thumbUrl || '';
                     
                     card.innerHTML = `
-                        <button
-                            class="delete-beat-btn absolute top-1 right-1 w-6 h-6 rounded-full bg-red-600 hover:bg-red-700 text-white text-xs flex items-center justify-center z-50"
-                            data-beat-id="${beat.id}"
-                            data-draft="true"
-                            title="Delete beat"
-                        >✕</button>
                         <div class="relative w-full h-40 beat-video-container overflow-hidden">
                             <video
                                 src="${videoUrl}"
@@ -7629,6 +7641,14 @@
                                 data-beat-id="${beat.id}"
                                 aria-label="Preview for: ${(beat.text || '').substring(0, 50)}"
                             ></video>
+                            <div class="beat-controls">
+                                <button
+                                    class="delete-beat-btn absolute top-1 right-1 w-6 h-6 rounded-full bg-red-600 hover:bg-red-700 text-white text-xs flex items-center justify-center z-50"
+                                    data-beat-id="${beat.id}"
+                                    data-draft="true"
+                                    title="Delete beat"
+                                >✕</button>
+                            </div>
                         </div>
                         <div 
                             class="beat-text p-2 text-xs text-gray-200 h-24 overflow-hidden cursor-text"
