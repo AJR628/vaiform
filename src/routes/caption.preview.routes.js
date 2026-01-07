@@ -5,6 +5,8 @@ import { z } from 'zod';
 import { CaptionMetaSchema } from '../schemas/caption.schema.js';
 import { bufferToTmp } from '../utils/tmp.js';
 import { canvasFontString, normalizeWeight, normalizeFontStyle } from '../utils/font.registry.js';
+import { wrapTextWithFont } from '../utils/caption.wrap.js';
+import { deriveCaptionWrapWidthPx } from '../utils/caption.wrapWidth.js';
 import requireAuth from '../middleware/requireAuth.js';
 const { createCanvas } = pkg;
 
@@ -104,78 +106,92 @@ router.post("/caption/preview", express.json({ limit: "200kb" }), requireAuth, a
     }
     
     const data = parsed.data;
-    const text = data.text.trim();
+    const textRaw = data.textRaw || data.text;
+    const text = textRaw.trim();
     if (!text) {
       return res.status(400).json({ ok: false, reason: "EMPTY_TEXT", detail: "Caption text cannot be empty" });
     }
     
-    // ✅ Use client SSOT values - NO RECOMPUTATION
+    // Extract style values
     const fontPx = data.fontPx;
     const lineSpacingPx = data.lineSpacingPx;
     const letterSpacingPx = data.letterSpacingPx || 0;
-    const rasterW = data.rasterW;
-    const rasterH = data.rasterH;  // ✅ TRUST CLIENT - no recomputation
-    const yPx_png = data.yPx_png;  // ✅ TRUST CLIENT - no fallback
-    const rasterPadding = data.rasterPadding;  // ✅ TRUST CLIENT - no recomputation
-    const lines = data.lines || [];  // ✅ Use client lines (browser-rendered)
-    const linesCount = lines.length;  // Derive from lines array
+    const weightCss = data.weightCss;
+    const fontStyle = data.fontStyle || 'normal';
+    const fontFamily = data.fontFamily || 'DejaVu Sans';
     
-    console.log('[geom:server]', {
-      fontPx, lineSpacingPx, letterSpacingPx, rasterW, rasterH,
-      xExpr_png: data.xExpr_png, yPx_png, frameW: data.frameW, frameH: data.frameH,
-      lines: Array.isArray(lines) ? lines.length : 'n/a',
-      linesCount: linesCount
+    // Derive canonical wrap width (SSOT)
+    const frameW = 1080; // Server canonical
+    const wPct = data.wPct ?? (data.rasterW ? data.rasterW / frameW : 0.8);
+    const internalPaddingPx = data.internalPaddingPx ?? data.rasterPadding ?? 24;
+    const { maxWidthPx, pad } = deriveCaptionWrapWidthPx({
+      frameW,
+      wPct,
+      internalPaddingPx,
+      rasterW: data.rasterW, // Allow fallback if provided
+      rasterPaddingPx: data.rasterPadding
     });
     
-    // Wrap text using client rasterW (reuse V2 pattern)
-    const canvas = createCanvas(data.frameW, data.frameH);
-    const ctx = canvas.getContext("2d");
-    const font = canvasFontString(data.weightCss, data.fontStyle, fontPx, 'DejaVu Sans');
-    ctx.font = font;
+    // Compute canonical lines ALWAYS from textRaw/text (server SSOT)
+    const wrapResult = wrapTextWithFont(textRaw || text, {
+      fontPx,
+      weightCss,
+      fontStyle,
+      fontFamily,
+      maxWidthPx,
+      letterSpacingPx,
+      lineSpacingPx
+    });
+    const lines = wrapResult.lines;
+    const totalTextH = wrapResult.totalTextH;
     
-    // ✅ Use client lines if provided - NO RE-WRAP
-    if (lines && lines.length > 0) {
-      // Trust client lines exactly - these are browser-rendered line breaks
-      console.log('[raster] Using client lines (browser truth):', lines.length, 'lines');
-    } else {
-      // Reject if missing - client MUST send lines
-      console.error('[raster] Client lines missing - cannot proceed');
-      return res.status(400).json({ 
-        ok: false, 
-        reason: "MISSING_SPLITLINES", 
-        detail: "Client must send browser-rendered lines in raster mode" 
+    // DEBUG: Compare client lines vs server lines (diagnostic only, doesn't affect output)
+    const clientLines = data.lines || [];
+    if (clientLines.length > 0 && clientLines.length !== lines.length) {
+      console.log('[preview-wrap:debug] Client vs server line count mismatch:', {
+        clientLinesCount: clientLines.length,
+        serverLinesCount: lines.length,
+        maxWidthPx
       });
     }
     
-    // ✅ Use client SSOT values - NO RECOMPUTATION
-    const totalTextH = data.totalTextH || (lines.length * fontPx + (lines.length - 1) * lineSpacingPx);
-    const yPxFirstLine = data.yPxFirstLine || (yPx_png + rasterPadding);
+    // Compute rasterH from final totalTextH + padding + shadows
+    const cssPaddingTop = data.padTop || data.rasterPadding || 24;
+    const cssPaddingBottom = data.padBottom || data.rasterPadding || 24;
+    const shadowBlur = data.shadowBlur || 12;
+    const shadowOffsetY = data.shadowOffsetY || 2;
+    const rasterH = Math.round(
+      totalTextH + 
+      cssPaddingTop + 
+      cssPaddingBottom + 
+      Math.max(0, shadowBlur * 2) + 
+      Math.max(0, shadowOffsetY)
+    );
     
-    // ✅ Safety logs and assertions for client canonical values
-    console.log('[raster] Using client canonical values:', {
-      rasterW,
-      rasterH,
-      rasterPadding,
-      linesCount: lines.length
+    // Keep yPx_png from client (positioning policy unchanged)
+    const yPx_png = data.yPx_png;
+    const yPxFirstLine = data.yPxFirstLine || (yPx_png + (data.rasterPadding || 24));
+    const rasterW = data.rasterW;
+    const rasterPadding = data.rasterPadding;
+    
+    // Log SSOT wrap result
+    console.log('[preview-wrap:ssot]', {
+      maxWidthPx,
+      linesCount: lines.length,
+      fontPx,
+      fontFamily,
+      weightCss,
+      wPct,
+      pad
     });
     
-    // Schema validation already ensures these fields exist and are valid
-    // Additional runtime checks for safety
+    // Validate required fields
     if (!Number.isFinite(rasterW) || rasterW <= 0) {
       console.error('[raster] rasterW is missing or invalid:', rasterW);
       return res.status(400).json({ 
         ok: false, 
         reason: "INVALID_RASTER_W", 
         detail: `rasterW is required but missing or invalid: ${rasterW}` 
-      });
-    }
-    
-    if (!Number.isFinite(rasterH) || rasterH <= 0) {
-      console.error('[raster] rasterH is missing or invalid:', rasterH);
-      return res.status(400).json({ 
-        ok: false, 
-        reason: "INVALID_RASTER_H", 
-        detail: `rasterH is required but missing or invalid: ${rasterH}` 
       });
     }
     
@@ -188,20 +204,11 @@ router.post("/caption/preview", express.json({ limit: "200kb" }), requireAuth, a
       });
     }
     
-    if (!Array.isArray(lines) || lines.length === 0) {
-      console.error('[raster] lines array is missing or empty:', lines);
-      return res.status(400).json({ 
-        ok: false, 
-        reason: "MISSING_LINES", 
-        detail: `lines array is required but missing or empty` 
-      });
-    }
-    
-    // Call renderCaptionRaster with client SSOT values
+    // Call renderCaptionRaster with server SSOT lines
     const rasterResult = await renderCaptionRaster({
       text,
-      lines: lines,
-      maxLineWidth: rasterW - (2 * rasterPadding),  // Use client geometry
+      lines: lines,  // Server-computed lines
+      maxLineWidth: maxWidthPx,  // Canonical width
       xPct: data.xPct,  // Not used in raster, but pass for consistency
       yPct: data.yPct,  // Not used in raster, but pass for consistency
       wPct: data.wPct,  // Not used in raster, but pass for consistency
@@ -235,47 +242,13 @@ router.post("/caption/preview", express.json({ limit: "200kb" }), requireAuth, a
     const pngBuffer = Buffer.from(rasterResult.rasterUrl.split(',')[1], 'base64');
     const rasterHash = crypto.createHash('sha256').update(pngBuffer).digest('hex').slice(0, 16);
     
-    // ✅ FIX: Use server-computed values if rewrap occurred, otherwise use client SSOT values
-    const finalLines = rasterResult.rewrapped ? rasterResult.finalLines : lines;
-    const finalRasterH = rasterResult.rewrapped ? rasterResult.serverRasterH : rasterH;
-    const finalTotalTextH = rasterResult.rewrapped ? rasterResult.serverTotalTextH : totalTextH;
-    // Keep yPx_png as-is (no positioning policy change, only geometry recomputation)
-    const finalYPx_png = yPx_png;
+    // Use server-computed values (always SSOT now)
+    const finalLines = lines;  // Server-computed lines
+    const finalRasterH = rasterH;  // Server-computed rasterH
+    const finalTotalTextH = totalTextH;  // Server-computed totalTextH
+    const finalYPx_png = yPx_png;  // Keep client value (positioning unchanged)
     
-    if (rasterResult.rewrapped) {
-      console.log('[geom:server] Using server-recomputed values (rewrap occurred):', {
-        fontPx, lineSpacingPx, letterSpacingPx, rasterW,
-        oldRasterH: rasterH,
-        newRasterH: finalRasterH,
-        oldTotalTextH: totalTextH,
-        newTotalTextH: finalTotalTextH,
-        oldLinesCount: lines.length,
-        newLinesCount: finalLines.length,
-        yPx_png: finalYPx_png, rasterPadding, previewFontString: data.previewFontString
-      });
-    } else {
-      console.log('[geom:server] Using client SSOT (no recomputation):', {
-        fontPx, lineSpacingPx, letterSpacingPx, rasterW, rasterH: finalRasterH,
-        yPx_png: finalYPx_png, rasterPadding, previewFontString: data.previewFontString
-      });
-    }
-    
-    // ✅ VALIDATION: Ensure all numeric fields are finite (validate input values, recomputed values validated after render)
-    const numericFields = { fontPx, lineSpacingPx, letterSpacingPx, rasterW, rasterH, yPx_png, rasterPadding };
-    const invalidFields = Object.entries(numericFields)
-      .filter(([key, value]) => !Number.isFinite(value))
-      .map(([key]) => key);
-    
-    if (invalidFields.length > 0) {
-      console.error('[raster:validation] Invalid numeric fields:', invalidFields);
-      return res.status(400).json({ 
-        ok: false, 
-        reason: "INVALID_NUMERIC_FIELDS", 
-        detail: `Invalid fields: ${invalidFields.join(', ')}` 
-      });
-    }
-
-    // Build complete ssotMeta with all required fields - echo back client values unchanged
+    // Build complete ssotMeta with server SSOT values
     const ssotMeta = {
       ssotVersion: 3,
       mode: 'raster',
@@ -286,15 +259,15 @@ router.post("/caption/preview", express.json({ limit: "200kb" }), requireAuth, a
       bgScaleExpr: "scale='if(gt(a,1080/1920),-2,1080)':'if(gt(a,1080/1920),1920,-2)'",
       bgCropExpr: "crop=1080:1920",
       
-      // ✅ FIX: Use server-computed values if rewrap occurred, otherwise echo client SSOT
+      // Server SSOT values
       rasterUrl: rasterResult.rasterUrl,
-      rasterW: data.rasterW,  // ✅ Client canonical value (width doesn't change on rewrap)
-      rasterH: finalRasterH,  // ✅ Server-recomputed if rewrap, else client canonical
-      rasterPadding: data.rasterPadding,  // ✅ Client canonical value
-      xExpr_png: data.xExpr_png,  // ✅ Client canonical value
-      yPx_png: finalYPx_png,  // ✅ Keep client value (no positioning policy change)
+      rasterW: data.rasterW,  // Client canonical value (width doesn't change)
+      rasterH: finalRasterH,  // Server-computed
+      rasterPadding: data.rasterPadding,  // Client canonical value
+      xExpr_png: data.xExpr_png,  // Client canonical value
+      yPx_png: finalYPx_png,  // Keep client value (no positioning policy change)
       
-      // Verification hashes - echo back actual server values
+      // Verification hashes
       rasterHash,
       previewFontString: rasterResult.previewFontString,
       previewFontHash: rasterResult.previewFontHash,
@@ -320,39 +293,18 @@ router.post("/caption/preview", express.json({ limit: "200kb" }), requireAuth, a
       shadowOffsetX: data.shadowOffsetX,
       shadowOffsetY: data.shadowOffsetY,
       
-      // ✅ FIX: Return server-wrapped lines if rewrap occurred, otherwise client lines
-      lines: finalLines,  // ✅ Server-wrapped lines if rewrap, else client lines
+      // Server SSOT lines and geometry
+      lines: finalLines,  // Server-computed lines
       lineSpacingPx,
-      totalTextH: finalTotalTextH,  // ✅ Server-recomputed if rewrap, else client value
-      // yPxFirstLine removed - debug only, not used for positioning
+      totalTextH: finalTotalTextH,  // Server-computed totalTextH
     };
     
-    // Validate echo integrity (only for non-rewrap case)
-    if (!rasterResult.rewrapped) {
-      const echoErrors = [];
-      if (ssotMeta.rasterW !== data.rasterW) echoErrors.push('rasterW');
-      if (ssotMeta.rasterH !== data.rasterH) echoErrors.push('rasterH');
-      if (ssotMeta.yPx_png !== data.yPx_png) echoErrors.push('yPx_png');
-      if (ssotMeta.fontPx !== data.fontPx) echoErrors.push('fontPx');
-
-      if (echoErrors.length > 0) {
-        console.error('[raster:echo] Failed to echo client values:', echoErrors);
-        return res.status(500).json({
-          ok: false,
-          reason: "ECHO_INTEGRITY_FAILED",
-          detail: `Server modified: ${echoErrors.join(', ')}`
-        });
-      }
-    } else {
-      console.log('[raster:rewrap] Server recomputed geometry - echo integrity check skipped');
-    }
-    
-    // Log for verification
+    // Log for verification (use final values)
     console.log('[v3:raster:complete]', {
-      rasterW: rasterResult.rasterW,
-      rasterH: rasterResult.rasterH,
-      yPx_png: rasterResult.yPx,
-      lines: lines.length,
+      rasterW: ssotMeta.rasterW,
+      rasterH: ssotMeta.rasterH,
+      yPx_png: ssotMeta.yPx_png,
+      lines: ssotMeta.lines.length,
       rasterHash: rasterHash.slice(0, 8) + '...'
     });
     
@@ -361,24 +313,25 @@ router.post("/caption/preview", express.json({ limit: "200kb" }), requireAuth, a
       required: ['rasterUrl', 'rasterW', 'rasterH', 'rasterPadding', 'yPx_png', 'bgScaleExpr', 'bgCropExpr', 'rasterHash', 'previewFontString', 'totalTextH', 'lines']
     });
     
-    // Add parity checklist log
+    // Add parity checklist log (use final values)
     console.log('[PARITY_CHECKLIST]', {
       mode: 'raster',
-      frameW: data.frameW,
-      frameH: data.frameH,
-      rasterW: data.rasterW,
-      rasterH: data.rasterH,
-      xExpr_png: data.xExpr_png,
-      yPx_png: data.yPx_png,
-      rasterPadding: data.rasterPadding,
+      frameW: ssotMeta.frameW,
+      frameH: ssotMeta.frameH,
+      rasterW: ssotMeta.rasterW,
+      rasterH: ssotMeta.rasterH,
+      xExpr_png: ssotMeta.xExpr_png,
+      yPx_png: ssotMeta.yPx_png,
+      rasterPadding: ssotMeta.rasterPadding,
       padTop: data.padTop || data.rasterPadding,
       padBottom: data.padBottom || data.rasterPadding,
-      previewFontString: rasterResult.previewFontString,
-      previewFontHash: rasterResult.previewFontHash,
+      previewFontString: ssotMeta.previewFontString,
+      previewFontHash: ssotMeta.previewFontHash,
       rasterHash,
-      bgScaleExpr: "scale='if(gt(a,1080/1920),-2,1080)':'if(gt(a,1080/1920),1920,-2)'",
-      bgCropExpr: "crop=1080:1920",
-      willMatchPreview: true
+      bgScaleExpr: ssotMeta.bgScaleExpr,
+      bgCropExpr: ssotMeta.bgCropExpr,
+      willMatchPreview: true,
+      linesCount: ssotMeta.lines.length
     });
     
     // DEBUG ONLY: Structured parity log before response

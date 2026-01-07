@@ -182,28 +182,55 @@ export async function createShortService({ ownerUid, mode, text, template, durat
           wrappedText = overlayCaption.lines.join('\n');
           console.log(`[shorts] Using wrapped text from overlayCaption.lines: ${overlayCaption.lines.length} lines`);
         } else if (usedQuote?.text) {
-          // Compute wrapped text using same logic as renderVideoQuoteOverlay
+          // Compute wrapped text using SSOT wrapper (same as preview)
           try {
+            const { wrapTextWithFont } = await import('../utils/caption.wrap.js');
+            const { deriveCaptionWrapWidthPx } = await import('../utils/caption.wrapWidth.js');
+            
             const fontPx = overlayCaption?.fontPx || overlayCaption?.sizePx || captionStyle?.fontSizePx || 64;
-            const boxWidthPx = 1080 - 120; // Same as renderVideoQuoteOverlay
-            // Simple word wrapping approximation
-            const words = String(usedQuote.text).trim().split(/\s+/);
-            const approxCharW = fontPx * 0.55;
-            const maxChars = Math.max(12, Math.floor(boxWidthPx / approxCharW));
-            const lines = [];
-            let line = '';
-            for (const w of words) {
-              const next = line ? line + ' ' + w : w;
-              if (next.length <= maxChars) {
-                line = next;
-              } else {
-                if (line) lines.push(line);
-                line = w;
-              }
+            const fontFamily = overlayCaption?.fontFamily || 'DejaVu Sans';
+            const weightCss = overlayCaption?.weightCss || 'normal';
+            const fontStyle = overlayCaption?.fontStyle || 'normal';
+            const letterSpacingPx = overlayCaption?.letterSpacingPx || 0;
+            const lineSpacingPx = overlayCaption?.lineSpacingPx || 0;
+            
+            // Derive maxWidthPx using same semantics as preview
+            const wPct = overlayCaption?.wPct ?? 0.8;
+            const pad = overlayCaption?.internalPaddingPx ?? overlayCaption?.internalPadding ?? overlayCaption?.rasterPadding ?? 24;
+            const { maxWidthPx } = deriveCaptionWrapWidthPx({
+              frameW: 1080,
+              wPct,
+              internalPaddingPx: pad
+            });
+            
+            // Compute wrap using SSOT wrapper
+            const wrapResult = wrapTextWithFont(usedQuote.text, {
+              fontPx,
+              weightCss,
+              fontStyle,
+              fontFamily,
+              maxWidthPx,
+              letterSpacingPx,
+              lineSpacingPx
+            });
+            
+            wrappedText = wrapResult.lines.join('\n');
+            
+            // Log warning if letterSpacingPx is non-zero (ASS may not render it the same)
+            if (letterSpacingPx !== 0) {
+              console.warn(`[render-wrap:ssot] letterSpacingPx=${letterSpacingPx} may not match ASS rendering`);
             }
-            if (line) lines.push(line);
-            wrappedText = lines.join('\n');
-            console.log(`[shorts] Computed wrapped text: ${lines.length} lines`);
+            
+            console.log(`[render-wrap:ssot]`, {
+              beatId: 'shorts',
+              maxWidthPx,
+              linesCount: wrapResult.linesCount,
+              fontPx,
+              fontFamily,
+              weightCss,
+              wPct,
+              pad
+            });
           } catch (wrapErr) {
             console.warn(`[shorts] Could not compute wrapped text:`, wrapErr?.message);
           }
