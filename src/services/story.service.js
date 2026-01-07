@@ -936,6 +936,36 @@ export async function renderStory({ uid, sessionId }) {
       // Check if session has overlay caption styling to pass to render
       const overlayCaption = session.overlayCaption || session.captionStyle;
       
+      // PROBE (Commit 0): gated debug logs. Remove after confirming behavior.
+      if (process.env.PROBE_SESSION_STRUCTURE === '1') {
+        const oc = overlayCaption || {};
+        const hasRaster = Boolean(oc.rasterUrl || oc.rasterDataUrl || oc.rasterPng || oc.storagePath);
+        console.log('[PROBE:SESSION_STRUCTURE]', {
+          ts: new Date().toISOString(),
+          uid,
+          sessionId,
+          hasSessionOverlayCaption: Boolean(session.overlayCaption),
+          hasSessionCaptionStyle: Boolean(session.captionStyle),
+          overlayCaptionMode: oc.mode || null,
+          hasRaster,
+          rasterUrlLength: (oc.rasterUrl || oc.rasterDataUrl || oc.rasterPng || '').length || 0,
+          storagePath: oc.storagePath || null,
+          keys: Object.keys(oc).slice(0, 60)
+        });
+      }
+      
+      // PROBE (Commit 0): gated debug logs. Remove after confirming behavior.
+      if (process.env.PROBE_PER_BEAT_TEXT === '1') {
+        const oc = overlayCaption || {};
+        console.log('[PROBE:PER_BEAT_TEXT]', {
+          ts: new Date().toISOString(),
+          sentenceIndex: caption.sentenceIndex,
+          text: caption.text?.substring(0, 50) || null,
+          overlayCaptionMode: oc.mode || null,
+          hasRaster: Boolean(oc.rasterUrl || oc.rasterDataUrl || oc.storagePath)
+        });
+      }
+      
       await renderVideoQuoteOverlay({
         videoPath: fetched.path,
         outPath: segmentPath,

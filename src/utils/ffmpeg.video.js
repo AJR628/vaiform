@@ -961,6 +961,22 @@ export async function renderVideoQuoteOverlay({
   if (overlayCaption?.mode === 'raster') {
     console.log('[render] RASTER MODE detected - skipping ALL caption drawtext paths');
     
+    // PROBE (Commit 0): gated debug logs. Remove after confirming behavior.
+    if (process.env.PROBE_RASTER_MODE === '1') {
+      const oc = overlayCaption || {};
+      console.log('[PROBE:RASTER_MODE]', {
+        ts: new Date().toISOString(),
+        hasRasterUrl: Boolean(oc.rasterUrl),
+        hasRasterDataUrl: Boolean(oc.rasterDataUrl || oc.rasterPng),
+        hasStoragePath: Boolean(oc.storagePath),
+        rasterW: oc.rasterW ?? null,
+        rasterH: oc.rasterH ?? null,
+        yPx_png: oc.yPx_png ?? null,
+        xExpr_png: oc.xExpr_png ?? null,
+        keys: Object.keys(oc).slice(0, 60)
+      });
+    }
+    
     // 🔒 RASTER MODE ASSERTION - fail fast if PNG missing
     if (!(overlayCaption.rasterUrl || overlayCaption.rasterDataUrl)) {
       throw new Error('RASTER: overlayCaption missing rasterUrl/rasterDataUrl at ffmpeg entry');
