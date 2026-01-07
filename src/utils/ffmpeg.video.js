@@ -1649,6 +1649,25 @@ export async function renderVideoQuoteOverlay({
         ? [drawMain, drawAuthor, drawWatermark].filter(Boolean)
         : [drawMain, drawAuthor, drawWatermark, shouldUseDrawCaption ? drawCaption : null].filter(Boolean));
   
+  // Determine final caption strategy for logging
+  const hasAss = !!assPath && fs.existsSync(assPath);
+  const hasRaster = !!usingCaptionPng;
+  
+  let strategy = 'none';
+  let reason = 'no caption layers';
+  if (hasRaster) {
+    strategy = 'raster';
+    reason = 'usingCaptionPng=true';
+  } else if (hasAss) {
+    strategy = 'ass';
+    reason = 'assPath exists';
+  } else if (shouldUseDrawCaption) {
+    strategy = 'drawtext';
+    reason = 'drawtext enabled, no ass/raster';
+  }
+  
+  console.log(`[captions] strategy=${strategy} reason="${reason}"`);
+  
   const vchain = buildVideoChain({ 
     width: W, 
     height: H, 
