@@ -7097,6 +7097,32 @@
             }
         }
         
+        /**
+         * Preserve client caption overrides only if server session doesn't have them.
+         * Server is SSOT - only carry forward client overrides when server has nothing meaningful.
+         * @param {object} nextSession - Session object from server
+         * @param {object} prevSession - Previous window.currentStorySession (may be null)
+         */
+        function preserveCaptionOverrides(nextSession, prevSession) {
+            const hasOwn = Object.prototype.hasOwnProperty;
+            for (const key of ['overlayCaption', 'captionStyle']) {
+                const nextHasNonEmpty =
+                    hasOwn.call(nextSession || {}, key) &&
+                    nextSession[key] &&
+                    Object.keys(nextSession[key]).length > 0;
+
+                const prevHasNonEmpty =
+                    prevSession &&
+                    prevSession[key] &&
+                    Object.keys(prevSession[key]).length > 0;
+
+                // Server wins if it has a non-empty object; otherwise carry forward client overrides.
+                if (!nextHasNonEmpty && prevHasNonEmpty) {
+                    nextSession[key] = prevSession[key];
+                }
+            }
+        }
+        
         async function prepareStoryboard() {
             const scriptPreviewEl = document.getElementById('article-script-preview');
             const prepareBtn = document.getElementById('prepare-storyboard-btn');
@@ -7192,6 +7218,10 @@
                     }
                     
                     const session = searchResp.data;
+                    
+                    // Preserve client caption overrides if server doesn't have them
+                    const prev = window.currentStorySession;
+                    preserveCaptionOverrides(session, prev);
                     
                     // Store session for clip picker access
                     window.currentStorySession = session;
@@ -7293,6 +7323,10 @@
                     }
                     
                     const session = searchResp.data;
+                    
+                    // Preserve client caption overrides if server doesn't have them
+                    const prev = window.currentStorySession;
+                    preserveCaptionOverrides(session, prev);
                     
                     // Store session for clip picker access
                     window.currentStorySession = session;
@@ -9327,6 +9361,10 @@
             }
             
             const { sessionId, session } = resp.data;
+            
+            // Preserve client caption overrides if server doesn't have them
+            const prev = window.currentStorySession;
+            preserveCaptionOverrides(session, prev);
             
             // Set globals
             window.currentStorySessionId = sessionId;
