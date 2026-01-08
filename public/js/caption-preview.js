@@ -206,20 +206,18 @@ export async function generateCaptionPreview(opts) {
     : (typeof window?.getCaptionPx === 'function' ? Number(window.getCaptionPx()) : undefined);
 
   // Clamp once with consistent bounds
-  const fontPx = clamp(
-    Number(ensureFontPx || opts.sizePx || opts.fontPx || 48),
-    8,
-    MAX_FONT_PX
-  );
+  // Note: If fontPx is not explicitly set, we'll omit it from payload to let server default (64) apply
+  const fontPxValue = ensureFontPx || opts.sizePx || opts.fontPx;
+  const fontPx = fontPxValue != null ? clamp(Number(fontPxValue), 8, MAX_FONT_PX) : undefined;
   
   // Line spacing calculation - lineHeight is a multiplier (e.g., 1.15), not pixels
+  // Only compute if fontPx is set; otherwise omit to let server default apply
   const lineHeightMul = 1.15;  // FIXED multiplier, ignore opts.lineHeight
-  const lineHeightPx = Math.round(fontPx * lineHeightMul);   // baseline-to-baseline (62px)
-  const lineSpacingPx = clamp(
-    Math.max(0, Math.round(lineHeightPx - fontPx)),
+  const lineSpacingPx = fontPx != null ? clamp(
+    Math.max(0, Math.round(Math.round(fontPx * lineHeightMul) - fontPx)),
     0,
     MAX_FONT_PX
-  );
+  ) : undefined;
   
   // Extract style fields from DOM if content element exists
   const extractDOMStyles = () => {
@@ -306,62 +304,84 @@ export async function generateCaptionPreview(opts) {
     Number.isFinite(overlayMeta.totalTextH) &&
     Number.isFinite(overlayMeta.yPx_png);
   
+  // Build payload conditionally - only include style fields if explicitly set
+  // This allows server schema defaults to apply (SSOT)
   const payload = (overlayV2 && hasRasterFields)
-    ? {
-        // V3 raster format – complete payload with all required fields
-        ssotVersion: 3,
-        mode: 'raster',  // ← REQUIRED for V3 raster detection
-        text: opts.text || overlayMeta.text,
-        placement: 'custom',
-        xPct: Number.isFinite(opts?.xPct) ? opts.xPct : (overlayMeta?.xPct ?? 0.5),
-        yPct: Number.isFinite(opts?.yPct) ? opts.yPct : (overlayMeta?.yPct ?? 0.5),
-        wPct: Number.isFinite(opts?.wPct) ? opts.wPct : (overlayMeta?.wPct ?? 0.8),
+    ? (() => {
+        const p = {
+          // V3 raster format – complete payload with all required fields
+          ssotVersion: 3,
+          mode: 'raster',  // ← REQUIRED for V3 raster detection
+          text: opts.text || overlayMeta.text,
+          placement: 'custom',
+          xPct: Number.isFinite(opts?.xPct) ? opts.xPct : (overlayMeta?.xPct ?? 0.5),
+          yPct: Number.isFinite(opts?.yPct) ? opts.yPct : (overlayMeta?.yPct ?? 0.5),
+          wPct: Number.isFinite(opts?.wPct) ? opts.wPct : (overlayMeta?.wPct ?? 0.8),
+          
+          // Geometry - required V3 raster fields
+          frameW: overlayMeta.frameW || frameW,
+          frameH: overlayMeta.frameH || frameH,
+          rasterW: overlayMeta.rasterW,
+          rasterH: overlayMeta.rasterH,
+          rasterPadding: overlayMeta.rasterPadding,
+          xPx_png: Number.isFinite(opts?.xPx_png) ? opts.xPx_png : (overlayMeta?.xPx_png ?? xPx_png),
+          yPx_png: Number.isFinite(opts?.yPx_png) ? opts.yPx_png : (overlayMeta?.yPx_png ?? yPx_png),
+          xExpr_png: overlayMeta?.xExpr_png || '(W-overlay_w)/2',
+          
+          // Browser-rendered line data (REQUIRED)
+          lines: overlayMeta.lines,
+          totalTextH: overlayMeta.totalTextH,
+          yPxFirstLine: overlayMeta.yPxFirstLine,
+        };
         
-        // Typography
-        fontPx,  // ← Already clamped
-        lineSpacingPx,  // ← Already clamped
-        fontFamily: opts.fontFamily || overlayMeta?.fontFamily || 'DejaVu Sans',
-        weightCss: opts.weight || overlayMeta?.weightCss || 'normal',
-        fontStyle: domStyles.fontStyle || overlayMeta?.fontStyle || 'normal',
-        textAlign: domStyles.textAlign || overlayMeta?.textAlign || 'center',
-        letterSpacingPx: domStyles.letterSpacingPx ?? overlayMeta?.letterSpacingPx ?? 0,
-        textTransform: overlayMeta?.textTransform || 'none',
+        // Typography - only include if explicitly set (let server defaults apply)
+        if (fontPx != null) p.fontPx = fontPx;
+        if (lineSpacingPx != null) p.lineSpacingPx = lineSpacingPx;
+        const fontFamilyVal = opts.fontFamily || overlayMeta?.fontFamily;
+        if (fontFamilyVal != null) p.fontFamily = fontFamilyVal;
+        const weightCssVal = opts.weightCss || opts.weight || overlayMeta?.weightCss;
+        if (weightCssVal != null) p.weightCss = weightCssVal;
+        const fontStyleVal = domStyles.fontStyle || overlayMeta?.fontStyle;
+        if (fontStyleVal != null) p.fontStyle = fontStyleVal;
+        const textAlignVal = domStyles.textAlign || overlayMeta?.textAlign;
+        if (textAlignVal != null) p.textAlign = textAlignVal;
+        const letterSpacingPxVal = domStyles.letterSpacingPx ?? overlayMeta?.letterSpacingPx;
+        if (letterSpacingPxVal != null) p.letterSpacingPx = letterSpacingPxVal;
+        const textTransformVal = overlayMeta?.textTransform;
+        if (textTransformVal != null) p.textTransform = textTransformVal;
         
-        // Color & effects
-        color: opts.color || overlayMeta?.color || '#FFFFFF',
-        opacity: Number(opts.opacity ?? overlayMeta?.opacity ?? 0.85),
-        strokePx: domStyles.strokePx ?? overlayMeta?.strokePx ?? 0,
-        strokeColor: domStyles.strokeColor || overlayMeta?.strokeColor || 'rgba(0,0,0,0.85)',
-        shadowColor: domStyles.shadowColor || overlayMeta?.shadowColor || 'rgba(0,0,0,0.6)',
-        shadowBlur: domStyles.shadowBlur ?? overlayMeta?.shadowBlur ?? 12,
-        shadowOffsetX: domStyles.shadowOffsetX ?? overlayMeta?.shadowOffsetX ?? 0,
-        shadowOffsetY: domStyles.shadowOffsetY ?? overlayMeta?.shadowOffsetY ?? 2,
+        // Color & effects - only include if explicitly set
+        const colorVal = opts.color || overlayMeta?.color;
+        if (colorVal != null) p.color = colorVal;
+        const opacityVal = opts.opacity ?? overlayMeta?.opacity;
+        if (opacityVal != null) p.opacity = Number(opacityVal);
+        const strokePxVal = domStyles.strokePx ?? overlayMeta?.strokePx;
+        if (strokePxVal != null) p.strokePx = strokePxVal;
+        const strokeColorVal = domStyles.strokeColor || overlayMeta?.strokeColor;
+        if (strokeColorVal != null) p.strokeColor = strokeColorVal;
+        const shadowColorVal = domStyles.shadowColor || overlayMeta?.shadowColor;
+        if (shadowColorVal != null) p.shadowColor = shadowColorVal;
+        const shadowBlurVal = domStyles.shadowBlur ?? overlayMeta?.shadowBlur;
+        if (shadowBlurVal != null) p.shadowBlur = shadowBlurVal;
+        const shadowOffsetXVal = domStyles.shadowOffsetX ?? overlayMeta?.shadowOffsetX;
+        if (shadowOffsetXVal != null) p.shadowOffsetX = shadowOffsetXVal;
+        const shadowOffsetYVal = domStyles.shadowOffsetY ?? overlayMeta?.shadowOffsetY;
+        if (shadowOffsetYVal != null) p.shadowOffsetY = shadowOffsetYVal;
         
-        // Geometry - required V3 raster fields
-        frameW: overlayMeta.frameW || frameW,
-        frameH: overlayMeta.frameH || frameH,
-        rasterW: overlayMeta.rasterW,
-        rasterH: overlayMeta.rasterH,
-        rasterPadding: overlayMeta.rasterPadding,
-        xPx_png: Number.isFinite(opts?.xPx_png) ? opts.xPx_png : (overlayMeta?.xPx_png ?? xPx_png),
-        yPx_png: Number.isFinite(opts?.yPx_png) ? opts.yPx_png : (overlayMeta?.yPx_png ?? yPx_png),
-        xExpr_png: overlayMeta?.xExpr_png || '(W-overlay_w)/2',
-        
-        // Browser-rendered line data (REQUIRED)
-        lines: overlayMeta.lines,
-        totalTextH: overlayMeta.totalTextH,
-        yPxFirstLine: overlayMeta.yPxFirstLine,
-        
-        // Font string for parity validation
-        previewFontString: overlayMeta.previewFontString || (
+        // Font string for parity validation (optional)
+        const previewFontStringVal = overlayMeta.previewFontString || (
           typeof window !== 'undefined' && document.getElementById('caption-content')
             ? getComputedStyle(document.getElementById('caption-content')).font
             : undefined
-        ),
+        );
+        if (previewFontStringVal != null) p.previewFontString = previewFontStringVal;
         
         // Optional textRaw
-        textRaw: overlayMeta.textRaw || opts.text
-      }
+        const textRawVal = overlayMeta.textRaw || opts.text;
+        if (textRawVal != null) p.textRaw = textRawVal;
+        
+        return p;
+      })()
     : (() => {
         // Legacy payload branch - should not execute in overlay mode
         console.warn('[caption-preview] Building payload without V3 raster fields - overlayV2:', overlayV2, 'hasRasterFields:', hasRasterFields);

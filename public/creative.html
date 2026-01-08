@@ -4677,25 +4677,25 @@
                 // Guard helper for numeric values
                 const guardNum = (val, fallback) => Number.isFinite(val) ? val : fallback;
 
-                // Typography
+                // Typography - fallbacks match server QMain defaults (SSOT)
                 const fontFamily = ssot.fontFamily || meta.fontFamily || 'DejaVu Sans';
-                const fontPx = guardNum(ssot.fontPx, guardNum(meta.fontPx, 48));
+                const fontPx = guardNum(ssot.fontPx, guardNum(meta.fontPx, 64));
                 const lineSpacingPx = guardNum(ssot.lineSpacingPx, guardNum(meta.lineSpacingPx, 8));
                 const letterSpacingPx = guardNum(ssot.letterSpacingPx, 0);
-                const weightCss = ssot.weightCss || meta.weightCss || '700';
+                const weightCss = ssot.weightCss || meta.weightCss || 'normal';
                 const fontStyle = ssot.fontStyle || 'normal';
                 const textAlign = ssot.textAlign || meta.textAlign || 'center';
                 const textTransform = ssot.textTransform || 'none';
 
-                // Color & effects
+                // Color & effects - fallbacks match server QMain defaults (SSOT)
                 const color = ssot.color || meta.color || 'rgb(255,255,255)';
                 const opacity = guardNum(ssot.opacity, guardNum(meta.opacity, 0.85));
-                const strokePx = guardNum(ssot.strokePx, 0);
+                const strokePx = guardNum(ssot.strokePx, 3);
                 const strokeColor = ssot.strokeColor || 'rgba(0,0,0,0.85)';
                 const shadowColor = ssot.shadowColor || 'rgba(0,0,0,0.6)';
-                const shadowBlur = guardNum(ssot.shadowBlur, 12);
-                const shadowOffsetX = guardNum(ssot.shadowOffsetX, 0);
-                const shadowOffsetY = guardNum(ssot.shadowOffsetY, 2);
+                const shadowBlur = guardNum(ssot.shadowBlur, 0);
+                const shadowOffsetX = guardNum(ssot.shadowOffsetX, 1);
+                const shadowOffsetY = guardNum(ssot.shadowOffsetY, 1);
 
                 // Geometry
                 const rasterW = guardNum(ssot.rasterW, 864);

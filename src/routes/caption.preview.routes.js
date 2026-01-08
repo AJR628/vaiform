@@ -19,10 +19,10 @@ const RasterSchema = z.object({
   
   // Typography
   fontFamily: z.string().default('DejaVu Sans'),
-  fontPx: z.coerce.number().int().finite().min(8).max(400),
+  fontPx: z.coerce.number().int().finite().min(8).max(400).default(64),
   lineSpacingPx: z.coerce.number().int().finite().min(0).max(400).default(0),
   letterSpacingPx: z.coerce.number().default(0),
-  weightCss: z.string().default('700'),
+  weightCss: z.string().default('normal'),
   fontStyle: z.string().default('normal'),
   textAlign: z.enum(['left', 'center', 'right']).default('center'),
   textTransform: z.string().default('none'),
@@ -30,12 +30,12 @@ const RasterSchema = z.object({
   // Color & effects
   color: z.string().default('rgb(255,255,255)'),
   opacity: z.coerce.number().min(0).max(1).default(1.0),
-  strokePx: z.coerce.number().default(0),
+  strokePx: z.coerce.number().default(3),
   strokeColor: z.string().default('rgba(0,0,0,0.85)'),
   shadowColor: z.string().default('rgba(0,0,0,0.6)'),
-  shadowBlur: z.coerce.number().default(12),
-  shadowOffsetX: z.coerce.number().default(0),
-  shadowOffsetY: z.coerce.number().default(2),
+  shadowBlur: z.coerce.number().default(0),
+  shadowOffsetX: z.coerce.number().default(1),
+  shadowOffsetY: z.coerce.number().default(1),
   
   // Geometry (frame-space pixels)
   rasterW: z.coerce.number().int().min(100).max(1080),
@@ -115,8 +115,19 @@ router.post("/caption/preview", express.json({ limit: "200kb" }), requireAuth, a
     // Extract style values
     const fontPx = data.fontPx;
     const lineSpacingPx = data.lineSpacingPx;
-    const letterSpacingPx = data.letterSpacingPx || 0;
+    const letterSpacingPx = data.letterSpacingPx;
     const weightCss = data.weightCss;
+    
+    // Log effective style after schema defaults applied
+    console.log('[preview-style:effective]', {
+      fontPx: data.fontPx,
+      weightCss: data.weightCss,
+      strokePx: data.strokePx,
+      shadowBlur: data.shadowBlur,
+      shadowOffsetX: data.shadowOffsetX,
+      shadowOffsetY: data.shadowOffsetY,
+      letterSpacingPx: data.letterSpacingPx
+    });
     const fontStyle = data.fontStyle || 'normal';
     const fontFamily = data.fontFamily || 'DejaVu Sans';
     
@@ -158,8 +169,8 @@ router.post("/caption/preview", express.json({ limit: "200kb" }), requireAuth, a
     // Compute rasterH from final totalTextH + padding + shadows
     const cssPaddingTop = data.padTop || data.rasterPadding || 24;
     const cssPaddingBottom = data.padBottom || data.rasterPadding || 24;
-    const shadowBlur = data.shadowBlur || 12;
-    const shadowOffsetY = data.shadowOffsetY || 2;
+    const shadowBlur = data.shadowBlur;
+    const shadowOffsetY = data.shadowOffsetY;
     const rasterH = Math.round(
       totalTextH + 
       cssPaddingTop + 
@@ -1207,8 +1218,8 @@ async function renderCaptionRaster(meta) {
       // Recompute rasterH using same logic as client (server-side equivalent)
       const cssPaddingTop = meta.padTop || meta.rasterPadding || 24;
       const cssPaddingBottom = meta.padBottom || meta.rasterPadding || 24;
-      const shadowBlur = meta.shadowBlur || 12;
-      const shadowOffsetY = meta.shadowOffsetY || 2;
+      const shadowBlur = meta.shadowBlur ?? 0;
+      const shadowOffsetY = meta.shadowOffsetY ?? 1;
       
       // Server-side computeRasterH equivalent
       serverRasterH = Math.round(
