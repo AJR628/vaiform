@@ -21,7 +21,7 @@ const RasterSchema = z.object({
   fontFamily: z.string().default('DejaVu Sans'),
   fontPx: z.coerce.number().int().finite().min(8).max(400).default(64),
   lineSpacingPx: z.coerce.number().int().finite().min(0).max(400).default(0),
-  letterSpacingPx: z.coerce.number().default(0),
+  letterSpacingPx: z.coerce.number().default(0.5),  // Match karaoke QMain default (Spacing: 0.5)
   weightCss: z.string().default('normal'),
   fontStyle: z.string().default('normal'),
   textAlign: z.enum(['left', 'center', 'right']).default('center'),
@@ -119,6 +119,7 @@ router.post("/caption/preview", express.json({ limit: "200kb" }), requireAuth, a
     const weightCss = data.weightCss;
     
     // Log effective style after schema defaults applied
+    // Add source tracking (use Object.prototype.hasOwnProperty.call for safety)
     console.log('[preview-style:effective]', {
       fontPx: data.fontPx,
       weightCss: data.weightCss,
@@ -126,7 +127,15 @@ router.post("/caption/preview", express.json({ limit: "200kb" }), requireAuth, a
       shadowBlur: data.shadowBlur,
       shadowOffsetX: data.shadowOffsetX,
       shadowOffsetY: data.shadowOffsetY,
-      letterSpacingPx: data.letterSpacingPx
+      letterSpacingPx: data.letterSpacingPx,
+      // Payload flags: indicate whether fields were present in request body
+      hasFontPxInPayload: Object.prototype.hasOwnProperty.call(req.body, 'fontPx'),
+      hasWeightCssInPayload: Object.prototype.hasOwnProperty.call(req.body, 'weightCss'),
+      hasStrokePxInPayload: Object.prototype.hasOwnProperty.call(req.body, 'strokePx'),
+      hasShadowBlurInPayload: Object.prototype.hasOwnProperty.call(req.body, 'shadowBlur'),
+      hasShadowOffsetXInPayload: Object.prototype.hasOwnProperty.call(req.body, 'shadowOffsetX'),
+      hasShadowOffsetYInPayload: Object.prototype.hasOwnProperty.call(req.body, 'shadowOffsetY'),
+      hasLetterSpacingPxInPayload: Object.prototype.hasOwnProperty.call(req.body, 'letterSpacingPx')
     });
     const fontStyle = data.fontStyle || 'normal';
     const fontFamily = data.fontFamily || 'DejaVu Sans';

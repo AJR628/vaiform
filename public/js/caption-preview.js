@@ -6,6 +6,26 @@
 // Import API helpers to use same backend as other endpoints
 import { apiFetch } from "../api.mjs";
 
+// MEASURE_DEFAULTS: Server defaults for DOM measurement (geometry/wrapping)
+// Must match server RasterSchema defaults for parity
+export const MEASURE_DEFAULTS = {
+  fontFamily: 'DejaVu Sans',
+  weightCss: 'normal',  // Match server default
+  fontPx: 64,  // Match server default
+  letterSpacingPx: 0.5,  // Match server default (after Commit 4)
+  yPct: 0.5,
+  wPct: 0.8,
+  opacity: 1,
+  color: '#FFFFFF',
+  // Include stroke/shadow for geometry safety (rasterH includes stroke/shadow padding)
+  strokePx: 3,  // Match server default
+  strokeColor: 'rgba(0,0,0,0.85)',  // Match server default
+  shadowBlur: 0,  // Match server default
+  shadowOffsetX: 1,  // Match server default
+  shadowOffsetY: 1,  // Match server default
+  shadowColor: 'rgba(0,0,0,0.6)'  // Match server default
+};
+
 let lastCaptionPNG = null; // { dataUrl, width, height }
 
 // Make lastCaptionPNG globally accessible
@@ -706,9 +726,10 @@ function setCachedBeatPreview(style, text, result) {
  * Build V3 raster preview payload from overlayMeta (reuses existing logic)
  * @param {string} text - Caption text
  * @param {object} overlayMeta - overlayMeta object from measureBeatCaptionGeometry()
+ * @param {object} explicitStyle - ONLY user/session overrides (empty object if none)
  * @returns {object} Payload ready for POST /api/caption/preview
  */
-function buildBeatPreviewPayload(text, overlayMeta) {
+function buildBeatPreviewPayload(text, overlayMeta, explicitStyle = {}) {
   return {
     ssotVersion: 3,
     mode: 'raster',
@@ -719,24 +740,26 @@ function buildBeatPreviewPayload(text, overlayMeta) {
     wPct: overlayMeta.wPct ?? 0.8,
     
     // Typography
-    fontPx: overlayMeta.fontPx,
-    lineSpacingPx: overlayMeta.lineSpacingPx,
-    fontFamily: overlayMeta.fontFamily,
-    weightCss: overlayMeta.weightCss,
-    fontStyle: overlayMeta.fontStyle,
-    textAlign: overlayMeta.textAlign,
-    letterSpacingPx: overlayMeta.letterSpacingPx,
-    textTransform: overlayMeta.textTransform,
+    // Style fields - only include if explicitly present in explicitStyle (let server defaults apply otherwise)
+    // Use Object.prototype.hasOwnProperty.call for safety (handles falsy values like 0/false)
+    ...(Object.prototype.hasOwnProperty.call(explicitStyle, 'fontPx') ? { fontPx: overlayMeta.fontPx } : {}),
+    ...(Object.prototype.hasOwnProperty.call(explicitStyle, 'lineSpacingPx') ? { lineSpacingPx: overlayMeta.lineSpacingPx } : {}),
+    ...(Object.prototype.hasOwnProperty.call(explicitStyle, 'fontFamily') ? { fontFamily: overlayMeta.fontFamily } : {}),
+    ...(Object.prototype.hasOwnProperty.call(explicitStyle, 'weightCss') ? { weightCss: overlayMeta.weightCss } : {}),
+    ...(Object.prototype.hasOwnProperty.call(explicitStyle, 'fontStyle') ? { fontStyle: overlayMeta.fontStyle } : {}),
+    ...(Object.prototype.hasOwnProperty.call(explicitStyle, 'textAlign') ? { textAlign: overlayMeta.textAlign } : {}),
+    ...(Object.prototype.hasOwnProperty.call(explicitStyle, 'letterSpacingPx') ? { letterSpacingPx: overlayMeta.letterSpacingPx } : {}),
+    ...(Object.prototype.hasOwnProperty.call(explicitStyle, 'textTransform') ? { textTransform: overlayMeta.textTransform } : {}),
     
     // Color & effects
-    color: overlayMeta.color,
-    opacity: overlayMeta.opacity,
-    strokePx: overlayMeta.strokePx,
-    strokeColor: overlayMeta.strokeColor,
-    shadowColor: overlayMeta.shadowColor,
-    shadowBlur: overlayMeta.shadowBlur,
-    shadowOffsetX: overlayMeta.shadowOffsetX,
-    shadowOffsetY: overlayMeta.shadowOffsetY,
+    ...(Object.prototype.hasOwnProperty.call(explicitStyle, 'color') ? { color: overlayMeta.color } : {}),
+    ...(Object.prototype.hasOwnProperty.call(explicitStyle, 'opacity') ? { opacity: overlayMeta.opacity } : {}),
+    ...(Object.prototype.hasOwnProperty.call(explicitStyle, 'strokePx') ? { strokePx: overlayMeta.strokePx } : {}),
+    ...(Object.prototype.hasOwnProperty.call(explicitStyle, 'strokeColor') ? { strokeColor: overlayMeta.strokeColor } : {}),
+    ...(Object.prototype.hasOwnProperty.call(explicitStyle, 'shadowColor') ? { shadowColor: overlayMeta.shadowColor } : {}),
+    ...(Object.prototype.hasOwnProperty.call(explicitStyle, 'shadowBlur') ? { shadowBlur: overlayMeta.shadowBlur } : {}),
+    ...(Object.prototype.hasOwnProperty.call(explicitStyle, 'shadowOffsetX') ? { shadowOffsetX: overlayMeta.shadowOffsetX } : {}),
+    ...(Object.prototype.hasOwnProperty.call(explicitStyle, 'shadowOffsetY') ? { shadowOffsetY: overlayMeta.shadowOffsetY } : {}),
     
     // Geometry - required V3 raster fields
     frameW: overlayMeta.frameW || 1080,
@@ -778,6 +801,9 @@ export async function generateBeatCaptionPreview(beatId, text, style) {
     return null;
   }
   
+  console.log('[beat-preview] Generating preview for beat:', beatId);
+  console.log('[beat-preview] explicitStyle keys:', Object.keys(style || {}));
+  
   // Check cache first
   const cached = getCachedBeatPreview(style, text);
   if (cached) {
@@ -797,14 +823,26 @@ export async function generateBeatCaptionPreview(beatId, text, style) {
     // Import offscreen measurement function
     const { measureBeatCaptionGeometry } = await import('./caption-overlay.js');
     
+    // Create measureStyle for DOM measurement (explicitStyle merged with measurement defaults)
+    // explicitStyle: ONLY user/session overrides (empty object if no session overrides)
+    const explicitStyle = style || {};
+    const measureStyle = { ...MEASURE_DEFAULTS, ...explicitStyle };
+    
     // Measure geometry using offscreen DOM (reuses SSOT logic)
-    const overlayMeta = measureBeatCaptionGeometry(text, style);
+    const overlayMeta = measureBeatCaptionGeometry(text, measureStyle);
     if (!overlayMeta) {
       return null;
     }
     
-    // Build payload using helper
-    const payload = buildBeatPreviewPayload(text, overlayMeta);
+    // Build payload using helper (pass explicitStyle for gating, not measureStyle)
+    const payload = buildBeatPreviewPayload(text, overlayMeta, explicitStyle);
+    
+    // Log payload style keys for verification
+    const payloadStyleKeys = Object.keys(payload).filter(k => 
+      ['fontPx', 'weightCss', 'strokePx', 'shadowBlur', 'shadowOffsetX', 'shadowOffsetY', 'letterSpacingPx'].includes(k)
+    );
+    console.log('[beat-preview] payload style keys:', payloadStyleKeys);
+    console.log('[beat-preview] POST /caption/preview payload keys:', Object.keys(payload));
     
     // DEBUG ONLY: Structured parity log before POST
     if (window.__beatPreviewDebug || window.__parityAudit) {

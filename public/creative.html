@@ -6810,19 +6810,12 @@
                 
                 // Trigger debounced preview (behind feature flag) - schedule after DOM update
                 if (window.BEAT_PREVIEW_ENABLED) {
-                    const style = window.currentStorySession.overlayCaption || window.currentStorySession.captionStyle || {
-                        fontFamily: 'DejaVu Sans',
-                        weightCss: 'bold',
-                        fontPx: 48,
-                        yPct: 0.5,
-                        wPct: 0.8,
-                        opacity: 1,
-                        color: '#FFFFFF'
-                    };
+                    // explicitStyle: ONLY user/session overrides (empty object if none)
+                    const explicitStyle = window.currentStorySession.overlayCaption || window.currentStorySession.captionStyle || {};
                     requestAnimationFrame(async () => {
                         const m = window.__beatPreviewModule || await window.__beatPreviewModulePromise;
                         if (m) {
-                            m.generateBeatCaptionPreviewDebounced(String(sentenceIndex), text, style);
+                            m.generateBeatCaptionPreviewDebounced(String(sentenceIndex), text, explicitStyle);
                         }
                     });
                 }
@@ -7551,16 +7544,9 @@
             
             // Apply beat previews (behind feature flag)
             if (window.BEAT_PREVIEW_ENABLED) {
-                const style = session.overlayCaption || session.captionStyle || {
-                    fontFamily: 'DejaVu Sans',
-                    weightCss: 'bold',
-                    fontPx: 48,
-                    yPct: 0.5,
-                    wPct: 0.8,
-                    opacity: 1,
-                    color: '#FFFFFF'
-                };
-                BeatPreviewManager.applyAllPreviews(sentences, style);
+                // explicitStyle: ONLY user/session overrides (empty object if none)
+                const explicitStyle = session.overlayCaption || session.captionStyle || {};
+                BeatPreviewManager.applyAllPreviews(sentences, explicitStyle);
             }
         }
         
@@ -8310,19 +8296,12 @@
                 
                 // Trigger debounced preview (behind feature flag) - schedule after DOM update
                 if (window.BEAT_PREVIEW_ENABLED) {
-                    const style = window.currentStorySession.overlayCaption || window.currentStorySession.captionStyle || {
-                        fontFamily: 'DejaVu Sans',
-                        weightCss: 'bold',
-                        fontPx: 48,
-                        yPct: 0.5,
-                        wPct: 0.8,
-                        opacity: 1,
-                        color: '#FFFFFF'
-                    };
+                    // explicitStyle: ONLY user/session overrides (empty object if none)
+                    const explicitStyle = window.currentStorySession.overlayCaption || window.currentStorySession.captionStyle || {};
                     requestAnimationFrame(async () => {
                         const m = window.__beatPreviewModule || await window.__beatPreviewModulePromise;
                         if (m) {
-                            m.generateBeatCaptionPreviewDebounced(identifier, newText, style);
+                            m.generateBeatCaptionPreviewDebounced(identifier, newText, explicitStyle);
                         }
                     });
                 }

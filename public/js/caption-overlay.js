@@ -1758,13 +1758,19 @@ export function measureBeatCaptionGeometry(text, style) {
   const contentEl = document.createElement('div');
   contentEl.className = 'content';
   const internalPadding = style.internalPadding ?? style.rasterPadding ?? 24;
-  const fontPx = style.fontPx ?? 48;
+  const fontPx = style.fontPx ?? 64;  // Match server default
+  const strokePx = style.strokePx ?? 3;  // Match server default
+  const strokeColor = style.strokeColor || 'rgba(0,0,0,0.85)';  // Match server default
+  const shadowBlur = style.shadowBlur ?? 0;  // Match server default
+  const shadowOffsetX = style.shadowOffsetX ?? 1;  // Match server default
+  const shadowOffsetY = style.shadowOffsetY ?? 1;  // Match server default
+  const shadowColor = style.shadowColor || 'rgba(0,0,0,0.6)';  // Match server default
   contentEl.style.cssText = `
     font-family: ${style.fontFamily || 'DejaVu Sans'};
-    font-weight: ${style.weightCss || 'bold'};
+    font-weight: ${style.weightCss || 'normal'};
     font-size: ${fontPx}px;
     font-style: ${style.fontStyle || 'normal'};
-    letter-spacing: ${style.letterSpacingPx || 0}px;
+    letter-spacing: ${style.letterSpacingPx ?? 0.5}px;
     text-align: ${style.textAlign || 'center'};
     color: ${style.color || '#FFFFFF'};
     opacity: ${style.opacity ?? 1};
@@ -1774,6 +1780,8 @@ export function measureBeatCaptionGeometry(text, style) {
     word-wrap: break-word;
     width: 100%;
     box-sizing: border-box;
+    -webkit-text-stroke: ${strokePx}px ${strokeColor};
+    text-shadow: ${shadowOffsetX}px ${shadowOffsetY}px ${shadowBlur}px ${shadowColor};
   `;
   contentEl.textContent = text;
   
