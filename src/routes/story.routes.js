@@ -23,6 +23,7 @@ import {
   finalizeStory,
   saveStorySession
 } from "../services/story.service.js";
+import { extractStyleOnly } from "../utils/caption-style-helper.js";
 
 const r = Router();
 r.use(requireAuth);
@@ -136,6 +137,86 @@ r.post("/update-script", async (req, res) => {
       success: false,
       error: "STORY_UPDATE_SCRIPT_FAILED",
       detail: e?.message || "Failed to update story script"
+    });
+  }
+});
+
+// POST /api/story/update-caption-style - Update caption style for session
+r.post("/update-caption-style", async (req, res) => {
+  try {
+    const CaptionStyleSchema = z.object({
+      // Typography
+      fontFamily: z.string().optional(),
+      fontPx: z.number().min(8).max(400).optional(),
+      weightCss: z.enum(['normal', 'bold', '100', '200', '300', '400', '500', '600', '700', '800', '900']).optional(),
+      fontStyle: z.enum(['normal', 'italic']).optional(),
+      letterSpacingPx: z.number().optional(),
+      lineSpacingPx: z.number().optional(),
+      
+      // Color & Effects
+      color: z.string().optional(),
+      opacity: z.number().min(0).max(1).optional(),
+      strokePx: z.number().min(0).optional(),
+      strokeColor: z.string().optional(),
+      shadowBlur: z.number().min(0).optional(),
+      shadowOffsetX: z.number().optional(),
+      shadowOffsetY: z.number().optional(),
+      shadowColor: z.string().optional(),
+      
+      // Placement
+      placement: z.enum(['top', 'center', 'bottom', 'custom']).optional(),
+      yPct: z.number().min(0).max(1).optional(),
+      xPct: z.number().min(0).max(1).optional(),
+      wPct: z.number().min(0).max(1).optional(),
+    }).strict(); // Reject unknown fields (mode, lines, rasterUrl, etc.)
+    
+    const parsed = z.object({
+      sessionId: z.string().min(3),
+      overlayCaption: CaptionStyleSchema
+    }).safeParse(req.body || {});
+    
+    if (!parsed.success) {
+      return res.status(400).json({
+        success: false,
+        error: "INVALID_INPUT",
+        detail: parsed.error.flatten()
+      });
+    }
+    
+    const { sessionId, overlayCaption } = parsed.data;
+    const session = await getStorySession({
+      uid: req.user.uid,
+      sessionId
+    });
+    
+    if (!session) {
+      return res.status(404).json({
+        success: false,
+        error: "SESSION_NOT_FOUND"
+      });
+    }
+    
+    // Merge style into session (extract style-only from existing if present)
+    const existing = session.overlayCaption || {};
+    const existingStyleOnly = extractStyleOnly(existing);
+    const mergedStyle = { ...existingStyleOnly, ...overlayCaption };
+    
+    // Strip any dangerous fields that might exist (defensive)
+    session.overlayCaption = extractStyleOnly(mergedStyle);
+    session.updatedAt = new Date().toISOString();
+    
+    await saveStorySession({ uid: req.user.uid, sessionId, data: session });
+    
+    return res.json({ 
+      success: true, 
+      data: { overlayCaption: session.overlayCaption } 
+    });
+  } catch (e) {
+    console.error("[story][update-caption-style] error:", e);
+    return res.status(500).json({
+      success: false,
+      error: "STORY_UPDATE_CAPTION_STYLE_FAILED",
+      detail: e?.message || "Failed to update caption style"
     });
   }
 });

@@ -809,6 +809,17 @@ export async function renderStory({ uid, sessionId }) {
             // Check if session has overlay caption styling
             const overlayCaption = session.overlayCaption || session.captionStyle;
             
+            // Safety guard: Warn if dangerous fields present
+            if (overlayCaption) {
+              const dangerousKeys = ['mode', 'lines', 'rasterUrl', 'rasterHash'];
+              const foundDangerous = dangerousKeys.filter(k => 
+                Object.prototype.hasOwnProperty.call(overlayCaption, k)
+              );
+              if (foundDangerous.length > 0) {
+                console.warn(`[render-guard] Found dangerous fields in overlayCaption: ${foundDangerous.join(', ')}. These should not be in global style.`);
+              }
+            }
+            
             // Get TTS duration for accurate timing
             let ttsDurationMs = ttsResult.durationMs;
             if (!ttsDurationMs && ttsPath) {
