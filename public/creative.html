@@ -3696,14 +3696,8 @@
         });
         
         document.addEventListener('DOMContentLoaded', async () => {
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/182f97d8-2a97-4944-a32e-62daaabec7d7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'creative.html:3698',message:'DOMContentLoaded init started',data:{ENABLE_LEGACY_STUDIO:typeof ENABLE_LEGACY_STUDIO!=='undefined'?ENABLE_LEGACY_STUDIO:'undefined'},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-            // #endregion
             // [STUDIO] Hide legacy quote/asset studio UI if disabled
             if (!ENABLE_LEGACY_STUDIO) {
-                // #region agent log
-                fetch('http://127.0.0.1:7242/ingest/182f97d8-2a97-4944-a32e-62daaabec7d7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'creative.html:3700',message:'Hiding quotes studio',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-                // #endregion
                 // Hide quotes tab button
                 const quotesTab = document.getElementById('mode-quotes-tab');
                 if (quotesTab) quotesTab.style.display = 'none';
@@ -3715,9 +3709,6 @@
                 
                 // Initialize to articles mode (core feature)
                 if (typeof window.setStudioMode === 'function') {
-                    // #region agent log
-                    fetch('http://127.0.0.1:7242/ingest/182f97d8-2a97-4944-a32e-62daaabec7d7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'creative.html:3711',message:'Setting studio mode to articles',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-                    // #endregion
                     window.setStudioMode('articles');
                 }
             } else {
@@ -7577,9 +7568,6 @@
         }
         
         async function renderStoryboard(session) {
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/182f97d8-2a97-4944-a32e-62daaabec7d7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'creative.html:7570',message:'renderStoryboard called',data:{hasSession:!!session,sessionId:session?.id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-            // #endregion
             const storyboardRow = document.getElementById('storyboard-row');
             const storyboardEl = document.getElementById('storyboard');
             
