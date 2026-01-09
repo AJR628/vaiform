@@ -823,9 +823,12 @@ export async function generateBeatCaptionPreview(beatId, text, style) {
     // Import offscreen measurement function
     const { measureBeatCaptionGeometry } = await import('./caption-overlay.js');
     
+    // Defense-in-depth: Extract style-only fields (strip any dangerous fields)
+    const { extractStyleOnly } = await import('./caption-style-helper.js');
+    const explicitStyle = extractStyleOnly(style || {});
+    
     // Create measureStyle for DOM measurement (explicitStyle merged with measurement defaults)
     // explicitStyle: ONLY user/session overrides (empty object if no session overrides)
-    const explicitStyle = style || {};
     const measureStyle = { ...MEASURE_DEFAULTS, ...explicitStyle };
     
     // Measure geometry using offscreen DOM (reuses SSOT logic)

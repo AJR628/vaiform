@@ -857,6 +857,13 @@
                         </div>
                     </div>
                 </div>
+                
+                <!-- Apply Caption Settings Button -->
+                <div class="mt-4">
+                    <button id="apply-caption-style-btn" type="button" class="w-full px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded text-base font-medium text-white">
+                        Apply Caption Settings
+                    </button>
+                </div>
                             </div>
                         </div>
                     </div>
@@ -3680,6 +3687,14 @@
         }
         
         // --- robust page bootstrap (run after DOM is ready)
+        // Wire Apply Caption Settings button
+        document.addEventListener('DOMContentLoaded', () => {
+            const applyBtn = document.getElementById('apply-caption-style-btn');
+            if (applyBtn) {
+                applyBtn.addEventListener('click', applyCaptionStyle);
+            }
+        });
+        
         document.addEventListener('DOMContentLoaded', async () => {
             // [STUDIO] Hide legacy quote/asset studio UI if disabled
             if (!ENABLE_LEGACY_STUDIO) {
@@ -6811,8 +6826,10 @@
                 // Trigger debounced preview (behind feature flag) - schedule after DOM update
                 if (window.BEAT_PREVIEW_ENABLED) {
                     // explicitStyle: ONLY user/session overrides (empty object if none)
-                    const explicitStyle = window.currentStorySession.overlayCaption || window.currentStorySession.captionStyle || {};
+                    const rawStyle = window.currentStorySession.overlayCaption || window.currentStorySession.captionStyle || {};
                     requestAnimationFrame(async () => {
+                        const { extractStyleOnly } = await import('./js/caption-style-helper.js');
+                        const explicitStyle = extractStyleOnly(rawStyle);
                         const m = window.__beatPreviewModule || await window.__beatPreviewModulePromise;
                         if (m) {
                             m.generateBeatCaptionPreviewDebounced(String(sentenceIndex), text, explicitStyle);
@@ -7104,6 +7121,11 @@
          * @param {object} prevSession - Previous window.currentStorySession (may be null)
          */
         function preserveCaptionOverrides(nextSession, prevSession) {
+            // CRITICAL: Only preserve if same session (prevent style bleed)
+            if (!prevSession || nextSession?.id !== prevSession?.id) {
+                return; // Different session - don't preserve
+            }
+            
             const hasOwn = Object.prototype.hasOwnProperty;
             for (const key of ['overlayCaption', 'captionStyle']) {
                 const nextHasNonEmpty =
@@ -7120,6 +7142,104 @@
                 if (!nextHasNonEmpty && prevHasNonEmpty) {
                     nextSession[key] = prevSession[key];
                 }
+            }
+        }
+        
+        /**
+         * Apply caption style settings to current session
+         * Extracts style-only fields from UI and POSTs to server
+         */
+        async function applyCaptionStyle() {
+            try {
+                // Ensure session exists
+                if (!window.currentStorySession || !window.currentStorySession.id) {
+                    showToast("No active session. Please create or load a story first.");
+                    return;
+                }
+                
+                const sessionId = window.currentStorySession.id;
+                
+                // Build raw style from UI controls (reuse existing captionStyle builder logic)
+                const sizePx = 54; // Default - will be overridden by server SSOT
+                const opacityPct = parseInt(document.getElementById('caption-opacity')?.value || '85', 10);
+                const placement = (document.getElementById('caption-placement')?.value || 'bottom').toLowerCase();
+                const selectedWeight = document.getElementById('caption-weight')?.value || 'bold';
+                
+                const placementToServerFormat = (uiPlacement) => {
+                    const mapping = {
+                        'top': { placement: 'top', yPct: 0.10 },
+                        'middle': { placement: 'center', yPct: 0.50 },
+                        'bottom': { placement: 'bottom', yPct: 0.90 }
+                    };
+                    return mapping[uiPlacement] || mapping['bottom'];
+                };
+                
+                const placementData = placementToServerFormat(placement);
+                
+                const fontMapping = {
+                    'system': { family: 'DejaVu Sans', weightCss: 'normal' },
+                    'bold': { family: 'DejaVu Sans', weightCss: 'bold' },
+                    'cinematic': { family: 'DejaVu Sans', weightCss: 'bold' },
+                    'minimal': { family: 'DejaVu Sans', weightCss: 'normal' }
+                };
+                
+                const selectedFont = document.getElementById('caption-font')?.value || 'system';
+                const fontConfig = fontMapping[selectedFont] || fontMapping['system'];
+                
+                const rawStyle = {
+                    fontFamily: fontConfig.family,
+                    weightCss: fontConfig.weightCss,
+                    fontPx: sizePx,
+                    color: "#FFFFFF",
+                    opacity: opacityPct / 100,
+                    placement: placementData.placement,
+                    yPct: placementData.yPct
+                };
+                
+                // Extract style-only fields (safety guard)
+                const { extractStyleOnly } = await import('./js/caption-style-helper.js');
+                const styleOnly = extractStyleOnly(rawStyle);
+                
+                // Avoid writing empty objects
+                if (Object.keys(styleOnly).length === 0) {
+                    showToast("No caption style settings to save.");
+                    return;
+                }
+                
+                // POST to server
+                const { apiFetch } = await import('./api.mjs');
+                const response = await apiFetch('/story/update-caption-style', {
+                    method: 'POST',
+                    body: {
+                        sessionId,
+                        overlayCaption: styleOnly
+                    }
+                });
+                
+                if (!response.success) {
+                    throw new Error(response.error || response.detail || 'Failed to update caption style');
+                }
+                
+                // Update local session object (optimistic update)
+                if (response.data && response.data.overlayCaption) {
+                    window.currentStorySession.overlayCaption = response.data.overlayCaption;
+                }
+                
+                showToast("Caption settings applied successfully!");
+                
+                // Refresh beat previews with new style
+                if (window.BEAT_PREVIEW_ENABLED && window.currentStorySession) {
+                    const sentences = window.currentStorySession.story?.sentences || [];
+                    if (sentences.length > 0) {
+                        const explicitStyle = window.currentStorySession.overlayCaption || window.currentStorySession.captionStyle || {};
+                        const { extractStyleOnly: extractStyleOnlyRefresh } = await import('./js/caption-style-helper.js');
+                        const safeStyle = extractStyleOnlyRefresh(explicitStyle);
+                        BeatPreviewManager.applyAllPreviews(sentences, safeStyle);
+                    }
+                }
+            } catch (err) {
+                console.error("[apply-caption-style] error:", err);
+                showToast("Failed to apply caption settings. Please try again.");
             }
         }
         
@@ -7579,7 +7699,9 @@
             // Apply beat previews (behind feature flag)
             if (window.BEAT_PREVIEW_ENABLED) {
                 // explicitStyle: ONLY user/session overrides (empty object if none)
-                const explicitStyle = session.overlayCaption || session.captionStyle || {};
+                const rawStyle = session.overlayCaption || session.captionStyle || {};
+                const { extractStyleOnly } = await import('./js/caption-style-helper.js');
+                const explicitStyle = extractStyleOnly(rawStyle);
                 BeatPreviewManager.applyAllPreviews(sentences, explicitStyle);
             }
         }
@@ -8331,8 +8453,10 @@
                 // Trigger debounced preview (behind feature flag) - schedule after DOM update
                 if (window.BEAT_PREVIEW_ENABLED) {
                     // explicitStyle: ONLY user/session overrides (empty object if none)
-                    const explicitStyle = window.currentStorySession.overlayCaption || window.currentStorySession.captionStyle || {};
+                    const rawStyle = window.currentStorySession.overlayCaption || window.currentStorySession.captionStyle || {};
                     requestAnimationFrame(async () => {
+                        const { extractStyleOnly } = await import('./js/caption-style-helper.js');
+                        const explicitStyle = extractStyleOnly(rawStyle);
                         const m = window.__beatPreviewModule || await window.__beatPreviewModulePromise;
                         if (m) {
                             m.generateBeatCaptionPreviewDebounced(identifier, newText, explicitStyle);
