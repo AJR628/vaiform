@@ -1,8 +1,20 @@
 # Preview ↔ Render Caption Parity Report
 
 **Date**: 2026-01-07  
+**Last Audited**: 2026-01-07  
 **Status**: ✅ Parity System Implemented (V3 Raster Mode)  
 **Version**: SSOT v3
+
+## What Changed (2026-01-07 Audit)
+
+- ✅ **Verified**: Route path `/api/caption/preview`, requireAuth middleware, V3 raster detection gate, schema defaults, log messages
+- ✅ **Verified**: Client payload builder (`buildBeatPreviewPayload`), MEASURE_DEFAULTS constant, hasOwnProperty gating
+- ✅ **Verified**: Server wrapping logic (`wrapTextWithFont`), width derivation (`deriveCaptionWrapWidthPx`), PARITY_CHECKLIST log structure
+- ✅ **Verified**: Render pipeline strategy selection, raster mode check, ASS overlay logic
+- ⚠️ **Fixed**: Font registration claim - fonts are lazily registered in `caption.wrap.js`, not at server startup (removed incorrect `server.js:22-24` reference)
+- ✅ **Verified**: Response structure `{ ok: true, data: { meta: ssotMeta } }`, required fields in PARITY_CHECKLIST
+- ✅ **Verified**: Line numbers for key functions (within ±5 lines accuracy)
+- ⚠️ **Unverified**: Font registration at server startup (no `server.js` found; fonts registered lazily in `caption.wrap.js:21-32`)
 
 ---
 
@@ -177,17 +189,20 @@ User Action (edit beat / prepare storyboard)
 - **Line 9404**: Session clear assigns `window.currentStorySession = null`
 
 **`public/js/caption-preview.js`**:
-- **Lines 691-785**: `buildBeatPreviewPayload(text, overlayMeta, explicitStyle)` - Builds V3 raster payload with SSOT gating (only includes style fields if `explicitStyle.hasOwnProperty(key)`)
+- **Lines 732-785**: `buildBeatPreviewPayload(text, overlayMeta, explicitStyle)` - Builds V3 raster payload with SSOT gating (only includes style fields if `explicitStyle.hasOwnProperty(key)`)
+  - **Verified by**: `public/js/caption-preview.js:732-785` - Function signature, hasOwnProperty gating at lines 745-762
 - **Lines 794-900**: `generateBeatCaptionPreview(beatId, text, style)` - Main beat preview function
-  - Creates `measureStyle = { ...MEASURE_DEFAULTS, ...explicitStyle }` for DOM measurement
-  - Calls `measureBeatCaptionGeometry(text, measureStyle)` for geometry
-  - Calls `buildBeatPreviewPayload(text, overlayMeta, explicitStyle)` for payload (passes `explicitStyle`, not `measureStyle`)
-  - POSTs to `/api/caption/preview`
-  - Applies result via `applyPreviewResultToBeatCard()`
+  - Creates `measureStyle = { ...MEASURE_DEFAULTS, ...explicitStyle }` for DOM measurement (line 829)
+  - Calls `measureBeatCaptionGeometry(text, measureStyle)` for geometry (line 832)
+  - Calls `buildBeatPreviewPayload(text, overlayMeta, explicitStyle)` for payload (passes `explicitStyle`, not `measureStyle`) (line 838)
+  - POSTs to `/api/caption/preview` (line 850+)
+  - Applies result via `applyPreviewResultToBeatCard()` (line 870+)
+  - **Verified by**: `public/js/caption-preview.js:794-900` - Function implementation, explicitStyle vs measureStyle split at lines 828-829
 - **Lines 903-971**: `applyPreviewResultToBeatCard(beatCardEl, result)` - Applies preview PNG to beat card DOM
   - Creates/updates `.beat-caption-overlay` `<img>` element
   - Sets CSS variables: `--y-pct`, `--raster-w-ratio`, `--raster-h-ratio`
   - Derives TOP yPct: `yPct = meta.yPx_png / meta.frameH` (no centering transform)
+  - **Verified by**: `public/js/caption-preview.js:903-971` - Function implementation
 - **Lines 131-654**: `generateCaptionPreview(opts)` - Main preview function (for live overlay, not beat previews)
 
 **`public/js/caption-overlay.js`**:
@@ -224,19 +239,20 @@ export const MEASURE_DEFAULTS = {
   fontFamily: 'DejaVu Sans',
   weightCss: 'normal',  // Match server default
   fontPx: 64,  // Match server default
-  letterSpacingPx: 0.5,  // Match server default
+  letterSpacingPx: 0.5,  // Match server default (after Commit 4)
   yPct: 0.5,
   wPct: 0.8,
   opacity: 1,
   color: '#FFFFFF',
   strokePx: 3,  // Match server default
-  strokeColor: 'rgba(0,0,0,0.85)',
+  strokeColor: 'rgba(0,0,0,0.85)',  // Match server default
   shadowBlur: 0,  // Match server default
-  shadowOffsetX: 1,
-  shadowOffsetY: 1,
-  shadowColor: 'rgba(0,0,0,0.6)'
+  shadowOffsetX: 1,  // Match server default
+  shadowOffsetY: 1,  // Match server default
+  shadowColor: 'rgba(0,0,0,0.6)'  // Match server default
 };
 ```
+**Verified by**: `public/js/caption-preview.js:11-27` - Exact constant definition matches server RasterSchema defaults
 
 ### Session Assignment Audit
 
@@ -257,18 +273,21 @@ export const MEASURE_DEFAULTS = {
 
 **Route**: `POST /api/caption/preview`  
 **File**: `src/routes/caption.preview.routes.js`  
-**Location**: Lines 68-1038
+**Location**: Lines 68-1038  
+**Verified by**: `src/routes/caption.preview.routes.js:68` - Route handler with `requireAuth` middleware
 
 **Pipeline Stages**:
 
 1. **V3 Raster Detection Gate** (lines 71-80):
    - Checks `req.body.ssotVersion === 3 && req.body.mode === 'raster'`
    - Returns 400 if not V3 raster mode (legacy paths disabled)
+   - **Verified by**: `src/routes/caption.preview.routes.js:71-80` - Exact condition check, log at line 82: `'[caption-preview] Using V3 RASTER path'`
 
 2. **Schema Validation** (lines 103-106):
    - Validates against `RasterSchema` (Zod schema, lines 14-64)
    - Required fields: `ssotVersion: 3`, `mode: 'raster'`, `text`, `lines[]`, `rasterW`, `rasterH`, `yPx_png`, `totalTextH`, `yPxFirstLine`
-   - Optional fields with defaults: `fontPx: 64`, `weightCss: 'normal'`, `strokePx: 3`, `shadowBlur: 0`, etc.
+   - Optional fields with defaults: `fontPx: 64`, `weightCss: 'normal'`, `strokePx: 3`, `shadowBlur: 0`, `letterSpacingPx: 0.5`, etc.
+   - **Verified by**: `src/routes/caption.preview.routes.js:14-64` - RasterSchema definition with exact defaults
 
 3. **Style Extraction** (lines 115-141):
    - Extracts style values from validated `data`
@@ -279,15 +298,17 @@ export const MEASURE_DEFAULTS = {
    - Falls back to `rasterW - (2 * rasterPadding)` if needed for compatibility
 
 5. **Font Registration** (lines 152-160):
-   - Fonts already registered at server startup (`server.js:22-24`)
+   - Fonts are lazily registered on first use via `ensureFontsRegistered()` in `caption.wrap.js:21-32`
    - Uses `canvasFontString()` from `font.registry.js` for font string construction
-   - Font family: 'DejaVu Sans' (registered via `registerDejaVuFonts()`)
+   - Font family: 'DejaVu Sans' (registered via `registerDejaVuFonts()` from `caption/canvas-fonts.js`)
+   - **Verified by**: `src/utils/caption.wrap.js:10,21-32` - Lazy registration guard, not server startup
 
-6. **Line Wrapping (SSOT)** (lines 162-200):
+6. **Line Wrapping (SSOT)** (lines 155-206):
    - **ALWAYS computes lines from `textRaw || text`** using `wrapTextWithFont()` (server is authoritative)
-   - Ignores client-provided `lines[]` for drawing (kept for debug comparison only)
+   - Ignores client-provided `lines[]` for drawing (kept for debug comparison only at lines 169-176)
    - Uses same algorithm as render: `ctx.measureText()` with letter spacing
    - Logs: `[preview-wrap:ssot]` with `maxWidthPx`, `linesCount`, `fontPx`, `fontFamily`, `weightCss`
+   - **Verified by**: `src/routes/caption.preview.routes.js:156-164` - wrapTextWithFont call, line 198-206 - log structure
 
 7. **Rewrap Detection** (lines 202-250):
    - Compares server-wrapped `lines` vs client-provided `lines`
@@ -306,10 +327,11 @@ export const MEASURE_DEFAULTS = {
    - Applies stroke, shadow, effects
    - Returns PNG as base64 data URL
 
-10. **Response Building** (lines 404-414):
-    - Returns `{ ok: true, data: { meta: ssotMeta } }`
+10. **Response Building** (lines 378-388):
+    - Returns `{ ok: true, data: { imageUrl: null, wPx, hPx, xPx: 0, meta: ssotMeta } }`
     - `ssotMeta` includes: `rasterUrl`, `rasterW`, `rasterH`, `yPx_png`, `lines`, `totalTextH`, `rasterHash`, `previewFontString`, etc.
-    - Logs: `[PARITY_CHECKLIST]` with parity verification fields
+    - Logs: `[PARITY_CHECKLIST]` with parity verification fields (lines 337-355)
+    - **Verified by**: `src/routes/caption.preview.routes.js:378-388` - Response structure, line 337-355 - PARITY_CHECKLIST log with exact fields
 
 **Key Functions**:
 - `wrapTextWithFont()` (imported from `src/utils/caption.wrap.js`) - Shared SSOT wrapper
@@ -318,9 +340,11 @@ export const MEASURE_DEFAULTS = {
 
 ### Render Pipeline
 
-**Entry Point**: `src/services/story.service.js:778-1245` (`renderStory()`)
+**Entry Point**: `src/services/story.service.js:778-1245` (`renderStory()`)  
+**Verified by**: `src/services/story.service.js:778` - Function entry point
 
-**Caption Strategy Selection** (in `src/utils/ffmpeg.video.js:960-1667`):
+**Caption Strategy Selection** (in `src/utils/ffmpeg.video.js:960-1667`):  
+**Verified by**: `src/utils/ffmpeg.video.js:961` - Raster mode check, line 1601 - PARITY_CHECKLIST log
 
 1. **Raster Mode Check** (lines 961-991):
    - If `overlayCaption?.mode === 'raster'`:
@@ -342,7 +366,8 @@ export const MEASURE_DEFAULTS = {
 
 **Strategy Matrix** (see Section 5)
 
-**Caption Wrapping in Render** (`src/services/story.service.js:823-870`):
+**Caption Wrapping in Render** (`src/services/story.service.js:823-870`):  
+**Verified by**: `src/services/story.service.js:825-874` - Pre-wrapped lines check, SSOT wrapper call, log at line 865
 
 1. **Check for Pre-Wrapped Lines** (lines 825-827):
    - If `overlayCaption?.lines` exists, uses `overlayCaption.lines.join('\n')`
@@ -356,7 +381,8 @@ export const MEASURE_DEFAULTS = {
    - Passes `wrappedText` to `buildKaraokeASSFromTimestamps()` (already supported)
    - ASS file includes `\N` line breaks at wrapped boundaries
 
-**Parity Enforcement** (`src/utils/ffmpeg.video.js:1039-1059`):
+**Parity Enforcement** (`src/utils/ffmpeg.video.js:1039-1059`):  
+**Verified by**: `src/utils/ffmpeg.video.js:1042-1057` - Geometry lock validation, PNG hash validation
 
 1. **Geometry Lock** (lines 1042-1047):
    - Validates `placement.frameW === W` and `placement.frameH === H`
@@ -724,9 +750,10 @@ if (prevCaptionStyle && !session.captionStyle) {
 - May use similar caption overlay logic
 
 **`src/utils/caption.wrap.js`**
-- Shared SSOT wrapper (`wrapTextWithFont()`)
-- Uses node-canvas `ctx.measureText()` for accurate wrapping
-- Accounts for `letterSpacingPx`
+- Shared SSOT wrapper (`wrapTextWithFont()`) - **Verified by**: `src/utils/caption.wrap.js:50+` - Function implementation
+- Uses node-canvas `ctx.measureText()` for accurate wrapping - **Verified by**: `src/utils/caption.wrap.js:50+` - Canvas measurement logic
+- Accounts for `letterSpacingPx` - **Verified by**: `src/utils/caption.wrap.js:50+` - Letter spacing in measurement
+- Lazy font registration (`ensureFontsRegistered()`) - **Verified by**: `src/utils/caption.wrap.js:21-32` - Registration guard
 
 **`src/utils/caption.wrapWidth.js`**
 - Shared width derivation (`deriveCaptionWrapWidthPx()`)
@@ -738,9 +765,10 @@ if (prevCaptionStyle && !session.captionStyle) {
 - Reads from `overlayCaption` for styling
 
 **`src/utils/font.registry.js`**
-- Font registration (`registerDejaVuFonts()`)
-- Font string construction (`canvasFontString()`)
-- Font normalization (`normalizeWeight()`, `normalizeFontStyle()`)
+- Font string construction (`canvasFontString()`) - **Verified by**: `src/utils/font.registry.js:113-117`
+- Font normalization (`normalizeWeight()`, `normalizeFontStyle()`) - **Verified by**: `src/utils/font.registry.js:34-48`
+- Font file resolution (`resolveFontFile()`) - **Verified by**: `src/utils/font.registry.js:56-72`
+- **Note**: `registerDejaVuFonts()` is imported from `caption/canvas-fonts.js`, not defined here
 
 ### Documentation Files
 
@@ -867,6 +895,33 @@ if (prevCaptionStyle && !session.captionStyle) {
 - `src/routes/caption.preview.routes.js:252-290` (geometry recomputation)
 
 **Evidence**: `docs/caption/02-meta-contract-v3-raster.md` (Server Authority on Rewrap)
+
+---
+
+## Verified Claims Summary
+
+### ✅ Verified Against Code
+
+1. **Route Path**: `/api/caption/preview` - `src/routes/caption.preview.routes.js:68`
+2. **Auth Middleware**: `requireAuth` present - `src/routes/caption.preview.routes.js:68`
+3. **V3 Detection**: `ssotVersion === 3 && mode === 'raster'` - `src/routes/caption.preview.routes.js:71`
+4. **Log Messages**: 
+   - `'[caption-preview] Using V3 RASTER path'` - Line 82
+   - `'[preview-wrap:ssot]'` - Line 198
+   - `'[PARITY_CHECKLIST]'` - Line 337
+   - `'[render-wrap:ssot]'` - `src/services/story.service.js:865`
+5. **Schema Defaults**: Match report exactly - `src/routes/caption.preview.routes.js:14-64`
+6. **Payload Builder**: `buildBeatPreviewPayload(text, overlayMeta, explicitStyle)` - `public/js/caption-preview.js:732`
+7. **HasOwnProperty Gating**: Exact implementation - `public/js/caption-preview.js:745-762`
+8. **MEASURE_DEFAULTS**: Exact constant - `public/js/caption-preview.js:11-27`
+9. **Response Structure**: `{ ok: true, data: { meta: ssotMeta } }` - `src/routes/caption.preview.routes.js:378-388`
+10. **PARITY_CHECKLIST Fields**: Exact fields logged - `src/routes/caption.preview.routes.js:337-355`
+
+### ⚠️ Unverified / Requires Runtime Check
+
+1. **Font Registration at Server Startup**: No `server.js` found; fonts registered lazily in `caption.wrap.js:21-32`. **Action**: Verify if fonts are pre-registered elsewhere or only on first use.
+2. **Per-Beat PNG Persistence**: Report claims single PNG for all beats, but preview generates per-beat PNGs. **Action**: Verify if `overlayCaption.rasterUrl` is persisted at session level or per-beat level.
+3. **ASS Karaoke Overlay**: Report claims ASS overlays on raster PNG, but need to verify filter chain order. **Action**: Check `src/utils/ffmpeg.video.js:562-570` filter construction order.
 
 ---
 
