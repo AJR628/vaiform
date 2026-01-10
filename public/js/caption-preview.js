@@ -1166,7 +1166,11 @@ export function createCaptionOverlay(captionData, container, scaling = {}) {
   // SSOT: Use server-computed positioning directly
   const overlayV2 = detectOverlayV2();
   const xPct = 0.5; // center horizontally for preview image
-  const yPct = Number.isFinite(captionData.meta?.yPct) ? captionData.meta.yPct : 0.5;
+  // V3 raster mode: use yPx_png as authoritative (TOP-anchored)
+  // Derive yPct from yPx_png to match server calculation (same as beat preview line 996)
+  const yPct = Number.isFinite(captionData.meta?.yPx_png) && Number.isFinite(captionData.meta?.frameH)
+    ? (captionData.meta.yPx_png / captionData.meta.frameH)
+    : (Number.isFinite(captionData.meta?.yPct) ? captionData.meta.yPct : 0.5);
   const totalTextH = captionData.meta?.totalTextH || 0;
   const align = 'center';
   const internalPadding = captionData.meta?.internalPadding || 0;
