@@ -750,7 +750,7 @@
         </div>
 
         <!-- Caption Style Section (Hidden during transition) -->
-        <div class="content-box bg-white dark:bg-gray-800 rounded-lg p-6 space-y-4 border border-gray-200 dark:border-gray-600" style="display: none;">
+        <div id="caption-style-section" class="content-box bg-white dark:bg-gray-800 rounded-lg p-6 space-y-4 border border-gray-200 dark:border-gray-600" style="display: none;">
             <h2 class="text-xl font-semibold text-gray-900 dark:text-white">Caption Style</h2>
             
             <!-- Overlay Mode Toggle -->
@@ -1029,6 +1029,8 @@
                     <div id="storyboard-scroll" class="storyboard-scroll-wrapper w-full">
                         <div id="storyboard-row" class="flex gap-3 pb-2"></div>
                     </div>
+                    <!-- Caption Style mount point -->
+                    <div id="caption-style-mount"></div>
                 </div>
                 
                 <!-- Beat Focus Preview Modal -->
@@ -3825,6 +3827,31 @@
               renderDraftStoryboard();
               updateRenderArticleButtonState();
           }
+        });
+
+        // Move Caption Style section below storyboard when DOM is ready
+        // Isolated listener ensures it runs even if main DOMContentLoaded handler throws
+        document.addEventListener('DOMContentLoaded', function ensureCaptionStyleMounted() {
+            try {
+                const mount = document.getElementById('caption-style-mount');
+                const section = document.getElementById('caption-style-section');
+                
+                if (!mount || !section) {
+                    console.warn('[caption-style] Mount point or section not found');
+                    return;
+                }
+                
+                // Only move if not already in mount (avoid duplicate moves)
+                if (section.parentElement !== mount) {
+                    // Remove inline display:none (section will inherit visibility from storyboard)
+                    section.style.display = '';
+                    mount.appendChild(section);
+                    console.log('[caption-style] Moved Caption Style section below storyboard');
+                }
+            } catch (e) {
+                console.error('[caption-style] Failed to move section:', e);
+                // Non-fatal: section remains in original location, just hidden
+            }
         });
 
         // Update render button state based on validation
