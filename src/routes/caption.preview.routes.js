@@ -7,6 +7,7 @@ import { bufferToTmp } from '../utils/tmp.js';
 import { canvasFontString, normalizeWeight, normalizeFontStyle } from '../utils/font.registry.js';
 import { wrapTextWithFont } from '../utils/caption.wrap.js';
 import { deriveCaptionWrapWidthPx } from '../utils/caption.wrapWidth.js';
+import { compileCaptionSSOT } from '../captions/compile.js';
 import requireAuth from '../middleware/requireAuth.js';
 const { createCanvas } = pkg;
 
@@ -112,58 +113,59 @@ router.post("/caption/preview", express.json({ limit: "200kb" }), requireAuth, a
       return res.status(400).json({ ok: false, reason: "EMPTY_TEXT", detail: "Caption text cannot be empty" });
     }
     
-    // Extract style values
-    const fontPx = data.fontPx;
-    const lineSpacingPx = data.lineSpacingPx;
-    const letterSpacingPx = data.letterSpacingPx;
-    const weightCss = data.weightCss;
-    
-    // Log effective style after schema defaults applied
-    // Add source tracking (use Object.prototype.hasOwnProperty.call for safety)
-    console.log('[preview-style:effective]', {
+    // Extract style fields from parsed payload (Zod already applied defaults)
+    const styleInput = {
       fontPx: data.fontPx,
+      letterSpacingPx: data.letterSpacingPx,
       weightCss: data.weightCss,
+      fontStyle: data.fontStyle,
+      fontFamily: data.fontFamily,
+      lineSpacingPx: data.lineSpacingPx,
+      color: data.color,
+      opacity: data.opacity,
       strokePx: data.strokePx,
+      strokeColor: data.strokeColor,
       shadowBlur: data.shadowBlur,
       shadowOffsetX: data.shadowOffsetX,
       shadowOffsetY: data.shadowOffsetY,
-      letterSpacingPx: data.letterSpacingPx,
-      // Payload flags: indicate whether fields were present in request body
-      hasFontPxInPayload: Object.prototype.hasOwnProperty.call(req.body, 'fontPx'),
-      hasWeightCssInPayload: Object.prototype.hasOwnProperty.call(req.body, 'weightCss'),
-      hasStrokePxInPayload: Object.prototype.hasOwnProperty.call(req.body, 'strokePx'),
-      hasShadowBlurInPayload: Object.prototype.hasOwnProperty.call(req.body, 'shadowBlur'),
-      hasShadowOffsetXInPayload: Object.prototype.hasOwnProperty.call(req.body, 'shadowOffsetX'),
-      hasShadowOffsetYInPayload: Object.prototype.hasOwnProperty.call(req.body, 'shadowOffsetY'),
-      hasLetterSpacingPxInPayload: Object.prototype.hasOwnProperty.call(req.body, 'letterSpacingPx')
-    });
-    const fontStyle = data.fontStyle || 'normal';
-    const fontFamily = data.fontFamily || 'DejaVu Sans';
+      shadowColor: data.shadowColor,
+      textAlign: data.textAlign,
+      textTransform: data.textTransform,
+      wPct: data.wPct,
+      internalPaddingPx: data.internalPaddingPx ?? data.rasterPadding
+    };
     
-    // Derive canonical wrap width (SSOT)
-    const frameW = 1080; // Server canonical
-    const wPct = data.wPct ?? (data.rasterW ? data.rasterW / frameW : 0.8);
-    const internalPaddingPx = data.internalPaddingPx ?? data.rasterPadding ?? 24;
-    const { maxWidthPx, pad } = deriveCaptionWrapWidthPx({
-      frameW,
-      wPct,
-      internalPaddingPx,
-      rasterW: data.rasterW, // Allow fallback if provided
-      rasterPaddingPx: data.rasterPadding
+    // ✅ Use compiler for SSOT
+    const meta = compileCaptionSSOT({
+      textRaw: textRaw || text,
+      style: styleInput,
+      frameW: data.frameW,
+      frameH: data.frameH
     });
     
-    // Compute canonical lines ALWAYS from textRaw/text (server SSOT)
-    const wrapResult = wrapTextWithFont(textRaw || text, {
+    // Extract values from compiler output
+    const lines = meta.lines;
+    const totalTextH = meta.totalTextH;
+    const maxWidthPx = meta.maxWidthPx;
+    const effectiveStyle = meta.effectiveStyle;
+    
+    // Use compiler's effectiveStyle values
+    const fontPx = effectiveStyle.fontPx;
+    const lineSpacingPx = effectiveStyle.lineSpacingPx;
+    const letterSpacingPx = effectiveStyle.letterSpacingPx;
+    const weightCss = effectiveStyle.weightCss;
+    const fontStyle = effectiveStyle.fontStyle;
+    const fontFamily = effectiveStyle.fontFamily;
+    
+    // Log SSOT compiler output
+    console.log('[caption:ssot:preview]', {
+      styleHash: meta.styleHash,
+      wrapHash: meta.wrapHash,
+      linesCount: lines.length,
       fontPx,
-      weightCss,
-      fontStyle,
-      fontFamily,
-      maxWidthPx,
       letterSpacingPx,
-      lineSpacingPx
+      maxWidthPx
     });
-    const lines = wrapResult.lines;
-    const totalTextH = wrapResult.totalTextH;
     
     // DEBUG: Compare client lines vs server lines (diagnostic only, doesn't affect output)
     const clientLines = data.lines || [];
@@ -201,8 +203,8 @@ router.post("/caption/preview", express.json({ limit: "200kb" }), requireAuth, a
       fontPx,
       fontFamily,
       weightCss,
-      wPct,
-      pad
+      wPct: effectiveStyle.wPct,
+      pad: effectiveStyle.internalPaddingPx
     });
     
     // Validate required fields
@@ -384,7 +386,9 @@ router.post("/caption/preview", express.json({ limit: "200kb" }), requireAuth, a
         xPx: 0,
         // yPx removed - use meta.yPx_png instead (no ambiguous top-level field)
         meta: ssotMeta,
-      }
+      },
+      // ✅ Return compiler meta for client to save
+      meta: meta
     });
     
     // Legacy path gate - block legacy code path

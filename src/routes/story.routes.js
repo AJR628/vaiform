@@ -221,6 +221,104 @@ r.post("/update-caption-style", async (req, res) => {
   }
 });
 
+// POST /api/story/update-caption-meta - Save captionMeta for session
+r.post("/update-caption-meta", async (req, res) => {
+  try {
+    const parsed = z.object({
+      sessionId: z.string().min(3),
+      beatIndex: z.number().int().min(0),  // ✅ REQUIRED: Each beat has different text, meta must be per-beat
+      captionMeta: z.object({
+        lines: z.array(z.string()).min(1).max(20),  // ✅ Cap line count (prevent abuse)
+        effectiveStyle: z.object({}).passthrough(),  // Will be sanitized server-side
+        styleHash: z.string().optional(),  // ✅ Server recomputes (don't trust client)
+        wrapHash: z.string().optional(),   // ✅ Server recomputes (don't trust client)
+        maxWidthPx: z.number().min(0).max(2000),
+        totalTextH: z.number().min(0).max(5000)
+        // ... other meta fields
+      })
+    }).safeParse(req.body);
+    
+    if (!parsed.success) {
+      return res.status(400).json({ success: false, error: "INVALID_INPUT", detail: parsed.error.flatten() });
+    }
+    
+    const { sessionId, beatIndex, captionMeta: clientMeta } = parsed.data;
+    
+    // Load session to get canonical beat text
+    const session = await getStorySession({ uid: req.user.uid, sessionId });
+    
+    if (!session) {
+      return res.status(404).json({ success: false, error: "SESSION_NOT_FOUND" });
+    }
+    
+    // ✅ CRITICAL: Fetch canonical textRaw from session.story.sentences[beatIndex]
+    const sentences = session.story?.sentences || [];
+    if (beatIndex < 0 || beatIndex >= sentences.length) {
+      return res.status(400).json({ success: false, error: "INVALID_BEAT_INDEX", detail: `beatIndex ${beatIndex} out of range (0-${sentences.length - 1})` });
+    }
+    
+    const textRaw = sentences[beatIndex];  // ✅ Canonical source (not reconstructed from lines)
+    
+    // ✅ SECURITY: Sanitize effectiveStyle server-side (don't trust client)
+    const sanitizedStyle = extractStyleOnly(clientMeta.effectiveStyle || {});
+    
+    // ✅ SECURITY: Recompute meta server-side using canonical textRaw
+    const { compileCaptionSSOT } = await import('../captions/compile.js');
+    const recomputedMeta = compileCaptionSSOT({
+      textRaw,  // ✅ Use canonical text from session, not reconstructed from lines
+      style: sanitizedStyle,
+      frameW: 1080,
+      frameH: 1920
+    });
+    
+    // ✅ CRITICAL: Verify lines match compiler output (prevents stale/spoofed meta)
+    const linesMatch = recomputedMeta.lines.length === clientMeta.lines.length &&
+      recomputedMeta.lines.every((line, i) => line === clientMeta.lines[i]);
+    
+    if (!linesMatch) {
+      console.warn('[update-caption-meta] Lines mismatch:', {
+        beatIndex,
+        clientLines: clientMeta.lines,
+        serverLines: recomputedMeta.lines,
+        textRaw: textRaw.substring(0, 50) + '...'
+      });
+      return res.status(409).json({ 
+        success: false, 
+        error: "STALE_META", 
+        detail: "Caption meta lines do not match server computation. Preview may be stale. Please regenerate preview."
+      });
+    }
+    
+    // ✅ Build server-verified meta (uses server-computed values)
+    // ✅ STALENESS DETECTION: Store textHash for render-time staleness checks
+    const cryptoModule = await import('crypto');
+    const textHash = cryptoModule.createHash('sha256').update(textRaw.trim().toLowerCase()).digest('hex').slice(0, 16);
+    
+    const serverMeta = {
+      lines: recomputedMeta.lines,  // ✅ Use server-computed lines (verified match)
+      effectiveStyle: recomputedMeta.effectiveStyle,  // Server-sanitized
+      styleHash: recomputedMeta.styleHash,  // Server-computed
+      wrapHash: recomputedMeta.wrapHash,    // Server-computed
+      textHash: textHash,  // ✅ Hash of canonical textRaw (for staleness detection)
+      maxWidthPx: recomputedMeta.maxWidthPx,
+      totalTextH: recomputedMeta.totalTextH
+    };
+    
+    // ✅ Store per-beat meta (required: each beat has different text)
+    if (!session.beats) session.beats = [];
+    if (!session.beats[beatIndex]) session.beats[beatIndex] = {};
+    session.beats[beatIndex].captionMeta = serverMeta;
+    
+    session.updatedAt = new Date().toISOString();
+    await saveStorySession({ uid: req.user.uid, sessionId, data: session });
+    
+    return res.json({ success: true, data: { captionMeta: serverMeta } });
+  } catch (e) {
+    console.error("[story][update-caption-meta] error:", e);
+    return res.status(500).json({ success: false, error: "UPDATE_CAPTION_META_FAILED", detail: e?.message });
+  }
+});
+
 // POST /api/story/plan - Generate visual plan
 r.post("/plan", enforceScriptDailyCap(300), async (req, res) => {
   try {

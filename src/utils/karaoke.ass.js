@@ -251,6 +251,23 @@ export function convertOverlayToASSStyle(overlayCaption, width = 1080, height = 
     marginR = Math.round((xPct - wPct / 2) * width * 0.1);
   }
   
+  // ASS Spacing scale: 1 = pixel equivalence (verify with test render)
+  // If test shows mismatch, adjust this constant
+  const ASS_SPACING_SCALE = 1;
+  
+  // Read letterSpacingPx from overlayCaption (which will be meta.effectiveStyle from render)
+  const letterSpacingPx = overlayCaption?.letterSpacingPx ?? 0.5;
+  
+  // Apply scale (default 1, adjust if test shows mismatch)
+  const assSpacing = letterSpacingPx * ASS_SPACING_SCALE;
+  
+  // Log for verification
+  console.log('[karaoke:spacing]', {
+    letterSpacingPx,
+    assSpacing,
+    source: overlayCaption?.letterSpacingPx ? 'overlayCaption' : 'default'
+  });
+  
   return {
     Fontname: fontFamily,
     Fontsize: Math.round(fontPx),
@@ -264,7 +281,7 @@ export function convertOverlayToASSStyle(overlayCaption, width = 1080, height = 
     StrikeOut: 0,
     ScaleX: 100,
     ScaleY: 100,
-    Spacing: 0.5,
+    Spacing: assSpacing,  // ✅ Replace hardcoded 0.5
     Angle: 0,
     BorderStyle: 1,
     Outline: 3, // Outline width

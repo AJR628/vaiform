@@ -24,6 +24,7 @@ import { getVoicePreset, getDefaultVoicePreset } from '../constants/voice.preset
 import { buildKaraokeASSFromTimestamps } from '../utils/karaoke.ass.js';
 import { wrapTextWithFont } from '../utils/caption.wrap.js';
 import { deriveCaptionWrapWidthPx } from '../utils/caption.wrapWidth.js';
+import { compileCaptionSSOT } from '../captions/compile.js';
 
 const TTL_HOURS = Number(process.env.STORY_TTL_HOURS || 48);
 
@@ -831,61 +832,65 @@ export async function renderStory({ uid, sessionId }) {
               }
             }
             
-            // Extract wrapped text from overlayCaption.lines or compute it using SSOT wrapper
+            // ✅ CORRECT PRECEDENCE: Prefer beat-specific captionMeta (SSOT persisted), but verify staleness
+            // Each beat has different text, so meta must be per-beat
             let wrappedText = null;
-            if (overlayCaption?.lines && Array.isArray(overlayCaption.lines)) {
-              wrappedText = overlayCaption.lines.join('\n');
-              console.log(`[story.service] Using wrapped text from overlayCaption.lines: ${overlayCaption.lines.length} lines`);
-            } else if (caption?.text) {
-              // Compute wrapped text using SSOT wrapper (same as preview)
-              try {
-                const fontPx = overlayCaption?.fontPx || overlayCaption?.sizePx || 64;
-                const fontFamily = overlayCaption?.fontFamily || 'DejaVu Sans';
-                const weightCss = overlayCaption?.weightCss || 'normal';
-                const fontStyle = overlayCaption?.fontStyle || 'normal';
-                const letterSpacingPx = overlayCaption?.letterSpacingPx || 0;
-                const lineSpacingPx = overlayCaption?.lineSpacingPx || 0;
-                
-                // Derive maxWidthPx using same semantics as preview
-                const wPct = overlayCaption?.wPct ?? 0.8;
-                const pad = overlayCaption?.internalPaddingPx ?? overlayCaption?.internalPadding ?? overlayCaption?.rasterPadding ?? 24;
-                const { maxWidthPx } = deriveCaptionWrapWidthPx({
-                  frameW: 1080,
-                  wPct,
-                  internalPaddingPx: pad
+            let meta = null;
+            
+            const beatMeta = session.beats?.[i]?.captionMeta;
+            
+            // ✅ STALENESS DETECTION: Verify beatMeta is still valid before using
+            let isStale = false;
+            if (beatMeta?.lines && beatMeta?.styleHash && beatMeta?.textHash) {
+              // Compute current text hash (canonical source: session.story.sentences[i])
+              const currentTextRaw = session.story?.sentences?.[i] || caption.text || '';
+              const currentTextHash = crypto.createHash('sha256').update(currentTextRaw.trim().toLowerCase()).digest('hex').slice(0, 16);
+              
+              // Compute current style hash (from current overlayCaption merged with defaults)
+              const currentStyleHash = compileCaptionSSOT({
+                textRaw: currentTextRaw,
+                style: overlayCaption || {},
+                frameW: 1080,
+                frameH: 1920
+              }).styleHash;
+              
+              // Check for staleness
+              if (beatMeta.textHash !== currentTextHash || beatMeta.styleHash !== currentStyleHash) {
+                isStale = true;
+                console.warn('[render:ssot:staleness] Beat meta is stale, recompiling:', {
+                  beatIndex: i,
+                  textHashMismatch: beatMeta.textHash !== currentTextHash,
+                  styleHashMismatch: beatMeta.styleHash !== currentStyleHash
                 });
-                
-                // Compute wrap using SSOT wrapper
-                const wrapResult = wrapTextWithFont(caption.text, {
-                  fontPx,
-                  weightCss,
-                  fontStyle,
-                  fontFamily,
-                  maxWidthPx,
-                  letterSpacingPx,
-                  lineSpacingPx
-                });
-                
-                wrappedText = wrapResult.lines.join('\n');
-                
-                // Log warning if letterSpacingPx is non-zero (ASS may not render it the same)
-                if (letterSpacingPx !== 0) {
-                  console.warn(`[render-wrap:ssot] letterSpacingPx=${letterSpacingPx} may not match ASS rendering`);
-                }
-                
-                console.log(`[render-wrap:ssot]`, {
-                  beatId: i,
-                  maxWidthPx,
-                  linesCount: wrapResult.linesCount,
-                  fontPx,
-                  fontFamily,
-                  weightCss,
-                  wPct,
-                  pad
-                });
-              } catch (wrapErr) {
-                console.warn(`[story.service] Could not compute wrapped text:`, wrapErr?.message);
               }
+            }
+            
+            if (beatMeta?.lines && beatMeta?.styleHash && !isStale) {
+              meta = beatMeta;
+              wrappedText = meta.lines.join('\n');
+              console.log('[render:ssot] Using stored beat meta:', { 
+                beatIndex: i,
+                styleHash: meta.styleHash, 
+                linesCount: meta.lines.length,
+                letterSpacingPx: meta.effectiveStyle.letterSpacingPx
+              });
+            } else {
+              // Compile fresh meta from caption.textRaw + session.overlayCaption (style-only, already sanitized)
+              const currentTextRaw = session.story?.sentences?.[i] || caption.text || '';
+              meta = compileCaptionSSOT({
+                textRaw: currentTextRaw,
+                style: overlayCaption || {},  // overlayCaption is style-only, sanitized by extractStyleOnly() in update route
+                frameW: 1080,
+                frameH: 1920
+              });
+              wrappedText = meta.lines.join('\n');
+              console.log('[render:ssot] Compiled fresh meta:', { 
+                beatIndex: i,
+                styleHash: meta.styleHash, 
+                linesCount: meta.lines.length,
+                letterSpacingPx: meta.effectiveStyle.letterSpacingPx,
+                reason: isStale ? 'stale' : 'missing'
+              });
             }
             
             assPath = await buildKaraokeASSFromTimestamps({
@@ -894,7 +899,7 @@ export async function renderStory({ uid, sessionId }) {
               durationMs: ttsDurationMs,
               audioPath: ttsPath, // Pass audio path for duration verification and scaling
               wrappedText: wrappedText, // Pass wrapped text for line breaks
-              overlayCaption: overlayCaption, // Pass overlay styling (SSOT)
+              overlayCaption: meta.effectiveStyle,  // ✅ Pass compiler output (SSOT) as overlayCaption
               width: 1080,
               height: 1920
             });
