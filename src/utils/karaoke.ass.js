@@ -108,7 +108,14 @@ function colorToASS(color, alpha = 1.0) {
   }
   
   // ASS format: &HAABBGGRR (AA=alpha, BB=blue, GG=green, RR=red)
-  const a = Math.round(alpha * 255);
+  // ASS uses inverted alpha: 00 = opaque, FF = transparent
+  const a = Math.round((1 - alpha) * 255);
+  
+  // Debug guard: Warn if alpha is inverted incorrectly (AA starts with FF when opacity=1)
+  if (alpha >= 0.99 && a > 0xF0) {
+    console.warn(`[karaoke:color] WARNING: Alpha inversion detected! opacity=${alpha}, ASS alpha=${a.toString(16).padStart(2, '0')} (should be 00 for opaque)`);
+  }
+  
   return `&H${a.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${r.toString(16).padStart(2, '0')}`;
 }
 
@@ -188,6 +195,22 @@ export function convertOverlayToASSStyle(overlayCaption, width = 1080, height = 
       }
     }
     highlightColor = colorToASS(`#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`, opacity);
+  }
+  
+  // Debug: Log resolved opacity and resulting colors
+  console.log('[karaoke:style] Color conversion:', {
+    color: color,
+    opacity: opacity,
+    primaryColour: primaryColor,
+    secondaryColour: highlightColor,
+    primaryAlpha: primaryColor.substring(2, 4), // Extract AA from &HAABBGGRR
+    secondaryAlpha: highlightColor.substring(2, 4),
+    warning: primaryColor.startsWith('&HFF') ? 'PrimaryColour has transparent alpha (FF) - should be 00 for opaque' : null
+  });
+  
+  // Warn if PrimaryColour starts with &HFF (transparent)
+  if (primaryColor.startsWith('&HFF')) {
+    console.warn('[karaoke:style] WARNING: PrimaryColour has transparent alpha (FF). Caption fill will be invisible!');
   }
   
   // Calculate margins based on position
