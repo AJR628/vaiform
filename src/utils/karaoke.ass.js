@@ -218,9 +218,21 @@ export function convertOverlayToASSStyle(overlayCaption, width = 1080, height = 
   // For center placement, use 0 to center vertically
   let marginV = 0; // default center (was 260)
   if (placement === 'top') {
-    marginV = Math.round(yPct * height * 0.1); // Top margin
+    // Use yPx_png directly (SSOT) if available, otherwise derive from yPct
+    if (typeof overlayCaption.yPx_png === 'number' && Number.isFinite(overlayCaption.yPx_png)) {
+      marginV = Math.round(overlayCaption.yPx_png); // Use SSOT value directly
+    } else {
+      marginV = Math.round(yPct * height); // Derive from yPct (no extra * 0.1)
+    }
   } else if (placement === 'bottom') {
-    marginV = Math.round((1 - yPct) * height * 0.1); // Bottom margin
+    // For bottom, MarginV is margin from bottom edge
+    if (typeof overlayCaption.yPx_png === 'number' && Number.isFinite(overlayCaption.yPx_png) && typeof overlayCaption.rasterH === 'number') {
+      // Calculate bottom margin: height - (yPx_png + rasterH)
+      marginV = Math.round(height - (overlayCaption.yPx_png + overlayCaption.rasterH));
+    } else {
+      // Derive from yPct: bottom margin = (1 - yPct) * height (no extra * 0.1)
+      marginV = Math.round((1 - yPct) * height);
+    }
   } else {
     // Center: use 0 for vertical centering
     marginV = 0;
