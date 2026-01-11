@@ -924,15 +924,26 @@ export async function generateBeatCaptionPreview(beatIndex, text, style) {
       throw new Error(data?.detail || data?.reason || 'Preview generation failed');
     }
     
-    // Extract compiler meta (prefer new top-level, fallback to legacy)
-    const compilerMeta = data?.meta ?? data?.data?.meta;
+    // Separate compiler meta (for handshake) from ssotMeta (for display)
+    const compilerMeta = data?.meta;  // Compiler meta (for handshake only)
+    const ssotMeta = data?.data?.meta;  // SSOT meta (contains rasterUrl and geometry)
     
     const result = {
       beatId,
       beatIndex: numericBeatIndex,
-      meta: compilerMeta ?? data.data.meta,
-      rasterUrl: (compilerMeta ?? data.data.meta)?.rasterUrl
+      meta: ssotMeta ?? compilerMeta,  // Prefer ssotMeta for display (has all geometry)
+      rasterUrl: ssotMeta?.rasterUrl  // rasterUrl only exists in ssotMeta
     };
+    
+    // Debug logging to diagnose extraction issues
+    if (window.__beatPreviewDebug || !result.rasterUrl) {
+      console.log('[beat-preview] Result extraction:', {
+        hasCompilerMeta: !!compilerMeta,
+        hasSsotMeta: !!ssotMeta,
+        rasterUrl: result.rasterUrl ? result.rasterUrl.substring(0, 50) + '...' : 'MISSING',
+        metaKeys: Object.keys(result.meta || {})
+      });
+    }
     
     // Handshake: save meta to server (fire-and-forget, non-blocking)
     if (compilerMeta?.effectiveStyle && compilerMeta?.lines?.length && numericBeatIndex != null) {
