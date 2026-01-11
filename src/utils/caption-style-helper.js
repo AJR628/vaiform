@@ -17,7 +17,9 @@ export function extractStyleOnly(obj) {
     'letterSpacingPx', 'lineSpacingPx',
     'color', 'opacity', 'strokePx', 'strokeColor',
     'shadowBlur', 'shadowOffsetX', 'shadowOffsetY', 'shadowColor',
-    'placement', 'yPct', 'xPct', 'wPct'
+    'placement', 'yPct', 'xPct', 'wPct',
+    'internalPaddingPx',  // ✅ Canonical name
+    'internalPadding'     // ✅ Legacy alias (for backward compatibility)
   ];
   
   const styleOnly = {};

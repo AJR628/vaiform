@@ -6859,7 +6859,8 @@
                         const explicitStyle = extractStyleOnly(rawStyle);
                         const m = window.__beatPreviewModule || await window.__beatPreviewModulePromise;
                         if (m) {
-                            m.generateBeatCaptionPreviewDebounced(String(sentenceIndex), text, explicitStyle);
+                            // Pass numeric sentenceIndex directly (matches session.story.sentences[i])
+                            m.generateBeatCaptionPreviewDebounced(sentenceIndex, text, explicitStyle);
                         }
                     });
                 }
@@ -7514,13 +7515,20 @@
         const BeatPreviewManager = {
             /**
              * Apply preview to beat card
+             * @param {HTMLElement} beatCardEl - Beat card DOM element
+             * @param {number} beatIndex - Beat index in story.sentences array (numeric, required for SSOT)
+             * @param {string} text - Beat text
+             * @param {object} style - Session-level caption style
              */
-            async applyPreview(beatCardEl, beatId, text, style) {
+            async applyPreview(beatCardEl, beatIndex, text, style) {
                 if (!window.BEAT_PREVIEW_ENABLED) return;
                 
                 try {
                     const { generateBeatCaptionPreview } = await import('./js/caption-preview.js');
-                    const result = await generateBeatCaptionPreview(beatId, text, style);
+                    // beatIndex must be numeric (matches session.story.sentences[i])
+                    const numericBeatIndex = typeof beatIndex === 'number' ? beatIndex :
+                        (typeof beatIndex === 'string' && /^\d+$/.test(beatIndex) ? parseInt(beatIndex, 10) : null);
+                    const result = await generateBeatCaptionPreview(numericBeatIndex ?? beatIndex, text, style);
                     
                     if (!result || !result.rasterUrl) return;
                     

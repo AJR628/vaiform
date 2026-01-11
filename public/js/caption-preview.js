@@ -6,6 +6,42 @@
 // Import API helpers to use same backend as other endpoints
 import { apiFetch } from "../api.mjs";
 
+/**
+ * Save caption meta to server for SSOT persistence (fire-and-forget, non-blocking)
+ * @param {Object} params
+ * @param {string} params.sessionId - Story session ID
+ * @param {number} params.beatIndex - Beat index in story.sentences array (must be numeric)
+ * @param {Object} params.captionMeta - Compiler meta object with effectiveStyle, lines, etc.
+ */
+async function saveCaptionMetaForBeat({ sessionId, beatIndex, captionMeta }) {
+  if (!sessionId || typeof beatIndex !== "number" || beatIndex < 0 || !captionMeta?.lines?.length) {
+    console.warn("[caption-meta-handshake] skipped (missing inputs)", { sessionId, beatIndex, hasMeta: !!captionMeta });
+    return;
+  }
+
+  try {
+    const resp = await apiFetch("/story/update-caption-meta", {
+      method: "POST",
+      body: { sessionId, beatIndex, captionMeta },
+    });
+
+    if (!resp?.success) {
+      console.warn("[caption-meta-handshake] server rejected", resp);
+      return;
+    }
+
+    console.log("[caption-meta-handshake] saved", {
+      beatIndex,
+      styleHash: resp?.data?.captionMeta?.styleHash,
+      textHash: resp?.data?.captionMeta?.textHash,
+      linesCount: resp?.data?.captionMeta?.lines?.length,
+    });
+  } catch (err) {
+    // Non-blocking by design
+    console.warn("[caption-meta-handshake] failed", err);
+  }
+}
+
 // MEASURE_DEFAULTS: Server defaults for DOM measurement (geometry/wrapping)
 // Must match server RasterSchema defaults for parity
 export const MEASURE_DEFAULTS = {
@@ -786,12 +822,12 @@ function buildBeatPreviewPayload(text, overlayMeta, explicitStyle = {}) {
 
 /**
  * Generate caption preview for a beat card (parity-only, uses SSOT measurement)
- * @param {string} beatId - Beat identifier
+ * @param {number} beatIndex - Beat index in story.sentences array (numeric, required for SSOT persistence)
  * @param {string} text - Beat text
  * @param {object} style - Session-level caption style
  * @returns {Promise<object|null>} Preview result with meta and rasterUrl, or null if disabled/skipped
  */
-export async function generateBeatCaptionPreview(beatId, text, style) {
+export async function generateBeatCaptionPreview(beatIndex, text, style) {
   // Feature flag check
   if (!window.BEAT_PREVIEW_ENABLED) {
     return null;
@@ -877,11 +913,24 @@ export async function generateBeatCaptionPreview(beatId, text, style) {
       throw new Error(data?.detail || data?.reason || 'Preview generation failed');
     }
     
+    // Extract compiler meta (prefer new top-level, fallback to legacy)
+    const compilerMeta = data?.meta ?? data?.data?.meta;
+    
     const result = {
       beatId,
-      meta: data.data.meta,
-      rasterUrl: data.data.meta.rasterUrl
+      beatIndex: numericBeatIndex,
+      meta: compilerMeta ?? data.data.meta,
+      rasterUrl: (compilerMeta ?? data.data.meta)?.rasterUrl
     };
+    
+    // Handshake: save meta to server (fire-and-forget, non-blocking)
+    if (compilerMeta?.effectiveStyle && compilerMeta?.lines?.length && numericBeatIndex != null) {
+      void saveCaptionMetaForBeat({
+        sessionId: window.currentStorySession?.id || window.currentStorySessionId,
+        beatIndex: numericBeatIndex,
+        captionMeta: compilerMeta,
+      });
+    }
     
     // Cache result
     setCachedBeatPreview(style, text, result);
@@ -904,21 +953,25 @@ export async function generateBeatCaptionPreview(beatId, text, style) {
 
 /**
  * Debounced beat preview generation
- * @param {string} beatId - Beat identifier
+ * @param {number|string} beatIndex - Beat index (numeric) or identifier (will be parsed to numeric)
  * @param {string} text - Beat text
  * @param {object} style - Session-level caption style
  * @param {number} delay - Debounce delay in ms (default 300)
  */
-export function generateBeatCaptionPreviewDebounced(beatId, text, style, delay = 300) {
+export function generateBeatCaptionPreviewDebounced(beatIndex, text, style, delay = 300) {
   if (!window.BEAT_PREVIEW_ENABLED) {
     return;
   }
   
-  // Normalize identifier to string
-  const id = String(beatId);
+  // Normalize to numeric beatIndex for SSOT persistence
+  const numericBeatIndex = typeof beatIndex === 'number' ? beatIndex :
+    (typeof beatIndex === 'string' && /^\d+$/.test(beatIndex) ? parseInt(beatIndex, 10) : null);
+  
+  // Keep string ID for DOM/cache purposes
+  const id = String(beatIndex);
   
   if (window.__beatPreviewDebug) {
-    console.log('[beat-preview] Debounce triggered:', { identifier: id, textLength: text?.length || 0 });
+    console.log('[beat-preview] Debounce triggered:', { identifier: id, beatIndex: numericBeatIndex, textLength: text?.length || 0 });
   }
   
   // Clear existing timer
@@ -928,7 +981,7 @@ export function generateBeatCaptionPreviewDebounced(beatId, text, style, delay =
   }
   
   const timer = setTimeout(async () => {
-    const result = await generateBeatCaptionPreview(id, text, style);
+    const result = await generateBeatCaptionPreview(numericBeatIndex ?? beatIndex, text, style);
     beatPreviewDebounceTimers.delete(id);
     
     // Apply preview to DOM

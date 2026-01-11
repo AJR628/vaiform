@@ -222,7 +222,7 @@ r.post("/update-caption-style", async (req, res) => {
 });
 
 // POST /api/story/update-caption-meta - Save captionMeta for session
-r.post("/update-caption-meta", async (req, res) => {
+r.post("/update-caption-meta", requireAuth, async (req, res) => {
   try {
     const parsed = z.object({
       sessionId: z.string().min(3),
