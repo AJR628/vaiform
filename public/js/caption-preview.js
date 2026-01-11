@@ -837,13 +837,24 @@ export async function generateBeatCaptionPreview(beatIndex, text, style) {
     return null;
   }
   
-  console.log('[beat-preview] Generating preview for beat:', beatId);
+  // Normalize beatIndex (must be numeric for SSOT persistence)
+  const numericBeatIndex = typeof beatIndex === 'number' ? beatIndex : 
+    (typeof beatIndex === 'string' && /^\d+$/.test(beatIndex) ? parseInt(beatIndex, 10) : null);
+  
+  if (numericBeatIndex == null || numericBeatIndex < 0) {
+    console.warn('[beat-preview] Invalid beatIndex, skipping SSOT persistence:', beatIndex);
+  }
+  
+  // Keep string ID for DOM/cache purposes
+  const beatId = String(beatIndex);
+  
+  console.log('[beat-preview] Generating preview for beat:', { beatId, beatIndex: numericBeatIndex });
   console.log('[beat-preview] explicitStyle keys:', Object.keys(style || {}));
   
   // Check cache first
   const cached = getCachedBeatPreview(style, text);
   if (cached) {
-    return { beatId, ...cached };
+    return { beatId, beatIndex: numericBeatIndex, ...cached };
   }
   
   // Cancel previous request for this beat

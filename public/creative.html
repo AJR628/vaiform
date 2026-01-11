@@ -7578,10 +7578,13 @@
                     // Handle both draft beats (object with id/text) and session sentences (string)
                     const beatId = beat.id || beat.sentenceIndex || idx;
                     const text = beat.text || (typeof beat === 'string' ? beat : '');
+                    // beatIndex must be numeric array index (matches session.story.sentences[i])
+                    const beatIndex = typeof beat.sentenceIndex === 'number' ? beat.sentenceIndex : idx;
                     const beatCardEl = document.querySelector(`[data-beat-id="${beatId}"]`) || 
                                       document.querySelector(`[data-sentence-index="${idx}"]`);
                     if (beatCardEl && text) {
-                        await BeatPreviewManager.applyPreview(beatCardEl, beatId, text, style);
+                        // Pass numeric beatIndex (matches session.story.sentences[i])
+                        await BeatPreviewManager.applyPreview(beatCardEl, beatIndex, text, style);
                     }
                 }
             }
