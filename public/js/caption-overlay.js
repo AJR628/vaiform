@@ -1295,11 +1295,19 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
       reason
     };
     
-    // Guard against NaN/null (preserve existing behavior)
+    // Guard against NaN/null: preserve last-known-good values instead of corrupting with 0s
+    const lastMeta = window.__overlayMeta || {};
     Object.keys(state).forEach(k => {
       if (typeof state[k] === 'number' && !Number.isFinite(state[k])) {
-        console.warn(`[emitCaptionState] Invalid number for ${k}:`, state[k]);
-        state[k] = 0;
+        const prevValue = lastMeta[k];
+        if (Number.isFinite(prevValue)) {
+          console.warn(`[emitCaptionState] Invalid number for ${k}, preserving previous value:`, prevValue);
+          state[k] = prevValue;
+        } else {
+          // Only set to 0 if no previous value exists (true initialization case)
+          console.warn(`[emitCaptionState] Invalid number for ${k}, no previous value, using 0`);
+          state[k] = 0;
+        }
       }
     });
     
@@ -1329,16 +1337,90 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
   window.emitCaptionState = emitCaptionState;
 
   // Snap box to placement preset (placement dropdown helper)
-  function snapToPlacement(placement) {
+  function snapToPlacement(placement, opts = {}) {
     // Get current metrics from DOM
     const stageRect = stage.getBoundingClientRect();
-    const cs = getComputedStyle(content);
     
     // Use logical stage height in CSS px (not affected by DPR/viewport scaling)
     let stageHeight = stage.clientHeight;
     if (!stageHeight) {
       stageHeight = stageRect.height;
     }
+    
+    // Guard: if stage not measurable, retry once or apply partial update
+    if ((stageHeight === 0 || stageRect.width === 0) && !opts.didRetry) {
+      requestAnimationFrame(() => snapToPlacement(placement, { didRetry: true }));
+      console.warn('[snapToPlacement] stage not measurable, retrying once', {
+        stageW: stageRect.width,
+        stageH: stageHeight
+      });
+      return;
+    }
+    
+    if (stageHeight === 0 || stageRect.width === 0) {
+      console.warn('[snapToPlacement] stage still not measurable; applying normalized placement only');
+      
+      // Update placement and yPct only, preserve other geometry
+      window.currentPlacement = placement;
+      const lastMeta = window.__overlayMeta || {};
+      
+      // SSOT-pure fallback: Use CaptionGeom if available, otherwise default to bottom (0.80) and log error
+      let yPct = 0.80;
+      if (window.CaptionGeom?.yPctFromPlacement) {
+        yPct = window.CaptionGeom.yPctFromPlacement(placement);
+      } else {
+        console.error('[snapToPlacement] CaptionGeom not available, defaulting to bottom placement');
+      }
+      
+      // CRITICAL: Recompute yPx_png from yPct + FRAME_H (not from stale lastMeta)
+      // This ensures geometry consistency: yPct and yPx_png must match
+      const { H: FRAME_H } = window.CaptionGeom?.getFrameDims() || { H: 1920 };
+      const yPx_png = Math.round(yPct * FRAME_H);
+      
+      // CRITICAL: Only preserve geometry if lastMeta has usable values
+      // Avoids spreading undefined values that become "last known good"
+      const hasUsableGeometry = 
+        Number.isFinite(lastMeta.xPct) &&
+        Number.isFinite(lastMeta.wPct) &&
+        Number.isFinite(lastMeta.xPx_png) &&
+        Number.isFinite(lastMeta.rasterW) &&
+        Number.isFinite(lastMeta.rasterH);
+      
+      if (hasUsableGeometry) {
+        // Emit partial state update (normalized fields + safe frame-derived fields)
+        const partialState = {
+          ...lastMeta,
+          placement,
+          yPct,
+          yPx_png,  // NEW: recomputed from yPct, not preserved stale value
+          // Preserve other geometry from last known good state
+          xPct: lastMeta.xPct,
+          wPct: lastMeta.wPct,
+          xPx_png: lastMeta.xPx_png,
+          rasterW: lastMeta.rasterW,
+          rasterH: lastMeta.rasterH,
+          reason: 'snap-partial'
+        };
+        window.__overlayMeta = partialState;
+        if (typeof window.updateCaptionState === 'function') {
+          window.updateCaptionState(partialState);
+        }
+      } else {
+        // No usable geometry - only store normalized placement + yPct + yPx_png
+        const minimalState = {
+          placement,
+          yPct,
+          yPx_png,
+          reason: 'snap-partial-minimal'
+        };
+        window.__overlayMeta = minimalState;
+        console.warn('[snapToPlacement] No usable geometry in lastMeta, storing minimal state only');
+      }
+      return;
+    }
+    
+    // Normal path: stage is measurable, proceed with full computation
+    const cs = getComputedStyle(content);
     
     // Use actual rendered height for totalTextH
     const totalTextH = Math.round(content.getBoundingClientRect().height);
@@ -1402,6 +1484,15 @@ export function computeCaptionMetaFromElements({ stageEl, boxEl, contentEl, fram
   if (!stageWidth || !stageHeight) {
     stageWidth = stageRect.width;
     stageHeight = stageRect.height;
+  }
+  
+  // Early guard - if still 0×0, return null (prevents NaN computation)
+  if (stageWidth === 0 || stageHeight === 0) {
+    console.warn('[computeCaptionMetaFromElements] stage not measurable, returning null', {
+      stageW: stageWidth,
+      stageH: stageHeight
+    });
+    return null;
   }
   
   const cs = getComputedStyle(contentEl);
@@ -1804,6 +1895,11 @@ export function measureBeatCaptionGeometry(text, style) {
       frameW,
       frameH
     });
+    
+    if (!meta) {
+      console.warn('[measureBeatCaptionGeometry] computeCaptionMetaFromElements returned null');
+      return null;
+    }
     
     // DO NOT override meta.yPct or meta.yPx_png after compute
     // Helper derives these from DOM position (same as live overlay)

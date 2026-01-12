@@ -3467,15 +3467,6 @@
         };
         
         // Helper function to derive yPct from placement
-        function yPctFromPlacement(placement) {
-            switch (placement) {
-                case 'top': return 0.15;
-                case 'center': return 0.50;
-                case 'bottom': return 0.80; // Reduced from 0.90 to prevent cutoff at bottom
-                default: return 0.50;
-            }
-        }
-        
         // Helper function for precise float conversion
         function preciseFloat0to1(value) {
             // Fix: If value is already 0-1 range, don't divide by 100
@@ -3530,7 +3521,16 @@
             
             // Legacy payload format (existing logic)
             const placement = captionStyle.placement || 'center';
-            const yPct = captionStyle.yPct ?? yPctFromPlacement(placement);
+            // SSOT-pure: Use CaptionGeom if available, otherwise default to bottom (0.80) and log error
+            let yPct = captionStyle.yPct;
+            if (typeof yPct !== 'number') {
+              if (window.CaptionGeom?.yPctFromPlacement) {
+                yPct = window.CaptionGeom.yPctFromPlacement(placement);
+              } else {
+                console.error('[caption] CaptionGeom not available, defaulting to bottom placement');
+                yPct = 0.80; // Default to bottom if scripts fail
+              }
+            }
             const opacity = preciseFloat0to1(captionStyle.opacity || 80);
             
             const payload = {

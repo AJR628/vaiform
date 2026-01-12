@@ -42,6 +42,16 @@
     return { blur: maxBlur, y: maxY };
   }
 
+  function yPctFromPlacement(placement) {
+    switch (String(placement || 'bottom').toLowerCase()) {
+      case 'top': return 0.15;
+      case 'center': 
+      case 'middle': return 0.50;
+      case 'bottom': 
+      default: return 0.80;
+    }
+  }
+
   window.CaptionGeom = {
     SAFE_TOP_PX,
     SAFE_BOTTOM_PX,
@@ -51,6 +61,7 @@
     computeRasterH,
     computeYPxFromPlacement,
     getFrameDims,
-    parseShadow
+    parseShadow,
+    yPctFromPlacement
   };
 })();
