@@ -854,129 +854,88 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
 
   // Public API on window (simple)
   window.getCaptionMeta = function getCaptionMeta(){
-    const s = stage.getBoundingClientRect(), b = box.getBoundingClientRect(), cs = getComputedStyle(content);
+    // Use shared helper for SSOT consistency
+    // Defensive: handle edge case where CaptionGeom loads after module
+    const { W: frameW, H: frameH } = window.CaptionGeom?.getFrameDims() || { W: 1080, H: 1920 };
     
-    // Extract wrapped text with actual line breaks from DOM
-    const extractWrappedText = () => {
-      // Use textContent to avoid innerText space-eating bug with wrapped text
-      const text = (content.textContent || content.innerText).trim();
-      if (!text) return '';
+    const computedMeta = computeCaptionMetaFromElements({
+      stageEl: stage,
+      boxEl: box,
+      contentEl: content,
+      frameW,
+      frameH
+    });
+    
+    if (!computedMeta) {
+      console.warn('[getCaptionMeta] computeCaptionMetaFromElements returned null, using fallback');
       
-      // Create a temporary range to measure actual line breaks
-      const range = document.createRange();
-      const walker = document.createTreeWalker(
-        content,
-        NodeFilter.SHOW_TEXT,
-        null,
-        false
-      );
+      // SSOT-safe fallback: prefer last-known-good values
+      const last = window.__overlayMeta || {};
+      const placement = window.currentPlacement || 'bottom';
       
-      let wrappedLines = [];
-      let currentLine = '';
-      let node;
-      
-      while (node = walker.nextNode()) {
-        const nodeText = node.textContent || '';
-        
-        // Split by actual line breaks in the DOM
-        if (nodeText.includes('\n')) {
-          const lines = nodeText.split('\n');
-          for (let i = 0; i < lines.length; i++) {
-            if (i === 0) {
-              currentLine += lines[i];
-            } else {
-              if (currentLine.trim()) wrappedLines.push(currentLine.trim());
-              currentLine = lines[i];
-            }
-          }
+      // Use CaptionGeom for yPct (SSOT mapping)
+      let yPct = last.yPct;
+      if (!Number.isFinite(yPct)) {
+        if (window.CaptionGeom?.yPctFromPlacement) {
+          yPct = window.CaptionGeom.yPctFromPlacement(placement);
         } else {
-          currentLine += nodeText;
+          yPct = 0.80; // bottom default
         }
       }
       
-      if (currentLine.trim()) wrappedLines.push(currentLine.trim());
+      // Use actual overlay defaults (from creative.html: xPct: 0.04, wPct: 0.88)
+      const xPct = Number.isFinite(last.xPct) ? last.xPct : 0.04;
+      const wPct = Number.isFinite(last.wPct) ? last.wPct : 0.88;
       
-      // If we couldn't detect line breaks from DOM, measure by width
-      if (wrappedLines.length <= 1 && text.length > 0) {
-        const words = text.split(/\s+/);
-        const maxWidth = content.clientWidth - parseInt(cs.paddingLeft, 10) - parseInt(cs.paddingRight, 10);
-        const testCanvas = document.createElement('canvas');
-        const ctx = testCanvas.getContext('2d');
-        ctx.font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
-        
-        wrappedLines = [];
-        let line = '';
-        
-        for (const word of words) {
-          const testLine = line ? line + ' ' + word : word;
-          if (ctx.measureText(testLine).width > maxWidth && line) {
-            wrappedLines.push(line);
-            line = word;
-          } else {
-            line = testLine;
-          }
-        }
-        if (line) wrappedLines.push(line);
-      }
+      // Compute yPx_png from yPct (SSOT consistency)
+      const yPx_png = Math.round(yPct * frameH);
+      const xPx_png = Math.round(xPct * frameW);
       
-      return wrappedLines.join('\n');
-    };
+      // Minimal fallback meta
+      const cs = getComputedStyle(content);
+      return {
+        text: (content.textContent || content.innerText || '').trim(),
+        textRaw: (content.textContent || content.innerText || '').trim(),
+        xPct,
+        yPct,
+        wPct,
+        hPct: Number.isFinite(last.hPct) ? last.hPct : 0.3,
+        fontPx: parseInt(cs.fontSize, 10) || 48,
+        lineSpacingPx: 0,
+        weightCss: '400',
+        fontStyle: 'normal',
+        textAlign: 'center',
+        color: '#ffffff',
+        opacity: 1,
+        fontFamily: 'DejaVu Sans',
+        // Include computed geometry fields (SSOT consistency)
+        frameW,
+        frameH,
+        yPx_png,
+        xPx_png,
+        placement
+      };
+    }
     
-    // Extract additional styling fields for server PNG generation
-    const parseShadow = (shadowStr) => {
-      if (!shadowStr || shadowStr === 'none') return { shadowColor: 'rgba(0,0,0,0.6)', shadowBlur: 0, shadowOffsetX: 0, shadowOffsetY: 0 };
-      const match = shadowStr.match(/(-?\d+(?:\.\d+)?)px\s+(-?\d+(?:\.\d+)?)px\s+(\d+(?:\.\d+)?)px\s+(.+)/);
-      if (match) {
-        return {
-          shadowOffsetX: parseFloat(match[1]) || 0,
-          shadowOffsetY: parseFloat(match[2]) || 0,
-          shadowBlur: parseFloat(match[3]) || 0,
-          shadowColor: match[4] || 'rgba(0,0,0,0.6)'
-        };
-      }
-      return { shadowColor: 'rgba(0,0,0,0.6)', shadowBlur: 0, shadowOffsetX: 0, shadowOffsetY: 0 };
-    };
-
-    const parseStroke = (strokeStr) => {
-      if (!strokeStr || strokeStr === 'none') return { strokePx: 0, strokeColor: 'rgba(0,0,0,0.85)' };
-      const match = strokeStr.match(/(\d+(?:\.\d+)?)px\s+(.+)/);
-      if (match) {
-        return {
-          strokePx: parseFloat(match[1]) || 0,
-          strokeColor: match[2] || 'rgba(0,0,0,0.85)'
-        };
-      }
-      return { strokePx: 0, strokeColor: 'rgba(0,0,0,0.85)' };
-    };
-
-    const shadowProps = parseShadow(cs.textShadow);
-    const strokeProps = parseStroke(cs.webkitTextStroke || cs.textStroke);
-
+    // Add legacy fields for backward compatibility
+    // Guard against NaN: if stage is hidden (clientHeight === 0), use last-known-good or default
+    const stageHeight = stage.clientHeight;
+    const hPct = computedMeta.hPct || (
+      stageHeight > 0 
+        ? (box.clientHeight / stageHeight)
+        : (window.__overlayMeta?.hPct || 0.3)
+    );
+    
+    const cs = getComputedStyle(content);
+    const paddingPx = computedMeta.rasterPadding || parseInt(cs.paddingLeft, 10) || 0;
+    
     const meta = {
-      text: extractWrappedText(),
-      textRaw: (content.textContent || content.innerText).trim(),  // Use textContent to avoid space corruption
-      xPct: (b.left - s.left) / s.width,
-      yPct: (b.top  - s.top ) / s.height,
-      wPct: b.width / s.width,
-      hPct: b.height / s.height,
-      fontPx: window.__serverCaptionMeta?.fontPx || parseInt(cs.fontSize,10),
-      lineSpacingPx: window.__serverCaptionMeta?.lineSpacingPx || (parseInt(cs.lineHeight,10) - parseInt(cs.fontSize,10)),
-      weightCss: String(cs.fontWeight),
-      fontStyle: cs.fontStyle || 'normal',
-      lineHeight: cs.lineHeight,
-      letterSpacingPx: parseFloat(cs.letterSpacing) || 0,
-      textTransform: cs.textTransform || 'none',
-      color: cs.color,
-      opacity: Number(cs.opacity || 1),
-      textAlign: cs.textAlign,
-      paddingPx: parseInt(cs.paddingLeft,10),
-      fontFamily: cs.fontFamily,
+      ...computedMeta,
+      // Legacy fields that getCaptionMeta() used to return
+      hPct: Number.isFinite(hPct) ? hPct : 0.3,
+      paddingPx: Number.isFinite(paddingPx) ? paddingPx : 0,
       showBox: !box.classList.contains('is-boxless'),
-      responsiveText: document.getElementById('responsive-text-toggle')?.checked ?? true,
-      // Shadow properties
-      ...shadowProps,
-      // Stroke properties  
-      ...strokeProps
+      responsiveText: document.getElementById('responsive-text-toggle')?.checked ?? true
     };
     
     // Update global SSOT meta
