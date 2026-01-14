@@ -1358,6 +1358,7 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
           xPx_png: lastMeta.xPx_png,
           rasterW: lastMeta.rasterW,
           rasterH: lastMeta.rasterH,
+          mode: lastMeta.mode || 'dom',  // Preserve mode with safe fallback
           reason: 'snap-partial'
         };
         window.__overlayMeta = partialState;
@@ -1370,6 +1371,7 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
           placement,
           yPct,
           yPx_png,
+          mode: lastMeta.mode || 'dom',  // Preserve mode with safe fallback
           reason: 'snap-partial-minimal'
         };
         window.__overlayMeta = minimalState;
