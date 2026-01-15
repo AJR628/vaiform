@@ -1026,8 +1026,13 @@ function roundRect(ctx, x, y, w, h, r) {
   ctx.closePath();
 }
 
-// Smoke test route for quick debugging
-router.get("/diag/caption-smoke", async (req, res) => {
+// Smoke test route for quick debugging - gated behind VAIFORM_DEBUG + requireAuth
+router.get("/diag/caption-smoke", (req, res, next) => {
+  if (process.env.VAIFORM_DEBUG !== "1") {
+    return res.status(404).end();
+  }
+  next();
+}, requireAuth, async (req, res) => {
   try {
     const W = 1080, H = 1920;
     const canvas = createCanvas(W, H);

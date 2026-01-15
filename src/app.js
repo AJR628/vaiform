@@ -34,6 +34,9 @@ const DBG = process.env.VAIFORM_DEBUG === "1";
 
 const app = express();
 
+// Trust proxy (before routes)
+app.set("trust proxy", Number(process.env.TRUST_PROXY_HOPS || 1));
+
 // 🪪 assign a request ID early
 app.use(reqId);
 

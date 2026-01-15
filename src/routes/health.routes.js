@@ -38,7 +38,12 @@ router.get("/version", (_req, res) => {
   res.json({ version });
 });
 
-/** Register endpoint */
-router.post("/register", validate(registerSchema), register);
+/** Register endpoint - gated behind VAIFORM_DEBUG */
+router.post("/register", (req, res, next) => {
+  if (process.env.VAIFORM_DEBUG !== "1") {
+    return res.status(404).end();
+  }
+  next();
+}, validate(registerSchema), register);
 
 export default router;

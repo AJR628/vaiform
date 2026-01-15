@@ -9,7 +9,7 @@ const stripe = process.env.STRIPE_SECRET_KEY ? new Stripe(process.env.STRIPE_SEC
 }) : null;
 
 // POST /stripe/webhook must use raw body
-router.post("/", express.raw({ type: "application/json" }), async (req, res) => {
+router.post("/", express.raw({ type: "application/json", limit: "1mb" }), async (req, res) => {
   console.log("[webhook] hit", new Date().toISOString());
   
   if (!stripe) {
