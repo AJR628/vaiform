@@ -1,8 +1,17 @@
 import { Router } from "express";
+import rateLimit from "express-rate-limit";
 
 const r = Router();
 
 const MAX_REDIRECTS = 2;
+
+// Rate limit /cdn: max 300 requests per minute
+const cdnRateLimit = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 300,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
 /**
  * GET /cdn?u=<downloadUrl>
