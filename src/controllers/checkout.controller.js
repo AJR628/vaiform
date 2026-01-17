@@ -173,7 +173,9 @@ export async function startPlanCheckout(req, res) {
     const mode = billing === "monthly" ? "subscription" : "payment";
     const FRONTEND = getFrontendBase(req);
 
-    console.log(`[checkout/start] Creating session with metadata:`, { uid, email, plan, billing, priceId, mode });
+    if (process.env.VAIFORM_DEBUG === "1") {
+      console.log(`[checkout/start] Creating session with metadata:`, { uid, email, plan, billing, priceId, mode });
+    }
     
     const session = await stripe.checkout.sessions.create({
       mode,
@@ -191,7 +193,11 @@ export async function startPlanCheckout(req, res) {
       }),
     });
 
-    console.info(`[checkout/start] ${plan} ${billing} uid=${uid} email=${email || 'null'} → ${session.url}`);
+    if (process.env.VAIFORM_DEBUG === "1") {
+      console.info(`[checkout/start] ${plan} ${billing} uid=${uid} email=${email || 'null'} → ${session.url}`);
+    } else {
+      console.info(`[checkout/start] ${plan} ${billing} → ${session.url}`);
+    }
     return res.json({ url: session.url });
   } catch (e) {
     console.error("[checkout/start] error", e);
