@@ -126,11 +126,12 @@ export async function createSubscriptionSession(req, res) {
 /**
  * Plans & Pricing Checkout (Creator/Pro plans).
  * Secured by requireAuth: req.user.{uid,email}
- * Body: { plan: 'creator'|'pro', billing: 'monthly'|'onetime', uid: string, email: string }
+ * Body: { plan: 'creator'|'pro', billing: 'monthly'|'onetime' }
+ * Note: uid and email are derived from req.user (server-trusted), not req.body
  */
 export async function startPlanCheckout(req, res) {
   try {
-    const { plan, billing, uid, email } = req.body;
+    const { plan, billing } = req.body;
     
     // Validate inputs
     if (!['creator', 'pro'].includes(plan)) {
@@ -139,8 +140,21 @@ export async function startPlanCheckout(req, res) {
     if (!['monthly', 'onetime'].includes(billing)) {
       return res.status(400).json({ ok: false, reason: "INVALID_BILLING", detail: "Billing must be 'monthly' or 'onetime'" });
     }
-    if (!uid || !email) {
-      return res.status(400).json({ ok: false, reason: "MISSING_USER_DATA", detail: "uid and email are required" });
+
+    // Trust boundary: derive uid/email from authenticated req.user, ignore any client-supplied values
+    const uid = req.user.uid;
+    const email = req.user.email || null;
+
+    // Debug: log if client sent conflicting uid/email (security verification)
+    if (process.env.VAIFORM_DEBUG === "1" && (req.body.uid || req.body.email)) {
+      const clientUid = req.body.uid;
+      const clientEmail = req.body.email;
+      if (clientUid && clientUid !== uid) {
+        console.warn(`[checkout/start:security] Client sent uid="${clientUid}" but server using req.user.uid="${uid}" (ignored)`);
+      }
+      if (clientEmail && clientEmail !== email) {
+        console.warn(`[checkout/start:security] Client sent email="${clientEmail}" but server using req.user.email="${email}" (ignored)`);
+      }
     }
 
     // Map plan + billing to Stripe price ID
@@ -159,15 +173,16 @@ export async function startPlanCheckout(req, res) {
     const mode = billing === "monthly" ? "subscription" : "payment";
     const FRONTEND = getFrontendBase(req);
 
-            console.log(`[checkout/start] Creating session with metadata:`, { uid, email, plan, billing, priceId, mode });
-            
-            const session = await stripe.checkout.sessions.create({
-              mode,
-              line_items: [{ price: priceId, quantity: 1 }],
-              customer_email: email,
-              success_url: `${FRONTEND}/success?plan=${plan}`,
-              cancel_url: `${FRONTEND}/pricing`,
-              metadata: { uid, email, plan, billing },
+    console.log(`[checkout/start] Creating session with metadata:`, { uid, email, plan, billing, priceId, mode });
+    
+    const session = await stripe.checkout.sessions.create({
+      mode,
+      line_items: [{ price: priceId, quantity: 1 }],
+      customer_email: email,
+      client_reference_id: uid,
+      success_url: `${FRONTEND}/success?plan=${plan}`,
+      cancel_url: `${FRONTEND}/pricing`,
+      metadata: { uid, email, plan, billing },
       ...(mode === "subscription" && {
         payment_method_collection: "always",
         subscription_data: {
@@ -176,7 +191,7 @@ export async function startPlanCheckout(req, res) {
       }),
     });
 
-    console.info(`[checkout/start] ${plan} ${billing} uid=${uid} email=${email} → ${session.url}`);
+    console.info(`[checkout/start] ${plan} ${billing} uid=${uid} email=${email || 'null'} → ${session.url}`);
     return res.json({ url: session.url });
   } catch (e) {
     console.error("[checkout/start] error", e);
