@@ -4,7 +4,9 @@ service cloud.firestore {
 
     function isSignedIn()     { return request.auth != null; }
     function isSelf(uid)      { return isSignedIn() && request.auth.uid == uid; }
-    function emailMatches(id) { return isSignedIn() && request.auth.token.email == id; }
+    function emailMatches(id) {
+      return isSignedIn() && request.auth.token.email != null && request.auth.token.email == id;
+    }
 
     // Canonical users by UID
     match /users/{uid} {
@@ -18,7 +20,8 @@ service cloud.firestore {
               .hasAny(["plan","credits","membership","isMember"]);
 
       match /generations/{genId} {
-        allow read, write: if isSelf(uid);
+        allow read: if isSelf(uid);
+        allow create, update, delete: if false; // server-only via Admin SDK
       }
 
       match /transactions/{txId} {
@@ -29,7 +32,8 @@ service cloud.firestore {
 
     // Legacy email-keyed docs (temporary, read-only)
     match /usersByEmail/{emailId} {
-      allow read: if emailMatches(emailId);
+      allow get: if emailMatches(emailId);
+      allow list: if false;
       allow write: if false;
     }
 
@@ -40,24 +44,16 @@ service cloud.firestore {
 
     // --- Shorts library (owner-locked) ---
     match /shorts/{id} {
-      // Create: must create for themselves
-      allow create: if isSignedIn() &&
-                    request.resource.data.ownerId == request.auth.uid;
-
       // Read: only owner can view
       allow read: if isSignedIn() &&
                   resource.data.ownerId == request.auth.uid;
+      // Write: server-only via Admin SDK
+      allow create, update, delete: if false;
+    }
 
-      // Update: only owner AND cannot change ownerId/createdAt
-      allow update: if isSignedIn() &&
-                    resource.data.ownerId == request.auth.uid &&
-                    request.resource.data.ownerId == resource.data.ownerId &&
-                    (!('createdAt' in resource.data) ||
-                      request.resource.data.createdAt == resource.data.createdAt);
-
-      // Delete: only owner can delete
-      allow delete: if isSignedIn() &&
-                    resource.data.ownerId == request.auth.uid;
+    // Explicit deny-all fallback
+    match /{allPaths=**} {
+      allow read, write: if false;
     }
   }
 }

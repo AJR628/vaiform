@@ -17,13 +17,6 @@ service firebase.storage {
       allow write: if false;
     }
 
-    // Optional: legacy user uploads (if still in use)
-    match /userUploads/{userEmail}/{fileName} {
-      allow read, write: if request.auth != null
-        && request.auth.token.email != null
-        && request.auth.token.email.replace('.', '_') == userEmail;
-    }
-
     // Deny everything else by default
     match /{allPaths=**} {
       allow read, write: if false;
