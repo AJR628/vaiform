@@ -1,6 +1,6 @@
 import { Router } from "express";
 import multer from "multer";
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { promises as fs } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -26,7 +26,7 @@ const r = Router();
 const uploadRateLimit = rateLimit({
   windowMs: 60 * 1000, // 1 minute
   max: 10, // 10 requests per minute (more generous than preview - file uploads are less CPU-intensive)
-  keyGenerator: (req) => req.user?.uid || req.ip, // Defensive fallback
+  keyGenerator: (req) => req.user?.uid || ipKeyGenerator(req.ip), // Defensive fallback
   skip: (req) => req.method === "OPTIONS", // Skip CORS preflights
   standardHeaders: true,
   legacyHeaders: false,

@@ -2,7 +2,7 @@ import express from "express";
 import pkg from "@napi-rs/canvas";
 import crypto from "node:crypto";
 import { z } from 'zod';
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { CaptionMetaSchema } from '../schemas/caption.schema.js';
 import { bufferToTmp } from '../utils/tmp.js';
 import { canvasFontString, normalizeWeight, normalizeFontStyle } from '../utils/font.registry.js';
@@ -70,7 +70,7 @@ const router = express.Router();
 const previewRateLimit = rateLimit({
   windowMs: 60 * 1000, // 1 minute
   max: 5, // 5 requests per minute
-  keyGenerator: (req) => req.user?.uid || req.ip, // Defensive fallback
+  keyGenerator: (req) => req.user?.uid || ipKeyGenerator(req.ip), // Defensive fallback
   skip: (req) => req.method === "OPTIONS", // Skip CORS preflights
   standardHeaders: true,
   legacyHeaders: false,

@@ -1,5 +1,5 @@
 import express from "express";
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { CaptionMetaSchema } from '../schemas/caption.schema.js';
 import requireAuth from '../middleware/requireAuth.js';
 
@@ -10,7 +10,7 @@ const SAFE_TOP = 0.10, SAFE_BOTTOM = 0.90;
 const renderRateLimit = rateLimit({
   windowMs: 60 * 1000, // 1 minute
   max: 5, // 5 requests per minute
-  keyGenerator: (req) => req.user?.uid || req.ip, // Defensive fallback
+  keyGenerator: (req) => req.user?.uid || ipKeyGenerator(req.ip), // Defensive fallback
   skip: (req) => req.method === "OPTIONS", // Skip CORS preflights
   standardHeaders: true,
   legacyHeaders: false,

@@ -1,5 +1,5 @@
 import express, { Router } from "express";
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { ttsPreview } from "../controllers/tts.controller.js";
 import requireAuth from "../middleware/requireAuth.js";
 const r = Router();
@@ -7,7 +7,7 @@ const r = Router();
 const ttsPreviewRateLimit = rateLimit({
   windowMs: 60 * 1000, // 1 minute
   max: 5, // 5 requests per minute
-  keyGenerator: (req) => req.user?.uid || req.ip, // Defensive fallback
+  keyGenerator: (req) => req.user?.uid || ipKeyGenerator(req.ip), // Defensive fallback
   skip: (req) => req.method === "OPTIONS", // Skip CORS preflights
   standardHeaders: true,
   legacyHeaders: false,
