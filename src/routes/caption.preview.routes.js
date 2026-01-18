@@ -2,6 +2,7 @@ import express from "express";
 import pkg from "@napi-rs/canvas";
 import crypto from "node:crypto";
 import { z } from 'zod';
+import rateLimit from 'express-rate-limit';
 import { CaptionMetaSchema } from '../schemas/caption.schema.js';
 import { bufferToTmp } from '../utils/tmp.js';
 import { canvasFontString, normalizeWeight, normalizeFontStyle } from '../utils/font.registry.js';
@@ -66,7 +67,23 @@ const RasterSchema = z.object({
 
 const router = express.Router();
 
-router.post("/caption/preview", express.json({ limit: "200kb" }), requireAuth, async (req, res) => {
+const previewRateLimit = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 5, // 5 requests per minute
+  keyGenerator: (req) => req.user?.uid || req.ip, // Defensive fallback
+  skip: (req) => req.method === "OPTIONS", // Skip CORS preflights
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (req, res) => {
+    res.status(429).json({ 
+      success: false, 
+      error: 'RATE_LIMIT_EXCEEDED', 
+      detail: 'Too many requests. Please try again in a minute.' 
+    });
+  }
+});
+
+router.post("/caption/preview", requireAuth, previewRateLimit, express.json({ limit: "200kb" }), async (req, res) => {
   try {
     // V3 Raster Detection Gate - Only allow V3 raster mode
     const isV3Raster = req.body.ssotVersion === 3 && req.body.mode === 'raster';

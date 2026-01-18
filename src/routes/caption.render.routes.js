@@ -1,4 +1,5 @@
 import express from "express";
+import rateLimit from 'express-rate-limit';
 import { CaptionMetaSchema } from '../schemas/caption.schema.js';
 import requireAuth from '../middleware/requireAuth.js';
 
@@ -6,7 +7,23 @@ const router = express.Router();
 
 const SAFE_TOP = 0.10, SAFE_BOTTOM = 0.90;
 
-router.post("/caption/render", express.json({ limit: "200kb" }), requireAuth, async (req, res) => {
+const renderRateLimit = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 5, // 5 requests per minute
+  keyGenerator: (req) => req.user?.uid || req.ip, // Defensive fallback
+  skip: (req) => req.method === "OPTIONS", // Skip CORS preflights
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (req, res) => {
+    res.status(429).json({ 
+      success: false, 
+      error: 'RATE_LIMIT_EXCEEDED', 
+      detail: 'Too many requests. Please try again in a minute.' 
+    });
+  }
+});
+
+router.post("/caption/render", requireAuth, renderRateLimit, express.json({ limit: "200kb" }), async (req, res) => {
   try {
     // Check if this is the new overlay format
     const isOverlayFormat = req.body.placement === 'custom' && req.body.yPct !== undefined;

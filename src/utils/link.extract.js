@@ -39,11 +39,15 @@ export async function extractContentFromUrl(url) {
         console.log(`[link.extract] Retry attempt ${attempt} for ${url}`);
       }
       
-      // Fetch HTML
-      const response = await fetch(url, {
-        headers,
-        redirect: 'follow'
-      });
+      // Fetch HTML with timeout (each retry attempt gets its own timeout)
+      const { withAbortTimeout } = await import('./fetch.timeout.js');
+      const response = await withAbortTimeout(async (signal) => {
+        return await fetch(url, {
+          headers,
+          redirect: 'follow',
+          ...(signal ? { signal } : {})
+        });
+      }, { timeoutMs: 20000, errorMessage: 'LINK_EXTRACT_TIMEOUT' });
       
       if (!response.ok) {
         // Retry on 403/429, but fail immediately on other errors
@@ -65,6 +69,10 @@ export async function extractContentFromUrl(url) {
       }
     } catch (error) {
       lastError = error;
+      // CRITICAL: Timeout errors must NOT trigger retries (fail immediately)
+      if (error.name === 'AbortError' || error.message === 'LINK_EXTRACT_TIMEOUT') {
+        throw error;
+      }
       // Only retry on network/403/429 errors
       if (attempt < maxRetries && (
         error.message.includes('HTTP_403') || 

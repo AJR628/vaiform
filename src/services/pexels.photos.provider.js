@@ -1,3 +1,5 @@
+import { withAbortTimeout } from '../utils/fetch.timeout.js';
+
 const PEXELS_PHOTOS = "https://api.pexels.com/v1/search";
 
 // Prefer vertical "portrait" src for 9:16
@@ -23,7 +25,12 @@ export async function pexelsSearchPhotos({ query, perPage = 12, page = 1 }) {
   url.searchParams.set("orientation", "portrait");
   url.searchParams.set("page", String(Math.max(1, page)));
 
-  const res = await fetch(url, { headers: { "Authorization": key, "Accept": "application/json" } });
+  const res = await withAbortTimeout(async (signal) => {
+    return await fetch(url, { 
+      headers: { "Authorization": key, "Accept": "application/json" },
+      ...(signal ? { signal } : {})
+    });
+  }, { timeoutMs: 15000, errorMessage: 'PEXELS_SEARCH_TIMEOUT' });
   if (!res.ok) {
     // short negative cache on backoff
     mem.set(cacheKey, { at: now, ttl: 60_000, items: [] });

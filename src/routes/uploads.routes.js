@@ -1,5 +1,6 @@
 import { Router } from "express";
 import multer from "multer";
+import rateLimit from 'express-rate-limit';
 import { promises as fs } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -22,7 +23,23 @@ const upload = multer({
 
 const r = Router();
 
-r.post("/uploads/image", requireAuth, upload.single("file"), async (req, res) => {
+const uploadRateLimit = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 10, // 10 requests per minute (more generous than preview - file uploads are less CPU-intensive)
+  keyGenerator: (req) => req.user?.uid || req.ip, // Defensive fallback
+  skip: (req) => req.method === "OPTIONS", // Skip CORS preflights
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (req, res) => {
+    res.status(429).json({ 
+      success: false, 
+      error: 'RATE_LIMIT_EXCEEDED', 
+      detail: 'Too many requests. Please try again in a minute.' 
+    });
+  }
+});
+
+r.post("/uploads/image", requireAuth, uploadRateLimit, upload.single("file"), async (req, res) => {
   try {
     const ownerUid = req.user?.uid;
     if (!ownerUid) return res.status(401).json({ success: false, error: "UNAUTHENTICATED", message: "Login required" });
@@ -58,7 +75,7 @@ r.post("/uploads/image", requireAuth, upload.single("file"), async (req, res) =>
 export default r;
 
 // Register a remote image URL into storage and return a tokenized URL
-r.post("/uploads/register", requireAuth, async (req, res) => {
+r.post("/uploads/register", requireAuth, uploadRateLimit, async (req, res) => {
   try {
     const ownerUid = req.user?.uid;
     if (!ownerUid) return res.status(401).json({ success: false, error: "UNAUTHENTICATED" });

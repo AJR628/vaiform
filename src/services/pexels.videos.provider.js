@@ -1,3 +1,5 @@
+import { withAbortTimeout } from '../utils/fetch.timeout.js';
+
 const PEXELS_VIDEOS = "https://api.pexels.com/videos/search";
 
 function pickBestFile(video, { targetDur = 8 }) {
@@ -42,7 +44,12 @@ export async function pexelsSearchVideos({ query, perPage = 12, targetDur = 8, p
   url.searchParams.set("size", "large");
   url.searchParams.set("page", String(Math.max(1, page)));
 
-  const res = await fetch(url, { headers: { "Authorization": key, "Accept": "application/json" } });
+  const res = await withAbortTimeout(async (signal) => {
+    return await fetch(url, { 
+      headers: { "Authorization": key, "Accept": "application/json" },
+      ...(signal ? { signal } : {})
+    });
+  }, { timeoutMs: 15000, errorMessage: 'PEXELS_SEARCH_TIMEOUT' });
   if (!res.ok) {
     mem.set(cacheKey, { at: now, ttl: 60_000, items: [] });
     return { ok: false, reason: `HTTP_${res.status}`, items: [] };
