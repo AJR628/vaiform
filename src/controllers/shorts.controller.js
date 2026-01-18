@@ -535,6 +535,10 @@ export async function deleteShort(req, res) {
     if (!jobId) {
       return res.status(400).json({ success: false, error: "INVALID_INPUT", message: "jobId required" });
     }
+    // Prevent path traversal in jobId
+    if (jobId.includes('/') || jobId.includes('\\') || jobId.includes('..')) {
+      return res.status(400).json({ success: false, error: "INVALID_INPUT", message: "Invalid jobId format" });
+    }
 
     const db = admin.firestore();
     const shortsRef = db.collection('shorts').doc(jobId);
@@ -555,12 +559,15 @@ export async function deleteShort(req, res) {
     
     // Delete files from Firebase Storage
     const bucket = admin.storage().bucket();
-    const destBase = `artifacts/${ownerUid}/${jobId}`;
+    const destBase = `artifacts/${ownerUid}/${jobId}/`;
     
     try {
-      const [files] = await bucket.getFiles({ prefix: destBase });
+      const [files, nextQuery] = await bucket.getFiles({ prefix: destBase, autoPaginate: false, maxResults: 100 });
       await Promise.all(files.map(file => file.delete()));
       console.log(`[shorts] Deleted ${files.length} files for short: ${jobId}`);
+      if (nextQuery && nextQuery.pageToken) {
+        console.warn(`[shorts] Storage deletion truncated for jobId=${jobId} ownerUid=${ownerUid} prefix=${destBase} deleted=${files.length} (maxResults=100 reached)`);
+      }
     } catch (storageError) {
       console.warn(`[shorts] Failed to delete storage files for ${jobId}:`, storageError.message);
     }
