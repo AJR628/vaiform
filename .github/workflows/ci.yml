@@ -24,7 +24,10 @@ jobs:
           cache: npm
 
       - name: Install
-        run: npm ci || npm i
+        run: npm ci
+
+      - name: Security audit
+        run: npm audit --audit-level=high
 
       - name: Prettier format check
         run: npm run format:check
