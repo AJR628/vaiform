@@ -222,97 +222,161 @@ r.post("/update-caption-style", async (req, res) => {
 });
 
 // POST /api/story/update-caption-meta - Save captionMeta for session
+// Supports both single-beat (legacy) and batch mode (new)
 r.post("/update-caption-meta", requireAuth, async (req, res) => {
   try {
-    const parsed = z.object({
+    // Detect batch vs single mode
+    const isBatchMode = Array.isArray(req.body?.updates);
+    
+    // Schema for single-beat mode (legacy)
+    const SingleBeatSchema = z.object({
       sessionId: z.string().min(3),
-      beatIndex: z.number().int().min(0),  // ✅ REQUIRED: Each beat has different text, meta must be per-beat
+      beatIndex: z.number().int().min(0),
       captionMeta: z.object({
-        lines: z.array(z.string()).min(1).max(20),  // ✅ Cap line count (prevent abuse)
-        effectiveStyle: z.object({}).passthrough(),  // Will be sanitized server-side
-        styleHash: z.string().optional(),  // ✅ Server recomputes (don't trust client)
-        wrapHash: z.string().optional(),   // ✅ Server recomputes (don't trust client)
+        lines: z.array(z.string()).min(1).max(20),
+        effectiveStyle: z.object({}).passthrough(),
+        styleHash: z.string().optional(),
+        wrapHash: z.string().optional(),
         maxWidthPx: z.number().min(0).max(2000),
         totalTextH: z.number().min(0).max(5000)
-        // ... other meta fields
       })
-    }).safeParse(req.body);
+    });
+    
+    // Schema for batch mode (new)
+    const BatchSchema = z.object({
+      sessionId: z.string().min(3),
+      updates: z.array(z.object({
+        beatIndex: z.number().int().min(0),
+        captionMeta: z.object({
+          lines: z.array(z.string()).min(1).max(20),
+          effectiveStyle: z.object({}).passthrough(),
+          styleHash: z.string().optional(),
+          wrapHash: z.string().optional(),
+          maxWidthPx: z.number().min(0).max(2000),
+          totalTextH: z.number().min(0).max(5000)
+        })
+      })).min(1).max(20)  // Hard cap batch size <= 20
+    });
+    
+    // Parse based on mode
+    const parsed = isBatchMode
+      ? BatchSchema.safeParse(req.body)
+      : SingleBeatSchema.safeParse(req.body);
     
     if (!parsed.success) {
       return res.status(400).json({ success: false, error: "INVALID_INPUT", detail: parsed.error.flatten() });
     }
     
-    const { sessionId, beatIndex, captionMeta: clientMeta } = parsed.data;
+    const { sessionId } = parsed.data;
     
-    // Load session to get canonical beat text
+    // Load session once (shared for both modes)
     const session = await getStorySession({ uid: req.user.uid, sessionId });
     
     if (!session) {
       return res.status(404).json({ success: false, error: "SESSION_NOT_FOUND" });
     }
     
-    // ✅ CRITICAL: Fetch canonical textRaw from session.story.sentences[beatIndex]
     const sentences = session.story?.sentences || [];
-    if (beatIndex < 0 || beatIndex >= sentences.length) {
-      return res.status(400).json({ success: false, error: "INVALID_BEAT_INDEX", detail: `beatIndex ${beatIndex} out of range (0-${sentences.length - 1})` });
-    }
     
-    const textRaw = sentences[beatIndex];  // ✅ Canonical source (not reconstructed from lines)
-    
-    // ✅ SECURITY: Sanitize effectiveStyle server-side (don't trust client)
-    const sanitizedStyle = extractStyleOnly(clientMeta.effectiveStyle || {});
-    
-    // ✅ SECURITY: Recompute meta server-side using canonical textRaw
+    // Import dependencies once (shared)
     const { compileCaptionSSOT } = await import('../captions/compile.js');
-    const recomputedMeta = compileCaptionSSOT({
-      textRaw,  // ✅ Use canonical text from session, not reconstructed from lines
-      style: sanitizedStyle,
-      frameW: 1080,
-      frameH: 1920
-    });
-    
-    // ✅ CRITICAL: Verify lines match compiler output (prevents stale/spoofed meta)
-    const linesMatch = recomputedMeta.lines.length === clientMeta.lines.length &&
-      recomputedMeta.lines.every((line, i) => line === clientMeta.lines[i]);
-    
-    if (!linesMatch) {
-      console.warn('[update-caption-meta] Lines mismatch:', {
-        beatIndex,
-        clientLines: clientMeta.lines,
-        serverLines: recomputedMeta.lines,
-        textRaw: textRaw.substring(0, 50) + '...'
-      });
-      return res.status(409).json({ 
-        success: false, 
-        error: "STALE_META", 
-        detail: "Caption meta lines do not match server computation. Preview may be stale. Please regenerate preview."
-      });
-    }
-    
-    // ✅ Build server-verified meta (uses server-computed values)
-    // ✅ STALENESS DETECTION: Store textHash for render-time staleness checks
     const cryptoModule = await import('crypto');
-    const textHash = cryptoModule.createHash('sha256').update(textRaw.trim().toLowerCase()).digest('hex').slice(0, 16);
     
-    const serverMeta = {
-      lines: recomputedMeta.lines,  // ✅ Use server-computed lines (verified match)
-      effectiveStyle: recomputedMeta.effectiveStyle,  // Server-sanitized
-      styleHash: recomputedMeta.styleHash,  // Server-computed
-      wrapHash: recomputedMeta.wrapHash,    // Server-computed
-      textHash: textHash,  // ✅ Hash of canonical textRaw (for staleness detection)
-      maxWidthPx: recomputedMeta.maxWidthPx,
-      totalTextH: recomputedMeta.totalTextH
+    // Helper to process a single beat update
+    const processBeatUpdate = (beatIndex, clientMeta) => {
+      if (beatIndex < 0 || beatIndex >= sentences.length) {
+        return { beatIndex, error: "INVALID_BEAT_INDEX", detail: `beatIndex ${beatIndex} out of range (0-${sentences.length - 1})` };
+      }
+      
+      const textRaw = sentences[beatIndex];
+      const sanitizedStyle = extractStyleOnly(clientMeta.effectiveStyle || {});
+      
+      const recomputedMeta = compileCaptionSSOT({
+        textRaw,
+        style: sanitizedStyle,
+        frameW: 1080,
+        frameH: 1920
+      });
+      
+      // Verify lines match compiler output
+      const linesMatch = recomputedMeta.lines.length === clientMeta.lines.length &&
+        recomputedMeta.lines.every((line, i) => line === clientMeta.lines[i]);
+      
+      if (!linesMatch) {
+        console.warn('[update-caption-meta] Lines mismatch (skipping beat):', {
+          beatIndex,
+          clientLinesCount: clientMeta.lines.length,
+          serverLinesCount: recomputedMeta.lines.length,
+          textRaw: textRaw.substring(0, 50) + '...'
+        });
+        return { beatIndex, error: "STALE_META", skipped: true };
+      }
+      
+      const textHash = cryptoModule.createHash('sha256').update(textRaw.trim().toLowerCase()).digest('hex').slice(0, 16);
+      
+      const serverMeta = {
+        lines: recomputedMeta.lines,
+        effectiveStyle: recomputedMeta.effectiveStyle,
+        styleHash: recomputedMeta.styleHash,
+        wrapHash: recomputedMeta.wrapHash,
+        textHash: textHash,
+        maxWidthPx: recomputedMeta.maxWidthPx,
+        totalTextH: recomputedMeta.totalTextH
+      };
+      
+      // Store per-beat meta
+      if (!session.beats) session.beats = [];
+      if (!session.beats[beatIndex]) session.beats[beatIndex] = {};
+      session.beats[beatIndex].captionMeta = serverMeta;
+      
+      return { beatIndex, captionMeta: serverMeta };
     };
     
-    // ✅ Store per-beat meta (required: each beat has different text)
-    if (!session.beats) session.beats = [];
-    if (!session.beats[beatIndex]) session.beats[beatIndex] = {};
-    session.beats[beatIndex].captionMeta = serverMeta;
-    
-    session.updatedAt = new Date().toISOString();
-    await saveStorySession({ uid: req.user.uid, sessionId, data: session });
-    
-    return res.json({ success: true, data: { captionMeta: serverMeta } });
+    if (isBatchMode) {
+      // BATCH MODE: Process all updates, save once
+      const updates = parsed.data.updates;
+      const results = [];
+      
+      for (const { beatIndex, captionMeta } of updates) {
+        const result = processBeatUpdate(beatIndex, captionMeta);
+        if (!result.skipped && !result.error) {
+          results.push(result);
+        }
+      }
+      
+      // Only save if we have successful updates (avoid pointless writes)
+      if (results.length > 0) {
+        session.updatedAt = new Date().toISOString();
+        await saveStorySession({ uid: req.user.uid, sessionId, data: session });
+        console.log('[update-caption-meta] Saved', { mode: 'batch', count: results.length, sessionId });
+      } else {
+        console.log('[update-caption-meta] No updates to save (all skipped)', { mode: 'batch', sessionId });
+      }
+      
+      return res.json({ success: true, data: { updates: results } });
+    } else {
+      // SINGLE MODE: Legacy behavior (backwards compatible)
+      const { beatIndex, captionMeta: clientMeta } = parsed.data;
+      const result = processBeatUpdate(beatIndex, clientMeta);
+      
+      if (result.error === "INVALID_BEAT_INDEX") {
+        return res.status(400).json({ success: false, error: result.error, detail: result.detail });
+      }
+      
+      if (result.error === "STALE_META") {
+        return res.status(409).json({ 
+          success: false, 
+          error: "STALE_META", 
+          detail: "Caption meta lines do not match server computation. Preview may be stale. Please regenerate preview."
+        });
+      }
+      
+      session.updatedAt = new Date().toISOString();
+      await saveStorySession({ uid: req.user.uid, sessionId, data: session });
+      console.log('[update-caption-meta] Saved', { mode: 'single', beatIndex, sessionId });
+      
+      return res.json({ success: true, data: { captionMeta: result.captionMeta } });
+    }
   } catch (e) {
     console.error("[story][update-caption-meta] error:", e);
     return res.status(500).json({ success: false, error: "UPDATE_CAPTION_META_FAILED", detail: e?.message });

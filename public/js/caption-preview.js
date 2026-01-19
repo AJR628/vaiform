@@ -6,39 +6,145 @@
 // Import API helpers to use same backend as other endpoints
 import { apiFetch } from "../api.mjs";
 
+// ============================================================================
+// Batched Meta Write System (prevents GCS 429 from per-beat writes)
+// ============================================================================
+const META_FLUSH_DELAY_MS = 1500;  // Flush pending writes after 1.5s of inactivity
+
+// Pending writes: Map<beatIndex, { sessionId, captionMeta, version }>
+const pendingMetaWrites = new Map();
+
+// Stale guard: Map<beatIndex, version> - tracks latest version per beat
+const beatRequestVersions = new Map();
+
+// Dedupe: Map<beatIndex, hash> - tracks last written hash per beat
+const lastWrittenHashes = new Map();
+
+// Flush timer reference
+let metaFlushTimer = null;
+
 /**
- * Save caption meta to server for SSOT persistence (fire-and-forget, non-blocking)
+ * Queue a caption meta write (batched, deduplicated)
  * @param {Object} params
  * @param {string} params.sessionId - Story session ID
  * @param {number} params.beatIndex - Beat index in story.sentences array (must be numeric)
  * @param {Object} params.captionMeta - Compiler meta object with effectiveStyle, lines, etc.
  */
-async function saveCaptionMetaForBeat({ sessionId, beatIndex, captionMeta }) {
+function saveCaptionMetaForBeat({ sessionId, beatIndex, captionMeta }) {
   if (!sessionId || typeof beatIndex !== "number" || beatIndex < 0 || !captionMeta?.lines?.length) {
     console.warn("[caption-meta-handshake] skipped (missing inputs)", { sessionId, beatIndex, hasMeta: !!captionMeta });
     return;
   }
 
-  try {
-    const resp = await apiFetch("/story/update-caption-meta", {
-      method: "POST",
-      body: { sessionId, beatIndex, captionMeta },
-    });
+  // Dedupe check: skip if same hash was already written
+  const hash = hashStyleAndText(captionMeta.effectiveStyle || {}, captionMeta.lines.join('\n'));
+  const lastHash = lastWrittenHashes.get(beatIndex);
+  if (lastHash === hash) {
+    // Already written this exact meta, skip
+    return;
+  }
 
-    if (!resp?.success) {
-      console.warn("[caption-meta-handshake] server rejected", resp);
-      return;
+  // Increment version for stale guard
+  const currentVersion = (beatRequestVersions.get(beatIndex) || 0) + 1;
+  beatRequestVersions.set(beatIndex, currentVersion);
+
+  // Queue write (latest wins)
+  pendingMetaWrites.set(beatIndex, {
+    sessionId,
+    captionMeta,
+    version: currentVersion,
+    hash
+  });
+
+  // Reset flush timer
+  if (metaFlushTimer) {
+    clearTimeout(metaFlushTimer);
+  }
+  metaFlushTimer = setTimeout(flushPendingMetaWrites, META_FLUSH_DELAY_MS);
+}
+
+/**
+ * Flush all pending meta writes in a single batch request
+ */
+async function flushPendingMetaWrites() {
+  metaFlushTimer = null;
+
+  if (pendingMetaWrites.size === 0) {
+    return;
+  }
+
+  // Snapshot and clear pending writes
+  const writes = Array.from(pendingMetaWrites.entries());
+  pendingMetaWrites.clear();
+
+  // Group by sessionId (should be same for all, but defensive)
+  const bySession = new Map();
+  for (const [beatIndex, data] of writes) {
+    const { sessionId, captionMeta, version, hash } = data;
+    if (!bySession.has(sessionId)) {
+      bySession.set(sessionId, []);
     }
+    bySession.get(sessionId).push({ beatIndex, captionMeta, version, hash });
+  }
 
-    console.log("[caption-meta-handshake] saved", {
-      beatIndex,
-      styleHash: resp?.data?.captionMeta?.styleHash,
-      textHash: resp?.data?.captionMeta?.textHash,
-      linesCount: resp?.data?.captionMeta?.lines?.length,
-    });
-  } catch (err) {
-    // Non-blocking by design
-    console.warn("[caption-meta-handshake] failed", err);
+  // Send batch request per session
+  for (const [sessionId, updates] of bySession.entries()) {
+    try {
+      const payload = {
+        sessionId,
+        updates: updates.map(({ beatIndex, captionMeta }) => ({ beatIndex, captionMeta }))
+      };
+
+      console.log("[caption-meta-handshake] batch flush", {
+        sessionId,
+        count: updates.length,
+        beatIndices: updates.map(u => u.beatIndex)
+      });
+
+      const resp = await apiFetch("/story/update-caption-meta", {
+        method: "POST",
+        body: payload,
+      });
+
+      if (!resp?.success) {
+        console.warn("[caption-meta-handshake] batch rejected", resp);
+        continue;
+      }
+
+      // Process successful updates
+      const serverUpdates = resp?.data?.updates || [];
+      for (const serverUpdate of serverUpdates) {
+        const { beatIndex, captionMeta: serverMeta } = serverUpdate;
+        
+        // Stale guard: only accept if version matches latest
+        const pendingData = updates.find(u => u.beatIndex === beatIndex);
+        if (!pendingData) continue;
+        
+        const latestVersion = beatRequestVersions.get(beatIndex);
+        if (pendingData.version !== latestVersion) {
+          // Stale response, ignore
+          console.log("[caption-meta-handshake] stale response ignored", {
+            beatIndex,
+            responseVersion: pendingData.version,
+            latestVersion
+          });
+          continue;
+        }
+
+        // Update dedupe hash
+        lastWrittenHashes.set(beatIndex, pendingData.hash);
+
+        console.log("[caption-meta-handshake] saved", {
+          beatIndex,
+          styleHash: serverMeta?.styleHash,
+          textHash: serverMeta?.textHash,
+          linesCount: serverMeta?.lines?.length,
+        });
+      }
+    } catch (err) {
+      // Non-blocking by design
+      console.warn("[caption-meta-handshake] batch failed", err);
+    }
   }
 }
 

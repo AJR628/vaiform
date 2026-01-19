@@ -69,7 +69,7 @@ const router = express.Router();
 
 const previewRateLimit = rateLimit({
   windowMs: 60 * 1000, // 1 minute
-  max: 5, // 5 requests per minute
+  max: 20, // 20 requests per minute (increased for 8-beat storyboard)
   keyGenerator: (req) => req.user?.uid || ipKeyGenerator(req.ip), // Defensive fallback
   skip: (req) => req.method === "OPTIONS", // Skip CORS preflights
   standardHeaders: true,

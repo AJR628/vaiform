@@ -171,7 +171,8 @@ export async function apiFetch(path, opts = {}) {
         const errorJson = await res.json();
         dlog("apiFetch error:", res.status, errorJson);
         // Return error object so callers can check resp.error or resp.code
-        return errorJson;
+        // Add httpStatus for callers that need to distinguish 429 vs 500 etc.
+        return { ...errorJson, httpStatus: res.status };
       } catch {
         // Fallback if JSON parsing fails
         const detail = await res.text().catch(() => "");
@@ -180,6 +181,7 @@ export async function apiFetch(path, opts = {}) {
           success: false,
           error: `HTTP_${res.status}`,
           detail: detail || `HTTP ${res.status}`,
+          httpStatus: res.status,
         };
       }
     } else {
@@ -189,6 +191,7 @@ export async function apiFetch(path, opts = {}) {
         success: false,
         error: `HTTP_${res.status}`,
         detail: detail || `HTTP ${res.status}`,
+        httpStatus: res.status,
       };
     }
   }
