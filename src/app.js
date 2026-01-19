@@ -1,6 +1,7 @@
 import express from "express";
 import cors from "cors";
 import bodyParser from "body-parser";
+import helmet from "helmet";
 import dotenv from "dotenv";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -36,6 +37,12 @@ const app = express();
 
 // Trust proxy (before routes)
 app.set("trust proxy", Number(process.env.TRUST_PROXY_HOPS || 1));
+
+// Security headers (CSP disabled for SPA compatibility)
+app.use(helmet({
+  contentSecurityPolicy: false,
+  crossOriginEmbedderPolicy: false,
+}));
 
 // 🪪 assign a request ID early
 app.use(reqId);

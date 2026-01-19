@@ -10,7 +10,15 @@ export default function envCheck() {
     'FIREBASE_PROJECT_ID',
     'FIREBASE_STORAGE_BUCKET',
   ];
-  
+
+  // Firebase credentials: require either B64 JSON or split vars
+  const hasB64 = !!process.env.FIREBASE_SERVICE_ACCOUNT_B64;
+  const hasSplit = !!(process.env.FIREBASE_CLIENT_EMAIL && process.env.FIREBASE_PRIVATE_KEY);
+  if (!hasB64 && !hasSplit) {
+    console.error('❌ Missing Firebase credentials: set FIREBASE_SERVICE_ACCOUNT_B64 OR (FIREBASE_CLIENT_EMAIL + FIREBASE_PRIVATE_KEY)');
+    process.exit(1);
+  }
+
   const optional = [
     'OPENAI_API_KEY',
     'STRIPE_SECRET_KEY', 

@@ -2,6 +2,10 @@
   "name": "vaiform",
   "version": "0.1.0",
   "type": "module",
+  "engines": {
+    "node": ">=22.0.0",
+    "npm": ">=10.0.0"
+  },
   "dependencies": {
     "@napi-rs/canvas": "^0.1.80",
     "body-parser": "^1.20.3",
