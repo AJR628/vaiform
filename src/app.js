@@ -70,13 +70,47 @@ const ALLOWED_ORIGINS = [
   "http://localhost:8888" // local development
 ];
 
-app.use(cors({
+// DEV-only: Allow Replit preview origins (Expo Web)
+const isDev = process.env.NODE_ENV !== "production";
+const isReplitPreview = (origin) => {
+  if (!isDev) return false;
+  try {
+    const { hostname, protocol } = new URL(origin);
+    if (protocol !== "https:") return false;
+    // Matches: *.riker.replit.dev, *.janeway.replit.dev, and other *.replit.dev preview hosts
+    return (
+      hostname.endsWith(".riker.replit.dev") ||
+      hostname.endsWith(".janeway.replit.dev") ||
+      hostname.endsWith(".replit.dev") ||
+      hostname.endsWith(".replit.app") ||
+      hostname.endsWith(".repl.co")
+    );
+  } catch {
+    return false;
+  }
+};
+
+const corsOptions = {
   origin(origin, cb) {
     if (!origin) return cb(null, true); // allow curl/healthchecks
-    cb(null, ALLOWED_ORIGINS.includes(origin));
+    // Exact match for production origins
+    if (ALLOWED_ORIGINS.includes(origin)) return cb(null, true);
+    // DEV-only: Pattern match for Replit preview
+    if (isReplitPreview(origin)) {
+      console.log(`[cors] Allowing Replit preview origin: ${origin}`);
+      return cb(null, true);
+    }
+    cb(null, false);
   },
-  credentials: true
-}));
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Authorization', 'Content-Type', 'x-client', 'x-idempotency-key']
+};
+
+app.use(cors(corsOptions));
+
+// Explicit OPTIONS handler (defensive - cors() handles this, but explicit is clearer)
+app.options("*", cors(corsOptions));
 
 // ---------- Stripe webhook FIRST (before JSON parser) ----------
 import stripeWebhook from "./routes/stripe.webhook.js";
