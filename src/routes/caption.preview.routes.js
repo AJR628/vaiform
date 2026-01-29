@@ -9,6 +9,8 @@ import { canvasFontString, normalizeWeight, normalizeFontStyle } from '../utils/
 import { wrapTextWithFont } from '../utils/caption.wrap.js';
 import { deriveCaptionWrapWidthPx } from '../utils/caption.wrapWidth.js';
 import { compileCaptionSSOT } from '../captions/compile.js';
+import { CAPTION_LIMITS } from '../captions/constants.js';
+import { extractStyleOnly } from '../utils/caption-style-helper.js';
 import requireAuth from '../middleware/requireAuth.js';
 const { createCanvas } = pkg;
 
@@ -65,6 +67,23 @@ const RasterSchema = z.object({
   wPct: z.coerce.number().optional(),
 });
 
+// Server-measured (mobile) schema: text + placement/yPct + style only. No geometry.
+const MobileSchema = z.object({
+  ssotVersion: z.literal(3),
+  mode: z.literal('raster'),
+  measure: z.literal('server').optional(),
+  textRaw: z.string().optional(),
+  text: z.string().min(1, 'Caption text is required'),
+  placement: z.enum(['top', 'center', 'bottom']).optional(),
+  yPct: z.coerce.number().min(0).max(1).optional(),
+  style: z.record(z.unknown()).optional(),
+  frameW: z.coerce.number().int().default(1080),
+  frameH: z.coerce.number().int().default(1920),
+}).refine(
+  (d) => d.placement != null || d.yPct != null,
+  { message: 'placement or yPct required', path: ['placement'] }
+);
+
 const router = express.Router();
 
 const previewRateLimit = rateLimit({
@@ -98,16 +117,203 @@ router.post("/caption/preview", requireAuth, previewRateLimit, express.json({ li
     }
     
     console.log('[caption-preview] Using V3 RASTER path');
-    
-    // Handle V3 raster format
-    // Server-side fallback guard: ensure text field exists before schema validation
+
     const body = req.body || {};
+    const useServerMeasure =
+      body.measure === 'server' ||
+      (body.measure == null && req.get('x-client') === 'mobile');
+
+    if (useServerMeasure) {
+      const mobileParsed = MobileSchema.safeParse(body);
+      if (!mobileParsed.success) {
+        return res.status(400).json({
+          ok: false,
+          reason: 'INVALID_INPUT',
+          detail: mobileParsed.error.flatten(),
+        });
+      }
+      const data = mobileParsed.data;
+      const textRaw = data.textRaw || data.text;
+      const text = String(textRaw || '').trim();
+      if (!text) {
+        return res.status(400).json({
+          ok: false,
+          reason: 'EMPTY_TEXT',
+          detail: 'Caption text cannot be empty',
+        });
+      }
+      const frameW = data.frameW ?? 1080;
+      const frameH = data.frameH ?? 1920;
+      const styleFromBody = extractStyleOnly(data.style || {});
+      const styleInput = {
+        ...styleFromBody,
+        internalPaddingPx:
+          styleFromBody.internalPaddingPx ??
+          styleFromBody.internalPadding ??
+          (data.style?.rasterPadding != null ? Number(data.style.rasterPadding) : undefined),
+      };
+      const meta = compileCaptionSSOT({
+        textRaw,
+        style: styleInput,
+        frameW,
+        frameH,
+      });
+      const lines = meta.lines;
+      const totalTextH = meta.totalTextH;
+      const maxWidthPx = meta.maxWidthPx;
+      const effectiveStyle = meta.effectiveStyle;
+      const fontPx = effectiveStyle.fontPx;
+      const lineSpacingPx = effectiveStyle.lineSpacingPx;
+      const letterSpacingPx = effectiveStyle.letterSpacingPx;
+      const weightCss = effectiveStyle.weightCss;
+      const fontStyle = effectiveStyle.fontStyle;
+      const fontFamily = effectiveStyle.fontFamily;
+      const wPct = effectiveStyle.wPct ?? 0.8;
+      const internalPaddingPx = effectiveStyle.internalPaddingPx ?? 24;
+      const { boxW, pad } = deriveCaptionWrapWidthPx({
+        frameW,
+        wPct,
+        internalPaddingPx,
+      });
+      const rasterW = Math.max(100, Math.min(1080, Math.round(boxW)));
+      const rasterPadding = Math.round(pad);
+      const cssPaddingTop = rasterPadding;
+      const cssPaddingBottom = rasterPadding;
+      const shadowBlur = effectiveStyle.shadowBlur ?? 0;
+      const shadowOffsetY = effectiveStyle.shadowOffsetY ?? 1;
+      const rasterH = Math.round(
+        totalTextH +
+          cssPaddingTop +
+          cssPaddingBottom +
+          Math.max(0, shadowBlur * 2) +
+          Math.max(0, shadowOffsetY)
+      );
+      const yPctNominal =
+        data.yPct != null
+          ? Math.max(0, Math.min(1, Number(data.yPct)))
+          : (() => {
+              const p = (data.placement || 'center').toLowerCase();
+              if (p === 'top') return 0.1;
+              if (p === 'bottom') return 0.9;
+              return 0.5;
+            })();
+      const safeTop = CAPTION_LIMITS.safeTopMarginPct * frameH;
+      const safeBottom = CAPTION_LIMITS.safeBottomMarginPct * frameH;
+      const yPxMin = safeTop;
+      const yPxMax = Math.max(yPxMin, frameH - safeBottom - rasterH);
+      const p = (data.placement || 'center').toLowerCase();
+      let yPx_png;
+      if (data.yPct != null) {
+        yPx_png = Math.round(yPctNominal * frameH);
+      } else if (p === 'top') {
+        yPx_png = Math.round(0.1 * frameH);
+      } else if (p === 'bottom') {
+        yPx_png = Math.round(0.9 * frameH - rasterH);
+      } else {
+        yPx_png = Math.round(0.5 * frameH - rasterH / 2);
+      }
+      yPx_png = Math.max(yPxMin, Math.min(yPxMax, yPx_png));
+      const yPxFirstLine = yPx_png + rasterPadding;
+      const previewFontString = canvasFontString(
+        weightCss,
+        fontStyle,
+        fontPx,
+        pickFamily(fontFamily)
+      );
+      const rasterResult = await renderCaptionRaster({
+        text,
+        lines,
+        maxLineWidth: maxWidthPx,
+        fontPx,
+        fontFamily,
+        weightCss,
+        fontStyle,
+        textAlign: effectiveStyle.textAlign ?? 'center',
+        letterSpacingPx,
+        textTransform: effectiveStyle.textTransform ?? 'none',
+        color: effectiveStyle.color ?? 'rgb(255,255,255)',
+        opacity: effectiveStyle.opacity ?? 1,
+        strokePx: effectiveStyle.strokePx ?? 3,
+        strokeColor: effectiveStyle.strokeColor ?? 'rgba(0,0,0,0.85)',
+        shadowColor: effectiveStyle.shadowColor ?? 'rgba(0,0,0,0.6)',
+        shadowBlur: effectiveStyle.shadowBlur ?? 0,
+        shadowOffsetX: effectiveStyle.shadowOffsetX ?? 1,
+        shadowOffsetY: effectiveStyle.shadowOffsetY ?? 1,
+        lineSpacingPx,
+        totalTextH,
+        yPxFirstLine,
+        rasterW,
+        rasterH,
+        rasterPadding,
+        padTop: rasterPadding,
+        padBottom: rasterPadding,
+        previewFontString,
+        W: frameW,
+        H: frameH,
+      });
+      const pngBuffer = Buffer.from(rasterResult.rasterUrl.split(',')[1], 'base64');
+      const rasterHash = crypto.createHash('sha256').update(pngBuffer).digest('hex').slice(0, 16);
+      const ssotMeta = {
+        ssotVersion: 3,
+        mode: 'raster',
+        frameW,
+        frameH,
+        bgScaleExpr: "scale='if(gt(a,1080/1920),-2,1080)':'if(gt(a,1080/1920),1920,-2)'",
+        bgCropExpr: 'crop=1080:1920',
+        rasterUrl: rasterResult.rasterUrl,
+        rasterW,
+        rasterH,
+        rasterPadding,
+        xExpr_png: '(W-overlay_w)/2',
+        yPx_png,
+        rasterHash,
+        previewFontString: rasterResult.previewFontString ?? previewFontString,
+        previewFontHash: rasterResult.previewFontHash,
+        textRaw: data.textRaw,
+        text,
+        fontPx,
+        fontFamily,
+        weightCss,
+        fontStyle,
+        textAlign: effectiveStyle.textAlign ?? 'center',
+        letterSpacingPx,
+        textTransform: effectiveStyle.textTransform ?? 'none',
+        color: effectiveStyle.color ?? 'rgb(255,255,255)',
+        opacity: effectiveStyle.opacity ?? 1,
+        strokePx: effectiveStyle.strokePx ?? 3,
+        strokeColor: effectiveStyle.strokeColor ?? 'rgba(0,0,0,0.85)',
+        shadowColor: effectiveStyle.shadowColor ?? 'rgba(0,0,0,0.6)',
+        shadowBlur: effectiveStyle.shadowBlur ?? 0,
+        shadowOffsetX: effectiveStyle.shadowOffsetX ?? 1,
+        shadowOffsetY: effectiveStyle.shadowOffsetY ?? 1,
+        lines,
+        lineSpacingPx,
+        totalTextH,
+      };
+      console.log('[caption-preview:server-measured]', {
+        rasterW: ssotMeta.rasterW,
+        rasterH: ssotMeta.rasterH,
+        yPx_png: ssotMeta.yPx_png,
+        lines: ssotMeta.lines.length,
+      });
+      return res.status(200).json({
+        ok: true,
+        data: {
+          imageUrl: null,
+          wPx: frameW,
+          hPx: frameH,
+          xPx: 0,
+          meta: ssotMeta,
+        },
+        meta,
+      });
+    }
+
+    // Handle V3 raster format (client-measured / desktop)
     if ((!body.text || !String(body.text).trim()) && Array.isArray(body.lines) && body.lines.length) {
       console.log('[caption-preview:fallback] Missing text field, deriving from lines array');
       body.text = body.lines.join(' ').trim();
     }
-    
-    // Log raw request body for debugging
     console.log('[caption-preview:raw]', {
       hasText: !!body.text,
       hasTextRaw: !!body.textRaw,
@@ -115,9 +321,9 @@ router.post("/caption/preview", requireAuth, previewRateLimit, express.json({ li
       linesCount: body.lines?.length || 0,
       textSample: body.text?.slice(0, 50),
       ssotVersion: body.ssotVersion,
-      mode: body.mode
+      mode: body.mode,
     });
-    
+
     const parsed = RasterSchema.safeParse(body);
     if (!parsed.success) {
       return res.status(400).json({ ok: false, reason: "INVALID_INPUT", detail: parsed.error.flatten() });

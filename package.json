@@ -36,7 +36,8 @@
     "prepare": "husky install",
     "check:responses": "node scripts/check-responses.js",
     "smoke": "node scripts/smoke.mjs",
-    "test:poster": "node scripts/test-poster.mjs"
+    "test:poster": "node scripts/test-poster.mjs",
+    "test:caption-preview-contract": "node scripts/test-caption-preview-contract.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.33.0",
