@@ -6,7 +6,7 @@ export const CAPTION_DEFAULTS = {
   fontStyle: 'normal',
   letterSpacingPx: 0.5,        // ✅ Unified default
   lineSpacingPx: 0,
-  color: 'rgb(255,255,255)',
+  color: '#FFFFFF',
   opacity: 1.0,
   strokePx: 3,
   strokeColor: 'rgba(0,0,0,0.85)',

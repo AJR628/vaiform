@@ -164,8 +164,17 @@ export function convertOverlayToASSStyle(overlayCaption, width = 1080, height = 
   
   // Create highlight color (brighter/more saturated version for active words)
   // For white text, use blue-green/cyan highlight. For colored text, increase brightness
+  const raw = String(color || '');
+  const norm = raw.toLowerCase().replace(/\s+/g, '');
+  const isWhite =
+    norm === '#ffffff' ||
+    norm === 'white' ||
+    norm === 'rgb(255,255,255)' ||
+    norm === 'rgba(255,255,255,1)' ||
+    norm === 'rgba(255,255,255,1.0)';
+
   let highlightColor;
-  if (color.toLowerCase() === '#ffffff' || color.toLowerCase() === 'white' || color.toLowerCase() === 'rgb(255, 255, 255)') {
+  if (isWhite) {
     // White text: use blue-green/cyan highlight for visibility
     highlightColor = colorToASS('#00ffff', opacity); // Cyan/blue-green
   } else {
