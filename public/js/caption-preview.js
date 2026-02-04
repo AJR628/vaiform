@@ -1191,6 +1191,26 @@ export function applyPreviewResultToBeatCard(beatCardEl, result) {
   overlayImg.style.setProperty('--raster-w-ratio', rasterWRatio);
   overlayImg.style.setProperty('--raster-h-ratio', rasterHRatio);
   
+  if (window.__beatPreviewDebug) {
+    const container = overlayImg.parentElement;
+    const stageW = container?.clientWidth ?? 0;
+    const stageH = container?.clientHeight ?? 0;
+    const frameW = meta.frameW ?? 1080;
+    const frameH = meta.frameH ?? 1920;
+    const yPctLog = (meta.yPx_png ?? 0) / frameH;
+    const computedTopPx = yPctLog * stageH;
+    const computedHeightPx = ((meta.rasterH ?? 0) / frameH) * stageH;
+    console.log('[beat-preview] positioning:', {
+      stageW, stageH,
+      aspectRatio: stageW && stageH ? (stageW / stageH).toFixed(4) : null,
+      expected9_16: (9/16).toFixed(4),
+      frameW, frameH,
+      rasterW: meta.rasterW, rasterH: meta.rasterH,
+      yPx_png: meta.yPx_png, yPct: yPctLog,
+      computedTopPx, computedHeightPx
+    });
+  }
+
   // Set image source
   overlayImg.src = result.rasterUrl;
   overlayImg.style.display = 'block';
