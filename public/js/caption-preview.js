@@ -872,7 +872,7 @@ function setCachedBeatPreview(style, text, result) {
  * @returns {object} Payload ready for POST /api/caption/preview
  */
 function buildBeatPreviewPayload(text, overlayMeta, explicitStyle = {}) {
-  return {
+  const payload = {
     ssotVersion: 3,
     mode: 'raster',
     text: overlayMeta.text || text,
@@ -880,7 +880,7 @@ function buildBeatPreviewPayload(text, overlayMeta, explicitStyle = {}) {
     xPct: overlayMeta.xPct ?? 0.5,
     yPct: overlayMeta.yPct ?? 0.5,
     wPct: overlayMeta.wPct ?? 0.8,
-    
+
     // Typography
     // Style fields - only include if explicitly present in explicitStyle (let server defaults apply otherwise)
     // Use Object.prototype.hasOwnProperty.call for safety (handles falsy values like 0/false)
@@ -892,7 +892,7 @@ function buildBeatPreviewPayload(text, overlayMeta, explicitStyle = {}) {
     ...(Object.prototype.hasOwnProperty.call(explicitStyle, 'textAlign') ? { textAlign: overlayMeta.textAlign } : {}),
     ...(Object.prototype.hasOwnProperty.call(explicitStyle, 'letterSpacingPx') ? { letterSpacingPx: overlayMeta.letterSpacingPx } : {}),
     ...(Object.prototype.hasOwnProperty.call(explicitStyle, 'textTransform') ? { textTransform: overlayMeta.textTransform } : {}),
-    
+
     // Color & effects
     ...(Object.prototype.hasOwnProperty.call(explicitStyle, 'color') ? { color: overlayMeta.color } : {}),
     ...(Object.prototype.hasOwnProperty.call(explicitStyle, 'opacity') ? { opacity: overlayMeta.opacity } : {}),
@@ -902,7 +902,7 @@ function buildBeatPreviewPayload(text, overlayMeta, explicitStyle = {}) {
     ...(Object.prototype.hasOwnProperty.call(explicitStyle, 'shadowBlur') ? { shadowBlur: overlayMeta.shadowBlur } : {}),
     ...(Object.prototype.hasOwnProperty.call(explicitStyle, 'shadowOffsetX') ? { shadowOffsetX: overlayMeta.shadowOffsetX } : {}),
     ...(Object.prototype.hasOwnProperty.call(explicitStyle, 'shadowOffsetY') ? { shadowOffsetY: overlayMeta.shadowOffsetY } : {}),
-    
+
     // Geometry - required V3 raster fields
     frameW: overlayMeta.frameW || 1080,
     frameH: overlayMeta.frameH || 1920,
@@ -912,18 +912,51 @@ function buildBeatPreviewPayload(text, overlayMeta, explicitStyle = {}) {
     xPx_png: overlayMeta.xPx_png,
     yPx_png: overlayMeta.yPx_png,
     xExpr_png: overlayMeta.xExpr_png || '(W-overlay_w)/2',
-    
+
     // Browser-rendered line data (REQUIRED)
     lines: overlayMeta.lines,
     totalTextH: overlayMeta.totalTextH,
     yPxFirstLine: overlayMeta.yPxFirstLine, // Now always present from helper
-    
+
     // Font string for parity validation
     previewFontString: overlayMeta.previewFontString,
-    
+
     // Optional textRaw
     textRaw: overlayMeta.textRaw || text
   };
+
+  // Preset placement (top/middle/bottom): override yPx_png/yPct/yPxFirstLine for SSOT raster path
+  const placement = (explicitStyle?.placement ?? overlayMeta?.placement ?? 'middle').toLowerCase();
+  const isPreset = (placement === 'top' || placement === 'middle' || placement === 'bottom');
+  if (isPreset && Number.isFinite(overlayMeta?.rasterH) && overlayMeta.rasterH > 0) {
+    const frameH = payload.frameH || 1920;
+    const safeTop = Math.round(frameH * 0.10);
+    const safeBottom = Math.round(frameH * 0.10);
+    const rasterH = overlayMeta.rasterH;
+    let yPx = placement === 'top'
+      ? safeTop
+      : placement === 'middle'
+        ? Math.round(frameH * 0.5 - rasterH / 2)
+        : Math.round(frameH * 0.9 - rasterH);
+    const clampMin = safeTop;
+    const clampMax = frameH - safeBottom - rasterH;
+    yPx = Math.max(clampMin, Math.min(clampMax, yPx));
+    payload.yPx_png = yPx;
+    payload.yPct = yPx / frameH;
+    payload.yPxFirstLine = yPx + (overlayMeta.rasterPadding ?? payload.rasterPadding ?? 0);
+    if (window.__beatPreviewDebug) {
+      console.log('[beat-preview] preset positioning:', {
+        placement,
+        rasterH,
+        yPx_png: payload.yPx_png,
+        yPct: payload.yPct,
+        clampMin,
+        clampMax
+      });
+    }
+  }
+
+  return payload;
 }
 
 /**
