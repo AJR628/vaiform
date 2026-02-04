@@ -1330,6 +1330,9 @@ export function initCaptionOverlay({ stageSel = '#stage', mediaSel = '#previewMe
       } else {
         console.error('[snapToPlacement] CaptionGeom not available, defaulting to bottom placement');
       }
+      if (window.__beatPreviewDebug) {
+        console.log('[snapToPlacement] fallback (stage not measurable):', { placement, yPct });
+      }
       
       // CRITICAL: Recompute yPx_png from yPct + FRAME_H (not from stale lastMeta)
       // This ensures geometry consistency: yPct and yPx_png must match
