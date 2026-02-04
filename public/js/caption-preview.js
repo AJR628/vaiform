@@ -1341,8 +1341,13 @@ export function createCaptionOverlay(captionData, container, scaling = {}) {
   overlay.className = 'caption-overlay';
   
   // Convert all overlay geometry to CSS with single scale factor
-  const dispW = (captionData.meta?.wPx || 1080) * s;
-  const dispH = (captionData.meta?.hPx || 1920) * s;
+  // V3 raster: use cropped raster dims so PNG content isn't centered in oversized box
+  const meta = captionData.meta || {};
+  const hasRaster = Number.isFinite(meta.rasterW) && Number.isFinite(meta.rasterH);
+  const baseW = hasRaster ? meta.rasterW : (meta.wPx || 1080);
+  const baseH = hasRaster ? meta.rasterH : (meta.hPx || 1920);
+  const dispW = baseW * s;
+  const dispH = baseH * s;
   
   // SSOT: Use server-computed positioning directly
   const overlayV2 = detectOverlayV2();
@@ -1388,8 +1393,8 @@ export function createCaptionOverlay(captionData, container, scaling = {}) {
   // TASK 4: Debug logging with actual container dimensions
   console.log('[preview-overlay] positioning:', {
     W: finalW, H: finalH, iw: captionData.meta?.wPx, iH: captionData.meta?.hPx,
-    dispW: finalDispW, dispH: finalDispH, align, yPct,
-    finalScale: s, scaledTotalTextH, totalTextH, left, top, targetTop,
+    rasterW: meta.rasterW, rasterH: meta.rasterH, hasRaster, baseW, baseH, dispW, dispH,
+    align, yPct, finalScale: s, scaledTotalTextH, totalTextH, left, top, targetTop,
     safeTopMargin, safeBottomMargin
   });
 
