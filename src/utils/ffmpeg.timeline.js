@@ -8,6 +8,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { fetchVideoToTmp } from './video.fetch.js';
+import { getDurationMsFromMedia } from './media.duration.js';
 
 /**
  * Concatenate multiple video clips into a single continuous video
@@ -127,6 +128,106 @@ function runFfmpeg(args) {
   });
 }
 
+const DEFAULT_WIDTH = 1080;
+const DEFAULT_HEIGHT = 1920;
+const DEFAULT_FPS = 24;
+
+/**
+ * Concatenate video clips video-only (no audio). Use for global timeline from raw/trimmed clips.
+ * Map only [outv]; do not inject anullsrc. Overlay step adds TTS per beat.
+ * @param {{ clips: Array<{path: string, durationSec?: number}>, outPath: string, options?: { width?: number, height?: number, fps?: number } }}
+ * @returns {Promise<{ durationSec: number }>}
+ */
+export async function concatenateClipsVideoOnly({ clips, outPath, options = {} }) {
+  if (!Array.isArray(clips) || clips.length === 0) {
+    throw new Error('CLIPS_REQUIRED');
+  }
+  const width = options.width || DEFAULT_WIDTH;
+  const height = options.height || DEFAULT_HEIGHT;
+  const fps = options.fps || DEFAULT_FPS;
+  const validClips = clips.filter(c => c.path && fs.existsSync(c.path));
+  if (validClips.length === 0) {
+    throw new Error('NO_VALID_CLIPS');
+  }
+  const totalDurationSec = validClips.reduce((sum, c) => sum + (c.durationSec || 0), 0);
+  const scaleFilters = validClips.map((_, i) =>
+    `[${i}:v]scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2,setsar=1,setpts=PTS-STARTPTS[v${i}]`
+  ).join(';');
+  const concatInputs = validClips.map((_, i) => `[v${i}]`).join('');
+  const concatFilter = `${concatInputs}concat=n=${validClips.length}:v=1:a=0[outv]`;
+  const filterComplex = `${scaleFilters};${concatFilter}`;
+  const inputArgs = validClips.flatMap(c => ['-i', c.path]);
+  const args = [
+    ...inputArgs,
+    '-filter_complex', filterComplex,
+    '-map', '[outv]',
+    '-c:v', 'libx264',
+    '-pix_fmt', 'yuv420p',
+    '-r', String(fps),
+    '-preset', 'veryfast',
+    '-crf', '23',
+    '-movflags', '+faststart',
+    outPath
+  ];
+  await runFfmpeg(args);
+  return { durationSec: totalDurationSec };
+}
+
+/**
+ * Trim a clip to a segment starting at inSec with length durSec. Output starts at 0.
+ * If source is shorter than requested durSec, pad last frame (tpad=stop_mode=clone) to reach durSec; do not clamp.
+ * @param {{ path: string, inSec: number, durSec: number, outPath: string, options?: { width?: number, height?: number } }}
+ */
+export async function trimClipToSegment({ path: inPath, inSec, durSec, outPath, options = {} }) {
+  if (!inPath || !fs.existsSync(inPath)) throw new Error('TRIM_INPUT_REQUIRED');
+  const width = options.width || DEFAULT_WIDTH;
+  const height = options.height || DEFAULT_HEIGHT;
+  const clipDurMs = await getDurationMsFromMedia(inPath);
+  const clipDurSec = clipDurMs != null ? clipDurMs / 1000 : 0;
+  const available = Math.max(0, clipDurSec - inSec);
+  const takeDur = Math.min(durSec, available);
+  const padDur = Math.max(0, durSec - takeDur);
+  const scalePad = `scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2,setsar=1`;
+  const trimFilter = `trim=start=0:duration=${takeDur}`;
+  const tpadFilter = padDur > 0 ? `,tpad=stop_mode=clone:stop_duration=${padDur}` : '';
+  const filter = `[0:v]${trimFilter},${scalePad}${tpadFilter},setpts=PTS-STARTPTS[v]`;
+  const args = [
+    '-ss', String(inSec),
+    '-i', inPath,
+    '-filter_complex', filter,
+    '-map', '[v]',
+    '-c:v', 'libx264',
+    '-pix_fmt', 'yuv420p',
+    '-t', String(durSec),
+    '-movflags', '+faststart',
+    outPath
+  ];
+  await runFfmpeg(args);
+}
+
+/**
+ * Extract a segment from a file (e.g. global timeline). Output starts at 0. Video only.
+ * @param {{ path: string, startSec: number, durSec: number, outPath: string, options?: { width?: number, height?: number } }}
+ */
+export async function extractSegmentFromFile({ path: inPath, startSec, durSec, outPath, options = {} }) {
+  if (!inPath || !fs.existsSync(inPath)) throw new Error('EXTRACT_INPUT_REQUIRED');
+  const width = options.width || DEFAULT_WIDTH;
+  const height = options.height || DEFAULT_HEIGHT;
+  const scalePad = `scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2,setsar=1,setpts=PTS-STARTPTS[v]`;
+  const args = [
+    '-ss', String(startSec),
+    '-i', inPath,
+    '-filter_complex', `[0:v]${scalePad}`,
+    '-map', '[v]',
+    '-c:v', 'libx264',
+    '-pix_fmt', 'yuv420p',
+    '-t', String(durSec),
+    '-movflags', '+faststart',
+    outPath
+  ];
+  await runFfmpeg(args);
+}
+
 /**
  * Fetch clips to temporary files and prepare for concatenation
  * @param {Array<{url: string, durationSec: number}>} clips - Clips with URLs
@@ -155,5 +256,5 @@ export async function fetchClipsToTmp(clips) {
   return { clips: fetchedClips, tmpDir };
 }
 
-export default { concatenateClips, fetchClipsToTmp };
+export default { concatenateClips, concatenateClipsVideoOnly, trimClipToSegment, extractSegmentFromFile, fetchClipsToTmp };
 

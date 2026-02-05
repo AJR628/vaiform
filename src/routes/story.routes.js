@@ -14,6 +14,7 @@ import {
   searchShots,
   searchClipsForShot,
   updateShotSelectedClip,
+  updateVideoCuts,
   insertBeatWithSearch,
   deleteBeat,
   updateBeatText,
@@ -474,6 +475,51 @@ r.post("/update-shot", async (req, res) => {
       success: false,
       error: "STORY_UPDATE_SHOT_FAILED",
       detail: e?.message || "Failed to update shot"
+    });
+  }
+});
+
+// Zod schema for videoCutsV1 (version 1, boundaries validated against N in service)
+const VideoCutsBoundarySchema = z.object({
+  leftBeat: z.number().int().min(0),
+  pos: z.object({
+    beatIndex: z.number().int().min(0),
+    pct: z.number().min(0).max(1)
+  })
+});
+const UpdateVideoCutsSchema = z.object({
+  sessionId: z.string().min(3),
+  videoCutsV1: z.object({
+    version: z.literal(1),
+    boundaries: z.array(VideoCutsBoundarySchema)
+  })
+});
+
+// POST /api/story/update-video-cuts - Persist beat-space video cuts (videoCutsV1)
+r.post("/update-video-cuts", async (req, res) => {
+  try {
+    const parsed = UpdateVideoCutsSchema.safeParse(req.body || {});
+    if (!parsed.success) {
+      return res.status(400).json({
+        success: false,
+        error: "INVALID_INPUT",
+        detail: parsed.error.flatten()
+      });
+    }
+    const { sessionId, videoCutsV1 } = parsed.data;
+    const session = await updateVideoCuts({
+      uid: req.user.uid,
+      sessionId,
+      videoCutsV1
+    });
+    return res.json({ success: true, data: session });
+  } catch (e) {
+    console.error("[story][update-video-cuts] error:", e);
+    const status = e?.message === "SESSION_NOT_FOUND" ? 404 : 400;
+    return res.status(status).json({
+      success: false,
+      error: e?.message?.startsWith("INVALID_") || e?.message === "SESSION_NOT_FOUND" || e?.message === "STORY_REQUIRED" ? e.message : "STORY_UPDATE_VIDEO_CUTS_FAILED",
+      detail: e?.message || "Failed to update video cuts"
     });
   }
 });

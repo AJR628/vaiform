@@ -12,7 +12,13 @@ import { generateStoryFromInput, planVisualShots } from './story.llm.service.js'
 import { pexelsSearchVideos } from './pexels.videos.provider.js';
 import { pixabaySearchVideos } from './pixabay.videos.provider.js';
 import { nasaSearchVideos } from './nasa.videos.provider.js';
-import { concatenateClips, fetchClipsToTmp } from '../utils/ffmpeg.timeline.js';
+import {
+  concatenateClips,
+  concatenateClipsVideoOnly,
+  trimClipToSegment,
+  extractSegmentFromFile,
+  fetchClipsToTmp
+} from '../utils/ffmpeg.timeline.js';
 import { renderVideoQuoteOverlay } from '../utils/ffmpeg.video.js';
 import { fetchVideoToTmp } from '../utils/video.fetch.js';
 import { uploadPublic } from '../utils/storage.js';
@@ -751,6 +757,109 @@ export async function generateCaptionTimings({ uid, sessionId }) {
 }
 
 /**
+ * Compute cut times in seconds from boundaries and beat durations.
+ * Used for validation (with dummy durations) and at render time.
+ * @param {Array<{leftBeat: number, pos: {beatIndex: number, pct: number}}>} boundaries
+ * @param {number[]} beatsDurSec - duration per beat in seconds
+ * @returns {number[]} cutTimes[0..N] where cutTimes[0]=0, cutTimes[N]=total
+ */
+function boundariesToCutTimes(boundaries, beatsDurSec) {
+  const N = beatsDurSec.length;
+  if (N === 0) return [];
+  const cutTimes = [0];
+  if (boundaries.length === 0) {
+    for (let k = 0; k < N; k++) {
+      cutTimes.push(cutTimes[cutTimes.length - 1] + beatsDurSec[k]);
+    }
+    return cutTimes;
+  }
+  for (let k = 0; k < boundaries.length; k++) {
+    const { pos } = boundaries[k];
+    const beatIdx = Math.max(0, Math.min(pos.beatIndex, N - 1));
+    const pct = Math.max(0, Math.min(1, pos.pct));
+    let t = 0;
+    for (let j = 0; j < beatIdx; j++) t += beatsDurSec[j];
+    t += pct * beatsDurSec[beatIdx];
+    cutTimes.push(t);
+  }
+  const total = beatsDurSec.reduce((a, b) => a + b, 0);
+  cutTimes.push(total);
+  return cutTimes;
+}
+
+/**
+ * Update session video cuts (videoCutsV1). Validates against story length.
+ */
+export async function updateVideoCuts({ uid, sessionId, videoCutsV1 }) {
+  const session = await loadStorySession({ uid, sessionId });
+  if (!session) throw new Error('SESSION_NOT_FOUND');
+  const N = session.story?.sentences?.length ?? 0;
+  if (N === 0) throw new Error('STORY_REQUIRED');
+
+  if (!videoCutsV1 || videoCutsV1.version !== 1) {
+    throw new Error('INVALID_VIDEO_CUTS_VERSION');
+  }
+  const boundaries = videoCutsV1.boundaries;
+  if (!Array.isArray(boundaries)) {
+    throw new Error('INVALID_VIDEO_CUTS_BOUNDARIES');
+  }
+  if (boundaries.length > 0 && boundaries.length !== N - 1) {
+    throw new Error('INVALID_VIDEO_CUTS_LENGTH');
+  }
+  for (let i = 0; i < boundaries.length; i++) {
+    const b = boundaries[i];
+    if (typeof b.leftBeat !== 'number' || b.leftBeat !== i) {
+      throw new Error('INVALID_VIDEO_CUTS_LEFT_BEAT');
+    }
+    const pos = b.pos;
+    if (!pos || typeof pos.beatIndex !== 'number' || typeof pos.pct !== 'number') {
+      throw new Error('INVALID_VIDEO_CUTS_POS');
+    }
+    if (pos.beatIndex < 0 || pos.beatIndex >= N) throw new Error('INVALID_VIDEO_CUTS_BEAT_INDEX');
+    if (pos.pct < 0 || pos.pct > 1) throw new Error('INVALID_VIDEO_CUTS_PCT');
+  }
+  // Non-decreasing cut times (use equal dummy durations for validation)
+  const dummyDurations = Array(N).fill(1);
+  const cutTimes = boundariesToCutTimes(boundaries, dummyDurations);
+  for (let i = 1; i < cutTimes.length; i++) {
+    if (cutTimes[i] < cutTimes[i - 1]) {
+      throw new Error('INVALID_VIDEO_CUTS_NON_DECREASING');
+    }
+  }
+
+  session.videoCutsV1 = videoCutsV1;
+  session.updatedAt = new Date().toISOString();
+  await saveStorySession({ uid, sessionId, data: session });
+  return session;
+}
+
+/**
+ * Compute video segments for building global timeline from videoCutsV1.
+ * @param {{ beatsDurSec: number[], shots: Array<{sentenceIndex: number, selectedClip?: {url: string}}>, videoCutsV1: { version: number, boundaries: Array<{leftBeat: number, pos: {beatIndex: number, pct: number}}> } }}
+ * @returns {Array<{ clipUrl: string, inSec: number, durSec: number, globalStartSec: number, globalEndSec: number }>}
+ */
+function computeVideoSegmentsFromCuts({ beatsDurSec, shots, videoCutsV1 }) {
+  const N = beatsDurSec.length;
+  if (N === 0) return [];
+  const boundaries = videoCutsV1?.boundaries ?? [];
+  const cutTimes = boundariesToCutTimes(boundaries, beatsDurSec);
+  const segments = [];
+  let sumPrev = 0;
+  for (let k = 0; k < N; k++) {
+    const shot = shots.find(s => s.sentenceIndex === k);
+    const clipUrl = shot?.selectedClip?.url;
+    if (!clipUrl) continue;
+    const globalStartSec = cutTimes[k];
+    const globalEndSec = cutTimes[k + 1];
+    const durSec = globalEndSec - globalStartSec;
+    const inSec = globalStartSec - sumPrev;
+    sumPrev += beatsDurSec[k];
+    segments.push({ clipUrl, inSec: Math.max(0, inSec), durSec, globalStartSec, globalEndSec });
+  }
+  return segments;
+}
+
+/**
  * Render final video (Phase 6)
  * Renders each clip with its caption, then concatenates
  */
@@ -760,26 +869,199 @@ export async function renderStory({ uid, sessionId }) {
   if (!session.shots || !session.captions) {
     throw new Error('SHOTS_AND_CAPTIONS_REQUIRED');
   }
-  
+
+  const N = session.story?.sentences?.length ?? 0;
+  const enableVideoCutsV1 = process.env.ENABLE_VIDEO_CUTS_V1 === 'true' || process.env.ENABLE_VIDEO_CUTS_V1 === '1';
+  const videoCutsV1 = session.videoCutsV1;
+  let useVideoCutsV1 = enableVideoCutsV1 && videoCutsV1?.version === 1 && Array.isArray(videoCutsV1.boundaries) && videoCutsV1.boundaries.length > 0;
+  if (useVideoCutsV1 && N > 0) {
+    for (let b = 0; b < N; b++) {
+      const shot = session.shots.find(s => s.sentenceIndex === b);
+      if (!shot?.selectedClip?.url) {
+        useVideoCutsV1 = false;
+        break;
+      }
+    }
+  }
+
   const shotsWithClips = session.shots.filter(s => s.selectedClip?.url);
   if (shotsWithClips.length === 0) {
     throw new Error('NO_CLIPS_SELECTED');
   }
-  
+
   // Get voice preset (default to calm male if not set)
   const voicePresetKey = session.voicePreset || 'male_calm';
   const voicePreset = getVoicePreset(voicePresetKey);
   console.log(`[story.service] Using voice preset: ${voicePreset.name} (${voicePresetKey})`);
-  
+
   // Create temp directory for rendered segments
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'vaiform-story-render-'));
   const renderedSegments = [];
-  
+  const segmentErrors = [];
+
   try {
-    // Render each segment
-    const segmentErrors = [];
-    for (let i = 0; i < shotsWithClips.length; i++) {
-      const shot = shotsWithClips[i];
+    if (useVideoCutsV1) {
+      // --- ENABLE_VIDEO_CUTS_V1: single flow — beatsDurSec → cutTimes → globalTimeline → slice per beat → overlay
+      const { getDurationMsFromMedia } = await import('../utils/media.duration.js');
+      const overlayCaption = session.overlayCaption || session.captionStyle;
+      const beatsDurSecArr = [];
+      const perBeat = []; // { ttsPath, assPath, durationSec, caption, meta, sentenceText }
+      for (let b = 0; b < N; b++) {
+        const shot = session.shots.find(s => s.sentenceIndex === b);
+        const caption = session.captions.find(c => c.sentenceIndex === b);
+        if (!caption) {
+          console.warn(`[story.service] [v1] No caption for beat ${b}`);
+          continue;
+        }
+        let ttsPath = null;
+        let assPath = null;
+        try {
+          const ttsResult = await synthVoiceWithTimestamps({
+            text: caption.text,
+            voiceId: voicePreset.voiceId,
+            modelId: process.env.ELEVEN_TTS_MODEL || 'eleven_flash_v2_5',
+            outputFormat: 'mp3_44100_128',
+            voiceSettings: voicePreset.voiceSettings
+          });
+          if (ttsResult.audioPath && ttsResult.timestamps) {
+            ttsPath = ttsResult.audioPath;
+            let ttsDurationMs = ttsResult.durationMs;
+            if (!ttsDurationMs && ttsPath) {
+              try {
+                ttsDurationMs = await getDurationMsFromMedia(ttsPath);
+              } catch (_) {}
+            }
+            const currentTextRaw = session.story?.sentences?.[b] ?? caption.text;
+            let meta = null;
+            const beatMeta = session.beats?.[b]?.captionMeta;
+            let isStale = false;
+            if (beatMeta?.lines && beatMeta?.styleHash && beatMeta?.textHash) {
+              const currentTextHash = crypto.createHash('sha256').update(currentTextRaw.trim().toLowerCase()).digest('hex').slice(0, 16);
+              const currentStyleHash = compileCaptionSSOT({
+                textRaw: currentTextRaw,
+                style: overlayCaption || {},
+                frameW: 1080,
+                frameH: 1920
+              }).styleHash;
+              if (beatMeta.textHash !== currentTextHash || beatMeta.styleHash !== currentStyleHash) isStale = true;
+            }
+            if (beatMeta?.lines && beatMeta?.styleHash && !isStale) {
+              meta = beatMeta;
+            } else {
+              meta = compileCaptionSSOT({
+                textRaw: currentTextRaw,
+                style: overlayCaption || {},
+                frameW: 1080,
+                frameH: 1920
+              });
+            }
+            const wrappedText = meta.lines.join('\n');
+            assPath = await buildKaraokeASSFromTimestamps({
+              text: caption.text,
+              timestamps: ttsResult.timestamps,
+              durationMs: ttsDurationMs,
+              audioPath: ttsPath,
+              wrappedText,
+              overlayCaption: meta.effectiveStyle,
+              width: 1080,
+              height: 1920
+            });
+          }
+        } catch (e) {
+          console.warn(`[story.service] [v1] TTS/ASS failed for beat ${b}:`, e?.message);
+        }
+        let durationSec = 3;
+        if (ttsPath) {
+          try {
+            const ttsDurationMs = await getDurationMsFromMedia(ttsPath);
+            if (ttsDurationMs) durationSec = ttsDurationMs / 1000;
+            else durationSec = caption.endTimeSec - caption.startTimeSec || shot?.durationSec || 3;
+          } catch (_) {
+            durationSec = caption.endTimeSec - caption.startTimeSec || shot?.durationSec || 3;
+          }
+        } else {
+          durationSec = caption.endTimeSec - caption.startTimeSec || shot?.durationSec || 3;
+        }
+        beatsDurSecArr.push(durationSec);
+        perBeat.push({
+          ttsPath,
+          assPath,
+          durationSec,
+          caption,
+          meta: session.beats?.[b]?.captionMeta ?? meta,
+          sentenceText: session.story?.sentences?.[b] ?? caption.text,
+          overlayCaption: overlayCaption || session.captionStyle
+        });
+      }
+      if (beatsDurSecArr.length !== N) {
+        throw new Error('VIDEO_CUTS_V1_TTS_FAILED');
+      }
+      const cutTimes = boundariesToCutTimes(videoCutsV1.boundaries, beatsDurSecArr);
+      const segments = computeVideoSegmentsFromCuts({
+        beatsDurSec: beatsDurSecArr,
+        shots: session.shots,
+        videoCutsV1
+      });
+      if (segments.length === 0) {
+        throw new Error('VIDEO_CUTS_V1_NO_SEGMENTS');
+      }
+      const trimmedPaths = [];
+      for (let i = 0; i < segments.length; i++) {
+        const seg = segments[i];
+        const fetched = await fetchVideoToTmp(seg.clipUrl);
+        const outSeg = path.join(tmpDir, `v1_seg_${i}.mp4`);
+        await trimClipToSegment({
+          path: fetched.path,
+          inSec: seg.inSec,
+          durSec: seg.durSec,
+          outPath: outSeg,
+          options: { width: 1080, height: 1920 }
+        });
+        trimmedPaths.push({ path: outSeg, durationSec: seg.durSec });
+      }
+      const globalTimelinePath = path.join(tmpDir, 'v1_global.mp4');
+      await concatenateClipsVideoOnly({
+        clips: trimmedPaths,
+        outPath: globalTimelinePath,
+        options: { width: 1080, height: 1920, fps: 24 }
+      });
+      let beatStartSec = 0;
+      for (let b = 0; b < N; b++) {
+        const info = perBeat[b];
+        const durationSec = beatsDurSecArr[b];
+        const slicePath = path.join(tmpDir, `v1_slice_${b}.mp4`);
+        await extractSegmentFromFile({
+          path: globalTimelinePath,
+          startSec: beatStartSec,
+          durSec: durationSec,
+          outPath: slicePath,
+          options: { width: 1080, height: 1920 }
+        });
+        const segmentPath = path.join(tmpDir, `segment_${b}.mp4`);
+        await renderVideoQuoteOverlay({
+          videoPath: slicePath,
+          outPath: segmentPath,
+          width: 1080,
+          height: 1920,
+          durationSec,
+          fps: 24,
+          text: info.caption.text,
+          captionText: info.caption.text,
+          ttsPath: info.ttsPath,
+          assPath: info.assPath,
+          overlayCaption: info.overlayCaption,
+          keepVideoAudio: true,
+          bgAudioVolume: 0.5,
+          watermark: true,
+          padSec: 0
+        });
+        renderedSegments.push({ path: segmentPath, durationSec });
+        beatStartSec += durationSec;
+      }
+    } else {
+      // --- Current path: one clip per beat
+      for (let i = 0; i < shotsWithClips.length; i++) {
+        const shot = shotsWithClips[i];
       const caption = session.captions.find(c => c.sentenceIndex === shot.sentenceIndex);
       
       if (!caption) {
@@ -1040,7 +1322,8 @@ export async function renderStory({ uid, sessionId }) {
       // Continue with other segments
     }
   }
-  
+  }
+
   if (renderedSegments.length === 0) {
     const errorDetail = segmentErrors.length > 0 
       ? `All ${segmentErrors.length} segments failed. First error: ${segmentErrors[0].error}`
@@ -1255,6 +1538,7 @@ export default {
   renderStory,
   finalizeStory,
   updateBeatText,
+  updateVideoCuts,
   saveStorySession
 };
 
