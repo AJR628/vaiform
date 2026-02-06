@@ -1031,6 +1031,21 @@
                     </div>
                     <!-- Caption Style mount point -->
                     <div id="caption-style-mount"></div>
+                    <!-- Video Cuts (beta) - visible when window.ENABLE_VIDEO_CUTS_UI && session && N >= 2 -->
+                    <div id="video-cuts-panel" class="mt-4 p-3 bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded text-sm hidden">
+                        <div class="font-semibold text-gray-900 dark:text-white mb-2">Video Cuts (beta)</div>
+                        <div id="video-cuts-warning" class="text-amber-600 dark:text-amber-400 text-xs mb-2 hidden"></div>
+                        <div class="space-y-2">
+                            <label class="block text-gray-700 dark:text-gray-300">Boundary <select id="video-cuts-boundary-index" class="ml-1 bg-gray-200 dark:bg-gray-700 border border-gray-400 dark:border-gray-500 rounded px-2 py-1"></select></label>
+                            <label class="block text-gray-700 dark:text-gray-300">beatIndex <input type="number" id="video-cuts-beat-index" min="1" max="1" class="w-16 ml-1 bg-gray-200 dark:bg-gray-700 border border-gray-400 dark:border-gray-500 rounded px-2 py-1" /></label>
+                            <label class="block text-gray-700 dark:text-gray-300">pct <input type="range" id="video-cuts-pct" min="0" max="1" step="0.01" value="0.35" class="align-middle" /><span id="video-cuts-pct-value" class="ml-1">0.35</span></label>
+                            <div class="flex gap-2 mt-2">
+                                <button type="button" id="video-cuts-save-btn" class="px-3 py-1.5 rounded bg-blue-600 hover:bg-blue-500 text-white text-xs">Save Cuts</button>
+                                <button type="button" id="video-cuts-reset-btn" class="px-3 py-1.5 rounded bg-gray-600 hover:bg-gray-500 text-white text-xs">Reset Cuts</button>
+                            </div>
+                        </div>
+                        <pre id="video-cuts-debug" class="mt-2 p-2 bg-gray-200 dark:bg-gray-900 rounded text-xs overflow-auto max-h-24 text-gray-800 dark:text-gray-200"></pre>
+                    </div>
                 </div>
                 
                 <!-- Beat Focus Preview Modal -->
@@ -7734,6 +7749,9 @@
             // Update render button state (session exists)
             updateRenderArticleButtonState();
             
+            // Video Cuts (beta) panel: show and refresh when storyboard is rendered
+            refreshVideoCutsPanel();
+            
             // Apply beat previews (behind feature flag)
             if (window.BEAT_PREVIEW_ENABLED) {
                 // explicitStyle: ONLY user/session overrides (empty object if none)
@@ -7741,6 +7759,162 @@
                 const { extractStyleOnly } = await import('./js/caption-style-helper.js');
                 const explicitStyle = extractStyleOnly(rawStyle);
                 await BeatPreviewManager.applyAllPreviews(sentences, explicitStyle);
+            }
+        }
+        
+        let videoCutsPanelListenersAttached = false;
+        function refreshVideoCutsPanel() {
+            const panel = document.getElementById('video-cuts-panel');
+            if (!panel) return;
+            const session = window.currentStorySession;
+            const enabled = !!(window.ENABLE_VIDEO_CUTS_UI && session?.story?.sentences?.length >= 2);
+            if (!enabled) {
+                panel.classList.add('hidden');
+                return;
+            }
+            const N = session.story.sentences.length;
+            panel.classList.remove('hidden');
+            if (!videoCutsPanelListenersAttached) {
+                setupVideoCutsPanelListeners();
+                videoCutsPanelListenersAttached = true;
+            }
+            // Boundary select: 0..N-2
+            const boundarySelect = document.getElementById('video-cuts-boundary-index');
+            if (boundarySelect) {
+                boundarySelect.innerHTML = '';
+                for (let i = 0; i <= N - 2; i++) {
+                    const opt = document.createElement('option');
+                    opt.value = i;
+                    opt.textContent = 'Between beat ' + i + '–' + (i + 1);
+                    boundarySelect.appendChild(opt);
+                }
+            }
+            const editIdx = boundarySelect ? parseInt(boundarySelect.value, 10) || 0 : 0;
+            const beatIndexInput = document.getElementById('video-cuts-beat-index');
+            if (beatIndexInput) {
+                beatIndexInput.min = editIdx + 1;
+                beatIndexInput.max = N - 1;
+                const val = parseInt(beatIndexInput.value, 10);
+                if (isNaN(val) || val < editIdx + 1 || val > N - 1) {
+                    beatIndexInput.value = editIdx + 1;
+                }
+            }
+            const pctEl = document.getElementById('video-cuts-pct-value');
+            const pctSlider = document.getElementById('video-cuts-pct');
+            if (pctEl && pctSlider) pctEl.textContent = pctSlider.value;
+            // Warning: any beat missing selectedClip.url
+            const shots = session.shots || [];
+            const missing = [];
+            for (let i = 0; i < N; i++) {
+                const shot = shots.find(s => s.sentenceIndex === i) || shots[i];
+                if (!shot?.selectedClip?.url) missing.push(i);
+            }
+            const warningEl = document.getElementById('video-cuts-warning');
+            if (warningEl) {
+                if (missing.length > 0) {
+                    warningEl.textContent = 'Some beats have no clip (beat ' + missing.join(', ') + '). Backend will fall back; video cuts may not apply.';
+                    warningEl.classList.remove('hidden');
+                } else {
+                    warningEl.textContent = '';
+                    warningEl.classList.add('hidden');
+                }
+            }
+            const debugPre = document.getElementById('video-cuts-debug');
+            if (debugPre) {
+                debugPre.textContent = JSON.stringify(session.videoCutsV1 ?? null, null, 2);
+            }
+        }
+        
+        function setupVideoCutsPanelListeners() {
+            const boundarySelect = document.getElementById('video-cuts-boundary-index');
+            const beatIndexInput = document.getElementById('video-cuts-beat-index');
+            const pctSlider = document.getElementById('video-cuts-pct');
+            const pctValue = document.getElementById('video-cuts-pct-value');
+            if (pctSlider && pctValue) {
+                pctSlider.addEventListener('input', function () {
+                    pctValue.textContent = pctSlider.value;
+                });
+            }
+            if (boundarySelect && beatIndexInput) {
+                boundarySelect.addEventListener('change', function () {
+                    refreshVideoCutsPanel();
+                });
+            }
+            const saveBtn = document.getElementById('video-cuts-save-btn');
+            const resetBtn = document.getElementById('video-cuts-reset-btn');
+            if (saveBtn) {
+                saveBtn.addEventListener('click', async function () {
+                    const session = window.currentStorySession;
+                    const sessionId = window.currentStorySessionId;
+                    if (!session || !sessionId) {
+                        if (typeof showToast === 'function') showToast('No session. Create or load a story first.');
+                        return;
+                    }
+                    const N = session.story?.sentences?.length ?? 0;
+                    if (N < 2) return;
+                    const boundarySelectEl = document.getElementById('video-cuts-boundary-index');
+                    const beatIndexEl = document.getElementById('video-cuts-beat-index');
+                    const pctEl = document.getElementById('video-cuts-pct');
+                    const editIdx = boundarySelectEl ? parseInt(boundarySelectEl.value, 10) || 0 : 0;
+                    const beatIndex = beatIndexEl ? parseInt(beatIndexEl.value, 10) : editIdx + 1;
+                    const pct = pctEl ? parseFloat(pctEl.value) : 0.35;
+                    const minBeat = editIdx + 1;
+                    const clampedBeatIndex = Math.max(minBeat, Math.min(N - 1, beatIndex));
+                    const boundaries = [];
+                    for (let i = 0; i <= N - 2; i++) {
+                        boundaries.push({
+                            leftBeat: i,
+                            pos: i === editIdx ? { beatIndex: clampedBeatIndex, pct: pct } : { beatIndex: i + 1, pct: 0 }
+                        });
+                    }
+                    try {
+                        const { apiFetch } = await import('./api.mjs');
+                        const resp = await apiFetch('/story/update-video-cuts', {
+                            method: 'POST',
+                            body: { sessionId, videoCutsV1: { version: 1, boundaries } }
+                        });
+                        if (resp.success && resp.data) {
+                            window.currentStorySession = resp.data;
+                            if (typeof showToast === 'function') showToast('Saved video cuts');
+                            refreshVideoCutsPanel();
+                        } else {
+                            const msg = resp.error || resp.detail || 'Failed to save video cuts';
+                            if (typeof showToast === 'function') showToast(msg);
+                            else console.error('[video-cuts]', msg);
+                        }
+                    } catch (e) {
+                        if (typeof showToast === 'function') showToast(e?.message || 'Failed to save video cuts');
+                        console.error('[video-cuts]', e);
+                    }
+                });
+            }
+            if (resetBtn) {
+                resetBtn.addEventListener('click', async function () {
+                    const sessionId = window.currentStorySessionId;
+                    if (!sessionId) {
+                        if (typeof showToast === 'function') showToast('No session.');
+                        return;
+                    }
+                    try {
+                        const { apiFetch } = await import('./api.mjs');
+                        const resp = await apiFetch('/story/update-video-cuts', {
+                            method: 'POST',
+                            body: { sessionId, videoCutsV1: { version: 1, boundaries: [] } }
+                        });
+                        if (resp.success && resp.data) {
+                            window.currentStorySession = resp.data;
+                            if (typeof showToast === 'function') showToast('Reset video cuts');
+                            refreshVideoCutsPanel();
+                        } else {
+                            const msg = resp.error || resp.detail || 'Failed to reset video cuts';
+                            if (typeof showToast === 'function') showToast(msg);
+                            else console.error('[video-cuts]', msg);
+                        }
+                    } catch (e) {
+                        if (typeof showToast === 'function') showToast(e?.message || 'Failed to reset video cuts');
+                        console.error('[video-cuts]', e);
+                    }
+                });
             }
         }
         
