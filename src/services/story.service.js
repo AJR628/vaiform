@@ -787,6 +787,81 @@ function boundariesToCutTimes(boundaries, beatsDurSec) {
   return cutTimes;
 }
 
+/** FNV-1a 32-bit hash. @returns {number} uint32 */
+function fnv1a32(str) {
+  let h = 2166136261;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = (h * 16777619) >>> 0;
+  }
+  return h >>> 0;
+}
+
+/** Deterministic float in [0,1). */
+function stableHash01(str) {
+  return (fnv1a32(str) >>> 0) / 4294967296;
+}
+
+function clamp(x, lo, hi) {
+  return Math.max(lo, Math.min(hi, x));
+}
+
+function lerp(a, b, t) {
+  return a + (b - a) * t;
+}
+
+/** Hex string hash of sentences for staleness check. */
+function sentencesHash(sentences) {
+  return fnv1a32((sentences || []).join('\n')).toString(16);
+}
+
+const CONJUNCTION_WORDS = new Set(['and', 'but', 'so', 'then', 'because']);
+
+/**
+ * Build auto VideoCutsV1 boundaries (deterministic heuristics).
+ * @param {{ sessionId: string, sentences: string[] }}
+ * @returns {{ version: 1, boundaries: Array<{leftBeat: number, pos: {beatIndex: number, pct: number}}> }}
+ */
+function buildAutoVideoCutsV1({ sessionId, sentences }) {
+  const N = (sentences || []).length;
+  if (N < 2) return { version: 1, boundaries: [] };
+  const boundaries = [];
+  for (let i = 0; i < N - 1; i++) {
+    const curr = String(sentences[i] ?? '').trimEnd();
+    const next = String(sentences[i + 1] ?? '');
+    const nextSentence = next.trim();
+    let lastChar = '';
+    for (let j = curr.length - 1; j >= 0; j--) {
+      if (curr[j] !== ' ' && curr[j] !== '\t') {
+        lastChar = curr[j];
+        break;
+      }
+    }
+    // (1) punctuation -> minPct/maxPct
+    const strongStop = ['.', '!', '?'].includes(lastChar);
+    const softStop = [',', ';', ':', '—', '-', '–'].includes(lastChar);
+    let minPct = strongStop ? 0.04 : 0.14;
+    let maxPct = strongStop ? 0.12 : 0.32;
+    // (2) conjunction bump
+    const firstWord = nextSentence.split(/\s+/)[0]?.toLowerCase() ?? '';
+    if (CONJUNCTION_WORDS.has(firstWord)) {
+      maxPct = Math.min(0.35, maxPct + 0.05);
+      minPct = Math.min(minPct, maxPct - 0.01);
+    }
+    // (3) r from stable hash
+    const r = stableHash01(`${sessionId}:${i}:${sentences[i]}:${sentences[i + 1]}`);
+    // (4) pct = lerp(minPct, maxPct, r)
+    let pct = lerp(minPct, maxPct, r);
+    // (5) lenScale
+    const lenScale = clamp(80 / Math.max(1, nextSentence.length), 0.45, 1.0);
+    pct *= lenScale;
+    // (6) final clamp
+    pct = clamp(pct, 0.04, 0.35);
+    boundaries.push({ leftBeat: i, pos: { beatIndex: i + 1, pct } });
+  }
+  return { version: 1, boundaries };
+}
+
 /**
  * Update session video cuts (videoCutsV1). Validates against story length.
  */
@@ -827,7 +902,13 @@ export async function updateVideoCuts({ uid, sessionId, videoCutsV1 }) {
     }
   }
 
-  session.videoCutsV1 = videoCutsV1;
+  if (boundaries.length === 0) {
+    session.videoCutsV1Disabled = true;
+    session.videoCutsV1 = { version: 1, boundaries: [] };
+  } else {
+    session.videoCutsV1Disabled = false;
+    session.videoCutsV1 = { ...videoCutsV1, source: 'manual' };
+  }
   session.updatedAt = new Date().toISOString();
   await saveStorySession({ uid, sessionId, data: session });
   return session;
@@ -872,17 +953,63 @@ export async function renderStory({ uid, sessionId }) {
 
   const N = session.story?.sentences?.length ?? 0;
   const enableVideoCutsV1 = process.env.ENABLE_VIDEO_CUTS_V1 === 'true' || process.env.ENABLE_VIDEO_CUTS_V1 === '1';
-  const videoCutsV1 = session.videoCutsV1;
-  let useVideoCutsV1 = enableVideoCutsV1 && videoCutsV1?.version === 1 && Array.isArray(videoCutsV1.boundaries) && videoCutsV1.boundaries.length > 0;
-  if (useVideoCutsV1 && N > 0) {
+  const sentences = session.story?.sentences ?? [];
+  const currentSentencesHash = sentencesHash(sentences);
+
+  let hasClipsForAllBeats = N > 0;
+  if (hasClipsForAllBeats) {
     for (let b = 0; b < N; b++) {
       const shot = session.shots.find(s => s.sentenceIndex === b);
       if (!shot?.selectedClip?.url) {
-        useVideoCutsV1 = false;
+        hasClipsForAllBeats = false;
         break;
       }
     }
   }
+
+  let source = 'classic';
+  let videoCutsV1ToUse = null;
+  let useVideoCutsV1 = false;
+
+  if (enableVideoCutsV1 && hasClipsForAllBeats && N >= 2 && session.videoCutsV1Disabled !== true) {
+    const v1 = session.videoCutsV1;
+    const bounds = v1?.boundaries;
+    const hasValidExisting = bounds && Array.isArray(bounds) && bounds.length === N - 1 &&
+      bounds.every((b, i) => {
+        if (typeof b.leftBeat !== 'number' || b.leftBeat !== i) return false;
+        const pos = b.pos;
+        if (!pos || typeof pos.beatIndex !== 'number' || typeof pos.pct !== 'number') return false;
+        if (pos.beatIndex < i + 1 || pos.beatIndex >= N) return false;
+        if (pos.pct < 0 || pos.pct > 1) return false;
+        return true;
+      });
+
+    if (!hasValidExisting && bounds && bounds.length > 0) {
+      source = 'invalid';
+    } else if (!hasValidExisting) {
+      const autoCuts = buildAutoVideoCutsV1({ sessionId: session.id, sentences });
+      session.videoCutsV1 = { version: 1, boundaries: autoCuts.boundaries, source: 'auto', sentencesHash: currentSentencesHash };
+      videoCutsV1ToUse = session.videoCutsV1;
+      source = 'auto';
+      useVideoCutsV1 = true;
+    } else if (v1.source !== 'auto') {
+      source = 'manual';
+      videoCutsV1ToUse = v1;
+      useVideoCutsV1 = true;
+    } else if (v1.sentencesHash === currentSentencesHash) {
+      source = 'auto';
+      videoCutsV1ToUse = v1;
+      useVideoCutsV1 = true;
+    } else {
+      const autoCuts = buildAutoVideoCutsV1({ sessionId: session.id, sentences });
+      session.videoCutsV1 = { version: 1, boundaries: autoCuts.boundaries, source: 'auto', sentencesHash: currentSentencesHash };
+      videoCutsV1ToUse = session.videoCutsV1;
+      source = 'auto';
+      useVideoCutsV1 = true;
+    }
+  }
+
+  console.log('[videoCuts]', 'source=' + source, { sessionId: session.id, pcts: source !== 'classic' ? videoCutsV1ToUse?.boundaries?.map(b => b.pos.pct) : undefined });
 
   const shotsWithClips = session.shots.filter(s => s.selectedClip?.url);
   if (shotsWithClips.length === 0) {
@@ -996,11 +1123,11 @@ export async function renderStory({ uid, sessionId }) {
       if (beatsDurSecArr.length !== N) {
         throw new Error('VIDEO_CUTS_V1_TTS_FAILED');
       }
-      const cutTimes = boundariesToCutTimes(videoCutsV1.boundaries, beatsDurSecArr);
+      const cutTimes = boundariesToCutTimes(videoCutsV1ToUse.boundaries, beatsDurSecArr);
       const segments = computeVideoSegmentsFromCuts({
         beatsDurSec: beatsDurSecArr,
         shots: session.shots,
-        videoCutsV1
+        videoCutsV1: videoCutsV1ToUse
       });
       if (segments.length === 0) {
         throw new Error('VIDEO_CUTS_V1_NO_SEGMENTS');
