@@ -816,6 +816,7 @@ function sentencesHash(sentences) {
 }
 
 const CONJUNCTION_WORDS = new Set(['and', 'but', 'so', 'then', 'because']);
+const AUTO_CUTS_GEN_V = 2;
 
 /**
  * Build auto VideoCutsV1 boundaries (deterministic heuristics).
@@ -837,26 +838,22 @@ function buildAutoVideoCutsV1({ sessionId, sentences }) {
         break;
       }
     }
-    // (1) punctuation -> minPct/maxPct
+    // (1) punctuation -> minPct/maxPct (wider range, cap 0.65)
     const strongStop = ['.', '!', '?'].includes(lastChar);
-    const softStop = [',', ';', ':', '—', '-', '–'].includes(lastChar);
-    let minPct = strongStop ? 0.04 : 0.14;
-    let maxPct = strongStop ? 0.12 : 0.32;
+    let minPct = strongStop ? 0.08 : 0.16;
+    let maxPct = strongStop ? 0.25 : 0.55;
     // (2) conjunction bump
     const firstWord = nextSentence.split(/\s+/)[0]?.toLowerCase() ?? '';
     if (CONJUNCTION_WORDS.has(firstWord)) {
-      maxPct = Math.min(0.35, maxPct + 0.05);
+      maxPct = Math.min(0.65, maxPct + 0.05);
       minPct = Math.min(minPct, maxPct - 0.01);
     }
     // (3) r from stable hash
     const r = stableHash01(`${sessionId}:${i}:${sentences[i]}:${sentences[i + 1]}`);
-    // (4) pct = lerp(minPct, maxPct, r)
+    // (4) pct = lerp(minPct, maxPct, r); no lenScale bias
     let pct = lerp(minPct, maxPct, r);
-    // (5) lenScale
-    const lenScale = clamp(80 / Math.max(1, nextSentence.length), 0.45, 1.0);
-    pct *= lenScale;
-    // (6) final clamp
-    pct = clamp(pct, 0.04, 0.35);
+    // (5) final clamp
+    pct = clamp(pct, 0.06, 0.65);
     boundaries.push({ leftBeat: i, pos: { beatIndex: i + 1, pct } });
   }
   return { version: 1, boundaries };
@@ -940,6 +937,115 @@ function computeVideoSegmentsFromCuts({ beatsDurSec, shots, videoCutsV1 }) {
   return segments;
 }
 
+/** Target clip count for auto budget. N=8 => K in [5..7]. */
+function getAutoClipBudget(N, seedStr) {
+  const minK = Math.max(1, Math.ceil(N * 0.6));
+  const maxK = Math.min(N, Math.ceil(N * 0.875));
+  const r = stableHash01(seedStr);
+  return Math.floor(r * (maxK - minK + 1)) + minK;
+}
+
+/** Pick boundary indices to merge. No adjacent merges. Uses punctuation weighting. */
+function pickMergeBoundaries(N, mergesNeeded, { sessionId, sentencesHash, sentences }) {
+  const maxMerges = Math.floor((N - 1 + 1) / 2);
+  const toMerge = clamp(mergesNeeded, 0, maxMerges);
+  if (toMerge === 0) return new Set();
+  const candidates = [];
+  for (let i = 0; i < N - 1; i++) {
+    const curr = String(sentences[i] ?? '').trimEnd();
+    let lastChar = '';
+    for (let j = curr.length - 1; j >= 0; j--) {
+      if (curr[j] !== ' ' && curr[j] !== '\t') {
+        lastChar = curr[j];
+        break;
+      }
+    }
+    const strongStop = ['.', '!', '?'].includes(lastChar);
+    const mergeWeight = strongStop ? 0.2 : 0.8;
+    const r = stableHash01(`${sessionId}:${sentencesHash}:merge:${i}`);
+    candidates.push({ i, score: r * mergeWeight });
+  }
+  candidates.sort((a, b) => b.score - a.score);
+  const mergeSet = new Set();
+  for (const { i } of candidates) {
+    if (mergeSet.size >= toMerge) break;
+    if (mergeSet.has(i - 1) || mergeSet.has(i + 1)) continue;
+    mergeSet.add(i);
+  }
+  return mergeSet;
+}
+
+/** owners[k] = start beat of group containing k. */
+function buildOwners(N, mergeSet) {
+  const owners = [];
+  let owner = 0;
+  for (let k = 0; k < N; k++) {
+    if (k > 0 && mergeSet.has(k - 1)) {
+    } else {
+      owner = k;
+    }
+    owners[k] = owner;
+  }
+  return owners;
+}
+
+/**
+ * Compute video segments for auto mode with clip budget (fewer distinct clips).
+ * Returns exactly N segments; throws if clipUrl missing.
+ */
+function computeVideoSegmentsFromCutsAutoBudget({ beatsDurSec, shots, videoCutsV1, sessionId, sentences, sentencesHash }) {
+  const N = beatsDurSec.length;
+  if (N === 0) return [];
+  const boundaries = videoCutsV1?.boundaries ?? [];
+  const cutTimes = boundariesToCutTimes(boundaries, beatsDurSec);
+  const pieceDur = [];
+  for (let k = 0; k < N; k++) {
+    pieceDur[k] = cutTimes[k + 1] - cutTimes[k];
+  }
+  const total = cutTimes[N] - cutTimes[0];
+  const K = getAutoClipBudget(N, `${sessionId}:${sentencesHash}`);
+  const mergesNeeded = N - K;
+  const mergeSet = pickMergeBoundaries(N, mergesNeeded, { sessionId, sentencesHash, sentences });
+  const owners = buildOwners(N, mergeSet);
+  const clipUrlByBeat = new Map();
+  for (let k = 0; k < N; k++) {
+    const shot = shots.find(s => s.sentenceIndex === k);
+    const url = shot?.selectedClip?.url;
+    clipUrlByBeat.set(k, url);
+  }
+  const cursor = new Map();
+  const segments = [];
+  for (let k = 0; k < N; k++) {
+    const owner = owners[k];
+    const clipUrl = clipUrlByBeat.get(owner);
+    if (!clipUrl) {
+      throw new Error(`VIDEO_CUTS_AUTO_BUDGET_MISSING_CLIP: beat=${k} owner=${owner}`);
+    }
+    let inSec = cursor.get(clipUrl);
+    if (inSec === undefined) {
+      inSec = stableHash01(`${sessionId}:${sentencesHash}:start:${owner}`) * 1.5;
+      cursor.set(clipUrl, inSec);
+    }
+    const durSec = pieceDur[k];
+    segments.push({
+      clipUrl,
+      inSec,
+      durSec,
+      globalStartSec: cutTimes[k],
+      globalEndSec: cutTimes[k + 1]
+    });
+    cursor.set(clipUrl, inSec + durSec);
+  }
+  if (segments.length !== N) {
+    throw new Error(`VIDEO_CUTS_AUTO_BUDGET_SEGMENT_COUNT: expected=${N} got=${segments.length}`);
+  }
+  const sumDur = segments.reduce((s, seg) => s + seg.durSec, 0);
+  if (Math.abs(sumDur - total) > 0.001) {
+    throw new Error(`VIDEO_CUTS_AUTO_BUDGET_DURATION_MISMATCH: sum=${sumDur} total=${total}`);
+  }
+  return segments;
+}
+
 /**
  * Render final video (Phase 6)
  * Renders each clip with its caption, then concatenates
@@ -988,7 +1094,7 @@ export async function renderStory({ uid, sessionId }) {
       source = 'invalid';
     } else if (!hasValidExisting) {
       const autoCuts = buildAutoVideoCutsV1({ sessionId: session.id, sentences });
-      session.videoCutsV1 = { version: 1, boundaries: autoCuts.boundaries, source: 'auto', sentencesHash: currentSentencesHash };
+      session.videoCutsV1 = { version: 1, boundaries: autoCuts.boundaries, source: 'auto', sentencesHash: currentSentencesHash, autoGenV: AUTO_CUTS_GEN_V };
       videoCutsV1ToUse = session.videoCutsV1;
       source = 'auto';
       useVideoCutsV1 = true;
@@ -996,13 +1102,13 @@ export async function renderStory({ uid, sessionId }) {
       source = 'manual';
       videoCutsV1ToUse = v1;
       useVideoCutsV1 = true;
-    } else if (v1.sentencesHash === currentSentencesHash) {
+    } else if (v1.sentencesHash === currentSentencesHash && v1.autoGenV === AUTO_CUTS_GEN_V) {
       source = 'auto';
       videoCutsV1ToUse = v1;
       useVideoCutsV1 = true;
     } else {
       const autoCuts = buildAutoVideoCutsV1({ sessionId: session.id, sentences });
-      session.videoCutsV1 = { version: 1, boundaries: autoCuts.boundaries, source: 'auto', sentencesHash: currentSentencesHash };
+      session.videoCutsV1 = { version: 1, boundaries: autoCuts.boundaries, source: 'auto', sentencesHash: currentSentencesHash, autoGenV: AUTO_CUTS_GEN_V };
       videoCutsV1ToUse = session.videoCutsV1;
       source = 'auto';
       useVideoCutsV1 = true;
@@ -1124,18 +1230,32 @@ export async function renderStory({ uid, sessionId }) {
         throw new Error('VIDEO_CUTS_V1_TTS_FAILED');
       }
       const cutTimes = boundariesToCutTimes(videoCutsV1ToUse.boundaries, beatsDurSecArr);
-      const segments = computeVideoSegmentsFromCuts({
-        beatsDurSec: beatsDurSecArr,
-        shots: session.shots,
-        videoCutsV1: videoCutsV1ToUse
-      });
+      const segments = source === 'auto'
+        ? computeVideoSegmentsFromCutsAutoBudget({
+            beatsDurSec: beatsDurSecArr,
+            shots: session.shots,
+            videoCutsV1: videoCutsV1ToUse,
+            sessionId: session.id,
+            sentences,
+            sentencesHash: currentSentencesHash
+          })
+        : computeVideoSegmentsFromCuts({
+            beatsDurSec: beatsDurSecArr,
+            shots: session.shots,
+            videoCutsV1: videoCutsV1ToUse
+          });
       if (segments.length === 0) {
         throw new Error('VIDEO_CUTS_V1_NO_SEGMENTS');
       }
+      const fetchedCache = new Map();
       const trimmedPaths = [];
       for (let i = 0; i < segments.length; i++) {
         const seg = segments[i];
-        const fetched = await fetchVideoToTmp(seg.clipUrl);
+        let fetched = fetchedCache.get(seg.clipUrl);
+        if (!fetched) {
+          fetched = await fetchVideoToTmp(seg.clipUrl);
+          fetchedCache.set(seg.clipUrl, fetched);
+        }
         const outSeg = path.join(tmpDir, `v1_seg_${i}.mp4`);
         await trimClipToSegment({
           path: fetched.path,
