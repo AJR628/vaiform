@@ -819,16 +819,16 @@ const CONJUNCTION_WORDS = new Set(['and', 'but', 'so', 'then', 'because']);
 // No overlap with CONJUNCTION_WORDS (e.g. do not include "then")
 const SHIFT_WORDS = new Set(['however', 'meanwhile', 'suddenly', 'next', 'finally', 'otherwise', 'instead']);
 const ACTION_WORDS = new Set(['run', 'sprint', 'chase', 'slam', 'crash', 'explode', 'grab', 'throw', 'jump', 'rush', 'attack', 'escape', 'surge', 'fire', 'strike', 'spin']);
-const AUTO_CUTS_GEN_V = 3;
+const AUTO_CUTS_GEN_V = 4;
 
 /** Closers to skip when scanning backward for terminal punctuation. */
 const CLOSING_PUNCT = new Set([' ', '\t', '\n', '\r', "'", '"', '\u201C', '\u201D', '\u2019', ')', ']', '}']);
 
 /**
  * Terminal punctuation class: scan backward skipping whitespace and closing quotes/brackets.
- * Detects ellipsis (... or …), strong (.!?), soft (,;:—–-), else none.
+ * Detects ellipsis (... or …), strong (.!?), semi (; : — –), soft (comma), else none.
  * @param {string} sentence
- * @returns {'ellipsis'|'strong'|'soft'|'none'}
+ * @returns {'ellipsis'|'strong'|'semi'|'soft'|'none'}
  */
 function getTerminalPunct(sentence) {
   const s = String(sentence ?? '').trimEnd();
@@ -839,8 +839,37 @@ function getTerminalPunct(sentence) {
   if (c === '\u2026') return 'ellipsis';
   if (c === '.' && j >= 2 && s[j - 1] === '.' && s[j - 2] === '.') return 'ellipsis';
   if (['.', '!', '?'].includes(c)) return 'strong';
-  if ([',', ';', ':', '\u2014', '\u2013', '-'].includes(c)) return 'soft';
+  if ([';', ':', '\u2014', '\u2013'].includes(c)) return 'semi';
+  if (c === ',' || c === '-') return 'soft';
   return 'none';
+}
+
+/** Earliest pause punctuation in sentence; pct in [0.12, 0.75] only. Deterministic. */
+const SEMI_CHARS = [';', ':', '\u2014', '\u2013'];
+
+/**
+ * Find earliest pause anchor in sentence for cut placement.
+ * @param {string} sentence
+ * @returns {{ pct: number, kind: 'semi'|'comma' }|null}
+ */
+function findPauseAnchorPct(sentence) {
+  const s = String(sentence ?? '').trim();
+  if (s.length === 0) return null;
+  let semiIdx = -1;
+  let commaIdx = -1;
+  for (let i = 0; i < s.length; i++) {
+    if (SEMI_CHARS.includes(s[i]) && semiIdx === -1) semiIdx = i;
+    if (s[i] === ',' && commaIdx === -1) commaIdx = i;
+  }
+  if (semiIdx >= 0) {
+    const pct = semiIdx / s.length;
+    if (pct >= 0.12 && pct <= 0.75) return { pct, kind: 'semi' };
+  }
+  if (commaIdx >= 0) {
+    const pct = commaIdx / s.length;
+    if (pct >= 0.12 && pct <= 0.75) return { pct, kind: 'comma' };
+  }
+  return null;
 }
 
 /** First word of sentence, lowercased. */
@@ -875,7 +904,7 @@ function scoreScriptCadence(sentences) {
     const s = String(arr[i] ?? '').trim();
     const endClass = getTerminalPunct(s);
     if (endClass === 'ellipsis') ellipsisCount += 1;
-    if (endClass === 'strong') strongCount += 1;
+    if (endClass === 'strong' || endClass === 'semi') strongCount += 1;
     const tokens = tokenize(s);
     const wordCount = tokens.length;
     const softInSentence = (s.match(/[,;:\u2014\u2013-]/g) || []).length;
@@ -912,16 +941,19 @@ function buildAutoVideoCutsV1({ sessionId, sentences }) {
     const actionHeavy = nextTokens.length > 0 && actionCount / nextTokens.length >= 0.15;
 
     let minPct = 0.16;
-    let maxPct = 0.55;
+    let maxPct = 0.6;
     if (endClass === 'ellipsis') {
-      minPct = 0.06;
-      maxPct = 0.18;
+      minPct = 0.22;
+      maxPct = 0.65;
     } else if (endClass === 'strong') {
-      minPct = 0.08;
-      maxPct = 0.25;
+      minPct = 0.1;
+      maxPct = 0.42;
+    } else if (endClass === 'semi') {
+      minPct = 0.02;
+      maxPct = 0.18;
     }
     if (CONJUNCTION_WORDS.has(fw)) {
-      maxPct = Math.min(0.65, maxPct + 0.05);
+      maxPct = Math.min(0.75, maxPct + 0.05);
       minPct = Math.min(minPct, maxPct - 0.01);
     }
     if (SHIFT_WORDS.has(fw) || actionHeavy) {
@@ -929,8 +961,16 @@ function buildAutoVideoCutsV1({ sessionId, sentences }) {
     }
 
     const r = stableHash01(`${sessionId}:${i}:${sentences[i]}:${sentences[i + 1]}`);
-    let pct = lerp(minPct, maxPct, r);
-    pct = clamp(pct, 0.06, 0.65);
+    let pctHash = lerp(minPct, maxPct, r);
+    const anchor = findPauseAnchorPct(next);
+    let pct;
+    if (anchor) {
+      const w = anchor.kind === 'semi' ? 0.35 : 0.5;
+      pct = lerp(anchor.pct, pctHash, w);
+    } else {
+      pct = pctHash;
+    }
+    pct = clamp(pct, 0.02, 0.75);
     boundaries.push({ leftBeat: i, pos: { beatIndex: i + 1, pct } });
   }
   return { version: 1, boundaries };
@@ -1022,13 +1062,13 @@ function getAutoClipBudget(N, seedStr) {
   return Math.floor(r * (maxK - minK + 1)) + minK;
 }
 
-/** Smart clip budget: K from [Kmin..Kmax] by script cadence + deterministic jitter. */
+/** Smart clip budget: K from [Kmin..Kmax] by script cadence + deterministic jitter. Kmax=N allows no merges when cadence high. */
 function getAutoClipBudgetSmart(N, seedStr, sentences) {
-  const Kmin = Math.max(1, Math.ceil(N * 0.6));
-  const Kmax = Math.min(N, Math.ceil(N * 0.875));
+  const Kmin = Math.max(1, Math.ceil(N * 0.7));
+  const Kmax = N;
   const cadence = scoreScriptCadence(sentences);
-  const jitter = (stableHash01(`${seedStr}:kJitter`) - 0.5) * 0.25;
-  const t = clamp(cadence + jitter, 0, 1);
+  const jitter = (stableHash01(`${seedStr}:kJitter`) - 0.5) * 0.18;
+  const t = clamp(0.15 + cadence + jitter, 0, 1);
   const K = Math.round(lerp(Kmin, Kmax, t));
   return clamp(K, Kmin, Kmax);
 }
@@ -1048,12 +1088,14 @@ function pickMergeBoundaries(N, mergesNeeded, { sessionId, sentencesHash, senten
     const actionCount = countActionWords(nextTokens);
 
     let mergePreference = 0.5;
-    if (endClass === 'ellipsis') mergePreference = 0.1;
-    else if (endClass === 'strong') mergePreference = 0.2;
-    else if (endClass === 'soft' || endClass === 'none') mergePreference = 0.7;
-    if (CONJUNCTION_WORDS.has(fw)) mergePreference += 0.25;
-    if (SHIFT_WORDS.has(fw)) mergePreference -= 0.3;
-    mergePreference -= Math.min(0.2, actionCount * 0.08);
+    if (endClass === 'ellipsis') mergePreference = 0.45;
+    else if (endClass === 'strong' || endClass === 'semi') mergePreference = 0.2;
+    else if (endClass === 'soft') mergePreference = 0.65;
+    else if (endClass === 'none') mergePreference = 0.55;
+    if (CONJUNCTION_WORDS.has(fw)) mergePreference += 0.15;
+    if (SHIFT_WORDS.has(fw)) mergePreference -= 0.25;
+    mergePreference -= Math.min(0.3, actionCount * 0.06);
+    if (findPauseAnchorPct(next)?.kind === 'semi') mergePreference -= 0.15;
 
     const jitter = (stableHash01(`${sessionId}:${sentencesHash}:m:${i}`) - 0.5) * 0.15;
     const score = clamp(mergePreference + jitter, 0, 1);
