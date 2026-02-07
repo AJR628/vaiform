@@ -816,7 +816,82 @@ function sentencesHash(sentences) {
 }
 
 const CONJUNCTION_WORDS = new Set(['and', 'but', 'so', 'then', 'because']);
-const AUTO_CUTS_GEN_V = 2;
+// No overlap with CONJUNCTION_WORDS (e.g. do not include "then")
+const SHIFT_WORDS = new Set(['however', 'meanwhile', 'suddenly', 'next', 'finally', 'otherwise', 'instead']);
+const ACTION_WORDS = new Set(['run', 'sprint', 'chase', 'slam', 'crash', 'explode', 'grab', 'throw', 'jump', 'rush', 'attack', 'escape', 'surge', 'fire', 'strike', 'spin']);
+const AUTO_CUTS_GEN_V = 3;
+
+/** Closers to skip when scanning backward for terminal punctuation. */
+const CLOSING_PUNCT = new Set([' ', '\t', '\n', '\r', "'", '"', '\u201C', '\u201D', '\u2019', ')', ']', '}']);
+
+/**
+ * Terminal punctuation class: scan backward skipping whitespace and closing quotes/brackets.
+ * Detects ellipsis (... or …), strong (.!?), soft (,;:—–-), else none.
+ * @param {string} sentence
+ * @returns {'ellipsis'|'strong'|'soft'|'none'}
+ */
+function getTerminalPunct(sentence) {
+  const s = String(sentence ?? '').trimEnd();
+  let j = s.length - 1;
+  while (j >= 0 && CLOSING_PUNCT.has(s[j])) j--;
+  if (j < 0) return 'none';
+  const c = s[j];
+  if (c === '\u2026') return 'ellipsis';
+  if (c === '.' && j >= 2 && s[j - 1] === '.' && s[j - 2] === '.') return 'ellipsis';
+  if (['.', '!', '?'].includes(c)) return 'strong';
+  if ([',', ';', ':', '\u2014', '\u2013', '-'].includes(c)) return 'soft';
+  return 'none';
+}
+
+/** First word of sentence, lowercased. */
+function firstWord(sentence) {
+  return (String(sentence ?? '').trim().split(/\s+/)[0] || '').toLowerCase();
+}
+
+/** Tokenize into words (lowercase). */
+function tokenize(sentence) {
+  return (String(sentence ?? '').toLowerCase().match(/\b\w+\b/g)) || [];
+}
+
+/** Count tokens that are in ACTION_WORDS. */
+function countActionWords(tokens) {
+  return tokens.filter(t => ACTION_WORDS.has(t)).length;
+}
+
+/**
+ * Script cadence score in [0..1]: higher = more cuts (pauses, action, short sentences).
+ * Deterministic aggregate of ellipsis, strong punct, soft punct density, action words, short-sentence ratio.
+ */
+function scoreScriptCadence(sentences) {
+  const arr = sentences || [];
+  if (arr.length === 0) return 0.5;
+  let ellipsisCount = 0;
+  let strongCount = 0;
+  let softDensitySum = 0;
+  let actionSum = 0;
+  let shortCount = 0;
+  const shortThreshold = 60;
+  for (let i = 0; i < arr.length; i++) {
+    const s = String(arr[i] ?? '').trim();
+    const endClass = getTerminalPunct(s);
+    if (endClass === 'ellipsis') ellipsisCount += 1;
+    if (endClass === 'strong') strongCount += 1;
+    const tokens = tokenize(s);
+    const wordCount = tokens.length;
+    const softInSentence = (s.match(/[,;:\u2014\u2013-]/g) || []).length;
+    softDensitySum += wordCount > 0 ? softInSentence / wordCount : 0;
+    actionSum += countActionWords(tokens);
+    if (s.length > 0 && s.length < shortThreshold) shortCount += 1;
+  }
+  const n = arr.length;
+  const ellipsisNorm = Math.min(1, ellipsisCount / Math.max(1, n) * 3);
+  const strongNorm = Math.min(1, strongCount / Math.max(1, n) * 1.5);
+  const softNorm = Math.min(1, softDensitySum / Math.max(1, n) * 2);
+  const actionNorm = Math.min(1, actionSum / Math.max(1, n * 5));
+  const shortNorm = shortCount / Math.max(1, n);
+  const raw = 0.2 * ellipsisNorm + 0.25 * strongNorm + 0.2 * softNorm + 0.2 * actionNorm + 0.15 * shortNorm;
+  return clamp(raw, 0, 1);
+}
 
 /**
  * Build auto VideoCutsV1 boundaries (deterministic heuristics).
@@ -829,30 +904,32 @@ function buildAutoVideoCutsV1({ sessionId, sentences }) {
   const boundaries = [];
   for (let i = 0; i < N - 1; i++) {
     const curr = String(sentences[i] ?? '').trimEnd();
-    const next = String(sentences[i + 1] ?? '');
-    const nextSentence = next.trim();
-    let lastChar = '';
-    for (let j = curr.length - 1; j >= 0; j--) {
-      if (curr[j] !== ' ' && curr[j] !== '\t') {
-        lastChar = curr[j];
-        break;
-      }
+    const next = String(sentences[i + 1] ?? '').trim();
+    const endClass = getTerminalPunct(curr);
+    const fw = firstWord(next);
+    const nextTokens = tokenize(next);
+    const actionCount = countActionWords(nextTokens);
+    const actionHeavy = nextTokens.length > 0 && actionCount / nextTokens.length >= 0.15;
+
+    let minPct = 0.16;
+    let maxPct = 0.55;
+    if (endClass === 'ellipsis') {
+      minPct = 0.06;
+      maxPct = 0.18;
+    } else if (endClass === 'strong') {
+      minPct = 0.08;
+      maxPct = 0.25;
     }
-    // (1) punctuation -> minPct/maxPct (wider range, cap 0.65)
-    const strongStop = ['.', '!', '?'].includes(lastChar);
-    let minPct = strongStop ? 0.08 : 0.16;
-    let maxPct = strongStop ? 0.25 : 0.55;
-    // (2) conjunction bump
-    const firstWord = nextSentence.split(/\s+/)[0]?.toLowerCase() ?? '';
-    if (CONJUNCTION_WORDS.has(firstWord)) {
+    if (CONJUNCTION_WORDS.has(fw)) {
       maxPct = Math.min(0.65, maxPct + 0.05);
       minPct = Math.min(minPct, maxPct - 0.01);
     }
-    // (3) r from stable hash
+    if (SHIFT_WORDS.has(fw) || actionHeavy) {
+      maxPct = Math.max(minPct + 0.01, maxPct - 0.12);
+    }
+
     const r = stableHash01(`${sessionId}:${i}:${sentences[i]}:${sentences[i + 1]}`);
-    // (4) pct = lerp(minPct, maxPct, r); no lenScale bias
     let pct = lerp(minPct, maxPct, r);
-    // (5) final clamp
     pct = clamp(pct, 0.06, 0.65);
     boundaries.push({ leftBeat: i, pos: { beatIndex: i + 1, pct } });
   }
@@ -945,7 +1022,18 @@ function getAutoClipBudget(N, seedStr) {
   return Math.floor(r * (maxK - minK + 1)) + minK;
 }
 
-/** Pick boundary indices to merge. No adjacent merges. Uses punctuation weighting. */
+/** Smart clip budget: K from [Kmin..Kmax] by script cadence + deterministic jitter. */
+function getAutoClipBudgetSmart(N, seedStr, sentences) {
+  const Kmin = Math.max(1, Math.ceil(N * 0.6));
+  const Kmax = Math.min(N, Math.ceil(N * 0.875));
+  const cadence = scoreScriptCadence(sentences);
+  const jitter = (stableHash01(`${seedStr}:kJitter`) - 0.5) * 0.25;
+  const t = clamp(cadence + jitter, 0, 1);
+  const K = Math.round(lerp(Kmin, Kmax, t));
+  return clamp(K, Kmin, Kmax);
+}
+
+/** Pick boundary indices to merge. No adjacent merges. Boundary-aware mergePreference + jitter. */
 function pickMergeBoundaries(N, mergesNeeded, { sessionId, sentencesHash, sentences }) {
   const maxMerges = Math.floor((N - 1 + 1) / 2);
   const toMerge = clamp(mergesNeeded, 0, maxMerges);
@@ -953,17 +1041,23 @@ function pickMergeBoundaries(N, mergesNeeded, { sessionId, sentencesHash, senten
   const candidates = [];
   for (let i = 0; i < N - 1; i++) {
     const curr = String(sentences[i] ?? '').trimEnd();
-    let lastChar = '';
-    for (let j = curr.length - 1; j >= 0; j--) {
-      if (curr[j] !== ' ' && curr[j] !== '\t') {
-        lastChar = curr[j];
-        break;
-      }
-    }
-    const strongStop = ['.', '!', '?'].includes(lastChar);
-    const mergeWeight = strongStop ? 0.2 : 0.8;
-    const r = stableHash01(`${sessionId}:${sentencesHash}:merge:${i}`);
-    candidates.push({ i, score: r * mergeWeight });
+    const next = String(sentences[i + 1] ?? '').trim();
+    const endClass = getTerminalPunct(curr);
+    const fw = firstWord(next);
+    const nextTokens = tokenize(next);
+    const actionCount = countActionWords(nextTokens);
+
+    let mergePreference = 0.5;
+    if (endClass === 'ellipsis') mergePreference = 0.1;
+    else if (endClass === 'strong') mergePreference = 0.2;
+    else if (endClass === 'soft' || endClass === 'none') mergePreference = 0.7;
+    if (CONJUNCTION_WORDS.has(fw)) mergePreference += 0.25;
+    if (SHIFT_WORDS.has(fw)) mergePreference -= 0.3;
+    mergePreference -= Math.min(0.2, actionCount * 0.08);
+
+    const jitter = (stableHash01(`${sessionId}:${sentencesHash}:m:${i}`) - 0.5) * 0.15;
+    const score = clamp(mergePreference + jitter, 0, 1);
+    candidates.push({ i, score });
   }
   candidates.sort((a, b) => b.score - a.score);
   const mergeSet = new Set();
@@ -1003,7 +1097,7 @@ function computeVideoSegmentsFromCutsAutoBudget({ beatsDurSec, shots, videoCutsV
     pieceDur[k] = cutTimes[k + 1] - cutTimes[k];
   }
   const total = cutTimes[N] - cutTimes[0];
-  const K = getAutoClipBudget(N, `${sessionId}:${sentencesHash}`);
+  const K = getAutoClipBudgetSmart(N, `${sessionId}:${sentencesHash}`, sentences);
   const mergesNeeded = N - K;
   const mergeSet = pickMergeBoundaries(N, mergesNeeded, { sessionId, sentencesHash, sentences });
   const owners = buildOwners(N, mergeSet);
