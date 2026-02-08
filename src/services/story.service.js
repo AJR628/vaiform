@@ -1357,7 +1357,7 @@ export async function renderStory({ uid, sessionId }) {
           assPath,
           durationSec,
           caption,
-          meta: session.beats?.[b]?.captionMeta ?? meta,
+          meta: session.beats?.[b]?.captionMeta ?? null,
           sentenceText: session.story?.sentences?.[b] ?? caption.text,
           overlayCaption: overlayCaption || session.captionStyle
         });
