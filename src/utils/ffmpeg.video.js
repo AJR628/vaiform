@@ -9,6 +9,40 @@ import pkg from "@napi-rs/canvas";
 import { renderImageQuoteVideo } from "./ffmpeg.js";
 import { getDurationMsFromMedia } from "./media.duration.js";
 
+const _ffprobeLog = { resolved: false, spawnWarned: false };
+
+/**
+ * Resolve ffprobe command: FFPROBE_PATH env > derived sibling > PATH fallback.
+ * @param {string} ffmpegPath - Path from ffmpeg-static
+ * @returns {string}
+ */
+function resolveFfprobeCmd(ffmpegPath) {
+  const envPath = process.env.FFPROBE_PATH;
+  if (envPath && fs.existsSync(envPath)) {
+    if (!_ffprobeLog.resolved) {
+      console.log('[ffmpeg] ffprobe resolved', { ffprobeCmd: envPath, ffmpegPath, used: 'env' });
+      _ffprobeLog.resolved = true;
+    }
+    return envPath;
+  }
+  const dir = path.dirname(ffmpegPath);
+  const base = path.basename(ffmpegPath);
+  const derivedBase = base.replace(/^ffmpeg/, 'ffprobe');
+  const derived = path.join(dir, derivedBase);
+  if (derivedBase !== base && fs.existsSync(derived)) {
+    if (!_ffprobeLog.resolved) {
+      console.log('[ffmpeg] ffprobe resolved', { ffprobeCmd: derived, ffmpegPath, used: 'derived' });
+      _ffprobeLog.resolved = true;
+    }
+    return derived;
+  }
+  if (!_ffprobeLog.resolved) {
+    console.log('[ffmpeg] ffprobe resolved', { ffprobeCmd: 'ffprobe', ffmpegPath, used: 'path' });
+    _ffprobeLog.resolved = true;
+  }
+  return 'ffprobe';
+}
+
 /**
  * Check if a video file has an audio stream
  * @param {string} videoPath - Path to video file
@@ -17,7 +51,7 @@ import { getDurationMsFromMedia } from "./media.duration.js";
 async function hasAudioStream(videoPath) {
   return new Promise((resolve) => {
     try {
-      const ffprobePath = ffmpegPath.replace('ffmpeg', 'ffprobe');
+      const ffprobeCmd = resolveFfprobeCmd(ffmpegPath);
       const args = [
         '-v', 'error',
         '-select_streams', 'a',
@@ -26,7 +60,7 @@ async function hasAudioStream(videoPath) {
         videoPath
       ];
       
-      const proc = spawn(ffprobePath, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+      const proc = spawn(ffprobeCmd, args, { stdio: ['ignore', 'pipe', 'pipe'] });
       let stdout = '';
       let stderr = '';
       
@@ -44,8 +78,11 @@ async function hasAudioStream(videoPath) {
         }
       });
       
-      proc.on('error', () => {
-        console.warn('[ffmpeg.video] Audio detection spawn failed, assuming no audio');
+      proc.on('error', (err) => {
+        if (!_ffprobeLog.spawnWarned) {
+          _ffprobeLog.spawnWarned = true;
+          console.warn('[ffmpeg.video] ffprobe spawn failed', { ffprobeCmd, code: err?.code });
+        }
         resolve(false);
       });
     } catch (error) {
@@ -66,7 +103,7 @@ async function getVideoColorMeta(videoPath) {
   }
   return new Promise((resolve) => {
     try {
-      const ffprobePath = ffmpegPath.replace('ffmpeg', 'ffprobe');
+      const ffprobeCmd = resolveFfprobeCmd(ffmpegPath);
       const args = [
         '-v', 'error',
         '-select_streams', 'v:0',
@@ -74,7 +111,7 @@ async function getVideoColorMeta(videoPath) {
         '-of', 'json',
         videoPath
       ];
-      const proc = spawn(ffprobePath, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+      const proc = spawn(ffprobeCmd, args, { stdio: ['ignore', 'pipe', 'pipe'] });
       let stdout = '';
       let stderr = '';
       proc.stdout.on('data', d => { stdout += d.toString(); });
@@ -96,7 +133,13 @@ async function getVideoColorMeta(videoPath) {
           resolve({ color_space: null, color_primaries: null, color_transfer: null });
         }
       });
-      proc.on('error', () => resolve({ color_space: null, color_primaries: null, color_transfer: null }));
+      proc.on('error', (err) => {
+        if (!_ffprobeLog.spawnWarned) {
+          _ffprobeLog.spawnWarned = true;
+          console.warn('[ffmpeg.video] ffprobe spawn failed', { ffprobeCmd, code: err?.code });
+        }
+        resolve({ color_space: null, color_primaries: null, color_transfer: null });
+      });
     } catch {
       resolve({ color_space: null, color_primaries: null, color_transfer: null });
     }
