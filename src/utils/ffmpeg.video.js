@@ -54,6 +54,82 @@ async function hasAudioStream(videoPath) {
     }
   });
 }
+
+/**
+ * Get video stream color metadata via ffprobe (first video stream).
+ * @param {string} videoPath - Path to video file
+ * @returns {Promise<{ color_space: string|null, color_primaries: string|null, color_transfer: string|null }>}
+ */
+async function getVideoColorMeta(videoPath) {
+  if (!videoPath || !fs.existsSync(videoPath)) {
+    return { color_space: null, color_primaries: null, color_transfer: null };
+  }
+  return new Promise((resolve) => {
+    try {
+      const ffprobePath = ffmpegPath.replace('ffmpeg', 'ffprobe');
+      const args = [
+        '-v', 'error',
+        '-select_streams', 'v:0',
+        '-show_entries', 'stream=color_space,color_primaries,color_transfer',
+        '-of', 'json',
+        videoPath
+      ];
+      const proc = spawn(ffprobePath, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+      let stdout = '';
+      let stderr = '';
+      proc.stdout.on('data', d => { stdout += d.toString(); });
+      proc.stderr.on('data', d => { stderr += d.toString(); });
+      proc.on('close', (code) => {
+        if (code !== 0) {
+          resolve({ color_space: null, color_primaries: null, color_transfer: null });
+          return;
+        }
+        try {
+          const data = JSON.parse(stdout);
+          const stream = data?.streams?.[0] || {};
+          resolve({
+            color_space: stream.color_space ?? null,
+            color_primaries: stream.color_primaries ?? null,
+            color_transfer: stream.color_transfer ?? null
+          });
+        } catch {
+          resolve({ color_space: null, color_primaries: null, color_transfer: null });
+        }
+      });
+      proc.on('error', () => resolve({ color_space: null, color_primaries: null, color_transfer: null }));
+    } catch {
+      resolve({ color_space: null, color_primaries: null, color_transfer: null });
+    }
+  });
+}
+
+/** Unknown/unspecified values for color_space that should skip the colorspace filter */
+const UNKNOWN_COLORSPACE = new Set(['unknown', 'unspecified', '2', '']);
+
+/**
+ * Return true only if meta.color_space is present and not unknown/unspecified.
+ * @param {{ color_space: string|null, color_primaries: string|null, color_transfer: string|null }} meta
+ * @returns {boolean}
+ */
+function isKnownColorSpace(meta) {
+  if (!meta || meta.color_space == null) return false;
+  const cs = String(meta.color_space).toLowerCase().trim();
+  if (!cs || UNKNOWN_COLORSPACE.has(cs)) return false;
+  return true;
+}
+
+/**
+ * Resolve colorspace mode from env: AUTO_COLORSPACE_MODE wins; else FFMPEG_USE_COLORSPACE=1 -> force, =0 -> off; else auto.
+ * @returns {'auto'|'off'|'force'}
+ */
+function getColorspaceMode() {
+  const explicit = process.env.AUTO_COLORSPACE_MODE;
+  if (explicit === 'off' || explicit === 'force' || explicit === 'auto') return explicit;
+  if (process.env.FFMPEG_USE_COLORSPACE === '1') return 'force';
+  if (process.env.FFMPEG_USE_COLORSPACE === '0') return 'off';
+  return 'auto';
+}
+
 import { CAPTION_OVERLAY } from "../config/env.js";
 import { hasLineSpacingOption } from "./ffmpeg.capabilities.js";
 import { normalizeOverlayCaption, computeOverlayPlacement } from "../render/overlay.helpers.js";
@@ -332,7 +408,13 @@ function runFfmpeg(args, opts = {}) {
     p.on("exit", (code, signal) => {
       clearTimeout(timeout);
       if (code !== 0) console.error('[ffmpeg] exit', { code, signal, stderr: String(stderr).slice(0,8000) });
-      if (code === 0) resolve({ stdout, stderr }); else reject(new Error(`ffmpeg exited with code ${code} signal ${signal || ''}: ${stderr}`));
+      if (code === 0) {
+        resolve({ stdout, stderr });
+      } else {
+        const err = new Error(`ffmpeg exited with code ${code} signal ${signal || ''}: ${stderr}`);
+        err.stderr = stderr;
+        reject(err);
+      }
     });
     p.on('close', (code, signal) => { if (code !== 0) console.error('[ffmpeg] close', { code, signal, stderr: String(stderr).slice(0,8000) }); });
     
@@ -379,7 +461,7 @@ function fitQuoteToBox({ text, boxWidthPx, baseFontSize = 72 }) {
   return { text: lines.join('\n'), fontsize: fz, lineSpacing };  // Use actual newlines, escapeForDrawtext will handle escaping
 }
 
-function buildVideoChain({ width, height, videoVignette, drawLayers, captionImage, usingCaptionPng, captionPngPath, rasterPlacement, overlayCaption, assPath, padSec = 0 }){
+function buildVideoChain({ width, height, videoVignette, drawLayers, captionImage, usingCaptionPng, captionPngPath, rasterPlacement, overlayCaption, assPath, padSec = 0, addColorspaceFilter = false }){
   const W = Math.max(4, Number(width)||1080);
   const H = Math.max(4, Number(height)||1920);
   
@@ -430,9 +512,8 @@ function buildVideoChain({ width, height, videoVignette, drawLayers, captionImag
   // Destructure for clarity and prevent shadowing
   const { usingCaptionPng: usePng, captionPngPath: pngPath } = { usingCaptionPng, captionPngPath };
   
-  // Env-gated pixel format and colorspace controls
+  // Env-gated pixel format; colorspace filter gated by addColorspaceFilter (caller decides via probe/mode)
   const use444 = process.env.FFMPEG_USE_YUV444 === '1';
-  const enableColorspace = process.env.FFMPEG_USE_COLORSPACE === '1';
   const pixelFmtFilter = `format=${use444 ? 'yuv444p' : 'yuv420p'}`;
   
   // If using PNG overlay for captions (SSOT v3 raster mode)
@@ -647,9 +728,9 @@ function buildVideoChain({ width, height, videoVignette, drawLayers, captionImag
         console.log('[karaoke] Using fontsdir:', fontsDir);
       }
       
-      // Apply other drawLayers (watermark, etc.) to [vsub], then format and colorspace
+      // Apply other drawLayers (watermark, etc.) to [vsub], then format and optional colorspace
       const otherLayers = drawLayers.filter(Boolean);
-      const postSubtitlesChain = makeChain('vsub', [ ...otherLayers, endFormat, 'colorspace=all=bt709:fast=1' ].filter(Boolean), 'vout');
+      const postSubtitlesChain = makeChain('vsub', [ ...otherLayers, endFormat, addColorspaceFilter ? 'colorspace=all=bt709:fast=1' : null ].filter(Boolean), 'vout');
       
       // Combine: tpad -> base chain -> subtitles -> other layers -> output
       const vchain = `${tpadPrefix}${baseChain};${subtitlesFilter};${postSubtitlesChain}`;
@@ -661,7 +742,7 @@ function buildVideoChain({ width, height, videoVignette, drawLayers, captionImag
     }
     
     // Default: use drawtext (no ASS subtitles)
-    let vchain = makeChain(videoInput, [ ...core, ...drawLayers, endFormat, 'colorspace=all=bt709:fast=1' ].filter(Boolean), 'vout');
+    let vchain = makeChain(videoInput, [ ...core, ...drawLayers, endFormat, addColorspaceFilter ? 'colorspace=all=bt709:fast=1' : null ].filter(Boolean), 'vout');
     
     return tpadPrefix + vchain;
   }
@@ -793,6 +874,7 @@ export async function renderVideoQuoteOverlay({
   padSec = 0,  // Padding duration in seconds (extends video when clip < TTS duration)
   videoVignette = false,
   haveBgAudio = true,
+  colorMetaCache = null,  // optional Map<path, ProbeResult> to avoid repeated ffprobe per render
 }) {
   // Log options for debugging
   console.log('[render:opts]', { 
@@ -1667,7 +1749,38 @@ export async function renderVideoQuoteOverlay({
   }
   
   console.log(`[captions] strategy=${strategy} reason="${reason}"`);
-  
+
+  // Colorspace filter: skip when raster; otherwise respect mode (auto = probe, off/force = no probe)
+  let addColorspaceFilter = false;
+  let colorSpaceLog = { mode: null, color_space: null };
+  if (usingCaptionPng) {
+    addColorspaceFilter = false;
+    colorSpaceLog = { mode: 'raster', color_space: null };
+  } else {
+    const mode = getColorspaceMode();
+    colorSpaceLog.mode = mode;
+    if (mode === 'off') {
+      addColorspaceFilter = false;
+    } else if (mode === 'force') {
+      addColorspaceFilter = true;
+      colorSpaceLog.color_space = 'force';
+    } else {
+      const cache = colorMetaCache ?? new Map();
+      let meta;
+      if (videoPath && cache.has(videoPath)) {
+        meta = cache.get(videoPath);
+      } else if (videoPath) {
+        meta = await getVideoColorMeta(videoPath);
+        cache.set(videoPath, meta);
+      } else {
+        meta = { color_space: null, color_primaries: null, color_transfer: null };
+      }
+      addColorspaceFilter = isKnownColorSpace(meta);
+      colorSpaceLog.color_space = meta?.color_space ?? 'unknown';
+    }
+  }
+  console.log('[ffmpeg] colorspace filter:', addColorspaceFilter ? 'applied' : 'skipped', colorSpaceLog);
+
   const vchain = buildVideoChain({ 
     width: W, 
     height: H, 
@@ -1679,7 +1792,8 @@ export async function renderVideoQuoteOverlay({
     rasterPlacement,
     overlayCaption,
     assPath,  // ASS subtitle file for karaoke word highlighting (overlays on top)
-    padSec
+    padSec,
+    addColorspaceFilter
   });
   // If includeBottomCaption flag is passed via captionStyle, honor it
 
@@ -2063,11 +2177,31 @@ export async function exportSocialImage({
 
   const scale = `scale='min(iw*${H}/ih\,${W})':'min(ih*${W}/iw\,${H})':force_original_aspect_ratio=decrease`;
   const pad = `pad=${W}:${H}:ceil((${W}-iw)/2):ceil((${H}-ih)/2)`;
-  // Colorspace handling for crisp text output
   const want444 = process.env.FFMPEG_USE_YUV444 === '1';
   const endFormat = want444 ? 'format=yuv444p' : 'format=yuv420p';
-  
-  const core = [ scale, pad, 'format=rgba', drawMain, drawAuthor, drawWatermark, endFormat, 'colorspace=all=bt709:fast=1' ].filter(Boolean);
+
+  // Colorspace: same mode + probe as overlay; when image-only input, skip filter
+  let addColorspaceFilter = false;
+  let colorSpaceLog = { mode: null, color_space: null };
+  if (videoPath) {
+    const mode = getColorspaceMode();
+    colorSpaceLog.mode = mode;
+    if (mode === 'off') {
+      addColorspaceFilter = false;
+    } else if (mode === 'force') {
+      addColorspaceFilter = true;
+      colorSpaceLog.color_space = 'force';
+    } else {
+      const meta = await getVideoColorMeta(videoPath);
+      addColorspaceFilter = isKnownColorSpace(meta);
+      colorSpaceLog.color_space = meta?.color_space ?? 'unknown';
+    }
+  } else {
+    colorSpaceLog = { mode: 'image', color_space: null };
+  }
+  console.log('[ffmpeg] colorspace filter:', addColorspaceFilter ? 'applied' : 'skipped', colorSpaceLog);
+
+  const core = [ scale, pad, 'format=rgba', drawMain, drawAuthor, drawWatermark, endFormat, addColorspaceFilter ? 'colorspace=all=bt709:fast=1' : null ].filter(Boolean);
   const chain = makeChain('0:v', core, 'vout');
   const finalFilter = sanitizeFilter(chain);
 

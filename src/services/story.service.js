@@ -1409,6 +1409,7 @@ export async function renderStory({ uid, sessionId }) {
         options: { width: 1080, height: 1920, fps: 24 }
       });
       let beatStartSec = 0;
+      const colorMetaCacheV1 = new Map();
       for (let b = 0; b < N; b++) {
         const info = perBeat[b];
         const durationSec = beatsDurSecArr[b];
@@ -1436,13 +1437,15 @@ export async function renderStory({ uid, sessionId }) {
           keepVideoAudio: true,
           bgAudioVolume: 0.5,
           watermark: true,
-          padSec: 0
+          padSec: 0,
+          colorMetaCache: colorMetaCacheV1
         });
         renderedSegments.push({ path: segmentPath, durationSec });
         beatStartSec += durationSec;
       }
     } else {
-      // --- Current path: one clip per beat
+      // --- Current path: one clip per beat (shared color probe cache to avoid re-probing same videoPath)
+      const colorMetaCache = new Map();
       for (let i = 0; i < shotsWithClips.length; i++) {
         const shot = shotsWithClips[i];
       const caption = session.captions.find(c => c.sentenceIndex === shot.sentenceIndex);
@@ -1685,7 +1688,8 @@ export async function renderStory({ uid, sessionId }) {
         keepVideoAudio: true, // Keep background audio (will auto-detect if audio exists)
         bgAudioVolume: 0.5,
         watermark: true,
-        padSec: padSec
+        padSec: padSec,
+        colorMetaCache
       });
       
       renderedSegments.push({
