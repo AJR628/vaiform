@@ -741,7 +741,17 @@ r.post("/captions", async (req, res) => {
 });
 
 // POST /api/story/render - Render final video (Phase 6)
-r.post("/render", async (req, res) => {
+// When DISABLE_STORY_RENDER_ROUTE=1, returns 405 and directs clients to POST /api/story/finalize.
+r.post("/render", (req, res, next) => {
+  if (process.env.DISABLE_STORY_RENDER_ROUTE === "1") {
+    return res.status(405).json({
+      success: false,
+      error: "RENDER_DISABLED",
+      detail: "Use POST /api/story/finalize"
+    });
+  }
+  next();
+}, enforceCreditsForRender(), async (req, res) => {
   try {
     const parsed = SessionSchema.safeParse(req.body || {});
     if (!parsed.success) {
@@ -753,13 +763,18 @@ r.post("/render", async (req, res) => {
     }
     
     const { sessionId } = parsed.data;
-    const session = await renderStory({
+    const session = await withRenderSlot(() => renderStory({
       uid: req.user.uid,
       sessionId
-    });
+    }));
     
     return res.json({ success: true, data: session });
   } catch (e) {
+    if (res.headersSent) return;
+    if (e?.code === "SERVER_BUSY" || e?.message === "SERVER_BUSY") {
+      res.set("Retry-After", "30");
+      return res.status(503).json({ success: false, error: "SERVER_BUSY", retryAfter: 30 });
+    }
     console.error("[story][render] error:", e);
     return res.status(500).json({
       success: false,
