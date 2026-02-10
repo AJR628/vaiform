@@ -6036,6 +6036,7 @@
             try {
                 const finalizeResp = await apiFetch('/story/finalize', {
                     method: 'POST',
+                    headers: { 'X-Idempotency-Key': sessionId },
                     body: { sessionId }
                 });
                 
@@ -9755,6 +9756,7 @@
                 // Call finalize with voice preset
                 const finalizeResp = await apiFetch('/story/finalize', {
                     method: 'POST',
+                    headers: { 'X-Idempotency-Key': window.currentStorySessionId },
                     body: {
                         sessionId: window.currentStorySessionId,
                         options: {

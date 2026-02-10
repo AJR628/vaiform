@@ -2,7 +2,8 @@ import { Router } from "express";
 import { z, ZodError } from "zod";
 import requireAuth from "../middleware/requireAuth.js";
 import { enforceCreditsForRender, enforceScriptDailyCap } from "../middleware/planGuards.js";
-import { spendCredits, refundCredits, RENDER_CREDIT_COST } from "../services/credit.service.js";
+import { idempotencyFinalize } from "../middleware/idempotency.firestore.js";
+import { RENDER_CREDIT_COST } from "../services/credit.service.js";
 import { withRenderSlot } from "../utils/render.semaphore.js";
 import {
   createStorySession,
@@ -784,8 +785,8 @@ r.post("/render", (req, res, next) => {
   }
 });
 
-// POST /api/story/finalize - Run full pipeline (Phase 7)
-r.post("/finalize", enforceCreditsForRender(), async (req, res) => {
+// POST /api/story/finalize - Run full pipeline (Phase 7). Credits reserved in idempotency middleware; no double charge on retry.
+r.post("/finalize", idempotencyFinalize({ getSession: getStorySession, creditCost: RENDER_CREDIT_COST }), async (req, res) => {
   try {
     const parsed = SessionSchema.safeParse(req.body || {});
     if (!parsed.success) {
@@ -798,45 +799,19 @@ r.post("/finalize", enforceCreditsForRender(), async (req, res) => {
     
     const { sessionId } = parsed.data;
     // NOTE: finalizeStory() blocks the HTTP request until render completes (synchronous operation).
-    // Server timeout is set to 15 minutes to accommodate long renders. For scalability,
-    // background job queue is planned (P2).
+    // Credits were already reserved by idempotency middleware; on 5xx middleware refunds.
     const session = await withRenderSlot(() => finalizeStory({
       uid: req.user.uid,
       sessionId,
       options: req.body.options || {}
     }));
     
-    // Spend credits only if render succeeded
-    let creditsSpent = false;
-    if (session?.finalVideo?.url) {
-      try {
-        await spendCredits(req.user.uid, RENDER_CREDIT_COST);
-        creditsSpent = true;
-      } catch (err) {
-        console.error("[story][finalize] Failed to spend credits:", err);
-        // Don't fail the request - credits were already checked by middleware
-      }
-    }
-    
     const shortId = session?.finalVideo?.jobId || null;
-    try {
-      return res.json({ 
-        success: true, 
-        data: session,
-        shortId: shortId  // Top-level for convenience
-      });
-    } catch (err) {
-      // If response failed after credits were spent, refund defensively
-      if (creditsSpent && !res.headersSent) {
-        try {
-          await refundCredits(req.user.uid, RENDER_CREDIT_COST);
-          console.log("[story][finalize] Refunded credits after response failure");
-        } catch (refundErr) {
-          console.error("[story][finalize] Failed to refund credits after response failure:", refundErr);
-        }
-      }
-      throw err; // Re-throw so outer catch handles it
-    }
+    return res.json({ 
+      success: true, 
+      data: session,
+      shortId
+    });
   } catch (e) {
     if (res.headersSent) return;
     if (e?.code === "SERVER_BUSY" || e?.message === "SERVER_BUSY") {
