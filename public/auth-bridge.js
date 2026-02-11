@@ -1,11 +1,12 @@
 // Bridge Firebase auth → api.js token provider (works with compat or when window.auth is present)
 import { setTokenProvider } from "./api.mjs";
-import { auth } from "./js/firebaseClient.js";
-import { ensureUserDoc } from "./js/firebaseClient.js";
+import { auth, db, ensureUserDoc } from "./js/firebaseClient.js";
 import { onIdTokenChanged, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
 // Expose the modular auth instance for any legacy code expecting window.auth
 try { if (!window.auth) window.auth = auth; } catch {}
+try { if (!window.db) window.db = db; } catch {}
+try { if (!window.onAuthStateChanged) window.onAuthStateChanged = onAuthStateChanged; } catch {}
 
 // Track if we've already called ensureUserDoc for this user to avoid duplicate calls
 let ensuredUid = null;
