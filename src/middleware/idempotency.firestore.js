@@ -3,10 +3,17 @@ import admin, { db } from '../config/firebase.js';
 /**
  * Idempotency middleware for POST /api/story/finalize.
  * - Requires X-Idempotency-Key (400 if missing).
+ * - Validates req.body.sessionId (non-empty string, min 3 chars) before any Firestore read/reserve; 400 INVALID_INPUT without debiting.
  * - Replay: if doc exists with state=done, fetches session via getSession and returns same response shape.
- * - Reserve: in one transaction creates idempotency doc (state=pending, reservedCredits) and debits user; 402 if insufficient.
+ * - Reserve: in one transaction creates idempotency doc (state=pending, reservedCredits, sessionId) and debits user; 402 if insufficient.
  * - On success: stores minimal payload (shortId, sessionId) only; no full session (Firestore 1 MiB limit).
  * - On 5xx: refunds credits and deletes doc.
+ *
+ * Verification (curl, no test framework):
+ * 1) Missing header: POST without X-Idempotency-Key -> 400 MISSING_IDEMPOTENCY_KEY.
+ * 2) Missing/invalid sessionId: POST with key but body {} or { "sessionId": "x" } -> 400 INVALID_INPUT; credits unchanged.
+ * 3) Same key twice with valid sessionId: first request renders and debits; second request replays (same shortId), no second debit.
+ *
  * @param {{ ttlMinutes?: number, getSession: (uid: string, sessionId: string) => Promise<object|null>, creditCost: number }} opts
  */
 export function idempotencyFinalize({ ttlMinutes = 60, getSession, creditCost } = {}) {
@@ -23,8 +30,17 @@ export function idempotencyFinalize({ ttlMinutes = 60, getSession, creditCost } 
       return res.status(401).json({ success: false, error: 'UNAUTHORIZED', detail: 'Authentication required.' });
     }
 
+    // Validate sessionId before any Firestore read or reserve so invalid input never debits credits
+    const sessionId = typeof req.body?.sessionId === 'string' ? req.body.sessionId.trim() : '';
+    if (sessionId.length < 3) {
+      return res.status(400).json({
+        success: false,
+        error: 'INVALID_INPUT',
+        detail: 'sessionId required and must be at least 3 characters.',
+      });
+    }
+
     const docRef = db.collection('idempotency').doc(`${uid}:${key}`);
-    const sessionId = req.body?.sessionId;
 
     // Single read to decide replay vs reserve
     const snap = await docRef.get();
@@ -79,6 +95,7 @@ export function idempotencyFinalize({ ttlMinutes = 60, getSession, creditCost } 
         tx.set(docRef, {
           state: 'pending',
           reservedCredits: creditCost,
+          sessionId,
           createdAt: new Date(),
           expiresAt: new Date(Date.now() + ttlMinutes * 60 * 1000),
         });
