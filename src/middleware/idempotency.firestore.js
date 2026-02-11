@@ -14,7 +14,7 @@ import admin, { db } from '../config/firebase.js';
  * 2) Missing/invalid sessionId: POST with key but body {} or { "sessionId": "x" } -> 400 INVALID_INPUT; credits unchanged.
  * 3) Same key twice with valid sessionId: first request renders and debits; second request replays (same shortId), no second debit.
  *
- * @param {{ ttlMinutes?: number, getSession: (uid: string, sessionId: string) => Promise<object|null>, creditCost: number }} opts
+ * @param {{ ttlMinutes?: number, getSession: (opts: { uid: string, sessionId: string }) => Promise<object|null>, creditCost: number }} opts
  */
 export function idempotencyFinalize({ ttlMinutes = 60, getSession, creditCost } = {}) {
   if (typeof getSession !== 'function' || typeof creditCost !== 'number') {
@@ -56,7 +56,7 @@ export function idempotencyFinalize({ ttlMinutes = 60, getSession, creditCost } 
         let session = null;
         if (sid) {
           try {
-            session = await getSession(uid, sid);
+            session = await getSession({ uid, sessionId: sid });
           } catch (err) {
             console.error('[idempotency][finalize] getSession on replay:', err);
           }
@@ -117,7 +117,7 @@ export function idempotencyFinalize({ ttlMinutes = 60, getSession, creditCost } 
         }
         let session = null;
         try {
-          session = await getSession(uid, sid);
+          session = await getSession({ uid, sessionId: sid });
         } catch (err) {
           console.error('[idempotency][finalize] getSession on replay (race):', err);
         }
