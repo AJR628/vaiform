@@ -503,443 +503,15 @@
     </section>
 
     <main class="w-full md:max-w-5xl md:mx-auto px-4 sm:px-6 lg:px-8 pb-16 space-y-6 bg-gray-50 dark:bg-gray-900">
-        <!-- Mode Toggle Tabs -->
-        <div class="flex gap-2 mb-2 md:mb-4">
-            <button
-                id="mode-quotes-tab"
-                data-action="setModeQuotes"
-                type="button"
-                class="px-4 py-2 rounded bg-blue-600 text-white font-medium"
-            >
-                Quotes
-            </button>
-        </div>
-
         <!-- Accordion Layout -->
         <!-- Mobile order: quote → CTA → preview. Desktop: preview → quote → CTA -->
-        <div class="studio-accordion-layout flex flex-col md:grid md:grid-cols-2">
+        <div class="studio-accordion-layout flex flex-col">
             <!-- Left: Accordion Sections -->
             <div class="studio-accordion-left order-1 md:order-2">
-                <!-- Quote Section -->
-                <div class="accordion-section" data-mode="quotes">
-                    <div class="accordion-header active" data-section="quote">
-                        <div class="accordion-title">
-                            <span class="accordion-icon">▼</span>
-                            <span class="accordion-label">Step 1 – Your Quote</span>
-                        </div>
-                        <div class="accordion-summary" id="quote-summary">Write your own quote or let AI suggest one.</div>
-                    </div>
-                    <div class="accordion-body active" id="quote-body">
-
-                        <!-- Quote Generation Section -->
-                        <div id="section-quote" class="content-box bg-gray-50/80 dark:bg-slate-900/60 border border-gray-200/50 dark:border-white/5 rounded-2xl p-4 md:p-6 space-y-4 shadow-sm w-full">
-                            <div class="text-xs text-gray-400 dark:text-gray-500 mb-2">Step 1 · Your quote</div>
-                            <h2 class="text-xl font-semibold text-gray-900 dark:text-white">Generate Quote</h2>
-                            <p class="text-sm text-gray-600 dark:text-gray-400 leading-tight">Describe the kind of quote you want, or type your own.</p>
-            
-            <div class="flex flex-col gap-2 md:flex-row md:items-center md:gap-4">
-                <input
-                    type="text"
-                    id="quote-text"
-                    value="Create a motivational quote about success"
-                    placeholder="Describe the quote you want…"
-                    class="w-full md:flex-1 bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-3 py-2 text-gray-900 dark:text-white"
-                />
-                <div class="hidden md:block text-xs text-gray-500 dark:text-gray-400 w-20 text-right" id="quote-char-count">0/200</div>
-                <div class="flex flex-col sm:flex-row gap-2 md:gap-4">
-                    <select id="quote-tone" class="flex-1 bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-3 py-2 text-gray-900 dark:text-white">
-                        <option value="default">Default</option>
-                        <option value="motivational">Motivational</option>
-                        <option value="witty">Witty</option>
-                        <option value="poetic">Poetic</option>
-                        <option value="bold">Bold</option>
-                        <option value="calm">Calm</option>
-                    </select>
-                    <button
-                        id="generate-quote-btn"
-                        data-action="generateQuote"
-                        type="button"
-                        class="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-600 rounded whitespace-nowrap"
-                    >
-                        Generate Quote
-                    </button>
-                </div>
-            </div>
-
-            <div id="quote-error" class="error text-sm hidden"></div>
-
-            <div id="quote-result" class="bg-gray-100 dark:bg-gray-800 rounded p-3 md:p-4 space-y-3 border border-gray-200 dark:border-gray-700">
-                <div class="flex items-start justify-between gap-3">
-                    <div class="flex-1">
-                        <div id="quote-text-display" class="text-lg font-medium text-gray-900 dark:text-white hidden"></div>
-                        <textarea id="quote-edit" class="w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded px-3 py-2 text-sm text-gray-900 dark:text-white" rows="4" placeholder="Enter your quote here or generate one above..."></textarea>
-                        <!-- Primary actions row -->
-                        <div class="flex gap-2 mt-2">
-                            <button id="save-quote-btn" data-action="saveQuote" type="button" class="px-4 py-2 bg-green-600 hover:bg-green-500 rounded text-base font-medium text-white">Save</button>
-                            <button id="cancel-quote-btn" data-action="cancelEdit" type="button" class="px-4 py-2 bg-gray-600 dark:bg-gray-700 hover:bg-gray-700 dark:hover:bg-gray-600 rounded text-base font-medium text-white hidden">Cancel</button>
-                        </div>
-                    </div>
-                    <div class="flex flex-col gap-2 items-end">
-                        <div id="regen-info" class="hidden md:block text-xs text-gray-400">Regens left: 10</div>
-                        <div class="flex gap-2">
-                            <button id="edit-quote-btn" data-action="editQuote" type="button" class="px-3 py-1 bg-gray-600 dark:bg-neutral-700 hover:bg-gray-700 dark:hover:bg-neutral-600 rounded text-sm text-white hidden">Edit</button>
-                        </div>
-                    </div>
-                </div>
-                <div id="quote-author" class="text-sm text-gray-400 hidden"></div>
-                <div id="quote-tone-tag" class="text-xs text-blue-400 hidden"></div>
-                
-                <!-- Secondary actions row (less emphasis) -->
-                <div id="remix-buttons" class="flex gap-2 mt-2">
-                    <button id="regenerate-btn" data-action="regenerateQuote" type="button" class="px-3 py-1.5 border border-purple-600 dark:border-purple-500 text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/20 disabled:opacity-50 disabled:cursor-not-allowed rounded text-sm">
-                        Regenerate
-                    </button>
-                    <button id="rephrase-btn" data-action="rephraseQuote" type="button" class="px-3 py-1.5 border border-purple-600 dark:border-purple-500 text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/20 disabled:opacity-50 disabled:cursor-not-allowed rounded text-sm">
-                        Rephrase
-                    </button>
-                    <button id="tone-shift-btn" data-action="changeTone" type="button" class="px-3 py-1.5 border border-purple-600 dark:border-purple-500 text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/20 disabled:opacity-50 disabled:cursor-not-allowed rounded text-sm">
-                        Change Tone
-                    </button>
-                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Media Section -->
-                <div class="accordion-section" data-mode="quotes">
-                    <div class="accordion-header" data-section="media">
-                        <div class="accordion-title">
-                            <span class="accordion-icon">▶</span>
-                            <span class="accordion-label">Step 2 – Background</span>
-                        </div>
-                        <div class="accordion-summary" id="media-summary">No background selected</div>
-                    </div>
-                    <div class="accordion-body" id="media-body">
-                        <!-- Asset Selection Section -->
-                        <div id="section-media" class="content-box bg-gray-50/80 dark:bg-slate-900/60 border border-gray-200/50 dark:border-white/5 rounded-2xl p-4 md:p-6 space-y-4 shadow-sm">
-                            <div class="text-xs text-gray-400 dark:text-gray-500 mb-2">Step 2 · Background</div>
-                            <h2 class="text-xl font-semibold text-gray-900 dark:text-white">Background</h2>
-            
-            <!-- Asset Type Tabs -->
-            <div class="flex gap-2">
-                <button id="images-tab" data-action="setMediaTab" type="button" class="px-4 py-2 rounded bg-blue-600 text-white" data-type="images">
-                    Images
-                </button>
-                <button id="videos-tab" data-action="setMediaTab" type="button" class="px-4 py-2 rounded bg-gray-600 dark:bg-gray-700 text-white" data-type="videos">
-                    Videos
-                </button>
-                <button id="ai-tab" class="px-4 py-2 rounded bg-gray-600 dark:bg-gray-700 text-white hidden" data-type="ai">
-                    AI Images
-                </button>
-            </div>
-
-            <!-- Remix Area -->
-            <div id="remix-area" class="bg-gray-100 dark:bg-gray-800 rounded-lg p-4 mb-4 hidden border border-gray-200 dark:border-gray-700">
-                <h3 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Remix References (up to 2)</h3>
-                <div id="remix-assets" class="flex gap-4">
-                    <!-- Remix assets will be added here -->
-                </div>
-                <!-- AI result preview slot -->
-                <div id="ai-result-block" class="mt-3 hidden">
-                    <div class="flex flex-col items-center gap-2">
-                        <div id="ai-ref-preview" class="flex gap-2 justify-center"></div>
-                        <div id="ai-result-preview" class="relative w-full rounded overflow-hidden border border-gray-600 bg-black" style="aspect-ratio: 9/16;"></div>
-                        <div class="mt-2">
-                            <button id="ai-save-use-btn" class="px-3 py-1 bg-green-600 hover:bg-green-500 text-white text-xs rounded">Save & Use</button>
-                        </div>
-                    </div>
-                </div>
-                <!-- Inline AI prompt + style for ideogram remix -->
-                <div class="mt-3 flex flex-wrap items-center gap-3">
-                    <input
-                        type="text"
-                        id="ai-prompt"
-                        value="A serene mountain landscape at sunset"
-                        placeholder="Describe what to create from these references..."
-                        class="flex-1 min-w-[16rem] bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded px-3 py-2 text-sm text-gray-900 dark:text-white"
-                    />
-                    <div class="flex items-center gap-2">
-                        <span class="text-xs text-gray-400">Realistic</span>
-                        <input type="range" id="ai-style-slider" min="0" max="1" step="0.1" value="0.5" class="w-24" />
-                        <span class="text-xs text-gray-400">Creative</span>
-                    </div>
-                </div>
-                <div class="mt-3 flex items-center gap-2">
-                    <button
-                        id="clear-remix-btn"
-                        class="px-3 py-1 bg-red-600 hover:bg-red-500 text-white text-xs rounded"
-                    >
-                        Clear All
-                    </button>
-                    <button
-                        id="remix-generate-btn"
-                        class="px-3 py-1 bg-purple-600 hover:bg-purple-500 text-white text-xs rounded"
-                        title="Generate a new AI image using the selected references"
-                    >
-                        20 Credits
-                    </button>
-                </div>
-            </div>
-
-            <!-- Search Controls -->
-            <div id="search-controls" class="flex gap-4 items-center">
-                <input
-                    type="text"
-                    id="asset-query"
-                    value="nature"
-                    placeholder="Search for images/videos..."
-                    class="flex-1 bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-3 py-2 text-gray-900 dark:text-white"
-                />
-                <button
-                    id="search-assets-btn"
-                    data-action="searchAssets"
-                    type="button"
-                    class="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-600 rounded text-white"
-                >
-                    Search
-                </button>
-                <button
-                    id="upload-asset-btn"
-                    class="px-3 py-2 bg-gray-600 dark:bg-gray-700 hover:bg-gray-700 dark:hover:bg-gray-600 rounded text-white"
-                    title="Upload your own image or video"
-                >
-                    📁
-                </button>
-                <input
-                    type="file"
-                    id="asset-upload-input"
-                    accept="image/*,video/*"
-                    class="hidden"
-                />
-            </div>
-
-            <!-- AI Images Controls removed (inline controls are now in remix-area) -->
-            <div id="ai-error" class="error text-sm hidden"></div>
-
-            <div id="asset-error" class="error text-sm hidden"></div>
-
-            <!-- Asset Grid (3 rows × 4 columns ≈ 12 results) -->
-            <div id="asset-grid" class="grid grid-cols-4 gap-4">
-                <!-- Assets will be populated here -->
-            </div>
-
-            <!-- Pagination Controls -->
-            <div id="pagination-container" class="flex justify-between items-center mt-4 hidden">
-                <button
-                    id="prev-page-btn"
-                    class="px-4 py-2 bg-gray-600 dark:bg-gray-700 hover:bg-gray-700 dark:hover:bg-gray-600 disabled:bg-gray-400 dark:disabled:bg-gray-600 disabled:opacity-50 rounded flex items-center gap-2 text-white"
-                >
-                    ← Previous
-                </button>
-                <span id="page-info" class="text-sm text-gray-600 dark:text-gray-400">Page 1</span>
-                <button
-                    id="next-page-btn"
-                    class="px-4 py-2 bg-gray-600 dark:bg-gray-700 hover:bg-gray-700 dark:hover:bg-gray-600 disabled:bg-gray-400 dark:disabled:bg-gray-600 disabled:opacity-50 rounded flex items-center gap-2 text-white"
-                >
-                    Next →
-                </button>
-            </div>
-
-            <!-- Free Plan Notice -->
-            <div id="free-notice" class="text-center text-sm text-gray-400 hidden">
-                Showing 12 curated assets. 
-                <span class="text-blue-400"> Upgrade to Pro</span> for larger pages and AI images.
-            </div>
-        </div>
-
-        <!-- Caption Style Section (Hidden during transition) -->
-        <div id="caption-style-section" class="content-box bg-white dark:bg-gray-800 rounded-lg p-6 space-y-4 border border-gray-200 dark:border-gray-600" style="display: none;">
-            <h2 class="text-xl font-semibold text-gray-900 dark:text-white">Caption Style</h2>
-            
-            <!-- Overlay Mode Toggle -->
-            <div class="mb-4">
-                <label class="flex items-center gap-2">
-                    <input type="checkbox" id="overlay-mode-toggle" class="rounded" />
-                    <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Use Draggable Overlay</span>
-                </label>
-            </div>
-            
-            <!-- Overlay Controls (shown when overlay mode is enabled) -->
-            <div id="overlay-controls" class="mb-4 space-y-3" style="display: none;">
-                <div>
-                    <label class="flex items-center gap-2">
-                        <input type="checkbox" id="show-outline-toggle" class="rounded" checked />
-                        <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Show outline</span>
-                    </label>
-                </div>
-                <div>
-                    <label class="flex items-center gap-2">
-                        <input type="checkbox" id="responsive-text-toggle" class="rounded" checked />
-                        <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Responsive text</span>
-                    </label>
-                </div>
-            </div>
-            
-            
-            
-            <div class="grid grid-cols-2 gap-4">
-                <!-- Font Family -->
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Font</label>
-                    <select id="caption-font" class="w-full bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-3 py-2 text-gray-900 dark:text-white">
-                        <option value="system">System</option>
-                        <option value="bold">Bold</option>
-                        <option value="cinematic">Cinematic</option>
-                        <option value="minimal">Minimal</option>
-                    </select>
-                </div>
-                
-                <!-- Font Weight -->
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Weight</label>
-                    <select id="caption-weight" class="w-full bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-3 py-2 text-gray-900 dark:text-white">
-                        <option value="normal">Normal</option>
-                        <option value="bold">Bold</option>
-                    </select>
-                </div>
-                
-                <!-- Size -->
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Size: <span id="size-value">80px</span></label>
-                    <input
-                        type="range"
-                        id="caption-size"
-                        min="0"
-                        max="100"
-                        value="60"
-                        class="w-full"
-                    />
-                </div>
-                
-                <!-- Opacity -->
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Opacity: <span id="opacity-value">80%</span></label>
-                    <input
-                        type="range"
-                        id="caption-opacity"
-                        min="30"
-                        max="100"
-                        value="80"
-                        class="w-full"
-                    />
-                </div>
-                
-                <!-- Placement -->
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Placement</label>
-                    <select id="caption-placement" class="w-full bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-3 py-2 text-gray-900 dark:text-white">
-                        <option value="top">Top</option>
-                        <option value="middle">Middle</option>
-                        <option value="bottom" selected>Bottom</option>
-                    </select>
-                </div>
-                
-                <!-- Background Box -->
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Background</label>
-                    <div class="flex items-center gap-4">
-                        <label class="flex items-center gap-2">
-                            <input type="checkbox" id="caption-background" class="rounded" />
-                            <span class="text-sm">Show box</span>
-                        </label>
-                        <div class="flex-1">
-                            <label class="block text-xs text-gray-400 mb-1">Box opacity: <span id="bg-opacity-value">50%</span></label>
-                            <input
-                                type="range"
-                                id="caption-bg-opacity"
-                                min="0"
-                                max="100"
-                                value="50"
-                                class="w-full"
-                            />
-                        </div>
-                    </div>
-                </div>
-                
-                <!-- Apply Caption Settings Button -->
-                <div class="mt-4">
-                    <button id="apply-caption-style-btn" type="button" class="w-full px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded text-base font-medium text-white">
-                        Apply Caption Settings
-                    </button>
-                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Voiceover Section -->
-                <div class="accordion-section md:hidden">
-                    <div class="accordion-header" data-section="voice">
-                        <div class="accordion-title">
-                            <span class="accordion-icon">▶</span>
-                            <span class="accordion-label">Step 3 – Voiceover (optional)</span>
-                        </div>
-                        <div class="accordion-summary" id="voice-summary">No voice selected</div>
-                    </div>
-                    <div class="accordion-body" id="voice-body">
-                        <!-- Voiceover Section -->
-                        <div id="section-voice" class="content-box bg-gray-50/80 dark:bg-slate-900/60 border border-gray-200/50 dark:border-white/5 rounded-2xl p-4 md:p-6 space-y-4 shadow-sm">
-                            <div class="text-xs text-gray-400 dark:text-gray-500 mb-2">Step 3 · Voiceover</div>
-                            <h2 class="text-xl font-semibold text-gray-900 dark:text-white">Voiceover</h2>
-                            <p class="text-sm text-gray-600 dark:text-gray-400 leading-tight">Add AI voice if you want audio, or leave this empty for a silent image or video.</p>
-            
-            <div class="grid grid-cols-2 gap-4">
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Voice</label>
-                    <div class="flex gap-2">
-                        <select id="voiceover-voice" class="flex-1 bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-3 py-2 text-gray-900 dark:text-white">
-                            <option value="">Loading voices...</option>
-                        </select>
-                        <button id="retry-voices-btn" onclick="loadVoices()" class="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm">
-                            🔄
-                        </button>
-                    </div>
-                </div>
-                <div class="flex items-end gap-2">
-                    <button
-                        id="preview-voice-btn"
-                        class="px-4 py-2 bg-purple-600 hover:bg-purple-500 rounded disabled:bg-gray-400 dark:disabled:bg-gray-600 text-white"
-                        disabled
-                    >
-                        Preview Voice
-                    </button>
-                    <audio id="voice-preview-audio" class="hidden" controls></audio>
-                </div>
-            </div>
-            
-            <!-- TTS Settings -->
-            <div class="grid grid-cols-2 gap-4 mt-4" data-mode="quotes">
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Stability</label>
-                    <input type="range" id="tts-stability" min="0" max="1" step="0.1" value="0.5" class="w-full">
-                    <div class="text-xs text-gray-500 mt-1">Value: <span id="stability-value">0.5</span></div>
-                </div>
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Similarity Boost</label>
-                    <input type="range" id="tts-similarity" min="0" max="1" step="0.1" value="0.75" class="w-full">
-                    <div class="text-xs text-gray-500 mt-1">Value: <span id="similarity-value">0.75</span></div>
-                </div>
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Style</label>
-                    <input type="range" id="tts-style" min="0" max="100" step="1" value="0" class="w-full">
-                    <div class="text-xs text-gray-500 mt-1">Value: <span id="style-value">0</span></div>
-                </div>
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Speaker Boost</label>
-                    <input type="checkbox" id="tts-speaker-boost" checked class="rounded">
-                    <div class="text-xs text-gray-500 mt-1">Enhance speaker characteristics</div>
-                </div>
-            </div>
-            
-                            <div id="voice-preview-status" class="text-sm text-gray-400 hidden"></div>
-                        </div>
-                    </div>
-                </div>
-            </div>
+                <!-- Media and Voiceover sections removed (Article-only) -->
 
             <!-- Article Mode Section (full width on desktop) -->
-            <div data-mode="articles" class="content-box bg-gray-50/80 dark:bg-slate-900/60 border border-gray-200/50 dark:border-white/5 rounded-2xl p-4 md:p-6 space-y-2 shadow-sm w-full md:col-span-2" style="display: none;">
+            <div data-mode="articles" class="content-box bg-gray-50/80 dark:bg-slate-900/60 border border-gray-200/50 dark:border-white/5 rounded-2xl p-4 md:p-6 space-y-2 shadow-sm w-full md:col-span-2">
                 <h2 class="text-xl font-semibold text-gray-900 dark:text-white">Article Explainer</h2>
                 
                 <!-- Input Section -->
@@ -1030,6 +602,94 @@
                     </div>
                     <!-- Caption Style mount point -->
                     <div id="caption-style-mount"></div>
+                    <!-- Caption Style Section (Hidden during transition) -->
+                    <div id="caption-style-section" class="content-box bg-white dark:bg-gray-800 rounded-lg p-6 space-y-4 border border-gray-200 dark:border-gray-600" style="display: none;">
+                        <h2 class="text-xl font-semibold text-gray-900 dark:text-white">Caption Style</h2>
+                        
+                        <!-- Overlay Mode Toggle -->
+                        <div class="mb-4">
+                            <label class="flex items-center gap-2">
+                                <input type="checkbox" id="overlay-mode-toggle" class="rounded" />
+                                <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Use Draggable Overlay</span>
+                            </label>
+                        </div>
+                        
+                        <!-- Overlay Controls (shown when overlay mode is enabled) -->
+                        <div id="overlay-controls" class="mb-4 space-y-3" style="display: none;">
+                            <div>
+                                <label class="flex items-center gap-2">
+                                    <input type="checkbox" id="show-outline-toggle" class="rounded" checked />
+                                    <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Show outline</span>
+                                </label>
+                            </div>
+                            <div>
+                                <label class="flex items-center gap-2">
+                                    <input type="checkbox" id="responsive-text-toggle" class="rounded" checked />
+                                    <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Responsive text</span>
+                                </label>
+                            </div>
+                        </div>
+                        
+                        <div class="grid grid-cols-2 gap-4">
+                            <!-- Font Family -->
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Font</label>
+                                <select id="caption-font" class="w-full bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-3 py-2 text-gray-900 dark:text-white">
+                                    <option value="system">System</option>
+                                    <option value="bold">Bold</option>
+                                    <option value="cinematic">Cinematic</option>
+                                    <option value="minimal">Minimal</option>
+                                </select>
+                            </div>
+                            <!-- Font Weight -->
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Weight</label>
+                                <select id="caption-weight" class="w-full bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-3 py-2 text-gray-900 dark:text-white">
+                                    <option value="normal">Normal</option>
+                                    <option value="bold">Bold</option>
+                                </select>
+                            </div>
+                            <!-- Size -->
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Size: <span id="size-value">80px</span></label>
+                                <input type="range" id="caption-size" min="0" max="100" value="60" class="w-full" />
+                            </div>
+                            <!-- Opacity -->
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Opacity: <span id="opacity-value">80%</span></label>
+                                <input type="range" id="caption-opacity" min="30" max="100" value="80" class="w-full" />
+                            </div>
+                            <!-- Placement -->
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Placement</label>
+                                <select id="caption-placement" class="w-full bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-3 py-2 text-gray-900 dark:text-white">
+                                    <option value="top">Top</option>
+                                    <option value="middle">Middle</option>
+                                    <option value="bottom" selected>Bottom</option>
+                                </select>
+                            </div>
+                            <!-- Background Box -->
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Background</label>
+                                <div class="flex items-center gap-4">
+                                    <label class="flex items-center gap-2">
+                                        <input type="checkbox" id="caption-background" class="rounded" />
+                                        <span class="text-sm">Show box</span>
+                                    </label>
+                                    <div class="flex-1">
+                                        <label class="block text-xs text-gray-400 mb-1">Box opacity: <span id="bg-opacity-value">50%</span></label>
+                                        <input type="range" id="caption-bg-opacity" min="0" max="100" value="50" class="w-full" />
+                                    </div>
+                                </div>
+                            </div>
+                            <!-- Apply Caption Settings Button -->
+                            <div class="mt-4">
+                                <button id="apply-caption-style-btn" type="button" class="w-full px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded text-base font-medium text-white">
+                                    Apply Caption Settings
+                                </button>
+                            </div>
+                        </div>
+                    </div>
                     <!-- Video Cuts (beta) - visible when window.ENABLE_VIDEO_CUTS_UI && session && N >= 2 -->
                     <div id="video-cuts-panel" class="mt-4 p-3 bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded text-sm hidden">
                         <div class="font-semibold text-gray-900 dark:text-white mb-2">Video Cuts (beta)</div>
@@ -1138,134 +798,6 @@
                     </div>
                 </div>
             </div>
-
-            <!-- Right: Preview Section -->
-            <div class="studio-accordion-right order-3 md:order-1">
-                <!-- Render Section -->
-                <div class="content-box bg-white dark:bg-gray-800 rounded-lg p-4 md:p-6 space-y-4 border border-gray-200 dark:border-gray-600 w-full" data-mode="quotes">
-                    <h2 class="text-xl font-semibold text-gray-900 dark:text-white">Live Preview</h2>
-            
-            <!-- Caption Toolbar Container (docked) -->
-            <div id="caption-toolbar-container" class="my-3 flex justify-center items-center flex-wrap gap-2 hidden">
-                <!-- Toolbar will be inserted here by JS -->
-            </div>
-            
-            <!-- Live Preview Canvas -->
-            <div id="live-preview-container" class="opacity-0 transition-opacity duration-300" style="min-height: 400px; width: 360px;">
-                <!-- Fix A: Give the preview wrapper a predictable size -->
-                <div class="relative mx-auto bg-black rounded-lg overflow-hidden" style="width: 360px; aspect-ratio: 9 / 16;">
-                    <canvas id="live-preview-canvas" class="w-full h-full block"></canvas>
-                    <!-- One-Click status overlay -->
-                    <div
-                      id="one-click-status"
-                      class="pointer-events-none absolute inset-0 z-40 flex items-center justify-center text-center px-4 text-sm sm:text-base font-semibold text-white bg-black/60 opacity-0 transition-opacity duration-200"
-                      aria-hidden="true"
-                    >
-                      <span id="one-click-status-text"></span>
-                    </div>
-                    <!-- Legacy caption overlay (hidden when using new overlay system) -->
-                    <img
-                      id="caption-overlay"
-                      class="absolute inset-0 pointer-events-none block w-full h-full"
-                      style="z-index:2"
-                    />
-                    <!-- Hybrid preview layers for live text + PNG swap -->
-                    <div id="caption-live" contenteditable="true" style="position:absolute; inset:0; pointer-events:auto; z-index:20; display:none; font-family: 'DejaVu Sans', sans-serif; color: white; text-align: center; padding: 24px; box-sizing: border-box;"></div>
-                    <img id="preview-raster-img" alt="caption png" style="position:absolute; inset:0; pointer-events:none; z-index:10; display:none; object-fit: contain;" />
-                    <!-- New draggable caption overlay container -->
-                    <div id="stage" class="absolute inset-0 w-full h-full" style="z-index:3; display:none;">
-                        <img id="previewMedia" class="w-full h-full object-cover" />
-                    </div>
-                    </div>
-                </div>
-                
-                <!-- Mobile Toolbar (visible only on mobile) -->
-                <div id="mobile-studio-toolbar" class="hidden w-full" data-mode="quotes">
-                    <div class="flex items-center gap-2 w-full" style="max-width: 100%;">
-                        <!-- Step Tabs -->
-                        <button
-                            id="mobile-tab-quote"
-                            class="mobile-studio-tab flex-1 px-3 py-2 text-sm font-medium rounded-lg border transition-colors"
-                            data-section="quote"
-                        >
-                            Quote
-                        </button>
-                        <button
-                            id="mobile-tab-background"
-                            class="mobile-studio-tab flex-1 px-3 py-2 text-sm font-medium rounded-lg border transition-colors"
-                            data-section="media"
-                        >
-                            Background
-                        </button>
-                        <button
-                            id="mobile-tab-voiceover"
-                            class="mobile-studio-tab flex-1 px-3 py-2 text-sm font-medium rounded-lg border transition-colors"
-                            data-section="voice"
-                        >
-                            Voiceover
-                        </button>
-                        <!-- Create Button -->
-                        <button
-                            id="mobile-create-btn"
-                            class="px-4 py-2 bg-green-600 hover:bg-green-500 disabled:bg-gray-400 disabled:cursor-not-allowed rounded-lg text-sm font-semibold text-white shadow-md transition-colors whitespace-nowrap"
-                            title="Create your short"
-                        >
-                            Create
-                        </button>
-                        <!-- One-Click Short Button (Mobile) -->
-                        <button
-                            id="mobile-one-click-btn"
-                            data-action="oneClickShort"
-                            class="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-400 disabled:cursor-not-allowed rounded-lg text-sm font-semibold text-white shadow-md transition-colors whitespace-nowrap"
-                            title="One-click: Generate quote, find background, and render automatically"
-                        >
-                            One-Click
-                        </button>
-                    </div>
-                </div>
-                
-                <!-- Helper text for empty preview -->
-                <div id="preview-helper-text" class="mt-3 text-center text-sm text-gray-500 dark:text-gray-400 hidden">
-                    Start by writing a quote, then choose an image or video background.
-                </div>
-                
-                <!-- Render buttons below preview -->
-                <div class="mt-4 flex flex-col items-center gap-3">
-                    <!-- Preview Status Indicator -->
-                    <div id="preview-status" class="hidden"></div>
-                    
-                    <!-- Action Buttons -->
-                    <div class="flex gap-3" data-mode="quotes">
-                        <!-- Create Button (combines Save Preview + Render) -->
-                        <button
-                            id="render-btn"
-                            class="px-6 py-3 bg-green-600 hover:bg-green-500 disabled:bg-gray-400 disabled:cursor-not-allowed rounded-lg text-base font-semibold text-white shadow-md transition-colors"
-                            title="Create your short"
-                        >
-                            Create
-                        </button>
-                    </div>
-                </div>
-                
-                <div id="render-preview" class="bg-gray-100 dark:bg-gray-800 rounded p-4 hidden border border-gray-200 dark:border-gray-700">
-                    <div class="text-sm text-gray-600 dark:text-gray-400 mb-2">Preview:</div>
-                    <div id="preview-quote" class="text-lg font-medium mb-2 text-gray-900 dark:text-white"></div>
-                    <div id="preview-asset" class="text-sm text-gray-600 dark:text-gray-400"></div>
-                    <div id="preview-caption-style" class="text-sm text-gray-600 dark:text-gray-400"></div>
-                    <div id="preview-voiceover" class="text-sm text-gray-600 dark:text-gray-400"></div>
-                </div>
-            </div>
-            
-            <!-- One-Click Short Button (reordered for mobile) -->
-            <div class="order-2 md:order-3 md:col-start-2 flex justify-center md:justify-start md:hidden" data-mode="quotes">
-                <button
-                    id="one-click-btn"
-                    data-action="oneClickShort"
-                    class="px-6 py-3 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-400 disabled:cursor-not-allowed rounded-lg text-base font-semibold text-white shadow-md transition-colors w-full md:w-auto"
-                    title="One-click: Generate quote, find background, and render automatically"
-                >
-                    One-Click Short
-                </button>
             </div>
         </div>
     </div>
