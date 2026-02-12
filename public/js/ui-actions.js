@@ -3,148 +3,8 @@
  * Provides resilient event handling for all action buttons using data-action attributes
  */
 
-// Action handlers map - maps data-action values to controller functions
+// Action handlers map - maps data-action values to controller functions (Article-only after Quote Studio removal)
 const ACTIONS = {
-  // Quote actions
-  generateQuote: () => {
-    console.log('[ui-actions] generateQuote triggered');
-    if (typeof window.generateQuote === 'function') {
-      window.generateQuote();
-    } else {
-      console.error('[ui-actions] generateQuote function not found');
-    }
-  },
-  
-  rephraseQuote: () => {
-    console.log('[ui-actions] rephraseQuote triggered');
-    if (typeof window.remixQuote === 'function') {
-      window.remixQuote('rephrase');
-    } else {
-      console.error('[ui-actions] remixQuote function not found');
-    }
-  },
-  
-  regenerateQuote: () => {
-    console.log('[ui-actions] regenerateQuote triggered');
-    if (typeof window.remixQuote === 'function') {
-      window.remixQuote('regenerate');
-    } else {
-      console.error('[ui-actions] remixQuote function not found');
-    }
-  },
-  
-  changeTone: () => {
-    console.log('[ui-actions] changeTone triggered');
-    if (typeof window.remixQuote === 'function') {
-      window.remixQuote('tone_shift');
-    } else {
-      console.error('[ui-actions] remixQuote function not found');
-    }
-  },
-  
-  saveQuote: () => {
-    console.log('[ui-actions] saveQuote triggered');
-    if (typeof window.saveQuote === 'function') {
-      window.saveQuote();
-    } else {
-      console.error('[ui-actions] saveQuote function not found');
-    }
-  },
-  
-  cancelEdit: () => {
-    console.log('[ui-actions] cancelEdit triggered');
-    if (typeof window.cancelEdit === 'function') {
-      window.cancelEdit();
-    } else {
-      console.error('[ui-actions] cancelEdit function not found');
-    }
-  },
-  
-  editQuote: () => {
-    console.log('[ui-actions] editQuote triggered');
-    if (typeof window.editQuote === 'function') {
-      window.editQuote();
-    } else {
-      console.error('[ui-actions] editQuote function not found');
-    }
-  },
-  
-  // Media actions
-  setMediaTab: (event) => {
-    // SSOT: read from data-type (matches getActiveAssetType() and DOM)
-    const kind = event.target.dataset.type;
-    console.log('[ui-actions] setMediaTab triggered for type:', kind);
-    
-    // Update current asset type
-    if (typeof window !== 'undefined') {
-      window.currentAssetType = kind;
-    }
-    
-    // Update tab styles
-    const tabs = document.querySelectorAll('[data-type]');
-    tabs.forEach(tab => {
-      if (tab.dataset.type === kind) {
-        // Active tab
-        tab.classList.remove('bg-gray-600', 'dark:bg-gray-700');
-        tab.classList.add('bg-blue-600');
-      } else {
-        // Inactive tab
-        tab.classList.remove('bg-blue-600');
-        tab.classList.add('bg-gray-600', 'dark:bg-gray-700');
-      }
-    });
-    
-    // Clear grid when switching tabs (user must click Search to load new assets)
-    const grid = document.getElementById('asset-grid');
-    if (grid) {
-      grid.innerHTML = '';
-    }
-    
-    // Do NOT auto-search; user must click Search button
-  },
-  
-  searchAssets: () => {
-    console.log('[ui-actions] searchAssets triggered');
-    if (typeof window.loadAssets === 'function') {
-      // Clear cache on new search
-      if (typeof window.assetCache !== 'undefined' && window.assetCache.clear) {
-        window.assetCache.clear();
-      }
-      window.loadAssets(1);
-    } else {
-      console.error('[ui-actions] loadAssets function not found');
-    }
-  },
-  
-  oneClickShort: () => {
-    console.log('[ui-actions] oneClickShort triggered');
-    if (typeof window.oneClickShort === 'function') {
-      window.oneClickShort();
-    } else {
-      console.error('[ui-actions] oneClickShort function not found');
-    }
-  },
-
-  // Mode switching actions
-  setModeQuotes: () => {
-    console.log('[ui-actions] setModeQuotes triggered');
-    if (typeof window.setStudioMode === 'function') {
-      window.setStudioMode('quotes');
-    } else {
-      console.error('[ui-actions] setStudioMode function not found');
-    }
-  },
-
-  setModeArticles: () => {
-    console.log('[ui-actions] setModeArticles triggered');
-    if (typeof window.setStudioMode === 'function') {
-      window.setStudioMode('articles');
-    } else {
-      console.error('[ui-actions] setStudioMode function not found');
-    }
-  },
-
-  // Article actions
   summarizeArticle: () => {
     console.log('[ui-actions] summarizeArticle triggered');
     if (typeof window.summarizeArticle === 'function') {
@@ -154,21 +14,21 @@ const ACTIONS = {
     }
   },
 
-  renderArticle: () => {
-    console.log('[ui-actions] renderArticle triggered');
-    if (typeof window.renderArticle === 'function') {
-      window.renderArticle();
-    } else {
-      console.error('[ui-actions] renderArticle function not found');
-    }
-  },
-
   prepareStoryboard: () => {
     console.log('[ui-actions] prepareStoryboard triggered');
     if (typeof window.prepareStoryboard === 'function') {
       window.prepareStoryboard();
     } else {
       console.error('[ui-actions] prepareStoryboard function not found');
+    }
+  },
+
+  renderArticle: () => {
+    console.log('[ui-actions] renderArticle triggered');
+    if (typeof window.renderArticle === 'function') {
+      window.renderArticle();
+    } else {
+      console.error('[ui-actions] renderArticle function not found');
     }
   }
 };
