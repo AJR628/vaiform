@@ -1316,12 +1316,18 @@ import { BACKEND as BACKEND_FROM_CONFIG } from '/config.js';
         }
         function showError(elementId, message) {
             const element = document.getElementById(elementId);
+            if (!element) {
+                if (message) console.warn('[showError] Target missing:', elementId, message);
+                return;
+            }
             element.textContent = message;
             element.classList.remove('hidden');
         }
 
         function hideError(elementId) {
-            document.getElementById(elementId).classList.add('hidden');
+            const element = document.getElementById(elementId);
+            if (!element) return;
+            element.classList.add('hidden');
         }
 
         function showBlockingError(title, msg) {
@@ -1841,8 +1847,9 @@ import { BACKEND as BACKEND_FROM_CONFIG } from '/config.js';
                 updateCaptionOverlay(currentQuote.text.trim(), true);
             }
             
-            // Scroll to render section
-            document.getElementById('render-preview').scrollIntoView({ behavior: 'smooth' });
+            // Scroll to render section (no-op if Quote DOM removed)
+            const renderPreview = document.getElementById('render-preview');
+            if (renderPreview) renderPreview.scrollIntoView({ behavior: 'smooth' });
         }
 
         // High-quality Pexels preview handler with race protection
@@ -1984,6 +1991,7 @@ import { BACKEND as BACKEND_FROM_CONFIG } from '/config.js';
 
         function updateRenderPreview() {
             const preview = document.getElementById('render-preview');
+            if (!preview) return;
             const renderBtn = document.getElementById('render-btn');
             
             // Show preview container if we have any feature selected
@@ -2970,13 +2978,14 @@ import { BACKEND as BACKEND_FROM_CONFIG } from '/config.js';
         }
 
         function populateVoiceSelect() {
-            const select = document.getElementById('voiceover-voice');
+            const select = document.getElementById('voiceover-voice') || document.getElementById('article-voice-preset');
+            if (!select) return;
             const retryBtn = document.getElementById('retry-voices-btn');
             select.innerHTML = '';
-            
+
             if (availableVoices.length === 0) {
                 select.innerHTML = '<option value="">No voices available</option>';
-                retryBtn.title = 'Retry loading voices';
+                if (retryBtn) retryBtn.title = 'Retry loading voices';
                 return;
             }
 
@@ -2987,9 +2996,10 @@ import { BACKEND as BACKEND_FROM_CONFIG } from '/config.js';
                 select.appendChild(option);
             });
 
-            // Enable preview button and hide retry button
-            document.getElementById('preview-voice-btn').disabled = false;
-            retryBtn.style.display = 'none';
+            // Enable preview button and hide retry button (only if elements exist)
+            const previewBtn = document.getElementById('preview-voice-btn');
+            if (previewBtn) previewBtn.disabled = false;
+            if (retryBtn) retryBtn.style.display = 'none';
         }
 
         async function previewVoice() {
@@ -9421,6 +9431,7 @@ import { BACKEND as BACKEND_FROM_CONFIG } from '/config.js';
 
         // Fix E: Ensure the first render actually fires
         window.addEventListener('load', () => {
+            if (!document.getElementById('live-preview-container')) return;
             console.log('[preview-init] Page loaded, initializing preview');
             initPreviewSystem();
             
