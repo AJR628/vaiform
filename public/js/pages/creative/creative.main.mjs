@@ -2439,6 +2439,7 @@ import { BACKEND as BACKEND_FROM_CONFIG } from '/config.js';
         });
         
         document.addEventListener('DOMContentLoaded', async () => {
+            const hasQuoteUI = !!document.querySelector('[data-mode="quotes"]');
             // [STUDIO] Hide legacy quote/asset studio UI if disabled
             if (!ENABLE_LEGACY_STUDIO) {
                 // Hide quotes tab button
@@ -2513,36 +2514,38 @@ import { BACKEND as BACKEND_FROM_CONFIG } from '/config.js';
             });
           }
 
-          // PRIORITY: Initialize assets after auth is ready
-          (async () => {
-            try {
-              console.log('[init] Starting asset browser initialization...');
-              // Wait for auth to settle once, then decide what to do
-              const ok = await ensureLoggedInOrWarn();
-              // If logged in (or you want to allow anonymous browsing anyway), kick off first load
-              if (ok) {
-                const activeType = getActiveAssetType();   // 'images' | 'videos' | 'ai'
-                const q = (document.getElementById('asset-query')?.value || 'nature').trim();
-                const grid = document.getElementById(`${activeType}-grid`) ||
-                             document.querySelector(`[data-grid="${activeType}"]`) ||
-                             document.getElementById('asset-grid');
-                
-                console.log('[assets] Checking initial load:', { activeType, gridEmpty: grid?.childElementCount === 0, query: q });
+          // PRIORITY: Initialize assets after auth is ready (quote UI only)
+          if (hasQuoteUI) {
+            (async () => {
+              try {
+                console.log('[init] Starting asset browser initialization...');
+                // Wait for auth to settle once, then decide what to do
+                const ok = await ensureLoggedInOrWarn();
+                // If logged in (or you want to allow anonymous browsing anyway), kick off first load
+                if (ok) {
+                  const activeType = getActiveAssetType();   // 'images' | 'videos' | 'ai'
+                  const q = (document.getElementById('asset-query')?.value || 'nature').trim();
+                  const grid = document.getElementById(`${activeType}-grid`) ||
+                               document.querySelector(`[data-grid="${activeType}"]`) ||
+                               document.getElementById('asset-grid');
+                  
+                  console.log('[assets] Checking initial load:', { activeType, gridEmpty: grid?.childElementCount === 0, query: q });
 
-            if (grid && grid.childElementCount === 0) {
-                  console.log('[assets] Loading initial assets for', activeType);
-              if (typeof loadAssets === 'function') {
-                    currentAssetType = activeType; // Set the global state
-                    await loadAssets(1); // Wait for assets to load
-              } else {
-                console.warn('[assets] loadAssets function not found');
+              if (grid && grid.childElementCount === 0) {
+                    console.log('[assets] Loading initial assets for', activeType);
+                if (typeof loadAssets === 'function') {
+                      currentAssetType = activeType; // Set the global state
+                      await loadAssets(1); // Wait for assets to load
+                } else {
+                  console.warn('[assets] loadAssets function not found');
+                }
               }
-            }
+                }
+              } catch (e) {
+                console.error('[init] Asset browser initialization failed:', e);
               }
-            } catch (e) {
-              console.error('[init] Asset browser initialization failed:', e);
-            }
-          })();
+            })();
+          }
 
           // Trigger caption preview if we have text and asset (legacy fallback only)
           safe('caption-preview-init', () => maybeGenerateCaptionPreview());
@@ -2600,6 +2603,7 @@ import { BACKEND as BACKEND_FROM_CONFIG } from '/config.js';
             console.log('[render-validate] updateRenderButtonState called from:', new Error().stack?.split('\n')[2]?.trim() || 'unknown');
             
             const renderBtn = document.getElementById('render-btn');
+            if (!renderBtn) return;
             const hasValidAsset = selectedAsset && (selectedAsset.fileUrl || selectedAsset.url);
             const hasQuote = currentQuote;
             const hasVoiceover = !!currentVoiceId;
@@ -8964,6 +8968,10 @@ import { BACKEND as BACKEND_FROM_CONFIG } from '/config.js';
             }
         });
 
+        // Quote-only event wiring: run only when quote DOM exists (safe for future HTML removal)
+        document.addEventListener('DOMContentLoaded', () => {
+            const hasQuoteUI = !!document.querySelector('[data-mode="quotes"]');
+            if (!hasQuoteUI) return;
         // Event listeners - generateQuote now handled by ui-actions.js
         const useTextBtn = document.getElementById('use-text-btn');
         if (useTextBtn) {
@@ -9308,6 +9316,8 @@ import { BACKEND as BACKEND_FROM_CONFIG } from '/config.js';
             }, 150); // Debounce resize events
         });
 
+        });
+
         // Tab switching is now handled by the delegated router in ui-actions.js
         // No duplicate onclick handlers needed
         
@@ -9315,6 +9325,7 @@ import { BACKEND as BACKEND_FROM_CONFIG } from '/config.js';
         // Initialize authentication using existing system
         // Note: Theme initialization is handled by header.js and early script in <head>
         document.addEventListener('DOMContentLoaded', () => {
+            const hasQuoteUI = !!document.querySelector('[data-mode="quotes"]');
             
             // Wait for auth system to be ready
             const checkAuth = () => {
@@ -9359,51 +9370,53 @@ import { BACKEND as BACKEND_FROM_CONFIG } from '/config.js';
             
             checkAuth();
 
-            // Initialize quote editor for manual entry from the start
-            try {
-                const seedInput = document.getElementById('quote-text');
-                const seed = (seedInput?.value || '').trim();
-                // Use default caption if no seed text provided
-                const defaultCaption = seed || 'Success is the result of persistent effort and unwavering belief in yourself.';
-                currentQuote = { text: defaultCaption };
-                displayQuote(currentQuote);
-                // Switch to edit mode by default so users can type immediately
-                const disp = document.getElementById('quote-text-display');
-                const ta = document.getElementById('quote-edit');
-                disp.classList.add('hidden');
-                ta.classList.remove('hidden');
-                document.getElementById('save-quote-btn').classList.remove('hidden');
-                document.getElementById('cancel-quote-btn').classList.remove('hidden');
-                document.getElementById('edit-quote-btn').classList.add('hidden');
-                // Do not reset regen counter on init
-                // Fix E: Initialize preview system after content is ready
-                try { 
-                    initPreviewSystem();
-                    
-                    // Fix E: Add ResizeObserver for canvas resizing
-                    const canvas = document.getElementById('live-preview-canvas');
-                    const container = document.getElementById('live-preview-container');
-                    if (canvas && container) {
-                        new ResizeObserver(() => {
-                            if (window.__overlayIsDragging) return; // Skip during drag
-                            if (sizeCanvasToCSS(canvas)) {
-                                // Trigger preview update on resize
-                                if (currentQuote?.text && selectedAsset) {
-                                    updateLivePreview();
-                                    updateCaptionOverlay(currentQuote.text.trim(), true);
+            // Initialize quote editor for manual entry from the start (quote UI only)
+            if (hasQuoteUI) {
+                try {
+                    const seedInput = document.getElementById('quote-text');
+                    const seed = (seedInput?.value || '').trim();
+                    // Use default caption if no seed text provided
+                    const defaultCaption = seed || 'Success is the result of persistent effort and unwavering belief in yourself.';
+                    currentQuote = { text: defaultCaption };
+                    displayQuote(currentQuote);
+                    // Switch to edit mode by default so users can type immediately
+                    const disp = document.getElementById('quote-text-display');
+                    const ta = document.getElementById('quote-edit');
+                    disp.classList.add('hidden');
+                    ta.classList.remove('hidden');
+                    document.getElementById('save-quote-btn').classList.remove('hidden');
+                    document.getElementById('cancel-quote-btn').classList.remove('hidden');
+                    document.getElementById('edit-quote-btn').classList.add('hidden');
+                    // Do not reset regen counter on init
+                    // Fix E: Initialize preview system after content is ready
+                    try { 
+                        initPreviewSystem();
+                        
+                        // Fix E: Add ResizeObserver for canvas resizing
+                        const canvas = document.getElementById('live-preview-canvas');
+                        const container = document.getElementById('live-preview-container');
+                        if (canvas && container) {
+                            new ResizeObserver(() => {
+                                if (window.__overlayIsDragging) return; // Skip during drag
+                                if (sizeCanvasToCSS(canvas)) {
+                                    // Trigger preview update on resize
+                                    if (currentQuote?.text && selectedAsset) {
+                                        updateLivePreview();
+                                        updateCaptionOverlay(currentQuote.text.trim(), true);
+                                    }
                                 }
-                            }
-                        }).observe(container);
+                            }).observe(container);
+                        }
+                    } catch (e) {
+                        console.warn('[preview-init] failed:', e);
                     }
-                } catch (e) {
-                    console.warn('[preview-init] failed:', e);
-                }
-                
-                // Seed char counter
-                const n = Math.min(200, defaultCaption.length);
-                const cc = document.getElementById('quote-char-count');
-                if (cc) cc.textContent = `${n}/200`;
-            } catch {}
+                    
+                    // Seed char counter
+                    const n = Math.min(200, defaultCaption.length);
+                    const cc = document.getElementById('quote-char-count');
+                    if (cc) cc.textContent = `${n}/200`;
+                } catch {}
+            }
         });
 
         // Fix E: Ensure the first render actually fires
