@@ -46,89 +46,8 @@
         window.updateCreditsDisplay = updateCreditsDisplay;
         window.fetchAndUpdateCredits = fetchAndUpdateCredits;
     </script>
-    <script type="module">
-        // Import render payload helper functions for SSOT preview workflow
-        try {
-            const { 
-                getSavedOverlayMeta, 
-                validateOverlayCaption,
-                validateBeforeRender,
-                showPreviewSavedIndicator,
-                markPreviewUnsaved
-            } = await import('/js/render-payload-helper.js');
-            
-            // Make globally available
-            window.getSavedOverlayMeta = getSavedOverlayMeta;
-            window.validateOverlayCaption = validateOverlayCaption;
-            window.validateBeforeRender = validateBeforeRender;
-            window.showPreviewSavedIndicator = showPreviewSavedIndicator;
-            window.markPreviewUnsaved = markPreviewUnsaved;
-            
-            console.log('[module] render-payload-helper functions loaded successfully');
-        } catch (error) {
-            console.error('[module] Failed to load render-payload-helper:', error);
-            // Set up fallback functions
-            window.showPreviewSavedIndicator = function(containerSelector = '#preview-status') {
-                const container = document.querySelector(containerSelector);
-                if (!container) return;
-                
-                const meta = window.getSavedOverlayMeta ? window.getSavedOverlayMeta() : null;
-                
-                if (meta) {
-                    container.innerHTML = `
-                        <div class="flex items-center gap-2 px-3 py-2 bg-green-600 text-white rounded text-sm">
-                            <span>✓</span>
-                            <span>Preview saved - ready to render</span>
-                        </div>
-                    `;
-                } else {
-                    container.innerHTML = `
-                        <div class="flex items-center gap-2 px-3 py-2 bg-yellow-600 text-white rounded text-sm">
-                            <span>⚠</span>
-                            <span>No preview saved - generate preview before rendering</span>
-                        </div>
-                    `;
-                }
-                container.classList.remove('hidden');
-            };
-            
-            window.getSavedOverlayMeta = function() {
-                if (window._overlayMeta) return window._overlayMeta;
-                try {
-                    const stored = localStorage.getItem('overlayMetaV3');
-                    if (stored) {
-                        const meta = JSON.parse(stored);
-                        // Validate ssotVersion === 3
-                        if (meta.ssotVersion !== 3) {
-                            console.warn('[fallback] Ignoring saved meta with wrong ssotVersion:', meta.ssotVersion);
-                            localStorage.removeItem('overlayMetaV3');
-                            return null;
-                        }
-                        window._overlayMeta = meta;
-                        return meta;
-                    }
-                } catch (err) {
-                    console.warn('[fallback] Failed to load from localStorage:', err.message);
-                }
-                return null;
-            };
-        }
-        
-        // Initialize preview saved flag
-        if (typeof window._previewSavedForCurrentText === 'undefined') {
-            window._previewSavedForCurrentText = false;
-        }
-    </script>
     <!-- Shared geometry utilities for caption positioning -->
     <script src="./js/caption-geom.js"></script>
-    <!-- Hybrid caption preview system -->
-    <script type="module" src="./js/caption-live.js"></script>
-    <!-- Import shared line extraction function -->
-    <script type="module">
-        import { extractRenderedLines, extractLinesStable } from './js/caption-overlay.js';
-        window.extractRenderedLines = extractRenderedLines;
-        window.extractLinesStable = extractLinesStable;
-    </script>
     <!-- Delegated event system for action buttons -->
     <script src="./js/ui-actions.js"></script>
     <link rel="stylesheet" href="/creative.css" />
