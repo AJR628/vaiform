@@ -32,6 +32,7 @@ dotenv.config();
 envCheck(); // presence-only checks; CI bypasses via NODE_ENV=test
 
 const DBG = process.env.VAIFORM_DEBUG === "1";
+const ENABLE_LEGACY = process.env.ENABLE_LEGACY_ROUTES === "1";
 
 const app = express();
 
@@ -174,12 +175,15 @@ app.get("/health", (req, res) => {
 app.head("/health", (req, res) => {
   res.set("Cache-Control", "no-store").end();
 });
-app.post("/diag/echo", (req, res) => {
-  res
-    .set("Cache-Control", "no-store")
-    .json({ ok: true, method: req.method, headers: req.headers, body: req.body, time: Date.now() });
-});
-console.log("[routes] /health and /diag/echo mounted");
+if (DBG) {
+  app.post("/diag/echo", (req, res) => {
+    res
+      .set("Cache-Control", "no-store")
+      .json({ ok: true, method: req.method, headers: req.headers, body: req.body, time: Date.now() });
+  });
+  console.log("[routes] /diag/echo mounted (VAIFORM_DEBUG=1)");
+}
+console.log("[routes] /health mounted");
 
 // ---------- STATIC FILES FIRST (before API routes to avoid shadowing) ----------
 // Serve /assets/fonts with correct MIME types and CORS headers
@@ -209,7 +213,7 @@ app.use("/", whoamiRoutes);
 // Keep existing creditsRoutes mount if present, but also provide a direct handler to avoid 404s.
 app.use("/", creditsRoutes);
 app.get("/credits", getCreditsHandler);
-if (process.env.NODE_ENV !== "production") app.use("/diag", diagRoutes);
+if (process.env.VAIFORM_DEBUG === "1") app.use("/diag", diagRoutes);
 app.use("/", generateRoutes);
 // /api alias for ALL API endpoints (ensure all four are mounted)
 app.use("/api", healthRoutes);
@@ -252,9 +256,9 @@ if (routes?.shorts) {
 // Same-origin CDN proxy (optional)
 app.use("/cdn", cdnRoutes);
 console.log("✅ Mounted cdn at /cdn");
-if (routes?.uploads) {
+if (ENABLE_LEGACY) {
   app.use("/api", routes.uploads);
-  console.log("✅ Mounted uploads at /api/uploads");
+  console.log("✅ Mounted uploads at /api/uploads (ENABLE_LEGACY_ROUTES=1)");
 }
 // PHASE 1: Unmounted non-core studio routes (code preserved)
 // if (routes?.studio) {
@@ -276,10 +280,10 @@ if (routes?.limits) {
   app.use("/limits", routes.limits);
   console.log("✅ Mounted limits at /limits and /api/limits");
 }
-if (routes?.voice) {
+if (ENABLE_LEGACY) {
   app.use("/api/voice", routes.voice);
   app.use("/voice", routes.voice);
-  console.log("✅ Mounted voice at /voice and /api/voice");
+  console.log("✅ Mounted voice at /voice and /api/voice (ENABLE_LEGACY_ROUTES=1)");
 }
 if (routes?.creative) {
   app.use("/creative", routes.creative);
@@ -291,9 +295,9 @@ if (routes?.creative) {
 //   app.use("/api/preview", routes.preview);
 //   console.log("✅ Mounted preview at /api/preview");
 // }
-if (routes?.tts) {
+if (ENABLE_LEGACY) {
   app.use("/api/tts", routes.tts);
-  console.log("✅ Mounted tts at /api/tts");
+  console.log("✅ Mounted tts at /api/tts (ENABLE_LEGACY_ROUTES=1)");
 }
 if (routes?.story) {
   app.use("/api/story", routes.story);
@@ -305,10 +309,12 @@ import captionPreviewRoutes from "./routes/caption.preview.routes.js";
 app.use("/api", captionPreviewRoutes);
 console.log("✅ Mounted caption preview at /api/caption/preview");
 
-// Mount caption render routes
+// Mount caption render routes (legacy flow only; Article finalize burns in-process via ffmpeg)
 import captionRenderRoutes from "./routes/caption.render.routes.js";
-app.use("/api", captionRenderRoutes);
-console.log("✅ Mounted caption render at /api/caption/render");
+if (ENABLE_LEGACY) {
+  app.use("/api", captionRenderRoutes);
+  console.log("✅ Mounted caption render at /api/caption/render (ENABLE_LEGACY_ROUTES=1)");
+}
 
 // Mount user routes
 import userRoutes from "./routes/user.routes.js";
@@ -326,8 +332,8 @@ app.post("/api/user/setup", (req, res) => {
   res.status(204).end(); // no content – frontend no longer relies on this
 });
 
-// PHASE 1: Core routers summary
-console.log("📋 Mounted core routes: story, caption (preview/render), tts, voice, checkout, credits (GET only), users, user, shorts-readonly");
+// Core routers summary (legacy: voice, tts, uploads, caption/render only when ENABLE_LEGACY_ROUTES=1)
+console.log("📋 Mounted core routes: story, caption preview, checkout, credits (GET only), users, user, shorts-readonly");
 
 // ---------- STATIC LAST (disable directory redirects like /dir -> /dir/) ----------
 // --- SPA static hosting (after API routes) ---
