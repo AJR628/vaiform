@@ -39,7 +39,10 @@
 - Trigger a known bad request to a validated endpoint → failure envelope matches contract and includes `requestId`.
 - No business logic or status code changes; only response shape.
 
-**Reference:** See Commit 2.2 audit + build plan (standardize error + validation output).
+**Hard checks (after 2.2 implemented):**
+- In validate.middleware.js and error.middleware.js only: response payload must not include `ok`, `reason`, `code`, `message`, `details`, `issues`, `stack`.
+- **Validation failure example:** `curl -s -X POST http://localhost:3000/api/assets/options -H "Content-Type: application/json" -d '{}'` (no auth + empty body). Expect 401 or 400 with envelope: `{ "success": false, "error": "VALIDATION_FAILED" or "UNAUTHENTICATED", "detail": "...", "fields": { ... } if validation, "requestId": "..." }`. No `code`, `message`, `details`, `issues`.
+- **Unauthenticated example:** `curl -s -X POST http://localhost:3000/api/story/start -H "Content-Type: application/json" -d '{"input":"x"}'` (no Authorization). Expect 401: `{ "success": false, "error": "UNAUTHENTICATED", "detail": "...", "requestId": "..." }`. No disallowed keys.
 
 ---
 

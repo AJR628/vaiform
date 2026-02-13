@@ -1,9 +1,20 @@
 // src/middleware/error.middleware.js
+import { fail } from '../http/respond.js';
+
+function fieldsFromZodIssues(issues) {
+  if (!issues || !Array.isArray(issues)) return undefined;
+  const fields = {};
+  for (const i of issues) {
+    const path = Array.isArray(i.path) ? i.path : (i.path != null ? [i.path] : []);
+    const key = path.length ? path.join('.') : '_root';
+    fields[key] = i.message;
+  }
+  return Object.keys(fields).length > 0 ? fields : undefined;
+}
+
 export default function errorHandler(err, req, res, _next) {
-  // Detect Zod-style validation errors
   const isZod = err?.name === 'ZodError' || err?.code === 'ZOD_ERROR' || Array.isArray(err?.issues);
 
-  // Map to status (overridable via err.status)
   const status =
     err?.status ??
     (isZod
@@ -18,40 +29,22 @@ export default function errorHandler(err, req, res, _next) {
               ? 400
               : 500);
 
-  // Prefer our reqId middleware value; fall back to incoming header
-  const requestId =
-    req?.id || req?.reqId || req?.headers?.['x-request-id'] || req?.headers?.['X-Request-Id'];
-
-  const payload = {
-    success: false,
-    error: err?.name || 'ERROR',
-    detail: err?.message || (status === 500 ? 'Unexpected server error' : 'Request failed'),
-    requestId,
-  };
-
-  // Include Zod issues for client UX
-  if (isZod && err?.issues) {
-    payload.issues = err.issues.map((i) => ({
-      path: Array.isArray(i.path) ? i.path.join('.') : String(i.path ?? ''),
-      message: i.message,
-    }));
-  }
-
-  // Structured log with minimal PII
   const log = {
     level: status >= 500 ? 'error' : 'warn',
     status,
     name: err?.name,
     message: err?.message,
-    requestId,
+    requestId: req?.id || req?.reqId || req?.headers?.['x-request-id'] || req?.headers?.['X-Request-Id'],
     route: `${req?.method} ${req?.originalUrl}`,
   };
   console.error('❌', JSON.stringify(log));
 
-  // Only expose stack outside production
-  if (process.env.NODE_ENV !== 'production' && err?.stack) {
-    payload.stack = err.stack;
+  if (isZod && err?.issues) {
+    const fields = fieldsFromZodIssues(err.issues);
+    return fail(req, res, status, 'VALIDATION_FAILED', 'Invalid request', fields);
   }
 
-  res.status(status).json(payload);
+  const error = String(err?.code ?? err?.name ?? 'INTERNAL_ERROR');
+  const detail = String(err?.message ?? 'Unexpected error');
+  fail(req, res, status, error, detail);
 }
