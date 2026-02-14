@@ -60,8 +60,7 @@ const RasterSchema = z.object({
   lines: z.array(z.string()).min(1, "At least one line required"),
   totalTextH: z.coerce.number().int().min(1),
   yPxFirstLine: z.coerce.number().int(),
-  previewFontString: z.string().optional(),
-  
+
   // Optional legacy fields (ignored but allowed during transition)
   xPct: z.coerce.number().optional(),
   yPct: z.coerce.number().optional(),
