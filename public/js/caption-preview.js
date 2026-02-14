@@ -599,7 +599,8 @@ export async function generateCaptionPreview(opts) {
     method: "POST",
     body: payload
   });
-  if (!data?.ok) throw new Error(data?.detail || data?.reason || "Preview generation failed");
+  const isOk = (data?.success ?? data?.ok);
+  if (!isOk) throw new Error(data?.detail || data?.error || data?.reason || "Preview generation failed");
 
   // Conditional audit logging (response)
   if (window.__parityAudit && data?.data?.meta) {
@@ -1059,12 +1060,11 @@ export async function generateBeatCaptionPreview(beatIndex, text, style) {
       signal: controller.signal // AbortController supported
     });
     
-    if (!data?.ok) {
-      throw new Error(data?.detail || data?.reason || 'Preview generation failed');
-    }
+    const isOk = (data?.success ?? data?.ok);
+    if (!isOk) throw new Error(data?.detail || data?.error || data?.reason || 'Preview generation failed');
     
     // Separate compiler meta (for handshake) from ssotMeta (for display)
-    const compilerMeta = data?.meta;  // Compiler meta (for handshake only)
+    const compilerMeta = data?.data?.compilerMeta ?? data?.meta ?? {};  // Backend 2.4b1: compilerMeta moved into data
     const ssotMeta = data?.data?.meta;  // SSOT meta (contains rasterUrl and geometry)
     
     const result = {

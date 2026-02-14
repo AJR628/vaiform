@@ -12,6 +12,7 @@ import { compileCaptionSSOT } from '../captions/compile.js';
 import { CAPTION_LIMITS } from '../captions/constants.js';
 import { extractStyleOnly } from '../utils/caption-style-helper.js';
 import requireAuth from '../middleware/requireAuth.js';
+import { ok, fail } from '../http/respond.js';
 const { createCanvas } = pkg;
 
 // V3 raster schema (pixel-based with frame coordinates)
@@ -94,11 +95,7 @@ const previewRateLimit = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   handler: (req, res) => {
-    res.status(429).json({ 
-      success: false, 
-      error: 'RATE_LIMIT_EXCEEDED', 
-      detail: 'Too many requests. Please try again in a minute.' 
-    });
+    return fail(req, res, 429, "RATE_LIMIT_EXCEEDED", "Too many requests. Please try again in a minute.");
   }
 });
 
@@ -108,12 +105,7 @@ router.post("/caption/preview", requireAuth, previewRateLimit, express.json({ li
     const isV3Raster = req.body.ssotVersion === 3 && req.body.mode === 'raster';
     
     if (!isV3Raster) {
-      // Strict gate: only V3 raster mode is allowed
-      return res.status(400).json({
-        ok: false,
-        reason: 'V3_RASTER_REQUIRED',
-        detail: 'V3 raster mode is required. Request must include ssotVersion: 3 and mode: "raster"'
-      });
+      return fail(req, res, 400, "V3_RASTER_REQUIRED", "V3 raster mode is required. Request must include ssotVersion: 3 and mode: \"raster\"");
     }
     
     console.log('[caption-preview] Using V3 RASTER path');
@@ -126,21 +118,18 @@ router.post("/caption/preview", requireAuth, previewRateLimit, express.json({ li
     if (useServerMeasure) {
       const mobileParsed = MobileSchema.safeParse(body);
       if (!mobileParsed.success) {
-        return res.status(400).json({
-          ok: false,
-          reason: 'INVALID_INPUT',
-          detail: mobileParsed.error.flatten(),
-        });
+        const fields = {};
+        for (const i of mobileParsed.error.issues) {
+          const key = i.path?.length ? i.path.join('.') : '_root';
+          fields[key] = i.message;
+        }
+        return fail(req, res, 400, "VALIDATION_FAILED", "Invalid request", fields);
       }
       const data = mobileParsed.data;
       const textRaw = data.textRaw || data.text;
       const text = String(textRaw || '').trim();
       if (!text) {
-        return res.status(400).json({
-          ok: false,
-          reason: 'EMPTY_TEXT',
-          detail: 'Caption text cannot be empty',
-        });
+        return fail(req, res, 400, "EMPTY_TEXT", "Caption text cannot be empty");
       }
       const frameW = data.frameW ?? 1080;
       const frameH = data.frameH ?? 1920;
@@ -296,16 +285,13 @@ router.post("/caption/preview", requireAuth, previewRateLimit, express.json({ li
         yPx_png: ssotMeta.yPx_png,
         lines: ssotMeta.lines.length,
       });
-      return res.status(200).json({
-        ok: true,
-        data: {
-          imageUrl: null,
-          wPx: frameW,
-          hPx: frameH,
-          xPx: 0,
-          meta: ssotMeta,
-        },
-        meta,
+      return ok(req, res, {
+        imageUrl: null,
+        wPx: frameW,
+        hPx: frameH,
+        xPx: 0,
+        meta: ssotMeta,
+        compilerMeta: meta
       });
     }
 
@@ -326,14 +312,19 @@ router.post("/caption/preview", requireAuth, previewRateLimit, express.json({ li
 
     const parsed = RasterSchema.safeParse(body);
     if (!parsed.success) {
-      return res.status(400).json({ ok: false, reason: "INVALID_INPUT", detail: parsed.error.flatten() });
+      const fields = {};
+      for (const i of parsed.error.issues) {
+        const key = i.path?.length ? i.path.join('.') : '_root';
+        fields[key] = i.message;
+      }
+      return fail(req, res, 400, "VALIDATION_FAILED", "Invalid request", fields);
     }
     
     const data = parsed.data;
     const textRaw = data.textRaw || data.text;
     const text = textRaw.trim();
     if (!text) {
-      return res.status(400).json({ ok: false, reason: "EMPTY_TEXT", detail: "Caption text cannot be empty" });
+      return fail(req, res, 400, "EMPTY_TEXT", "Caption text cannot be empty");
     }
     
     // Extract style fields from parsed payload (Zod already applied defaults)
@@ -433,20 +424,12 @@ router.post("/caption/preview", requireAuth, previewRateLimit, express.json({ li
     // Validate required fields
     if (!Number.isFinite(rasterW) || rasterW <= 0) {
       console.error('[raster] rasterW is missing or invalid:', rasterW);
-      return res.status(400).json({ 
-        ok: false, 
-        reason: "INVALID_RASTER_W", 
-        detail: `rasterW is required but missing or invalid: ${rasterW}` 
-      });
+      return fail(req, res, 400, "INVALID_RASTER_W", `rasterW is required but missing or invalid: ${rasterW}`);
     }
     
     if (!Number.isFinite(rasterPadding) || rasterPadding < 0) {
       console.error('[raster] rasterPadding is missing or invalid:', rasterPadding);
-      return res.status(400).json({ 
-        ok: false, 
-        reason: "INVALID_RASTER_PADDING", 
-        detail: `rasterPadding is required but missing or invalid: ${rasterPadding}` 
-      });
+      return fail(req, res, 400, "INVALID_RASTER_PADDING", `rasterPadding is required but missing or invalid: ${rasterPadding}`);
     }
     
     // Call renderCaptionRaster with server SSOT lines
@@ -600,29 +583,20 @@ router.post("/caption/preview", requireAuth, previewRateLimit, express.json({ li
       }));
     }
     
-    return res.status(200).json({
-      ok: true,
-      data: {
-        imageUrl: null,  // V3 raster mode returns PNG in meta.rasterUrl
-        wPx: data.frameW,
-        hPx: data.frameH,
-        xPx: 0,
-        // yPx removed - use meta.yPx_png instead (no ambiguous top-level field)
-        meta: ssotMeta,
-      },
-      // ✅ Return compiler meta for client to save
-      meta: meta
+    return ok(req, res, {
+      imageUrl: null,
+      wPx: data.frameW,
+      hPx: data.frameH,
+      xPx: 0,
+      meta: ssotMeta,
+      compilerMeta: meta
     });
     
     // Legacy path gate - block legacy code path
     // LEGACY PATH - DEPRECATED, DO NOT USE
     if (process.env.ALLOW_LEGACY_PREVIEW !== '1') {
       console.warn('[caption-preview] Legacy path attempted but disabled');
-      return res.status(400).json({
-        ok: false,
-        reason: 'LEGACY_PATH_DISABLED',
-        detail: 'Legacy preview path is disabled. Use V3 raster mode (ssotVersion: 3, mode: "raster")'
-      });
+      return fail(req, res, 400, "LEGACY_PATH_DISABLED", "Legacy preview path is disabled. Use V3 raster mode (ssotVersion: 3, mode: \"raster\")");
     }
     
     console.warn('[caption-preview] LEGACY PATH ENABLED VIA ENV - DEPRECATED');
@@ -643,7 +617,12 @@ router.post("/caption/preview", requireAuth, previewRateLimit, express.json({ li
       // Handle new draggable overlay format
       const legacyParsed = CaptionMetaSchema.safeParse(req.body);
       if (!legacyParsed.success) {
-        return res.status(400).json({ ok: false, reason: "INVALID_INPUT", detail: legacyParsed.error.flatten() });
+        const fields = {};
+        for (const i of legacyParsed.error.issues) {
+          const key = i.path?.length ? i.path.join('.') : '_root';
+          fields[key] = i.message;
+        }
+        return fail(req, res, 400, "VALIDATION_FAILED", "Invalid request", fields);
       }
 
       // STEP 1: Extract ONLY safe input fields (no spreading)
@@ -701,7 +680,7 @@ router.post("/caption/preview", requireAuth, previewRateLimit, express.json({ li
 
       // STEP 2: Wrap text preserving explicit \n (using canvas ctx for measurement)
       if (!text || text.length === 0) {
-        return res.status(400).json({ ok: false, reason: "INVALID_INPUT", detail: "text required" });
+        return fail(req, res, 400, "INVALID_INPUT", "text required");
       }
       
       const W = 1080, H = 1920;
@@ -741,7 +720,7 @@ router.post("/caption/preview", requireAuth, previewRateLimit, express.json({ li
       
       // STEP 3: Compute metrics from scratch - NEVER use incoming computed values
       if (!Number.isFinite(fontPx) || fontPx < 24 || fontPx > 200) {
-        return res.status(400).json({ ok: false, reason: "INVALID_INPUT", detail: "fontPx must be 24-200" });
+        return fail(req, res, 400, "INVALID_INPUT", "fontPx must be 24-200");
       }
 
       try {
@@ -771,20 +750,12 @@ router.post("/caption/preview", requireAuth, previewRateLimit, express.json({ li
           console.error('[caption-preview-ERROR] bad metrics', { 
             lineHeight, lineSpacingPx, totalTextH, lines: lines.length, fontPx 
           });
-          return res.status(500).json({ 
-            ok: false, 
-            reason: 'COMPUTATION_ERROR',
-            detail: `Metric out of bounds: totalTextH=${totalTextH}, lineSpacingPx=${lineSpacingPx}`
-          });
+          return fail(req, res, 500, "COMPUTATION_ERROR", `Metric out of bounds: totalTextH=${totalTextH}, lineSpacingPx=${lineSpacingPx}`);
         }
 
         if (lines.length > 50) {
           console.error('[caption-preview-ERROR] Too many lines:', lines.length);
-          return res.status(400).json({ 
-            ok: false, 
-            reason: "TEXT_TOO_LONG", 
-            detail: `Text wrapped into ${lines.length} lines` 
-          });
+          return fail(req, res, 400, "TEXT_TOO_LONG", `Text wrapped into ${lines.length} lines`);
         }
 
         // STEP 5: Compute positioning (no client values)
@@ -960,20 +931,17 @@ router.post("/caption/preview", requireAuth, previewRateLimit, express.json({ li
           hasAdvancedStyles: Boolean(fontStyle !== 'normal' || letterSpacingPx !== 0 || strokePx > 0 || shadowBlur > 0)
         });
 
-        return res.status(200).json({
-          ok: true,
-          data: {
-            imageUrl: previewUrl,
-            wPx: W,
-            hPx: H,
-            xPx: 0,
-            yPx: yPxFirstLine,
-            meta: ssotMeta,
-          }
+        return ok(req, res, {
+          imageUrl: previewUrl,
+          wPx: W,
+          hPx: H,
+          xPx: 0,
+          yPx: yPxFirstLine,
+          meta: ssotMeta
         });
       } catch (e) {
         console.error('[overlay-preview] Preview failed:', e);
-        return res.status(500).json({ ok: false, reason: 'RENDER_FAILED', detail: e.message });
+        return fail(req, res, 500, "RENDER_FAILED", e.message);
       }
     } // End legacy path block scope
     // Note: The following else block appears to be unreachable (V3 path returns early above)
@@ -989,7 +957,7 @@ router.post("/caption/preview", requireAuth, previewRateLimit, express.json({ li
     // SSOT: prefer style.*, then fall back to top-level
     const text = (req.body?.style?.text ?? req.body?.text ?? "").toString().trim();
     if (!text) {
-      return res.status(400).json({ success: false, error: "INVALID_INPUT", detail: "text required" });
+      return fail(req, res, 400, "INVALID_INPUT", "text required");
     }
 
     const fontFamily = (s.fontFamily ?? b.fontFamily ?? "DejaVu Sans Local");
@@ -1017,7 +985,7 @@ router.post("/caption/preview", requireAuth, previewRateLimit, express.json({ li
     const H = 1920; // Standard canvas height
 
     if (typeof text !== "string" || !text.trim()) {
-      return res.status(400).json({ success:false, error:"INVALID_INPUT", detail:"text required" });
+      return fail(req, res, 400, "INVALID_INPUT", "text required");
     }
 
     // Server-side font clamping to prevent overflow (match frontend limits)
@@ -1027,7 +995,7 @@ router.post("/caption/preview", requireAuth, previewRateLimit, express.json({ li
 
     // Validate required numeric inputs
     if (!Number.isFinite(clampedFontPx)) {
-      return res.status(400).json({ success:false, error:"INVALID_INPUT", detail:"fontPx must be a valid number" });
+      return fail(req, res, 400, "INVALID_INPUT", "fontPx must be a valid number");
     }
 
     // SSOT: Server derives effective values from client intent
@@ -1106,7 +1074,7 @@ router.post("/caption/preview", requireAuth, previewRateLimit, express.json({ li
     
     // Ensure we have valid text dimensions
     if (!lines.length || !Number.isFinite(textH)) {
-      return res.status(400).json({ success:false, error:"INVALID_INPUT", detail:"failed to compute text dimensions" });
+      return fail(req, res, 400, "INVALID_INPUT", "failed to compute text dimensions");
     }
     
     // Variables already defined above
@@ -1208,33 +1176,32 @@ router.post("/caption/preview", requireAuth, previewRateLimit, express.json({ li
       safeH: Math.floor(H * 0.84)
     });
     
-    return res.json({
-      ok: true,
-      data: {
-        imageUrl: dataUrl,
+    return ok(req, res, {
+      imageUrl: dataUrl,
+      wPx: W,
+      hPx: H,
+      xPx: 0,
+      yPx: textStartY,
+      meta: {
+        yPct: yPctUsed,
+        totalTextH: totalTextH,
+        totalTextHPx: totalTextH,
+        lineSpacingPx: lh,
+        fontPx: clampedFontPx,
+        internalPadding,
+        placement,
         wPx: W,
         hPx: H,
-        xPx: 0,
-        yPx: textStartY,
-        meta: {
-          // Restrict to SSOT meta keys for legacy branch too
-          yPct: yPctUsed,
-          totalTextH: totalTextH,
-          totalTextHPx: totalTextH,  // ← ADD: duplicate for client compatibility
-          lineSpacingPx: lh,
-          fontPx: clampedFontPx,
-          internalPadding,
-          placement,
-          wPx: W,
-          hPx: H,
-          lines: lines,
-          baselines: undefined,
-        }
+        lines: lines,
+        baselines: undefined,
       }
     });
     } // End legacy format handling block scope
   } catch (e) {
-    return res.status(400).json({ success:false, error:"INVALID_INPUT", detail:String(e?.message || e) });
+    if (e?.code === "FONT_MISMATCH") {
+      return fail(req, res, 422, "FONT_MISMATCH", e.message);
+    }
+    return fail(req, res, 400, "INVALID_INPUT", String(e?.message || e));
   }
 });
 
@@ -1270,18 +1237,13 @@ router.get("/diag/caption-smoke", (req, res, next) => {
     ctx.fillText("SMOKE TEST", W/2, H/2);
     
     const dataUrl = canvas.toDataURL("image/png");
-    return res.json({ 
-      ok: true, 
+    return ok(req, res, {
       message: "Caption smoke test passed",
       hasDataUrl: !!dataUrl,
-      dataUrlLength: dataUrl.length 
+      dataUrlLength: dataUrl.length
     });
   } catch (e) {
-    return res.status(500).json({ 
-      ok: false, 
-      error: String(e?.message || e),
-      message: "Caption smoke test failed"
-    });
+    return fail(req, res, 500, "CAPTION_SMOKE_FAILED", String(e?.message || e));
   }
 });
 
@@ -1536,11 +1498,10 @@ async function renderCaptionRaster(meta) {
       normalizedExpected: normalizeFontString(incomingFont),
       normalizedActual: normalizeFontString(actualFont)
     });
-    return res.status(422).json({
-      ok: false,
-      reason: 'FONT_MISMATCH',
-      detail: `Expected font "${incomingFont}", got "${actualFont}"`
-    });
+    const err = new Error(`Expected font "${incomingFont}", got "${actualFont}"`);
+    err.httpStatus = 422;
+    err.code = "FONT_MISMATCH";
+    throw err;
   }
   
   // Freeze typography for forensic parity debugging

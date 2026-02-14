@@ -603,9 +603,8 @@ async function callPreviewAPI(captionState, fingerprint) {
       body: payload
     });
 
-    if (!response?.ok) {
-      throw new Error(response?.detail || response?.reason || "Preview generation failed");
-    }
+    const isOk = (response?.success ?? response?.ok);
+    if (!isOk) throw new Error(response?.detail || response?.error || response?.reason || "Preview generation failed");
 
     return response.data;
   } catch (error) {
