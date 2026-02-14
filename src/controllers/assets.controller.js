@@ -3,12 +3,18 @@ import { pexelsSearchVideos } from "../services/pexels.videos.provider.js";
 import { pexelsSearchPhotos } from "../services/pexels.photos.provider.js";
 import { generateAIImage } from "../services/ai.image.provider.js";
 import { ensureUserDoc, debitCreditsTx, refundCredits } from "../services/credit.service.js";
+import { ok, fail } from "../http/respond.js";
 
 export async function getAssetsOptions(req, res) {
   try {
     const parsed = AssetsOptionsSchema.safeParse(req.body || {});
     if (!parsed.success) {
-      return res.status(400).json({ ok: false, reason: "BAD_REQUEST", detail: parsed.error.flatten() });
+      const fields = {};
+      for (const i of parsed.error.issues) {
+        const key = i.path?.length ? i.path.join('.') : '_root';
+        fields[key] = i.message;
+      }
+      return fail(req, res, 400, "VALIDATION_FAILED", "Invalid request", fields);
     }
     const { type, query = "calm", page = 1, perPage = 12 } = parsed.data;
     
@@ -73,17 +79,14 @@ export async function getAssetsOptions(req, res) {
     // Persist seen IDs back to session (cap size)
     req.session[sessKey] = Array.from(seen).slice(-500);
 
-    return res.json({ 
-      ok: true, 
-      data: { 
-        ...result,
-        meta: { type, query, page: startPage }, // Debug: show what was requested
-        plan: isPro ? 'pro' : 'free',
-        limits: { maxPerPage, currentPerPage: actualPerPage }
-      } 
+    return ok(req, res, {
+      ...result,
+      meta: { type, query, page: startPage },
+      plan: isPro ? 'pro' : 'free',
+      limits: { maxPerPage, currentPerPage: actualPerPage }
     });
   } catch (e) {
-    return res.status(500).json({ ok: false, reason: "SERVER_ERROR", detail: e?.message || "assets fetch failed" });
+    return fail(req, res, 500, "SERVER_ERROR", e?.message || "assets fetch failed");
   }
 }
 
