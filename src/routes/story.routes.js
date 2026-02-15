@@ -26,9 +26,26 @@ import {
   saveStorySession
 } from "../services/story.service.js";
 import { extractStyleOnly } from "../utils/caption-style-helper.js";
+import { ok, fail } from "../http/respond.js";
 
 const r = Router();
 r.use(requireAuth);
+
+const requestIdOf = (req) => req?.id ?? null;
+const finalizeSuccess = (req, session, shortId) => ({
+  success: true,
+  data: session,
+  shortId,
+  requestId: requestIdOf(req),
+});
+
+const serverBusyFailure = (req, retryAfter = 30) => ({
+  success: false,
+  error: "SERVER_BUSY",
+  detail: "Server is busy. Please retry shortly.",
+  requestId: requestIdOf(req),
+  retryAfter,
+});
 
 const StartSchema = z.object({
   input: z.string().min(1).max(2000),
@@ -51,11 +68,7 @@ r.post("/start", async (req, res) => {
   try {
     const parsed = StartSchema.safeParse(req.body || {});
     if (!parsed.success) {
-      return res.status(400).json({
-        success: false,
-        error: "INVALID_INPUT",
-        detail: parsed.error.flatten()
-      });
+      return fail(req, res, 400, "INVALID_INPUT", parsed.error.flatten());
     }
     
     const { input, inputType, styleKey } = parsed.data;
@@ -66,14 +79,10 @@ r.post("/start", async (req, res) => {
       styleKey
     });
     
-    return res.json({ success: true, data: session });
+    return ok(req, res, session);
   } catch (e) {
     console.error("[story][start] error:", e);
-    return res.status(500).json({
-      success: false,
-      error: "STORY_START_FAILED",
-      detail: e?.message || "Failed to create story session"
-    });
+    return fail(req, res, 500, "STORY_START_FAILED", e?.message || "Failed to create story session");
   }
 });
 
@@ -82,11 +91,7 @@ r.post("/generate", enforceScriptDailyCap(300), async (req, res) => {
   try {
     const parsed = GenerateSchema.safeParse(req.body || {});
     if (!parsed.success) {
-      return res.status(400).json({
-        success: false,
-        error: "INVALID_INPUT",
-        detail: parsed.error.flatten()
-      });
+      return fail(req, res, 400, "INVALID_INPUT", parsed.error.flatten());
     }
     
     const { sessionId, input, inputType } = parsed.data;
@@ -97,14 +102,10 @@ r.post("/generate", enforceScriptDailyCap(300), async (req, res) => {
       inputType
     });
     
-    return res.json({ success: true, data: session });
+    return ok(req, res, session);
   } catch (e) {
     console.error("[story][generate] error:", e);
-    return res.status(500).json({
-      success: false,
-      error: "STORY_GENERATE_FAILED",
-      detail: e?.message || "Failed to generate story"
-    });
+    return fail(req, res, 500, "STORY_GENERATE_FAILED", e?.message || "Failed to generate story");
   }
 });
 
@@ -118,11 +119,7 @@ r.post("/update-script", async (req, res) => {
     
     const parsed = UpdateScriptSchema.safeParse(req.body || {});
     if (!parsed.success) {
-      return res.status(400).json({
-        success: false,
-        error: "INVALID_INPUT",
-        detail: parsed.error.flatten()
-      });
+      return fail(req, res, 400, "INVALID_INPUT", parsed.error.flatten());
     }
     
     const { sessionId, sentences } = parsed.data;
@@ -132,14 +129,10 @@ r.post("/update-script", async (req, res) => {
       sentences
     });
     
-    return res.json({ success: true, data: session });
+    return ok(req, res, session);
   } catch (e) {
     console.error("[story][update-script] error:", e);
-    return res.status(500).json({
-      success: false,
-      error: "STORY_UPDATE_SCRIPT_FAILED",
-      detail: e?.message || "Failed to update story script"
-    });
+    return fail(req, res, 500, "STORY_UPDATE_SCRIPT_FAILED", e?.message || "Failed to update story script");
   }
 });
 
@@ -178,11 +171,7 @@ r.post("/update-caption-style", async (req, res) => {
     }).safeParse(req.body || {});
     
     if (!parsed.success) {
-      return res.status(400).json({
-        success: false,
-        error: "INVALID_INPUT",
-        detail: parsed.error.flatten()
-      });
+      return fail(req, res, 400, "INVALID_INPUT", parsed.error.flatten());
     }
     
     const { sessionId, overlayCaption } = parsed.data;
@@ -192,10 +181,7 @@ r.post("/update-caption-style", async (req, res) => {
     });
     
     if (!session) {
-      return res.status(404).json({
-        success: false,
-        error: "SESSION_NOT_FOUND"
-      });
+      return fail(req, res, 404, "SESSION_NOT_FOUND", "Session not found");
     }
     
     // Merge style into session (extract style-only from existing if present)
@@ -209,17 +195,10 @@ r.post("/update-caption-style", async (req, res) => {
     
     await saveStorySession({ uid: req.user.uid, sessionId, data: session });
     
-    return res.json({ 
-      success: true, 
-      data: { overlayCaption: session.overlayCaption } 
-    });
+    return ok(req, res, { overlayCaption: session.overlayCaption });
   } catch (e) {
     console.error("[story][update-caption-style] error:", e);
-    return res.status(500).json({
-      success: false,
-      error: "STORY_UPDATE_CAPTION_STYLE_FAILED",
-      detail: e?.message || "Failed to update caption style"
-    });
+    return fail(req, res, 500, "STORY_UPDATE_CAPTION_STYLE_FAILED", e?.message || "Failed to update caption style");
   }
 });
 
@@ -266,7 +245,7 @@ r.post("/update-caption-meta", requireAuth, async (req, res) => {
       : SingleBeatSchema.safeParse(req.body);
     
     if (!parsed.success) {
-      return res.status(400).json({ success: false, error: "INVALID_INPUT", detail: parsed.error.flatten() });
+      return fail(req, res, 400, "INVALID_INPUT", parsed.error.flatten());
     }
     
     const { sessionId } = parsed.data;
@@ -275,7 +254,7 @@ r.post("/update-caption-meta", requireAuth, async (req, res) => {
     const session = await getStorySession({ uid: req.user.uid, sessionId });
     
     if (!session) {
-      return res.status(404).json({ success: false, error: "SESSION_NOT_FOUND" });
+      return fail(req, res, 404, "SESSION_NOT_FOUND", "Session not found");
     }
     
     const sentences = session.story?.sentences || [];
@@ -355,33 +334,29 @@ r.post("/update-caption-meta", requireAuth, async (req, res) => {
         console.log('[update-caption-meta] No updates to save (all skipped)', { mode: 'batch', sessionId });
       }
       
-      return res.json({ success: true, data: { updates: results } });
+      return ok(req, res, { updates: results });
     } else {
       // SINGLE MODE: Legacy behavior (backwards compatible)
       const { beatIndex, captionMeta: clientMeta } = parsed.data;
       const result = processBeatUpdate(beatIndex, clientMeta);
       
       if (result.error === "INVALID_BEAT_INDEX") {
-        return res.status(400).json({ success: false, error: result.error, detail: result.detail });
+        return fail(req, res, 400, result.error, result.detail);
       }
       
       if (result.error === "STALE_META") {
-        return res.status(409).json({ 
-          success: false, 
-          error: "STALE_META", 
-          detail: "Caption meta lines do not match server computation. Preview may be stale. Please regenerate preview."
-        });
+        return fail(req, res, 409, "STALE_META", "Caption meta lines do not match server computation. Preview may be stale. Please regenerate preview.");
       }
       
       session.updatedAt = new Date().toISOString();
       await saveStorySession({ uid: req.user.uid, sessionId, data: session });
       console.log('[update-caption-meta] Saved', { mode: 'single', beatIndex, sessionId });
       
-      return res.json({ success: true, data: { captionMeta: result.captionMeta } });
+      return ok(req, res, { captionMeta: result.captionMeta });
     }
   } catch (e) {
     console.error("[story][update-caption-meta] error:", e);
-    return res.status(500).json({ success: false, error: "UPDATE_CAPTION_META_FAILED", detail: e?.message });
+    return fail(req, res, 500, "UPDATE_CAPTION_META_FAILED", e?.message || "Failed to update caption meta");
   }
 });
 
@@ -390,11 +365,7 @@ r.post("/plan", enforceScriptDailyCap(300), async (req, res) => {
   try {
     const parsed = SessionSchema.safeParse(req.body || {});
     if (!parsed.success) {
-      return res.status(400).json({
-        success: false,
-        error: "INVALID_INPUT",
-        detail: parsed.error.flatten()
-      });
+      return fail(req, res, 400, "INVALID_INPUT", parsed.error.flatten());
     }
     
     const { sessionId } = parsed.data;
@@ -403,14 +374,10 @@ r.post("/plan", enforceScriptDailyCap(300), async (req, res) => {
       sessionId
     });
     
-    return res.json({ success: true, data: session });
+    return ok(req, res, session);
   } catch (e) {
     console.error("[story][plan] error:", e);
-    return res.status(500).json({
-      success: false,
-      error: "STORY_PLAN_FAILED",
-      detail: e?.message || "Failed to plan shots"
-    });
+    return fail(req, res, 500, "STORY_PLAN_FAILED", e?.message || "Failed to plan shots");
   }
 });
 
@@ -419,11 +386,7 @@ r.post("/search", async (req, res) => {
   try {
     const parsed = SessionSchema.safeParse(req.body || {});
     if (!parsed.success) {
-      return res.status(400).json({
-        success: false,
-        error: "INVALID_INPUT",
-        detail: parsed.error.flatten()
-      });
+      return fail(req, res, 400, "INVALID_INPUT", parsed.error.flatten());
     }
     
     const { sessionId } = parsed.data;
@@ -432,14 +395,10 @@ r.post("/search", async (req, res) => {
       sessionId
     });
     
-    return res.json({ success: true, data: session });
+    return ok(req, res, session);
   } catch (e) {
     console.error("[story][search] error:", e);
-    return res.status(500).json({
-      success: false,
-      error: "STORY_SEARCH_FAILED",
-      detail: e?.message || "Failed to search clips"
-    });
+    return fail(req, res, 500, "STORY_SEARCH_FAILED", e?.message || "Failed to search clips");
   }
 });
 
@@ -454,11 +413,7 @@ r.post("/update-shot", async (req, res) => {
     
     const parsed = UpdateShotSchema.safeParse(req.body || {});
     if (!parsed.success) {
-      return res.status(400).json({
-        success: false,
-        error: "INVALID_INPUT",
-        detail: parsed.error.flatten()
-      });
+      return fail(req, res, 400, "INVALID_INPUT", parsed.error.flatten());
     }
     
     const { sessionId, sentenceIndex, clipId } = parsed.data;
@@ -469,14 +424,10 @@ r.post("/update-shot", async (req, res) => {
       clipId
     });
     
-    return res.json({ success: true, data: result });
+    return ok(req, res, result);
   } catch (e) {
     console.error("[story][update-shot] error:", e);
-    return res.status(500).json({
-      success: false,
-      error: "STORY_UPDATE_SHOT_FAILED",
-      detail: e?.message || "Failed to update shot"
-    });
+    return fail(req, res, 500, "STORY_UPDATE_SHOT_FAILED", e?.message || "Failed to update shot");
   }
 });
 
@@ -501,11 +452,7 @@ r.post("/update-video-cuts", async (req, res) => {
   try {
     const parsed = UpdateVideoCutsSchema.safeParse(req.body || {});
     if (!parsed.success) {
-      return res.status(400).json({
-        success: false,
-        error: "INVALID_INPUT",
-        detail: parsed.error.flatten()
-      });
+      return fail(req, res, 400, "INVALID_INPUT", parsed.error.flatten());
     }
     const { sessionId, videoCutsV1 } = parsed.data;
     const session = await updateVideoCuts({
@@ -513,15 +460,19 @@ r.post("/update-video-cuts", async (req, res) => {
       sessionId,
       videoCutsV1
     });
-    return res.json({ success: true, data: session });
+    return ok(req, res, session);
   } catch (e) {
     console.error("[story][update-video-cuts] error:", e);
     const status = e?.message === "SESSION_NOT_FOUND" ? 404 : 400;
-    return res.status(status).json({
-      success: false,
-      error: e?.message?.startsWith("INVALID_") || e?.message === "SESSION_NOT_FOUND" || e?.message === "STORY_REQUIRED" ? e.message : "STORY_UPDATE_VIDEO_CUTS_FAILED",
-      detail: e?.message || "Failed to update video cuts"
-    });
+    return fail(
+      req,
+      res,
+      status,
+      e?.message?.startsWith("INVALID_") || e?.message === "SESSION_NOT_FOUND" || e?.message === "STORY_REQUIRED"
+        ? e.message
+        : "STORY_UPDATE_VIDEO_CUTS_FAILED",
+      e?.message || "Failed to update video cuts"
+    );
   }
 });
 
@@ -537,11 +488,7 @@ r.post("/search-shot", async (req, res) => {
     
     const parsed = SearchShotSchema.safeParse(req.body || {});
     if (!parsed.success) {
-      return res.status(400).json({
-        success: false,
-        error: "INVALID_INPUT",
-        detail: parsed.error.flatten()
-      });
+      return fail(req, res, 400, "INVALID_INPUT", parsed.error.flatten());
     }
     
     const { sessionId, sentenceIndex, query, page = 1 } = parsed.data;
@@ -553,21 +500,14 @@ r.post("/search-shot", async (req, res) => {
       page
     });
     
-    return res.json({ 
-      success: true, 
-      data: { 
-        shot: result.shot, 
-        page: result.page, 
-        hasMore: result.hasMore 
-      } 
+    return ok(req, res, {
+      shot: result.shot,
+      page: result.page,
+      hasMore: result.hasMore
     });
   } catch (e) {
     console.error("[story][search-shot] error:", e);
-    return res.status(500).json({
-      success: false,
-      error: "STORY_SEARCH_SHOT_FAILED",
-      detail: e?.message || "Failed to search clips for shot"
-    });
+    return fail(req, res, 500, "STORY_SEARCH_SHOT_FAILED", e?.message || "Failed to search clips for shot");
   }
 });
 
@@ -582,11 +522,7 @@ r.post("/insert-beat", async (req, res) => {
     
     const parsed = InsertBeatSchema.safeParse(req.body || {});
     if (!parsed.success) {
-      return res.status(400).json({
-        success: false,
-        error: "INVALID_INPUT",
-        detail: parsed.error.flatten()
-      });
+      return fail(req, res, 400, "INVALID_INPUT", parsed.error.flatten());
     }
     
     const { sessionId, insertAfterIndex, text } = parsed.data;
@@ -597,14 +533,10 @@ r.post("/insert-beat", async (req, res) => {
       text
     });
     
-    return res.json({ success: true, data: result });
+    return ok(req, res, result);
   } catch (e) {
     console.error("[story][insert-beat] error:", e);
-    return res.status(500).json({
-      success: false,
-      error: "STORY_INSERT_BEAT_FAILED",
-      detail: e?.message || "Failed to insert beat"
-    });
+    return fail(req, res, 500, "STORY_INSERT_BEAT_FAILED", e?.message || "Failed to insert beat");
   }
 });
 
@@ -618,11 +550,7 @@ r.post("/delete-beat", async (req, res) => {
     
     const parsed = DeleteBeatSchema.safeParse(req.body || {});
     if (!parsed.success) {
-      return res.status(400).json({
-        success: false,
-        error: "INVALID_INPUT",
-        detail: parsed.error.flatten()
-      });
+      return fail(req, res, 400, "INVALID_INPUT", parsed.error.flatten());
     }
     
     const { sessionId, sentenceIndex } = parsed.data;
@@ -632,14 +560,10 @@ r.post("/delete-beat", async (req, res) => {
       sentenceIndex
     });
     
-    return res.json({ success: true, data: result });
+    return ok(req, res, result);
   } catch (e) {
     console.error("[story][delete-beat] error:", e);
-    return res.status(500).json({
-      success: false,
-      error: "STORY_DELETE_BEAT_FAILED",
-      detail: e?.message || "Failed to delete beat"
-    });
+    return fail(req, res, 500, "STORY_DELETE_BEAT_FAILED", e?.message || "Failed to delete beat");
   }
 });
 
@@ -662,10 +586,7 @@ r.post("/update-beat-text", async (req, res) => {
       text,
     });
     
-    return res.json({
-      success: true,
-      data: { sentences, shots },
-    });
+    return ok(req, res, { sentences, shots });
   } catch (e) {
     const isZod = e instanceof ZodError;
     const status = isZod ? 400 : 500;
@@ -675,11 +596,7 @@ r.post("/update-beat-text", async (req, res) => {
     
     console.error("[story][update-beat-text] error:", e);
     
-    return res.status(status).json({
-      success: false,
-      error: errorCode,
-      detail: e?.message,
-    });
+    return fail(req, res, status, errorCode, e?.message || "Failed to update beat text");
   }
 });
 
@@ -688,11 +605,7 @@ r.post("/timeline", async (req, res) => {
   try {
     const parsed = SessionSchema.safeParse(req.body || {});
     if (!parsed.success) {
-      return res.status(400).json({
-        success: false,
-        error: "INVALID_INPUT",
-        detail: parsed.error.flatten()
-      });
+      return fail(req, res, 400, "INVALID_INPUT", parsed.error.flatten());
     }
     
     const { sessionId } = parsed.data;
@@ -701,14 +614,10 @@ r.post("/timeline", async (req, res) => {
       sessionId
     });
     
-    return res.json({ success: true, data: session });
+    return ok(req, res, session);
   } catch (e) {
     console.error("[story][timeline] error:", e);
-    return res.status(500).json({
-      success: false,
-      error: "STORY_TIMELINE_FAILED",
-      detail: e?.message || "Failed to build timeline"
-    });
+    return fail(req, res, 500, "STORY_TIMELINE_FAILED", e?.message || "Failed to build timeline");
   }
 });
 
@@ -717,11 +626,7 @@ r.post("/captions", async (req, res) => {
   try {
     const parsed = SessionSchema.safeParse(req.body || {});
     if (!parsed.success) {
-      return res.status(400).json({
-        success: false,
-        error: "INVALID_INPUT",
-        detail: parsed.error.flatten()
-      });
+      return fail(req, res, 400, "INVALID_INPUT", parsed.error.flatten());
     }
     
     const { sessionId } = parsed.data;
@@ -730,14 +635,10 @@ r.post("/captions", async (req, res) => {
       sessionId
     });
     
-    return res.json({ success: true, data: session });
+    return ok(req, res, session);
   } catch (e) {
     console.error("[story][captions] error:", e);
-    return res.status(500).json({
-      success: false,
-      error: "STORY_CAPTIONS_FAILED",
-      detail: e?.message || "Failed to generate caption timings"
-    });
+    return fail(req, res, 500, "STORY_CAPTIONS_FAILED", e?.message || "Failed to generate caption timings");
   }
 });
 
@@ -745,22 +646,14 @@ r.post("/captions", async (req, res) => {
 // When DISABLE_STORY_RENDER_ROUTE=1, returns 405 and directs clients to POST /api/story/finalize.
 r.post("/render", (req, res, next) => {
   if (process.env.DISABLE_STORY_RENDER_ROUTE === "1") {
-    return res.status(405).json({
-      success: false,
-      error: "RENDER_DISABLED",
-      detail: "Use POST /api/story/finalize"
-    });
+    return fail(req, res, 405, "RENDER_DISABLED", "Use POST /api/story/finalize");
   }
   next();
 }, enforceCreditsForRender(), async (req, res) => {
   try {
     const parsed = SessionSchema.safeParse(req.body || {});
     if (!parsed.success) {
-      return res.status(400).json({
-        success: false,
-        error: "INVALID_INPUT",
-        detail: parsed.error.flatten()
-      });
+      return fail(req, res, 400, "INVALID_INPUT", parsed.error.flatten());
     }
     
     const { sessionId } = parsed.data;
@@ -769,19 +662,15 @@ r.post("/render", (req, res, next) => {
       sessionId
     }));
     
-    return res.json({ success: true, data: session });
+    return ok(req, res, session);
   } catch (e) {
     if (res.headersSent) return;
     if (e?.code === "SERVER_BUSY" || e?.message === "SERVER_BUSY") {
       res.set("Retry-After", "30");
-      return res.status(503).json({ success: false, error: "SERVER_BUSY", retryAfter: 30 });
+      return res.status(503).json(serverBusyFailure(req, 30));
     }
     console.error("[story][render] error:", e);
-    return res.status(500).json({
-      success: false,
-      error: "STORY_RENDER_FAILED",
-      detail: e?.message || "Failed to render story"
-    });
+    return fail(req, res, 500, "STORY_RENDER_FAILED", e?.message || "Failed to render story");
   }
 });
 
@@ -790,11 +679,7 @@ r.post("/finalize", idempotencyFinalize({ getSession: getStorySession, creditCos
   try {
     const parsed = SessionSchema.safeParse(req.body || {});
     if (!parsed.success) {
-      return res.status(400).json({
-        success: false,
-        error: "INVALID_INPUT",
-        detail: parsed.error.flatten()
-      });
+      return fail(req, res, 400, "INVALID_INPUT", parsed.error.flatten());
     }
     
     const { sessionId } = parsed.data;
@@ -807,23 +692,15 @@ r.post("/finalize", idempotencyFinalize({ getSession: getStorySession, creditCos
     }));
     
     const shortId = session?.finalVideo?.jobId || null;
-    return res.json({ 
-      success: true, 
-      data: session,
-      shortId
-    });
+    return res.status(200).json(finalizeSuccess(req, session, shortId));
   } catch (e) {
     if (res.headersSent) return;
     if (e?.code === "SERVER_BUSY" || e?.message === "SERVER_BUSY") {
       res.set("Retry-After", "30");
-      return res.status(503).json({ success: false, error: "SERVER_BUSY", retryAfter: 30 });
+      return res.status(503).json(serverBusyFailure(req, 30));
     }
     console.error("[story][finalize] error:", e);
-    return res.status(500).json({
-      success: false,
-      error: "STORY_FINALIZE_FAILED",
-      detail: e?.message || "Failed to finalize story"
-    });
+    return fail(req, res, 500, "STORY_FINALIZE_FAILED", e?.message || "Failed to finalize story");
   }
 });
 
@@ -837,11 +714,7 @@ r.post("/manual", async (req, res) => {
     
     const parsed = ManualSchema.safeParse(req.body || {});
     if (!parsed.success) {
-      return res.status(400).json({
-        success: false,
-        error: "INVALID_INPUT",
-        detail: parsed.error.flatten()
-      });
+      return fail(req, res, 400, "INVALID_INPUT", parsed.error.flatten());
     }
     
     const { scriptText } = parsed.data;
@@ -850,14 +723,10 @@ r.post("/manual", async (req, res) => {
       scriptText
     });
     
-    return res.json({ success: true, data: { sessionId: session.id } });
+    return ok(req, res, { sessionId: session.id });
   } catch (e) {
     console.error("[story][manual] error:", e);
-    return res.status(500).json({
-      success: false,
-      error: "STORY_MANUAL_FAILED",
-      detail: e?.message || "Failed to create manual story session"
-    });
+    return fail(req, res, 500, "STORY_MANUAL_FAILED", e?.message || "Failed to create manual story session");
   }
 });
 
@@ -879,11 +748,7 @@ r.post("/create-manual-session", async (req, res) => {
     
     const parsed = CreateManualSessionSchema.safeParse(req.body || {});
     if (!parsed.success) {
-      return res.status(400).json({
-        success: false,
-        error: "INVALID_INPUT",
-        detail: parsed.error.flatten()
-      });
+      return fail(req, res, 400, "INVALID_INPUT", parsed.error.flatten());
     }
     
     let { beats } = parsed.data;
@@ -907,11 +772,7 @@ r.post("/create-manual-session", async (req, res) => {
     });
     
     if (validBeats.length === 0) {
-      return res.status(400).json({
-        success: false,
-        error: "INVALID_INPUT",
-        detail: "At least one beat must have both text and selectedClip. Empty or placeholder beats cannot be rendered."
-      });
+      return fail(req, res, 400, "INVALID_INPUT", "At least one beat must have both text and selectedClip. Empty or placeholder beats cannot be rendered.");
     }
     
     // Use only valid beats for session creation
@@ -951,20 +812,13 @@ r.post("/create-manual-session", async (req, res) => {
     console.log('[story][create-manual-session] Saving session:', session.id);
     await saveStorySession({ uid, sessionId: session.id, data: session });
     
-    return res.json({
-      success: true,
-      data: {
-        sessionId: session.id,
-        session
-      }
+    return ok(req, res, {
+      sessionId: session.id,
+      session
     });
   } catch (e) {
     console.error("[story][create-manual-session] error:", e);
-    return res.status(500).json({
-      success: false,
-      error: "STORY_CREATE_MANUAL_SESSION_FAILED",
-      detail: e?.message || "Failed to create manual session"
-    });
+    return fail(req, res, 500, "STORY_CREATE_MANUAL_SESSION_FAILED", e?.message || "Failed to create manual session");
   }
 });
 
@@ -973,11 +827,7 @@ r.get("/:sessionId", async (req, res) => {
   try {
     const sessionId = String(req.params?.sessionId || "").trim();
     if (!sessionId) {
-      return res.status(400).json({
-        success: false,
-        error: "INVALID_INPUT",
-        message: "sessionId required"
-      });
+      return fail(req, res, 400, "INVALID_INPUT", "sessionId required");
     }
     
     const session = await getStorySession({
@@ -986,20 +836,13 @@ r.get("/:sessionId", async (req, res) => {
     });
     
     if (!session) {
-      return res.status(404).json({
-        success: false,
-        error: "NOT_FOUND"
-      });
+      return fail(req, res, 404, "NOT_FOUND", "Story session not found");
     }
     
-    return res.json({ success: true, data: session });
+    return ok(req, res, session);
   } catch (e) {
     console.error("[story][get] error:", e);
-    return res.status(500).json({
-      success: false,
-      error: "STORY_GET_FAILED",
-      detail: e?.message || "Failed to get story session"
-    });
+    return fail(req, res, 500, "STORY_GET_FAILED", e?.message || "Failed to get story session");
   }
 });
 

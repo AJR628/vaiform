@@ -1,4 +1,13 @@
 import admin, { db } from '../config/firebase.js';
+import { ok, fail } from "../http/respond.js";
+
+const requestIdOf = (req) => req?.id ?? null;
+const finalizeSuccess = (req, session, shortId) => ({
+  success: true,
+  data: session,
+  shortId,
+  requestId: requestIdOf(req),
+});
 
 /**
  * Idempotency middleware for POST /api/story/finalize.
@@ -24,20 +33,16 @@ export function idempotencyFinalize({ ttlMinutes = 60, getSession, creditCost } 
     const key = req.get('X-Idempotency-Key');
     const uid = req.user?.uid;
     if (!key) {
-      return res.status(400).json({ success: false, error: 'MISSING_IDEMPOTENCY_KEY', detail: 'Provide X-Idempotency-Key header.' });
+      return fail(req, res, 400, 'MISSING_IDEMPOTENCY_KEY', 'Provide X-Idempotency-Key header.');
     }
     if (!uid) {
-      return res.status(401).json({ success: false, error: 'UNAUTHORIZED', detail: 'Authentication required.' });
+      return fail(req, res, 401, 'UNAUTHORIZED', 'Authentication required.');
     }
 
     // Validate sessionId before any Firestore read or reserve so invalid input never debits credits
     const sessionId = typeof req.body?.sessionId === 'string' ? req.body.sessionId.trim() : '';
     if (sessionId.length < 3) {
-      return res.status(400).json({
-        success: false,
-        error: 'INVALID_INPUT',
-        detail: 'sessionId required and must be at least 3 characters.',
-      });
+      return fail(req, res, 400, 'INVALID_INPUT', 'sessionId required and must be at least 3 characters.');
     }
 
     const docRef = db.collection('idempotency').doc(`${uid}:${key}`);
@@ -47,7 +52,7 @@ export function idempotencyFinalize({ ttlMinutes = 60, getSession, creditCost } 
     if (snap.exists) {
       const d = snap.data();
       if (d.state === 'pending') {
-        return res.status(409).json({ success: false, error: 'IDEMPOTENT_IN_PROGRESS', detail: 'Request in progress.' });
+        return fail(req, res, 409, 'IDEMPOTENT_IN_PROGRESS', 'Request in progress.');
       }
       if (d.state === 'done') {
         const status = d.status || 200;
@@ -62,9 +67,9 @@ export function idempotencyFinalize({ ttlMinutes = 60, getSession, creditCost } 
           }
         }
         if (session == null) {
-          return res.status(404).json({ success: false, error: 'SESSION_NOT_FOUND', detail: 'Session no longer available for replay.' });
+          return fail(req, res, 404, 'SESSION_NOT_FOUND', 'Session no longer available for replay.');
         }
-        return res.status(status).json({ success: true, data: session, shortId });
+        return res.status(status).json(finalizeSuccess(req, session, shortId));
       }
     }
 
@@ -106,14 +111,14 @@ export function idempotencyFinalize({ ttlMinutes = 60, getSession, creditCost } 
       });
     } catch (e) {
       if (e._idemp === 'PENDING') {
-        return res.status(409).json({ success: false, error: 'IDEMPOTENT_IN_PROGRESS', detail: 'Request in progress.' });
+        return fail(req, res, 409, 'IDEMPOTENT_IN_PROGRESS', 'Request in progress.');
       }
       if (e._idemp) {
         const status = e._idemp.status || 200;
         const shortId = e._idemp.shortId ?? null;
         const sid = e._idemp.sessionId || sessionId;
         if (!sid) {
-          return res.status(404).json({ success: false, error: 'SESSION_NOT_FOUND', detail: 'Session id missing for replay.' });
+          return fail(req, res, 404, 'SESSION_NOT_FOUND', 'Session id missing for replay.');
         }
         let session = null;
         try {
@@ -122,16 +127,12 @@ export function idempotencyFinalize({ ttlMinutes = 60, getSession, creditCost } 
           console.error('[idempotency][finalize] getSession on replay (race):', err);
         }
         if (session == null) {
-          return res.status(404).json({ success: false, error: 'SESSION_NOT_FOUND', detail: 'Session no longer available for replay.' });
+          return fail(req, res, 404, 'SESSION_NOT_FOUND', 'Session no longer available for replay.');
         }
-        return res.status(status).json({ success: true, data: session, shortId });
+        return res.status(status).json(finalizeSuccess(req, session, shortId));
       }
       if (e?.status === 402 || e?.code === 'INSUFFICIENT_CREDITS' || e?.code === 'USER_NOT_FOUND') {
-        return res.status(402).json({
-          success: false,
-          error: e?.code || 'INSUFFICIENT_CREDITS',
-          detail: e?.message || 'Insufficient credits for render.',
-        });
+        return fail(req, res, 402, e?.code || 'INSUFFICIENT_CREDITS', e?.message || 'Insufficient credits for render.');
       }
       return next(e);
     }
@@ -185,7 +186,7 @@ export default function idempotencyFirestore({ ttlMinutes = 60 } = {}) {
   return async function middleware(req, res, next) {
     const key = req.get('X-Idempotency-Key');
     const uid = req.user?.uid || 'anon';
-    if (!key) return res.status(400).json({ success: false, error: 'MISSING_IDEMPOTENCY_KEY', detail: 'Provide X-Idempotency-Key header.' });
+    if (!key) return fail(req, res, 400, 'MISSING_IDEMPOTENCY_KEY', 'Provide X-Idempotency-Key header.');
 
     const docRef = db.collection('idempotency').doc(`${uid}:${key}`);
 
@@ -207,8 +208,15 @@ export default function idempotencyFirestore({ ttlMinutes = 60 } = {}) {
         }
       });
     } catch (e) {
-      if (e._idemp === 'PENDING') return res.status(409).json({ success: false, error: 'IDEMPOTENT_IN_PROGRESS', detail: 'Request in progress.' });
-      if (e._idemp) return res.status(e._idemp.status || 200).json(e._idemp.body || { success: true });
+      if (e._idemp === 'PENDING') return fail(req, res, 409, 'IDEMPOTENT_IN_PROGRESS', 'Request in progress.');
+      if (e._idemp) {
+        const status = e._idemp.status || 200;
+        const body = e._idemp.body;
+        if (body != null && typeof body === 'object') {
+          return res.status(status).json({ ...body, requestId: requestIdOf(req) });
+        }
+        return ok(req, res, body ?? null);
+      }
       // else real error
       return next(e);
     }
