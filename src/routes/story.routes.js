@@ -68,7 +68,7 @@ r.post("/start", async (req, res) => {
   try {
     const parsed = StartSchema.safeParse(req.body || {});
     if (!parsed.success) {
-      return fail(req, res, 400, "INVALID_INPUT", parsed.error.flatten());
+      return fail(req, res, 400, "INVALID_INPUT", "Invalid request", parsed.error.flatten().fieldErrors);
     }
     
     const { input, inputType, styleKey } = parsed.data;
@@ -91,7 +91,7 @@ r.post("/generate", enforceScriptDailyCap(300), async (req, res) => {
   try {
     const parsed = GenerateSchema.safeParse(req.body || {});
     if (!parsed.success) {
-      return fail(req, res, 400, "INVALID_INPUT", parsed.error.flatten());
+      return fail(req, res, 400, "INVALID_INPUT", "Invalid request", parsed.error.flatten().fieldErrors);
     }
     
     const { sessionId, input, inputType } = parsed.data;
@@ -119,7 +119,7 @@ r.post("/update-script", async (req, res) => {
     
     const parsed = UpdateScriptSchema.safeParse(req.body || {});
     if (!parsed.success) {
-      return fail(req, res, 400, "INVALID_INPUT", parsed.error.flatten());
+      return fail(req, res, 400, "INVALID_INPUT", "Invalid request", parsed.error.flatten().fieldErrors);
     }
     
     const { sessionId, sentences } = parsed.data;
@@ -171,7 +171,7 @@ r.post("/update-caption-style", async (req, res) => {
     }).safeParse(req.body || {});
     
     if (!parsed.success) {
-      return fail(req, res, 400, "INVALID_INPUT", parsed.error.flatten());
+      return fail(req, res, 400, "INVALID_INPUT", "Invalid request", parsed.error.flatten().fieldErrors);
     }
     
     const { sessionId, overlayCaption } = parsed.data;
@@ -245,7 +245,7 @@ r.post("/update-caption-meta", requireAuth, async (req, res) => {
       : SingleBeatSchema.safeParse(req.body);
     
     if (!parsed.success) {
-      return fail(req, res, 400, "INVALID_INPUT", parsed.error.flatten());
+      return fail(req, res, 400, "INVALID_INPUT", "Invalid request", parsed.error.flatten().fieldErrors);
     }
     
     const { sessionId } = parsed.data;
@@ -365,7 +365,7 @@ r.post("/plan", enforceScriptDailyCap(300), async (req, res) => {
   try {
     const parsed = SessionSchema.safeParse(req.body || {});
     if (!parsed.success) {
-      return fail(req, res, 400, "INVALID_INPUT", parsed.error.flatten());
+      return fail(req, res, 400, "INVALID_INPUT", "Invalid request", parsed.error.flatten().fieldErrors);
     }
     
     const { sessionId } = parsed.data;
@@ -386,7 +386,7 @@ r.post("/search", async (req, res) => {
   try {
     const parsed = SessionSchema.safeParse(req.body || {});
     if (!parsed.success) {
-      return fail(req, res, 400, "INVALID_INPUT", parsed.error.flatten());
+      return fail(req, res, 400, "INVALID_INPUT", "Invalid request", parsed.error.flatten().fieldErrors);
     }
     
     const { sessionId } = parsed.data;
@@ -413,7 +413,7 @@ r.post("/update-shot", async (req, res) => {
     
     const parsed = UpdateShotSchema.safeParse(req.body || {});
     if (!parsed.success) {
-      return fail(req, res, 400, "INVALID_INPUT", parsed.error.flatten());
+      return fail(req, res, 400, "INVALID_INPUT", "Invalid request", parsed.error.flatten().fieldErrors);
     }
     
     const { sessionId, sentenceIndex, clipId } = parsed.data;
@@ -452,7 +452,7 @@ r.post("/update-video-cuts", async (req, res) => {
   try {
     const parsed = UpdateVideoCutsSchema.safeParse(req.body || {});
     if (!parsed.success) {
-      return fail(req, res, 400, "INVALID_INPUT", parsed.error.flatten());
+      return fail(req, res, 400, "INVALID_INPUT", "Invalid request", parsed.error.flatten().fieldErrors);
     }
     const { sessionId, videoCutsV1 } = parsed.data;
     const session = await updateVideoCuts({
@@ -488,7 +488,7 @@ r.post("/search-shot", async (req, res) => {
     
     const parsed = SearchShotSchema.safeParse(req.body || {});
     if (!parsed.success) {
-      return fail(req, res, 400, "INVALID_INPUT", parsed.error.flatten());
+      return fail(req, res, 400, "INVALID_INPUT", "Invalid request", parsed.error.flatten().fieldErrors);
     }
     
     const { sessionId, sentenceIndex, query, page = 1 } = parsed.data;
@@ -522,7 +522,7 @@ r.post("/insert-beat", async (req, res) => {
     
     const parsed = InsertBeatSchema.safeParse(req.body || {});
     if (!parsed.success) {
-      return fail(req, res, 400, "INVALID_INPUT", parsed.error.flatten());
+      return fail(req, res, 400, "INVALID_INPUT", "Invalid request", parsed.error.flatten().fieldErrors);
     }
     
     const { sessionId, insertAfterIndex, text } = parsed.data;
@@ -550,7 +550,7 @@ r.post("/delete-beat", async (req, res) => {
     
     const parsed = DeleteBeatSchema.safeParse(req.body || {});
     if (!parsed.success) {
-      return fail(req, res, 400, "INVALID_INPUT", parsed.error.flatten());
+      return fail(req, res, 400, "INVALID_INPUT", "Invalid request", parsed.error.flatten().fieldErrors);
     }
     
     const { sessionId, sentenceIndex } = parsed.data;
@@ -605,7 +605,7 @@ r.post("/timeline", async (req, res) => {
   try {
     const parsed = SessionSchema.safeParse(req.body || {});
     if (!parsed.success) {
-      return fail(req, res, 400, "INVALID_INPUT", parsed.error.flatten());
+      return fail(req, res, 400, "INVALID_INPUT", "Invalid request", parsed.error.flatten().fieldErrors);
     }
     
     const { sessionId } = parsed.data;
@@ -626,7 +626,7 @@ r.post("/captions", async (req, res) => {
   try {
     const parsed = SessionSchema.safeParse(req.body || {});
     if (!parsed.success) {
-      return fail(req, res, 400, "INVALID_INPUT", parsed.error.flatten());
+      return fail(req, res, 400, "INVALID_INPUT", "Invalid request", parsed.error.flatten().fieldErrors);
     }
     
     const { sessionId } = parsed.data;
@@ -653,7 +653,7 @@ r.post("/render", (req, res, next) => {
   try {
     const parsed = SessionSchema.safeParse(req.body || {});
     if (!parsed.success) {
-      return fail(req, res, 400, "INVALID_INPUT", parsed.error.flatten());
+      return fail(req, res, 400, "INVALID_INPUT", "Invalid request", parsed.error.flatten().fieldErrors);
     }
     
     const { sessionId } = parsed.data;
@@ -679,7 +679,7 @@ r.post("/finalize", idempotencyFinalize({ getSession: getStorySession, creditCos
   try {
     const parsed = SessionSchema.safeParse(req.body || {});
     if (!parsed.success) {
-      return fail(req, res, 400, "INVALID_INPUT", parsed.error.flatten());
+      return fail(req, res, 400, "INVALID_INPUT", "Invalid request", parsed.error.flatten().fieldErrors);
     }
     
     const { sessionId } = parsed.data;
@@ -714,7 +714,7 @@ r.post("/manual", async (req, res) => {
     
     const parsed = ManualSchema.safeParse(req.body || {});
     if (!parsed.success) {
-      return fail(req, res, 400, "INVALID_INPUT", parsed.error.flatten());
+      return fail(req, res, 400, "INVALID_INPUT", "Invalid request", parsed.error.flatten().fieldErrors);
     }
     
     const { scriptText } = parsed.data;
@@ -748,7 +748,7 @@ r.post("/create-manual-session", async (req, res) => {
     
     const parsed = CreateManualSessionSchema.safeParse(req.body || {});
     if (!parsed.success) {
-      return fail(req, res, 400, "INVALID_INPUT", parsed.error.flatten());
+      return fail(req, res, 400, "INVALID_INPUT", "Invalid request", parsed.error.flatten().fieldErrors);
     }
     
     let { beats } = parsed.data;
