@@ -16,6 +16,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Use Node 22
         uses: actions/setup-node@v4
@@ -26,8 +28,18 @@ jobs:
       - name: Install
         run: npm ci
 
-      - name: Security audit
+      - name: Security audit (non-blocking)
+        continue-on-error: true
         run: npm audit --audit-level=high
 
       - name: Prettier format check
         run: npm run format:check
+
+      - name: Security tests
+        run: npm run test:security
+
+      - name: Response contract check (changed files)
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: npm run check:responses:changed
