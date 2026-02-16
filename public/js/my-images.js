@@ -1,6 +1,6 @@
 // /public/js/my-images.js
 // Read-only Firestore usage; all writes happen on the server.
-// Upscale hits /generate/upscale and then we re-render the gallery.
+// Upscale is gated in default runtime.
 
 import { auth, db } from "./firebaseClient.js";
 // Import constants without Firebase initialization
@@ -206,39 +206,12 @@ function makeTile({ url, upscaledUrl, genId, index }) {
     action.className = "text-sm px-3 py-1 rounded bg-green-600 hover:bg-green-700 text-white";
   } else {
     action.type = "button";
-    action.textContent = `Upscale (${UPSCALE_COST} credits)`;
-    action.className = "text-sm px-3 py-1 rounded bg-indigo-600 hover:bg-indigo-700 text-white";
-    action.onclick = async (e) => {
+    action.textContent = "Upscale unavailable";
+    action.title = "Upscale is temporarily unavailable in this build.";
+    action.className = "text-sm px-3 py-1 rounded bg-gray-500 text-white cursor-not-allowed";
+    action.onclick = (e) => {
       e.stopPropagation();
-      // [AI_IMAGES] Kill-switch guard
-      if (!IMAGE_UPSCALE_ENABLED) {
-        showToast('Upscaling is disabled in this version of Vaiform.');
-        return;
-      }
-      
-      action.disabled = true;
-      const old = action.textContent;
-      action.textContent = "Upscaling…";
-      try {
-        await apiFetch("/generate/upscale", {
-          method: "POST",
-          body: { imageUrl: url }
-        });
-        // Backend writes Firestore; just refresh UI
-        if (typeof renderGallery === "function") {
-          await renderGallery(currentUserUid);
-        } else {
-          window.location.reload();
-        }
-        showToast("✅ Upscaled!");
-        await refreshCredits();
-      } catch (err) {
-        console.error(err);
-        action.textContent = old;
-        showToast(err.message || "Upscale failed");
-      } finally {
-        action.disabled = false;
-      }
+      showToast("Upscale is temporarily unavailable in this build.");
     };
   }
 

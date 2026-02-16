@@ -535,32 +535,9 @@ generateForm?.addEventListener("submit", async (e) => {
 
 /* ========================= UPSCALE ========================= */
 async function requestUpscale(imageUrl, btnEl) {
-  // [AI_IMAGES] Kill-switch guard
-  if (window.VAIFORM_FEATURES && !window.VAIFORM_FEATURES.ENABLE_IMAGE_UPSCALE) {
-    showToast('Upscaling is disabled in this version of Vaiform.');
-    return;
-  }
-  
-  try {
-    btnEl && (btnEl.disabled = true);
-    const { images, upscaledUrl, cost, alreadyUpscaled } = await apiFetch("/generate/upscale", {
-      method: "POST",
-      body: { imageUrl }
-    });
-
-    showToast(alreadyUpscaled ? "🔼 Already upscaled (cached)" : "🔼 Upscaled!");
-
-    // If your UI expects a single URL:
-    const urlToUse = upscaledUrl || (Array.isArray(images) ? images[0] : null);
-    if (urlToUse) {
-      // TODO: update your UI with urlToUse
-    }
-  } catch (e) {
-    console.error(e);
-    showToast(e.message || "Upscale failed");
-  } finally {
-    btnEl && (btnEl.disabled = false);
-  }
+  btnEl && (btnEl.disabled = true);
+  showToast("Upscale is temporarily unavailable in this build.");
+  btnEl && (btnEl.disabled = false);
 }
 
 /* ========================= DEV: QUICK TOKEN ========================= */
