@@ -18,6 +18,9 @@ Companion docs:
 | Default flag values | legacy/debug both OFF by default | `env.example:3`, `env.example:7` |
 | Dual mounts exist | yes (`/` and `/api`, plus `/limits` and `/api/limits`) | `src/app.js:211-223`, `src/app.js:279-280` |
 | Precedence/shadowing risk | yes (ordered root routers include multiple `GET /`) | `src/app.js:211`, `src/app.js:212`, `src/app.js:214`, `src/app.js:237`; route defs in `src/routes/health.routes.js:10`, `src/routes/whoami.routes.js:10`, `src/routes/credits.routes.js:11`, `src/routes/index.js:24` |
+| Whoami surface truth | `/whoami` and `/api/whoami` are not mounted API routes; whoami router roots are shadowed | `src/routes/whoami.routes.js:10`, `src/app.js:211-212`, `src/app.js:219-220`; runtime probe: `/api/whoami` -> `404` |
+| Checkout API alias truth | mounted alias is `/api/start|session|subscription|portal` (not `/api/checkout/*`) | `src/routes/checkout.routes.js:16-26`, `src/app.js:247-248`; runtime probe: `/api/checkout/start` -> `404` |
+| Caller mapping truth | `apiFetch(\"/x\")` resolves to `/api/x`; fallback only for GET `/credits|/whoami|/health` | `public/api.mjs:154`, `public/api.mjs:160-164` |
 | CI enforced checks | `format:check`, `test:security`, `check:responses:changed` | `.github/workflows/ci.yml:35-45` |
 | CI non-blocking check | `npm audit --audit-level=high` | `.github/workflows/ci.yml:31-33` |
 | Repo-wide envelope drift (observed) | still present in reachable and gated files | `node scripts/check-responses.js` output (latest audit run) |
@@ -32,7 +35,7 @@ Companion docs:
 - `POST /stripe/webhook` and `GET /stripe/webhook`: `src/app.js:120`, `src/routes/stripe.webhook.js:12`, `src/routes/stripe.webhook.js:144`
 - Root + `/api` mounts for health/whoami/credits/generate: `src/app.js:211-223`
 - Enhance: `/`, `/enhance`, `/api`: `src/app.js:241-243`
-- Checkout: `/checkout`, `/api`: `src/app.js:247-248`
+- Checkout: `/checkout` and `/api` prefixes; concrete paths become `/checkout/start|session|subscription|portal` and `/api/start|session|subscription|portal`: `src/app.js:247-248`, `src/routes/checkout.routes.js:16-26`
 - Shorts: `/api/shorts`: `src/app.js:253`
 - CDN: `/cdn`: `src/app.js:257`
 - Assets: `/api/assets`: `src/app.js:275`
@@ -41,7 +44,7 @@ Companion docs:
 - Story: `/api/story`: `src/app.js:303`
 - Caption preview: `/api/caption/preview` via `/api` mount: `src/app.js:308-310`, `src/routes/caption.preview.routes.js:101`
 - User routes: `/api/user`, `/api/users`: `src/app.js:321`, `src/app.js:326`
-- Legacy alias no-op: `POST /api/user/setup`: `src/app.js:330-333`
+- Inline no-op alias `POST /api/user/setup` exists but is shadowed by earlier `/api/user` router mount (`userRoutes` handles the request first): `src/app.js:321`, `src/routes/user.routes.js:12`, `src/app.js:330-333`
 
 ### 1.2 Legacy-gated surfaces
 
@@ -73,6 +76,7 @@ C1 classification uses separate facts:
 - `Default-Reachable`: endpoint is reachable with default env flags (`ENABLE_LEGACY_ROUTES=0`, `VAIFORM_DEBUG=0`).
 - `Caller-Backed`: endpoint is called by files actually served/loaded by runtime entrypoints.
 - `Active`: `Default-Reachable && Caller-Backed`.
+- Callsite mapping: `apiFetch(\"/x\")` targets `/api/x`, with fallback only for GET `/credits|/whoami|/health`.
 
 Primary evidence for served entrypoints:
 
@@ -80,6 +84,7 @@ Primary evidence for served entrypoints:
 - `public/creative.html` loads `creative.article.mjs`: `public/creative.html:724`
 - `public/creative.html` loads auth bridge/firebase modules: `public/creative.html:39-43`
 - `web/dist` is served when present: `src/app.js:341-347`
+- Dist/static precedence: with dist present, SPA static + fallback run before `express.static(\"public\")`: `src/app.js:343-347`, `src/app.js:366`
 
 ## 3. Response Contract Drift Truth
 
@@ -123,6 +128,11 @@ Current `.github/workflows/ci.yml` behavior:
 - Corrected gating truth to exact predicates (`ENABLE_LEGACY_ROUTES === "1"`, `VAIFORM_DEBUG === "1"`).
 - Corrected active-surface logic to computed `Active = Default-Reachable && Caller-Backed`.
 - Added explicit precedence/shadowing treatment for ordered root mounts.
+- Corrected whoami route truth: `/whoami` and `/api/whoami` are not mounted API endpoints.
+- Corrected checkout alias truth: `/api/checkout/*` is absent; concrete alias is `/api/start|session|subscription|portal`.
+- Corrected caller-evidence semantics using `apiFetch` path resolution (`/api`-prefixed by default).
+- Marked inline `/api/user/setup` no-op as shadowed by router order.
+- Added `web/dist` vs `public` precedence note for HTML serving behavior.
 - Separated CI-enforced ratchet (`check:responses:changed`) from observed repo-wide drift (`check-responses.js`).
 
 ## 7. Canonical References
