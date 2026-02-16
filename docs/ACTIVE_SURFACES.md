@@ -43,16 +43,17 @@ Important exclusion rule:
 ## 3) Active (Default-Reachable + Caller-Backed)
 
 Confirmed caller-backed default surfaces include:
-- `/api/credits` via dist pages (`web/dist/js/my-images.js:132`, `web/dist/js/my-shorts.js:131`, `web/dist/creative.html:1148`) with `apiFetch("/credits") -> /api/credits` (`web/dist/api.mjs:152`).
-- `/api/generate` via creative/frontend (`web/dist/frontend.js:490`, `web/dist/creative.html:2443`) with `apiFetch("/generate") -> /api/generate` (`web/dist/api.mjs:152`).
-- `/api/job/:jobId` via my-images (`web/dist/js/my-images.js:378`) with `apiFetch("/job/:jobId") -> /api/job/:jobId` (`web/dist/api.mjs:152`).
+- `/api/credits` via dist pages (`web/dist/js/my-images.js:132`, `web/dist/js/my-shorts.js:131`, `web/dist/creative.html:1183`) with `apiFetch("/credits") -> /api/credits` (`web/dist/api.mjs:152`).
+- `/api/generate` via creative/frontend (`web/dist/frontend.js:490`, `web/dist/creative.html:2120`) with `apiFetch("/generate") -> /api/generate` (`web/dist/api.mjs:152`).
+- `/api/job/:jobId` via my-images (`web/dist/js/my-images.js:357`) with `apiFetch("/job/:jobId") -> /api/job/:jobId` (`web/dist/api.mjs:152`).
 - `/checkout/start` via pricing (`web/dist/js/pricing.js:138`; mounted at `src/routes/checkout.routes.js:16`).
+- `/api/session`, `/api/subscription`, `/api/portal` via buy credits (`web/dist/js/buy-credits.js:40`, `web/dist/js/buy-credits.js:52`, `web/dist/js/buy-credits.js:123`; mounted via `src/app.js:248`, `src/routes/checkout.routes.js:20-26`).
 - `/api/shorts/mine`, `/api/shorts/:jobId` via my-shorts (`web/dist/js/my-shorts.js:35`, `web/dist/js/my-shorts.js:172`).
-- `/api/assets/options` via creative (`web/dist/creative.html:1273`).
-- `/api/assets/ai-images` via creative (`web/dist/creative.html:2552`) (handler still responds `410` by design: `src/routes/assets.routes.js:12-17`).
+- `/api/assets/options` via creative (`web/dist/creative.html:1266`).
+- `/api/assets/ai-images` via creative (`web/dist/creative.html:2229`) (handler still responds `410` by design: `src/routes/assets.routes.js:12-17`).
 - `/api/caption/preview` via dynamic import path (`web/dist/creative.html:1043`, `web/dist/js/caption-preview.js:82`).
 - `/api/enhance` via frontend (`web/dist/frontend.js:272`) with `apiFetch("/enhance") -> /api/enhance` (`web/dist/api.mjs:152`).
-- `/cdn` via creative image proxying (`web/dist/creative.html:2576`; mounted `src/app.js:257`).
+- `/cdn` via creative image proxying (`web/dist/creative.html:2253`; mounted `src/app.js:257`).
 
 ## 4) Default-Reachable but Not Caller-Backed (Attack Surface)
 
@@ -66,24 +67,16 @@ Reachable under defaults, but no proven dist-entrypoint caller:
 
 ## 5) Caller-Backed but Not Default-Reachable (Broken Under Defaults)
 
-These are present in served entrypoint code but fail under default mounts/flags:
+None currently proven from default dist entrypoint callers.
 
-- Checkout alias mismatch:
-  - `apiFetch("/checkout/session")` -> `/api/checkout/session` (`web/dist/js/buy-credits.js:40`, `web/dist/api.mjs:152`) but mounted path is `/checkout/session` or `/api/session` (`src/app.js:247-248`, `src/routes/checkout.routes.js:20`).
-  - `apiFetch("/checkout/subscription")` -> `/api/checkout/subscription` (`web/dist/js/buy-credits.js:52`) while mount is `/checkout/subscription` or `/api/subscription` (`src/routes/checkout.routes.js:23`).
-  - `apiFetch("/checkout/portal")` -> `/api/checkout/portal` (`web/dist/js/buy-credits.js:123`) while mount is `/checkout/portal` or `/api/portal` (`src/routes/checkout.routes.js:26`).
-- `apiFetch("/generate/upscale")` -> `/api/generate/upscale` (`web/dist/js/my-images.js:213`) but no matching generate route (`src/routes/generate.routes.js:11-12`).
-- Quotes routes are unmounted but called from creative:
-  - `/api/quotes/generate-quote` (`web/dist/creative.html:1182`)
-  - `/api/quotes/remix` (`web/dist/creative.html:2376`)
-  - `/api/quotes/save` (`web/dist/creative.html:2673`, `web/dist/creative.html:2782`)
-  - mount is commented out (`src/app.js:269-273`)
-- Legacy-gated endpoints called from creative while legacy flag is off by default:
-  - `/api/voice/voices` (`web/dist/creative.html:2045`)
-  - `/api/voice/preview` (`web/dist/creative.html:2105`)
-  - `/api/uploads/register` (`web/dist/creative.html:2600`)
-  - legacy gating: `src/app.js:259-262`, `src/app.js:283-287`, default `env.example:3`
-- `/api/shorts/create` attempted by creative (`web/dist/creative.html:2333`) but route is commented/unmounted (`src/routes/shorts.routes.js:9`).
+C3 changes that removed prior broken caller attempts:
+- Checkout callers now resolve to mounted aliases:
+  - `apiFetch("/session")` -> `/api/session`
+  - `apiFetch("/subscription")` -> `/api/subscription`
+  - `apiFetch("/portal")` -> `/api/portal`
+  - evidence: `web/dist/js/buy-credits.js:40`, `web/dist/js/buy-credits.js:52`, `web/dist/js/buy-credits.js:123`, `src/app.js:248`.
+- Upscale callsites were removed/gated from default dist callers (`web/dist/js/my-images.js:205-213`, `web/dist/frontend.js:525-528`).
+- Creative legacy/unmounted call paths (quotes/voice/uploads/register/shorts/create) are now UI-gated and hard-guarded in default dist runtime (`web/dist/creative.html:906-935`, `web/dist/creative.html:1201-1203`, `web/dist/creative.html:2025-2026`, `web/dist/creative.html:2077-2083`, `web/dist/creative.html:2269-2276`).
 
 ## 6) Legacy-Gated and Debug-Gated
 
