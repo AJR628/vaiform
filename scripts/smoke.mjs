@@ -1,5 +1,3 @@
-mkdir -p scripts
-cat > scripts/smoke.mjs <<'EOF'
 // scripts/smoke.mjs
 // Run with: node scripts/smoke.mjs  (Node 18+)
 import assert from "node:assert";
@@ -93,4 +91,3 @@ function idem() { return `cli-${Date.now()}-${Math.random().toString(16).slice(2
     console.log("\n🎉 All backend contract tests passed.");
   }
 })().catch(e => { console.error(e); process.exit(1); });
-EOF

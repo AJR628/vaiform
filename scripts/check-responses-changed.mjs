@@ -58,27 +58,29 @@ function refExists(ref) {
 
 function resolveChangedFiles(explicitFiles) {
   if (explicitFiles.length) {
-    return explicitFiles;
+    return { files: explicitFiles, source: "explicit" };
   }
 
   const base = process.env.BASE_SHA;
   const head = process.env.HEAD_SHA;
   if (base && head) {
     const bySha = tryGitDiff(`${base}..${head}`);
-    if (bySha.length) return bySha;
+    return { files: bySha, source: "ci_sha" };
   }
 
-  if (refExists("origin/main")) {
-    const byMain = tryGitDiff("origin/main...HEAD");
-    if (byMain.length) return byMain;
+  if (process.env.ALLOW_BROAD_SCAN === "1") {
+    if (refExists("origin/main")) {
+      const byMain = tryGitDiff("origin/main...HEAD");
+      if (byMain.length) return { files: byMain, source: "broad" };
+    }
+
+    if (refExists("HEAD~1")) {
+      const byPrev = tryGitDiff("HEAD~1..HEAD");
+      if (byPrev.length) return { files: byPrev, source: "broad" };
+    }
   }
 
-  if (refExists("HEAD~1")) {
-    const byPrev = tryGitDiff("HEAD~1..HEAD");
-    if (byPrev.length) return byPrev;
-  }
-
-  return [];
+  return { files: [], source: "none" };
 }
 
 function isEligible(file) {
@@ -273,7 +275,20 @@ function scanFile(filePath) {
 
 function main() {
   const { files: explicitFiles } = parseArgs(process.argv.slice(2));
-  const changed = resolveChangedFiles(explicitFiles).map(normalizeFile);
+  const resolution = resolveChangedFiles(explicitFiles);
+  const changed = resolution.files.map(normalizeFile);
+
+  if (!changed.length && resolution.source === "none") {
+    console.error("No file scope provided.");
+    console.error(
+      "Usage: node scripts/check-responses-changed.mjs --files <file1,file2,...>",
+    );
+    console.error(
+      "Or set BASE_SHA and HEAD_SHA (CI mode). Optional broad fallback: set ALLOW_BROAD_SCAN=1.",
+    );
+    process.exit(1);
+  }
+
   const eligible = [...new Set(changed.filter(isEligible))].filter((rel) =>
     fs.existsSync(path.resolve(process.cwd(), rel)),
   );
