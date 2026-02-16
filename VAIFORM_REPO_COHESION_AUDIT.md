@@ -1,6 +1,6 @@
 # Vaiform Repo Cohesion Audit (C1 Baseline Truth Snapshot)
 
-**Audit date**: 2026-02-15  
+**Audit date**: 2026-02-16  
 **Branch**: `feat/voice-ssot-tts`  
 **Scope**: Docs-only truth snapshot from current code. No runtime changes.
 
@@ -16,11 +16,12 @@ Companion docs:
 | Legacy gate predicate | `ENABLE_LEGACY_ROUTES === "1"` | `src/app.js:35`, `src/app.js:259`, `src/app.js:283`, `src/app.js:298`, `src/app.js:314` |
 | Debug gate predicate | `VAIFORM_DEBUG === "1"` | `src/app.js:34`, `src/app.js:216`, `src/app.js:225`, `src/app.js:369` |
 | Default flag values | legacy/debug both OFF by default | `env.example:3`, `env.example:7` |
+| Default static mode | dist-first (`web/dist` exists and is mounted before `public`) | `src/app.js:343-347`, `src/app.js:366`, `web/dist` |
 | Dual mounts exist | yes (`/` and `/api`, plus `/limits` and `/api/limits`) | `src/app.js:211-223`, `src/app.js:279-280` |
 | Precedence/shadowing risk | yes (ordered root routers include multiple `GET /`) | `src/app.js:211`, `src/app.js:212`, `src/app.js:214`, `src/app.js:237`; route defs in `src/routes/health.routes.js:10`, `src/routes/whoami.routes.js:10`, `src/routes/credits.routes.js:11`, `src/routes/index.js:24` |
 | Whoami surface truth | `/whoami` and `/api/whoami` are not mounted API routes; whoami router roots are shadowed | `src/routes/whoami.routes.js:10`, `src/app.js:211-212`, `src/app.js:219-220`; runtime probe: `/api/whoami` -> `404` |
 | Checkout API alias truth | mounted alias is `/api/start|session|subscription|portal` (not `/api/checkout/*`) | `src/routes/checkout.routes.js:16-26`, `src/app.js:247-248`; runtime probe: `/api/checkout/start` -> `404` |
-| Caller mapping truth | `apiFetch(\"/x\")` resolves to `/api/x`; fallback only for GET `/credits|/whoami|/health` | `public/api.mjs:154`, `public/api.mjs:160-164` |
+| Caller mapping truth | `apiFetch(\"/x\")` resolves to `/api/x`; fallback only for GET `/credits|/whoami|/health` | `web/dist/api.mjs:152`, `web/dist/api.mjs:156-163` |
 | CI enforced checks | `format:check`, `test:security`, `check:responses:changed` | `.github/workflows/ci.yml:35-45` |
 | CI non-blocking check | `npm audit --audit-level=high` | `.github/workflows/ci.yml:31-33` |
 | Repo-wide envelope drift (observed) | still present in reachable and gated files | `node scripts/check-responses.js` output (latest audit run) |
@@ -80,11 +81,17 @@ C1 classification uses separate facts:
 
 Primary evidence for served entrypoints:
 
-- `/creative` serves `public/creative.html`: `src/routes/creative.routes.js:11-13`
-- `public/creative.html` loads `creative.article.mjs`: `public/creative.html:724`
-- `public/creative.html` loads auth bridge/firebase modules: `public/creative.html:39-43`
+- Dist entrypoints redirect/link to `/creative.html` and other dist pages: `web/dist/index.html:40`, `web/dist/index.html:142`, `web/dist/components/header.js:13-17`
+- `creative.html` loads runtime modules (`frontend.js`, `auth-bridge.js`, `firebaseClient.js`): `web/dist/creative.html:24-34`
 - `web/dist` is served when present: `src/app.js:341-347`
 - Dist/static precedence: with dist present, SPA static + fallback run before `express.static(\"public\")`: `src/app.js:343-347`, `src/app.js:366`
+
+## 2.1 Dist-Mode Implication (C1 Caller Evidence Rule)
+
+- With `web/dist` present, treat `web/dist` as the canonical source for served static assets and caller evidence.
+- `public/` still matters, but only when reached by explicit routes (for example `/creative`) or when a file is absent in dist.
+- Dist bundle strings are not caller evidence unless the bundle is referenced by a served entrypoint HTML.
+- Net effect: Caller-Backed and Active sets must be computed from entrypoint-loaded dist files first, not `public/**` source callsites.
 
 ## 3. Response Contract Drift Truth
 
@@ -132,7 +139,7 @@ Current `.github/workflows/ci.yml` behavior:
 - Corrected checkout alias truth: `/api/checkout/*` is absent; concrete alias is `/api/start|session|subscription|portal`.
 - Corrected caller-evidence semantics using `apiFetch` path resolution (`/api`-prefixed by default).
 - Marked inline `/api/user/setup` no-op as shadowed by router order.
-- Added `web/dist` vs `public` precedence note for HTML serving behavior.
+- Added dist-aware caller rule: dist is canonical for static caller evidence when present; `public/` remains explicit-route/missing-file fallback.
 - Separated CI-enforced ratchet (`check:responses:changed`) from observed repo-wide drift (`check-responses.js`).
 
 ## 7. Canonical References
