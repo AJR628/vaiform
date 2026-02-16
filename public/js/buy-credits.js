@@ -37,7 +37,7 @@ async function startOneTime({ priceId, credits = 0, quantity = 1 }) {
   const user = await ensureAuth();
   if (!user) return toast("Please sign in to buy credits.");
 
-  const data = await apiFetch("/checkout/session", {
+  const data = await apiFetch("/session", {
     method: "POST",
     body: { priceId, quantity, credits } // credits optional (for analytics/metadata)
   });
@@ -49,7 +49,7 @@ async function startSubscription({ priceId, credits = 0 }) {
   const user = await ensureAuth();
   if (!user) return toast("Please sign in to subscribe.");
 
-  const data = await apiFetch("/checkout/subscription", {
+  const data = await apiFetch("/subscription", {
     method: "POST",
     body: { priceId, credits } // credits optional (for analytics/metadata)
   });
@@ -120,7 +120,7 @@ manageBtn?.addEventListener("click", async () => {
     const user = await ensureAuth();
     if (!user) { toast("Please sign in to manage billing."); return; }
 
-    const data = await apiFetch("/checkout/portal", {
+    const data = await apiFetch("/portal", {
       method: "POST"
     });
     if (!data?.url) return toast(data?.error || "Could not open billing portal");
