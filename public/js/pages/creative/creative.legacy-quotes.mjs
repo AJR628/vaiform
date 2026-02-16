@@ -1573,32 +1573,8 @@ import { BACKEND as BACKEND_FROM_CONFIG } from '/config.js';
                         }
                     }
                 } else {
-                    // Non-URL: use existing quote generation flow
-                    const data = await apiFetch('/quotes/generate-quote', {
-                        method: 'POST',
-                        body: {
-                            text,
-                            tone: tone === 'default' ? undefined : tone,
-                            maxChars: 120
-                        }
-                    });
-                    
-                    if (data.ok) {
-                        currentQuote = data.data.quote;
-                        await displayQuote(currentQuote, { skipPreview: true }); // keep textarea visible, skip preview update
-                        decRegens();
-                        
-                        // Update overlay if system is active (for mobile visibility)
-                        if (useOverlayMode && overlaySystemInitialized && currentQuote?.text) {
-                            try {
-                                await maybeUpdateOverlay(currentQuote.text.trim(), true);
-                            } catch (e) {
-                                console.warn('[generate-quote] overlay update failed', e);
-                            }
-                        }
-                    } else {
-                        showError('quote-error', data.reason || 'Failed to generate quote');
-                    }
+                    showError('quote-error', 'Quote generation is temporarily unavailable in this build.');
+                    return;
                 }
             } catch (error) {
                 showError('quote-error', error.message || 'Network error');
@@ -2980,33 +2956,8 @@ import { BACKEND as BACKEND_FROM_CONFIG } from '/config.js';
 
         // Voice loading and preview functions
         window.loadVoices = async function loadVoices() {
-            try {
-                // Wait for auth to be ready
-                if (!window.auth?.currentUser) {
-                    // Wait a bit for auth to initialize
-                    await new Promise(resolve => setTimeout(resolve, 1000));
-                    if (!window.auth?.currentUser) {
-                        showError('voice-preview-status', 'Please log in to load voices');
-                        return;
-                    }
-                }
-
-                const { apiFetch } = await import('/api.mjs');
-                const data = await apiFetch('/voice/voices', {
-                    method: 'GET'
-                });
-
-                if (data.success) {
-                    availableVoices = data.data.voices;
-                    populateVoiceSelect();
-                    hideError('voice-preview-status');
-                } else {
-                    showError('voice-preview-status', data.error || 'Failed to load voices');
-                }
-            } catch (error) {
-                console.error('Voice loading error:', error);
-                showError('voice-preview-status', error.message || 'Network error');
-            }
+            showError('voice-preview-status', 'Voice loading is temporarily unavailable in this build.');
+            try { showToast('Voice loading is temporarily unavailable in this build.'); } catch {}
         }
 
         function populateVoiceSelect() {
@@ -4594,34 +4545,8 @@ import { BACKEND as BACKEND_FROM_CONFIG } from '/config.js';
                     }
                 }
 
-                const data = await apiFetch('/shorts/create', {
-                    method: 'POST',
-                    body: payload
-                });
-
-                if (!data.success) {
-                    if (data.error === 'AUTH_REQUIRED') {
-                        showAuthRequiredModal();
-                        return;
-                    }
-                    if (data.error === 'FREE_LIMIT_REACHED') {
-                        showFreeLimitModal();
-                        return;
-                    }
-                    alert(`Render failed: ${data.error || data.message || 'Unknown error'}`);
-                    return;
-                }
-
-                // Success! Show the result
-                const result = data.data;
-                alert(`Short created successfully! Job ID: ${result.jobId}`);
-                
-                // Redirect to My Shorts page so user sees result immediately
-                try { window.location.href = `/my-shorts.html?new=${encodeURIComponent(result.jobId)}`; } catch {}
-                
-                // You could redirect to a results page or show the video here
-                // For now, we'll just show success
-                console.log('Render result:', result);
+                alert('Short rendering is temporarily unavailable in this build.');
+                return;
             } catch (error) {
                 console.error('Render error:', error); // includes stack trace
                 
@@ -8712,49 +8637,8 @@ import { BACKEND as BACKEND_FROM_CONFIG } from '/config.js';
                 showError('quote-error', 'Legacy quote remix is disabled. Use Article Explainer instead.');
                 return;
             }
-            
-            if (!currentQuote) return;
-            if (!window.auth?.currentUser) {
-                showError('quote-error', 'Please log in to remix quotes');
-                return;
-            }
-            
-            setLoading('generate-quote-btn', true);
-            hideError('quote-error');
-            
-            try {
-                const { apiFetch } = await import('/api.mjs');
-                const data = await apiFetch('/quotes/remix', {
-                    method: 'POST',
-                    body: {
-                        // Prefer live textarea content so users don't need to hit Save first
-                        originalText: (document.getElementById('quote-edit')?.value || currentQuote.text || '').trim(),
-                        mode,
-                        targetTone: mode === 'tone_shift' ? document.getElementById('quote-tone').value : undefined,
-                        maxChars: 120
-                    }
-                });
-                
-                if (data.ok) {
-                    currentQuote = data.data.quote;
-                    await displayQuote(currentQuote, { skipPreview: true }); // Skip preview during remix
-                    decRegens();
-                    // Keep the editor visible with new text
-                    try {
-                      document.getElementById('quote-text-display').classList.add('hidden');
-                      document.getElementById('quote-edit').classList.remove('hidden');
-                      document.getElementById('save-quote-btn').classList.remove('hidden');
-                      document.getElementById('cancel-quote-btn').classList.remove('hidden');
-                      document.getElementById('edit-quote-btn').classList.add('hidden');
-                    } catch {}
-                } else {
-                    showError('quote-error', data.reason || 'Failed to remix quote');
-                }
-            } catch (error) {
-                showError('quote-error', error.message || 'Network error');
-            } finally {
-                setLoading('generate-quote-btn', false);
-            }
+            showError('quote-error', 'Quote remix is temporarily unavailable in this build.');
+            try { showToast('Quote remix is temporarily unavailable in this build.'); } catch {}
         }
 
         // Expose to window scope for ui-actions.js
@@ -8955,10 +8839,8 @@ import { BACKEND as BACKEND_FROM_CONFIG } from '/config.js';
               const imgEl = document.querySelector('#ai-result-preview img');
               const url = imgEl?.getAttribute('src');
               if (!url) return;
-              const { apiFetch } = await import('/api.mjs');
-              // Store the image in storage and get a tokenized URL
-              const reg = await apiFetch('/uploads/register', { method:'POST', body:{ imageUrl: url } });
-              const savedUrl = reg?.data?.url || url;
+              const savedUrl = url;
+              try { showToast('Save & Use registration is temporarily unavailable in this build.'); } catch {}
               // Mark selection locally and update preview immediately
               selectedAsset = { id: `ai-${Date.now()}`, provider: 'ai', query: (document.getElementById('ai-prompt')?.value||'').trim(), fileUrl: savedUrl, thumbUrl: savedUrl, width: 1080, height: 1920 };
               updateRenderPreview();
@@ -9031,16 +8913,8 @@ import { BACKEND as BACKEND_FROM_CONFIG } from '/config.js';
             document.getElementById('cancel-quote-btn').classList.add('hidden');
             document.getElementById('edit-quote-btn').classList.remove('hidden');
             // do not reset regen counter here
-            // Persist immediately so it can be used for the short without extra clicks
-            (async ()=>{
-              try {
-                const { apiFetch } = await import('/api.mjs');
-                await apiFetch('/quotes/save', { method:'POST', body:{ text: input, author: '', toneTag: (document.getElementById('quote-tone')?.value || 'default') } });
-                try { window.VAIFORM = window.VAIFORM || {}; window.VAIFORM.currentQuoteText = input; } catch {}
-              } catch (e) {
-                console.warn('Use This Text save failed:', e?.message || e);
-              }
-            })();
+            try { window.VAIFORM = window.VAIFORM || {}; window.VAIFORM.currentQuoteText = input; } catch {}
+            try { showToast('Quote cloud save is temporarily unavailable in this build.'); } catch {}
             
             // Trigger caption preview immediately after using text
             try {
@@ -9302,13 +9176,8 @@ import { BACKEND as BACKEND_FROM_CONFIG } from '/config.js';
             }
 
             // Persist to backend so it can be used in the short without CORS issues
-            try {
-              const { apiFetch } = await import('/api.mjs');
-              await apiFetch('/quotes/save', { method: 'POST', body: { text: newText, author: '', toneTag: (document.getElementById('quote-tone')?.value || 'default') } });
-              try { window.VAIFORM = window.VAIFORM || {}; window.VAIFORM.currentQuoteText = newText; } catch {}
-            } catch (e) {
-              console.warn('Quote save failed (non-fatal):', e?.message || e);
-            }
+            try { window.VAIFORM = window.VAIFORM || {}; window.VAIFORM.currentQuoteText = newText; } catch {}
+            try { showToast('Quote cloud save is temporarily unavailable in this build.'); } catch {}
         }
 
         // Expose to window scope for ui-actions.js

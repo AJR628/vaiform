@@ -903,6 +903,41 @@
         let uploadedAssets = [];
         let availableVoices = [];
         let currentVoiceId = null;
+        const CREATIVE_LEGACY_CALLS_ENABLED = false;
+        const CREATIVE_LEGACY_DISABLED_MSG = 'This feature is temporarily unavailable in this build.';
+
+        function showLegacyDisabled(targetId) {
+            if (targetId) {
+                try { showError(targetId, CREATIVE_LEGACY_DISABLED_MSG); } catch {}
+            }
+            try { showToast(CREATIVE_LEGACY_DISABLED_MSG); } catch {}
+        }
+
+        function disableLegacyControl(id, message = CREATIVE_LEGACY_DISABLED_MSG) {
+            const el = document.getElementById(id);
+            if (!el) return;
+            el.disabled = true;
+            el.setAttribute('aria-disabled', 'true');
+            el.setAttribute('title', message);
+            el.classList.add('opacity-50', 'cursor-not-allowed');
+        }
+
+        function applyLegacyFeatureGates() {
+            if (CREATIVE_LEGACY_CALLS_ENABLED) return;
+            disableLegacyControl('generate-quote-btn');
+            disableLegacyControl('regenerate-btn');
+            disableLegacyControl('rephrase-btn');
+            disableLegacyControl('tone-shift-btn');
+            disableLegacyControl('retry-voices-btn');
+            disableLegacyControl('preview-voice-btn');
+            disableLegacyControl('render-btn');
+            disableLegacyControl('ai-save-use-btn');
+            const voiceSelect = document.getElementById('voiceover-voice');
+            if (voiceSelect) {
+                voiceSelect.disabled = true;
+                voiceSelect.setAttribute('title', CREATIVE_LEGACY_DISABLED_MSG);
+            }
+        }
 
         // Helper functions - PNG overlay system
         let captionOverlayState = null;
@@ -1164,49 +1199,7 @@
 
         // Quote generation
         async function generateQuote() {
-            if (!window.auth?.currentUser) {
-                showError('quote-error', 'Please log in to generate quotes');
-                return;
-            }
-            
-            const text = document.getElementById('quote-text').value;
-            const tone = document.getElementById('quote-tone').value;
-            
-            if (!text.trim()) return;
-            
-            setLoading('generate-quote-btn', true);
-            hideError('quote-error');
-            
-            try {
-                const { apiFetch } = await import('./api.mjs');
-                const data = await apiFetch('/quotes/generate-quote', {
-                    method: 'POST',
-                    body: {
-                        text,
-                        tone: tone === 'default' ? undefined : tone,
-                        maxChars: 120
-                    }
-                });
-                
-                if (data.ok) {
-                    currentQuote = data.data.quote;
-                    displayQuote(currentQuote); // keep textarea visible (no toggle)
-                    decRegens();
-                    
-                    // Trigger caption preview immediately after quote generation
-                    try {
-                        updateCaptionOverlay(currentQuote.text.trim(), true);
-                    } catch (e) {
-                        console.warn('[caption-overlay] auto-preview failed (non-fatal)', e);
-                    }
-                } else {
-                    showError('quote-error', data.reason || 'Failed to generate quote');
-                }
-            } catch (error) {
-                showError('quote-error', error.message || 'Network error');
-            } finally {
-                setLoading('generate-quote-btn', false);
-            }
+            showLegacyDisabled('quote-error');
         }
 
         function displayQuote(quote) {
@@ -2030,33 +2023,7 @@
 
         // Voice loading and preview functions
         window.loadVoices = async function loadVoices() {
-            try {
-                // Wait for auth to be ready
-                if (!window.auth?.currentUser) {
-                    // Wait a bit for auth to initialize
-                    await new Promise(resolve => setTimeout(resolve, 1000));
-                    if (!window.auth?.currentUser) {
-                        showError('voice-preview-status', 'Please log in to load voices');
-                        return;
-                    }
-                }
-
-                const { apiFetch } = await import('./api.mjs');
-                const data = await apiFetch('/voice/voices', {
-                    method: 'GET'
-                });
-
-                if (data.success) {
-                    availableVoices = data.data.voices;
-                    populateVoiceSelect();
-                    hideError('voice-preview-status');
-                } else {
-                    showError('voice-preview-status', data.error || 'Failed to load voices');
-                }
-            } catch (error) {
-                console.error('Voice loading error:', error);
-                showError('voice-preview-status', error.message || 'Network error');
-            }
+            showLegacyDisabled('voice-preview-status');
         }
 
         function populateVoiceSelect() {
@@ -2083,53 +2050,7 @@
         }
 
         async function previewVoice() {
-            const voiceSelect = document.getElementById('voiceover-voice');
-            const voiceId = voiceSelect.value;
-            
-            if (!voiceId || voiceId === '') {
-                showError('voice-preview-status', 'Please select a voice');
-                return;
-            }
-
-            const statusEl = document.getElementById('voice-preview-status');
-            const previewBtn = document.getElementById('preview-voice-btn');
-            const audioEl = document.getElementById('voice-preview-audio');
-
-            statusEl.classList.remove('hidden');
-            statusEl.textContent = 'Generating preview...';
-            previewBtn.disabled = true;
-
-            try {
-                console.log('Voice preview - voiceId:', voiceId);
-                const { apiFetch } = await import('./api.mjs');
-                const data = await apiFetch('/voice/preview', {
-                    method: 'POST',
-                    body: {
-                        voiceId,
-                        text: 'Hello, this is a preview of my voice. How does it sound?'
-                    }
-                });
-                
-                console.log('Voice preview response:', data);
-
-                if (data.success) {
-                    audioEl.src = data.data.audio;
-                    audioEl.classList.remove('hidden');
-                    statusEl.textContent = 'Preview ready - click play to listen';
-                    
-                    // Auto-play the preview
-                    audioEl.play().catch(e => {
-                        console.log('Auto-play prevented:', e);
-                        statusEl.textContent = 'Preview ready - click play to listen';
-                    });
-                } else {
-                    showError('voice-preview-status', data.error || 'Failed to generate preview');
-                }
-            } catch (error) {
-                showError('voice-preview-status', error.message || 'Network error');
-            } finally {
-                previewBtn.disabled = false;
-            }
+            showLegacyDisabled('voice-preview-status');
         }
 
         // Helper function for better error messages
@@ -2154,256 +2075,12 @@
 
         // Render short function
         async function renderShort() {
-            if (!currentQuote || !selectedAsset) {
-                alert('Please select a quote and an asset first');
-                return;
-            }
-
-            if (!window.auth?.currentUser) {
-                alert('Please log in to render shorts');
-                return;
-            }
-
-            const renderBtn = document.getElementById('render-btn');
-            const originalText = renderBtn.textContent;
-            
-            renderBtn.disabled = true;
-            renderBtn.textContent = 'Rendering...';
-
-            try {
-                const { apiFetch } = await import('./api.mjs');
-                
-                // Prepare the render payload with proper background structure
-                const assetUrl = selectedAsset.fileUrl || selectedAsset.url;
-                
-                // Detect type from URL extension
-                const detectTypeFromUrl = (url) => {
-                    if (!url) return 'image'; // Default fallback
-                    
-                    try {
-                        // Handle URLs with query parameters or fragments
-                        const cleanUrl = url.split('?')[0].split('#')[0];
-                        const ext = cleanUrl.toLowerCase().split('.').pop();
-                        
-                        console.log(`[typeDetection] URL: ${url}`);
-                        console.log(`[typeDetection] Clean URL: ${cleanUrl}`);
-                        console.log(`[typeDetection] Extension: ${ext}`);
-                        
-                        if (['mp4', 'mov', 'avi', 'mkv', 'webm', 'm4v', '3gp', 'flv'].includes(ext)) {
-                            return 'video';
-                        }
-                        if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg', 'tiff'].includes(ext)) {
-                            return 'image';
-                        }
-                        
-                        // Default fallback
-                        console.log(`[typeDetection] Unknown extension: ${ext}, defaulting to image`);
-                        return 'image';
-                    } catch (error) {
-                        console.error(`[typeDetection] Error parsing URL: ${error.message}`);
-                        return 'image'; // Safe fallback
-                    }
-                };
-                
-                const detectedType = detectTypeFromUrl(assetUrl);
-                
-                console.log(`[render] Asset URL: ${assetUrl}`);
-                console.log(`[render] Detected type: ${detectedType}`);
-                
-                const background = {
-                    kind: selectedAsset.provider === 'ai' ? 'ai' : 
-                          selectedAsset.provider === 'uploaded' ? 'upload' : 'stock',
-                    type: detectedType, // Use detected type from URL
-                    url: assetUrl, // Required URL
-                    query: selectedAsset.query,
-                    // Legacy fields for backward compatibility
-                    imageUrl: selectedAsset.provider === 'uploaded' ? selectedAsset.fileUrl : undefined,
-                    prompt: selectedAsset.provider === 'ai' ? selectedAsset.query : undefined
-                };
-
-                // Get caption style settings
-                const captionStyle = {
-                    font: document.getElementById('caption-font').value,
-                    weight: document.getElementById('caption-weight').value,
-                    sizePx: window.getCaptionPx(),
-                    opacity: parseInt(document.getElementById('caption-opacity').value) / 100,
-                    placement: document.getElementById('caption-placement').value,
-                    showBox: document.getElementById('caption-background').checked,
-                    boxOpacity: parseInt(document.getElementById('caption-bg-opacity').value) / 100
-                };
-                
-                // --- BEGIN strictly-typed payload construction ---
-
-                // 1) Get current quote text safely as a string
-                const quoteText = ((currentQuote && currentQuote.text) || '').toString();
-
-                // 2) Get mapped and clamped font size
-                const sizePx = window.getCaptionPx();
-
-                // 3) Find last generated overlay from preview step
-                //    (caption-preview.js should already be writing this)
-                const overlay = window.__lastCaptionOverlay;
-                // overlay shape we expect: { dataUrl: 'data:image/png;base64,...', width, height, meta: {...} }
-                const overlayDataUrl = overlay && typeof overlay.dataUrl === 'string' ? overlay.dataUrl : undefined;
-
-                // 4) Voice handling (don't change existing selection logic—just make sure we send strings)
-                const voiceId = (currentVoiceId || '').toString();
-                const wantVoiceover = !!currentVoiceId; // keep existing toggle, but normalize to boolean
-
-                // 5) Background (use what the page already computed)
-                const bg = background; // must be whatever your UI already sets up
-
-                // 6) Build payload with correct conditional logic
-                let payload = {
-                  mode: 'quote',
-                  template: 'calm',
-                  durationSec: 8,
-                  voiceover: wantVoiceover,
-                  includeBottomCaption: true,
-                  wantAttribution: true,
-                  watermark: true,
-
-                  // strings only
-                  text: quoteText,
-                  ttsText: wantVoiceover ? quoteText : '',
-
-                  // keep existing background contract
-                  background: bg,
-
-                  // pass voice id only if voiceover is on (string type)
-                  voiceId: wantVoiceover && voiceId ? voiceId : undefined,
-                };
-
-                // IMPORTANT: caption vs overlay – never send caption as an object
-                if (overlayDataUrl) {
-                  payload.captionImage = overlayDataUrl;            // string data URL
-                  // do NOT include payload.caption at all when overlay is present
-                } else {
-                  payload.caption = sizePx;                  // number (not object)
-                  payload.captionMode = 'static';    // keep if you already send it
-                  // Only include style if your backend expects it when no overlay:
-                  payload.captionStyle = {
-                    placement: captionStyle.placement || 'bottom',        // e.g. 'top' | 'center' | 'bottom'
-                    align: 'center',                // if you have it
-                    opacity: clamp(captionStyle.opacity || 0.8, 0, 1),            // 0..1 if applicable
-                    weight: captionStyle.weight || 'bold',              // 'normal' | 'bold'
-                    font: captionStyle.font || 'DejaVu Sans Local',                  // 'system' | 'bold' etc if used by API
-                  };
-                }
-
-                // remove undefined keys so contract stays clean
-                payload = stripUndefined(payload);
-
-                // 7) Log minimal, type-focused debug
-                console.debug('[render] payload.types', {
-                  caption_type: typeof payload.caption,               // expect 'number' when no overlay, 'undefined' when overlay
-                  captionImage_type: typeof payload.captionImage,     // 'string' when overlay present or 'undefined'
-                  text_type: typeof payload.text,                     // 'string'
-                  ttsText_type: typeof payload.ttsText,               // 'string'
-                  voiceId_type: typeof payload.voiceId,               // 'string' or 'undefined'
-                  hasOverlay: !!overlayDataUrl,                       // boolean for debugging
-                  caption_value: payload.caption,                     // show actual value
-                  mappedSizePx: sizePx,                            // show mapped font size
-                });
-
-                // --- END strictly-typed payload construction ---
-
-                console.log('[render] Final payload:', payload);
-                console.log('[render] Background object:', background);
-                console.log('[render] Current voice ID:', currentVoiceId);
-
-                // Final validation before sending
-                if (background.url && background.type) {
-                    const url = background.url.toLowerCase();
-                    const isVideoUrl = ['mp4', 'mov', 'avi', 'mkv', 'webm', 'm4v'].some(ext => url.includes(`.${ext}`));
-                    const isImageUrl = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'].some(ext => url.includes(`.${ext}`));
-                    
-                    if (background.type === 'video' && !isVideoUrl) {
-                        console.error('[validation] Type mismatch: type is video but URL is not a video');
-                        alert('Error: Selected asset type does not match URL. Please try selecting a different asset.');
-                        return;
-                    }
-                    if (background.type === 'image' && !isImageUrl) {
-                        console.error('[validation] Type mismatch: type is image but URL is not an image');
-                        alert('Error: Selected asset type does not match URL. Please try selecting a different asset.');
-                        return;
-                    }
-                }
-
-                const data = await apiFetch('/shorts/create', {
-                    method: 'POST',
-                    body: payload
-                });
-
-                if (data.success) {
-                    // Success! Show the result
-                    const result = data.data;
-                    alert(`Short created successfully! Job ID: ${result.jobId}`);
-                    
-                    // Redirect to My Shorts page so user sees result immediately
-                    try { window.location.href = `/my-shorts.html?new=${encodeURIComponent(result.jobId)}`; } catch {}
-                    
-                    // You could redirect to a results page or show the video here
-                    // For now, we'll just show success
-                    console.log('Render result:', result);
-                } else {
-                    alert(`Render failed: ${data.error || 'Unknown error'}`);
-                }
-            } catch (error) {
-                console.error('Render error:', error); // includes stack trace
-                
-                const hint = summarizeCreateError(error);
-                alert(`Render failed${hint ? ': ' + hint : ': ' + (error?.message || 'Unknown error')}`);
-            } finally {
-                renderBtn.disabled = false;
-                renderBtn.textContent = originalText;
-            }
+            showLegacyDisabled('asset-error');
         }
 
         // Remix quote function
         async function remixQuote(mode) {
-            if (!currentQuote) return;
-            if (!window.auth?.currentUser) {
-                showError('quote-error', 'Please log in to remix quotes');
-                return;
-            }
-            
-            setLoading('generate-quote-btn', true);
-            hideError('quote-error');
-            
-            try {
-                const { apiFetch } = await import('./api.mjs');
-                const data = await apiFetch('/quotes/remix', {
-                    method: 'POST',
-                    body: {
-                        // Prefer live textarea content so users don't need to hit Save first
-                        originalText: (document.getElementById('quote-edit')?.value || currentQuote.text || '').trim(),
-                        mode,
-                        targetTone: mode === 'tone_shift' ? document.getElementById('quote-tone').value : undefined,
-                        maxChars: 120
-                    }
-                });
-                
-                if (data.ok) {
-                    currentQuote = data.data.quote;
-                    displayQuote(currentQuote);
-                    decRegens();
-                    // Keep the editor visible with new text
-                    try {
-                      document.getElementById('quote-text-display').classList.add('hidden');
-                      document.getElementById('quote-edit').classList.remove('hidden');
-                      document.getElementById('save-quote-btn').classList.remove('hidden');
-                      document.getElementById('cancel-quote-btn').classList.remove('hidden');
-                      document.getElementById('edit-quote-btn').classList.add('hidden');
-                    } catch {}
-                } else {
-                    showError('quote-error', data.reason || 'Failed to remix quote');
-                }
-            } catch (error) {
-                showError('quote-error', error.message || 'Network error');
-            } finally {
-                setLoading('generate-quote-btn', false);
-            }
+            showLegacyDisabled('quote-error');
         }
 
         // AI Image generation
@@ -2595,10 +2272,8 @@
               const imgEl = document.querySelector('#ai-result-preview img');
               const url = imgEl?.getAttribute('src');
               if (!url) return;
-              const { apiFetch } = await import('./api.mjs');
-              // Store the image in storage and get a tokenized URL
-              const reg = await apiFetch('/uploads/register', { method:'POST', body:{ imageUrl: url } });
-              const savedUrl = reg?.data?.url || url;
+              const savedUrl = url;
+              showLegacyDisabled('asset-error');
               // Mark selection locally and update preview immediately
               selectedAsset = { id: `ai-${Date.now()}`, provider: 'ai', query: (document.getElementById('ai-prompt')?.value||'').trim(), fileUrl: savedUrl, thumbUrl: savedUrl, width: 1080, height: 1920 };
               updateRenderPreview();
@@ -2666,16 +2341,8 @@
             document.getElementById('cancel-quote-btn').classList.add('hidden');
             document.getElementById('edit-quote-btn').classList.remove('hidden');
             // do not reset regen counter here
-            // Persist immediately so it can be used for the short without extra clicks
-            (async ()=>{
-              try {
-                const { apiFetch } = await import('./api.mjs');
-                await apiFetch('/quotes/save', { method:'POST', body:{ text: input, author: '', toneTag: (document.getElementById('quote-tone')?.value || 'default') } });
-                try { window.VAIFORM = window.VAIFORM || {}; window.VAIFORM.currentQuoteText = input; } catch {}
-              } catch (e) {
-                console.warn('Use This Text save failed:', e?.message || e);
-              }
-            })();
+            try { window.VAIFORM = window.VAIFORM || {}; window.VAIFORM.currentQuoteText = input; } catch {}
+            showLegacyDisabled('quote-error');
             
             // Trigger caption preview immediately after using text
             try {
@@ -2776,14 +2443,8 @@
             updateRenderPreview();
             updateCaptionOverlay(newText, true);
 
-            // Persist to backend so it can be used in the short without CORS issues
-            try {
-              const { apiFetch } = await import('./api.mjs');
-              await apiFetch('/quotes/save', { method: 'POST', body: { text: newText, author: '', toneTag: (document.getElementById('quote-tone')?.value || 'default') } });
-              try { window.VAIFORM = window.VAIFORM || {}; window.VAIFORM.currentQuoteText = newText; } catch {}
-            } catch (e) {
-              console.warn('Quote save failed (non-fatal):', e?.message || e);
-            }
+            try { window.VAIFORM = window.VAIFORM || {}; window.VAIFORM.currentQuoteText = newText; } catch {}
+            showLegacyDisabled('quote-error');
         };
 
         // Character counter for input
@@ -2891,6 +2552,7 @@
         document.addEventListener('DOMContentLoaded', () => {
             // Initialize theme first
             initTheme();
+            applyLegacyFeatureGates();
             
             // Wait for auth system to be ready
             const checkAuth = () => {
@@ -2919,10 +2581,7 @@
                             // Update render button state after auth changes
                             updateRenderButtonState();
                             
-                            // Load voices with a small delay to ensure auth is fully ready
-                            setTimeout(() => {
-                                loadVoices();
-                            }, 500);
+                            // Voice loading is gated in default runtime hardening.
                         } catch (e) {
                             console.error("Failed to refresh credits:", e);
                         }
