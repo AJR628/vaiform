@@ -43,21 +43,22 @@ Important exclusion rule:
 ## 3) Active (Default-Reachable + Caller-Backed)
 
 Confirmed caller-backed default surfaces include:
-- `/credits`, `/api/credits` via dist pages (`web/dist/js/my-images.js:132`, `web/dist/js/my-shorts.js:131`, `web/dist/creative.html:1148`).
-- `/generate`, `/api/generate` via creative/frontend (`web/dist/frontend.js:490`, `web/dist/creative.html:2443`).
-- `/job/:jobId`, `/api/job/:jobId` via my-images (`web/dist/js/my-images.js:378`).
+- `/api/credits` via dist pages (`web/dist/js/my-images.js:132`, `web/dist/js/my-shorts.js:131`, `web/dist/creative.html:1148`) with `apiFetch("/credits") -> /api/credits` (`web/dist/api.mjs:152`).
+- `/api/generate` via creative/frontend (`web/dist/frontend.js:490`, `web/dist/creative.html:2443`) with `apiFetch("/generate") -> /api/generate` (`web/dist/api.mjs:152`).
+- `/api/job/:jobId` via my-images (`web/dist/js/my-images.js:378`) with `apiFetch("/job/:jobId") -> /api/job/:jobId` (`web/dist/api.mjs:152`).
 - `/checkout/start` via pricing (`web/dist/js/pricing.js:138`; mounted at `src/routes/checkout.routes.js:16`).
 - `/api/shorts/mine`, `/api/shorts/:jobId` via my-shorts (`web/dist/js/my-shorts.js:35`, `web/dist/js/my-shorts.js:172`).
 - `/api/assets/options` via creative (`web/dist/creative.html:1273`).
 - `/api/assets/ai-images` via creative (`web/dist/creative.html:2552`) (handler still responds `410` by design: `src/routes/assets.routes.js:12-17`).
 - `/api/caption/preview` via dynamic import path (`web/dist/creative.html:1043`, `web/dist/js/caption-preview.js:82`).
-- `/enhance`, `/api/enhance` via frontend (`web/dist/frontend.js:272`).
+- `/api/enhance` via frontend (`web/dist/frontend.js:272`) with `apiFetch("/enhance") -> /api/enhance` (`web/dist/api.mjs:152`).
 - `/cdn` via creative image proxying (`web/dist/creative.html:2576`; mounted `src/app.js:257`).
 
 ## 4) Default-Reachable but Not Caller-Backed (Attack Surface)
 
 Reachable under defaults, but no proven dist-entrypoint caller:
 - `/api/limits/usage`, `/limits/usage` (`src/app.js:279-280`, `src/routes/limits.routes.js:7`).
+- `/credits`, `/enhance`, `/generate`, `/job/:jobId` are root aliases not default caller-backed from dist `apiFetch` flows; `/credits` root use is conditional fallback only (`web/dist/api.mjs:156-163`).
 - `/creative` route itself (dist nav points to `/creative.html`, not `/creative`) (`web/dist/components/header.js:13`).
 - `/api/user/me` and `/api/user/setup` router route (`src/routes/user.routes.js:12-67`) (inline alias remains shadowed by router order: `src/app.js:321`, `src/app.js:330-333`).
 - `/api/users/ensure` (`src/routes/users.routes.js:14-100`) (dist `firebaseClient` writes Firestore directly: `web/dist/js/firebaseClient.js:23-53`).
