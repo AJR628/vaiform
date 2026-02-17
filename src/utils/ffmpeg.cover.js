@@ -1,7 +1,7 @@
-import { runFFmpeg } from "./ffmpeg.js";
+import { runFFmpeg } from './ffmpeg.js';
 
 export async function extractCoverJpeg({ inPath, outPath, durationSec, width = 720 }) {
-  if (!inPath || !outPath) throw new Error("inPath and outPath are required");
+  if (!inPath || !outPath) throw new Error('inPath and outPath are required');
   const attempts = [];
   const mid = durationSec ? Math.max(0.1, durationSec * 0.5) : 0.5;
   const early = durationSec ? Math.min(1.0, Math.max(0.05, durationSec * 0.1)) : 0.2;
@@ -10,11 +10,16 @@ export async function extractCoverJpeg({ inPath, outPath, durationSec, width = 7
   for (const sec of attempts) {
     try {
       const args = [
-        "-ss", String(sec),
-        "-i", inPath,
-        "-frames:v", "1",
-        "-vf", `scale='if(gt(a,1),${width},-2)':'if(gt(a,1),-2,${width})'`,
-        "-q:v", "3",
+        '-ss',
+        String(sec),
+        '-i',
+        inPath,
+        '-frames:v',
+        '1',
+        '-vf',
+        `scale='if(gt(a,1),${width},-2)':'if(gt(a,1),-2,${width})'`,
+        '-q:v',
+        '3',
         outPath,
       ];
       await runFFmpeg(args);
@@ -27,5 +32,3 @@ export async function extractCoverJpeg({ inPath, outPath, durationSec, width = 7
 }
 
 export default { extractCoverJpeg };
-
-

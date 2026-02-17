@@ -1,6 +1,6 @@
 # Vaiform v1 Launch Scope - Single Source of Truth
 
-**Purpose**: This document defines what Vaiform v1 *is* at launch. Everything documented here should be preserved. Anything not listed can be safely removed later.
+**Purpose**: This document defines what Vaiform v1 _is_ at launch. Everything documented here should be preserved. Anything not listed can be safely removed later.
 
 **Last Updated**: December 2025
 
@@ -11,6 +11,7 @@
 ### Story Generation & Planning
 
 **POST /api/story/start**
+
 - **File**: `src/routes/story.routes.js`
 - **Handler**: `createStorySession`
 - **Services**: `story.service.js → createStorySession()`
@@ -18,9 +19,10 @@
 - **Purpose**: Create new story session from article/link/idea
 
 **POST /api/story/generate**
+
 - **File**: `src/routes/story.routes.js`
 - **Handler**: `generateStory`
-- **Services**: 
+- **Services**:
   - `story.service.js → generateStory()`
   - `story.llm.service.js → generateStoryFromInput()` (OpenAI)
   - `link.extract.js → extractContentFromUrl()` (for links)
@@ -28,15 +30,17 @@
 - **Purpose**: Generate 4-8 sentence script from input
 
 **POST /api/story/update-script**
+
 - **File**: `src/routes/story.routes.js`
 - **Handler**: `updateStorySentences`
 - **Services**: `story.service.js → updateStorySentences()`
 - **Purpose**: User edits script manually
 
 **POST /api/story/plan**
+
 - **File**: `src/routes/story.routes.js`
 - **Handler**: `planShots`
-- **Services**: 
+- **Services**:
   - `story.service.js → planShots()`
   - `story.llm.service.js → planVisualShots()` (OpenAI)
 - **Middleware**: `requireAuth`, `enforceScriptDailyCap(300)`
@@ -45,6 +49,7 @@
 ### Clip Search & Selection
 
 **POST /api/story/search**
+
 - **File**: `src/routes/story.routes.js`
 - **Handler**: `searchShots`
 - **Services**:
@@ -56,6 +61,7 @@
 - **Purpose**: Search clips for all shots
 
 **POST /api/story/search-shot**
+
 - **File**: `src/routes/story.routes.js`
 - **Handler**: `searchClipsForShot`
 - **Services**: `story.service.js → searchClipsForShot()`
@@ -63,6 +69,7 @@
 - **Purpose**: Search/paginate clips for single shot
 
 **POST /api/story/update-shot**
+
 - **File**: `src/routes/story.routes.js`
 - **Handler**: `updateShotSelectedClip`
 - **Services**: `story.service.js → updateShotSelectedClip()`
@@ -71,18 +78,21 @@
 ### Beat Editing
 
 **POST /api/story/insert-beat**
+
 - **File**: `src/routes/story.routes.js`
 - **Handler**: `insertBeatWithSearch`
 - **Services**: `story.service.js → insertBeatWithSearch()`
 - **Purpose**: Insert new sentence + auto-search clips
 
 **POST /api/story/delete-beat**
+
 - **File**: `src/routes/story.routes.js`
 - **Handler**: `deleteBeat`
 - **Services**: `story.service.js → deleteBeat()`
 - **Purpose**: Delete sentence + shot
 
 **POST /api/story/update-beat-text**
+
 - **File**: `src/routes/story.routes.js`
 - **Handler**: `updateBeatText`
 - **Services**: `story.service.js → updateBeatText()`
@@ -91,12 +101,14 @@
 ### Timeline & Captions
 
 **POST /api/story/timeline**
+
 - **File**: `src/routes/story.routes.js`
 - **Handler**: `buildTimeline`
 - **Services**: `story.service.js → buildTimeline()`
 - **Purpose**: Build stitched timeline
 
 **POST /api/story/captions**
+
 - **File**: `src/routes/story.routes.js`
 - **Handler**: `generateCaptionTimings`
 - **Services**: `story.service.js → generateCaptionTimings()`
@@ -105,15 +117,17 @@
 ### Final Render
 
 **POST /api/story/render**
+
 - **File**: `src/routes/story.routes.js`
 - **Handler**: `renderStory`
-- **Services**: 
+- **Services**:
   - `story.service.js → renderStory()`
   - `ffmpeg.video.js → renderShortVideo()`
   - `tts.service.js → synthVoice()` (ElevenLabs/OpenAI)
 - **Purpose**: Render individual segments
 
 **POST /api/story/finalize**
+
 - **File**: `src/routes/story.routes.js`
 - **Handler**: `finalizeStory`
 - **Services**: `story.service.js → finalizeStory()` (runs full pipeline)
@@ -122,6 +136,7 @@
 - **Purpose**: One-click render from any state
 
 **GET /api/story/:sessionId**
+
 - **File**: `src/routes/story.routes.js`
 - **Handler**: `getStorySession`
 - **Services**: `story.service.js → getStorySession()`
@@ -134,12 +149,14 @@
 > **Note**: This feature is documented for completeness but is **not part of the core v1 product**. The core product is the Article Explainer pipeline. Studio routes can be removed after launch if not actively used.
 
 **POST /api/studio/start**
+
 - **File**: `src/routes/studio.routes.js`
 - **Handler**: `startStudio`
 - **Services**: `studio.service.js → startStudio()`
 - **Purpose**: Create studio session
 
 **POST /api/studio/quote**
+
 - **File**: `src/routes/studio.routes.js`
 - **Handler**: `generateQuoteCandidates`
 - **Services**:
@@ -151,6 +168,7 @@
 - **Purpose**: Generate quote candidates
 
 **POST /api/studio/image**
+
 - **File**: `src/routes/studio.routes.js`
 - **Handler**: `generateImageCandidates`
 - **Services**:
@@ -161,6 +179,7 @@
 - **Purpose**: Generate background image candidates
 
 **POST /api/studio/video**
+
 - **File**: `src/routes/studio.routes.js`
 - **Handler**: `generateVideoCandidates`
 - **Services**:
@@ -170,12 +189,14 @@
 - **Purpose**: Generate background video candidates
 
 **POST /api/studio/choose**
+
 - **File**: `src/routes/studio.routes.js`
 - **Handler**: `chooseCandidate`
 - **Services**: `studio.service.js → chooseCandidate()`
 - **Purpose**: User selects quote/image/video
 
 **POST /api/studio/finalize**
+
 - **File**: `src/routes/studio.routes.js`
 - **Handler**: `finalizeStudio` or `finalizeStudioMulti`
 - **Services**:
@@ -188,18 +209,21 @@
 - **Purpose**: Render final short (9:16, 1:1, 16:9)
 
 **POST /api/studio/remix**
+
 - **File**: `src/routes/studio.routes.js`
 - **Handler**: `createRemix`
 - **Services**: `studio.service.js → createRemix()`
 - **Purpose**: Create remix from existing render
 
 **GET /api/studio/:studioId**
+
 - **File**: `src/routes/studio.routes.js`
 - **Handler**: `getStudio`
 - **Services**: `studio.service.js → getStudio()`
 - **Purpose**: Fetch studio session
 
 **GET /api/studio/events/:studioId**
+
 - **File**: `src/routes/studio.routes.js`
 - **Purpose**: Server-Sent Events for progress updates
 
@@ -208,6 +232,7 @@
 ## Core Feature: Karaoke Captions (Overlay System)
 
 **POST /api/caption/preview**
+
 - **File**: `src/routes/caption.preview.routes.js`
 - **Handler**: V3 Raster mode (SSOT)
 - **Services**: `renderCaptionRaster()` (in-file)
@@ -216,11 +241,13 @@
 - **Returns**: PNG data URL + positioning metadata
 
 **POST /api/caption/render**
+
 - **File**: `src/routes/caption.render.routes.js`
 - **Handler**: Render route (delegates to preview)
 - **Purpose**: Final caption render (currently redirects to preview)
 
 **POST /api/preview/caption**
+
 - **File**: `src/routes/preview.routes.js`
 - **Handler**: Legacy preview endpoint
 - **Services**: `caption/renderCaptionImage.js`
@@ -232,22 +259,25 @@
 ## Core Feature: Text-to-Speech (Voiceover)
 
 **POST /api/tts/preview**
+
 - **File**: `src/routes/tts.routes.js`
 - **Handler**: `ttsPreview`
 - **Controller**: `tts.controller.js → ttsPreview()`
-- **Services**: 
+- **Services**:
   - `tts.service.js → synthVoice()`
   - `elevenlabs.adapter.js → elevenLabsSynthesize()`
   - OpenAI TTS (fallback)
 - **Purpose**: Generate TTS audio preview
 
 **GET /api/voice/voices**
+
 - **File**: `src/routes/voice.routes.js`
 - **Handler**: `getVoices`
 - **Controller**: `voice.controller.js → getVoices()`
 - **Purpose**: List available voices
 
 **POST /api/voice/preview**
+
 - **File**: `src/routes/voice.routes.js`
 - **Handler**: `previewVoice`
 - **Controller**: `voice.controller.js → previewVoice()`
@@ -260,6 +290,7 @@
 ### Checkout
 
 **POST /checkout/start**
+
 - **File**: `src/routes/checkout.routes.js`
 - **Handler**: `startPlanCheckout`
 - **Controller**: `checkout.controller.js → startPlanCheckout()`
@@ -269,18 +300,21 @@
 - **Plans**: `creator` or `pro`, `monthly` or `onetime`
 
 **POST /checkout/session** (Legacy)
+
 - **File**: `src/routes/checkout.routes.js`
 - **Handler**: `createCheckoutSession`
 - **Controller**: `checkout.controller.js → createCheckoutSession()`
 - **Purpose**: One-time credit pack purchase
 
 **POST /checkout/subscription** (Legacy)
+
 - **File**: `src/routes/checkout.routes.js`
 - **Handler**: `createSubscriptionSession`
 - **Controller**: `checkout.controller.js → createSubscriptionSession()`
 - **Purpose**: Recurring subscription
 
 **POST /checkout/portal**
+
 - **File**: `src/routes/checkout.routes.js`
 - **Handler**: `createBillingPortalSession`
 - **Controller**: `checkout.controller.js → createBillingPortalSession()`
@@ -289,6 +323,7 @@
 ### Webhook
 
 **POST /stripe/webhook**
+
 - **File**: `src/routes/stripe.webhook.js`
 - **Handler**: Webhook handler (raw body)
 - **Services**: `credit.service.js → grantCreditsAndUpdatePlan()`
@@ -301,6 +336,7 @@
 ### Credits
 
 **GET /credits**
+
 - **File**: `src/routes/credits.routes.js`
 - **Handler**: `getCredits`
 - **Controller**: `credits.controller.js → getCredits()`
@@ -308,11 +344,13 @@
 - **Purpose**: Get user credit balance
 
 **GET /credits/balance** (Legacy - Can Be Removed)
+
 - **File**: `src/routes/credits.routes.js`
 - **Handler**: `balance`
 - **Purpose**: Query balance by email
 
 **POST /credits/grant** (Legacy/Admin - Can Be Removed)
+
 - **File**: `src/routes/credits.routes.js`
 - **Handler**: `grant`
 - **Purpose**: Grant credits manually
@@ -322,6 +360,7 @@
 ## Core Feature: Auth & User Management
 
 **POST /api/users/ensure**
+
 - **File**: `src/routes/users.routes.js`
 - **Handler**: Ensure user doc exists
 - **Middleware**: `requireAuth`
@@ -329,6 +368,7 @@
 - **Security**: Only trusts auth token (not request body)
 
 **POST /api/user/setup**
+
 - **File**: `src/routes/user.routes.js`
 - **Handler**: `ensureFreeUser`
 - **Services**: `user.service.js → ensureFreeUser()`
@@ -336,6 +376,7 @@
 - **Purpose**: Setup user after signup
 
 **GET /api/user/me**
+
 - **File**: `src/routes/user.routes.js`
 - **Handler**: `getUserData`
 - **Services**: `user.service.js → getUserData()`
@@ -347,6 +388,7 @@
 ## Core Feature: My Shorts Library
 
 **GET /api/shorts/mine**
+
 - **File**: `src/routes/shorts.routes.js`
 - **Handler**: `getMyShorts`
 - **Controller**: `shorts.controller.js → getMyShorts()`
@@ -354,6 +396,7 @@
 - **Purpose**: List the current user's rendered shorts for the "My Shorts" page
 
 **GET /api/shorts/:jobId**
+
 - **File**: `src/routes/shorts.routes.js`
 - **Handler**: `getShortById`
 - **Middleware**: `requireAuth`
@@ -366,6 +409,7 @@
 > **Note**: These routes support the Quote-to-Short Studio feature and are **not part of the core v1 product**.
 
 **POST /api/assets/options**
+
 - **File**: `src/routes/assets.routes.js`
 - **Handler**: `getAssetsOptions`
 - **Controller**: `assets.controller.js → getAssetsOptions()`
@@ -373,6 +417,7 @@
 - **Purpose**: Get asset options for quote
 
 **POST /api/assets/ai-images**
+
 - **File**: `src/routes/assets.routes.js`
 - **Handler**: `generateAiImages`
 - **Controller**: `assets.controller.js → generateAiImages()`
@@ -380,6 +425,7 @@
 - **Purpose**: Generate AI images (Pro only)
 
 **POST /api/quotes/generate-quote**
+
 - **File**: `src/routes/quotes.routes.js`
 - **Handler**: `generateQuote`
 - **Controller**: `quotes.controller.js → generateQuote()`
@@ -387,6 +433,7 @@
 - **Purpose**: Generate quote candidates
 
 **POST /api/quotes/remix**
+
 - **File**: `src/routes/quotes.routes.js`
 - **Handler**: `remixQuote`
 - **Controller**: `quotes.controller.js → remixQuote()`
@@ -400,6 +447,7 @@
 > **Note**: These routes are legacy endpoints and are **not part of the core v1 product**. The core product uses the Article Explainer pipeline (`/api/story/*`) for creation.
 
 **POST /api/shorts/create**
+
 - **File**: `src/routes/shorts.routes.js`
 - **Handler**: `createShort`
 - **Controller**: `shorts.controller.js → createShort()`
@@ -408,6 +456,7 @@
 - **Purpose**: Legacy short creation endpoint not used by the main Article Explainer flow
 
 **DELETE /api/shorts/:jobId**
+
 - **File**: `src/routes/shorts.routes.js`
 - **Handler**: `deleteShort`
 - **Middleware**: `requireAuth`
@@ -418,28 +467,34 @@
 ## Middleware (Critical Guards)
 
 **requireAuth** (`src/middleware/requireAuth.js`)
+
 - Verifies Firebase Auth token
 - Sets `req.user = { uid, email }`
 
 **enforceCreditsForRender()** (`src/middleware/planGuards.js`)
+
 - Checks user has >= 20 credits before render
 - Does NOT spend credits (spending happens after success)
 - Returns 402 if insufficient
 
 **enforceScriptDailyCap(300)** (`src/middleware/planGuards.js`)
+
 - Limits script generation to 300/day per user
 - Uses Firestore transaction for atomic increment
 - Returns 429 if limit reached
 
 **enforceWatermarkFlag()** (`src/middleware/planGuards.js`)
+
 - Forces watermark for free users
 - Sets `req.body.forceWatermark = true`
 
 **blockAIQuotesForFree()** (`src/middleware/planGuards.js`)
+
 - Blocks AI quote generation for free users
 - Requires `req.user.isMember = true`
 
 **planGuard('pro')** (`src/middleware/planGuard.js`)
+
 - Requires specific plan tier
 - Used for Pro-only features (AI images - non-core feature)
 
@@ -448,6 +503,7 @@
 ## Key Services (Business Logic)
 
 **story.service.js**
+
 - `createStorySession()` - Initialize session
 - `generateStory()` - LLM script generation
 - `planShots()` - LLM visual planning
@@ -456,6 +512,7 @@
 - `finalizeStory()` - Full pipeline orchestration
 
 **studio.service.js**
+
 - `startStudio()` - Create studio session
 - `generateQuoteCandidates()` - Quote generation
 - `generateImageCandidates()` - Image search
@@ -463,28 +520,34 @@
 - `finalizeStudioMulti()` - Multi-format rendering
 
 **shorts.service.js**
+
 - `createShortService()` - Legacy short creation (used by studio)
 
 **tts.service.js**
+
 - `synthVoice()` - TTS synthesis (ElevenLabs/OpenAI)
 - In-memory caching (15min TTL)
 - Rate limit handling (429 backoff)
 
 **credit.service.js**
+
 - `spendCredits(uid, amount)` - Atomic credit deduction
 - `grantCredits(uid, amount)` - Add credits
 - `getCreditsForPlan(plan)` - Plan → credits mapping
 - `RENDER_CREDIT_COST = 20` - Cost per render
 
 **quote.engine.js**
+
 - `getQuote()` - Quote generation orchestrator
 - LLM → curated fallback
 
 **stock.video.provider.js**
+
 - `resolveStockVideo()` - Multi-provider video search
 - Pexels → NASA → Pixabay fallback
 
 **story.llm.service.js**
+
 - `generateStoryFromInput()` - Script generation (OpenAI)
 - `planVisualShots()` - Visual planning (OpenAI)
 - Link extraction for article mode
@@ -494,6 +557,7 @@
 ## FFmpeg Pipeline (Critical Path)
 
 **ffmpeg.video.js**
+
 - `renderShortVideo()` - Main render orchestrator
 - `renderAllFormats()` - Multi-format (9:16, 1:1, 16:9)
 - `exportSocialImage()` - Static social image
@@ -503,6 +567,7 @@
 - Filter graph labels: `[0:v]...[vout]`, `[aout]`
 
 **Filter Complexity Rules**:
+
 - Video chain: `[0:v]` → `[vout]`
 - Audio chain: `[bg][tts]amix→[aout]` (BG+VO) or `[tts1][sil]concat→[aout]` (VO only) or `anullsrc→[aout]` (silence)
 - Never remove labels
@@ -513,33 +578,41 @@
 ## Constants & Limits
 
 **Font Ranges**:
+
 - `ABS_MIN_FONT = 32px`
 - `ABS_MAX_FONT = 120px` (preview), `200px` (render)
 
 **Safe Margins**:
+
 - Top: 10% (0.10)
 - Bottom: 10% (0.10)
 
 **Canvas Dimensions**:
+
 - Portrait: 1080×1920
 
 **Credit Costs**:
+
 - Render: 20 credits (`RENDER_CREDIT_COST`)
 - Welcome credits: 100 (new users via `/api/users/ensure`)
 
 **Rate Limits**:
+
 - Script generation: 300/day per user
 
 **Plan Tiers**:
+
 - `free` - 100 welcome credits, watermarked
 - `creator` - Monthly/one-time, no watermark
 - `pro` - Monthly/one-time, AI features
 
 **Plan Credits** (`PLAN_CREDITS_MAP`):
+
 - `creator`: 2500 credits
 - `pro`: 5000 credits
 
 **Legacy Behavior (No Longer Used)**:
+
 - Free shorts: 4 lifetime limit - This limit exists in code (`freeShortsUsed`, `enforceFreeLifetimeShortLimit`) but is **not wired** into any active routes. The current free experience uses the credit system (100 welcome credits, 20 credits per render).
 
 ---
@@ -547,11 +620,13 @@
 ## Environment Variables (Required)
 
 **Auth**:
+
 - `FIREBASE_PROJECT_ID`
 - `FIREBASE_PRIVATE_KEY`
 - `FIREBASE_CLIENT_EMAIL`
 
 **Payments**:
+
 - `STRIPE_SECRET_KEY`
 - `STRIPE_WEBHOOK_SECRET`
 - `STRIPE_PRICE_CREATOR_SUB`
@@ -560,19 +635,23 @@
 - `STRIPE_PRICE_PRO_PASS`
 
 **LLM**:
+
 - `OPENAI_API_KEY`
 - `OPENAI_MODEL` (default: `gpt-4o-mini`)
 
 **TTS**:
+
 - `TTS_PROVIDER` (`openai` or `elevenlabs`)
 - `ELEVENLABS_API_KEY`
 - `OPENAI_TTS_MODEL` (default: `gpt-4o-mini-tts`)
 
 **Media Providers**:
+
 - `PEXELS_API_KEY`
 - `NASA_API_KEY`
 
 **Frontend**:
+
 - `FRONTEND_URL` (default: `https://vaiform.com`)
 
 ---
@@ -580,6 +659,7 @@
 ## Response Envelope (API Standard)
 
 **Success (200)**:
+
 ```json
 {
   "success": true,
@@ -588,6 +668,7 @@
 ```
 
 **Error (4xx/5xx)**:
+
 ```json
 {
   "success": false,
@@ -597,6 +678,7 @@
 ```
 
 **Common Error Codes**:
+
 - `AUTH_REQUIRED` (401)
 - `INSUFFICIENT_CREDITS` (402)
 - `MEMBERSHIP_REQUIRED` (402)
@@ -612,19 +694,23 @@
 ### ✅ Core Features (Keep)
 
 **Article Explainer Pipeline**:
+
 - All `/api/story/*` routes (article explainer)
 - `story.service.js`, `story.llm.service.js` (core services)
 
 **Caption System**:
+
 - `/api/caption/preview` (V3 raster mode)
 - `/api/caption/render`
 
 **Text-to-Speech**:
+
 - `/api/tts/preview` (voiceover)
 - `/api/voice/voices`, `/api/voice/preview`
 - `tts.service.js` (core service)
 
 **Payments & Credits**:
+
 - `/checkout/*` (especially `/checkout/start`)
 - `/stripe/webhook`
 - `/credits` (GET endpoint - "get my credits")
@@ -633,45 +719,55 @@
 - `credit.service.js` (core service)
 
 **My Shorts Library**:
+
 - `GET /api/shorts/mine` and `GET /api/shorts/:jobId` (My Shorts Library)
 
 **Middleware**:
+
 - `requireAuth`
 - `enforceCreditsForRender`
 - `enforceScriptDailyCap`
 - `enforceWatermarkFlag` (if still used in active routes)
 
 **Render Pipeline**:
+
 - `ffmpeg.video.js` (critical render orchestrator)
 
 ### 🚧 Non-Core Features (Candidates for Removal After Launch)
 
 **Quote-to-Short Studio**:
+
 - All `/api/studio/*` routes
 - `studio.service.js`
 
 **Quote & Asset Helpers**:
+
 - `/api/quotes/*` routes
 - `/api/assets/*` routes (including AI images)
 - `quote.engine.js`, `llmQuotes.service.js`, `quotes.curated.js`
 
 **Legacy Shorts**:
+
 - `POST /api/shorts/create` (legacy creation endpoint)
 - `DELETE /api/shorts/:jobId` (optional cleanup)
 - `shorts.service.js` (used by legacy creation)
 
 **Legacy Credits Endpoints**:
+
 - `/credits/balance` (legacy query by email)
 - `/credits/grant` (admin manual grant)
 
 **Non-Core Middleware**:
+
 - `planGuard('pro')` (only used for AI images - non-core)
 - `blockAIQuotesForFree()` (only used for quotes - non-core)
 
 **Legacy Caption Modes**:
+
 - `/api/preview/caption` (v1/v2 legacy formats, non-V3 raster)
 
 ### ❌ Can Delete (Not Documented Above)
+
 - Old experimental routes
 - Unused middleware
 - Test/debug routes (unless in production)
@@ -679,4 +775,3 @@
 ---
 
 **End of Vaiform v1 Scope Document**
-

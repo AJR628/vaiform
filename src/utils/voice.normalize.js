@@ -10,12 +10,12 @@
 export function norm01(value) {
   const num = Number(value);
   if (isNaN(num)) return 0;
-  
+
   // If value is > 1, assume it's 0-100 scale and convert to 0-1
   if (num > 1) {
     return Math.max(0, Math.min(1, num / 100));
   }
-  
+
   // Otherwise, clamp to 0-1 range
   return Math.max(0, Math.min(1, num));
 }
@@ -29,9 +29,9 @@ export function normalizeVoiceSettings(settings = {}) {
     stability: norm01(settings.stability ?? settings.stability ?? 0.5),
     similarity_boost: norm01(settings.similarity_boost ?? settings.similarityBoost ?? 0.75),
     style: norm01(settings.style ?? 0),
-    use_speaker_boost: Boolean(settings.use_speaker_boost ?? settings.useSpeakerBoost ?? true)
+    use_speaker_boost: Boolean(settings.use_speaker_boost ?? settings.useSpeakerBoost ?? true),
   };
-  
+
   return normalized;
 }
 

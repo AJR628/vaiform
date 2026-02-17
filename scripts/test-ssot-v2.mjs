@@ -22,9 +22,9 @@ const checks = [
       'splitLines: lines',
       'lineSpacingPx: lineSpacingPx',
       'yPxFirstLine: yPxFirstLine',
-      'totalTextH: totalTextH'
+      'totalTextH: totalTextH',
     ],
-    description: 'Server returns SSOT v2 with all required fields'
+    description: 'Server returns SSOT v2 with all required fields',
   },
   {
     file: 'src/render/overlay.helpers.js',
@@ -32,29 +32,29 @@ const checks = [
       'const hasV2 = ssotVersion === 2',
       'willUseSSOT: true',
       "mode: 'ssot'",
-      "xExpr: `(W - text_w)/2`"
+      'xExpr: `(W - text_w)/2`',
     ],
-    description: 'Overlay helper forces SSOT path for v2'
+    description: 'Overlay helper forces SSOT path for v2',
   },
   {
     file: 'src/utils/ffmpeg.video.js',
     mustContain: [
       'const useSSOT = placement?.willUseSSOT === true',
       'if (useSSOT && splitLines && splitLines.length > 0)',
-      'console.log(\'[ffmpeg] Using SSOT values verbatim',
-      'textToRender = splitLines.join'
+      "console.log('[ffmpeg] Using SSOT values verbatim",
+      'textToRender = splitLines.join',
     ],
-    description: 'FFmpeg uses SSOT values and splitLines'
+    description: 'FFmpeg uses SSOT values and splitLines',
   },
   {
     file: 'public/js/caption-preview.js',
     mustContain: [
       'ssotVersion: 2',
       'splitLines: Array.isArray(meta.splitLines)',
-      'yPxFirstLine: yPxFirstLine'
+      'yPxFirstLine: yPxFirstLine',
     ],
-    description: 'Client saves SSOT v2 to localStorage'
-  }
+    description: 'Client saves SSOT v2 to localStorage',
+  },
 ];
 
 let passed = 0;
@@ -64,14 +64,14 @@ for (const check of checks) {
   try {
     const filePath = join(__dirname, '..', check.file);
     const content = readFileSync(filePath, 'utf-8');
-    
+
     const missing = [];
     for (const pattern of check.mustContain) {
       if (!content.includes(pattern)) {
         missing.push(pattern);
       }
     }
-    
+
     if (missing.length === 0) {
       console.log(`✅ ${check.file}`);
       console.log(`   ${check.description}`);
@@ -80,7 +80,7 @@ for (const check of checks) {
       console.log(`❌ ${check.file}`);
       console.log(`   ${check.description}`);
       console.log(`   Missing patterns:`);
-      missing.forEach(p => console.log(`     - "${p}"`));
+      missing.forEach((p) => console.log(`     - "${p}"`));
       failed++;
     }
   } catch (err) {
@@ -112,4 +112,3 @@ if (failed === 0) {
   console.log('❌ Some checks failed. Review the implementation.\n');
   process.exit(1);
 }
-

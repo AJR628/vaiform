@@ -8,8 +8,8 @@ const MAX_CONCURRENT_RENDERS = 3;
  */
 export async function withRenderSlot(fn) {
   if (activeRenders >= MAX_CONCURRENT_RENDERS) {
-    const err = new Error("SERVER_BUSY");
-    err.code = "SERVER_BUSY";
+    const err = new Error('SERVER_BUSY');
+    err.code = 'SERVER_BUSY';
     throw err;
   }
 
@@ -20,4 +20,3 @@ export async function withRenderSlot(fn) {
     activeRenders--;
   }
 }
-

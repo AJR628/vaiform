@@ -2,9 +2,11 @@
 import OpenAI from 'openai';
 
 // Single client instance (reads OPENAI_API_KEY from env)
-const openai = process.env.OPENAI_API_KEY ? new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-}) : null;
+const openai = process.env.OPENAI_API_KEY
+  ? new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+    })
+  : null;
 
 // Clamp helper
 const clamp01 = (n) => Math.max(0, Math.min(1, Number(n)));

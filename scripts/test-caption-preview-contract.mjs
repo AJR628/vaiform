@@ -40,7 +40,10 @@ async function api(path, opts = {}) {
 
 function assertMeta(meta, label) {
   assert(meta != null && typeof meta === 'object', `${label}: meta is object`);
-  assert(typeof meta.rasterUrl === 'string' && meta.rasterUrl.length > 0, `${label}: meta.rasterUrl`);
+  assert(
+    typeof meta.rasterUrl === 'string' && meta.rasterUrl.length > 0,
+    `${label}: meta.rasterUrl`
+  );
   assert(Number.isFinite(meta.rasterW), `${label}: meta.rasterW`);
   assert(Number.isFinite(meta.rasterH), `${label}: meta.rasterH`);
   assert(Number.isFinite(meta.yPx_png), `${label}: meta.yPx_png`);
@@ -59,7 +62,9 @@ async function main() {
   try {
     healthRes = await fetch(`${BASE}/health`, { method: 'GET' });
   } catch (_e) {
-    console.error(`Server not reachable at ${BASE}. Ensure it is running and BACKEND_URL is correct.`);
+    console.error(
+      `Server not reachable at ${BASE}. Ensure it is running and BACKEND_URL is correct.`
+    );
     process.exit(1);
   }
   if (!healthRes.ok) {

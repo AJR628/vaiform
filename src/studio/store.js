@@ -22,5 +22,3 @@ export function dump() {
 }
 
 export default { ensure, get, has, dump };
-
-

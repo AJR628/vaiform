@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 /**
  * Regression guard: Ensure privilege escalation endpoints are not mounted
- * 
+ *
  * This script fails if any of the following dangerous patterns are found:
  * - Route mounts for /credits/balance or /credits/grant
  * - Function definitions for balance() or grant() in credits controller
  * - Any imports of balance/grant functions
- * 
+ *
  * Exit code: 0 if safe, 1 if vulnerabilities detected
  */
 
@@ -44,12 +44,12 @@ function scanFile(filePath) {
 
   lines.forEach((line, index) => {
     const lineNum = index + 1;
-    
+
     // Check for dangerous patterns
     for (const pattern of DANGEROUS_PATTERNS) {
       if (pattern.test(line)) {
         // Check if it's in a safe context (comment, etc.)
-        const isSafe = SAFE_PATTERNS.some(safe => safe.test(line));
+        const isSafe = SAFE_PATTERNS.some((safe) => safe.test(line));
         if (!isSafe) {
           issues.push({
             file: filePath,
@@ -67,19 +67,19 @@ function scanFile(filePath) {
 
 function scanDirectory(dir, extensions = ['.js', '.mjs', '.ts']) {
   const issues = [];
-  
+
   function walk(currentPath) {
     const entries = readdirSync(currentPath);
-    
+
     for (const entry of entries) {
       // Skip node_modules, .git, etc.
       if (entry.startsWith('.') || entry === 'node_modules') {
         continue;
       }
-      
+
       const fullPath = join(currentPath, entry);
       const stat = statSync(fullPath);
-      
+
       if (stat.isDirectory()) {
         walk(fullPath);
       } else if (stat.isFile()) {
@@ -91,7 +91,7 @@ function scanDirectory(dir, extensions = ['.js', '.mjs', '.ts']) {
       }
     }
   }
-  
+
   walk(dir);
   return issues;
 }
@@ -103,15 +103,19 @@ const issues = scanDirectory(srcDir);
 if (issues.length > 0) {
   console.error('❌ PRIVILEGE ESCALATION RISK DETECTED\n');
   console.error('The following dangerous patterns were found:\n');
-  
-  issues.forEach(issue => {
+
+  issues.forEach((issue) => {
     console.error(`  ${issue.file}:${issue.line}`);
     console.error(`    ${issue.content}`);
     console.error(`    Pattern: ${issue.pattern}\n`);
   });
-  
-  console.error('These endpoints must NEVER be mounted without proper authentication and authorization.');
-  console.error('If you need admin functionality, create separate admin-only routes with role checks.\n');
+
+  console.error(
+    'These endpoints must NEVER be mounted without proper authentication and authorization.'
+  );
+  console.error(
+    'If you need admin functionality, create separate admin-only routes with role checks.\n'
+  );
   process.exit(1);
 } else {
   console.log('✅ No privilege escalation risks detected');

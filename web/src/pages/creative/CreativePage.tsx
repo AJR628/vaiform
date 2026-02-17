@@ -1,222 +1,224 @@
-import { useEffect, useState } from 'react'
-import { api } from '../../lib/api'
+import { useEffect, useState } from 'react';
+import { api } from '../../lib/api';
 
 interface UsageLimits {
-  plan: string
-  isPro: boolean
+  plan: string;
+  isPro: boolean;
   usage: {
-    monthlyGenerations: number
-    monthlyQuotes: number
-    remainingGenerations: number
-    remainingQuotes: number
-  }
+    monthlyGenerations: number;
+    monthlyQuotes: number;
+    remainingGenerations: number;
+    remainingQuotes: number;
+  };
   limits: {
-    monthlyGenerations: number
-    monthlyQuotes: number
-    maxAssetsPerRequest: number
-    features: string[]
-  }
-  resetDate: string
+    monthlyGenerations: number;
+    monthlyQuotes: number;
+    maxAssetsPerRequest: number;
+    features: string[];
+  };
+  resetDate: string;
 }
 
 interface Quote {
-  id: string
-  text: string
-  author?: string
-  attributed?: boolean
-  toneTag?: string
+  id: string;
+  text: string;
+  author?: string;
+  attributed?: boolean;
+  toneTag?: string;
 }
 
 interface Asset {
-  id: string
-  provider: string
-  query: string
-  fileUrl: string
-  width?: number
-  height?: number
-  duration?: number
-  photographer?: string
-  sourceUrl?: string
-  thumbUrl?: string
+  id: string;
+  provider: string;
+  query: string;
+  fileUrl: string;
+  width?: number;
+  height?: number;
+  duration?: number;
+  photographer?: string;
+  sourceUrl?: string;
+  thumbUrl?: string;
 }
 
 interface AiImage {
-  id: string
-  url: string
-  prompt: string
-  style: string
+  id: string;
+  url: string;
+  prompt: string;
+  style: string;
 }
 
 export function CreativePage() {
-  const [limits, setLimits] = useState<UsageLimits | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const [limits, setLimits] = useState<UsageLimits | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   // Quote state
-  const [quoteText, setQuoteText] = useState('Create a motivational quote about success')
-  const [quoteTone, setQuoteTone] = useState<'motivational'|'witty'|'poetic'|'bold'|'calm'|'default'>('default')
-  const [currentQuote, setCurrentQuote] = useState<Quote | null>(null)
-  const [quoteLoading, setQuoteLoading] = useState(false)
-  const [quoteError, setQuoteError] = useState<string | null>(null)
+  const [quoteText, setQuoteText] = useState('Create a motivational quote about success');
+  const [quoteTone, setQuoteTone] = useState<
+    'motivational' | 'witty' | 'poetic' | 'bold' | 'calm' | 'default'
+  >('default');
+  const [currentQuote, setCurrentQuote] = useState<Quote | null>(null);
+  const [quoteLoading, setQuoteLoading] = useState(false);
+  const [quoteError, setQuoteError] = useState<string | null>(null);
 
   // Asset state
-  const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null)
-  const [assetType, setAssetType] = useState<'images'|'videos'>('images')
-  const [assetQuery, setAssetQuery] = useState('nature')
-  const [assets, setAssets] = useState<Asset[]>([])
-  const [assetLoading, setAssetLoading] = useState(false)
-  const [assetError, setAssetError] = useState<string | null>(null)
-  const [assetPage, setAssetPage] = useState(1)
-  const [hasMoreAssets, setHasMoreAssets] = useState(false)
-  const [nextPage, setNextPage] = useState<number|null>(null)
+  const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null);
+  const [assetType, setAssetType] = useState<'images' | 'videos'>('images');
+  const [assetQuery, setAssetQuery] = useState('nature');
+  const [assets, setAssets] = useState<Asset[]>([]);
+  const [assetLoading, setAssetLoading] = useState(false);
+  const [assetError, setAssetError] = useState<string | null>(null);
+  const [assetPage, setAssetPage] = useState(1);
+  const [hasMoreAssets, setHasMoreAssets] = useState(false);
+  const [nextPage, setNextPage] = useState<number | null>(null);
 
   // AI Images state
-  const [aiPrompt, setAiPrompt] = useState('A serene mountain landscape at sunset')
-  const [aiStyle, setAiStyle] = useState<'realistic'|'creative'>('realistic')
-  const [aiImages, setAiImages] = useState<AiImage[]>([])
-  const [aiLoading, setAiLoading] = useState(false)
-  const [aiError, setAiError] = useState<string | null>(null)
+  const [aiPrompt, setAiPrompt] = useState('A serene mountain landscape at sunset');
+  const [aiStyle, setAiStyle] = useState<'realistic' | 'creative'>('realistic');
+  const [aiImages, setAiImages] = useState<AiImage[]>([]);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
 
   // Load usage limits on mount
   useEffect(() => {
-    loadLimits()
-  }, [])
+    loadLimits();
+  }, []);
 
   async function loadLimits() {
     try {
-      setLoading(true)
-      setError(null)
-      const result = await api.getUsageLimits()
+      setLoading(true);
+      setError(null);
+      const result = await api.getUsageLimits();
       if (result.ok) {
-        setLimits(result.data)
+        setLimits(result.data);
       } else {
-        setError(result.error)
+        setError(result.error);
       }
     } catch (e) {
-      setError('Failed to load usage limits')
+      setError('Failed to load usage limits');
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
   }
 
   async function generateQuote() {
-    if (!quoteText.trim()) return
-    
+    if (!quoteText.trim()) return;
+
     try {
-      setQuoteLoading(true)
-      setQuoteError(null)
+      setQuoteLoading(true);
+      setQuoteError(null);
       const result = await api.generateQuote({
         text: quoteText,
         tone: quoteTone === 'default' ? undefined : quoteTone,
-        maxChars: 120
-      })
+        maxChars: 120,
+      });
       if (result.ok) {
-        setCurrentQuote(result.data.quote)
+        setCurrentQuote(result.data.quote);
       } else {
-        setQuoteError(result.error)
+        setQuoteError(result.error);
       }
     } catch (e) {
-      setQuoteError('Failed to generate quote')
+      setQuoteError('Failed to generate quote');
     } finally {
-      setQuoteLoading(false)
+      setQuoteLoading(false);
     }
   }
 
-  async function remixQuote(mode: 'regenerate'|'rephrase'|'tone_shift') {
-    if (!currentQuote) return
-    
+  async function remixQuote(mode: 'regenerate' | 'rephrase' | 'tone_shift') {
+    if (!currentQuote) return;
+
     try {
-      setQuoteLoading(true)
-      setQuoteError(null)
+      setQuoteLoading(true);
+      setQuoteError(null);
       const result = await api.remixQuote({
         originalText: currentQuote.text,
         mode,
         targetTone: mode === 'tone_shift' ? quoteTone : undefined,
-        maxChars: 120
-      })
+        maxChars: 120,
+      });
       if (result.ok) {
-        setCurrentQuote(result.data.quote)
+        setCurrentQuote(result.data.quote);
       } else {
-        setQuoteError(result.error)
+        setQuoteError(result.error);
       }
     } catch (e) {
-      setQuoteError('Failed to remix quote')
+      setQuoteError('Failed to remix quote');
     } finally {
-      setQuoteLoading(false)
+      setQuoteLoading(false);
     }
   }
 
   async function loadAssets(page = 1) {
     try {
-      setAssetLoading(true)
-      setAssetError(null)
-      const perPage = 12 // request fuller grid; backend will cap for free plans
+      setAssetLoading(true);
+      setAssetError(null);
+      const perPage = 12; // request fuller grid; backend will cap for free plans
       const result = await api.getAssetsOptions({
         type: assetType,
         query: assetQuery,
         page,
-        perPage
-      })
+        perPage,
+      });
       if (result.ok) {
         if (page === 1) {
-          setAssets(result.data.items)
+          setAssets(result.data.items);
         } else {
-          setAssets(prev => [...prev, ...result.data.items])
+          setAssets((prev) => [...prev, ...result.data.items]);
         }
-        setHasMoreAssets(!!result.data.nextPage)
-        setNextPage(result.data.nextPage)
-        setAssetPage(page)
+        setHasMoreAssets(!!result.data.nextPage);
+        setNextPage(result.data.nextPage);
+        setAssetPage(page);
       } else {
-        setAssetError(result.error)
+        setAssetError(result.error);
       }
     } catch (e) {
-      setAssetError('Failed to load assets')
+      setAssetError('Failed to load assets');
     } finally {
-      setAssetLoading(false)
+      setAssetLoading(false);
     }
   }
 
   async function loadMoreAssets() {
-    const p = nextPage || (assetPage + 1)
-    await loadAssets(p)
+    const p = nextPage || assetPage + 1;
+    await loadAssets(p);
   }
 
   async function generateAiImages() {
-    if (!aiPrompt.trim()) return
-    
+    if (!aiPrompt.trim()) return;
+
     try {
-      setAiLoading(true)
-      setAiError(null)
+      setAiLoading(true);
+      setAiError(null);
       const result = await api.generateAiImages({
         prompt: aiPrompt,
         style: aiStyle,
-        count: 2
-      })
+        count: 2,
+      });
       if (result.ok) {
-        setAiImages(result.data.images)
+        setAiImages(result.data.images);
       } else {
-        setAiError(result.error)
+        setAiError(result.error);
       }
     } catch (e) {
-      setAiError('Failed to generate AI images')
+      setAiError('Failed to generate AI images');
     } finally {
-      setAiLoading(false)
+      setAiLoading(false);
     }
   }
 
   // Load assets when type or query changes
   useEffect(() => {
     if (limits) {
-      loadAssets(1)
+      loadAssets(1);
     }
-  }, [assetType, assetQuery, limits])
+  }, [assetType, assetQuery, limits]);
 
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-lg">Loading...</div>
       </div>
-    )
+    );
   }
 
   if (error) {
@@ -224,7 +226,7 @@ export function CreativePage() {
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-red-500">Error: {error}</div>
       </div>
-    )
+    );
   }
 
   if (!limits) {
@@ -232,7 +234,7 @@ export function CreativePage() {
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-red-500">Failed to load usage limits</div>
       </div>
-    )
+    );
   }
 
   return (
@@ -241,9 +243,11 @@ export function CreativePage() {
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-bold">Creative Studio</h1>
         <div className="flex items-center gap-4">
-          <div className={`px-3 py-1 rounded-full text-sm font-medium ${
-            limits.isPro ? 'bg-purple-600 text-white' : 'bg-gray-600 text-white'
-          }`}>
+          <div
+            className={`px-3 py-1 rounded-full text-sm font-medium ${
+              limits.isPro ? 'bg-purple-600 text-white' : 'bg-gray-600 text-white'
+            }`}
+          >
             {limits.plan.toUpperCase()} Plan
           </div>
           <div className="text-sm text-gray-400">
@@ -255,7 +259,7 @@ export function CreativePage() {
       {/* Quote Generation Section */}
       <div className="bg-gray-900 rounded-lg p-6 space-y-4">
         <h2 className="text-xl font-semibold">Generate Quote</h2>
-        
+
         <div className="flex gap-4 items-center">
           <input
             type="text"
@@ -285,9 +289,7 @@ export function CreativePage() {
           </button>
         </div>
 
-        {quoteError && (
-          <div className="text-red-500 text-sm">{quoteError}</div>
-        )}
+        {quoteError && <div className="text-red-500 text-sm">{quoteError}</div>}
 
         {currentQuote && (
           <div className="bg-gray-800 rounded p-4 space-y-3">
@@ -298,7 +300,7 @@ export function CreativePage() {
             {currentQuote.toneTag && (
               <div className="text-xs text-blue-400">Tone: {currentQuote.toneTag}</div>
             )}
-            
+
             {/* Remix buttons (Pro only) */}
             {limits.isPro && (
               <div className="flex gap-2">
@@ -332,7 +334,7 @@ export function CreativePage() {
       {/* Asset Selection Section */}
       <div className="bg-gray-900 rounded-lg p-6 space-y-4">
         <h2 className="text-xl font-semibold">Choose Background</h2>
-        
+
         {/* Asset Type Tabs */}
         <div className="flex gap-2">
           <button
@@ -410,78 +412,74 @@ export function CreativePage() {
                 {aiLoading ? 'Generating...' : 'Generate'}
               </button>
             </div>
-            {aiError && (
-              <div className="text-red-500 text-sm">{aiError}</div>
-            )}
+            {aiError && <div className="text-red-500 text-sm">{aiError}</div>}
           </div>
         )}
 
-        {assetError && (
-          <div className="text-red-500 text-sm">{assetError}</div>
-        )}
+        {assetError && <div className="text-red-500 text-sm">{assetError}</div>}
 
         {/* Asset Grid */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {/* Stock Assets */}
-          {assetType !== 'ai' && assets.map((asset) => (
-            <div
-              key={asset.id}
-              className={`border-2 rounded overflow-hidden cursor-pointer transition-colors ${
-                selectedAsset?.id === asset.id ? 'border-blue-500' : 'border-gray-700'
-              }`}
-              onClick={() => setSelectedAsset(asset)}
-            >
-              {assetType === 'images' ? (
-                <img
-                  src={asset.thumbUrl || asset.fileUrl}
-                  alt={asset.query}
-                  loading="lazy"
-                  className="w-full h-32 object-cover"
-                />
-              ) : (
-                <video
-                  src={asset.fileUrl}
-                  className="w-full h-32 object-cover"
-                  muted
-                  playsInline
-                />
-              )}
-              <div className="p-2 text-xs">
-                <div className="truncate">{asset.query}</div>
-                {asset.photographer && (
-                  <div className="text-gray-400 truncate">by {asset.photographer}</div>
+          {assetType !== 'ai' &&
+            assets.map((asset) => (
+              <div
+                key={asset.id}
+                className={`border-2 rounded overflow-hidden cursor-pointer transition-colors ${
+                  selectedAsset?.id === asset.id ? 'border-blue-500' : 'border-gray-700'
+                }`}
+                onClick={() => setSelectedAsset(asset)}
+              >
+                {assetType === 'images' ? (
+                  <img
+                    src={asset.thumbUrl || asset.fileUrl}
+                    alt={asset.query}
+                    loading="lazy"
+                    className="w-full h-32 object-cover"
+                  />
+                ) : (
+                  <video
+                    src={asset.fileUrl}
+                    className="w-full h-32 object-cover"
+                    muted
+                    playsInline
+                  />
                 )}
+                <div className="p-2 text-xs">
+                  <div className="truncate">{asset.query}</div>
+                  {asset.photographer && (
+                    <div className="text-gray-400 truncate">by {asset.photographer}</div>
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
+            ))}
 
           {/* AI Images */}
-          {assetType === 'ai' && aiImages.map((image) => (
-            <div
-              key={image.id}
-              className={`border-2 rounded overflow-hidden cursor-pointer transition-colors ${
-                selectedAsset?.id === image.id ? 'border-purple-500' : 'border-gray-700'
-              }`}
-              onClick={() => setSelectedAsset({
-                id: image.id,
-                provider: 'ai',
-                query: image.prompt,
-                fileUrl: image.url,
-                width: 1024,
-                height: 1024
-              })}
-            >
-              <img
-                src={image.url}
-                alt={image.prompt}
-                className="w-full h-32 object-cover"
-              />
-              <div className="p-2 text-xs">
-                <div className="truncate">{image.prompt}</div>
-                <div className="text-purple-400">AI • {image.style}</div>
+          {assetType === 'ai' &&
+            aiImages.map((image) => (
+              <div
+                key={image.id}
+                className={`border-2 rounded overflow-hidden cursor-pointer transition-colors ${
+                  selectedAsset?.id === image.id ? 'border-purple-500' : 'border-gray-700'
+                }`}
+                onClick={() =>
+                  setSelectedAsset({
+                    id: image.id,
+                    provider: 'ai',
+                    query: image.prompt,
+                    fileUrl: image.url,
+                    width: 1024,
+                    height: 1024,
+                  })
+                }
+              >
+                <img src={image.url} alt={image.prompt} className="w-full h-32 object-cover" />
+                <div className="p-2 text-xs">
+                  <div className="truncate">{image.prompt}</div>
+                  <div className="text-purple-400">AI • {image.style}</div>
+                </div>
               </div>
-            </div>
-          ))}
+            ))}
         </div>
 
         {/* Load More Button */}
@@ -500,7 +498,7 @@ export function CreativePage() {
         {/* Free Plan Notice */}
         {!limits.isPro && (
           <div className="text-center text-sm text-gray-400">
-            Showing {limits.limits.maxAssetsPerRequest} curated assets. 
+            Showing {limits.limits.maxAssetsPerRequest} curated assets.
             <span className="text-blue-400"> Upgrade to Pro</span> for full search and AI images.
           </div>
         )}
@@ -509,14 +507,10 @@ export function CreativePage() {
       {/* Render Section */}
       <div className="bg-gray-900 rounded-lg p-6 space-y-4">
         <h2 className="text-xl font-semibold">Create Short</h2>
-        
-        {!currentQuote && (
-          <div className="text-gray-400">Generate a quote first</div>
-        )}
-        
-        {!selectedAsset && (
-          <div className="text-gray-400">Choose a background asset</div>
-        )}
+
+        {!currentQuote && <div className="text-gray-400">Generate a quote first</div>}
+
+        {!selectedAsset && <div className="text-gray-400">Choose a background asset</div>}
 
         {currentQuote && selectedAsset && (
           <div className="space-y-4">
@@ -524,14 +518,17 @@ export function CreativePage() {
               <div className="text-sm text-gray-400 mb-2">Preview:</div>
               <div className="text-lg font-medium mb-2">{currentQuote.text}</div>
               <div className="text-sm text-gray-400">
-                Background: {selectedAsset.provider === 'ai' ? 'AI Image' : `${selectedAsset.type} - ${selectedAsset.query}`}
+                Background:{' '}
+                {selectedAsset.provider === 'ai'
+                  ? 'AI Image'
+                  : `${selectedAsset.type} - ${selectedAsset.query}`}
               </div>
             </div>
-            
+
             <button
               onClick={() => {
                 // TODO: Wire to existing render flow
-                alert('Render functionality will be wired to existing render endpoint')
+                alert('Render functionality will be wired to existing render endpoint');
               }}
               className="px-6 py-3 bg-green-600 hover:bg-green-500 rounded-lg font-medium"
             >
@@ -541,5 +538,5 @@ export function CreativePage() {
         )}
       </div>
     </div>
-  )
+  );
 }

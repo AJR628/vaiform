@@ -3,8 +3,8 @@ export function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-export async function withTimeout(promiseOrFn, ms, label = "op") {
-  const p = typeof promiseOrFn === "function" ? promiseOrFn() : promiseOrFn;
+export async function withTimeout(promiseOrFn, ms, label = 'op') {
+  const p = typeof promiseOrFn === 'function' ? promiseOrFn() : promiseOrFn;
   let to;
   const timeout = new Promise((_, rej) => {
     to = setTimeout(() => rej(new Error(`TIMEOUT:${label}:${ms}ms`)), ms);
@@ -27,7 +27,9 @@ export async function retry(fn, { retries = 2, baseMs = 800, factor = 1.8, jitte
       return await fn(attempt);
     } catch (err) {
       if (attempt >= retries) throw err;
-      const wait = Math.round(baseMs * Math.pow(factor, attempt) * (jitter ? (0.7 + Math.random() * 0.6) : 1));
+      const wait = Math.round(
+        baseMs * Math.pow(factor, attempt) * (jitter ? 0.7 + Math.random() * 0.6 : 1)
+      );
       await sleep(wait);
       attempt++;
     }

@@ -28,8 +28,9 @@
     if (!textShadow || textShadow === 'none') {
       return { blur: 0, y: 0 };
     }
-    const parts = (textShadow || '').split(',').map(s => s.trim());
-    let maxBlur = 0, maxY = 0;
+    const parts = (textShadow || '').split(',').map((s) => s.trim());
+    let maxBlur = 0,
+      maxY = 0;
     for (const p of parts) {
       const m = p.match(/(-?\d+\.?\d*)px\s+(-?\d+\.?\d*)px(?:\s+(\d+\.?\d*)px)?/);
       if (m) {
@@ -44,11 +45,14 @@
 
   function yPctFromPlacement(placement) {
     switch (String(placement || 'bottom').toLowerCase()) {
-      case 'top': return 0.10;
-      case 'center': 
-      case 'middle': return 0.50;
-      case 'bottom': 
-      default: return 0.90;
+      case 'top':
+        return 0.1;
+      case 'center':
+      case 'middle':
+        return 0.5;
+      case 'bottom':
+      default:
+        return 0.9;
     }
   }
 
@@ -62,6 +66,6 @@
     computeYPxFromPlacement,
     getFrameDims,
     parseShadow,
-    yPctFromPlacement
+    yPctFromPlacement,
   };
 })();

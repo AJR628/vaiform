@@ -4,7 +4,7 @@ export const CAPTION_DEFAULTS = {
   fontPx: 64,
   weightCss: 'normal',
   fontStyle: 'normal',
-  letterSpacingPx: 0.5,        // ✅ Unified default
+  letterSpacingPx: 0.5, // ✅ Unified default
   lineSpacingPx: 0,
   color: '#FFFFFF',
   opacity: 1.0,
@@ -17,14 +17,14 @@ export const CAPTION_DEFAULTS = {
   textAlign: 'center',
   textTransform: 'none',
   wPct: 0.8,
-  internalPaddingPx: 24  // ✅ Canonical name (alias: rasterPadding for backwards compat)
+  internalPaddingPx: 24, // ✅ Canonical name (alias: rasterPadding for backwards compat)
 };
 
 export const CAPTION_LIMITS = {
-  fontPx: { min: 8, max: 400 },  // Validation range (schema accepts 8-400)
+  fontPx: { min: 8, max: 400 }, // Validation range (schema accepts 8-400)
   lineSpacingPx: { min: 0, max: 400 },
-  safeTopMarginPct: 0.10,
-  safeBottomMarginPct: 0.10
+  safeTopMarginPct: 0.1,
+  safeBottomMarginPct: 0.1,
 };
 
 // Enforced font range (matches preview route ABS_MIN/MAX_FONT)
@@ -34,5 +34,5 @@ export const ENFORCED_FONT_MAX = 120;
 
 export const FRAME_DIMS = {
   W: 1080,
-  H: 1920
+  H: 1920,
 };

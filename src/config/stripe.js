@@ -12,6 +12,8 @@ if (!STRIPE_WEBHOOK_SECRET) {
   console.warn('⚠️ STRIPE_WEBHOOK_SECRET not set. Webhook signature verification will fail.');
 }
 
-export const stripe = STRIPE_SECRET_KEY ? new Stripe(STRIPE_SECRET_KEY, {
-  apiVersion: '2023-10-16', // pin to a stable version
-}) : null;
+export const stripe = STRIPE_SECRET_KEY
+  ? new Stripe(STRIPE_SECRET_KEY, {
+      apiVersion: '2023-10-16', // pin to a stable version
+    })
+  : null;

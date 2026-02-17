@@ -1,5 +1,5 @@
-import admin from "firebase-admin";
-import { ensureUserDoc } from "../services/credit.service.js";
+import admin from 'firebase-admin';
+import { ensureUserDoc } from '../services/credit.service.js';
 
 export async function getCredits(req, res) {
   try {
@@ -15,7 +15,7 @@ export async function getCredits(req, res) {
   } catch (err) {
     return res.status(500).json({
       success: false,
-      code: "CREDITS_ERROR",
+      code: 'CREDITS_ERROR',
       message: err.message,
     });
   }

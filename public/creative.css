@@ -1,31 +1,31 @@
 /* DejaVu Sans Font Faces - Server/Client Parity */
-@font-face { 
-  font-family: "DejaVu Sans"; 
-  src: url("/assets/fonts/DejaVuSans.ttf") format("truetype"); 
-  font-weight: 400; 
-  font-style: normal; 
-  font-display: swap; 
+@font-face {
+  font-family: 'DejaVu Sans';
+  src: url('/assets/fonts/DejaVuSans.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
 }
-@font-face { 
-  font-family: "DejaVu Sans"; 
-  src: url("/assets/fonts/DejaVuSans-Bold.ttf") format("truetype"); 
-  font-weight: 700; 
-  font-style: normal; 
-  font-display: swap; 
+@font-face {
+  font-family: 'DejaVu Sans';
+  src: url('/assets/fonts/DejaVuSans-Bold.ttf') format('truetype');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
 }
-@font-face { 
-  font-family: "DejaVu Sans"; 
-  src: url("/assets/fonts/DejaVuSans-Oblique.ttf") format("truetype"); 
-  font-weight: 400; 
-  font-style: italic; 
-  font-display: swap; 
+@font-face {
+  font-family: 'DejaVu Sans';
+  src: url('/assets/fonts/DejaVuSans-Oblique.ttf') format('truetype');
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
 }
-@font-face { 
-  font-family: "DejaVu Sans"; 
-  src: url("/assets/fonts/DejaVuSans-BoldOblique.ttf") format("truetype"); 
-  font-weight: 700; 
-  font-style: italic; 
-  font-display: swap; 
+@font-face {
+  font-family: 'DejaVu Sans';
+  src: url('/assets/fonts/DejaVuSans-BoldOblique.ttf') format('truetype');
+  font-weight: 700;
+  font-style: italic;
+  font-display: swap;
 }
 
 /* Font synthesis disabled to prevent browser from faking bold/italic */
@@ -49,7 +49,7 @@
   display: grid;
   place-items: center;
   font-size: 18px;
-  color: rgba(255,255,255,.6);
+  color: rgba(255, 255, 255, 0.6);
 }
 
 /* Keep content editable - do NOT disable pointer events */
@@ -63,7 +63,10 @@
 }
 
 /* 9:16 holder with cover image */
-#short-preview, #live-preview, #preview-holder, #ai-result-preview {
+#short-preview,
+#live-preview,
+#preview-holder,
+#ai-result-preview {
   position: relative;
   aspect-ratio: 9 / 16;
   background: #000;
@@ -97,7 +100,6 @@
   pointer-events: none;
 }
 
-
 /* Prevent AI result preview from growing too wide */
 #ai-result-preview {
   max-width: 420px;
@@ -109,29 +111,36 @@
   max-width: 480px;
 }
 
-
 /* --- Preview font parity with FFmpeg --- */
 @font-face {
-  font-family: "DejaVu Sans Local";
+  font-family: 'DejaVu Sans Local';
   src:
-    url("/assets/fonts/DejaVuSans.woff2") format("woff2"),
-    url("/assets/fonts/DejaVuSans.ttf") format("truetype"); /* fallback */
+    url('/assets/fonts/DejaVuSans.woff2') format('woff2'),
+    url('/assets/fonts/DejaVuSans.ttf') format('truetype'); /* fallback */
   font-weight: 400;
   font-style: normal;
   font-display: swap;
 }
 @font-face {
-  font-family: "DejaVu Sans Local";
+  font-family: 'DejaVu Sans Local';
   src:
-    url("/assets/fonts/DejaVuSans-Bold.woff2") format("woff2"),
-    url("/assets/fonts/DejaVuSans-Bold.ttf") format("truetype"); /* fallback */
+    url('/assets/fonts/DejaVuSans-Bold.woff2') format('woff2'),
+    url('/assets/fonts/DejaVuSans-Bold.ttf') format('truetype'); /* fallback */
   font-weight: 700;
   font-style: normal;
   font-display: swap;
 }
 
 .caption-preview {
-  font-family: "DejaVu Sans Local", "DejaVu Sans", system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+  font-family:
+    'DejaVu Sans Local',
+    'DejaVu Sans',
+    system-ui,
+    -apple-system,
+    Segoe UI,
+    Roboto,
+    Arial,
+    sans-serif;
   letter-spacing: normal;
   font-kerning: normal;
 }
@@ -271,7 +280,7 @@
     grid-template-columns: 1fr;
     gap: 1rem;
   }
-  
+
   .studio-accordion-right {
     position: static;
     order: -1;
@@ -296,95 +305,95 @@
 /* Mobile Studio Layout - max-width: 768px */
 @media (max-width: 768px) {
   /* Header full-width - no padding constraints */
-  
+
   /* Hide "Live Preview" title on mobile */
   .studio-accordion-right .content-box h2 {
     display: none;
   }
-  
+
   /* Hide preview summary card on mobile */
   #render-preview {
     display: none !important;
   }
-  
+
   /* Hide desktop Create button on mobile */
   .studio-accordion-right #render-btn {
     display: none;
   }
-  
+
   /* Preview container full-width on mobile */
   #live-preview-container {
     width: 100% !important;
     max-width: 100%;
   }
-  
+
   /* Adjust preview wrapper to match container width */
   #live-preview-container .relative {
     width: 100% !important;
     max-width: 100%;
   }
-  
+
   /* Ensure no horizontal scroll */
   body {
     overflow-x: hidden;
   }
-  
+
   /* Accordion layout single column with preview first */
   .studio-accordion-layout {
     grid-template-columns: 1fr;
     gap: 1rem;
   }
-  
+
   .studio-accordion-right {
     position: static;
     order: -1;
   }
-  
+
   /* Ensure floating toolbar still works on mobile */
   #caption-toolbar-container {
     position: relative;
     z-index: 1000;
   }
-  
+
   /* Show mobile toolbar on mobile */
   #mobile-studio-toolbar {
     display: block !important;
   }
-  
+
   /* Mobile toolbar styling */
   #mobile-studio-toolbar {
     width: 100%;
     max-width: 100%;
     margin-top: 0.5rem;
   }
-  
+
   /* Mobile tab buttons */
   .mobile-studio-tab {
     background: #f9fafb;
     border-color: #e5e7eb;
     color: #111827;
   }
-  
+
   .dark .mobile-studio-tab {
     background: #374151;
     border-color: #4b5563;
     color: #f9fafb;
   }
-  
+
   .mobile-studio-tab:hover {
     background: #f3f4f6;
   }
-  
+
   .dark .mobile-studio-tab:hover {
     background: #4b5563;
   }
-  
+
   .mobile-studio-tab.active {
     background: #3b82f6;
     border-color: #3b82f6;
     color: white;
   }
-  
+
   .dark .mobile-studio-tab.active {
     background: #1e3a8a;
     border-color: #3b82f6;
@@ -395,14 +404,14 @@
   .studio-accordion-left .accordion-header {
     display: none !important;
   }
-  
+
   /* Position accordion bodies directly under toolbar */
   .studio-accordion-left {
     margin-top: 0;
     width: 100%;
     max-width: 100%;
   }
-  
+
   /* Ensure only active body is visible, positioned under toolbar */
   .studio-accordion-left .accordion-body {
     display: none;
@@ -429,7 +438,7 @@
     border-bottom-left-radius: 0;
     border-bottom-right-radius: 0;
   }
-  
+
   /* Hide accordion section borders on mobile since headers are hidden */
   .studio-accordion-left .accordion-section {
     border: none;

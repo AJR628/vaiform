@@ -1,4 +1,10 @@
-import { CAPTION_DEFAULTS, CAPTION_LIMITS, FRAME_DIMS, ENFORCED_FONT_MIN, ENFORCED_FONT_MAX } from './constants.js';
+import {
+  CAPTION_DEFAULTS,
+  CAPTION_LIMITS,
+  FRAME_DIMS,
+  ENFORCED_FONT_MIN,
+  ENFORCED_FONT_MAX,
+} from './constants.js';
 import { wrapTextWithFont } from '../utils/caption.wrap.js';
 import { deriveCaptionWrapWidthPx } from '../utils/caption.wrapWidth.js';
 import { extractStyleOnly } from '../utils/caption-style-helper.js';
@@ -16,13 +22,13 @@ import crypto from 'crypto';
 export function compileCaptionSSOT(payload) {
   // 1. Sanitize style input (only allow known style keys) - MANDATORY
   const sanitizedStyle = extractStyleOnly(payload.style ?? {});
-  
+
   // 2. Resolve effectiveStyle (merge sanitized style with defaults)
   const effectiveStyle = {
     ...CAPTION_DEFAULTS,
-    ...sanitizedStyle
+    ...sanitizedStyle,
   };
-  
+
   // 3. Clamp fontPx to enforced range (32-120) - NOT validation range (8-400)
   if (effectiveStyle.fontPx) {
     effectiveStyle.fontPx = Math.max(
@@ -30,16 +36,16 @@ export function compileCaptionSSOT(payload) {
       Math.min(ENFORCED_FONT_MAX, effectiveStyle.fontPx)
     );
   }
-  
+
   // 4. Compute maxWidthPx
   const frameW = payload.frameW || FRAME_DIMS.W;
   const frameH = payload.frameH || FRAME_DIMS.H;
   const { maxWidthPx } = deriveCaptionWrapWidthPx({
     frameW,
     wPct: effectiveStyle.wPct,
-    internalPaddingPx: effectiveStyle.internalPaddingPx
+    internalPaddingPx: effectiveStyle.internalPaddingPx,
   });
-  
+
   // 5. Compute authoritative lines[]
   const wrapResult = wrapTextWithFont(payload.textRaw, {
     fontPx: effectiveStyle.fontPx,
@@ -48,22 +54,22 @@ export function compileCaptionSSOT(payload) {
     fontFamily: effectiveStyle.fontFamily,
     maxWidthPx,
     letterSpacingPx: effectiveStyle.letterSpacingPx,
-    lineSpacingPx: effectiveStyle.lineSpacingPx
+    lineSpacingPx: effectiveStyle.lineSpacingPx,
   });
-  
+
   // 6. Compute hashes
   const styleHash = hashStyle(effectiveStyle);
   // wrapHash must include all factors affecting wrap: text, maxWidthPx, font metrics, letterSpacingPx
   const wrapHash = hashWrap(
-    payload.textRaw.trim().toLowerCase(),  // Normalized text
+    payload.textRaw.trim().toLowerCase(), // Normalized text
     maxWidthPx,
     effectiveStyle.fontFamily,
     effectiveStyle.fontPx,
     effectiveStyle.weightCss,
     effectiveStyle.fontStyle,
-    effectiveStyle.letterSpacingPx  // ✅ Critical: affects measurement
+    effectiveStyle.letterSpacingPx // ✅ Critical: affects measurement
   );
-  
+
   // 7. Return canonical meta
   return {
     effectiveStyle,
@@ -74,7 +80,7 @@ export function compileCaptionSSOT(payload) {
     wrapHash,
     // Geometry fields (for compatibility)
     frameW,
-    frameH
+    frameH,
   };
 }
 
@@ -83,7 +89,7 @@ export function compileCaptionSSOT(payload) {
  */
 function hashStyle(style) {
   const keys = Object.keys(style).sort();
-  const str = keys.map(k => `${k}:${style[k]}`).join('|');
+  const str = keys.map((k) => `${k}:${style[k]}`).join('|');
   return crypto.createHash('sha256').update(str).digest('hex').slice(0, 16);
 }
 

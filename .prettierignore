@@ -1,0 +1,6 @@
+docs/_archive/**
+!docs/_archive/INDEX.md
+docs/archive/**
+.cursor/**
+web/dist/**
+web/debug/**

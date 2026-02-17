@@ -1,5 +1,5 @@
-import { spawn } from "node:child_process";
-import ffmpegPath from "ffmpeg-static";
+import { spawn } from 'node:child_process';
+import ffmpegPath from 'ffmpeg-static';
 
 let _hasSubtitles = null;
 let _hasLineSpacing = null;
@@ -8,13 +8,15 @@ export async function hasSubtitlesFilter() {
   if (_hasSubtitles !== null) return _hasSubtitles;
   try {
     const ok = await new Promise((resolve) => {
-      const p = spawn(ffmpegPath, ["-hide_banner", "-filters"], { stdio: ["ignore", "pipe", "ignore"] });
-      let out = "";
-      p.stdout.on("data", d => (out += d.toString()));
-      p.on("close", () => {
+      const p = spawn(ffmpegPath, ['-hide_banner', '-filters'], {
+        stdio: ['ignore', 'pipe', 'ignore'],
+      });
+      let out = '';
+      p.stdout.on('data', (d) => (out += d.toString()));
+      p.on('close', () => {
         resolve(/\b(subtitles|ass)\b/.test(out));
       });
-      p.on("error", () => resolve(false));
+      p.on('error', () => resolve(false));
     });
     _hasSubtitles = !!ok;
   } catch {
@@ -33,20 +35,20 @@ export async function hasLineSpacingOption() {
   }
 
   if (_hasLineSpacing !== null) return _hasLineSpacing;
-  
+
   try {
     const ok = await new Promise((resolve) => {
       // Check drawtext filter options for line_spacing support
-      const p = spawn(ffmpegPath, ["-hide_banner", "-h", "filter=drawtext"], { 
-        stdio: ["ignore", "pipe", "pipe"] 
+      const p = spawn(ffmpegPath, ['-hide_banner', '-h', 'filter=drawtext'], {
+        stdio: ['ignore', 'pipe', 'pipe'],
       });
-      let out = "";
-      p.stdout.on("data", d => (out += d.toString()));
-      p.stderr.on("data", d => (out += d.toString()));
-      p.on("close", () => {
+      let out = '';
+      p.stdout.on('data', (d) => (out += d.toString()));
+      p.stderr.on('data', (d) => (out += d.toString()));
+      p.on('close', () => {
         resolve(/\bline_spacing\b/.test(out));
       });
-      p.on("error", () => resolve(false));
+      p.on('error', () => resolve(false));
     });
     _hasLineSpacing = !!ok;
     console.log(`[ffmpeg] line_spacing capability detected: ${_hasLineSpacing}`);
@@ -58,5 +60,3 @@ export async function hasLineSpacingOption() {
 }
 
 export default { hasSubtitlesFilter, hasLineSpacingOption };
-
-

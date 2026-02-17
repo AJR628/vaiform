@@ -36,9 +36,9 @@ All JSON API responses must use this envelope so clients and tests never have to
 
 ## Required keys
 
-| Response | Required keys |
-|----------|----------------|
-| Success  | `success`, `data`, `requestId` |
+| Response | Required keys                             |
+| -------- | ----------------------------------------- |
+| Success  | `success`, `data`, `requestId`            |
 | Failure  | `success`, `error`, `detail`, `requestId` |
 
 ## Disallowed keys

@@ -1,8 +1,8 @@
 // src/controllers/enhance.controller.js
-import admin from "../config/firebase.js"; // ✅ use the initialized Admin instance
-import { enhancePrompt } from "../services/enhance.service.js";
-import { ensureUserDoc, debitCreditsTx } from "../services/credit.service.js";
-import { ENHANCE_COST } from "../config/pricing.js";
+import admin from '../config/firebase.js'; // ✅ use the initialized Admin instance
+import { enhancePrompt } from '../services/enhance.service.js';
+import { ensureUserDoc, debitCreditsTx } from '../services/credit.service.js';
+import { ENHANCE_COST } from '../config/pricing.js';
 
 /**
  * POST /enhance
@@ -18,9 +18,9 @@ export async function enhanceController(req, res) {
   return res.status(410).json({
     success: false,
     error: 'FEATURE_DISABLED',
-    detail: 'Image prompt enhancement is not available in this version of Vaiform.'
+    detail: 'Image prompt enhancement is not available in this version of Vaiform.',
   });
-  
+
   // [AI_IMAGES] Legacy implementation (disabled for v1)
   /* eslint-disable no-unreachable */
   try {
@@ -45,11 +45,11 @@ export async function enhanceController(req, res) {
       },
     });
   } catch (err) {
-    console.error("❌ [enhance] failed:", err?.code || err?.name, err?.message || err);
+    console.error('❌ [enhance] failed:', err?.code || err?.name, err?.message || err);
     return res.status(500).json({
       success: false,
-      error: "ENHANCE_FAILED",
-      detail: err?.message || "Enhance failed",
+      error: 'ENHANCE_FAILED',
+      detail: err?.message || 'Enhance failed',
     });
   }
 }

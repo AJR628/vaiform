@@ -2,7 +2,9 @@
 @tailwind components;
 @tailwind utilities;
 
-:root { color-scheme: dark; }
-body { @apply bg-neutral-950 text-neutral-100; }
-
-
+:root {
+  color-scheme: dark;
+}
+body {
+  @apply bg-neutral-950 text-neutral-100;
+}

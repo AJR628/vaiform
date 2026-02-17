@@ -9,7 +9,9 @@ import path from 'path';
  */
 export function writeCaptionFile(text) {
   // drawtext treats '\n' literally when escape=1 (default), so keep backslashes out.
-  const safe = String(text || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  const safe = String(text || '')
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vaiform-caption-'));
   const file = path.join(dir, 'caption.txt');
   fs.writeFileSync(file, safe, 'utf8');

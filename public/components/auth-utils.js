@@ -17,40 +17,42 @@ export function initializeAuth() {
   const creditCount = document.getElementById('credit-count');
 
   // Import Firebase auth functions
-  import('https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js').then(({ onAuthStateChanged, signOut }) => {
-    // Listen for auth state changes
-    onAuthStateChanged(auth, (user) => {
-      updateAuthUI(user);
-      if (user) {
-        fetchAndUpdateCredits();
-      }
-    });
-
-    // Set up logout button
-    if (logoutBtn) {
-      logoutBtn.addEventListener('click', async () => {
-        try {
-          await signOut(auth);
-          window.location.reload();
-        } catch (error) {
-          console.error('Logout error:', error);
+  import('https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js').then(
+    ({ onAuthStateChanged, signOut }) => {
+      // Listen for auth state changes
+      onAuthStateChanged(auth, (user) => {
+        updateAuthUI(user);
+        if (user) {
+          fetchAndUpdateCredits();
         }
       });
-    }
 
-    // Set up login/signup buttons
-    if (loginBtn) {
-      loginBtn.addEventListener('click', () => {
-        window.location.href = '/login.html';
-      });
-    }
+      // Set up logout button
+      if (logoutBtn) {
+        logoutBtn.addEventListener('click', async () => {
+          try {
+            await signOut(auth);
+            window.location.reload();
+          } catch (error) {
+            console.error('Logout error:', error);
+          }
+        });
+      }
 
-    if (signupBtn) {
-      signupBtn.addEventListener('click', () => {
-        window.location.href = '/pricing.html';
-      });
+      // Set up login/signup buttons
+      if (loginBtn) {
+        loginBtn.addEventListener('click', () => {
+          window.location.href = '/login.html';
+        });
+      }
+
+      if (signupBtn) {
+        signupBtn.addEventListener('click', () => {
+          window.location.href = '/pricing.html';
+        });
+      }
     }
-  });
+  );
 }
 
 function updateAuthUI(user) {
@@ -59,12 +61,12 @@ function updateAuthUI(user) {
 
   if (user) {
     // User is logged in
-    loggedInElements.forEach(el => el.classList.remove('hidden'));
-    loggedOutElements.forEach(el => el.classList.add('hidden'));
+    loggedInElements.forEach((el) => el.classList.remove('hidden'));
+    loggedOutElements.forEach((el) => el.classList.add('hidden'));
   } else {
     // User is not logged in
-    loggedInElements.forEach(el => el.classList.add('hidden'));
-    loggedOutElements.forEach(el => el.classList.remove('hidden'));
+    loggedInElements.forEach((el) => el.classList.add('hidden'));
+    loggedOutElements.forEach((el) => el.classList.remove('hidden'));
   }
 }
 
@@ -114,11 +116,11 @@ function showLoginModal() {
     document.getElementById('modalLoginBtn').addEventListener('click', () => {
       window.location.href = '/login.html';
     });
-    
+
     document.getElementById('modalCloseBtn').addEventListener('click', () => {
       modal.remove();
     });
-    
+
     // Close modal when clicking outside
     modal.addEventListener('click', (e) => {
       if (e.target === modal) {

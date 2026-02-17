@@ -17,20 +17,20 @@ export default {
   mode: 'img2img',
   async invoke({ prompt, refs = [], params = {} }) {
     const imageBase64 = refs[0];
-    
+
     // Debug logging
-    console.log("[pixar-adapter] invoke called with:", { 
-      hasPrompt: !!prompt, 
-      refsLength: refs.length, 
+    console.log('[pixar-adapter] invoke called with:', {
+      hasPrompt: !!prompt,
+      refsLength: refs.length,
       hasImage: !!imageBase64,
       imageType: typeof imageBase64,
-      imageStartsWith: imageBase64?.substring(0, 50) || 'none'
+      imageStartsWith: imageBase64?.substring(0, 50) || 'none',
     });
-    
+
     // Require an image (schema should already enforce; this is a defensive guard)
     if (!imageBase64) {
-      const err = new Error("Pixar requires an input image.");
-      err.code = "BAD_REQUEST";
+      const err = new Error('Pixar requires an input image.');
+      err.code = 'BAD_REQUEST';
       throw err;
     }
 
@@ -40,12 +40,12 @@ export default {
       guidance_scale: 3.5,
       image_guidance_scale: 2,
       num_inference_steps: 28, // aka "steps"
-      scheduler: "K_EULER",
-      refiner: "none",
+      scheduler: 'K_EULER',
+      refiner: 'none',
       output_quality: 80,
-      speed_mode: "Extra Juiced 🚀 (even more speed)",
+      speed_mode: 'Extra Juiced 🚀 (even more speed)',
       // pin the rest explicitly:
-      output_format: "webp",
+      output_format: 'webp',
       seed: -1,
       refine_strength: 0.3,
       clip_cfg_norm: true,
@@ -58,14 +58,14 @@ export default {
       // only include image field if we have a usable value
       ...(imageBase64 ? { image: toDataUrlMaybe(imageBase64) } : {}),
     };
-    
-    console.log("[pixar-adapter] sending to Replicate:", { 
-      hasImage: !!input.image, 
+
+    console.log('[pixar-adapter] sending to Replicate:', {
+      hasImage: !!input.image,
       imageType: typeof input.image,
       imageStartsWith: input.image?.substring(0, 50) || 'none',
       inputKeys: Object.keys(input),
       // Debug: show sanitized payload keys (without image data)
-      sanitizedKeys: Object.keys(input).filter(key => key !== 'image')
+      sanitizedKeys: Object.keys(input).filter((key) => key !== 'image'),
     });
 
     // Create a prediction to poll

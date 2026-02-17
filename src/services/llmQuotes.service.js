@@ -9,22 +9,25 @@ export async function llmQuotesByFeeling({ feeling, count }) {
     model: OPENAI_MODEL,
     temperature: 0.9,
     messages: [
-      { role: 'system', content:
-        'You write short, attribution-safe aphorisms. Favor timeless phrasing (Stoics, Emerson-like). If output resembles a modern quote, paraphrase and set isParaphrase=true. Return ONLY JSON: {"items":[{"text":"...","author":"Seneca","attributed":true,"isParaphrase":false}, ...] }'
+      {
+        role: 'system',
+        content:
+          'You write short, attribution-safe aphorisms. Favor timeless phrasing (Stoics, Emerson-like). If output resembles a modern quote, paraphrase and set isParaphrase=true. Return ONLY JSON: {"items":[{"text":"...","author":"Seneca","attributed":true,"isParaphrase":false}, ...] }',
       },
-      { role: 'user', content:
-        `Generate ${count} unique quotes that evoke the feeling: "${feeling}". Each single-line, 8–18 words, clean ASCII, no emojis.`
-      }
-    ]
+      {
+        role: 'user',
+        content: `Generate ${count} unique quotes that evoke the feeling: "${feeling}". Each single-line, 8–18 words, clean ASCII, no emojis.`,
+      },
+    ],
   };
 
   const r = await fetch(url, {
     method: 'POST',
     headers: {
-      'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-      'Content-Type': 'application/json'
+      Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+      'Content-Type': 'application/json',
     },
-    body: JSON.stringify(body)
+    body: JSON.stringify(body),
   });
 
   if (!r.ok) throw new Error(`LLM_HTTP_${r.status}`);
@@ -45,7 +48,9 @@ export async function llmQuotesByFeeling({ feeling, count }) {
   // Map + validate
   const out = [];
   for (const it of items) {
-    const text = String(it?.text || '').replace(/\s+/g, ' ').trim();
+    const text = String(it?.text || '')
+      .replace(/\s+/g, ' ')
+      .trim();
     if (!text) continue;
     if (text.split(' ').length < 8 || text.split(' ').length > 18) continue;
     const author = it?.author ? String(it.author).trim() : null;
@@ -54,7 +59,7 @@ export async function llmQuotesByFeeling({ feeling, count }) {
       text,
       author: author || null,
       attributed: !!author,
-      isParaphrase: !!it?.isParaphrase
+      isParaphrase: !!it?.isParaphrase,
     });
   }
   return out;
@@ -77,22 +82,22 @@ export async function llmSingleQuoteFromText({ text, tone, maxChars = 120 }) {
           `Hard limit ${maxChars} characters. Prefer 8–18 words.`,
           'If you quote a known author, include author and set attributed=true. Otherwise, attributed=false and author=null.',
           'Return ONLY strict JSON: {"text":"...","author":null|"Name","attributed":true|false,"toneTag":"motivational|witty|poetic|bold|calm|default"}',
-        ].join(' ')
+        ].join(' '),
       },
       {
         role: 'user',
-        content: `Source text: ${String(text || '').slice(0, 1200)}\nTone hint: ${tone || 'default'}\nConstraints: <=${maxChars} chars, single line, plain ASCII, no emojis.`
-      }
-    ]
+        content: `Source text: ${String(text || '').slice(0, 1200)}\nTone hint: ${tone || 'default'}\nConstraints: <=${maxChars} chars, single line, plain ASCII, no emojis.`,
+      },
+    ],
   };
 
   const r = await fetch(url, {
     method: 'POST',
     headers: {
-      'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-      'Content-Type': 'application/json'
+      Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+      'Content-Type': 'application/json',
     },
-    body: JSON.stringify(body)
+    body: JSON.stringify(body),
   });
 
   if (!r.ok) throw new Error(`LLM_HTTP_${r.status}`);
@@ -105,26 +110,29 @@ export async function llmSingleQuoteFromText({ text, tone, maxChars = 120 }) {
     obj = JSON.parse(jsonTextMatch ? jsonTextMatch[0] : content);
   } catch {}
 
-  const textOut = String(obj?.text || '').replace(/\s+/g, ' ').trim();
+  const textOut = String(obj?.text || '')
+    .replace(/\s+/g, ' ')
+    .trim();
   if (textOut) {
     return {
       id: `q-${randomUUID()}`,
       text: textOut.slice(0, maxChars),
       author: obj?.author ? String(obj.author).trim() : null,
       attributed: !!obj?.attributed,
-      toneTag: obj?.toneTag ? String(obj.toneTag).toLowerCase() : (tone || 'default')
+      toneTag: obj?.toneTag ? String(obj.toneTag).toLowerCase() : tone || 'default',
     };
   }
 
   // Fallback: lightly trim input
-  const trimmed = String(text || '').replace(/\s+/g, ' ').trim().slice(0, maxChars);
+  const trimmed = String(text || '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, maxChars);
   return {
     id: `q-${randomUUID()}`,
     text: trimmed || 'Begin again. Small courage, repeated, becomes strength.',
     author: null,
     attributed: false,
-    toneTag: tone || 'default'
+    toneTag: tone || 'default',
   };
 }
-
-

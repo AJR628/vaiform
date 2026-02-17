@@ -1,16 +1,16 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Creative Studio - Vaiform</title>
     <!-- Respect saved theme before paint - default to dark -->
     <script>
-      const savedTheme = localStorage.getItem("theme");
-      if (savedTheme === "light") {
-        document.documentElement.classList.remove("dark");
+      const savedTheme = localStorage.getItem('theme');
+      if (savedTheme === 'light') {
+        document.documentElement.classList.remove('dark');
       } else {
-        document.documentElement.classList.add("dark");
+        document.documentElement.classList.add('dark');
       }
     </script>
     <!-- Tailwind CDN must load before config -->
@@ -22,29 +22,29 @@
     </script>
     <!-- Unified Header and Auth -->
     <script type="module">
-        import { createUnifiedHeader, initializeHeader } from "/components/header.js";
-        import { initializeAuth } from "/components/auth-utils.js";
-        
-        // Load unified header
-        document.getElementById('unified-header').innerHTML = createUnifiedHeader();
-        initializeHeader();
-        
-        // Initialize auth after a short delay to ensure Firebase is ready
-        setTimeout(() => {
-            initializeAuth();
-        }, 100);
+      import { createUnifiedHeader, initializeHeader } from '/components/header.js';
+      import { initializeAuth } from '/components/auth-utils.js';
+
+      // Load unified header
+      document.getElementById('unified-header').innerHTML = createUnifiedHeader();
+      initializeHeader();
+
+      // Initialize auth after a short delay to ensure Firebase is ready
+      setTimeout(() => {
+        initializeAuth();
+      }, 100);
     </script>
-    
+
     <!-- Firebase SDK - Load the same way as main site -->
     <script type="module" src="./js/firebaseClient.js"></script>
     <!-- Auth bridge: expose auth & wire token provider before page code -->
     <script type="module" src="./auth-bridge.js"></script>
     <script type="module" src="/js/credits-ui.js?v=20250920b"></script>
     <script type="module">
-        // Make credits functions globally available
-        import { updateCreditsDisplay, fetchAndUpdateCredits } from '/js/credits-ui.js?v=20250920b';
-        window.updateCreditsDisplay = updateCreditsDisplay;
-        window.fetchAndUpdateCredits = fetchAndUpdateCredits;
+      // Make credits functions globally available
+      import { updateCreditsDisplay, fetchAndUpdateCredits } from '/js/credits-ui.js?v=20250920b';
+      window.updateCreditsDisplay = updateCreditsDisplay;
+      window.fetchAndUpdateCredits = fetchAndUpdateCredits;
     </script>
     <!-- Shared geometry utilities for caption positioning -->
     <script src="./js/caption-geom.js"></script>
@@ -54,671 +54,851 @@
     <!-- Font loading handled by creative.css (DejaVu Sans variants via /assets/fonts/) -->
     <!-- Caption rendering now uses server-side PNG overlay - no fonts needed -->
     <style>
-        .loading { opacity: 0.6; pointer-events: none; }
-        .error { color: #ef4444; }
-        .success { color: #10b981; }
-        
-        /* Force dark mode for content boxes */
-        .dark .content-box {
-            background-color: #1f2937 !important; /* gray-800 */
-            border-color: #4b5563 !important; /* gray-600 */
-        }
-        
-        .dark .content-box h2 {
-            color: #ffffff !important;
-        }
-        
-        /* Force dark mode for quote result box */
-        .dark #quote-result {
-            background-color: #1f2937 !important; /* gray-800 */
-            border-color: #4b5563 !important; /* gray-600 */
-        }
-        
-        /* Force dark mode for quote text display */
-        .dark #quote-text-display {
-            color: #ffffff !important;
-        }
-        
-        /* Force dark mode for quote edit textarea */
-        .dark #quote-edit {
-            background-color: #111827 !important; /* gray-900 */
-            color: #ffffff !important;
-            border-color: #4b5563 !important; /* gray-600 */
-        }
-        
-        /* Force dark mode for remix area */
-        .dark #remix-area {
-            background-color: #1f2937 !important; /* gray-800 */
-            border-color: #4b5563 !important; /* gray-600 */
-        }
-        
-        /* Force dark mode for remix area heading */
-        .dark #remix-area h3 {
-            color: #d1d5db !important; /* gray-300 */
-        }
-        
-        /* Force dark mode for remix assets container */
-        .dark #remix-assets {
-            background-color: transparent !important;
-        }
-        
-        /* Force dark mode for AI result preview */
-        .dark #ai-result-preview {
-            background-color: #111827 !important; /* gray-900 */
-            border-color: #4b5563 !important; /* gray-600 */
-        }
-        
-        /* Force dark mode for render preview box */
-        .dark #render-preview {
-            background-color: #1f2937 !important; /* gray-800 */
-            border-color: #4b5563 !important; /* gray-600 */
-        }
-        
-        /* Force dark mode for preview text elements */
-        .dark #preview-quote {
-            color: #ffffff !important;
-        }
-        
-        .dark #preview-asset,
-        .dark #preview-caption-style,
-        .dark #preview-voiceover {
-            color: #9ca3af !important; /* gray-400 */
-        }
-        
-        /* Force dark mode for remix input text */
-        .dark #remix-input {
-            background-color: #111827 !important; /* gray-900 */
-            color: #ffffff !important;
-            border-color: #4b5563 !important; /* gray-600 */
-        }
-        
-        /* Force dark mode for clip picker container */
-        .dark #clip-picker {
-            background-color: #1f2937 !important; /* gray-800 */
-            border-color: #4b5563 !important; /* gray-600 */
-        }
-        
-        /* Force dark mode for clip picker heading */
-        .dark #clip-picker h3 {
-            color: #ffffff !important;
-        }
-        
-        /* Force dark mode for clip picker close button */
-        .dark #clip-picker-close {
-            color: #9ca3af !important; /* gray-400 */
-        }
-        
-        .dark #clip-picker-close:hover {
-            color: #ffffff !important;
-        }
-        
-        /* Force dark mode for clip search input */
-        .dark #clip-search-input {
-            background-color: #111827 !important; /* gray-900 */
-            color: #ffffff !important;
-            border-color: #4b5563 !important; /* gray-600 */
-        }
-        
-        /* Force dark mode for clip picker pagination buttons */
-        .dark #clip-picker-prev {
-            background-color: #374151 !important; /* gray-700 */
-            color: #ffffff !important;
-        }
-        
-        .dark #clip-picker-prev:hover:not(:disabled) {
-            background-color: #4b5563 !important; /* gray-600 */
-        }
-        
-        /* --- Caption overlay stacking & sizing --- */
-        #live-preview-container { position: relative; }
-        #live-preview-canvas { position: relative; z-index: 1; display: block; width: 100%; height: auto; }
-        #caption-overlay {
-            position: absolute;
-            left: 0; top: 0;
-            width: 100%; height: 100%;
-            z-index: 2;
-            pointer-events: none;
-            opacity: 1;
-        }
-        /* Make sure preview media and any legacy containers never steal pointer events */
-        #stage img, #stage video, #previewMedia, .preview-overlay, #previewOverlayCanvas, #previewOverlayImg {
-            pointer-events: none;
-            z-index: 1;
-        }
-        /* Draggable box must sit on top */
-        .caption-box, .caption-box .drag-handle { touch-action: none; }
-        .caption-box { z-index: 9999; }
-        
-        /* Add beat button - minimal "+" sign with hover effect */
-        .add-beat-btn {
-            transition: transform 0.2s ease;
-            cursor: pointer;
-        }
-        .add-beat-btn:hover {
-            transform: scale(1.2);
-        }
-        .beat-text-editing {
-            outline: 2px solid #3b82f6;
-            outline-offset: -2px;
-            background-color: rgba(59, 130, 246, 0.1);
-            border-radius: 4px;
-        }
-        /* Beat video container - 9:16 aspect ratio to match focus modal */
-        .beat-video-container {
-            aspect-ratio: 9 / 16;
-            height: auto !important;
-            background-color: #000;
-            overflow: hidden;
-        }
-        
-        /* Beat caption preview overlay */
-        .beat-caption-overlay {
-            position: absolute;
-            left: 50%;
-            top: calc(var(--y-pct) * 100%);
-            width: calc(var(--raster-w-ratio) * 100%);
-            height: calc(var(--raster-h-ratio) * 100%);
-            transform: translateX(-50%);
-            pointer-events: none;
-            z-index: 10;
-            object-fit: contain;
-            image-rendering: -webkit-optimize-contrast;
-            image-rendering: crisp-edges;
-        }
-        
-        /* Beat controls overlay - contains delete button */
-        .beat-controls {
-            position: absolute;
-            inset: 0;
-            z-index: 50;
-            pointer-events: none;
-        }
-        
-        .beat-controls .delete-beat-btn {
-            pointer-events: auto;
-        }
-        
-        /* Beat card balloon hover styles */
-        .beat-card {
-            transition: transform 180ms cubic-bezier(0.4, 0, 0.2, 1);
-            will-change: transform;
-        }
-        
-        .beat-card.beat-hovered {
-            transform: scale(1.35);
-            transform-origin: top center;
-            z-index: 80;
-            overflow: visible; /* Allow scaled content to overflow card bounds */
-        }
-        
-        .beat-card.squish-left-1 {
-            transform: translateX(-20px);
-        }
-        
-        .beat-card.squish-left-2 {
-            transform: translateX(-10px);
-        }
-        
-        .beat-card.squish-right-1 {
-            transform: translateX(20px);
-        }
-        
-        .beat-card.squish-right-2 {
-            transform: translateX(10px);
-        }
-        
-        /* Storyboard scroll wrapper - handles horizontal scrolling and allows vertical overflow */
-        .storyboard-scroll-wrapper {
-            overflow-x: auto;
-            overflow-y: visible;
-            padding-top: 24px;
-            padding-bottom: 140px;
-            width: 100%;
-        }
-        
-        /* Storyboard row - no overflow constraints, allows content to overflow vertically */
-        #storyboard-row {
-            overflow: visible;
-        }
-        
-        /* Extra padding when actively hovering a card */
-        #storyboard.storyboard-hovering .storyboard-scroll-wrapper {
-            padding-bottom: 160px;
-        }
-        
-        /* Beat Focus Preview Modal */
-        #beat-focus-modal {
-            position: fixed;
-            inset: 0;
-            z-index: 10000;
-            display: none;
-            align-items: center;
-            justify-content: center;
-            background-color: rgba(0, 0, 0, 0.85);
-            backdrop-filter: blur(4px);
-        }
-        
-        #beat-focus-modal.show {
-            display: flex;
-        }
-        
-        #beat-focus-panel {
-            position: relative;
-            width: 90%;
-            max-width: 800px;
-            max-height: 90vh;
-            background-color: #1f2937;
-            border-radius: 12px;
-            overflow: hidden;
-            display: flex;
-            flex-direction: column;
-            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5);
-        }
-        
-        #beat-focus-video-container {
-            position: relative;
-            height: min(70vh, 720px);
-            aspect-ratio: 9 / 16;
-            width: auto;
-            max-width: 80vw;
-            margin: 0 auto;
-            background-color: #000;
-            overflow: hidden;
-        }
-        
-        #beat-focus-video {
-            position: absolute;
-            inset: 0;
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-            object-position: center;
-        }
-        
-        #beat-focus-overlay {
-            position: absolute;
-            left: 50%;
-            top: calc(var(--y-pct) * 100%);
-            width: calc(var(--raster-w-ratio) * 100%);
-            height: calc(var(--raster-h-ratio) * 100%);
-            transform: translateX(-50%);
-            pointer-events: none;
-            z-index: 10;
-            object-fit: contain;
-            image-rendering: -webkit-optimize-contrast;
-            image-rendering: crisp-edges;
-        }
-        
-        #beat-focus-text {
-            padding: 1.5rem;
-            color: #e5e7eb;
-            font-size: 1rem;
-            line-height: 1.5;
-            white-space: pre-wrap;
-            word-wrap: break-word;
-        }
-        
-        #beat-focus-close {
-            position: absolute;
-            top: 1rem;
-            right: 1rem;
-            width: 2.5rem;
-            height: 2.5rem;
-            border-radius: 50%;
-            background-color: rgba(0, 0, 0, 0.7);
-            border: none;
-            color: #fff;
-            font-size: 1.5rem;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 20;
-            transition: background-color 0.2s;
-        }
-        
-        #beat-focus-close:hover {
-            background-color: rgba(0, 0, 0, 0.9);
-        }
-        
-        #beat-focus-preview-note {
-            padding: 1rem;
-            text-align: center;
-            color: #9ca3af;
-            font-size: 0.875rem;
-            background-color: #374151;
-        }
+      .loading {
+        opacity: 0.6;
+        pointer-events: none;
+      }
+      .error {
+        color: #ef4444;
+      }
+      .success {
+        color: #10b981;
+      }
+
+      /* Force dark mode for content boxes */
+      .dark .content-box {
+        background-color: #1f2937 !important; /* gray-800 */
+        border-color: #4b5563 !important; /* gray-600 */
+      }
+
+      .dark .content-box h2 {
+        color: #ffffff !important;
+      }
+
+      /* Force dark mode for quote result box */
+      .dark #quote-result {
+        background-color: #1f2937 !important; /* gray-800 */
+        border-color: #4b5563 !important; /* gray-600 */
+      }
+
+      /* Force dark mode for quote text display */
+      .dark #quote-text-display {
+        color: #ffffff !important;
+      }
+
+      /* Force dark mode for quote edit textarea */
+      .dark #quote-edit {
+        background-color: #111827 !important; /* gray-900 */
+        color: #ffffff !important;
+        border-color: #4b5563 !important; /* gray-600 */
+      }
+
+      /* Force dark mode for remix area */
+      .dark #remix-area {
+        background-color: #1f2937 !important; /* gray-800 */
+        border-color: #4b5563 !important; /* gray-600 */
+      }
+
+      /* Force dark mode for remix area heading */
+      .dark #remix-area h3 {
+        color: #d1d5db !important; /* gray-300 */
+      }
+
+      /* Force dark mode for remix assets container */
+      .dark #remix-assets {
+        background-color: transparent !important;
+      }
+
+      /* Force dark mode for AI result preview */
+      .dark #ai-result-preview {
+        background-color: #111827 !important; /* gray-900 */
+        border-color: #4b5563 !important; /* gray-600 */
+      }
+
+      /* Force dark mode for render preview box */
+      .dark #render-preview {
+        background-color: #1f2937 !important; /* gray-800 */
+        border-color: #4b5563 !important; /* gray-600 */
+      }
+
+      /* Force dark mode for preview text elements */
+      .dark #preview-quote {
+        color: #ffffff !important;
+      }
+
+      .dark #preview-asset,
+      .dark #preview-caption-style,
+      .dark #preview-voiceover {
+        color: #9ca3af !important; /* gray-400 */
+      }
+
+      /* Force dark mode for remix input text */
+      .dark #remix-input {
+        background-color: #111827 !important; /* gray-900 */
+        color: #ffffff !important;
+        border-color: #4b5563 !important; /* gray-600 */
+      }
+
+      /* Force dark mode for clip picker container */
+      .dark #clip-picker {
+        background-color: #1f2937 !important; /* gray-800 */
+        border-color: #4b5563 !important; /* gray-600 */
+      }
+
+      /* Force dark mode for clip picker heading */
+      .dark #clip-picker h3 {
+        color: #ffffff !important;
+      }
+
+      /* Force dark mode for clip picker close button */
+      .dark #clip-picker-close {
+        color: #9ca3af !important; /* gray-400 */
+      }
+
+      .dark #clip-picker-close:hover {
+        color: #ffffff !important;
+      }
+
+      /* Force dark mode for clip search input */
+      .dark #clip-search-input {
+        background-color: #111827 !important; /* gray-900 */
+        color: #ffffff !important;
+        border-color: #4b5563 !important; /* gray-600 */
+      }
+
+      /* Force dark mode for clip picker pagination buttons */
+      .dark #clip-picker-prev {
+        background-color: #374151 !important; /* gray-700 */
+        color: #ffffff !important;
+      }
+
+      .dark #clip-picker-prev:hover:not(:disabled) {
+        background-color: #4b5563 !important; /* gray-600 */
+      }
+
+      /* --- Caption overlay stacking & sizing --- */
+      #live-preview-container {
+        position: relative;
+      }
+      #live-preview-canvas {
+        position: relative;
+        z-index: 1;
+        display: block;
+        width: 100%;
+        height: auto;
+      }
+      #caption-overlay {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: 100%;
+        z-index: 2;
+        pointer-events: none;
+        opacity: 1;
+      }
+      /* Make sure preview media and any legacy containers never steal pointer events */
+      #stage img,
+      #stage video,
+      #previewMedia,
+      .preview-overlay,
+      #previewOverlayCanvas,
+      #previewOverlayImg {
+        pointer-events: none;
+        z-index: 1;
+      }
+      /* Draggable box must sit on top */
+      .caption-box,
+      .caption-box .drag-handle {
+        touch-action: none;
+      }
+      .caption-box {
+        z-index: 9999;
+      }
+
+      /* Add beat button - minimal "+" sign with hover effect */
+      .add-beat-btn {
+        transition: transform 0.2s ease;
+        cursor: pointer;
+      }
+      .add-beat-btn:hover {
+        transform: scale(1.2);
+      }
+      .beat-text-editing {
+        outline: 2px solid #3b82f6;
+        outline-offset: -2px;
+        background-color: rgba(59, 130, 246, 0.1);
+        border-radius: 4px;
+      }
+      /* Beat video container - 9:16 aspect ratio to match focus modal */
+      .beat-video-container {
+        aspect-ratio: 9 / 16;
+        height: auto !important;
+        background-color: #000;
+        overflow: hidden;
+      }
+
+      /* Beat caption preview overlay */
+      .beat-caption-overlay {
+        position: absolute;
+        left: 50%;
+        top: calc(var(--y-pct) * 100%);
+        width: calc(var(--raster-w-ratio) * 100%);
+        height: calc(var(--raster-h-ratio) * 100%);
+        transform: translateX(-50%);
+        pointer-events: none;
+        z-index: 10;
+        object-fit: contain;
+        image-rendering: -webkit-optimize-contrast;
+        image-rendering: crisp-edges;
+      }
+
+      /* Beat controls overlay - contains delete button */
+      .beat-controls {
+        position: absolute;
+        inset: 0;
+        z-index: 50;
+        pointer-events: none;
+      }
+
+      .beat-controls .delete-beat-btn {
+        pointer-events: auto;
+      }
+
+      /* Beat card balloon hover styles */
+      .beat-card {
+        transition: transform 180ms cubic-bezier(0.4, 0, 0.2, 1);
+        will-change: transform;
+      }
+
+      .beat-card.beat-hovered {
+        transform: scale(1.35);
+        transform-origin: top center;
+        z-index: 80;
+        overflow: visible; /* Allow scaled content to overflow card bounds */
+      }
+
+      .beat-card.squish-left-1 {
+        transform: translateX(-20px);
+      }
+
+      .beat-card.squish-left-2 {
+        transform: translateX(-10px);
+      }
+
+      .beat-card.squish-right-1 {
+        transform: translateX(20px);
+      }
+
+      .beat-card.squish-right-2 {
+        transform: translateX(10px);
+      }
+
+      /* Storyboard scroll wrapper - handles horizontal scrolling and allows vertical overflow */
+      .storyboard-scroll-wrapper {
+        overflow-x: auto;
+        overflow-y: visible;
+        padding-top: 24px;
+        padding-bottom: 140px;
+        width: 100%;
+      }
+
+      /* Storyboard row - no overflow constraints, allows content to overflow vertically */
+      #storyboard-row {
+        overflow: visible;
+      }
+
+      /* Extra padding when actively hovering a card */
+      #storyboard.storyboard-hovering .storyboard-scroll-wrapper {
+        padding-bottom: 160px;
+      }
+
+      /* Beat Focus Preview Modal */
+      #beat-focus-modal {
+        position: fixed;
+        inset: 0;
+        z-index: 10000;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        background-color: rgba(0, 0, 0, 0.85);
+        backdrop-filter: blur(4px);
+      }
+
+      #beat-focus-modal.show {
+        display: flex;
+      }
+
+      #beat-focus-panel {
+        position: relative;
+        width: 90%;
+        max-width: 800px;
+        max-height: 90vh;
+        background-color: #1f2937;
+        border-radius: 12px;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5);
+      }
+
+      #beat-focus-video-container {
+        position: relative;
+        height: min(70vh, 720px);
+        aspect-ratio: 9 / 16;
+        width: auto;
+        max-width: 80vw;
+        margin: 0 auto;
+        background-color: #000;
+        overflow: hidden;
+      }
+
+      #beat-focus-video {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        object-position: center;
+      }
+
+      #beat-focus-overlay {
+        position: absolute;
+        left: 50%;
+        top: calc(var(--y-pct) * 100%);
+        width: calc(var(--raster-w-ratio) * 100%);
+        height: calc(var(--raster-h-ratio) * 100%);
+        transform: translateX(-50%);
+        pointer-events: none;
+        z-index: 10;
+        object-fit: contain;
+        image-rendering: -webkit-optimize-contrast;
+        image-rendering: crisp-edges;
+      }
+
+      #beat-focus-text {
+        padding: 1.5rem;
+        color: #e5e7eb;
+        font-size: 1rem;
+        line-height: 1.5;
+        white-space: pre-wrap;
+        word-wrap: break-word;
+      }
+
+      #beat-focus-close {
+        position: absolute;
+        top: 1rem;
+        right: 1rem;
+        width: 2.5rem;
+        height: 2.5rem;
+        border-radius: 50%;
+        background-color: rgba(0, 0, 0, 0.7);
+        border: none;
+        color: #fff;
+        font-size: 1.5rem;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 20;
+        transition: background-color 0.2s;
+      }
+
+      #beat-focus-close:hover {
+        background-color: rgba(0, 0, 0, 0.9);
+      }
+
+      #beat-focus-preview-note {
+        padding: 1rem;
+        text-align: center;
+        color: #9ca3af;
+        font-size: 0.875rem;
+        background-color: #374151;
+      }
     </style>
-</head>
-<body class="bg-gray-50 text-gray-800 dark:bg-gray-900 dark:text-gray-100 min-h-screen transition-colors duration-300">
+  </head>
+  <body
+    class="bg-gray-50 text-gray-800 dark:bg-gray-900 dark:text-gray-100 min-h-screen transition-colors duration-300"
+  >
     <!-- Unified Header -->
     <div id="unified-header"></div>
 
     <!-- Hero Section -->
-    <section class="w-full md:max-w-5xl md:mx-auto px-4 sm:px-6 lg:px-8 py-8 md:py-12 bg-gray-50 dark:bg-gray-900">
-        <div class="flex flex-col md:flex-row md:items-start md:justify-between md:gap-8">
-            <div class="flex-1">
-                <p class="text-sm text-gray-500 dark:text-gray-100 mb-3">Articles → Shorts</p>
-                <h1 class="text-3xl md:text-4xl font-bold text-gray-900 dark:text-white mb-4">From articles and ideas to finished videos.</h1>
-                <p class="text-base text-gray-600 dark:text-gray-100 leading-relaxed">No timeline, no editing software.<br>Just your link, notes, or idea—and a video that's ready to post.</p>
-            </div>
-            <div class="mt-6 md:mt-0 md:flex-shrink-0">
-                <div class="space-y-3 text-sm text-gray-600 dark:text-gray-100">
-                    <div class="flex items-start gap-2">
-                        <span class="text-lg">①</span>
-                        <span>Start with an article, notes, or idea</span>
-                    </div>
-                    <div class="flex items-start gap-2">
-                        <span class="text-lg">②</span>
-                        <span>Shape the script and beats</span>
-                    </div>
-                    <div class="flex items-start gap-2">
-                        <span class="text-lg">③</span>
-                        <span>Render video</span>
-                    </div>
-                </div>
-            </div>
+    <section
+      class="w-full md:max-w-5xl md:mx-auto px-4 sm:px-6 lg:px-8 py-8 md:py-12 bg-gray-50 dark:bg-gray-900"
+    >
+      <div class="flex flex-col md:flex-row md:items-start md:justify-between md:gap-8">
+        <div class="flex-1">
+          <p class="text-sm text-gray-500 dark:text-gray-100 mb-3">Articles → Shorts</p>
+          <h1 class="text-3xl md:text-4xl font-bold text-gray-900 dark:text-white mb-4">
+            From articles and ideas to finished videos.
+          </h1>
+          <p class="text-base text-gray-600 dark:text-gray-100 leading-relaxed">
+            No timeline, no editing software.<br />Just your link, notes, or idea—and a video that's
+            ready to post.
+          </p>
         </div>
+        <div class="mt-6 md:mt-0 md:flex-shrink-0">
+          <div class="space-y-3 text-sm text-gray-600 dark:text-gray-100">
+            <div class="flex items-start gap-2">
+              <span class="text-lg">①</span>
+              <span>Start with an article, notes, or idea</span>
+            </div>
+            <div class="flex items-start gap-2">
+              <span class="text-lg">②</span>
+              <span>Shape the script and beats</span>
+            </div>
+            <div class="flex items-start gap-2">
+              <span class="text-lg">③</span>
+              <span>Render video</span>
+            </div>
+          </div>
+        </div>
+      </div>
     </section>
 
-    <main class="w-full md:max-w-5xl md:mx-auto px-4 sm:px-6 lg:px-8 pb-16 space-y-6 bg-gray-50 dark:bg-gray-900">
-        <!-- Accordion Layout -->
-        <!-- Mobile order: quote → CTA → preview. Desktop: preview → quote → CTA -->
-        <div class="studio-accordion-layout flex flex-col">
-            <!-- Left: Accordion Sections -->
-            <div class="studio-accordion-left order-1 md:order-2">
-                <!-- Media and Voiceover sections removed (Article-only) -->
+    <main
+      class="w-full md:max-w-5xl md:mx-auto px-4 sm:px-6 lg:px-8 pb-16 space-y-6 bg-gray-50 dark:bg-gray-900"
+    >
+      <!-- Accordion Layout -->
+      <!-- Mobile order: quote → CTA → preview. Desktop: preview → quote → CTA -->
+      <div class="studio-accordion-layout flex flex-col">
+        <!-- Left: Accordion Sections -->
+        <div class="studio-accordion-left order-1 md:order-2">
+          <!-- Media and Voiceover sections removed (Article-only) -->
 
-            <!-- Article Mode Section (full width on desktop) -->
-            <div data-mode="articles" class="content-box bg-gray-50/80 dark:bg-slate-900/60 border border-gray-200/50 dark:border-white/5 rounded-2xl p-4 md:p-6 space-y-2 shadow-sm w-full md:col-span-2">
-                <h2 class="text-xl font-semibold text-gray-900 dark:text-white">Article Explainer</h2>
-                
-                <!-- Input Section -->
-                <div class="space-y-2">
-                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Style</label>
-                    <select
-                        id="article-style-select"
-                        class="w-full bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-3 py-2 text-gray-900 dark:text-white"
-                    >
-                        <option value="default">Default (Explainer)</option>
-                        <option value="hype">Hype</option>
-                        <option value="cozy">Cozy</option>
-                    </select>
-                    <textarea
-                        id="article-input"
-                        rows="4"
-                        placeholder="Paste article URL or text here..."
-                        class="w-full bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-3 py-2 text-gray-900 dark:text-white"
-                    ></textarea>
-                    <button
-                        id="summarize-article-btn"
-                        data-action="summarizeArticle"
-                        type="button"
-                        class="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-600 rounded text-white"
-                    >
-                        Summarize into script
-                    </button>
-                    <div id="article-error" class="error text-sm hidden"></div>
-                </div>
+          <!-- Article Mode Section (full width on desktop) -->
+          <div
+            data-mode="articles"
+            class="content-box bg-gray-50/80 dark:bg-slate-900/60 border border-gray-200/50 dark:border-white/5 rounded-2xl p-4 md:p-6 space-y-2 shadow-sm w-full md:col-span-2"
+          >
+            <h2 class="text-xl font-semibold text-gray-900 dark:text-white">Article Explainer</h2>
 
-                <!-- Script Preview Section -->
-                <div id="article-script-section" class="space-y-2 mt-2">
-                    <div class="flex justify-between items-center">
-                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Script Preview</label>
-                        <button
-                            id="toggle-view-btn"
-                            type="button"
-                            class="text-xs px-2 py-1 bg-gray-600 hover:bg-gray-500 rounded text-white"
-                        >
-                            Beat View
-                        </button>
-                    </div>
-                    <p class="text-xs text-gray-500 dark:text-gray-400 leading-tight">Each numbered beat becomes one clip (beats can wrap to multiple lines).</p>
-                    <textarea
-                        id="article-script-preview"
-                        rows="4"
-                        placeholder="Script will appear here after summarization..."
-                        class="w-full bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-3 py-2 text-gray-900 dark:text-white"
-                    ></textarea>
-                    <!-- Beat Editor (initially hidden) -->
-                    <div id="beat-editor" class="space-y-2 hidden">
-                        <div id="beat-list" class="space-y-2"></div>
-                        <div class="flex justify-between items-center">
-                            <button
-                                id="add-beat-btn"
-                                type="button"
-                                class="text-xs px-2 py-1 bg-gray-600 hover:bg-gray-500 disabled:bg-gray-400 disabled:cursor-not-allowed rounded text-white"
-                            >
-                                + Add beat
-                            </button>
-                            <div id="beat-editor-counters" class="text-xs text-gray-500 dark:text-gray-400"></div>
-                        </div>
-                    </div>
-                    <!-- Counters: show only in raw view -->
-                    <div id="script-preview-counters" class="text-xs text-gray-500 dark:text-gray-400">
-                        Beats: 0 / 8 | Total: 0 / 850
-                    </div>
-                </div>
-
-                <!-- Prepare Storyboard Button -->
-                <div class="mt-2 mb-1">
-                    <button
-                        id="prepare-storyboard-btn"
-                        data-action="prepareStoryboard"
-                        type="button"
-                        class="w-full px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-600 disabled:cursor-not-allowed rounded text-white"
-                    >
-                        Prepare storyboard
-                    </button>
-                </div>
-
-                <!-- Storyboard Section -->
-                <div id="storyboard" class="mt-2 hidden">
-                    <div class="text-xs text-gray-400 dark:text-gray-500 mb-2">Step 2 · Storyboard</div>
-                    <h3 class="text-lg font-semibold mb-2 text-gray-900 dark:text-white">Storyboard</h3>
-                    <div id="storyboard-scroll" class="storyboard-scroll-wrapper w-full">
-                        <div id="storyboard-row" class="flex gap-3 pb-2"></div>
-                    </div>
-                    <!-- Caption Style mount point -->
-                    <div id="caption-style-mount"></div>
-                    <!-- Caption Style Section (Hidden during transition) -->
-                    <div id="caption-style-section" class="content-box bg-white dark:bg-gray-800 rounded-lg p-6 space-y-4 border border-gray-200 dark:border-gray-600" style="display: none;">
-                        <h2 class="text-xl font-semibold text-gray-900 dark:text-white">Caption Style</h2>
-                        
-                        <!-- Overlay Mode Toggle -->
-                        <div class="mb-4">
-                            <label class="flex items-center gap-2">
-                                <input type="checkbox" id="overlay-mode-toggle" class="rounded" />
-                                <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Use Draggable Overlay</span>
-                            </label>
-                        </div>
-                        
-                        <!-- Overlay Controls (shown when overlay mode is enabled) -->
-                        <div id="overlay-controls" class="mb-4 space-y-3" style="display: none;">
-                            <div>
-                                <label class="flex items-center gap-2">
-                                    <input type="checkbox" id="show-outline-toggle" class="rounded" checked />
-                                    <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Show outline</span>
-                                </label>
-                            </div>
-                            <div>
-                                <label class="flex items-center gap-2">
-                                    <input type="checkbox" id="responsive-text-toggle" class="rounded" checked />
-                                    <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Responsive text</span>
-                                </label>
-                            </div>
-                        </div>
-                        
-                        <div class="grid grid-cols-2 gap-4">
-                            <!-- Font Family -->
-                            <div>
-                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Font</label>
-                                <select id="caption-font" class="w-full bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-3 py-2 text-gray-900 dark:text-white">
-                                    <option value="system">System</option>
-                                    <option value="bold">Bold</option>
-                                    <option value="cinematic">Cinematic</option>
-                                    <option value="minimal">Minimal</option>
-                                </select>
-                            </div>
-                            <!-- Font Weight -->
-                            <div>
-                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Weight</label>
-                                <select id="caption-weight" class="w-full bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-3 py-2 text-gray-900 dark:text-white">
-                                    <option value="normal">Normal</option>
-                                    <option value="bold">Bold</option>
-                                </select>
-                            </div>
-                            <!-- Size -->
-                            <div>
-                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Size: <span id="size-value">80px</span></label>
-                                <input type="range" id="caption-size" min="0" max="100" value="60" class="w-full" />
-                            </div>
-                            <!-- Opacity -->
-                            <div>
-                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Opacity: <span id="opacity-value">80%</span></label>
-                                <input type="range" id="caption-opacity" min="30" max="100" value="80" class="w-full" />
-                            </div>
-                            <!-- Placement -->
-                            <div>
-                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Placement</label>
-                                <select id="caption-placement" class="w-full bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-3 py-2 text-gray-900 dark:text-white">
-                                    <option value="top">Top</option>
-                                    <option value="middle">Middle</option>
-                                    <option value="bottom" selected>Bottom</option>
-                                </select>
-                            </div>
-                            <!-- Background Box -->
-                            <div>
-                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Background</label>
-                                <div class="flex items-center gap-4">
-                                    <label class="flex items-center gap-2">
-                                        <input type="checkbox" id="caption-background" class="rounded" />
-                                        <span class="text-sm">Show box</span>
-                                    </label>
-                                    <div class="flex-1">
-                                        <label class="block text-xs text-gray-400 mb-1">Box opacity: <span id="bg-opacity-value">50%</span></label>
-                                        <input type="range" id="caption-bg-opacity" min="0" max="100" value="50" class="w-full" />
-                                    </div>
-                                </div>
-                            </div>
-                            <!-- Apply Caption Settings Button -->
-                            <div class="mt-4">
-                                <button id="apply-caption-style-btn" type="button" class="w-full px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded text-base font-medium text-white">
-                                    Apply Caption Settings
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                    <!-- Video Cuts (beta) - visible when window.ENABLE_VIDEO_CUTS_UI && session && N >= 2 -->
-                    <div id="video-cuts-panel" class="mt-4 p-3 bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded text-sm hidden">
-                        <div class="font-semibold text-gray-900 dark:text-white mb-2">Video Cuts (beta)</div>
-                        <div id="video-cuts-warning" class="text-amber-600 dark:text-amber-400 text-xs mb-2 hidden"></div>
-                        <div class="space-y-2">
-                            <label class="block text-gray-700 dark:text-gray-300">Boundary <select id="video-cuts-boundary-index" class="ml-1 bg-gray-200 dark:bg-gray-700 border border-gray-400 dark:border-gray-500 rounded px-2 py-1"></select></label>
-                            <label class="block text-gray-700 dark:text-gray-300">beatIndex <input type="number" id="video-cuts-beat-index" min="1" max="1" class="w-16 ml-1 bg-gray-200 dark:bg-gray-700 border border-gray-400 dark:border-gray-500 rounded px-2 py-1" /></label>
-                            <label class="block text-gray-700 dark:text-gray-300">pct <input type="range" id="video-cuts-pct" min="0" max="1" step="0.01" value="0.35" class="align-middle" /><span id="video-cuts-pct-value" class="ml-1">0.35</span></label>
-                            <div class="flex gap-2 mt-2">
-                                <button type="button" id="video-cuts-save-btn" class="px-3 py-1.5 rounded bg-blue-600 hover:bg-blue-500 text-white text-xs">Save Cuts</button>
-                                <button type="button" id="video-cuts-reset-btn" class="px-3 py-1.5 rounded bg-gray-600 hover:bg-gray-500 text-white text-xs">Reset Cuts</button>
-                            </div>
-                        </div>
-                        <pre id="video-cuts-debug" class="mt-2 p-2 bg-gray-200 dark:bg-gray-900 rounded text-xs overflow-auto max-h-24 text-gray-800 dark:text-gray-200"></pre>
-                    </div>
-                </div>
-                
-                <!-- Beat Focus Preview Modal -->
-                <div id="beat-focus-modal">
-                    <div id="beat-focus-panel">
-                        <button id="beat-focus-close" aria-label="Close preview">✕</button>
-                        <div id="beat-focus-video-container">
-                            <video id="beat-focus-video" muted loop preload="auto"></video>
-                            <img id="beat-focus-overlay" alt="Caption overlay" style="display: none;" />
-                        </div>
-                        <div id="beat-focus-preview-note" style="display: none;">
-                            Preview not ready yet
-                        </div>
-                        <div id="beat-focus-text"></div>
-                    </div>
-                </div>
-
-                <!-- Clip Picker Drawer -->
-                <div id="clip-picker" class="mt-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg p-4 hidden max-h-[75vh] overflow-y-auto">
-                    <div class="flex justify-between items-center mb-2">
-                        <h3 class="text-sm font-semibold text-gray-900 dark:text-white">Choose a clip for this line</h3>
-                        <button id="clip-picker-close" class="text-xs text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white px-2 py-1">Close</button>
-                    </div>
-                    <div class="flex items-center gap-2 mb-3">
-                        <input
-                            id="clip-search-input"
-                            type="text"
-                            class="flex-1 px-2 py-1 rounded bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 text-sm text-gray-900 dark:text-white placeholder-gray-400"
-                            placeholder="Search clips for this sentence..."
-                        />
-                        <button
-                            id="clip-search-btn"
-                            class="px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-sm font-medium text-white"
-                        >
-                            Search
-                        </button>
-                    </div>
-                    <div id="clip-picker-grid" class="grid grid-cols-2 md:grid-cols-4 gap-2 max-h-96 overflow-y-auto"></div>
-                    <div id="clip-picker-pagination" class="flex justify-center items-center gap-2 mt-3 hidden">
-                        <button
-                            id="clip-picker-prev"
-                            class="px-3 py-1 rounded bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-sm font-medium text-gray-900 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                            Previous
-                        </button>
-                        <button
-                            id="clip-picker-more"
-                            class="px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-sm font-medium text-white disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                            More clips
-                        </button>
-                    </div>
-                </div>
-
-                <!-- Voice Selection -->
-                <div class="space-y-2 mt-2">
-                    <div class="text-xs text-gray-400 dark:text-gray-500 mb-2">Step 3 · Voice & render</div>
-                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Voice</label>
-                    <select
-                        id="article-voice-preset"
-                        class="w-full bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-3 py-2 text-gray-900 dark:text-white"
-                    >
-                        <option value="male_calm">Neutral</option>
-                        <option value="male_friendly">Warm</option>
-                        <option value="male_energetic">Energetic</option>
-                    </select>
-                </div>
-
-                <!-- Render Button -->
-                <div class="mt-2">
-                    <button
-                        id="render-article-btn"
-                        data-action="renderArticle"
-                        type="button"
-                        class="w-full px-6 py-3 bg-green-600 hover:bg-green-500 disabled:bg-gray-400 disabled:cursor-not-allowed rounded-lg text-base font-semibold text-white shadow-md transition-colors"
-                    >
-                        Render video
-                    </button>
-                </div>
-
-                <!-- Last Render Video Player -->
-                <div id="article-render-result" class="mt-2 hidden">
-                    <h3 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Last render</h3>
-                    <video
-                        id="article-render-video"
-                        controls
-                        class="w-full rounded border border-gray-300 dark:border-gray-700"
-                    ></video>
-                    <div id="article-render-links" class="mt-2 space-y-1">
-                        <a id="article-video-url" href="#" target="_blank" class="text-sm text-blue-600 dark:text-blue-400 hover:underline">Open video</a>
-                    </div>
-                </div>
+            <!-- Input Section -->
+            <div class="space-y-2">
+              <label class="block text-sm font-medium text-gray-700 dark:text-gray-300"
+                >Style</label
+              >
+              <select
+                id="article-style-select"
+                class="w-full bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-3 py-2 text-gray-900 dark:text-white"
+              >
+                <option value="default">Default (Explainer)</option>
+                <option value="hype">Hype</option>
+                <option value="cozy">Cozy</option>
+              </select>
+              <textarea
+                id="article-input"
+                rows="4"
+                placeholder="Paste article URL or text here..."
+                class="w-full bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-3 py-2 text-gray-900 dark:text-white"
+              ></textarea>
+              <button
+                id="summarize-article-btn"
+                data-action="summarizeArticle"
+                type="button"
+                class="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-600 rounded text-white"
+              >
+                Summarize into script
+              </button>
+              <div id="article-error" class="error text-sm hidden"></div>
             </div>
+
+            <!-- Script Preview Section -->
+            <div id="article-script-section" class="space-y-2 mt-2">
+              <div class="flex justify-between items-center">
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300"
+                  >Script Preview</label
+                >
+                <button
+                  id="toggle-view-btn"
+                  type="button"
+                  class="text-xs px-2 py-1 bg-gray-600 hover:bg-gray-500 rounded text-white"
+                >
+                  Beat View
+                </button>
+              </div>
+              <p class="text-xs text-gray-500 dark:text-gray-400 leading-tight">
+                Each numbered beat becomes one clip (beats can wrap to multiple lines).
+              </p>
+              <textarea
+                id="article-script-preview"
+                rows="4"
+                placeholder="Script will appear here after summarization..."
+                class="w-full bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-3 py-2 text-gray-900 dark:text-white"
+              ></textarea>
+              <!-- Beat Editor (initially hidden) -->
+              <div id="beat-editor" class="space-y-2 hidden">
+                <div id="beat-list" class="space-y-2"></div>
+                <div class="flex justify-between items-center">
+                  <button
+                    id="add-beat-btn"
+                    type="button"
+                    class="text-xs px-2 py-1 bg-gray-600 hover:bg-gray-500 disabled:bg-gray-400 disabled:cursor-not-allowed rounded text-white"
+                  >
+                    + Add beat
+                  </button>
+                  <div
+                    id="beat-editor-counters"
+                    class="text-xs text-gray-500 dark:text-gray-400"
+                  ></div>
+                </div>
+              </div>
+              <!-- Counters: show only in raw view -->
+              <div id="script-preview-counters" class="text-xs text-gray-500 dark:text-gray-400">
+                Beats: 0 / 8 | Total: 0 / 850
+              </div>
+            </div>
+
+            <!-- Prepare Storyboard Button -->
+            <div class="mt-2 mb-1">
+              <button
+                id="prepare-storyboard-btn"
+                data-action="prepareStoryboard"
+                type="button"
+                class="w-full px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-600 disabled:cursor-not-allowed rounded text-white"
+              >
+                Prepare storyboard
+              </button>
+            </div>
+
+            <!-- Storyboard Section -->
+            <div id="storyboard" class="mt-2 hidden">
+              <div class="text-xs text-gray-400 dark:text-gray-500 mb-2">Step 2 · Storyboard</div>
+              <h3 class="text-lg font-semibold mb-2 text-gray-900 dark:text-white">Storyboard</h3>
+              <div id="storyboard-scroll" class="storyboard-scroll-wrapper w-full">
+                <div id="storyboard-row" class="flex gap-3 pb-2"></div>
+              </div>
+              <!-- Caption Style mount point -->
+              <div id="caption-style-mount"></div>
+              <!-- Caption Style Section (Hidden during transition) -->
+              <div
+                id="caption-style-section"
+                class="content-box bg-white dark:bg-gray-800 rounded-lg p-6 space-y-4 border border-gray-200 dark:border-gray-600"
+                style="display: none"
+              >
+                <h2 class="text-xl font-semibold text-gray-900 dark:text-white">Caption Style</h2>
+
+                <!-- Overlay Mode Toggle -->
+                <div class="mb-4">
+                  <label class="flex items-center gap-2">
+                    <input type="checkbox" id="overlay-mode-toggle" class="rounded" />
+                    <span class="text-sm font-medium text-gray-700 dark:text-gray-300"
+                      >Use Draggable Overlay</span
+                    >
+                  </label>
+                </div>
+
+                <!-- Overlay Controls (shown when overlay mode is enabled) -->
+                <div id="overlay-controls" class="mb-4 space-y-3" style="display: none">
+                  <div>
+                    <label class="flex items-center gap-2">
+                      <input type="checkbox" id="show-outline-toggle" class="rounded" checked />
+                      <span class="text-sm font-medium text-gray-700 dark:text-gray-300"
+                        >Show outline</span
+                      >
+                    </label>
+                  </div>
+                  <div>
+                    <label class="flex items-center gap-2">
+                      <input type="checkbox" id="responsive-text-toggle" class="rounded" checked />
+                      <span class="text-sm font-medium text-gray-700 dark:text-gray-300"
+                        >Responsive text</span
+                      >
+                    </label>
+                  </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-4">
+                  <!-- Font Family -->
+                  <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+                      >Font</label
+                    >
+                    <select
+                      id="caption-font"
+                      class="w-full bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-3 py-2 text-gray-900 dark:text-white"
+                    >
+                      <option value="system">System</option>
+                      <option value="bold">Bold</option>
+                      <option value="cinematic">Cinematic</option>
+                      <option value="minimal">Minimal</option>
+                    </select>
+                  </div>
+                  <!-- Font Weight -->
+                  <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+                      >Weight</label
+                    >
+                    <select
+                      id="caption-weight"
+                      class="w-full bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-3 py-2 text-gray-900 dark:text-white"
+                    >
+                      <option value="normal">Normal</option>
+                      <option value="bold">Bold</option>
+                    </select>
+                  </div>
+                  <!-- Size -->
+                  <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+                      >Size: <span id="size-value">80px</span></label
+                    >
+                    <input
+                      type="range"
+                      id="caption-size"
+                      min="0"
+                      max="100"
+                      value="60"
+                      class="w-full"
+                    />
+                  </div>
+                  <!-- Opacity -->
+                  <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+                      >Opacity: <span id="opacity-value">80%</span></label
+                    >
+                    <input
+                      type="range"
+                      id="caption-opacity"
+                      min="30"
+                      max="100"
+                      value="80"
+                      class="w-full"
+                    />
+                  </div>
+                  <!-- Placement -->
+                  <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+                      >Placement</label
+                    >
+                    <select
+                      id="caption-placement"
+                      class="w-full bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-3 py-2 text-gray-900 dark:text-white"
+                    >
+                      <option value="top">Top</option>
+                      <option value="middle">Middle</option>
+                      <option value="bottom" selected>Bottom</option>
+                    </select>
+                  </div>
+                  <!-- Background Box -->
+                  <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+                      >Background</label
+                    >
+                    <div class="flex items-center gap-4">
+                      <label class="flex items-center gap-2">
+                        <input type="checkbox" id="caption-background" class="rounded" />
+                        <span class="text-sm">Show box</span>
+                      </label>
+                      <div class="flex-1">
+                        <label class="block text-xs text-gray-400 mb-1"
+                          >Box opacity: <span id="bg-opacity-value">50%</span></label
+                        >
+                        <input
+                          type="range"
+                          id="caption-bg-opacity"
+                          min="0"
+                          max="100"
+                          value="50"
+                          class="w-full"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                  <!-- Apply Caption Settings Button -->
+                  <div class="mt-4">
+                    <button
+                      id="apply-caption-style-btn"
+                      type="button"
+                      class="w-full px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded text-base font-medium text-white"
+                    >
+                      Apply Caption Settings
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <!-- Video Cuts (beta) - visible when window.ENABLE_VIDEO_CUTS_UI && session && N >= 2 -->
+              <div
+                id="video-cuts-panel"
+                class="mt-4 p-3 bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded text-sm hidden"
+              >
+                <div class="font-semibold text-gray-900 dark:text-white mb-2">
+                  Video Cuts (beta)
+                </div>
+                <div
+                  id="video-cuts-warning"
+                  class="text-amber-600 dark:text-amber-400 text-xs mb-2 hidden"
+                ></div>
+                <div class="space-y-2">
+                  <label class="block text-gray-700 dark:text-gray-300"
+                    >Boundary
+                    <select
+                      id="video-cuts-boundary-index"
+                      class="ml-1 bg-gray-200 dark:bg-gray-700 border border-gray-400 dark:border-gray-500 rounded px-2 py-1"
+                    ></select
+                  ></label>
+                  <label class="block text-gray-700 dark:text-gray-300"
+                    >beatIndex
+                    <input
+                      type="number"
+                      id="video-cuts-beat-index"
+                      min="1"
+                      max="1"
+                      class="w-16 ml-1 bg-gray-200 dark:bg-gray-700 border border-gray-400 dark:border-gray-500 rounded px-2 py-1"
+                  /></label>
+                  <label class="block text-gray-700 dark:text-gray-300"
+                    >pct
+                    <input
+                      type="range"
+                      id="video-cuts-pct"
+                      min="0"
+                      max="1"
+                      step="0.01"
+                      value="0.35"
+                      class="align-middle"
+                    /><span id="video-cuts-pct-value" class="ml-1">0.35</span></label
+                  >
+                  <div class="flex gap-2 mt-2">
+                    <button
+                      type="button"
+                      id="video-cuts-save-btn"
+                      class="px-3 py-1.5 rounded bg-blue-600 hover:bg-blue-500 text-white text-xs"
+                    >
+                      Save Cuts
+                    </button>
+                    <button
+                      type="button"
+                      id="video-cuts-reset-btn"
+                      class="px-3 py-1.5 rounded bg-gray-600 hover:bg-gray-500 text-white text-xs"
+                    >
+                      Reset Cuts
+                    </button>
+                  </div>
+                </div>
+                <pre
+                  id="video-cuts-debug"
+                  class="mt-2 p-2 bg-gray-200 dark:bg-gray-900 rounded text-xs overflow-auto max-h-24 text-gray-800 dark:text-gray-200"
+                ></pre>
+              </div>
+            </div>
+
+            <!-- Beat Focus Preview Modal -->
+            <div id="beat-focus-modal">
+              <div id="beat-focus-panel">
+                <button id="beat-focus-close" aria-label="Close preview">✕</button>
+                <div id="beat-focus-video-container">
+                  <video id="beat-focus-video" muted loop preload="auto"></video>
+                  <img id="beat-focus-overlay" alt="Caption overlay" style="display: none" />
+                </div>
+                <div id="beat-focus-preview-note" style="display: none">Preview not ready yet</div>
+                <div id="beat-focus-text"></div>
+              </div>
+            </div>
+
+            <!-- Clip Picker Drawer -->
+            <div
+              id="clip-picker"
+              class="mt-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg p-4 hidden max-h-[75vh] overflow-y-auto"
+            >
+              <div class="flex justify-between items-center mb-2">
+                <h3 class="text-sm font-semibold text-gray-900 dark:text-white">
+                  Choose a clip for this line
+                </h3>
+                <button
+                  id="clip-picker-close"
+                  class="text-xs text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white px-2 py-1"
+                >
+                  Close
+                </button>
+              </div>
+              <div class="flex items-center gap-2 mb-3">
+                <input
+                  id="clip-search-input"
+                  type="text"
+                  class="flex-1 px-2 py-1 rounded bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 text-sm text-gray-900 dark:text-white placeholder-gray-400"
+                  placeholder="Search clips for this sentence..."
+                />
+                <button
+                  id="clip-search-btn"
+                  class="px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-sm font-medium text-white"
+                >
+                  Search
+                </button>
+              </div>
+              <div
+                id="clip-picker-grid"
+                class="grid grid-cols-2 md:grid-cols-4 gap-2 max-h-96 overflow-y-auto"
+              ></div>
+              <div
+                id="clip-picker-pagination"
+                class="flex justify-center items-center gap-2 mt-3 hidden"
+              >
+                <button
+                  id="clip-picker-prev"
+                  class="px-3 py-1 rounded bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-sm font-medium text-gray-900 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Previous
+                </button>
+                <button
+                  id="clip-picker-more"
+                  class="px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-sm font-medium text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  More clips
+                </button>
+              </div>
+            </div>
+
+            <!-- Voice Selection -->
+            <div class="space-y-2 mt-2">
+              <div class="text-xs text-gray-400 dark:text-gray-500 mb-2">
+                Step 3 · Voice & render
+              </div>
+              <label class="block text-sm font-medium text-gray-700 dark:text-gray-300"
+                >Voice</label
+              >
+              <select
+                id="article-voice-preset"
+                class="w-full bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-3 py-2 text-gray-900 dark:text-white"
+              >
+                <option value="male_calm">Neutral</option>
+                <option value="male_friendly">Warm</option>
+                <option value="male_energetic">Energetic</option>
+              </select>
+            </div>
+
+            <!-- Render Button -->
+            <div class="mt-2">
+              <button
+                id="render-article-btn"
+                data-action="renderArticle"
+                type="button"
+                class="w-full px-6 py-3 bg-green-600 hover:bg-green-500 disabled:bg-gray-400 disabled:cursor-not-allowed rounded-lg text-base font-semibold text-white shadow-md transition-colors"
+              >
+                Render video
+              </button>
+            </div>
+
+            <!-- Last Render Video Player -->
+            <div id="article-render-result" class="mt-2 hidden">
+              <h3 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Last render</h3>
+              <video
+                id="article-render-video"
+                controls
+                class="w-full rounded border border-gray-300 dark:border-gray-700"
+              ></video>
+              <div id="article-render-links" class="mt-2 space-y-1">
+                <a
+                  id="article-video-url"
+                  href="#"
+                  target="_blank"
+                  class="text-sm text-blue-600 dark:text-blue-400 hover:underline"
+                  >Open video</a
+                >
+              </div>
+            </div>
+          </div>
         </div>
-    </div>
+      </div>
     </main>
 
     <script type="module" src="/js/pages/creative/creative.article.mjs"></script>
@@ -737,20 +917,20 @@
       // ========================================
 
       // Accordion behavior - single open section
-      (function(){
+      (function () {
         const headers = document.querySelectorAll('.accordion-header');
         const bodies = document.querySelectorAll('.accordion-body');
-        
+
         // Check if we're on mobile
         function isMobile() {
           return window.matchMedia('(max-width: 768px)').matches;
         }
-        
+
         function toggleSection(targetSection) {
           const targetHeader = document.querySelector(`[data-section="${targetSection}"]`);
           const targetBody = document.getElementById(`${targetSection}-body`);
           const targetIcon = targetHeader?.querySelector('.accordion-icon');
-          
+
           // Toggle the clicked section
           if (targetHeader?.classList.contains('active')) {
             // Close if already open
@@ -764,14 +944,14 @@
             targetIcon.textContent = '▼';
           }
         }
-        
-        headers.forEach(header => {
+
+        headers.forEach((header) => {
           header.addEventListener('click', (event) => {
             // On mobile, accordion headers are handled by mobile tab logic
             if (isMobile()) {
               return; // Let mobile tab logic handle it
             }
-            
+
             // Desktop behavior: only toggle if clicking the header itself, not buttons inside
             if (event.target === header || event.target.closest('.accordion-header') === header) {
               // Don't toggle if clicking on action buttons
@@ -783,7 +963,7 @@
             }
           });
         });
-        
+
         // Update summaries when state changes
         function updateSummaries() {
           // Quote summary
@@ -792,7 +972,7 @@
             const text = window.currentQuote.text.substring(0, 50);
             quoteSummary.textContent = text + (window.currentQuote.text.length > 50 ? '...' : '');
           }
-          
+
           // Media summary
           const mediaSummary = document.getElementById('media-summary');
           if (mediaSummary && window.selectedAsset) {
@@ -807,7 +987,7 @@
             }
             mediaSummary.textContent = summary;
           }
-          
+
           // Voice summary
           const voiceSummary = document.getElementById('voice-summary');
           if (voiceSummary && window.currentVoiceId) {
@@ -817,40 +997,40 @@
             voiceSummary.textContent = voiceName;
           }
         }
-        
+
         // Hook into existing state updates
         const originalDisplayQuote = window.displayQuote;
         if (originalDisplayQuote) {
-          window.displayQuote = function(quote) {
+          window.displayQuote = function (quote) {
             originalDisplayQuote(quote);
             updateSummaries();
           };
         }
-        
+
         // Mobile tab switching logic
-        (function() {
+        (function () {
           let activeMobileTab = null;
-          
+
           // Check if we're on mobile
           function isMobile() {
             return window.matchMedia('(max-width: 768px)').matches;
           }
-          
+
           // Function to switch to a specific tab (reuses existing accordion DOM)
           function switchToTab(section) {
             if (!isMobile()) return;
-            
+
             // Map section names to tab IDs
             const tabIdMap = {
-                'quote': 'mobile-tab-quote',
-                'media': 'mobile-tab-background',
-                'voice': 'mobile-tab-voiceover'
+              quote: 'mobile-tab-quote',
+              media: 'mobile-tab-background',
+              voice: 'mobile-tab-voiceover',
             };
             const tabButton = document.getElementById(tabIdMap[section]);
             const accordionBody = document.getElementById(`${section}-body`);
             const accordionHeader = document.querySelector(`[data-section="${section}"]`);
             const accordionIcon = accordionHeader?.querySelector('.accordion-icon');
-            
+
             // If clicking the same tab, collapse it
             if (activeMobileTab === section) {
               activeMobileTab = null;
@@ -860,20 +1040,20 @@
               if (accordionIcon) accordionIcon.textContent = '▶';
               return;
             }
-            
+
             // Close all other tabs and accordion bodies
-            document.querySelectorAll('.mobile-studio-tab').forEach(tab => {
+            document.querySelectorAll('.mobile-studio-tab').forEach((tab) => {
               tab.classList.remove('active');
             });
-            document.querySelectorAll('.accordion-body').forEach(body => {
+            document.querySelectorAll('.accordion-body').forEach((body) => {
               body.classList.remove('active');
             });
-            document.querySelectorAll('.accordion-header').forEach(header => {
+            document.querySelectorAll('.accordion-header').forEach((header) => {
               header.classList.remove('active');
               const icon = header.querySelector('.accordion-icon');
               if (icon) icon.textContent = '▶';
             });
-            
+
             // Open the selected tab
             activeMobileTab = section;
             if (tabButton) tabButton.classList.add('active');
@@ -881,28 +1061,28 @@
             if (accordionHeader) accordionHeader.classList.add('active');
             if (accordionIcon) accordionIcon.textContent = '▼';
           }
-          
+
           // Set up tab click handlers
-          document.querySelectorAll('.mobile-studio-tab').forEach(tab => {
+          document.querySelectorAll('.mobile-studio-tab').forEach((tab) => {
             tab.addEventListener('click', (e) => {
               e.preventDefault();
               const section = tab.dataset.section;
               switchToTab(section);
             });
           });
-          
+
           // On mobile, make accordion headers call the same logic as tabs
           // (Note: accordion headers already skip their default behavior on mobile via the check above)
           // We add a separate listener that runs after the desktop check
-          headers.forEach(header => {
+          headers.forEach((header) => {
             header.addEventListener('click', (event) => {
               if (!isMobile()) return; // Desktop behavior unchanged
-              
+
               // Don't interfere with action buttons
               if (event.target.dataset && event.target.dataset.action) {
                 return;
               }
-              
+
               // Only handle if clicking the header itself
               if (event.target === header || event.target.closest('.accordion-header') === header) {
                 const section = header.dataset.section;
@@ -910,12 +1090,12 @@
               }
             });
           });
-          
+
           // Initialize: open Quote tab by default on mobile
           if (isMobile()) {
             switchToTab('quote');
           }
-          
+
           // Handle window resize to sync state
           let resizeTimeout;
           window.addEventListener('resize', () => {
@@ -924,7 +1104,7 @@
               if (!isMobile()) {
                 // Reset mobile state when switching to desktop
                 activeMobileTab = null;
-                document.querySelectorAll('.mobile-studio-tab').forEach(tab => {
+                document.querySelectorAll('.mobile-studio-tab').forEach((tab) => {
                   tab.classList.remove('active');
                 });
               } else {
@@ -936,10 +1116,10 @@
             }, 100);
           });
         })();
-        
+
         // Update summaries on load
         setTimeout(updateSummaries, 1000);
-        
+
         // Update preview height based on media selection
         function updatePreviewHeight() {
           const previewContainer = document.getElementById('live-preview-container');
@@ -951,85 +1131,97 @@
             }
           }
         }
-        
+
         // Hook into asset selection to update preview height
         const originalAssetSelection = window.onAssetSelect;
         if (originalAssetSelection) {
-          window.onAssetSelect = function(asset) {
+          window.onAssetSelect = function (asset) {
             originalAssetSelection(asset);
             updatePreviewHeight();
           };
         }
-        
+
         // Update preview height on load
         setTimeout(updatePreviewHeight, 1000);
-        
+
         // Media buttons are now handled by ui-actions.js delegated event system
       })();
-      
+
       // Debug helper for caption box visibility
-      window.debugCaptionBox = function() {
+      window.debugCaptionBox = function () {
         const stage = document.getElementById('stage');
         const box = stage?.querySelector('.caption-box');
         const container = document.getElementById('live-preview-container');
         const canvas = document.getElementById('live-preview-canvas');
-        
+
         if (!stage) {
           console.warn('[debugCaptionBox] Stage not found');
           return;
         }
-        
+
         if (!box) {
           console.warn('[debugCaptionBox] Caption box not found');
           return;
         }
-        
+
         const stageRect = stage.getBoundingClientRect();
         const boxRect = box.getBoundingClientRect();
         const containerRect = container?.getBoundingClientRect();
         const canvasRect = canvas?.getBoundingClientRect();
-        
+
         console.log('[debugCaptionBox] Stage:', {
           display: window.getComputedStyle(stage).display,
           visibility: window.getComputedStyle(stage).visibility,
           opacity: window.getComputedStyle(stage).opacity,
-          rect: { width: stageRect.width, height: stageRect.height, top: stageRect.top, left: stageRect.left },
+          rect: {
+            width: stageRect.width,
+            height: stageRect.height,
+            top: stageRect.top,
+            left: stageRect.left,
+          },
           clientWidth: stage.clientWidth,
           clientHeight: stage.clientHeight,
           offsetWidth: stage.offsetWidth,
-          offsetHeight: stage.offsetHeight
+          offsetHeight: stage.offsetHeight,
         });
-        
+
         console.log('[debugCaptionBox] Caption Box:', {
           display: window.getComputedStyle(box).display,
           visibility: window.getComputedStyle(box).visibility,
           opacity: window.getComputedStyle(box).opacity,
           position: window.getComputedStyle(box).position,
           zIndex: window.getComputedStyle(box).zIndex,
-          rect: { width: boxRect.width, height: boxRect.height, top: boxRect.top, left: boxRect.left },
+          rect: {
+            width: boxRect.width,
+            height: boxRect.height,
+            top: boxRect.top,
+            left: boxRect.left,
+          },
           styleLeft: box.style.left,
           styleTop: box.style.top,
           offsetWidth: box.offsetWidth,
           offsetHeight: box.offsetHeight,
           clientWidth: box.clientWidth,
-          clientHeight: box.clientHeight
+          clientHeight: box.clientHeight,
         });
-        
+
         console.log('[debugCaptionBox] Container:', {
           display: container ? window.getComputedStyle(container).display : 'N/A',
-          rect: containerRect ? { width: containerRect.width, height: containerRect.height } : 'N/A'
+          rect: containerRect
+            ? { width: containerRect.width, height: containerRect.height }
+            : 'N/A',
         });
-        
+
         console.log('[debugCaptionBox] Canvas:', {
           display: canvas ? window.getComputedStyle(canvas).display : 'N/A',
           rect: canvasRect ? { width: canvasRect.width, height: canvasRect.height } : 'N/A',
           canvasWidth: canvas?.width,
-          canvasHeight: canvas?.height
+          canvasHeight: canvas?.height,
         });
       };
-      
+
       // Debug helper for caption visibility diagnostics
-      window.debugCaptionVisibility = function() {
+      window.debugCaptionVisibility = function () {
         const container = document.getElementById('live-preview-container');
         const stage = document.getElementById('stage');
         const box = document.querySelector('.caption-box');
@@ -1052,13 +1244,32 @@
     </script>
 
     <!-- Render Status Banner -->
-    <div id="render-status-banner" class="hidden fixed bottom-8 left-1/2 transform -translate-x-1/2 z-50 bg-gray-900/90 dark:bg-gray-800/90 backdrop-blur-sm text-white px-6 py-3 rounded-lg shadow-lg flex items-center gap-3">
-        <svg id="render-status-spinner" class="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-        </svg>
-        <span id="render-status-text" class="text-sm font-medium">Preparing video...</span>
+    <div
+      id="render-status-banner"
+      class="hidden fixed bottom-8 left-1/2 transform -translate-x-1/2 z-50 bg-gray-900/90 dark:bg-gray-800/90 backdrop-blur-sm text-white px-6 py-3 rounded-lg shadow-lg flex items-center gap-3"
+    >
+      <svg
+        id="render-status-spinner"
+        class="animate-spin h-5 w-5"
+        xmlns="http://www.w3.org/2000/svg"
+        fill="none"
+        viewBox="0 0 24 24"
+      >
+        <circle
+          class="opacity-25"
+          cx="12"
+          cy="12"
+          r="10"
+          stroke="currentColor"
+          stroke-width="4"
+        ></circle>
+        <path
+          class="opacity-75"
+          fill="currentColor"
+          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+        ></path>
+      </svg>
+      <span id="render-status-text" class="text-sm font-medium">Preparing video...</span>
     </div>
-
-</body>
+  </body>
 </html>

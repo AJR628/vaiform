@@ -1,5 +1,5 @@
-import { Router } from "express";
-import rateLimit from "express-rate-limit";
+import { Router } from 'express';
+import rateLimit from 'express-rate-limit';
 
 const r = Router();
 
@@ -18,8 +18,8 @@ const cdnRateLimit = rateLimit({
  * Same-origin proxy for Firebase download URLs.
  * Buffered with timeout to avoid hanging requests.
  */
-r.get("/", cdnRateLimit, async (req, res) => {
-  const u = String(req.query?.u || "").trim();
+r.get('/', cdnRateLimit, async (req, res) => {
+  const u = String(req.query?.u || '').trim();
   const ts = new Date().toISOString();
   console.log('[cdn]', ts, 'GET', u.slice(0, 160));
 
@@ -64,10 +64,10 @@ r.get("/", cdnRateLimit, async (req, res) => {
     let redirectCount = 0;
 
     while (redirectCount <= MAX_REDIRECTS) {
-      const up = await fetch(currentUrl, { 
-        redirect: 'manual', 
-        signal: ac.signal, 
-        headers: { Accept: 'image/*' } 
+      const up = await fetch(currentUrl, {
+        redirect: 'manual',
+        signal: ac.signal,
+        headers: { Accept: 'image/*' },
       });
 
       // Handle redirect
@@ -143,5 +143,3 @@ r.get("/", cdnRateLimit, async (req, res) => {
 });
 
 export default r;
-
-

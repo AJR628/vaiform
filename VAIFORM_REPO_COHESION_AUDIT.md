@@ -5,26 +5,27 @@
 **Scope**: Docs-only truth snapshot from current code. No runtime changes.
 
 Companion docs:
+
 - `ROUTE_TRUTH_TABLE.md`
 - `docs/ACTIVE_SURFACES.md`
 
 ## Executive Summary
 
-| Category | Current truth | Evidence |
-|---|---|---|
-| Runtime entrypoint | `server.js` boots `src/app.js` | `server.js`, `src/app.js:1-383` |
-| Legacy gate predicate | `ENABLE_LEGACY_ROUTES === "1"` | `src/app.js:35`, `src/app.js:259`, `src/app.js:283`, `src/app.js:298`, `src/app.js:314` |
-| Debug gate predicate | `VAIFORM_DEBUG === "1"` | `src/app.js:34`, `src/app.js:216`, `src/app.js:225`, `src/app.js:369` |
-| Default flag values | legacy/debug both OFF by default | `env.example:3`, `env.example:7` |
-| Default static mode | dist-first (`web/dist` exists and is mounted before `public`) | `src/app.js:343-347`, `src/app.js:366`, `web/dist` |
-| Dual mounts exist | yes (`/` and `/api`, plus `/limits` and `/api/limits`) | `src/app.js:211-223`, `src/app.js:279-280` |
-| Precedence/shadowing risk | yes (ordered root routers include multiple `GET /`) | `src/app.js:211`, `src/app.js:212`, `src/app.js:214`, `src/app.js:237`; route defs in `src/routes/health.routes.js:10`, `src/routes/whoami.routes.js:10`, `src/routes/credits.routes.js:11`, `src/routes/index.js:24` |
-| Whoami surface truth | `/whoami` and `/api/whoami` are not mounted API routes; whoami router roots are shadowed | `src/routes/whoami.routes.js:10`, `src/app.js:211-212`, `src/app.js:219-220`; runtime probe: `/api/whoami` -> `404` |
-| Checkout API alias truth | mounted alias is `/api/start|session|subscription|portal` (not `/api/checkout/*`) | `src/routes/checkout.routes.js:16-26`, `src/app.js:247-248`; runtime probe: `/api/checkout/start` -> `404` |
-| Caller mapping truth | `apiFetch(\"/x\")` resolves to `/api/x`; fallback only for GET `/credits|/whoami|/health` | `web/dist/api.mjs:152`, `web/dist/api.mjs:156-163` |
-| CI enforced checks | `format:check`, `test:security`, `check:responses:changed` | `.github/workflows/ci.yml:35-45` |
-| CI non-blocking check | `npm audit --audit-level=high` | `.github/workflows/ci.yml:31-33` |
-| Repo-wide envelope drift (observed) | still present in reachable and gated files | `node scripts/check-responses.js` output (latest audit run) |
+| Category                            | Current truth                                                                            | Evidence                                                                                                                                                                                                              |
+| ----------------------------------- | ---------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ | -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| Runtime entrypoint                  | `server.js` boots `src/app.js`                                                           | `server.js`, `src/app.js:1-383`                                                                                                                                                                                       |
+| Legacy gate predicate               | `ENABLE_LEGACY_ROUTES === "1"`                                                           | `src/app.js:35`, `src/app.js:259`, `src/app.js:283`, `src/app.js:298`, `src/app.js:314`                                                                                                                               |
+| Debug gate predicate                | `VAIFORM_DEBUG === "1"`                                                                  | `src/app.js:34`, `src/app.js:216`, `src/app.js:225`, `src/app.js:369`                                                                                                                                                 |
+| Default flag values                 | legacy/debug both OFF by default                                                         | `env.example:3`, `env.example:7`                                                                                                                                                                                      |
+| Default static mode                 | dist-first (`web/dist` exists and is mounted before `public`)                            | `src/app.js:343-347`, `src/app.js:366`, `web/dist`                                                                                                                                                                    |
+| Dual mounts exist                   | yes (`/` and `/api`, plus `/limits` and `/api/limits`)                                   | `src/app.js:211-223`, `src/app.js:279-280`                                                                                                                                                                            |
+| Precedence/shadowing risk           | yes (ordered root routers include multiple `GET /`)                                      | `src/app.js:211`, `src/app.js:212`, `src/app.js:214`, `src/app.js:237`; route defs in `src/routes/health.routes.js:10`, `src/routes/whoami.routes.js:10`, `src/routes/credits.routes.js:11`, `src/routes/index.js:24` |
+| Whoami surface truth                | `/whoami` and `/api/whoami` are not mounted API routes; whoami router roots are shadowed | `src/routes/whoami.routes.js:10`, `src/app.js:211-212`, `src/app.js:219-220`; runtime probe: `/api/whoami` -> `404`                                                                                                   |
+| Checkout API alias truth            | mounted alias is `/api/start                                                             | session                                                                                                                                                                                                               | subscription | portal`(not`/api/checkout/\*`)                     | `src/routes/checkout.routes.js:16-26`, `src/app.js:247-248`; runtime probe: `/api/checkout/start` -> `404` |
+| Caller mapping truth                | `apiFetch(\"/x\")` resolves to `/api/x`; fallback only for GET `/credits                 | /whoami                                                                                                                                                                                                               | /health`     | `web/dist/api.mjs:152`, `web/dist/api.mjs:156-163` |
+| CI enforced checks                  | `format:check`, `test:security`, `check:responses:changed`                               | `.github/workflows/ci.yml:35-45`                                                                                                                                                                                      |
+| CI non-blocking check               | `npm audit --audit-level=high`                                                           | `.github/workflows/ci.yml:31-33`                                                                                                                                                                                      |
+| Repo-wide envelope drift (observed) | still present in reachable and gated files                                               | `node scripts/check-responses.js` output (latest audit run)                                                                                                                                                           |
 
 ## 1. Mount Topology Truth
 
@@ -102,7 +103,7 @@ Primary evidence for served entrypoints:
 
 ### 3.2 Observed baseline (full scan, informational)
 
-- Full drift scan command: `node scripts/check-responses.js`  
+- Full drift scan command: `node scripts/check-responses.js`
 - Latest audit run confirms violations in reachable files (examples):
   - `src/app.js` (`code/message` on `/generate` 405)
   - `src/handlers/credits.get.js` (`code/message`)
@@ -112,12 +113,12 @@ Primary evidence for served entrypoints:
 
 ## 4. SSOT Collision Truth
 
-| Concern | Current operational SSOT | Parallel/legacy surface | Notes |
-|---|---|---|---|
-| Auth middleware | `src/middleware/requireAuth.js` | `src/middleware/auth.middleware.js` | Mounted routes import `requireAuth` directly. |
-| Plan guards | split usage | `planGuards.js` and `planGuard.js` | `story.routes.js` uses `planGuards.js`; `assets.routes.js` still imports `planGuard.js` (`src/routes/assets.routes.js:4`, `src/routes/assets.routes.js:12`). |
-| Idempotency | `idempotency.firestore.js` | `idempotency.js` exists | Generate/finalize paths reference Firestore middleware (`src/routes/generate.routes.js:3`, `src/routes/story.routes.js:5`). |
-| Validation | `src/schemas/*` + `validate.middleware.js` | inline Zod in route files | Story routes perform inline `safeParse` checks (`src/routes/story.routes.js`, multiple). |
+| Concern         | Current operational SSOT                   | Parallel/legacy surface             | Notes                                                                                                                                                        |
+| --------------- | ------------------------------------------ | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Auth middleware | `src/middleware/requireAuth.js`            | `src/middleware/auth.middleware.js` | Mounted routes import `requireAuth` directly.                                                                                                                |
+| Plan guards     | split usage                                | `planGuards.js` and `planGuard.js`  | `story.routes.js` uses `planGuards.js`; `assets.routes.js` still imports `planGuard.js` (`src/routes/assets.routes.js:4`, `src/routes/assets.routes.js:12`). |
+| Idempotency     | `idempotency.firestore.js`                 | `idempotency.js` exists             | Generate/finalize paths reference Firestore middleware (`src/routes/generate.routes.js:3`, `src/routes/story.routes.js:5`).                                  |
+| Validation      | `src/schemas/*` + `validate.middleware.js` | inline Zod in route files           | Story routes perform inline `safeParse` checks (`src/routes/story.routes.js`, multiple).                                                                     |
 
 ## 5. CI Truth Snapshot
 

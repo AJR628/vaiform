@@ -1,15 +1,15 @@
 // src/services/storage.service.js
-import admin from "firebase-admin";
-import crypto from "node:crypto";
+import admin from 'firebase-admin';
+import crypto from 'node:crypto';
 
 /* ---------- optional: lazy-load sharp for recompress ---------- */
 let _sharpPromise;
 async function getSharp() {
   if (!_sharpPromise) {
-    _sharpPromise = import("sharp")
+    _sharpPromise = import('sharp')
       .then((m) => m.default)
       .catch((err) => {
-        console.warn("⚠️ sharp unavailable, skipping recompress:", err?.message || err);
+        console.warn('⚠️ sharp unavailable, skipping recompress:', err?.message || err);
         return null;
       });
   }
@@ -18,11 +18,11 @@ async function getSharp() {
 
 /* ---------- helpers ---------- */
 function extFromContentType(ct) {
-  const c = (ct || "").toLowerCase();
-  if (c.includes("image/webp")) return { ext: "webp", ct: "image/webp" };
-  if (c.includes("image/png"))  return { ext: "png",  ct: "image/png" };
-  if (c.includes("image/jpeg")) return { ext: "jpg",  ct: "image/jpeg" };
-  return { ext: "bin", ct: c || "application/octet-stream" };
+  const c = (ct || '').toLowerCase();
+  if (c.includes('image/webp')) return { ext: 'webp', ct: 'image/webp' };
+  if (c.includes('image/png')) return { ext: 'png', ct: 'image/png' };
+  if (c.includes('image/jpeg')) return { ext: 'jpg', ct: 'image/jpeg' };
+  return { ext: 'bin', ct: c || 'application/octet-stream' };
 }
 
 function publicTokenUrl(bucketName, objectPath, token) {
@@ -40,9 +40,9 @@ export async function saveImageFromUrl(
   srcUrl,
   { index = 0, recompress = false, maxSide = 1536, webpQuality = 85 } = {}
 ) {
-  if (!uid) throw new Error("SAVE_IMAGE_MISSING_UID");
-  if (!jobId) throw new Error("SAVE_IMAGE_MISSING_JOB");
-  if (!srcUrl) throw new Error("SAVE_IMAGE_MISSING_SRC");
+  if (!uid) throw new Error('SAVE_IMAGE_MISSING_UID');
+  if (!jobId) throw new Error('SAVE_IMAGE_MISSING_JOB');
+  if (!srcUrl) throw new Error('SAVE_IMAGE_MISSING_SRC');
 
   const bucket = admin.storage().bucket();
 
@@ -59,17 +59,17 @@ export async function saveImageFromUrl(
 
   const srcBuf = Buffer.from(await res.arrayBuffer());
   let outBuf = srcBuf;
-  let { ext, ct } = extFromContentType(res.headers.get("content-type"));
+  let { ext, ct } = extFromContentType(res.headers.get('content-type'));
 
   if (recompress) {
     const sharp = await getSharp();
     if (sharp) {
       outBuf = await sharp(srcBuf)
-        .resize({ width: maxSide, height: maxSide, fit: "inside", withoutEnlargement: true })
+        .resize({ width: maxSide, height: maxSide, fit: 'inside', withoutEnlargement: true })
         .webp({ quality: webpQuality })
         .toBuffer();
-      ext = "webp";
-      ct  = "image/webp";
+      ext = 'webp';
+      ct = 'image/webp';
     }
   }
 
@@ -80,7 +80,7 @@ export async function saveImageFromUrl(
   await file.save(outBuf, {
     contentType: ct,
     metadata: {
-      cacheControl: "public,max-age=31536000,immutable",
+      cacheControl: 'public,max-age=31536000,immutable',
       metadata: { firebaseStorageDownloadTokens: token },
     },
   });
@@ -91,10 +91,15 @@ export async function saveImageFromUrl(
 /**
  * Save a raw buffer as artifacts/{uid}/{jobId}/image_{index}.webp (or provided type)
  */
-export async function saveImageBuffer(uid, jobId, buffer, { index = 0, contentType = "image/webp" } = {}) {
-  if (!uid) throw new Error("SAVE_IMAGE_MISSING_UID");
-  if (!jobId) throw new Error("SAVE_IMAGE_MISSING_JOB");
-  if (!buffer) throw new Error("SAVE_IMAGE_MISSING_BUFFER");
+export async function saveImageBuffer(
+  uid,
+  jobId,
+  buffer,
+  { index = 0, contentType = 'image/webp' } = {}
+) {
+  if (!uid) throw new Error('SAVE_IMAGE_MISSING_UID');
+  if (!jobId) throw new Error('SAVE_IMAGE_MISSING_JOB');
+  if (!buffer) throw new Error('SAVE_IMAGE_MISSING_BUFFER');
 
   const bucket = admin.storage().bucket();
   const { ext, ct } = extFromContentType(contentType);
@@ -105,7 +110,7 @@ export async function saveImageBuffer(uid, jobId, buffer, { index = 0, contentTy
   await file.save(buffer, {
     contentType: ct,
     metadata: {
-      cacheControl: "public,max-age=31536000,immutable",
+      cacheControl: 'public,max-age=31536000,immutable',
       metadata: { firebaseStorageDownloadTokens: token },
     },
   });
@@ -121,23 +126,37 @@ export async function saveImageBuffer(uid, jobId, buffer, { index = 0, contentTy
 export async function uploadToFirebaseStorage(imageUrl, email, index, opts = {}) {
   // Prefer the new path when uid/jobId are provided in opts:
   if (opts?.uid && opts?.jobId) {
-    return (await saveImageFromUrl(opts.uid, opts.jobId, imageUrl, { index, recompress: opts.recompress }))
-      ?.publicUrl ?? null;
+    return (
+      (
+        await saveImageFromUrl(opts.uid, opts.jobId, imageUrl, {
+          index,
+          recompress: opts.recompress,
+        })
+      )?.publicUrl ?? null
+    );
   }
-  console.warn("⚠️ uploadToFirebaseStorage is deprecated; provide {uid, jobId} in opts to use Gate C storage.");
+  console.warn(
+    '⚠️ uploadToFirebaseStorage is deprecated; provide {uid, jobId} in opts to use Gate C storage.'
+  );
   // Fallback: still write to artifacts with synthesized jobId
   const fakeJobId = `legacy-${Date.now()}`;
-  return (await saveImageFromUrl(opts?.uid || "unknown", fakeJobId, imageUrl, { index, recompress: opts.recompress }))
-    ?.publicUrl ?? null;
+  return (
+    (
+      await saveImageFromUrl(opts?.uid || 'unknown', fakeJobId, imageUrl, {
+        index,
+        recompress: opts.recompress,
+      })
+    )?.publicUrl ?? null
+  );
 }
 
 /* ---------- small utility you already had ---------- */
 export function extractUrlsFromReplicateOutput(output) {
   if (Array.isArray(output)) return output.filter(Boolean);
-  if (typeof output === "string") return [output];
-  if (output && typeof output === "object") {
-    if (typeof output.url === "function") return [output.url()];
-    if (typeof output.url === "string") return [output.url];
+  if (typeof output === 'string') return [output];
+  if (output && typeof output === 'object') {
+    if (typeof output.url === 'function') return [output.url()];
+    if (typeof output.url === 'string') return [output.url];
     if (Array.isArray(output.images)) return output.images.filter(Boolean);
   }
   return [];

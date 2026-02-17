@@ -1,8 +1,8 @@
 // src/validation/schemas.js
-import { z } from "zod";
+import { z } from 'zod';
 
 export const enhanceSchema = z.object({
-  prompt: z.string().min(3, "prompt too short").max(2000, "prompt too long"),
+  prompt: z.string().min(3, 'prompt too short').max(2000, 'prompt too long'),
   strength: z.number().min(0).max(1).optional(),
 });
 

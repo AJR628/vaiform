@@ -1,23 +1,23 @@
 #!/usr/bin/env node
-import fs from "node:fs";
-import path from "node:path";
-import { execSync } from "node:child_process";
+import fs from 'node:fs';
+import path from 'node:path';
+import { execSync } from 'node:child_process';
 
-const DISALLOWED_KEYS = new Set(["ok", "reason", "code", "message", "issues"]);
+const DISALLOWED_KEYS = new Set(['ok', 'reason', 'code', 'message', 'issues']);
 
 function normalizeFile(input) {
-  return input.replace(/\\/g, "/").replace(/^\.\/+/, "");
+  return input.replace(/\\/g, '/').replace(/^\.\/+/, '');
 }
 
 function parseArgs(argv) {
   const files = [];
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
-    if (arg === "--files") {
+    if (arg === '--files') {
       i += 1;
-      while (i < argv.length && !argv[i].startsWith("--")) {
+      while (i < argv.length && !argv[i].startsWith('--')) {
         const chunk = argv[i];
-        for (const part of chunk.split(",")) {
+        for (const part of chunk.split(',')) {
           const trimmed = part.trim();
           if (trimmed) files.push(trimmed);
         }
@@ -32,8 +32,8 @@ function parseArgs(argv) {
 function runGit(cmd) {
   return execSync(cmd, {
     cwd: process.cwd(),
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "ignore"],
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'ignore'],
   }).trim();
 }
 
@@ -41,7 +41,10 @@ function tryGitDiff(range) {
   try {
     const out = runGit(`git diff --name-only ${range}`);
     if (!out) return [];
-    return out.split(/\r?\n/).map((f) => f.trim()).filter(Boolean);
+    return out
+      .split(/\r?\n/)
+      .map((f) => f.trim())
+      .filter(Boolean);
   } catch {
     return [];
   }
@@ -58,39 +61,39 @@ function refExists(ref) {
 
 function resolveChangedFiles(explicitFiles) {
   if (explicitFiles.length) {
-    return { files: explicitFiles, source: "explicit" };
+    return { files: explicitFiles, source: 'explicit' };
   }
 
   const base = process.env.BASE_SHA;
   const head = process.env.HEAD_SHA;
   if (base && head) {
     const bySha = tryGitDiff(`${base}..${head}`);
-    return { files: bySha, source: "ci_sha" };
+    return { files: bySha, source: 'ci_sha' };
   }
 
-  if (process.env.ALLOW_BROAD_SCAN === "1") {
-    if (refExists("origin/main")) {
-      const byMain = tryGitDiff("origin/main...HEAD");
-      if (byMain.length) return { files: byMain, source: "broad" };
+  if (process.env.ALLOW_BROAD_SCAN === '1') {
+    if (refExists('origin/main')) {
+      const byMain = tryGitDiff('origin/main...HEAD');
+      if (byMain.length) return { files: byMain, source: 'broad' };
     }
 
-    if (refExists("HEAD~1")) {
-      const byPrev = tryGitDiff("HEAD~1..HEAD");
-      if (byPrev.length) return { files: byPrev, source: "broad" };
+    if (refExists('HEAD~1')) {
+      const byPrev = tryGitDiff('HEAD~1..HEAD');
+      if (byPrev.length) return { files: byPrev, source: 'broad' };
     }
   }
 
-  return { files: [], source: "none" };
+  return { files: [], source: 'none' };
 }
 
 function isEligible(file) {
-  return file.startsWith("src/") && /\.(?:js|mjs)$/.test(file);
+  return file.startsWith('src/') && /\.(?:js|mjs)$/.test(file);
 }
 
 function buildLineIndex(src) {
   const starts = [0];
   for (let i = 0; i < src.length; i += 1) {
-    if (src[i] === "\n") starts.push(i + 1);
+    if (src[i] === '\n') starts.push(i + 1);
   }
   return starts;
 }
@@ -110,7 +113,7 @@ function skipQuotedString(src, start, quote) {
   let i = start + 1;
   while (i < src.length) {
     const ch = src[i];
-    if (ch === "\\") {
+    if (ch === '\\') {
       i += 2;
       continue;
     }
@@ -122,14 +125,14 @@ function skipQuotedString(src, start, quote) {
 
 function skipLineComment(src, start) {
   let i = start + 2;
-  while (i < src.length && src[i] !== "\n") i += 1;
+  while (i < src.length && src[i] !== '\n') i += 1;
   return i;
 }
 
 function skipBlockComment(src, start) {
   let i = start + 2;
   while (i < src.length - 1) {
-    if (src[i] === "*" && src[i + 1] === "/") return i + 2;
+    if (src[i] === '*' && src[i + 1] === '/') return i + 2;
     i += 1;
   }
   return src.length;
@@ -148,20 +151,20 @@ function findMatchingObjectEnd(src, openBraceIndex) {
     const ch = src[i];
     const next = src[i + 1];
 
-    if (ch === "'" || ch === '"' || ch === "`") {
+    if (ch === "'" || ch === '"' || ch === '`') {
       i = skipQuotedString(src, i, ch);
       continue;
     }
-    if (ch === "/" && next === "/") {
+    if (ch === '/' && next === '/') {
       i = skipLineComment(src, i);
       continue;
     }
-    if (ch === "/" && next === "*") {
+    if (ch === '/' && next === '*') {
       i = skipBlockComment(src, i);
       continue;
     }
-    if (ch === "{") depth += 1;
-    if (ch === "}") depth -= 1;
+    if (ch === '{') depth += 1;
+    if (ch === '}') depth -= 1;
     if (depth === 0) return i;
     i += 1;
   }
@@ -170,7 +173,7 @@ function findMatchingObjectEnd(src, openBraceIndex) {
 
 function findObjectArgStart(src, openParenIndex) {
   const i = skipWhitespace(src, openParenIndex + 1);
-  return src[i] === "{" ? i : -1;
+  return src[i] === '{' ? i : -1;
 }
 
 function collectDisallowedKeys(src, objStart, objEnd, lineStarts) {
@@ -182,14 +185,14 @@ function collectDisallowedKeys(src, objStart, objEnd, lineStarts) {
     const ch = src[i];
     const next = src[i + 1];
 
-    if (ch === "'" || ch === '"' || ch === "`") {
+    if (ch === "'" || ch === '"' || ch === '`') {
       if (depth === 0 && (ch === "'" || ch === '"')) {
         const keyStart = i;
         let j = i + 1;
-        let key = "";
+        let key = '';
         while (j < objEnd) {
           const c = src[j];
-          if (c === "\\") {
+          if (c === '\\') {
             j += 2;
             continue;
           }
@@ -199,7 +202,7 @@ function collectDisallowedKeys(src, objStart, objEnd, lineStarts) {
         }
         if (j < objEnd && src[j] === ch) {
           const after = skipWhitespace(src, j + 1);
-          if (src[after] === ":" && DISALLOWED_KEYS.has(key)) {
+          if (src[after] === ':' && DISALLOWED_KEYS.has(key)) {
             violations.push({ key, line: lineOf(keyStart, lineStarts) });
           }
         }
@@ -207,21 +210,21 @@ function collectDisallowedKeys(src, objStart, objEnd, lineStarts) {
       i = skipQuotedString(src, i, ch);
       continue;
     }
-    if (ch === "/" && next === "/") {
+    if (ch === '/' && next === '/') {
       i = skipLineComment(src, i);
       continue;
     }
-    if (ch === "/" && next === "*") {
+    if (ch === '/' && next === '*') {
       i = skipBlockComment(src, i);
       continue;
     }
 
-    if (ch === "{" || ch === "[" || ch === "(") {
+    if (ch === '{' || ch === '[' || ch === '(') {
       depth += 1;
       i += 1;
       continue;
     }
-    if (ch === "}" || ch === "]" || ch === ")") {
+    if (ch === '}' || ch === ']' || ch === ')') {
       depth -= 1;
       i += 1;
       continue;
@@ -233,7 +236,7 @@ function collectDisallowedKeys(src, objStart, objEnd, lineStarts) {
       while (j < objEnd && /[A-Za-z0-9_$]/.test(src[j])) j += 1;
       const key = src.slice(i, j);
       const after = skipWhitespace(src, j);
-      if (src[after] === ":" && DISALLOWED_KEYS.has(key)) {
+      if (src[after] === ':' && DISALLOWED_KEYS.has(key)) {
         violations.push({ key, line: lineOf(keyStart, lineStarts) });
       }
       i = j;
@@ -247,7 +250,7 @@ function collectDisallowedKeys(src, objStart, objEnd, lineStarts) {
 }
 
 function scanFile(filePath) {
-  const src = fs.readFileSync(filePath, "utf8");
+  const src = fs.readFileSync(filePath, 'utf8');
   const lineStarts = buildLineIndex(src);
   const findings = [];
   const responseCallRe = /res\s*\.\s*(?:status\s*\([^)]*\)\s*\.\s*)?(?:json|send)\s*\(/g;
@@ -278,23 +281,21 @@ function main() {
   const resolution = resolveChangedFiles(explicitFiles);
   const changed = resolution.files.map(normalizeFile);
 
-  if (!changed.length && resolution.source === "none") {
-    console.error("No file scope provided.");
+  if (!changed.length && resolution.source === 'none') {
+    console.error('No file scope provided.');
+    console.error('Usage: node scripts/check-responses-changed.mjs --files <file1,file2,...>');
     console.error(
-      "Usage: node scripts/check-responses-changed.mjs --files <file1,file2,...>",
-    );
-    console.error(
-      "Or set BASE_SHA and HEAD_SHA (CI mode). Optional broad fallback: set ALLOW_BROAD_SCAN=1.",
+      'Or set BASE_SHA and HEAD_SHA (CI mode). Optional broad fallback: set ALLOW_BROAD_SCAN=1.'
     );
     process.exit(1);
   }
 
   const eligible = [...new Set(changed.filter(isEligible))].filter((rel) =>
-    fs.existsSync(path.resolve(process.cwd(), rel)),
+    fs.existsSync(path.resolve(process.cwd(), rel))
   );
 
   if (!eligible.length) {
-    console.log("No eligible changed files in src/**/*.js|mjs; skipping response contract check.");
+    console.log('No eligible changed files in src/**/*.js|mjs; skipping response contract check.');
     process.exit(0);
   }
 
@@ -309,7 +310,7 @@ function main() {
     process.exit(0);
   }
 
-  console.error("Response contract violations found:");
+  console.error('Response contract violations found:');
   for (const item of findings) {
     console.error(`${item.file}:${item.line} key=${item.key}`);
   }

@@ -1,13 +1,13 @@
-import ffmpegPath from "ffmpeg-static";
-import { spawn } from "node:child_process";
-import os from "node:os";
-import path from "node:path";
-import fs from "node:fs";
-import fsp from "node:fs/promises";
-import crypto from "node:crypto";
-import pkg from "@napi-rs/canvas";
-import { renderImageQuoteVideo } from "./ffmpeg.js";
-import { getDurationMsFromMedia } from "./media.duration.js";
+import ffmpegPath from 'ffmpeg-static';
+import { spawn } from 'node:child_process';
+import os from 'node:os';
+import path from 'node:path';
+import fs from 'node:fs';
+import fsp from 'node:fs/promises';
+import crypto from 'node:crypto';
+import pkg from '@napi-rs/canvas';
+import { renderImageQuoteVideo } from './ffmpeg.js';
+import { getDurationMsFromMedia } from './media.duration.js';
 
 const _ffprobeLog = { resolved: false, spawnWarned: false };
 
@@ -31,7 +31,11 @@ function resolveFfprobeCmd(ffmpegPath) {
   const derived = path.join(dir, derivedBase);
   if (derivedBase !== base && fs.existsSync(derived)) {
     if (!_ffprobeLog.resolved) {
-      console.log('[ffmpeg] ffprobe resolved', { ffprobeCmd: derived, ffmpegPath, used: 'derived' });
+      console.log('[ffmpeg] ffprobe resolved', {
+        ffprobeCmd: derived,
+        ffmpegPath,
+        used: 'derived',
+      });
       _ffprobeLog.resolved = true;
     }
     return derived;
@@ -53,31 +57,42 @@ async function hasAudioStream(videoPath) {
     try {
       const ffprobeCmd = resolveFfprobeCmd(ffmpegPath);
       const args = [
-        '-v', 'error',
-        '-select_streams', 'a',
-        '-show_entries', 'stream=codec_type',
-        '-of', 'csv=p=0',
-        videoPath
+        '-v',
+        'error',
+        '-select_streams',
+        'a',
+        '-show_entries',
+        'stream=codec_type',
+        '-of',
+        'csv=p=0',
+        videoPath,
       ];
-      
+
       const proc = spawn(ffprobeCmd, args, { stdio: ['ignore', 'pipe', 'pipe'] });
       let stdout = '';
       let stderr = '';
-      
-      proc.stdout.on('data', (d) => { stdout += d.toString(); });
-      proc.stderr.on('data', (d) => { stderr += d.toString(); });
-      
+
+      proc.stdout.on('data', (d) => {
+        stdout += d.toString();
+      });
+      proc.stderr.on('data', (d) => {
+        stderr += d.toString();
+      });
+
       proc.on('close', (code) => {
         if (code === 0) {
           // If stdout contains 'audio', the video has an audio stream
           resolve(stdout.trim().includes('audio') || stdout.trim().length > 0);
         } else {
           // If ffprobe fails, assume no audio (safer default)
-          console.warn('[ffmpeg.video] Audio detection failed, assuming no audio:', stderr.slice(0, 200));
+          console.warn(
+            '[ffmpeg.video] Audio detection failed, assuming no audio:',
+            stderr.slice(0, 200)
+          );
           resolve(false);
         }
       });
-      
+
       proc.on('error', (err) => {
         if (!_ffprobeLog.spawnWarned) {
           _ffprobeLog.spawnWarned = true;
@@ -105,17 +120,25 @@ async function getVideoColorMeta(videoPath) {
     try {
       const ffprobeCmd = resolveFfprobeCmd(ffmpegPath);
       const args = [
-        '-v', 'error',
-        '-select_streams', 'v:0',
-        '-show_entries', 'stream=color_space,color_primaries,color_transfer',
-        '-of', 'json',
-        videoPath
+        '-v',
+        'error',
+        '-select_streams',
+        'v:0',
+        '-show_entries',
+        'stream=color_space,color_primaries,color_transfer',
+        '-of',
+        'json',
+        videoPath,
       ];
       const proc = spawn(ffprobeCmd, args, { stdio: ['ignore', 'pipe', 'pipe'] });
       let stdout = '';
       let stderr = '';
-      proc.stdout.on('data', d => { stdout += d.toString(); });
-      proc.stderr.on('data', d => { stderr += d.toString(); });
+      proc.stdout.on('data', (d) => {
+        stdout += d.toString();
+      });
+      proc.stderr.on('data', (d) => {
+        stderr += d.toString();
+      });
       proc.on('close', (code) => {
         if (code !== 0) {
           resolve({ color_space: null, color_primaries: null, color_transfer: null });
@@ -127,7 +150,7 @@ async function getVideoColorMeta(videoPath) {
           resolve({
             color_space: stream.color_space ?? null,
             color_primaries: stream.color_primaries ?? null,
-            color_transfer: stream.color_transfer ?? null
+            color_transfer: stream.color_transfer ?? null,
           });
         } catch {
           resolve({ color_space: null, color_primaries: null, color_transfer: null });
@@ -173,22 +196,22 @@ function getColorspaceMode() {
   return 'auto';
 }
 
-import { CAPTION_OVERLAY } from "../config/env.js";
-import { hasLineSpacingOption } from "./ffmpeg.capabilities.js";
-import { normalizeOverlayCaption, computeOverlayPlacement } from "../render/overlay.helpers.js";
-import { fetchToTmp, cleanupTmp } from "./tmp.js";
-import { resolveFontFile, assertFontExists, escapeFontPath } from "./font.registry.js";
+import { CAPTION_OVERLAY } from '../config/env.js';
+import { hasLineSpacingOption } from './ffmpeg.capabilities.js';
+import { normalizeOverlayCaption, computeOverlayPlacement } from '../render/overlay.helpers.js';
+import { fetchToTmp, cleanupTmp } from './tmp.js';
+import { resolveFontFile, assertFontExists, escapeFontPath } from './font.registry.js';
 
 const { createCanvas } = pkg;
 
 // Helper function to save dataUrl to temporary file
-export async function saveDataUrlToTmp(dataUrl, prefix = "caption") {
-  const m = /^data:(.+?);base64,(.*)$/.exec(dataUrl || "");
-  if (!m) throw new Error("BAD_DATA_URL");
+export async function saveDataUrlToTmp(dataUrl, prefix = 'caption') {
+  const m = /^data:(.+?);base64,(.*)$/.exec(dataUrl || '');
+  if (!m) throw new Error('BAD_DATA_URL');
   const [, mime, b64] = m;
-  const buf = Buffer.from(b64, "base64");
-  const ext = mime.includes("png") ? ".png" : ".bin";
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "vaiform-"));
+  const buf = Buffer.from(b64, 'base64');
+  const ext = mime.includes('png') ? '.png' : '.bin';
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'vaiform-'));
   const file = path.join(tmpDir, `${prefix}${ext}`);
   fs.writeFileSync(file, buf);
   return { file, mime };
@@ -196,9 +219,9 @@ export async function saveDataUrlToTmp(dataUrl, prefix = "caption") {
 
 // Helper function to write caption text to file (safe from escaping issues)
 function writeCaptionTxt(text) {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "vaiform-"));
-  const file = path.join(tmpDir, "caption.txt");
-  fs.writeFileSync(file, text ?? "", { encoding: "utf8" });
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'vaiform-'));
+  const file = path.join(tmpDir, 'caption.txt');
+  fs.writeFileSync(file, text ?? '', { encoding: 'utf8' });
   return file;
 }
 
@@ -207,39 +230,43 @@ function writeCaptionTxt(text) {
  */
 function assertRasterParity(overlayCaption, captionPngPath, finalFilter) {
   if (!overlayCaption || overlayCaption.mode !== 'raster') return;
-  
+
   console.log('[assertRasterParity] Validating raster mode SSOT...');
-  
+
   const errors = [];
-  
+
   // Required fields
   if (!overlayCaption.rasterUrl) errors.push('rasterUrl missing');
   if (!overlayCaption.rasterW || overlayCaption.rasterW <= 0) errors.push('invalid rasterW');
   if (!overlayCaption.rasterH || overlayCaption.rasterH <= 0) errors.push('invalid rasterH');
-  if (overlayCaption.yPx_png == null || !Number.isFinite(overlayCaption.yPx_png)) errors.push('invalid yPx_png');
+  if (overlayCaption.yPx_png == null || !Number.isFinite(overlayCaption.yPx_png))
+    errors.push('invalid yPx_png');
   if (!overlayCaption.rasterPadding) errors.push('rasterPadding missing (vertical shift risk)');
   if (!overlayCaption.frameW || !overlayCaption.frameH) errors.push('frameW/frameH missing');
-  if (!overlayCaption.bgScaleExpr || !overlayCaption.bgCropExpr) errors.push('bgScaleExpr/bgCropExpr missing');
+  if (!overlayCaption.bgScaleExpr || !overlayCaption.bgCropExpr)
+    errors.push('bgScaleExpr/bgCropExpr missing');
   if (!overlayCaption.rasterHash) errors.push('rasterHash missing (cannot verify PNG integrity)');
   if (!overlayCaption.previewFontString) errors.push('previewFontString missing');
-  
+
   // PNG file must exist
   if (!captionPngPath || !fs.existsSync(captionPngPath)) {
     errors.push('PNG file missing at ' + captionPngPath);
   }
-  
+
   // PNG integrity check
   if (overlayCaption.rasterHash && captionPngPath) {
     const pngBuffer = fs.readFileSync(captionPngPath);
     const actualHash = crypto.createHash('sha256').update(pngBuffer).digest('hex').slice(0, 16);
-    
+
     if (actualHash !== overlayCaption.rasterHash) {
-      errors.push(`PNG hash mismatch: expected ${overlayCaption.rasterHash}, got ${actualHash} (preview stale?)`);
+      errors.push(
+        `PNG hash mismatch: expected ${overlayCaption.rasterHash}, got ${actualHash} (preview stale?)`
+      );
     } else {
       console.log('[assertRasterParity] ✅ PNG hash verified:', actualHash);
     }
   }
-  
+
   // Forbidden fields (indicate wrong mode)
   if (overlayCaption.yPxFirstLine != null) {
     console.warn('[assertRasterParity] yPxFirstLine present (should use yPx_png only)');
@@ -247,25 +274,27 @@ function assertRasterParity(overlayCaption, captionPngPath, finalFilter) {
   if (overlayCaption.yPct != null) {
     console.warn('[assertRasterParity] yPct present (raster uses absolute yPx_png)');
   }
-  
+
   // Filter must have ≤1 drawtext (watermark only)
   if (finalFilter) {
     const drawtextMatches = finalFilter.match(/drawtext=/g) || [];
     if (drawtextMatches.length > 1) {
-      errors.push(`Multiple drawtext nodes (${drawtextMatches.length}) - expected 1 watermark only`);
+      errors.push(
+        `Multiple drawtext nodes (${drawtextMatches.length}) - expected 1 watermark only`
+      );
     }
-    
+
     // Forbidden: overlay scaling in raster mode
     if (finalFilter.includes('[1:v]scale')) {
       errors.push('[1:v]scale detected - overlay must NOT be scaled in raster mode (Design A)');
     }
   }
-  
+
   if (errors.length > 0) {
     console.error('[assertRasterParity] FAILED:', errors);
     throw new Error('RASTER_PARITY violations: ' + errors.join('; '));
   }
-  
+
   console.log('[assertRasterParity] ✅ All constraints validated');
 }
 
@@ -273,37 +302,43 @@ function assertRasterParity(overlayCaption, captionPngPath, finalFilter) {
 // DEPRECATED: These constants are superseded by resolveFontFile() in font.registry.js
 // They remain for reference only. All render paths should use:
 //   resolveFontFile(weightCss, fontStyle) → correct .ttf path
-const CAPTION_FONT_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf";
-const CAPTION_FONT_REG  = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf";
+const CAPTION_FONT_BOLD = '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf';
+const CAPTION_FONT_REG = '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf';
 
 // Font resolution now handled by SSOT font.registry.js
 
 // Match preview look: slightly higher outline + soft drop shadow
-const CAPTION_ALPHA     = 0.80;   // white text opacity (preview uses ~80%)
-const STROKE_ALPHA      = 0.85;   // dark outline opacity
-const STROKE_W          = 3;      // outline width - matches preview styling
-const SHADOW_ALPHA      = 0.55;   // drop shadow opacity
-const SHADOW_X          = 0;      // no horizontal shift (keeps symmetry)
-const SHADOW_Y          = 2;      // slight vertical softness
-const BOX_BG_ALPHA      = 0.00;   // keep disabled unless user checks "Show box"
+const CAPTION_ALPHA = 0.8; // white text opacity (preview uses ~80%)
+const STROKE_ALPHA = 0.85; // dark outline opacity
+const STROKE_W = 3; // outline width - matches preview styling
+const SHADOW_ALPHA = 0.55; // drop shadow opacity
+const SHADOW_X = 0; // no horizontal shift (keeps symmetry)
+const SHADOW_Y = 2; // slight vertical softness
+const BOX_BG_ALPHA = 0.0; // keep disabled unless user checks "Show box"
 
 // text/path helpers
-const esc = s => String(s).replace(/\\/g,'\\\\').replace(/:/g,'\\:').replace(/\[/g,'\\[').replace(/\]/g,'\\]').replace(/'/g,"\\'");
+const esc = (s) =>
+  String(s)
+    .replace(/\\/g, '\\\\')
+    .replace(/:/g, '\\:')
+    .replace(/\[/g, '\\[')
+    .replace(/\]/g, '\\]')
+    .replace(/'/g, "\\'");
 function escText(s) {
   // Escape characters that break drawtext text=... parsing
   return String(s)
-    .replace(/\\/g, '\\\\')   // backslash first
-    .replace(/'/g, "\\'")     // apostrophe
-    .replace(/:/g, '\\:')     // option separator
-    .replace(/\[/g, '\\[')    // label delimiters
+    .replace(/\\/g, '\\\\') // backslash first
+    .replace(/'/g, "\\'") // apostrophe
+    .replace(/:/g, '\\:') // option separator
+    .replace(/\[/g, '\\[') // label delimiters
     .replace(/\]/g, '\\]')
-    .replace(/\(/g, '\\(')    // expression args
+    .replace(/\(/g, '\\(') // expression args
     .replace(/\)/g, '\\)')
-    .replace(/%/g, '\\%');    // format tokens
+    .replace(/%/g, '\\%'); // format tokens
 }
 
 function escFF(text) {
-  if (!text) return "";
+  if (!text) return '';
   // Escape chars that break ffmpeg expressions
   return String(text)
     .replace(/\\/g, '\\\\')
@@ -315,36 +350,38 @@ function escFF(text) {
 
 // Escapes text for FFmpeg drawtext (filter-syntax, not shell)
 function escapeForDrawtext(s = '') {
-  return String(s)
-    // order matters; escape backslash first
-    .replace(/\\/g, '\\\\')
-    // characters that break option parsing in drawtext:
-    .replace(/:/g, '\\:')
-    .replace(/\[/g, '\\[')
-    .replace(/\]/g, '\\]')
-    .replace(/%/g, '\\%')
-    // quotes
-    .replace(/'/g, "\\'");
-    // ❌ REMOVED: .replace(/\r?\n/g, '\\n');  // This causes double-escaping
+  return (
+    String(s)
+      // order matters; escape backslash first
+      .replace(/\\/g, '\\\\')
+      // characters that break option parsing in drawtext:
+      .replace(/:/g, '\\:')
+      .replace(/\[/g, '\\[')
+      .replace(/\]/g, '\\]')
+      .replace(/%/g, '\\%')
+      // quotes
+      .replace(/'/g, "\\'")
+  );
+  // ❌ REMOVED: .replace(/\r?\n/g, '\\n');  // This causes double-escaping
 }
 
 // Normalize color to hex format for FFmpeg (avoids comma escaping in rgb())
 function normalizeColorForFFmpeg(color) {
   if (!color) return 'white';
   const c = String(color).trim();
-  
+
   // Already hex format
   if (c.startsWith('#')) return c;
-  
+
   // Parse rgb(R, G, B) or rgba(R, G, B, A)
   const m = /rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/.exec(c);
   if (m) {
     const r = parseInt(m[1], 10);
     const g = parseInt(m[2], 10);
     const b = parseInt(m[3], 10);
-    return `#${r.toString(16).padStart(2,'0')}${g.toString(16).padStart(2,'0')}${b.toString(16).padStart(2,'0')}`;
+    return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
   }
-  
+
   // Named colors or other formats - pass through (ffmpeg supports named colors)
   return c;
 }
@@ -352,12 +389,15 @@ export function sanitizeFilter(graph) {
   const s = String(graph);
   // Protect quoted substrings so we don't touch spaces/newlines inside drawtext text='...'
   const stash = [];
-  const protectedS = s.replace(/'[^']*'/g, (m) => { stash.push(m); return `__Q${stash.length - 1}__`; });
+  const protectedS = s.replace(/'[^']*'/g, (m) => {
+    stash.push(m);
+    return `__Q${stash.length - 1}__`;
+  });
   const cleaned = protectedS
     .split(';')
-    .map(seg => seg.trim())
+    .map((seg) => seg.trim())
     .filter(Boolean)
-    .map(seg => seg.replace(/\s{2,}/g, ' '))
+    .map((seg) => seg.replace(/\s{2,}/g, ' '))
     .join(';')
     .replace(/;{2,}/g, ';');
   return cleaned.replace(/__Q(\d+)__/g, (_, i) => stash[Number(i)]);
@@ -366,15 +406,16 @@ export function sanitizeFilter(graph) {
 // safe builders
 export function joinF(parts) {
   return (parts || [])
-    .flatMap(p => Array.isArray(p) ? p : [p])
-    .map(p => (p ?? '').trim())
+    .flatMap((p) => (Array.isArray(p) ? p : [p]))
+    .map((p) => (p ?? '').trim())
     .filter(Boolean)
     .join(',');
 }
 const joinFilters = (arr) => (arr || []).filter(Boolean).join(',');
-const inL  = (l) => (l ? `[${l}]` : '');
+const inL = (l) => (l ? `[${l}]` : '');
 const outL = (l) => (l ? ` [${l}]` : ''); // NOTE: leading space, not comma
-const makeChain = (inputLabel, filters, outputLabel) => `${inL(inputLabel)}${joinFilters(filters)}${outL(outputLabel)}`;
+const makeChain = (inputLabel, filters, outputLabel) =>
+  `${inL(inputLabel)}${joinFilters(filters)}${outL(outputLabel)}`;
 
 // --- Caption layout helper -----------------------------------------------
 // Wrap captions into 1–2 lines that fit inside safe margins, then return
@@ -382,15 +423,17 @@ const makeChain = (inputLabel, filters, outputLabel) => `${inL(inputLabel)}${joi
 function wrapCaption(raw, w, h, opts = {}) {
   const {
     maxLines = 2,
-    fontMax = 64,         // starting size; we’ll step down if needed
-    fontMin = 28,         // hard floor
-    marginX = 0.08,       // 8% left/right safe area
-    marginBottom = 0.12,  // 12% bottom safe area
-    charW = 0.58,         // DejaVuSans avg glyph width factor
+    fontMax = 64, // starting size; we’ll step down if needed
+    fontMin = 28, // hard floor
+    marginX = 0.08, // 8% left/right safe area
+    marginBottom = 0.12, // 12% bottom safe area
+    charW = 0.58, // DejaVuSans avg glyph width factor
     lineSpacingFactor = 0.25,
   } = opts;
 
-  const text = String(raw || '').trim().replace(/\s+/g, ' ');
+  const text = String(raw || '')
+    .trim()
+    .replace(/\s+/g, ' ');
   const usablePx = Math.max(1, Math.round(w * (1 - 2 * marginX)));
 
   for (let fz = fontMax; fz >= fontMin; fz -= 2) {
@@ -402,17 +445,20 @@ function wrapCaption(raw, w, h, opts = {}) {
     for (const ww of words) {
       const next = cur ? cur + ' ' + ww : ww;
       if (next.length <= maxChars) cur = next;
-      else { if (cur) lines.push(cur); cur = ww; }
+      else {
+        if (cur) lines.push(cur);
+        cur = ww;
+      }
     }
     if (cur) lines.push(cur);
 
     if (lines.length <= maxLines) {
       return {
-        text: lines.join('\n'),  // Use actual newlines, escapeForDrawtext will handle escaping
+        text: lines.join('\n'), // Use actual newlines, escapeForDrawtext will handle escaping
         fontsize: fz,
         lineSpacing: Math.round(fz * lineSpacingFactor),
         // bottom-anchored, inside safe area, accounting for text height
-        yExpr: `h-${Math.round(h * marginBottom)}-text_h`
+        yExpr: `h-${Math.round(h * marginBottom)}-text_h`,
       };
     }
   }
@@ -422,35 +468,45 @@ function wrapCaption(raw, w, h, opts = {}) {
     text,
     fontsize: fontMin,
     lineSpacing: Math.round(fontMin * 0.25),
-    yExpr: `h-${Math.round(h * marginBottom)}-text_h`
+    yExpr: `h-${Math.round(h * marginBottom)}-text_h`,
   };
 }
 
 function runFfmpeg(args, opts = {}) {
   return new Promise((resolve, reject) => {
     // Log full args JSON for diagnostics
-    try { console.log('[ffmpeg] spawn args JSON:', JSON.stringify(["-y", ...args])); } catch {}
-    
+    try {
+      console.log('[ffmpeg] spawn args JSON:', JSON.stringify(['-y', ...args]));
+    } catch {}
+
     // Determine timeout based on whether this is a video (longer timeout)
-    const isVideo = args.some(arg => typeof arg === 'string' && (arg.includes('.mp4') || arg.includes('.mov') || arg.includes('.webm')));
+    const isVideo = args.some(
+      (arg) =>
+        typeof arg === 'string' &&
+        (arg.includes('.mp4') || arg.includes('.mov') || arg.includes('.webm'))
+    );
     const timeoutMs = opts.timeout || (isVideo ? 300000 : 300000); // default 5 minutes for stability
-    
+
     // Force loglevel so parsing errors always appear on stderr
-    const p = spawn(ffmpegPath, ["-y", "-v", (process.env.FFMPEG_LOGLEVEL || 'error'), ...args], { stdio: ["ignore", "pipe", "pipe"] });
-    let stdout = '', stderr = '';
-    p.stdout.on('data', d => stdout += d);
-    p.stderr.on('data', d => stderr += d);
-    
+    const p = spawn(ffmpegPath, ['-y', '-v', process.env.FFMPEG_LOGLEVEL || 'error', ...args], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let stdout = '',
+      stderr = '';
+    p.stdout.on('data', (d) => (stdout += d));
+    p.stderr.on('data', (d) => (stderr += d));
+
     // Add timeout to prevent hanging
     const timeout = setTimeout(() => {
       console.log(`[ffmpeg] Timeout after ${timeoutMs}ms, killing process`);
       p.kill('SIGKILL');
       reject(new Error('FFMPEG_TIMEOUT'));
     }, timeoutMs);
-    
-    p.on("exit", (code, signal) => {
+
+    p.on('exit', (code, signal) => {
       clearTimeout(timeout);
-      if (code !== 0) console.error('[ffmpeg] exit', { code, signal, stderr: String(stderr).slice(0,8000) });
+      if (code !== 0)
+        console.error('[ffmpeg] exit', { code, signal, stderr: String(stderr).slice(0, 8000) });
       if (code === 0) {
         resolve({ stdout, stderr });
       } else {
@@ -459,21 +515,32 @@ function runFfmpeg(args, opts = {}) {
         reject(err);
       }
     });
-    p.on('close', (code, signal) => { if (code !== 0) console.error('[ffmpeg] close', { code, signal, stderr: String(stderr).slice(0,8000) }); });
-    
-    p.on('error', err => {
+    p.on('close', (code, signal) => {
+      if (code !== 0)
+        console.error('[ffmpeg] close', { code, signal, stderr: String(stderr).slice(0, 8000) });
+    });
+
+    p.on('error', (err) => {
       clearTimeout(timeout);
-      try { console.error('[ffmpeg] error', { message: err?.message, stack: err?.stack }); } catch {}
+      try {
+        console.error('[ffmpeg] error', { message: err?.message, stack: err?.stack });
+      } catch {}
       reject(new Error(`FFmpeg spawn error: ${err.message}`));
     });
   });
 }
 
 // ---- Generalized helpers ----
-function clamp01(x){ const n = Number(x); if (!Number.isFinite(n)) return 0; return Math.max(0, Math.min(1, n)); }
+function clamp01(x) {
+  const n = Number(x);
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(0, Math.min(1, n));
+}
 
 function fitQuoteToBox({ text, boxWidthPx, baseFontSize = 72 }) {
-  const raw = String(text || '').trim().replace(/\s+/g, ' ');
+  const raw = String(text || '')
+    .trim()
+    .replace(/\s+/g, ' ');
   let fz = baseFontSize;
   const len = raw.length;
   if (len > 140) fz = Math.round(baseFontSize * 0.55);
@@ -487,7 +554,11 @@ function fitQuoteToBox({ text, boxWidthPx, baseFontSize = 72 }) {
   let line = '';
   for (const w of words) {
     const next = line ? line + ' ' + w : w;
-    if (next.length <= maxChars) line = next; else { if (line) lines.push(line); line = w; }
+    if (next.length <= maxChars) line = next;
+    else {
+      if (line) lines.push(line);
+      line = w;
+    }
   }
   if (line) lines.push(line);
   const lineSpacing = Math.round(fz * 0.25);
@@ -495,22 +566,35 @@ function fitQuoteToBox({ text, boxWidthPx, baseFontSize = 72 }) {
   try {
     const safePx = 0.85 * Math.max(1, Number(boxWidthPx) || 1080);
     const pxPerChar = 0.55 * fz;
-    const maxCharsLen = Math.max(0, ...lines.map(l => l.length));
-    if ((maxCharsLen * pxPerChar) > safePx) {
-      const adj = Math.floor(fz * safePx / Math.max(1, maxCharsLen * pxPerChar));
+    const maxCharsLen = Math.max(0, ...lines.map((l) => l.length));
+    if (maxCharsLen * pxPerChar > safePx) {
+      const adj = Math.floor((fz * safePx) / Math.max(1, maxCharsLen * pxPerChar));
       fz = Math.max(16, adj);
     }
   } catch {}
-  return { text: lines.join('\n'), fontsize: fz, lineSpacing };  // Use actual newlines, escapeForDrawtext will handle escaping
+  return { text: lines.join('\n'), fontsize: fz, lineSpacing }; // Use actual newlines, escapeForDrawtext will handle escaping
 }
 
-function buildVideoChain({ width, height, videoVignette, drawLayers, captionImage, usingCaptionPng, captionPngPath, rasterPlacement, overlayCaption, assPath, padSec = 0, addColorspaceFilter = false }){
-  const W = Math.max(4, Number(width)||1080);
-  const H = Math.max(4, Number(height)||1920);
-  
+function buildVideoChain({
+  width,
+  height,
+  videoVignette,
+  drawLayers,
+  captionImage,
+  usingCaptionPng,
+  captionPngPath,
+  rasterPlacement,
+  overlayCaption,
+  assPath,
+  padSec = 0,
+  addColorspaceFilter = false,
+}) {
+  const W = Math.max(4, Number(width) || 1080);
+  const H = Math.max(4, Number(height) || 1920);
+
   // Prefer already-built placement (primary path)
   let placement = rasterPlacement ?? null;
-  
+
   // Graceful fallback: reconstruct from overlayCaption if needed
   if (!placement && overlayCaption?.mode === 'raster') {
     console.log('[buildVideoChain] Reconstructing rasterPlacement from overlayCaption (fallback)');
@@ -518,7 +602,10 @@ function buildVideoChain({ width, height, videoVignette, drawLayers, captionImag
       mode: 'raster',
       rasterW: overlayCaption.rasterW,
       rasterH: overlayCaption.rasterH,
-      xExpr: (overlayCaption.xExpr_png || overlayCaption.xExpr || '(W-overlay_w)/2').replace(/\s+/g,''),
+      xExpr: (overlayCaption.xExpr_png || overlayCaption.xExpr || '(W-overlay_w)/2').replace(
+        /\s+/g,
+        ''
+      ),
       xPx_png: overlayCaption.xPx_png,
       y: overlayCaption.yPx_png ?? overlayCaption.yPx ?? 24,
       // Pass through geometry lock fields
@@ -528,15 +615,15 @@ function buildVideoChain({ width, height, videoVignette, drawLayers, captionImag
       bgCropExpr: overlayCaption.bgCropExpr,
       rasterHash: overlayCaption.rasterHash,
       previewFontString: overlayCaption.previewFontString,
-      rasterPadding: overlayCaption.rasterPadding
+      rasterPadding: overlayCaption.rasterPadding,
     };
   }
-  
+
   // Defaults for non-raster / legacy paths
   if (!placement) {
     placement = { xExpr: '(W-overlay_w)/2', y: 24 };
   }
-  
+
   // Prefer absolute X in raster mode (Decision 2)
   let xExpr = placement.xExpr || '(W-overlay_w)/2';
   if (Number.isFinite(placement.xPx_png)) {
@@ -544,25 +631,26 @@ function buildVideoChain({ width, height, videoVignette, drawLayers, captionImag
     console.log('[raster:x-absolute]', { xPx_png: placement.xPx_png, xExpr });
   }
   const y = Number.isFinite(placement.y) ? placement.y : 24;
-  
+
   console.log('[raster:x-mode]', {
     usingAbsoluteX: Number.isFinite(placement.xPx_png),
-    xExpr, y,
+    xExpr,
+    y,
     xPx_png: placement.xPx_png ?? null,
-    fallbackUsed: !Number.isFinite(placement.xPx_png)
+    fallbackUsed: !Number.isFinite(placement.xPx_png),
   });
-  
+
   // Destructure for clarity and prevent shadowing
   const { usingCaptionPng: usePng, captionPngPath: pngPath } = { usingCaptionPng, captionPngPath };
-  
+
   // Env-gated pixel format; colorspace filter gated by addColorspaceFilter (caller decides via probe/mode)
   const use444 = process.env.FFMPEG_USE_YUV444 === '1';
   const pixelFmtFilter = `format=${use444 ? 'yuv444p' : 'yuv420p'}`;
-  
+
   // If using PNG overlay for captions (SSOT v3 raster mode)
   if (usePng && pngPath && fs.existsSync(pngPath)) {
     console.log(`[render] USING PNG OVERLAY from: ${pngPath}`);
-    
+
     // RASTER MODE INVARIANTS - fail fast if geometry missing
     if (!placement) {
       throw new Error('RASTER: rasterPlacement is required but was not provided');
@@ -583,25 +671,28 @@ function buildVideoChain({ width, height, videoVignette, drawLayers, captionImag
       rasterW: placement.rasterW,
       rasterH: placement.rasterH,
       yPx_png: placement.y,
-      xExpr_png: placement.xExpr
+      xExpr_png: placement.xExpr,
     });
-    
+
     // DEBUG ONLY: Structured parity log before FFmpeg
     if (process.env.DEBUG_CAPTION_PARITY === '1') {
-      console.log('[PARITY:RENDER:FFMPEG]', JSON.stringify({
-        textLen: overlayCaption?.text?.length || 0,
-        linesCount: overlayCaption?.lines?.length || 0,
-        rasterW: placement.rasterW,
-        rasterH: placement.rasterH,
-        yPx_png: placement.y,
-        fontPx: overlayCaption?.fontPx,
-        weightCss: overlayCaption?.weightCss,
-        previewFontString: overlayCaption?.previewFontString,
-        totalTextH: overlayCaption?.totalTextH,
-        timestamp: Date.now()
-      }));
+      console.log(
+        '[PARITY:RENDER:FFMPEG]',
+        JSON.stringify({
+          textLen: overlayCaption?.text?.length || 0,
+          linesCount: overlayCaption?.lines?.length || 0,
+          rasterW: placement.rasterW,
+          rasterH: placement.rasterH,
+          yPx_png: placement.y,
+          fontPx: overlayCaption?.fontPx,
+          weightCss: overlayCaption?.weightCss,
+          previewFontString: overlayCaption?.previewFontString,
+          totalTextH: overlayCaption?.totalTextH,
+          timestamp: Date.now(),
+        })
+      );
     }
-    
+
     // Build filter graph: scale -> crop -> format -> [vmain], then overlay PNG
     // CRITICAL: Use persisted geometry from preview for exact parity
     let scale, crop;
@@ -618,8 +709,10 @@ function buildVideoChain({ width, height, videoVignette, drawLayers, captionImag
         console.warn('[buildVideoChain] Missing bgScaleExpr/bgCropExpr in raster mode!');
       }
     }
-    const core = [ scale, crop, (videoVignette ? 'vignette=PI/4:0.5' : null), 'format=rgba' ].filter(Boolean);
-    
+    const core = [scale, crop, videoVignette ? 'vignette=PI/4:0.5' : null, 'format=rgba'].filter(
+      Boolean
+    );
+
     // Add tpad filter if padding needed (before scale/crop)
     let videoInput = '0:v';
     let tpadPrefix = '';
@@ -627,29 +720,29 @@ function buildVideoChain({ width, height, videoVignette, drawLayers, captionImag
       tpadPrefix = `[0:v]tpad=stop_mode=clone:stop_duration=${padSec}[padded];`;
       videoInput = 'padded';
     }
-    
+
     const baseChain = makeChain(videoInput, core, 'vmain');
-    
+
     // 🔒 NO SCALING - use preview dimensions verbatim for perfect parity
     const pngPrep = `[1:v]format=rgba[ovr]`;
-    
+
     console.log('[v3:parity] Using preview dimensions verbatim:', {
       rasterW: placement.rasterW,
       rasterH: placement.rasterH,
       xExpr: placement.xExpr,
-      y: placement.y
+      y: placement.y,
     });
-    
+
     // Use the xExpr and y already computed above (prefers absolute X)
-    
+
     // Use centralized pixel format filter
     const endFormat = pixelFmtFilter;
-    
+
     const overlayExpr = `[vmain][ovr]overlay=${xExpr}:${y}:format=auto,${endFormat}[vout]`;
-    
+
     // Log exact ffmpeg overlay expression for parity debugging
     console.log('[ffmpeg:overlay]', { overlay: `overlay=${xExpr}:${y}:format=auto` });
-    
+
     // CRITICAL: Log final overlay configuration
     console.log('[render:raster:FFMPEG]', {
       actualRasterW: placement.rasterW,
@@ -657,34 +750,37 @@ function buildVideoChain({ width, height, videoVignette, drawLayers, captionImag
       xExpr,
       y,
       noScaling: true,
-      willScaleOverlay: false
+      willScaleOverlay: false,
     });
-    
+
     // CRITICAL: Log x-mode for verification
     console.log('[raster:x-mode]', {
       usingAbsoluteX: Number.isFinite(placement?.xPx_png),
       xExpr,
       y,
       xPx_png: placement?.xPx_png,
-      fallbackUsed: !Number.isFinite(placement?.xPx_png)
+      fallbackUsed: !Number.isFinite(placement?.xPx_png),
     });
-    
+
     // PARITY GUARD - ensure overlay filter doesn't apply unintended scaling
     if (placement.rasterW && placement.rasterH) {
       console.log('[v3:parity-guard] Overlay dimensions locked:', {
         rasterW: placement.rasterW,
         rasterH: placement.rasterH,
-        willScaleOverlay: false
+        willScaleOverlay: false,
       });
     }
-    
+
     let filter = `${tpadPrefix}${baseChain};${pngPrep};${overlayExpr}`;
-    
+
     // Add ASS subtitles if provided (for karaoke word highlighting)
     // ASS overlays on top of caption PNG to provide word-level highlighting
     // The ASS file should match the caption styling exactly so it appears as highlighting only
     if (assPath && fs.existsSync(assPath)) {
-      console.log('[render] Adding ASS subtitles for karaoke highlighting (raster overlay mode):', assPath);
+      console.log(
+        '[render] Adding ASS subtitles for karaoke highlighting (raster overlay mode):',
+        assPath
+      );
       // Escape path for FFmpeg
       const escAssPath = assPath.replace(/\\/g, '/').replace(/:/g, '\\:').replace(/'/g, "\\'");
       // Apply subtitles after overlay - replace [vout] with intermediate, then add subtitles
@@ -692,40 +788,48 @@ function buildVideoChain({ width, height, videoVignette, drawLayers, captionImag
       filter = `${filter};[vsub]subtitles='${escAssPath}'[vout]`;
       console.log('[render] ASS subtitles added to filter chain as overlay');
     }
-    
+
     // Sanity check: ensure colorspace filter is NOT in raster chain
     console.log('[v3:filter-chain]', {
       mode: 'raster',
       pixelFmt: use444 ? 'yuv444p' : 'yuv420p',
       hasColorspaceFilter: filter.includes('colorspace='),
       hasSubtitles: filter.includes('subtitles='),
-      filterLength: filter.length
+      filterLength: filter.length,
     });
-    
+
     if (filter.includes('colorspace=')) {
-      console.error('[v3:filter-chain] ERROR: colorspace filter found in raster chain - this will cause crashes!');
+      console.error(
+        '[v3:filter-chain] ERROR: colorspace filter found in raster chain - this will cause crashes!'
+      );
     }
-    
+
     return filter;
   } else if (CAPTION_OVERLAY && captionImage) {
     // Legacy overlay format (keep for backward compatibility)
     // Verify the overlay file exists before using it
     const overlayPath = captionImage.pngPath || captionImage.localPath;
     if (overlayPath && fs.existsSync(overlayPath) && fs.statSync(overlayPath).size > 0) {
-      console.log(`[render] USING LEGACY OVERLAY at x=${captionImage.xPx} y=${captionImage.yPx} w=${captionImage.wPx} h=${captionImage.hPx}`);
+      console.log(
+        `[render] USING LEGACY OVERLAY at x=${captionImage.xPx} y=${captionImage.yPx} w=${captionImage.wPx} h=${captionImage.hPx}`
+      );
       const baseChain = `[0:v]scale=${W}:${H}:force_original_aspect_ratio=increase,crop=${W}:${H},setsar=1[v0]`;
       const overlayChain = `[v0][1:v]overlay=${captionImage.xPx}:${captionImage.yPx}:format=auto[vout]`;
       return `${baseChain};${overlayChain}`;
     } else {
-      console.warn(`[render] Legacy overlay file not found or empty: ${overlayPath}, falling back to drawtext`);
+      console.warn(
+        `[render] Legacy overlay file not found or empty: ${overlayPath}, falling back to drawtext`
+      );
       // Fall through to drawtext approach
     }
   } else {
     // Legacy drawtext approach
     const scale = `scale='if(gt(a,${W}/${H}),-2,${W})':'if(gt(a,${W}/${H}),${H},-2)'`;
     const crop = `crop=${W}:${H}`;
-    const core = [ scale, crop, (videoVignette ? 'vignette=PI/4:0.5' : null), 'format=rgba' ].filter(Boolean);
-    
+    const core = [scale, crop, videoVignette ? 'vignette=PI/4:0.5' : null, 'format=rgba'].filter(
+      Boolean
+    );
+
     // Add tpad filter if padding needed
     let videoInput = '0:v';
     let tpadPrefix = '';
@@ -733,21 +837,26 @@ function buildVideoChain({ width, height, videoVignette, drawLayers, captionImag
       tpadPrefix = `[0:v]tpad=stop_mode=clone:stop_duration=${padSec}[padded];`;
       videoInput = 'padded';
     }
-    
+
     // Colorspace handling for crisp text output
     const endFormat = pixelFmtFilter;
-    
+
     // Check if we should use ASS subtitles INSTEAD of drawtext for karaoke
-    if (assPath && fs.existsSync(assPath) && !usingCaptionPng && overlayCaption?.mode !== 'raster') {
+    if (
+      assPath &&
+      fs.existsSync(assPath) &&
+      !usingCaptionPng &&
+      overlayCaption?.mode !== 'raster'
+    ) {
       console.log('[karaoke] ASS file present, using subtitles filter instead of drawtext');
       console.log('[karaoke] ASS file path:', assPath);
-      
+
       // Build base chain ending with [base]
       const baseChain = makeChain(videoInput, core, 'base');
-      
+
       // Escape path for FFmpeg (same as raster mode)
       const escAssPath = assPath.replace(/\\/g, '/').replace(/:/g, '\\:').replace(/'/g, "\\'");
-      
+
       // Try to resolve fonts directory for fontsdir parameter
       let fontsDir = null;
       try {
@@ -761,63 +870,96 @@ function buildVideoChain({ width, height, videoVignette, drawLayers, captionImag
       } catch (e) {
         // Ignore errors, fontsdir is optional
       }
-      
+
       // Build subtitles filter with optional fontsdir
-      const fontsDirParam = fontsDir ? `:fontsdir='${fontsDir.replace(/\\/g, '/').replace(/:/g, '\\:').replace(/'/g, "\\'")}'` : '';
+      const fontsDirParam = fontsDir
+        ? `:fontsdir='${fontsDir.replace(/\\/g, '/').replace(/:/g, '\\:').replace(/'/g, "\\'")}'`
+        : '';
       const subtitlesFilter = `[base]subtitles='${escAssPath}'${fontsDirParam}[vsub]`;
-      
+
       console.log('[karaoke] subtitles filter:', subtitlesFilter);
       if (fontsDir) {
         console.log('[karaoke] Using fontsdir:', fontsDir);
       }
-      
+
       // Apply other drawLayers (watermark, etc.) to [vsub], then format and optional colorspace
       const otherLayers = drawLayers.filter(Boolean);
-      const postSubtitlesChain = makeChain('vsub', [ ...otherLayers, endFormat, addColorspaceFilter ? 'colorspace=all=bt709:fast=1' : null ].filter(Boolean), 'vout');
-      
+      const postSubtitlesChain = makeChain(
+        'vsub',
+        [
+          ...otherLayers,
+          endFormat,
+          addColorspaceFilter ? 'colorspace=all=bt709:fast=1' : null,
+        ].filter(Boolean),
+        'vout'
+      );
+
       // Combine: tpad -> base chain -> subtitles -> other layers -> output
       const vchain = `${tpadPrefix}${baseChain};${subtitlesFilter};${postSubtitlesChain}`;
-      
+
       console.log('[karaoke] Skipping drawtext because assPath is present');
       console.log('[karaoke] Final video chain includes subtitles filter');
-      
+
       return vchain;
     }
-    
+
     // Default: use drawtext (no ASS subtitles)
-    let vchain = makeChain(videoInput, [ ...core, ...drawLayers, endFormat, addColorspaceFilter ? 'colorspace=all=bt709:fast=1' : null ].filter(Boolean), 'vout');
-    
+    let vchain = makeChain(
+      videoInput,
+      [
+        ...core,
+        ...drawLayers,
+        endFormat,
+        addColorspaceFilter ? 'colorspace=all=bt709:fast=1' : null,
+      ].filter(Boolean),
+      'vout'
+    );
+
     return tpadPrefix + vchain;
   }
 }
 
-function buildAudioChain({ outSec, keepVideoAudio, haveBgAudio, ttsPath, leadInMs, tailSec, bgVol, ttsInputIndex = 1, skipDelayForKaraoke = false }){
+function buildAudioChain({
+  outSec,
+  keepVideoAudio,
+  haveBgAudio,
+  ttsPath,
+  leadInMs,
+  tailSec,
+  bgVol,
+  ttsInputIndex = 1,
+  skipDelayForKaraoke = false,
+}) {
   let aChain = '';
   if (ttsPath && keepVideoAudio && haveBgAudio) {
-    const bg = makeChain('0:a', [
-      `adelay=${leadInMs}|${leadInMs}`,
-      `volume=${bgVol.toFixed(2)}`,
-      'aresample=48000',
-      'aformat=sample_fmts=fltp:channel_layouts=stereo'
-    ], 'bg');
+    const bg = makeChain(
+      '0:a',
+      [
+        `adelay=${leadInMs}|${leadInMs}`,
+        `volume=${bgVol.toFixed(2)}`,
+        'aresample=48000',
+        'aformat=sample_fmts=fltp:channel_layouts=stereo',
+      ],
+      'bg'
+    );
     const ttsFilters = skipDelayForKaraoke
       ? [
           'aresample=48000',
           'pan=stereo|c0=c0|c1=c0',
           'aformat=sample_fmts=fltp:channel_layouts=stereo',
-          'asetpts=PTS-STARTPTS'
+          'asetpts=PTS-STARTPTS',
         ]
       : [
           `adelay=${leadInMs}|${leadInMs}`,
           'aresample=48000',
           'pan=stereo|c0=c0|c1=c0',
           'aformat=sample_fmts=fltp:channel_layouts=stereo',
-          'asetpts=PTS-STARTPTS'
+          'asetpts=PTS-STARTPTS',
         ];
     const tts1 = makeChain(`${ttsInputIndex}:a`, ttsFilters, 'tts1');
     const mix = `[bg][tts1]amix=inputs=2:duration=longest:dropout_transition=0 [aout]`;
     aChain = [bg, tts1, mix].join(';');
-    
+
     // Log TTS audio chain for karaoke verification
     if (skipDelayForKaraoke) {
       const ttsChainStr = ttsFilters.join(';');
@@ -840,20 +982,20 @@ function buildAudioChain({ outSec, keepVideoAudio, haveBgAudio, ttsPath, leadInM
           'aresample=48000',
           'pan=stereo|c0=c0|c1=c0',
           'aformat=sample_fmts=fltp:channel_layouts=stereo',
-          'asetpts=PTS-STARTPTS'
+          'asetpts=PTS-STARTPTS',
         ]
       : [
           `adelay=${leadInMs}|${leadInMs}`,
           'aresample=48000',
           'pan=stereo|c0=c0|c1=c0',
           'aformat=sample_fmts=fltp:channel_layouts=stereo',
-          'asetpts=PTS-STARTPTS'
+          'asetpts=PTS-STARTPTS',
         ];
     const tts1 = makeChain(`${ttsInputIndex}:a`, ttsFilters, 'tts1');
     const sil = makeChain(null, [`anullsrc=r=48000:cl=stereo:d=${tailSec}`], 'sil');
     const concat = `[tts1][sil]concat=n=2:v=0:a=1 [aout]`;
     aChain = [tts1, sil, concat].join(';');
-    
+
     // Log TTS audio chain for karaoke verification
     if (skipDelayForKaraoke) {
       const ttsChainStr = ttsFilters.join(';');
@@ -870,24 +1012,37 @@ function buildAudioChain({ outSec, keepVideoAudio, haveBgAudio, ttsPath, leadInM
       }
     }
   } else if (keepVideoAudio && haveBgAudio) {
-    aChain = makeChain('0:a', [
-      `adelay=${leadInMs}|${leadInMs}`,
-      `volume=${bgVol.toFixed(2)}`,
-      'aresample=48000',
-      'aformat=sample_fmts=fltp:channel_layouts=stereo'
-    ], 'aout');
+    aChain = makeChain(
+      '0:a',
+      [
+        `adelay=${leadInMs}|${leadInMs}`,
+        `volume=${bgVol.toFixed(2)}`,
+        'aresample=48000',
+        'aformat=sample_fmts=fltp:channel_layouts=stereo',
+      ],
+      'aout'
+    );
   } else {
-    aChain = makeChain(null, [`anullsrc=r=48000:cl=stereo:d=${Math.max(0.8, outSec || 0.8)}`], 'aout');
+    aChain = makeChain(
+      null,
+      [`anullsrc=r=48000:cl=stereo:d=${Math.max(0.8, outSec || 0.8)}`],
+      'aout'
+    );
   }
   return aChain;
 }
 
 export async function renderVideoQuoteOverlay({
-  videoPath, outPath,
+  videoPath,
+  outPath,
   // output dims/time
-  width = 1080, height = 1920, durationSec = 8, fps = 24,
+  width = 1080,
+  height = 1920,
+  durationSec = 8,
+  fps = 24,
   // content
-  text, authorLine,
+  text,
+  authorLine,
   captionText,
   caption,
   captionResolved,
@@ -897,9 +1052,20 @@ export async function renderVideoQuoteOverlay({
   // caption options
   includeBottomCaption = false,
   // style bundle
-  fontfile, fontcolor = 'white', fontsize = 72, lineSpacing = 12, shadowColor = 'black', shadowX = 2, shadowY = 2,
-  box = 1, boxcolor = 'black@0.35', boxborderw = 24,
-  watermark = true, watermarkText = 'Vaiform', watermarkFontSize = 30, watermarkPadding = 42,
+  fontfile,
+  fontcolor = 'white',
+  fontsize = 72,
+  lineSpacing = 12,
+  shadowColor = 'black',
+  shadowX = 2,
+  shadowY = 2,
+  box = 1,
+  boxcolor = 'black@0.35',
+  boxborderw = 24,
+  watermark = true,
+  watermarkText = 'Vaiform',
+  watermarkFontSize = 30,
+  watermarkPadding = 42,
   safeMargin, // px or percent (0..1) if < 1
   // audio
   ttsPath,
@@ -914,63 +1080,68 @@ export async function renderVideoQuoteOverlay({
   assPath, // ASS subtitle file for karaoke word highlighting
   // visual polish
   videoStartSec = 0,
-  padSec = 0,  // Padding duration in seconds (extends video when clip < TTS duration)
+  padSec = 0, // Padding duration in seconds (extends video when clip < TTS duration)
   videoVignette = false,
   haveBgAudio = true,
-  colorMetaCache = null,  // optional Map<path, ProbeResult> to avoid repeated ffprobe per render
+  colorMetaCache = null, // optional Map<path, ProbeResult> to avoid repeated ffprobe per render
 }) {
   // Log options for debugging
-  console.log('[render:opts]', { 
-    includeBottomCaption, 
-    overlayMode: !!overlayCaption, 
-    hasOverlayCaption: !!overlayCaption
+  console.log('[render:opts]', {
+    includeBottomCaption,
+    overlayMode: !!overlayCaption,
+    hasOverlayCaption: !!overlayCaption,
   });
 
   // Default font fallback if caller does not provide one
-  const DEFAULT_FONT = process.env.DRAWTEXT_FONTFILE || '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf';
+  const DEFAULT_FONT =
+    process.env.DRAWTEXT_FONTFILE || '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf';
   const effFont = String(fontfile || DEFAULT_FONT);
-  const W = Math.max(4, Number(width)||1080);
-  const H = Math.max(4, Number(height)||1920);
-  const sm = (typeof safeMargin === 'number')
-    ? (safeMargin <= 1 ? Math.round(Math.min(W,H) * clamp01(safeMargin)) : Math.round(safeMargin))
-    : Math.round(Math.min(W,H) * 0.06);
+  const W = Math.max(4, Number(width) || 1080);
+  const H = Math.max(4, Number(height) || 1920);
+  const sm =
+    typeof safeMargin === 'number'
+      ? safeMargin <= 1
+        ? Math.round(Math.min(W, H) * clamp01(safeMargin))
+        : Math.round(safeMargin)
+      : Math.round(Math.min(W, H) * 0.06);
 
   // ---- PNG OVERLAY BRANCH: if captionImage exists, use overlay path and SKIP drawtext ----
   let usingCaptionPng = false;
   let captionPngPath = null;
-  
+
   // 🔒 EARLY PNG MATERIALIZATION - read directly from overlayCaption for raster mode
   if (overlayCaption?.mode === 'raster') {
-    const dataUrl = overlayCaption.rasterUrl || overlayCaption.rasterDataUrl || overlayCaption.rasterPng;
-    
+    const dataUrl =
+      overlayCaption.rasterUrl || overlayCaption.rasterDataUrl || overlayCaption.rasterPng;
+
     console.log('[v3:materialize:CHECK]', {
       hasRasterUrl: Boolean(overlayCaption.rasterUrl),
       hasRasterDataUrl: Boolean(overlayCaption.rasterDataUrl),
-      rasterUrlLen: dataUrl?.length || 0
+      rasterUrlLen: dataUrl?.length || 0,
     });
-    
+
     if (!dataUrl) {
       throw new Error('RASTER: missing rasterDataUrl/rasterUrl');
     }
-    
+
     try {
       usingCaptionPng = true;
       captionPngPath = await fetchToTmp(dataUrl, '.png');
-      
+
       console.log('[render:raster-guard]', {
         usingCaptionPng: true,
         includeBottomCaption,
-        willDisableBottomCaption: true
+        willDisableBottomCaption: true,
       });
-      
+
       // Verify PNG file
       if (!fs.existsSync(captionPngPath) || fs.statSync(captionPngPath).size === 0) {
         throw new Error('RASTER: PNG file is empty or missing');
       }
-      
+
       console.log('[v3:materialize:AFTER]', {
         path: captionPngPath,
-        fileSize: fs.statSync(captionPngPath).size
+        fileSize: fs.statSync(captionPngPath).size,
       });
     } catch (error) {
       console.error('[raster] Failed to materialize PNG overlay:', error.message);
@@ -980,37 +1151,40 @@ export async function renderVideoQuoteOverlay({
     // Legacy v1 captionImage path
     usingCaptionPng = true;
     try {
-      const { file: pngPath } = await saveDataUrlToTmp(captionImage.dataUrl, "caption");
-      
+      const { file: pngPath } = await saveDataUrlToTmp(captionImage.dataUrl, 'caption');
+
       // Verify the PNG file exists and is readable
       if (fs.existsSync(pngPath) && fs.statSync(pngPath).size > 0) {
         captionPngPath = pngPath;
-        console.log("[render] using caption PNG overlay:", pngPath);
-        console.log("[render] USING OVERLAY - skipping drawtext. Caption PNG:", pngPath);
+        console.log('[render] using caption PNG overlay:', pngPath);
+        console.log('[render] USING OVERLAY - skipping drawtext. Caption PNG:', pngPath);
       } else {
         throw new Error("PNG file is empty or doesn't exist");
       }
     } catch (error) {
-      console.warn("[render] failed to save or verify caption PNG, falling back to drawtext:", error.message);
+      console.warn(
+        '[render] failed to save or verify caption PNG, falling back to drawtext:',
+        error.message
+      );
       usingCaptionPng = false;
       captionPngPath = null;
     }
   }
-  
+
   // Guard: Verify caption PNG path exists before using in ffmpeg
   if (usingCaptionPng && (!captionPngPath || !fs.existsSync(captionPngPath))) {
-    console.warn("[render] Caption PNG path invalid or missing, falling back to drawtext");
-    console.warn("[render] PNG path was:", captionPngPath);
-    console.warn("[render] File exists:", captionPngPath ? fs.existsSync(captionPngPath) : false);
+    console.warn('[render] Caption PNG path invalid or missing, falling back to drawtext');
+    console.warn('[render] PNG path was:', captionPngPath);
+    console.warn('[render] File exists:', captionPngPath ? fs.existsSync(captionPngPath) : false);
     usingCaptionPng = false;
     captionPngPath = null;
   }
-  
+
   // Additional guard: Ensure PNG file is not empty
   if (usingCaptionPng && captionPngPath && fs.existsSync(captionPngPath)) {
     const stats = fs.statSync(captionPngPath);
     if (stats.size === 0) {
-      console.warn("[render] Caption PNG file is empty, falling back to drawtext");
+      console.warn('[render] Caption PNG file is empty, falling back to drawtext');
       usingCaptionPng = false;
       captionPngPath = null;
     } else {
@@ -1018,21 +1192,28 @@ export async function renderVideoQuoteOverlay({
     }
   }
 
-  const fit = fitQuoteToBox({ text, boxWidthPx: W - sm*2, baseFontSize: fontsize || 72 });
+  const fit = fitQuoteToBox({ text, boxWidthPx: W - sm * 2, baseFontSize: fontsize || 72 });
   const effLineSpacing = Math.max(2, Number.isFinite(lineSpacing) ? lineSpacing : fit.lineSpacing);
   try {
     const raw = String(text ?? '').trim();
-    console.log('[fit]', JSON.stringify({ raw, fitted: fit.text, fontsize: fit.fontsize, lineSpacing: effLineSpacing }, null, 2));
+    console.log(
+      '[fit]',
+      JSON.stringify(
+        { raw, fitted: fit.text, fontsize: fit.fontsize, lineSpacing: effLineSpacing },
+        null,
+        2
+      )
+    );
   } catch {}
 
   // Write quote/author text to temp textfiles for robust multiline handling
   const tmpBase = fs.mkdtempSync(path.join(os.tmpdir(), 'vaiform-txt-'));
   const quoteTxtPath = path.join(tmpBase, 'quote.txt');
   const authorTxtPath = path.join(tmpBase, 'author.txt');
-  
+
   // Check line_spacing support once per render
   const supportsLineSpacing = await hasLineSpacingOption();
-  
+
   let drawMain = '';
   try {
     const rawMain = String(text ?? '').trim();
@@ -1042,50 +1223,85 @@ export async function renderVideoQuoteOverlay({
       console.log('[drawtext][quotefile]', quoteTxtPath, 'bytes=', stat.size);
       if (stat.size > 0) {
         drawMain = `drawtext=${[
-          `textfile='${quoteTxtPath.replace(/\\/g,'/').replace(/^([A-Za-z]):\//, "$1\\:/")}'`,
+          `textfile='${quoteTxtPath.replace(/\\/g, '/').replace(/^([A-Za-z]):\//, '$1\\:/')}'`,
           `x=(w-text_w)/2`,
           `y=(h-text_h)/2`,
           `fontsize=${fit.fontsize}`,
           `fontcolor=${fontcolor}`,
-          `shadowcolor=${shadowColor}`,`shadowx=${shadowX}`,`shadowy=${shadowY}`,
-          `borderw=2`,`bordercolor=black@0.85`,
+          `shadowcolor=${shadowColor}`,
+          `shadowx=${shadowX}`,
+          `shadowy=${shadowY}`,
+          `borderw=2`,
+          `bordercolor=black@0.85`,
           supportsLineSpacing && effLineSpacing > 0 ? `line_spacing=${effLineSpacing}` : null,
-          `box=0`
-        ].filter(Boolean).join(':')}`;
+          `box=0`,
+        ]
+          .filter(Boolean)
+          .join(':')}`;
       }
     }
   } catch {}
 
   // drawMain is prepared above only when there is actual text content
-  const drawAuthor = (authorLine && String(authorLine).trim()) ? (() => {
-    try { fs.writeFileSync(authorTxtPath, String(authorLine).trim(), { encoding: 'utf8' }); console.log('[drawtext][authorfile]', authorTxtPath, 'bytes=', fs.statSync(authorTxtPath).size); } catch {}
-    return `drawtext=${[
-      `textfile='${authorTxtPath.replace(/\\/g,'/').replace(/^([A-Za-z]):\//, "$1\\:/")}'`,
-      'x=(w-text_w)/2', `y=(h+text_h)/2+${Math.round(sm*0.8)}`,
-      `fontsize=${Math.max(28, Math.round(fit.fontsize * 0.5))}`,
-      `fontcolor=${fontcolor}`,
-      `shadowcolor=${shadowColor}`,`shadowx=${shadowX}`,`shadowy=${shadowY}`,
-      'box=0','borderw=0'
-    ].filter(Boolean).join(':')}`;
-  })() : '';
-  const drawWatermark = watermark ? (() => {
-    const watermarkFontFile = escapeFontPath(assertFontExists(resolveFontFile('normal', 'normal')));
-    return `drawtext=${[
-      `fontfile=${watermarkFontFile}`,
-      `text='${escapeForDrawtext(watermarkText || 'Vaiform')}'`,
-      `x=w-tw-${watermarkPadding}`, `y=h-th-${watermarkPadding}`,
-      `fontsize=${watermarkFontSize}`, 'fontcolor=white',
-      'shadowcolor=black','shadowx=2','shadowy=2','borderw=2','bordercolor=black@0.85','box=0'
-    ].filter(Boolean).join(':')}`;
-  })() : '';
+  const drawAuthor =
+    authorLine && String(authorLine).trim()
+      ? (() => {
+          try {
+            fs.writeFileSync(authorTxtPath, String(authorLine).trim(), { encoding: 'utf8' });
+            console.log(
+              '[drawtext][authorfile]',
+              authorTxtPath,
+              'bytes=',
+              fs.statSync(authorTxtPath).size
+            );
+          } catch {}
+          return `drawtext=${[
+            `textfile='${authorTxtPath.replace(/\\/g, '/').replace(/^([A-Za-z]):\//, '$1\\:/')}'`,
+            'x=(w-text_w)/2',
+            `y=(h+text_h)/2+${Math.round(sm * 0.8)}`,
+            `fontsize=${Math.max(28, Math.round(fit.fontsize * 0.5))}`,
+            `fontcolor=${fontcolor}`,
+            `shadowcolor=${shadowColor}`,
+            `shadowx=${shadowX}`,
+            `shadowy=${shadowY}`,
+            'box=0',
+            'borderw=0',
+          ]
+            .filter(Boolean)
+            .join(':')}`;
+        })()
+      : '';
+  const drawWatermark = watermark
+    ? (() => {
+        const watermarkFontFile = escapeFontPath(
+          assertFontExists(resolveFontFile('normal', 'normal'))
+        );
+        return `drawtext=${[
+          `fontfile=${watermarkFontFile}`,
+          `text='${escapeForDrawtext(watermarkText || 'Vaiform')}'`,
+          `x=w-tw-${watermarkPadding}`,
+          `y=h-th-${watermarkPadding}`,
+          `fontsize=${watermarkFontSize}`,
+          'fontcolor=white',
+          'shadowcolor=black',
+          'shadowx=2',
+          'shadowy=2',
+          'borderw=2',
+          'bordercolor=black@0.85',
+          'box=0',
+        ]
+          .filter(Boolean)
+          .join(':')}`;
+      })()
+    : '';
 
   // Optional caption (bottom, safe area, wrapped)
   let drawCaption = '';
-  
+
   // CRITICAL: Early raster mode guard - skip ALL caption drawtext paths
   if (overlayCaption?.mode === 'raster') {
     console.log('[render] RASTER MODE detected - skipping ALL caption drawtext paths');
-    
+
     // PROBE (Commit 0): gated debug logs. Remove after confirming behavior.
     if (process.env.PROBE_RASTER_MODE === '1') {
       const oc = overlayCaption || {};
@@ -1098,28 +1314,28 @@ export async function renderVideoQuoteOverlay({
         rasterH: oc.rasterH ?? null,
         yPx_png: oc.yPx_png ?? null,
         xExpr_png: oc.xExpr_png ?? null,
-        keys: Object.keys(oc).slice(0, 60)
+        keys: Object.keys(oc).slice(0, 60),
       });
     }
-    
+
     // 🔒 RASTER MODE ASSERTION - fail fast if PNG missing
     if (!(overlayCaption.rasterUrl || overlayCaption.rasterDataUrl)) {
       throw new Error('RASTER: overlayCaption missing rasterUrl/rasterDataUrl at ffmpeg entry');
     }
-    
+
     // Disable all caption drawtext in pure raster mode
     drawCaption = '';
-    
+
     // Force disable bottom caption for raster mode
     if (includeBottomCaption) {
       console.log('[render] Disabling includeBottomCaption for raster mode');
     }
   } else if (overlayCaption && overlayCaption.text) {
     console.log(`[render] USING OVERLAY MODE - SSOT positioning from computeOverlayPlacement`);
-    
+
     // Normalize overlay caption to ensure all fields are present
     const normalized = normalizeOverlayCaption(overlayCaption);
-    
+
     console.log('[render] Normalized overlayCaption (post-normalize):', {
       ssotVersion: normalized.ssotVersion,
       mode: normalized.mode,
@@ -1130,290 +1346,320 @@ export async function renderVideoQuoteOverlay({
       lines: Array.isArray(normalized.lines) ? normalized.lines.length : 0,
       internalPadding: normalized.internalPadding,
       placement: normalized.placement,
-      lineSpacingPx: normalized.lineSpacingPx
+      lineSpacingPx: normalized.lineSpacingPx,
     });
-    
+
     // Compute placement using shared SSOT helper (same math as preview)
     const placement = computeOverlayPlacement(normalized, W, H);
-    
+
     // SSOT V3 RASTER MODE: Use PNG overlay instead of drawtext
     if (placement?.mode === 'raster' && placement.rasterUrl) {
       console.log('[raster] Using PNG overlay instead of drawtext');
-      
+
       // CRITICAL: Log raster inputs for debugging
       console.log('[render:raster:IN]', {
         rasterW: placement.rasterW,
         rasterH: placement.rasterH,
         y: placement.y,
         wPct: normalized.wPct ?? placement.wPct ?? 1,
-        xExpr: placement.xExpr
+        xExpr: placement.xExpr,
       });
-      
+
       // CRITICAL: Log placement before materialization
       console.log('[v3:materialize:BEFORE]', {
         rasterUrl: placement.rasterUrl.substring(0, 50) + '...',
         rasterW: placement.rasterW,
         rasterH: placement.rasterH,
         y: placement.y,
-        xExpr: placement.xExpr
+        xExpr: placement.xExpr,
       });
-      
+
       // PNG already materialized earlier - just validate dimensions and skip drawtext
       console.log('[raster] Using pre-materialized PNG overlay');
-      
+
       // 🔒 VALIDATION GUARDS - fail fast on mismatches
-      
+
       // GEOMETRY LOCK - fail if preview was made for different target dimensions
       if (placement.frameW && placement.frameW !== W) {
-        throw new Error(`Preview was for ${placement.frameW}×${placement.frameH}, got ${W}×${H}. Regenerate preview.`);
+        throw new Error(
+          `Preview was for ${placement.frameW}×${placement.frameH}, got ${W}×${H}. Regenerate preview.`
+        );
       }
       if (placement.frameH && placement.frameH !== H) {
-        throw new Error(`Preview was for ${placement.frameW}×${placement.frameH}, got ${W}×${H}. Regenerate preview.`);
+        throw new Error(
+          `Preview was for ${placement.frameW}×${placement.frameH}, got ${W}×${H}. Regenerate preview.`
+        );
       }
-      
+
       // OVERLAY IDENTITY - verify PNG hash matches preview
       if (placement.rasterHash && captionPngPath) {
         const pngBuffer = fs.readFileSync(captionPngPath);
         const actualHash = crypto.createHash('sha256').update(pngBuffer).digest('hex').slice(0, 16);
         if (actualHash !== placement.rasterHash) {
-          throw new Error(`Overlay differs from preview (hash mismatch: ${actualHash} vs ${placement.rasterHash}). Regenerate preview.`);
+          throw new Error(
+            `Overlay differs from preview (hash mismatch: ${actualHash} vs ${placement.rasterHash}). Regenerate preview.`
+          );
         }
         console.log('[v3:hash] PNG integrity verified:', actualHash);
       }
-      
+
       // MODE LOCK - only raster mode allowed for v3
       if (placement.mode !== 'raster') {
         throw new Error(`Expected mode='raster', got '${placement.mode}'. Regenerate preview.`);
       }
-      
+
       console.log('[raster] Using pre-materialized PNG overlay:', {
         path: captionPngPath,
         size: captionPngPath ? fs.statSync(captionPngPath).size : 0,
         rasterW: placement.rasterW,
         rasterH: placement.rasterH,
-        y: placement.y
+        y: placement.y,
       });
-      
+
       // CRITICAL: Validate that dimensions match preview expectations
       if (placement.rasterW !== normalized.rasterW || placement.rasterH !== normalized.rasterH) {
-        throw new Error(`Raster dimensions mismatch: expected ${normalized.rasterW}×${normalized.rasterH}, got ${placement.rasterW}×${placement.rasterH}`);
+        throw new Error(
+          `Raster dimensions mismatch: expected ${normalized.rasterW}×${normalized.rasterH}, got ${placement.rasterW}×${placement.rasterH}`
+        );
       }
-      
+
       // Skip drawtext - we'll use overlay filter instead
       drawCaption = '';
-      
-    console.log('[ffmpeg:overlay]', {
-      xExpr: placement.xExpr,
-      y: placement.y,
-      rasterW: placement.rasterW,
-      rasterH: placement.rasterH,
-      match: placement.rasterW === overlayWidth && placement.rasterH === overlayHeight
-    });
-      
+
+      console.log('[ffmpeg:overlay]', {
+        xExpr: placement.xExpr,
+        y: placement.y,
+        rasterW: placement.rasterW,
+        rasterH: placement.rasterH,
+        match: placement.rasterW === overlayWidth && placement.rasterH === overlayHeight,
+      });
+
       // Skip the rest of the drawtext logic
       // Jump directly to buildVideoChain
     } else {
       // Extract computed values (let for reassignment in sanity checks)
       const useSSOT = placement?.willUseSSOT === true;
-      let { 
-        xExpr, y, fontPx: overlayFontPx, lineSpacingPx, totalTextH, 
-        fromSavedPreview, lines, leftPx, windowW 
-      } = placement;
-    
-    // Log SSOT values before drawtext
-    console.log('[ffmpeg] Pre-drawtext SSOT:', {
-      useSSOT,
-      willUseSSOT: placement?.willUseSSOT,
-      fontPx: overlayFontPx,
-      lineSpacingPx,
-      totalTextH,
-      y,
-      yPxFirstLine: normalized.yPxFirstLine,
-      lines: lines?.length
-    });
-    
-    // ===== SANITY CHECKS - Only apply to fallback values, not SSOT =====
-    if (useSSOT) {
-      // Trust SSOT values completely when willUseSSOT is true
-      console.log('[ffmpeg] Using SSOT values verbatim');
-    } else {
-      // Apply sanity checks for fallback/legacy values
-      if (!Number.isFinite(overlayFontPx) || overlayFontPx < 8 || overlayFontPx > 400) {
-        console.warn(`[ffmpeg-sanity] Invalid fontPx=${overlayFontPx}, defaulting to 56`);
-        overlayFontPx = 56;
-      }
-      
-      if (!Number.isFinite(lineSpacingPx) || lineSpacingPx < 0 || lineSpacingPx > overlayFontPx * 3) {
-        console.warn(`[ffmpeg-sanity] Invalid lineSpacingPx=${lineSpacingPx}, recomputing`);
-        const lh = Math.round(overlayFontPx * 1.15);
-        lineSpacingPx = Math.max(0, lh - overlayFontPx);
-      }
-      
-      if (!Number.isFinite(totalTextH) || totalTextH <= 0) {
-        console.warn(`[ffmpeg-sanity] Invalid totalTextH=${totalTextH}, recomputing`);
-        const linesCount = (lines && lines.length) || 1;
-        totalTextH = linesCount * Math.round(overlayFontPx * 1.15);
-      }
-      
-      if (!Number.isFinite(y)) {
-        console.warn(`[ffmpeg-sanity] Invalid y=${y}, recomputing from yPct`);
-        const anchorY = Math.round((normalized.yPct ?? 0.1) * H);
-        y = Math.round(anchorY - (totalTextH / 2));
-      }
-    }
-    
-    // Log placement for verification (match preview logging format)
-    console.log(`[render] SSOT placement computed:`, {
-      useSSOT,
-      willUseSSOT: placement?.willUseSSOT,
-      fromSavedPreview,
-      mode: placement?.mode,
-      xPct: normalized.xPct?.toFixed(3),
-      yPct: normalized.yPct?.toFixed(3),
-      wPct: normalized.wPct?.toFixed(3),
-      fontPx: overlayFontPx,
-      totalTextH,
-      computedY: y,
-      lineSpacingPx,
-      xExpr,
-      lines: lines?.length || 'unknown'
-    });
-    
-    // Use overlay font settings
-    const overlayColorRaw = normalized.color || '#ffffff';
-    const overlayColor = normalizeColorForFFmpeg(overlayColorRaw);
-    const overlayOpacity = normalized.opacity;
-    
-    // Resolve font file using SSOT registry
-    const fontFile = assertFontExists(resolveFontFile(
-      normalized.weightCss, 
-      normalized.fontStyle || 'normal'
-    ));
-    
-    // Log resolved font for debugging
-    console.log('[render] SSOT font resolved:', {
-      weightCss: normalized.weightCss,
-      fontStyle: normalized.fontStyle,
-      fontFile: fontFile
-    });
-    
-    // Text to render: use saved lines if available, otherwise fallback to word-wrap
-    let textToRender;
-    if (useSSOT && lines && lines.length > 0) {
-      // Use exact text from saved preview (SSOT) - don't rewrap!
-      textToRender = lines.join('\n');  // Use actual newlines, escapeForDrawtext will handle escaping
-      console.log(`[render] Using SSOT lines: ${lines.length} lines`);
-    } else if (Array.isArray(lines) && lines.length > 0) {
-      // Have lines but not SSOT mode (legacy path with saved lines)
-      textToRender = lines.join('\n');  // Use actual newlines, escapeForDrawtext will handle escaping
-      console.log(`[render] Using saved lines (legacy): ${lines.length} lines`);
-    } else {
-      // Fallback: word-wrap text
-      textToRender = (normalized.text || '').replace(/\r\n/g, '\n');
-      const hasLineBreaks = textToRender.includes('\n');
-      
-      if (!hasLineBreaks && textToRender.trim()) {
-        // Create temporary canvas for text measurement
-        const tempCanvas = createCanvas(W, H);
-        const tempCtx = tempCanvas.getContext("2d");
-        const fontString = `${normalized.weightCss || 'normal'} ${overlayFontPx}px "DejaVu Sans"`;
-        tempCtx.font = fontString;
-        
-        // Word-wrap using same logic as legacy caption path
-        const maxWidth = windowW || Math.round(W * 0.92);
-        const words = textToRender.split(/\s+/);
-        const lines = [];
-        let line = "";
-        
-        for (const word of words) {
-          const test = line ? line + " " + word : word;
-          if (tempCtx.measureText(test).width > maxWidth && line) {
-            lines.push(line);
-            line = word;
-          } else {
-            line = test;
-          }
-        }
-        if (line) lines.push(line);
-        
-        textToRender = lines.join('\n');  // Use actual newlines, escapeForDrawtext will handle escaping
-        console.log(`[render] word-wrapped text: ${lines.length} lines`);
-      }
-    }
-    
-    // Verify SSOT values before using them in drawtext
-    console.log('[ffmpeg] overlayCaption SSOT values:', {
-      fontPx: overlayFontPx,
-      lineSpacingPx: lineSpacingPx,
-      totalTextH: totalTextH,
-      y: y,
-      lines: lines?.length,
-      xExpr: xExpr,
-      supportsLineSpacing: supportsLineSpacing
-    });
-    
-    // SSOT validation logging
-    console.log('[SSOT-render] Drawing with:', {
-      fontPx: overlayFontPx, 
-      lineSpacingPx, 
-      y,
-      text: textToRender.substring(0, 40),
-      hasLiteralBackslashN: textToRender.includes('\\n'),
-      hasActualNewline: textToRender.includes('\n')
-    });
-    
-    // Build drawtext filter with SSOT placement and escaped font path
-    const fontfileArg = `fontfile=${escapeFontPath(fontFile)}`;
-    drawCaption = `drawtext=${[
-      fontfileArg,
-      `text='${escapeForDrawtext(textToRender)}'`,
-      `x=${xExpr}`, // Use computed expression from placement helper
-      `y=${y}`, // Should be ~130 for yPct=0.1, not -3129
-      `fontsize=${overlayFontPx}`, // Should be 54
-      `fontcolor=${overlayColor}@${overlayOpacity}`,
-      supportsLineSpacing && lineSpacingPx > 0 ? `line_spacing=${lineSpacingPx}` : null, // Should be ~8
-      `borderw=2:bordercolor=black@0.85`,
-      `shadowcolor=black:shadowx=2:shadowy=2`,
-      `box=0`
-    ].filter(Boolean).join(':')}`;
-    
-    // Enhanced diagnostic logging
-    try { 
-      console.log(JSON.stringify({ 
-        tag:'render:payload', 
-        mode:'overlayCaption', 
+      let {
+        xExpr,
+        y,
+        fontPx: overlayFontPx,
+        lineSpacingPx,
+        totalTextH,
         fromSavedPreview,
-        fontPx: overlayFontPx, 
-        lineSpacingPx, 
-        totalTextH, 
-        y, 
-        supportsLineSpacing, 
-        textLength: textToRender.length, 
-        lines: lines?.length || 'unknown'
-      })); 
-    } catch {}
-    
-    // CRITICAL: Log exact values being used in FFmpeg
-    console.log('[ffmpeg] USING VALUES', {
-      useSSOT,
-      willUseSSOT: placement?.willUseSSOT,
-      fromSavedPreview,
-      fontPx: overlayFontPx,
-      y,
-      lineSpacingPx,
-      xExpr,
-      text: textToRender.substring(0, 50).replace(/\n/g, '\\n'),
-      linesCount: lines?.length || 'unknown',
-      textLines: textToRender.split('\n').length
-    });
-    }  // End of else block for non-raster mode
+        lines,
+        leftPx,
+        windowW,
+      } = placement;
+
+      // Log SSOT values before drawtext
+      console.log('[ffmpeg] Pre-drawtext SSOT:', {
+        useSSOT,
+        willUseSSOT: placement?.willUseSSOT,
+        fontPx: overlayFontPx,
+        lineSpacingPx,
+        totalTextH,
+        y,
+        yPxFirstLine: normalized.yPxFirstLine,
+        lines: lines?.length,
+      });
+
+      // ===== SANITY CHECKS - Only apply to fallback values, not SSOT =====
+      if (useSSOT) {
+        // Trust SSOT values completely when willUseSSOT is true
+        console.log('[ffmpeg] Using SSOT values verbatim');
+      } else {
+        // Apply sanity checks for fallback/legacy values
+        if (!Number.isFinite(overlayFontPx) || overlayFontPx < 8 || overlayFontPx > 400) {
+          console.warn(`[ffmpeg-sanity] Invalid fontPx=${overlayFontPx}, defaulting to 56`);
+          overlayFontPx = 56;
+        }
+
+        if (
+          !Number.isFinite(lineSpacingPx) ||
+          lineSpacingPx < 0 ||
+          lineSpacingPx > overlayFontPx * 3
+        ) {
+          console.warn(`[ffmpeg-sanity] Invalid lineSpacingPx=${lineSpacingPx}, recomputing`);
+          const lh = Math.round(overlayFontPx * 1.15);
+          lineSpacingPx = Math.max(0, lh - overlayFontPx);
+        }
+
+        if (!Number.isFinite(totalTextH) || totalTextH <= 0) {
+          console.warn(`[ffmpeg-sanity] Invalid totalTextH=${totalTextH}, recomputing`);
+          const linesCount = (lines && lines.length) || 1;
+          totalTextH = linesCount * Math.round(overlayFontPx * 1.15);
+        }
+
+        if (!Number.isFinite(y)) {
+          console.warn(`[ffmpeg-sanity] Invalid y=${y}, recomputing from yPct`);
+          const anchorY = Math.round((normalized.yPct ?? 0.1) * H);
+          y = Math.round(anchorY - totalTextH / 2);
+        }
+      }
+
+      // Log placement for verification (match preview logging format)
+      console.log(`[render] SSOT placement computed:`, {
+        useSSOT,
+        willUseSSOT: placement?.willUseSSOT,
+        fromSavedPreview,
+        mode: placement?.mode,
+        xPct: normalized.xPct?.toFixed(3),
+        yPct: normalized.yPct?.toFixed(3),
+        wPct: normalized.wPct?.toFixed(3),
+        fontPx: overlayFontPx,
+        totalTextH,
+        computedY: y,
+        lineSpacingPx,
+        xExpr,
+        lines: lines?.length || 'unknown',
+      });
+
+      // Use overlay font settings
+      const overlayColorRaw = normalized.color || '#ffffff';
+      const overlayColor = normalizeColorForFFmpeg(overlayColorRaw);
+      const overlayOpacity = normalized.opacity;
+
+      // Resolve font file using SSOT registry
+      const fontFile = assertFontExists(
+        resolveFontFile(normalized.weightCss, normalized.fontStyle || 'normal')
+      );
+
+      // Log resolved font for debugging
+      console.log('[render] SSOT font resolved:', {
+        weightCss: normalized.weightCss,
+        fontStyle: normalized.fontStyle,
+        fontFile: fontFile,
+      });
+
+      // Text to render: use saved lines if available, otherwise fallback to word-wrap
+      let textToRender;
+      if (useSSOT && lines && lines.length > 0) {
+        // Use exact text from saved preview (SSOT) - don't rewrap!
+        textToRender = lines.join('\n'); // Use actual newlines, escapeForDrawtext will handle escaping
+        console.log(`[render] Using SSOT lines: ${lines.length} lines`);
+      } else if (Array.isArray(lines) && lines.length > 0) {
+        // Have lines but not SSOT mode (legacy path with saved lines)
+        textToRender = lines.join('\n'); // Use actual newlines, escapeForDrawtext will handle escaping
+        console.log(`[render] Using saved lines (legacy): ${lines.length} lines`);
+      } else {
+        // Fallback: word-wrap text
+        textToRender = (normalized.text || '').replace(/\r\n/g, '\n');
+        const hasLineBreaks = textToRender.includes('\n');
+
+        if (!hasLineBreaks && textToRender.trim()) {
+          // Create temporary canvas for text measurement
+          const tempCanvas = createCanvas(W, H);
+          const tempCtx = tempCanvas.getContext('2d');
+          const fontString = `${normalized.weightCss || 'normal'} ${overlayFontPx}px "DejaVu Sans"`;
+          tempCtx.font = fontString;
+
+          // Word-wrap using same logic as legacy caption path
+          const maxWidth = windowW || Math.round(W * 0.92);
+          const words = textToRender.split(/\s+/);
+          const lines = [];
+          let line = '';
+
+          for (const word of words) {
+            const test = line ? line + ' ' + word : word;
+            if (tempCtx.measureText(test).width > maxWidth && line) {
+              lines.push(line);
+              line = word;
+            } else {
+              line = test;
+            }
+          }
+          if (line) lines.push(line);
+
+          textToRender = lines.join('\n'); // Use actual newlines, escapeForDrawtext will handle escaping
+          console.log(`[render] word-wrapped text: ${lines.length} lines`);
+        }
+      }
+
+      // Verify SSOT values before using them in drawtext
+      console.log('[ffmpeg] overlayCaption SSOT values:', {
+        fontPx: overlayFontPx,
+        lineSpacingPx: lineSpacingPx,
+        totalTextH: totalTextH,
+        y: y,
+        lines: lines?.length,
+        xExpr: xExpr,
+        supportsLineSpacing: supportsLineSpacing,
+      });
+
+      // SSOT validation logging
+      console.log('[SSOT-render] Drawing with:', {
+        fontPx: overlayFontPx,
+        lineSpacingPx,
+        y,
+        text: textToRender.substring(0, 40),
+        hasLiteralBackslashN: textToRender.includes('\\n'),
+        hasActualNewline: textToRender.includes('\n'),
+      });
+
+      // Build drawtext filter with SSOT placement and escaped font path
+      const fontfileArg = `fontfile=${escapeFontPath(fontFile)}`;
+      drawCaption = `drawtext=${[
+        fontfileArg,
+        `text='${escapeForDrawtext(textToRender)}'`,
+        `x=${xExpr}`, // Use computed expression from placement helper
+        `y=${y}`, // Should be ~130 for yPct=0.1, not -3129
+        `fontsize=${overlayFontPx}`, // Should be 54
+        `fontcolor=${overlayColor}@${overlayOpacity}`,
+        supportsLineSpacing && lineSpacingPx > 0 ? `line_spacing=${lineSpacingPx}` : null, // Should be ~8
+        `borderw=2:bordercolor=black@0.85`,
+        `shadowcolor=black:shadowx=2:shadowy=2`,
+        `box=0`,
+      ]
+        .filter(Boolean)
+        .join(':')}`;
+
+      // Enhanced diagnostic logging
+      try {
+        console.log(
+          JSON.stringify({
+            tag: 'render:payload',
+            mode: 'overlayCaption',
+            fromSavedPreview,
+            fontPx: overlayFontPx,
+            lineSpacingPx,
+            totalTextH,
+            y,
+            supportsLineSpacing,
+            textLength: textToRender.length,
+            lines: lines?.length || 'unknown',
+          })
+        );
+      } catch {}
+
+      // CRITICAL: Log exact values being used in FFmpeg
+      console.log('[ffmpeg] USING VALUES', {
+        useSSOT,
+        willUseSSOT: placement?.willUseSSOT,
+        fromSavedPreview,
+        fontPx: overlayFontPx,
+        y,
+        lineSpacingPx,
+        xExpr,
+        text: textToRender.substring(0, 50).replace(/\n/g, '\\n'),
+        linesCount: lines?.length || 'unknown',
+        textLines: textToRender.split('\n').length,
+      });
+    } // End of else block for non-raster mode
   } else if (CAPTION_OVERLAY && captionImage) {
     console.log(`[render] USING OVERLAY - skipping drawtext. Caption PNG: ${captionImage.pngPath}`);
     drawCaption = '';
-  } else if (!usingCaptionPng && overlayCaption?.mode !== 'raster' && caption && String(caption.text || '').trim()) {
+  } else if (
+    !usingCaptionPng &&
+    overlayCaption?.mode !== 'raster' &&
+    caption &&
+    String(caption.text || '').trim()
+  ) {
     // Inputs
     const capTextRaw = String(caption.text || '').trim();
-    const fittedFromPreview = (caption.fittedText && String(caption.fittedText).trim()) ? String(caption.fittedText).trim() : null;
+    const fittedFromPreview =
+      caption.fittedText && String(caption.fittedText).trim()
+        ? String(caption.fittedText).trim()
+        : null;
 
     function scaleFontPx(fontSizePx = 32, previewH = 640) {
       const base = Math.max(1, Number(previewH) || 640);
@@ -1423,61 +1669,82 @@ export async function renderVideoQuoteOverlay({
     const oldFontPx = scaleFontPx(caption.fontSizePx, caption.previewHeightPx);
 
     // font file - use SSOT registry for consistent bold/italic detection
-    const originalFontFile = assertFontExists(resolveFontFile(
-      previewResolved?.weightCss || caption.fontWeight || caption.weight || 'normal',
-      previewResolved?.fontStyle || 'normal'
-    ));
+    const originalFontFile = assertFontExists(
+      resolveFontFile(
+        previewResolved?.weightCss || caption.fontWeight || caption.weight || 'normal',
+        previewResolved?.fontStyle || 'normal'
+      )
+    );
 
     // opacity + line spacing - match preview exactly (size * 1.2 - size = size * 0.2)
     const op = Math.max(0, Math.min(1, Number(caption.opacity ?? 0.8)));
-    const lsRaw = Math.round((Number(caption.fontSizePx) || 32) * 0.20);
-    const originalLineSp = Math.max(0, Math.round(lsRaw * (oldFontPx / Math.max(1, Number(caption.fontSizePx) || 32))));
+    const lsRaw = Math.round((Number(caption.fontSizePx) || 32) * 0.2);
+    const originalLineSp = Math.max(
+      0,
+      Math.round(lsRaw * (oldFontPx / Math.max(1, Number(caption.fontSizePx) || 32)))
+    );
 
     // Preview is authoritative - normalize resolved values up front
     const previewResolved = captionResolved || null;
-    
+
     // helpers (inline, no imports)
-    const clamp01 = v => Math.min(1, Math.max(0, Number(v)));
+    const clamp01 = (v) => Math.min(1, Math.max(0, Number(v)));
     const num = (v, d) => {
       const n = Number(v);
       return Number.isFinite(n) ? n : d;
     };
-    
+
     // fallbacks keep current behavior when previewResolved is missing
     const finalFontPx = num(previewResolved?.fontPx, oldFontPx);
     const oldLineSpacing = num(previewResolved?.lineSpacing, originalLineSp);
-    const lineSp      = oldLineSpacing;               // ✅ alias used by existing template
-    const oldTextAlpha   = clamp01(previewResolved?.textAlpha ?? 0.80);
-    const oldStrokeW     = num(previewResolved?.strokeW, 3);
+    const lineSp = oldLineSpacing; // ✅ alias used by existing template
+    const oldTextAlpha = clamp01(previewResolved?.textAlpha ?? 0.8);
+    const oldStrokeW = num(previewResolved?.strokeW, 3);
     const strokeAlpha = clamp01(previewResolved?.strokeAlpha ?? 0.85);
     const shadowAlpha = clamp01(previewResolved?.shadowAlpha ?? 0.55);
-    const oldShadowX     = num(previewResolved?.shadowX, 0);
-    const oldShadowY     = num(previewResolved?.shadowY, 2);
+    const oldShadowX = num(previewResolved?.shadowX, 0);
+    const oldShadowY = num(previewResolved?.shadowY, 2);
     // Use SSOT font resolution for final font file
-    const fontFile = assertFontExists(resolveFontFile(
-      previewResolved?.weightCss || caption.fontWeight || caption.weight || 'normal',
-      previewResolved?.fontStyle || 'normal'
-    ));
-    
+    const fontFile = assertFontExists(
+      resolveFontFile(
+        previewResolved?.weightCss || caption.fontWeight || caption.weight || 'normal',
+        previewResolved?.fontStyle || 'normal'
+      )
+    );
+
     // (optional but handy) one-time log so we can verify parity
-    console.log('[preflight]', { fontPx: finalFontPx, lineSpacing: oldLineSpacing, textAlpha: oldTextAlpha, strokeW: oldStrokeW, strokeAlpha, shadowAlpha, shadowX: oldShadowX, shadowY: oldShadowY, fontFile });
+    console.log('[preflight]', {
+      fontPx: finalFontPx,
+      lineSpacing: oldLineSpacing,
+      textAlpha: oldTextAlpha,
+      strokeW: oldStrokeW,
+      strokeAlpha,
+      shadowAlpha,
+      shadowX: oldShadowX,
+      shadowY: oldShadowY,
+      fontFile,
+    });
 
     // text (prefer preview-fitted)
     let capText = fittedFromPreview || '';
     if (!capText) {
       // fallback heuristic (kept from previous logic)
       const contentW = Math.max(1, Math.round(W * 0.92));
-      const charW = 0.60 * finalFontPx;
+      const charW = 0.6 * finalFontPx;
       const maxChars = Math.max(6, Math.floor(contentW / Math.max(1, charW)));
       const words = capTextRaw.split(/\s+/);
       const lines = [];
       let cur = '';
       for (const w2 of words) {
         const next = cur ? cur + ' ' + w2 : w2;
-        if (next.length <= maxChars) cur = next; else { if (cur) lines.push(cur); cur = w2; }
+        if (next.length <= maxChars) cur = next;
+        else {
+          if (cur) lines.push(cur);
+          cur = w2;
+        }
       }
       if (cur) lines.push(cur);
-      capText = lines.join('\n');  // Use actual newlines, escapeForDrawtext will handle escaping
+      capText = lines.join('\n'); // Use actual newlines, escapeForDrawtext will handle escaping
     }
 
     // This section is now handled by the pure painter approach above
@@ -1486,22 +1753,33 @@ export async function renderVideoQuoteOverlay({
     const xFinal = `'max(20\\,min(w-20-text_w\\,(w*0.5)-text_w/2))'`;
     const wantBox = !!(caption.box && (caption.box.enabled || caption.wantBox));
     const boxAlpha = Math.max(0, Math.min(1, Number(caption.box?.alpha ?? caption.boxAlpha ?? 0)));
-    
+
     // If caption is required but no PNG overlay, fail explicitly
     if ((captionText || caption?.text) && !usingCaptionPng) {
-      throw new Error("Caption resolution missing: overlay not provided");
+      throw new Error('Caption resolution missing: overlay not provided');
     }
-    
+
     // ---- Pure painter approach: use captionResolved verbatim when available (only if NOT using PNG) ----
-    let usingResolved = !usingCaptionPng && !!(captionResolved && captionResolved.fontPx && Array.isArray(captionResolved.lines) && captionResolved.lines.length > 0);
-    
+    let usingResolved =
+      !usingCaptionPng &&
+      !!(
+        captionResolved &&
+        captionResolved.fontPx &&
+        Array.isArray(captionResolved.lines) &&
+        captionResolved.lines.length > 0
+      );
+
     let fontPx, lineSpacing, strokeW, shadowX, shadowY, textAlpha, baseY, lines, n, _lineSp;
-    
+
     // Safety check: if we have captionResolved but no valid lines, fail explicitly
-    if (captionResolved && captionResolved.fontPx && (!Array.isArray(captionResolved.lines) || captionResolved.lines.length === 0)) {
-      throw new Error("Caption resolution missing: overlay not provided");
+    if (
+      captionResolved &&
+      captionResolved.fontPx &&
+      (!Array.isArray(captionResolved.lines) || captionResolved.lines.length === 0)
+    ) {
+      throw new Error('Caption resolution missing: overlay not provided');
     }
-    
+
     if (usingResolved) {
       // Frontend computed everything - use values verbatim, no scaling, no re-wrap
       fontPx = Number(captionResolved.fontPx);
@@ -1511,25 +1789,26 @@ export async function renderVideoQuoteOverlay({
       shadowY = Number(captionResolved.shadowY || 2);
       textAlpha = Number(captionResolved.textAlpha || 1.0);
       const linesFromResolved = captionResolved.lines || [];
-      
-      console.log(`[render] usingResolved=true fontPx=${fontPx} lineSpacing=${lineSpacing} strokeW=${strokeW} lines=${linesFromResolved.length}`);
-      
+
+      console.log(
+        `[render] usingResolved=true fontPx=${fontPx} lineSpacing=${lineSpacing} strokeW=${strokeW} lines=${linesFromResolved.length}`
+      );
+
       // Use frontend's exact line breaks and positioning
       lines = linesFromResolved;
       n = Math.max(1, lines.length);
-      
+
       // Compute Y position from preview anchor (no scaling)
       const yPct = Number(captionResolved.yPct || caption?.pos?.yPct || 12);
-      baseY = Math.round(H * yPct / 100);
-      
+      baseY = Math.round((H * yPct) / 100);
     } else {
       // Fallback: old behavior for backward compatibility
       console.log('[render] usingResolved=false, falling back to legacy layout');
-      
+
       // Y origin in pixels from top, from preview yPct (default 12%)
       const _calcTopY = (yPct) => {
         const pct = Number.isFinite(Number(yPct)) ? Number(yPct) : 12;
-        return Math.max(20, Math.round(1920 * pct / 100));
+        return Math.max(20, Math.round((1920 * pct) / 100));
       };
 
       fontPx = Number(caption.fontSizePx ?? 48);
@@ -1539,115 +1818,143 @@ export async function renderVideoQuoteOverlay({
       shadowY = 2;
       textAlpha = Number(caption?.opacity ?? 0.8);
       baseY = _calcTopY(caption?.pos?.yPct);
-      
+
       // Re-wrap text (legacy behavior) - get text from caption or captionText
       const capTextRaw = String(caption.text || captionText || '').trim();
       if (capTextRaw) {
         const contentW = Math.max(1, Math.round(W * 0.92));
-        const charW = 0.60 * fontPx;
+        const charW = 0.6 * fontPx;
         const maxChars = Math.max(6, Math.floor(contentW / Math.max(1, charW)));
         const words = capTextRaw.split(/\s+/);
         lines = [];
         let cur = '';
         for (const w2 of words) {
           const next = cur ? cur + ' ' + w2 : w2;
-          if (next.length <= maxChars) cur = next; else { if (cur) lines.push(cur); cur = w2; }
+          if (next.length <= maxChars) cur = next;
+          else {
+            if (cur) lines.push(cur);
+            cur = w2;
+          }
         }
         if (cur) lines.push(cur);
       } else {
         lines = [];
       }
-      
+
       n = Math.max(1, lines.length);
-      console.log(`[render] legacy layout: fontPx=${fontPx} lineSpacing=${lineSpacing} lines=${lines.length} text="${capTextRaw}"`);
+      console.log(
+        `[render] legacy layout: fontPx=${fontPx} lineSpacing=${lineSpacing} lines=${lines.length} text="${capTextRaw}"`
+      );
     }
-    
+
     // Guard (avoid undefined var crash)
     _lineSp = Number.isFinite(lineSpacing) ? lineSpacing : 12;
 
     // keep existing font path (must match ffmpeg logs)
-    const CAPTION_FONT_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf";
+    const CAPTION_FONT_BOLD = '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf';
 
     // Final preflight log (variables are now in scope from either branch)
-    console.log('[preflight]', { fontPx, lineSpacing, strokeW, shadowX, shadowY, textAlpha, usingResolved });
+    console.log('[preflight]', {
+      fontPx,
+      lineSpacing,
+      strokeW,
+      shadowX,
+      shadowY,
+      textAlpha,
+      usingResolved,
+    });
 
     const capDraws = [];
-    
+
     // Safety: if no valid lines, don't create any drawtext commands
-    if (!lines || lines.length === 0 || lines.every(line => !line.trim())) {
+    if (!lines || lines.length === 0 || lines.every((line) => !line.trim())) {
       console.log('[render] no valid caption lines to draw');
       drawCaption = '';
     } else {
       // For each caption line, push THREE layers:
       // 1) softening shadow pass A
-      // 2) softening shadow pass B  
+      // 2) softening shadow pass B
       // 3) main white text + scalable stroke
       for (let i = 0; i < n; i++) {
-      const lineY = Math.round(baseY + i * (fontPx + _lineSp));
-      const line = lines[i] || '';
-      
-      // Skip empty lines to avoid drawtext=textfile=''
-      if (!line.trim()) continue;
-      
-      const xExpr = xFinal;
-      const yExpr = `'max(20\\,min(h-20-${fontPx}\\,${lineY}))'`;
-      
-      // Write line to temp file for safe handling of special characters
-      const lineTxtFile = writeCaptionTxt(line);
+        const lineY = Math.round(baseY + i * (fontPx + _lineSp));
+        const line = lines[i] || '';
 
-      // pass A — subtle blur-ish base (no stroke)
-      const lineFontFile = escapeFontPath(assertFontExists(resolveFontFile(
-        captionResolved?.weightCss || 'bold',
-        captionResolved?.fontStyle || 'normal'
-      )));
-      capDraws.push(
-        `drawtext=textfile='${lineTxtFile}'` +
-        `:fontfile=${lineFontFile}` +
-        `:x='${xExpr}'` +
-        `:y='${yExpr}'` +
-        `:fontsize=${fontPx}` +
-        (supportsLineSpacing && _lineSp > 0 ? `:line_spacing=${_lineSp}` : '') +
-        `:fontcolor=black@${(usingResolved ? (captionResolved?.shadowAlpha ?? 0.35) : 0.35).toFixed(2)}:borderw=0:shadowx=${shadowX}:shadowy=${shadowY}` +
-        `:fix_bounds=1:text_shaping=1:box=0`
-      );
+        // Skip empty lines to avoid drawtext=textfile=''
+        if (!line.trim()) continue;
 
-      // pass B — second soften pass (no stroke)
-      capDraws.push(
-        `drawtext=textfile='${lineTxtFile}'` +
-        `:fontfile=${lineFontFile}` +
-        `:x='${xExpr}'` +
-        `:y='${yExpr}'` +
-        `:fontsize=${fontPx}` +
-        (supportsLineSpacing && _lineSp > 0 ? `:line_spacing=${_lineSp}` : '') +
-        `:fontcolor=black@0.25:borderw=0:shadowx=${shadowX + 1}:shadowy=${shadowY + 1}` +
-        `:fix_bounds=1:text_shaping=1:box=0`
-      );
+        const xExpr = xFinal;
+        const yExpr = `'max(20\\,min(h-20-${fontPx}\\,${lineY}))'`;
 
-      // pass C — main text last (so stroke isn't dimmed)
-      capDraws.push(
-        `drawtext=textfile='${lineTxtFile}'` +
-        `:fontfile=${lineFontFile}` +
-        `:x='${xExpr}'` +
-        `:y='${yExpr}'` +
-        `:fontsize=${fontPx}` +
-        (supportsLineSpacing && _lineSp > 0 ? `:line_spacing=${_lineSp}` : '') +
-        `:fontcolor=white@${textAlpha.toFixed(2)}` +
-        `:borderw=${strokeW}:bordercolor=black@${(usingResolved ? (captionResolved?.strokeAlpha ?? 0.85) : 0.85).toFixed(2)}` +
-        `:shadowx=0:shadowy=0` +
-        `:fix_bounds=1:text_shaping=1:box=0`
-      );
+        // Write line to temp file for safe handling of special characters
+        const lineTxtFile = writeCaptionTxt(line);
+
+        // pass A — subtle blur-ish base (no stroke)
+        const lineFontFile = escapeFontPath(
+          assertFontExists(
+            resolveFontFile(
+              captionResolved?.weightCss || 'bold',
+              captionResolved?.fontStyle || 'normal'
+            )
+          )
+        );
+        capDraws.push(
+          `drawtext=textfile='${lineTxtFile}'` +
+            `:fontfile=${lineFontFile}` +
+            `:x='${xExpr}'` +
+            `:y='${yExpr}'` +
+            `:fontsize=${fontPx}` +
+            (supportsLineSpacing && _lineSp > 0 ? `:line_spacing=${_lineSp}` : '') +
+            `:fontcolor=black@${(usingResolved ? (captionResolved?.shadowAlpha ?? 0.35) : 0.35).toFixed(2)}:borderw=0:shadowx=${shadowX}:shadowy=${shadowY}` +
+            `:fix_bounds=1:text_shaping=1:box=0`
+        );
+
+        // pass B — second soften pass (no stroke)
+        capDraws.push(
+          `drawtext=textfile='${lineTxtFile}'` +
+            `:fontfile=${lineFontFile}` +
+            `:x='${xExpr}'` +
+            `:y='${yExpr}'` +
+            `:fontsize=${fontPx}` +
+            (supportsLineSpacing && _lineSp > 0 ? `:line_spacing=${_lineSp}` : '') +
+            `:fontcolor=black@0.25:borderw=0:shadowx=${shadowX + 1}:shadowy=${shadowY + 1}` +
+            `:fix_bounds=1:text_shaping=1:box=0`
+        );
+
+        // pass C — main text last (so stroke isn't dimmed)
+        capDraws.push(
+          `drawtext=textfile='${lineTxtFile}'` +
+            `:fontfile=${lineFontFile}` +
+            `:x='${xExpr}'` +
+            `:y='${yExpr}'` +
+            `:fontsize=${fontPx}` +
+            (supportsLineSpacing && _lineSp > 0 ? `:line_spacing=${_lineSp}` : '') +
+            `:fontcolor=white@${textAlpha.toFixed(2)}` +
+            `:borderw=${strokeW}:bordercolor=black@${(usingResolved ? (captionResolved?.strokeAlpha ?? 0.85) : 0.85).toFixed(2)}` +
+            `:shadowx=0:shadowy=0` +
+            `:fix_bounds=1:text_shaping=1:box=0`
+        );
       }
 
       drawCaption = capDraws.join(',');
     }
-  } else if (!usingCaptionPng && overlayCaption?.mode !== 'raster' && includeBottomCaption && captionText && String(captionText).trim()) {
+  } else if (
+    !usingCaptionPng &&
+    overlayCaption?.mode !== 'raster' &&
+    includeBottomCaption &&
+    captionText &&
+    String(captionText).trim()
+  ) {
     // Back-compat: simple bottom caption with safe wrapping
     const CANVAS_W = W;
     const CANVAS_H = H;
-    const cap = wrapCaption(captionText, CANVAS_W, CANVAS_H, { maxLines: 2, fontMax: 64, fontMin: 28 });
+    const cap = wrapCaption(captionText, CANVAS_W, CANVAS_H, {
+      maxLines: 2,
+      fontMax: 64,
+      fontMin: 28,
+    });
     drawCaption = `drawtext=${[
       `text='${escapeForDrawtext(cap.text)}'`,
-      `fontfile='${effFont.replace(/\\/g,'/').replace(/^([A-Za-z]):\//, "$1\\:/")}'`,
+      `fontfile='${effFont.replace(/\\/g, '/').replace(/^([A-Za-z]):\//, '$1\\:/')}'`,
       `x=(w-text_w)/2`,
       `y=${cap.yExpr}`,
       `fontsize=${cap.fontsize}`,
@@ -1655,13 +1962,23 @@ export async function renderVideoQuoteOverlay({
       supportsLineSpacing && cap.lineSpacing > 0 ? `line_spacing=${cap.lineSpacing}` : null,
       `borderw=2:bordercolor=black@0.85`,
       `shadowcolor=black:shadowx=2:shadowy=2`,
-      `box=0`
-    ].filter(Boolean).join(':')}`;
+      `box=0`,
+    ]
+      .filter(Boolean)
+      .join(':')}`;
   }
-  try { console.log('[ffmpeg] drawMain', drawMain); } catch {}
-  try { if (drawAuthor) console.log('[ffmpeg] drawAuthor', drawAuthor); } catch {}
-  try { if (drawWatermark) console.log('[ffmpeg] drawWatermark', drawWatermark); } catch {}
-  try { if (drawCaption) console.log('[ffmpeg] drawCaption', drawCaption); } catch {}
+  try {
+    console.log('[ffmpeg] drawMain', drawMain);
+  } catch {}
+  try {
+    if (drawAuthor) console.log('[ffmpeg] drawAuthor', drawAuthor);
+  } catch {}
+  try {
+    if (drawWatermark) console.log('[ffmpeg] drawWatermark', drawWatermark);
+  } catch {}
+  try {
+    if (drawCaption) console.log('[ffmpeg] drawCaption', drawCaption);
+  } catch {}
 
   // Debug: Log all draw layers before building the video chain
   console.log('[ffmpeg] DEBUG - drawMain:', drawMain);
@@ -1672,37 +1989,46 @@ export async function renderVideoQuoteOverlay({
   console.log('[ffmpeg] DEBUG - captionText param:', captionText);
 
   // CRITICAL: Log raster placement before passing to buildVideoChain
-  const rasterPlacement = overlayCaption?.mode === 'raster' ? {
-    mode: 'raster',
-    rasterUrl: overlayCaption.rasterUrl || overlayCaption.rasterDataUrl || overlayCaption.rasterPng,
-    rasterW: overlayCaption.rasterW,
-    rasterH: overlayCaption.rasterH,
-    xExpr: (overlayCaption.xExpr_png || overlayCaption.xExpr || '(W-overlay_w)/2').replace(/\s+/g, ''),
-    xPx_png: overlayCaption.xPx_png,   // <-- keep threading it through
-    y: overlayCaption.yPx_png ?? overlayCaption.yPx,  // Use PNG anchor, not drawtext anchor
-    wPct: overlayCaption.wPct ?? 1,
-    // Geometry lock fields
-    frameW: overlayCaption.frameW,
-    frameH: overlayCaption.frameH,
-    bgScaleExpr: overlayCaption.bgScaleExpr,
-    bgCropExpr: overlayCaption.bgCropExpr,
-    // Integrity fields
-    rasterHash: overlayCaption.rasterHash,
-    previewFontString: overlayCaption.previewFontString,
-    previewFontHash: overlayCaption.previewFontHash,
-    rasterPadding: overlayCaption.rasterPadding
-  } : null;
-  
+  const rasterPlacement =
+    overlayCaption?.mode === 'raster'
+      ? {
+          mode: 'raster',
+          rasterUrl:
+            overlayCaption.rasterUrl || overlayCaption.rasterDataUrl || overlayCaption.rasterPng,
+          rasterW: overlayCaption.rasterW,
+          rasterH: overlayCaption.rasterH,
+          xExpr: (overlayCaption.xExpr_png || overlayCaption.xExpr || '(W-overlay_w)/2').replace(
+            /\s+/g,
+            ''
+          ),
+          xPx_png: overlayCaption.xPx_png, // <-- keep threading it through
+          y: overlayCaption.yPx_png ?? overlayCaption.yPx, // Use PNG anchor, not drawtext anchor
+          wPct: overlayCaption.wPct ?? 1,
+          // Geometry lock fields
+          frameW: overlayCaption.frameW,
+          frameH: overlayCaption.frameH,
+          bgScaleExpr: overlayCaption.bgScaleExpr,
+          bgCropExpr: overlayCaption.bgCropExpr,
+          // Integrity fields
+          rasterHash: overlayCaption.rasterHash,
+          previewFontString: overlayCaption.previewFontString,
+          previewFontHash: overlayCaption.previewFontHash,
+          rasterPadding: overlayCaption.rasterPadding,
+        }
+      : null;
+
   console.log('[v3:buildChain:IN]', {
     usingCaptionPng,
     captionPngPath: captionPngPath ? 'present' : 'null',
-    rasterPlacement: rasterPlacement ? {
-      mode: rasterPlacement.mode,
-      rasterW: rasterPlacement.rasterW,
-      rasterH: rasterPlacement.rasterH,
-      y: rasterPlacement.y,
-      xExpr: rasterPlacement.xExpr
-    } : null
+    rasterPlacement: rasterPlacement
+      ? {
+          mode: rasterPlacement.mode,
+          rasterW: rasterPlacement.rasterW,
+          rasterH: rasterPlacement.rasterH,
+          y: rasterPlacement.y,
+          xExpr: rasterPlacement.xExpr,
+        }
+      : null,
   });
 
   // Runtime parity checklist for raster mode
@@ -1721,17 +2047,17 @@ export async function renderVideoQuoteOverlay({
       rasterHash: rasterPlacement.rasterHash,
       bgScaleExpr: rasterPlacement.bgScaleExpr,
       bgCropExpr: rasterPlacement.bgCropExpr,
-      willScaleOverlay: false  // Design A enforced
+      willScaleOverlay: false, // Design A enforced
     };
     console.log('[PARITY_CHECKLIST]', JSON.stringify(checklist, null, 2));
-    
+
     // AUDIT: Log PNG consume details
     console.info('[AUDIT:SHORTS:png-consume]', {
       path: captionPngPath,
       pngExists: fs.existsSync(captionPngPath),
       usingCaptionPng,
       previewFontString: rasterPlacement.previewFontString,
-      previewFontHash: rasterPlacement.previewFontHash
+      previewFontHash: rasterPlacement.previewFontHash,
     });
   }
 
@@ -1740,44 +2066,44 @@ export async function renderVideoQuoteOverlay({
   // - In drawtext mode: ASS subtitles REPLACE drawtext (full caption + highlighting)
   // When assPath exists in drawtext mode, skip drawtext to avoid duplicates
   // When assPath exists in raster mode, keep both (ASS is highlighting overlay)
-  const shouldUseDrawCaption = drawCaption && (
-    (usingCaptionPng || overlayCaption?.mode === 'raster') 
-    ? true  // In raster/PNG mode, always render base caption even with ASS (ASS is overlay)
-    : !assPath  // In drawtext mode, skip drawtext when ASS is present (ASS replaces it)
-  );
-  
+  const shouldUseDrawCaption =
+    drawCaption &&
+    (usingCaptionPng || overlayCaption?.mode === 'raster'
+      ? true // In raster/PNG mode, always render base caption even with ASS (ASS is overlay)
+      : !assPath); // In drawtext mode, skip drawtext when ASS is present (ASS replaces it)
+
   // Debug logging for karaoke ASS support
   console.log('[story-segment] karaokeAssPath:', assPath ? `present (${assPath})` : 'missing');
   console.log('[story-segment] shouldUseDrawCaption:', shouldUseDrawCaption, {
     hasDrawCaption: !!drawCaption,
     usingCaptionPng,
     isRasterMode: overlayCaption?.mode === 'raster',
-    hasAssPath: !!assPath
+    hasAssPath: !!assPath,
   });
-  
+
   // Exclude drawMain when ASS is present (non-raster mode) to avoid double captions
   // In raster mode, ASS is an overlay for highlighting, so keep drawMain
-  const shouldExcludeDrawMain = assPath && 
-    !usingCaptionPng && 
-    overlayCaption?.mode !== 'raster' &&
-    fs.existsSync(assPath);
-  
+  const shouldExcludeDrawMain =
+    assPath && !usingCaptionPng && overlayCaption?.mode !== 'raster' && fs.existsSync(assPath);
+
   if (shouldExcludeDrawMain) {
     console.log('[story-segment] Excluding drawMain because ASS subtitles are present');
   }
-  
+
   const drawLayersForChain = shouldExcludeDrawMain
-    ? (usingCaptionPng 
-        ? [drawAuthor, drawWatermark].filter(Boolean)
-        : [drawAuthor, drawWatermark, shouldUseDrawCaption ? drawCaption : null].filter(Boolean))
-    : (usingCaptionPng 
-        ? [drawMain, drawAuthor, drawWatermark].filter(Boolean)
-        : [drawMain, drawAuthor, drawWatermark, shouldUseDrawCaption ? drawCaption : null].filter(Boolean));
-  
+    ? usingCaptionPng
+      ? [drawAuthor, drawWatermark].filter(Boolean)
+      : [drawAuthor, drawWatermark, shouldUseDrawCaption ? drawCaption : null].filter(Boolean)
+    : usingCaptionPng
+      ? [drawMain, drawAuthor, drawWatermark].filter(Boolean)
+      : [drawMain, drawAuthor, drawWatermark, shouldUseDrawCaption ? drawCaption : null].filter(
+          Boolean
+        );
+
   // Determine final caption strategy for logging
   const hasAss = !!assPath && fs.existsSync(assPath);
   const hasRaster = !!usingCaptionPng;
-  
+
   let strategy = 'none';
   let reason = 'no caption layers';
   if (hasRaster) {
@@ -1790,7 +2116,7 @@ export async function renderVideoQuoteOverlay({
     strategy = 'drawtext';
     reason = 'drawtext enabled, no ass/raster';
   }
-  
+
   console.log(`[captions] strategy=${strategy} reason="${reason}"`);
 
   // Colorspace filter: skip when raster; otherwise respect mode (auto = probe, off/force = no probe)
@@ -1822,21 +2148,25 @@ export async function renderVideoQuoteOverlay({
       colorSpaceLog.color_space = meta?.color_space ?? 'unknown';
     }
   }
-  console.log('[ffmpeg] colorspace filter:', addColorspaceFilter ? 'applied' : 'skipped', colorSpaceLog);
+  console.log(
+    '[ffmpeg] colorspace filter:',
+    addColorspaceFilter ? 'applied' : 'skipped',
+    colorSpaceLog
+  );
 
-  const vchain = buildVideoChain({ 
-    width: W, 
-    height: H, 
-    videoVignette, 
+  const vchain = buildVideoChain({
+    width: W,
+    height: H,
+    videoVignette,
     drawLayers: drawLayersForChain,
     captionImage: CAPTION_OVERLAY ? captionImage : null,
     usingCaptionPng,
     captionPngPath,
     rasterPlacement,
     overlayCaption,
-    assPath,  // ASS subtitle file for karaoke word highlighting (overlays on top)
+    assPath, // ASS subtitle file for karaoke word highlighting (overlays on top)
     padSec,
-    addColorspaceFilter
+    addColorspaceFilter,
   });
   // If includeBottomCaption flag is passed via captionStyle, honor it
 
@@ -1846,19 +2176,35 @@ export async function renderVideoQuoteOverlay({
   if (!Number.isFinite(outSec) || outSec <= 0) {
     let videoMs = null;
     let ttsMs = null;
-    try { if (videoPath) videoMs = await getDurationMsFromMedia(videoPath); } catch {}
-    try { if (ttsPath) ttsMs = await getDurationMsFromMedia(ttsPath); } catch {}
+    try {
+      if (videoPath) videoMs = await getDurationMsFromMedia(videoPath);
+    } catch {}
+    try {
+      if (ttsPath) ttsMs = await getDurationMsFromMedia(ttsPath);
+    } catch {}
     const maxMs = Math.max(videoMs || 0, ttsMs || 0);
-    outSec = (maxMs > 0) ? (maxMs/1000 + 0.3) : 8;
+    outSec = maxMs > 0 ? maxMs / 1000 + 0.3 : 8;
   }
-  try { console.log('[mix] outSec', outSec, { keepVideoAudio, hasTTS: !!ttsPath }); } catch {}
+  try {
+    console.log('[mix] outSec', outSec, { keepVideoAudio, hasTTS: !!ttsPath });
+  } catch {}
   const envDelay = Number(process.env.TTS_DELAY_MS ?? 1000);
   const envTailMs = Number(process.env.TTS_TAIL_MS ?? 800);
   const leadInMs = Math.round(
-    (Number.isFinite(Number(voiceoverDelaySec)) ? Number(voiceoverDelaySec) : (Number.isFinite(Number(ttsDelayMs)) ? Number(ttsDelayMs)/1000 : envDelay/1000)) * 1000
+    (Number.isFinite(Number(voiceoverDelaySec))
+      ? Number(voiceoverDelaySec)
+      : Number.isFinite(Number(ttsDelayMs))
+        ? Number(ttsDelayMs) / 1000
+        : envDelay / 1000) * 1000
   );
-  const tailSec = Math.max(0, Number.isFinite(Number(tailPadSec)) ? Number(tailPadSec) : (envTailMs/1000));
-  const bgVol = Math.min(1, Math.max(0, Number.isFinite(Number(bgAudioVolume)) ? Number(bgAudioVolume) : 0.35));
+  const tailSec = Math.max(
+    0,
+    Number.isFinite(Number(tailPadSec)) ? Number(tailPadSec) : envTailMs / 1000
+  );
+  const bgVol = Math.min(
+    1,
+    Math.max(0, Number.isFinite(Number(bgAudioVolume)) ? Number(bgAudioVolume) : 0.35)
+  );
 
   // Detect if video has audio stream (only if we want to keep video audio)
   let detectedHaveBgAudio = haveBgAudio;
@@ -1869,32 +2215,47 @@ export async function renderVideoQuoteOverlay({
         console.log('[ffmpeg.video] Video has no audio stream, using silent audio');
       }
     } catch (error) {
-      console.warn('[ffmpeg.video] Failed to detect audio, using provided haveBgAudio:', error?.message);
+      console.warn(
+        '[ffmpeg.video] Failed to detect audio, using provided haveBgAudio:',
+        error?.message
+      );
       // Keep the provided value as fallback
     }
   }
-  
+
   // Calculate correct TTS input index (PNG input shifts audio index)
   const ttsInputIndex = usingCaptionPng ? 2 : 1;
   // Skip delay for karaoke when ASS subtitles are present to align audio with ASS dialogue start at 0:00:00.00
   const skipDelayForKaraoke = !!assPath && fs.existsSync(assPath);
-  const aChain = buildAudioChain({ outSec, keepVideoAudio, haveBgAudio: detectedHaveBgAudio, ttsPath, leadInMs, tailSec, bgVol, ttsInputIndex, skipDelayForKaraoke });
+  const aChain = buildAudioChain({
+    outSec,
+    keepVideoAudio,
+    haveBgAudio: detectedHaveBgAudio,
+    ttsPath,
+    leadInMs,
+    tailSec,
+    bgVol,
+    ttsInputIndex,
+    skipDelayForKaraoke,
+  });
 
   // Assemble and log RAW vs FINAL filter_complex
   const rawFilter = [vchain, aChain].filter(Boolean).join(';');
-  const finalFilter = (process.env.BYPASS_SANITIZE === '1') ? rawFilter : sanitizeFilter(rawFilter);
+  const finalFilter = process.env.BYPASS_SANITIZE === '1' ? rawFilter : sanitizeFilter(rawFilter);
   console.log('[ffmpeg] RAW   -filter_complex:', rawFilter);
   console.log('[ffmpeg] FINAL -filter_complex:', finalFilter);
 
   // Assert raster parity constraints before spawning ffmpeg
   if (overlayCaption?.mode === 'raster') {
     assertRasterParity(overlayCaption, captionPngPath, finalFilter);
-    
+
     // Parity log (matches contract spec)
     const pngBuffer = fs.readFileSync(captionPngPath);
     const rasterHash = crypto.createHash('sha256').update(pngBuffer).digest('hex').slice(0, 16);
 
-    console.log(`[RASTER_PARITY] W×H=${overlayCaption.rasterW}×${overlayCaption.rasterH}, y=${overlayCaption.yPx_png}, fontPx=${overlayCaption.fontPx}, lineSp=${overlayCaption.lineSpacingPx}, lines=${overlayCaption.lines?.length || '?'}, hash=${rasterHash}`);
+    console.log(
+      `[RASTER_PARITY] W×H=${overlayCaption.rasterW}×${overlayCaption.rasterH}, y=${overlayCaption.yPx_png}, fontPx=${overlayCaption.fontPx}, lineSp=${overlayCaption.lineSpacingPx}, lines=${overlayCaption.lines?.length || '?'}, hash=${rasterHash}`
+    );
   }
   try {
     const scaleDesc = `scale='if(gt(a,${W}/${H}),-2,${W})':'if(gt(a,${W}/${H}),${H},-2)'`;
@@ -1912,7 +2273,7 @@ export async function renderVideoQuoteOverlay({
   if (!finalFilter.includes('[vout]') || !finalFilter.includes('[aout]')) {
     console.warn('[ffmpeg][warn] expected [vout] and [aout] labels present?');
   }
-  
+
   // Log final filter chain for karaoke debugging
   const hasSubtitles = finalFilter.includes('subtitles=');
   console.log('[story-segment] Final filter_complex includes subtitles:', hasSubtitles);
@@ -1920,7 +2281,10 @@ export async function renderVideoQuoteOverlay({
     // Extract the subtitles filter portion for debugging
     const subtitlesMatch = finalFilter.match(/subtitles='[^']+'/);
     if (subtitlesMatch) {
-      console.log('[story-segment] Subtitles filter in final chain:', subtitlesMatch[0].substring(0, 100) + '...');
+      console.log(
+        '[story-segment] Subtitles filter in final chain:',
+        subtitlesMatch[0].substring(0, 100) + '...'
+      );
     }
   }
 
@@ -1929,43 +2293,72 @@ export async function renderVideoQuoteOverlay({
   const hasKaraoke = !!assPath && fs.existsSync(assPath);
   const args = [
     '-y',
-    '-i', videoPath,
-    ...(usingCaptionPng && captionPngPath && fs.existsSync(captionPngPath) && fs.statSync(captionPngPath).size > 0 ? ['-i', captionPngPath] : []),
-    ...(CAPTION_OVERLAY && captionImage && !usingCaptionPng ? ['-i', captionImage.pngPath || captionImage.localPath] : []),
+    '-i',
+    videoPath,
+    ...(usingCaptionPng &&
+    captionPngPath &&
+    fs.existsSync(captionPngPath) &&
+    fs.statSync(captionPngPath).size > 0
+      ? ['-i', captionPngPath]
+      : []),
+    ...(CAPTION_OVERLAY && captionImage && !usingCaptionPng
+      ? ['-i', captionImage.pngPath || captionImage.localPath]
+      : []),
     ...(ttsPath ? ['-i', ttsPath] : []),
     ...(hasKaraoke ? [] : ['-ss', '0.5']),
-    '-filter_complex', finalFilter,
-    '-map', '[vout]', '-map', '[aout]',
-    '-c:v', 'libx264', '-crf', '23', '-preset', 'veryfast',
-    '-color_primaries', 'bt709',
-    '-color_trc', 'bt709',
-    '-colorspace', 'bt709',
-    '-c:a', 'aac', '-b:a', '96k',
-    '-movflags', '+faststart',
-    '-r', String(fps),
-    '-t', String(outSec),
+    '-filter_complex',
+    finalFilter,
+    '-map',
+    '[vout]',
+    '-map',
+    '[aout]',
+    '-c:v',
+    'libx264',
+    '-crf',
+    '23',
+    '-preset',
+    'veryfast',
+    '-color_primaries',
+    'bt709',
+    '-color_trc',
+    'bt709',
+    '-colorspace',
+    'bt709',
+    '-c:a',
+    'aac',
+    '-b:a',
+    '96k',
+    '-movflags',
+    '+faststart',
+    '-r',
+    String(fps),
+    '-t',
+    String(outSec),
     outPath,
   ];
   if (keepVideoAudio && !ttsPath) {
-    args.splice( args.indexOf('-c:v'), 0, '-shortest');
+    args.splice(args.indexOf('-c:v'), 0, '-shortest');
   }
   try {
     await runFfmpeg(args);
   } catch (e) {
     // Check if filter chain had colorspace filter
     const chainHadColorspace = finalFilter.includes('colorspace=all=bt709');
-    
+
     if (chainHadColorspace && !usingCaptionPng) {
       // Retry without colorspace filter (only for non-raster paths)
       console.warn('[ffmpeg] colorspace filter failed, retrying without colorspace...');
-      const argsFallback = args.map(arg => 
+      const argsFallback = args.map((arg) =>
         typeof arg === 'string' ? arg.replace(/,?colorspace=all=bt709:fast=1/g, '') : arg
       );
       const filterIdx = argsFallback.indexOf('-filter_complex');
       if (filterIdx >= 0) {
-        argsFallback[filterIdx + 1] = argsFallback[filterIdx + 1].replace(/,?colorspace=all=bt709:fast=1/g, '');
+        argsFallback[filterIdx + 1] = argsFallback[filterIdx + 1].replace(
+          /,?colorspace=all=bt709:fast=1/g,
+          ''
+        );
       }
-      
+
       try {
         await runFfmpeg(argsFallback);
         console.log('[ffmpeg] Fallback succeeded without colorspace filter');
@@ -1976,7 +2369,7 @@ export async function renderVideoQuoteOverlay({
         throw e;
       }
     }
-    
+
     // Original error handling
     const err = new Error('RENDER_FAILED');
     err.filter = finalFilter;
@@ -1985,36 +2378,56 @@ export async function renderVideoQuoteOverlay({
       err.stderr = e.stderr || '';
       err.code = e.code;
     }
-    try { console.error('[ffmpeg] compose failed', { code: e?.code, message: e?.message, stderr: String(e?.stderr||'').slice(0,8000) }); } catch {}
+    try {
+      console.error('[ffmpeg] compose failed', {
+        code: e?.code,
+        message: e?.message,
+        stderr: String(e?.stderr || '').slice(0, 8000),
+      });
+    } catch {}
     throw err;
   }
   return { outPath, durationSec: outSec };
 }
 
-export async function exportPoster({ videoPath, outPngPath, width = 1080, height = 1920, atSec = 0.2 }){
+export async function exportPoster({
+  videoPath,
+  outPngPath,
+  width = 1080,
+  height = 1920,
+  atSec = 0.2,
+}) {
   // Ensure directory exists
   await fsp.mkdir(path.dirname(outPngPath), { recursive: true });
 
   const vf = [
     `scale=${width}:-2:force_original_aspect_ratio=decrease`,
-    `pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2`
+    `pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2`,
   ].join(',');
 
   const args = [
     '-y',
-    '-ss', String(atSec),
-    '-i', videoPath,
-    '-frames:v', '1',
-    '-vf', vf,
-    '-f', 'image2',
-    '-update', '1',
+    '-ss',
+    String(atSec),
+    '-i',
+    videoPath,
+    '-frames:v',
+    '1',
+    '-vf',
+    vf,
+    '-f',
+    'image2',
+    '-update',
+    '1',
     outPngPath,
   ];
 
   await new Promise((resolve, reject) => {
     let stderr = '';
     const p = spawn(ffmpegPath, args, { stdio: ['ignore', 'ignore', 'pipe'] });
-    p.stderr.on('data', (d) => { stderr += d.toString(); });
+    p.stderr.on('data', (d) => {
+      stderr += d.toString();
+    });
     p.on('exit', (code) => {
       if (code === 0) {
         console.log('[poster] wrote', outPngPath);
@@ -2031,27 +2444,64 @@ export async function exportPoster({ videoPath, outPngPath, width = 1080, height
   });
 }
 
-export async function exportAudioMp3({ videoPath, ttsPath, outPath, durationSec = 8, voiceoverDelaySec, ttsDelayMs, keepVideoAudio = false, haveBgAudio = true, bgAudioVolume = 0.35, tailPadSec }){
+export async function exportAudioMp3({
+  videoPath,
+  ttsPath,
+  outPath,
+  durationSec = 8,
+  voiceoverDelaySec,
+  ttsDelayMs,
+  keepVideoAudio = false,
+  haveBgAudio = true,
+  bgAudioVolume = 0.35,
+  tailPadSec,
+}) {
   const outSec = Math.max(0.1, Number(durationSec) || 8);
   const envDelay = Number(process.env.TTS_DELAY_MS ?? 1000);
   const envTailMs = Number(process.env.TTS_TAIL_MS ?? 800);
   const leadInMs = Math.round(
-    (Number.isFinite(Number(voiceoverDelaySec)) ? Number(voiceoverDelaySec) : (Number.isFinite(Number(ttsDelayMs)) ? Number(ttsDelayMs)/1000 : envDelay/1000)) * 1000
+    (Number.isFinite(Number(voiceoverDelaySec))
+      ? Number(voiceoverDelaySec)
+      : Number.isFinite(Number(ttsDelayMs))
+        ? Number(ttsDelayMs) / 1000
+        : envDelay / 1000) * 1000
   );
-  const tailSec = Math.max(0, Number.isFinite(Number(tailPadSec)) ? Number(tailPadSec) : (envTailMs/1000));
-  const bgVol = Math.min(1, Math.max(0, Number.isFinite(Number(bgAudioVolume)) ? Number(bgAudioVolume) : 0.35));
-  const aChain = buildAudioChain({ outSec, keepVideoAudio, haveBgAudio, ttsPath, leadInMs, tailSec, bgVol });
+  const tailSec = Math.max(
+    0,
+    Number.isFinite(Number(tailPadSec)) ? Number(tailPadSec) : envTailMs / 1000
+  );
+  const bgVol = Math.min(
+    1,
+    Math.max(0, Number.isFinite(Number(bgAudioVolume)) ? Number(bgAudioVolume) : 0.35)
+  );
+  const aChain = buildAudioChain({
+    outSec,
+    keepVideoAudio,
+    haveBgAudio,
+    ttsPath,
+    leadInMs,
+    tailSec,
+    bgVol,
+  });
   const rawFilter = [aChain].join(';');
-  const finalFilter = (process.env.BYPASS_SANITIZE === '1') ? rawFilter : sanitizeFilter(rawFilter);
+  const finalFilter = process.env.BYPASS_SANITIZE === '1' ? rawFilter : sanitizeFilter(rawFilter);
   console.log('[ffmpeg] RAW   -filter_complex:', rawFilter);
   console.log('[ffmpeg] FINAL -filter_complex:', finalFilter);
   const args = [
-    ...(videoPath ? ['-i', videoPath] : ['-f','lavfi','-i','anullsrc=r=48000:cl=stereo:d=' + String(outSec)]),
+    ...(videoPath
+      ? ['-i', videoPath]
+      : ['-f', 'lavfi', '-i', 'anullsrc=r=48000:cl=stereo:d=' + String(outSec)]),
     ...(ttsPath ? ['-i', ttsPath] : []),
-    '-filter_complex', finalFilter,
-    '-map', '[aout]',
-    '-c:a', 'libmp3lame', '-b:a', '128k',
-    '-t', String(outSec),
+    '-filter_complex',
+    finalFilter,
+    '-map',
+    '[aout]',
+    '-c:a',
+    'libmp3lame',
+    '-b:a',
+    '128k',
+    '-t',
+    String(outSec),
     outPath,
   ];
   await runFfmpeg(args);
@@ -2063,9 +2513,9 @@ export async function renderAllFormats(renderSpec) {
   const base = path.join(tmpRoot, id);
 
   const formats = [
-    { key: '9x16',   width: 1080, height: 1920 },
-    { key: '1x1',    width: 1080, height: 1080 },
-    { key: '16x9',   width: 1920, height: 1080 },
+    { key: '9x16', width: 1080, height: 1920 },
+    { key: '1x1', width: 1080, height: 1080 },
+    { key: '16x9', width: 1920, height: 1080 },
   ];
 
   const outputs = {};
@@ -2125,7 +2575,13 @@ export async function renderAllFormats(renderSpec) {
   // Poster from vertical variant
   const posterPath = `${base}_poster_9x16.png`;
   try {
-    await exportPoster({ videoPath: outputs['9x16'], outPngPath: posterPath, atSec: 0.2, width: 1080, height: 1920 });
+    await exportPoster({
+      videoPath: outputs['9x16'],
+      outPngPath: posterPath,
+      atSec: 0.2,
+      width: 1080,
+      height: 1920,
+    });
     outputs.poster = posterPath;
   } catch (e) {
     console.warn('[ffmpeg] poster export failed:', e?.message || e);
@@ -2134,7 +2590,18 @@ export async function renderAllFormats(renderSpec) {
   // Audio-only mp3 from audio graph
   const mp3Path = `${base}.mp3`;
   try {
-    await exportAudioMp3({ videoPath: videoPath || null, ttsPath, outPath: mp3Path, durationSec, voiceoverDelaySec: common.voiceoverDelaySec, ttsDelayMs: common.ttsDelayMs, keepVideoAudio: !!common.keepVideoAudio, haveBgAudio: !!common.haveBgAudio, bgAudioVolume: common.bgAudioVolume, tailPadSec });
+    await exportAudioMp3({
+      videoPath: videoPath || null,
+      ttsPath,
+      outPath: mp3Path,
+      durationSec,
+      voiceoverDelaySec: common.voiceoverDelaySec,
+      ttsDelayMs: common.ttsDelayMs,
+      keepVideoAudio: !!common.keepVideoAudio,
+      haveBgAudio: !!common.haveBgAudio,
+      bgAudioVolume: common.bgAudioVolume,
+      tailPadSec,
+    });
     outputs.audio = mp3Path;
   } catch (e) {
     console.warn('[ffmpeg] audio export failed:', e?.message || e);
@@ -2170,12 +2637,15 @@ export async function exportSocialImage({
 }) {
   if (!outPath) throw new Error('outPath required');
   if (!videoPath && !imagePath) throw new Error('IMAGE_OR_VIDEO_REQUIRED');
-  const W = Math.max(4, Number(width)||1080);
-  const H = Math.max(4, Number(height)||1350);
-  const sm = (typeof safeMargin === 'number')
-    ? (safeMargin <= 1 ? Math.round(Math.min(W,H) * clamp01(safeMargin)) : Math.round(safeMargin))
-    : Math.round(Math.min(W,H) * 0.06);
-  const fit = fitQuoteToBox({ text, boxWidthPx: W - sm*2, baseFontSize: fontsize || 72 });
+  const W = Math.max(4, Number(width) || 1080);
+  const H = Math.max(4, Number(height) || 1350);
+  const sm =
+    typeof safeMargin === 'number'
+      ? safeMargin <= 1
+        ? Math.round(Math.min(W, H) * clamp01(safeMargin))
+        : Math.round(safeMargin)
+      : Math.round(Math.min(W, H) * 0.06);
+  const fit = fitQuoteToBox({ text, boxWidthPx: W - sm * 2, baseFontSize: fontsize || 72 });
   const quoteTxt = escText(fit.text);
   const effLineSpacing = Math.max(2, Number.isFinite(lineSpacing) ? lineSpacing : fit.lineSpacing);
 
@@ -2189,34 +2659,63 @@ export async function exportSocialImage({
     `y=(h-text_h)/2`,
     `fontsize=${fit.fontsize}`,
     `fontcolor=${fontcolor}`,
-    `shadowcolor=${shadowColor}`,`shadowx=${shadowX}`,`shadowy=${shadowY}`,
-    `box=${box}`,`boxcolor=${boxcolor}`,`boxborderw=${boxborderw}`,
+    `shadowcolor=${shadowColor}`,
+    `shadowx=${shadowX}`,
+    `shadowy=${shadowY}`,
+    `box=${box}`,
+    `boxcolor=${boxcolor}`,
+    `boxborderw=${boxborderw}`,
     supportsLineSpacing && effLineSpacing > 0 ? `line_spacing=${effLineSpacing}` : null,
-    'borderw=0'
-  ].filter(Boolean).join(':')}`;
-  
+    'borderw=0',
+  ]
+    .filter(Boolean)
+    .join(':')}`;
+
   // Debug: Log the filter construction
   console.log('[ffmpeg] DEBUG - quoteTxt:', quoteTxt);
   console.log('[ffmpeg] DEBUG - drawMain:', drawMain);
-  const drawAuthor = (authorLine && String(authorLine).trim()) ? `drawtext=${[
-    fontfile ? `fontfile='${fontfile}'` : null,
-    `text='${escText(String(authorLine).trim())}'`,
-    'x=(w-text_w)/2', `y=(h+th)/2+${Math.round(sm*0.8)}`,
-    `fontsize=${Math.max(28, Math.round(fit.fontsize * 0.5))}`,
-    `fontcolor=${fontcolor}`,
-    `shadowcolor=${shadowColor}`,`shadowx=${shadowX}`,`shadowy=${shadowY}`,
-    'box=0','borderw=0'
-  ].filter(Boolean).join(':')}` : '';
-  const drawWatermark = watermark ? (() => {
-    const watermarkFontFile = escapeFontPath(assertFontExists(resolveFontFile('normal', 'normal')));
-    return `drawtext=${[
-      `fontfile=${watermarkFontFile}`,
-      `text='${escText(watermarkText || 'Vaiform')}'`,
-      `x=w-tw-${watermarkPadding}`, `y=h-th-${watermarkPadding}`,
-      `fontsize=${watermarkFontSize}`, 'fontcolor=white',
-      'shadowcolor=black','shadowx=2','shadowy=2','box=1','boxcolor=black@0.25','boxborderw=12','borderw=0'
-    ].filter(Boolean).join(':')}`;
-  })() : '';
+  const drawAuthor =
+    authorLine && String(authorLine).trim()
+      ? `drawtext=${[
+          fontfile ? `fontfile='${fontfile}'` : null,
+          `text='${escText(String(authorLine).trim())}'`,
+          'x=(w-text_w)/2',
+          `y=(h+th)/2+${Math.round(sm * 0.8)}`,
+          `fontsize=${Math.max(28, Math.round(fit.fontsize * 0.5))}`,
+          `fontcolor=${fontcolor}`,
+          `shadowcolor=${shadowColor}`,
+          `shadowx=${shadowX}`,
+          `shadowy=${shadowY}`,
+          'box=0',
+          'borderw=0',
+        ]
+          .filter(Boolean)
+          .join(':')}`
+      : '';
+  const drawWatermark = watermark
+    ? (() => {
+        const watermarkFontFile = escapeFontPath(
+          assertFontExists(resolveFontFile('normal', 'normal'))
+        );
+        return `drawtext=${[
+          `fontfile=${watermarkFontFile}`,
+          `text='${escText(watermarkText || 'Vaiform')}'`,
+          `x=w-tw-${watermarkPadding}`,
+          `y=h-th-${watermarkPadding}`,
+          `fontsize=${watermarkFontSize}`,
+          'fontcolor=white',
+          'shadowcolor=black',
+          'shadowx=2',
+          'shadowy=2',
+          'box=1',
+          'boxcolor=black@0.25',
+          'boxborderw=12',
+          'borderw=0',
+        ]
+          .filter(Boolean)
+          .join(':')}`;
+      })()
+    : '';
 
   const scale = `scale='min(iw*${H}/ih\,${W})':'min(ih*${W}/iw\,${H})':force_original_aspect_ratio=decrease`;
   const pad = `pad=${W}:${H}:ceil((${W}-iw)/2):ceil((${H}-ih)/2)`;
@@ -2242,23 +2741,47 @@ export async function exportSocialImage({
   } else {
     colorSpaceLog = { mode: 'image', color_space: null };
   }
-  console.log('[ffmpeg] colorspace filter:', addColorspaceFilter ? 'applied' : 'skipped', colorSpaceLog);
+  console.log(
+    '[ffmpeg] colorspace filter:',
+    addColorspaceFilter ? 'applied' : 'skipped',
+    colorSpaceLog
+  );
 
-  const core = [ scale, pad, 'format=rgba', drawMain, drawAuthor, drawWatermark, endFormat, addColorspaceFilter ? 'colorspace=all=bt709:fast=1' : null ].filter(Boolean);
+  const core = [
+    scale,
+    pad,
+    'format=rgba',
+    drawMain,
+    drawAuthor,
+    drawWatermark,
+    endFormat,
+    addColorspaceFilter ? 'colorspace=all=bt709:fast=1' : null,
+  ].filter(Boolean);
   const chain = makeChain('0:v', core, 'vout');
   const finalFilter = sanitizeFilter(chain);
 
   const args = [
     '-y',
-    ...(videoPath ? ['-ss', String(ssSec), '-i', videoPath] : ['-loop','1','-t','1','-i', imagePath]),
-    '-frames:v','1',
-    '-filter_complex', finalFilter,
-    '-map','[vout]',
-    '-f','image2', outPath,
+    ...(videoPath
+      ? ['-ss', String(ssSec), '-i', videoPath]
+      : ['-loop', '1', '-t', '1', '-i', imagePath]),
+    '-frames:v',
+    '1',
+    '-filter_complex',
+    finalFilter,
+    '-map',
+    '[vout]',
+    '-f',
+    'image2',
+    outPath,
   ];
   await runFfmpeg(args);
 }
 
-export default { renderVideoQuoteOverlay, renderAllFormats, exportPoster, exportAudioMp3, exportSocialImage };
-
-
+export default {
+  renderVideoQuoteOverlay,
+  renderAllFormats,
+  exportPoster,
+  exportAudioMp3,
+  exportSocialImage,
+};

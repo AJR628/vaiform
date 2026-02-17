@@ -40,34 +40,37 @@ export function createUnifiedHeader() {
       </div>
     </header>
   `;
-  
+
   return headerHTML;
 }
 
 export function initializeHeader() {
   // [AI_IMAGES] Hide Image Creator nav if disabled
   if (window.VAIFORM_FEATURES && !window.VAIFORM_FEATURES.ENABLE_IMAGE_CREATOR) {
-    const link = document.querySelector('a[data-page="image-creator"], a[href="/image-creator.html"]');
+    const link = document.querySelector(
+      'a[data-page="image-creator"], a[href="/image-creator.html"]'
+    );
     if (link) link.style.display = 'none';
   }
-  
+
   // Set active navigation link based on current page
   const currentPath = window.location.pathname;
   const navLinks = document.querySelectorAll('.nav-link');
-  
-  navLinks.forEach(link => {
+
+  navLinks.forEach((link) => {
     const href = link.getAttribute('href');
-    const isActive = currentPath === href || 
-                    (currentPath === '/' && href === '/creative.html') ||
-                    (currentPath === '/creative.html' && href === '/creative.html') ||
-                    (currentPath === '/image-creator.html' && href === '/image-creator.html');
-    
+    const isActive =
+      currentPath === href ||
+      (currentPath === '/' && href === '/creative.html') ||
+      (currentPath === '/creative.html' && href === '/creative.html') ||
+      (currentPath === '/image-creator.html' && href === '/image-creator.html');
+
     if (isActive) {
       link.classList.add('text-indigo-600', 'dark:text-indigo-400');
       link.classList.remove('text-gray-700', 'dark:text-gray-300');
     }
   });
-  
+
   // Initialize theme toggle with a small delay to ensure DOM is ready
   setTimeout(() => {
     const themeToggle = document.getElementById('theme-toggle');
@@ -75,11 +78,11 @@ export function initializeHeader() {
       // Remove any existing event listeners
       themeToggle.replaceWith(themeToggle.cloneNode(true));
       const newThemeToggle = document.getElementById('theme-toggle');
-      
+
       newThemeToggle.addEventListener('click', () => {
         const html = document.documentElement;
         const isDark = html.classList.contains('dark');
-        
+
         if (isDark) {
           // Switch to light theme
           html.classList.remove('dark');
@@ -92,11 +95,10 @@ export function initializeHeader() {
           newThemeToggle.textContent = '🌙';
         }
       });
-      
+
       // Set toggle button icon based on current theme state (early script already set the class)
       const isCurrentlyDark = document.documentElement.classList.contains('dark');
       newThemeToggle.textContent = isCurrentlyDark ? '🌙' : '☀️';
     }
   }, 100);
 }
-

@@ -1,11 +1,11 @@
-import admin from "../config/firebase.js";
-import crypto from "node:crypto";
+import admin from '../config/firebase.js';
+import crypto from 'node:crypto';
 
 /**
  * Upload a local file path to Firebase Storage and make it public via token URL.
  * Returns { publicUrl, gsPath }.
  */
-export async function uploadPublic(localPath, destPath, contentType = "video/mp4") {
+export async function uploadPublic(localPath, destPath, contentType = 'video/mp4') {
   const bucket = admin.storage().bucket();
   const file = bucket.file(destPath);
   const token = crypto.randomUUID();
@@ -14,7 +14,7 @@ export async function uploadPublic(localPath, destPath, contentType = "video/mp4
     destination: destPath,
     metadata: {
       contentType,
-      cacheControl: "public,max-age=31536000,immutable",
+      cacheControl: 'public,max-age=31536000,immutable',
       metadata: { firebaseStorageDownloadTokens: token },
     },
     resumable: false,
@@ -54,11 +54,13 @@ export function buildPublicUrl({ bucket, path, token }) {
 // Read Firebase download token from object metadata via Admin SDK
 export async function getDownloadToken(file) {
   const [md] = await file.getMetadata();
-  const raw = md.metadata?.firebaseStorageDownloadTokens || md.metadata?.downloadTokens || "";
-  const token = String(raw).split(",").map(s => s.trim()).filter(Boolean)[0] || null;
+  const raw = md.metadata?.firebaseStorageDownloadTokens || md.metadata?.downloadTokens || '';
+  const token =
+    String(raw)
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean)[0] || null;
   return token;
 }
 
 export default { uploadPublic, buildPublicUrl, getDownloadToken };
-
-

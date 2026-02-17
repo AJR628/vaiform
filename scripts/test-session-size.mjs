@@ -25,7 +25,7 @@ function createCandidate(id) {
     providerId: `pexels-${id}`,
     license: 'free',
     description: 'Test video description for candidate',
-    tags: ['test', 'video', 'stock']
+    tags: ['test', 'video', 'stock'],
   };
 }
 
@@ -48,13 +48,13 @@ function createShot(sentenceIndex, candidateCount, oversized = false) {
     searchQuery: 'test query',
     durationSec: 8,
     visualDescription: 'Test visual description',
-    startTimeSec: sentenceIndex * 8
+    startTimeSec: sentenceIndex * 8,
   };
 }
 
 async function testNormalSession() {
   console.log('Test 1: Normal session (should pass)');
-  
+
   // Create session with 8 shots, 12 candidates each (typical usage)
   const normalSession = {
     id: 'test-session-normal',
@@ -63,20 +63,20 @@ async function testNormalSession() {
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     story: {
-      sentences: Array.from({ length: 8 }, (_, i) => `Sentence ${i + 1}`)
+      sentences: Array.from({ length: 8 }, (_, i) => `Sentence ${i + 1}`),
     },
     shots: Array.from({ length: 8 }, (_, i) => createShot(i, 12)),
     plan: {
-      shots: Array.from({ length: 8 }, (_, i) => ({ index: i, description: `Plan ${i}` }))
-    }
+      shots: Array.from({ length: 8 }, (_, i) => ({ index: i, description: `Plan ${i}` })),
+    },
   };
-  
+
   try {
-    await saveJSON({ 
-      uid: TEST_UID, 
-      studioId: TEST_STUDIO_ID, 
-      file: 'story.json', 
-      data: normalSession 
+    await saveJSON({
+      uid: TEST_UID,
+      studioId: TEST_STUDIO_ID,
+      file: 'story.json',
+      data: normalSession,
     });
     console.log('✅ Normal session saved successfully');
     return true;
@@ -88,7 +88,7 @@ async function testNormalSession() {
 
 async function testOversizedSession() {
   console.log('\nTest 2: Oversized session (should fail)');
-  
+
   // Create session with 8 shots, 150 candidates each with _payload to guarantee exceeding 500KB
   // Base: ~300KB (8 shots × 150 candidates × ~250 bytes base)
   // Payload: ~240KB (8 shots × 150 candidates × 200 bytes _payload)
@@ -100,27 +100,27 @@ async function testOversizedSession() {
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     story: {
-      sentences: Array.from({ length: 8 }, (_, i) => `Sentence ${i + 1}`)
+      sentences: Array.from({ length: 8 }, (_, i) => `Sentence ${i + 1}`),
     },
     shots: Array.from({ length: 8 }, (_, i) => createShot(i, 150, true)), // oversized = true
     plan: {
-      shots: Array.from({ length: 8 }, (_, i) => ({ index: i, description: `Plan ${i}` }))
-    }
+      shots: Array.from({ length: 8 }, (_, i) => ({ index: i, description: `Plan ${i}` })),
+    },
   };
-  
+
   // Diagnostic: Check actual size before save attempt
   const json = JSON.stringify(oversizedSession);
   const sizeBytes = Buffer.byteLength(json, 'utf8');
   const sizeKB = (sizeBytes / 1024).toFixed(2);
-  const maxKB = (500 * 1024 / 1024).toFixed(2);
+  const maxKB = ((500 * 1024) / 1024).toFixed(2);
   console.log(`   Diagnostic: Session size = ${sizeKB}KB (limit: ${maxKB}KB)`);
-  
+
   try {
-    await saveJSON({ 
-      uid: TEST_UID, 
-      studioId: TEST_STUDIO_ID, 
-      file: 'story.json', 
-      data: oversizedSession 
+    await saveJSON({
+      uid: TEST_UID,
+      studioId: TEST_STUDIO_ID,
+      file: 'story.json',
+      data: oversizedSession,
     });
     console.error(`   ⚠️  Session saved but should have been rejected (size ${sizeKB}KB)`);
     throw new Error('Should have thrown SESSION_TOO_LARGE');
@@ -131,7 +131,7 @@ async function testOversizedSession() {
       assert(typeof err.maxBytes === 'number', 'maxBytes should be a number');
       assert(err.sizeBytes > err.maxBytes, 'sizeBytes should exceed maxBytes');
       assert.strictEqual(err.maxBytes, 500 * 1024, 'maxBytes should be 500KB');
-      
+
       const errSizeKB = (err.sizeBytes / 1024).toFixed(2);
       const errMaxKB = (err.maxBytes / 1024).toFixed(2);
       console.log(`✅ Oversized session correctly rejected`);
@@ -146,11 +146,11 @@ async function testOversizedSession() {
 
 async function main() {
   console.log('=== Session Size Limit Tests ===\n');
-  
+
   try {
     await testNormalSession();
     await testOversizedSession();
-    
+
     console.log('\n✅ All tests passed');
     process.exit(0);
   } catch (err) {
@@ -160,4 +160,3 @@ async function main() {
 }
 
 main();
-

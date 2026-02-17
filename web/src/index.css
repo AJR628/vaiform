@@ -2,13 +2,17 @@
 @tailwind components;
 @tailwind utilities;
 
-:root { color-scheme: dark; }
-body { @apply bg-neutral-950 text-neutral-100; }
+:root {
+  color-scheme: dark;
+}
+body {
+  @apply bg-neutral-950 text-neutral-100;
+}
 
 /* Fixed 9:16 viewer stage matching preview dimensions */
 .render-stage {
-  width: 360px;   /* EXACT preview width */
-  height: 640px;  /* EXACT preview height */
+  width: 360px; /* EXACT preview width */
+  height: 640px; /* EXACT preview height */
   background: #000;
   overflow: hidden;
   border-radius: 8px;
@@ -19,4 +23,3 @@ body { @apply bg-neutral-950 text-neutral-100; }
   object-fit: cover; /* matches preview canvas */
   display: block;
 }
-

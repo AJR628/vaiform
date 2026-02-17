@@ -1,6 +1,6 @@
 /**
  * Font SSOT (Single Source of Truth) Registry
- * 
+ *
  * Provides consistent font resolution across preview (canvas) and render (ffmpeg)
  * to ensure bold/italic weights are applied identically in both paths.
  */
@@ -14,15 +14,15 @@ export const FONT_FAMILY = 'DejaVu Sans';
 function resolveFontPath(filename) {
   const candidates = [
     path.resolve(process.cwd(), 'assets', 'fonts', filename),
-    path.resolve(process.cwd(), 'src', 'assets', 'fonts', filename)
+    path.resolve(process.cwd(), 'src', 'assets', 'fonts', filename),
   ];
-  
+
   for (const candidate of candidates) {
     if (fs.existsSync(candidate)) {
       return candidate;
     }
   }
-  
+
   return null;
 }
 
@@ -56,18 +56,18 @@ export function normalizeFontStyle(fontStyle) {
 export function resolveFontFile(weightCss, fontStyle) {
   const w = normalizeWeight(weightCss);
   const s = normalizeFontStyle(fontStyle);
-  
+
   let filename;
   if (w >= 700 && s === 'italic') filename = 'DejaVuSans-BoldOblique.ttf';
-  else if (w >= 700)               filename = 'DejaVuSans-Bold.ttf';
-  else if (s === 'italic')        filename = 'DejaVuSans-Oblique.ttf';
-  else                            filename = 'DejaVuSans.ttf';
-  
+  else if (w >= 700) filename = 'DejaVuSans-Bold.ttf';
+  else if (s === 'italic') filename = 'DejaVuSans-Oblique.ttf';
+  else filename = 'DejaVuSans.ttf';
+
   const resolvedPath = resolveFontPath(filename);
   if (!resolvedPath) {
     throw new Error(`Font file not found: ${filename}`);
   }
-  
+
   return resolvedPath;
 }
 
@@ -77,10 +77,10 @@ export function resolveFontFile(weightCss, fontStyle) {
  * - resolveFontFile('700', 'normal')  → /absolute/path/to/assets/fonts/DejaVuSans-Bold.ttf
  * - resolveFontFile('400', 'italic')  → /absolute/path/to/assets/fonts/DejaVuSans-Oblique.ttf
  * - resolveFontFile('700', 'italic')  → /absolute/path/to/assets/fonts/DejaVuSans-BoldOblique.ttf
- * 
+ *
  * Canvas usage (preview):
  * - canvasFontString('700', 'italic', 57) → "italic bold 57px \"DejaVu Sans\""
- * 
+ *
  * FFmpeg usage (render):
  * - escapeFontPath(resolveFontFile('700', 'italic')) → fontfile=/absolute/path/to/assets/fonts/DejaVuSans-BoldOblique.ttf
  */
@@ -113,7 +113,7 @@ export function getVariantFamily(baseFamily, weightCss, fontStyle) {
 export function canvasFontString(weightCss, fontStyle, px, baseFamily = 'DejaVu Sans') {
   const w = normalizeWeight(weightCss) >= 700 ? 'bold' : 'normal';
   const s = normalizeFontStyle(fontStyle);
-  return `${s} ${w} ${px}px "${baseFamily}"`;  // Always use base family + descriptors
+  return `${s} ${w} ${px}px "${baseFamily}"`; // Always use base family + descriptors
 }
 
 /**
@@ -148,8 +148,13 @@ export function escapeFontPath(fontfile) {
  * @param {string} [options.family='DejaVu Sans'] - Font family
  * @returns {string} Canvas font string
  */
-export function toCanvasFont({fontStyle='normal', weightCss='700', fontPx, family='DejaVu Sans'}) {
-  const weight = (weightCss+'').toLowerCase()==='bold' ? 'bold' : 'normal';
+export function toCanvasFont({
+  fontStyle = 'normal',
+  weightCss = '700',
+  fontPx,
+  family = 'DejaVu Sans',
+}) {
+  const weight = (weightCss + '').toLowerCase() === 'bold' ? 'bold' : 'normal';
   const style = fontStyle === 'italic' ? 'italic' : 'normal';
-  return `${style} ${weight} ${fontPx}px "${family}"`;  // Always use base family + descriptors
+  return `${style} ${weight} ${fontPx}px "${family}"`; // Always use base family + descriptors
 }

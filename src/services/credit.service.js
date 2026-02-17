@@ -10,10 +10,10 @@ async function copySubcollection(srcRef, dstRef, name) {
   const snap = await srcRef.collection(name).get();
   if (snap.empty) return;
   for (const doc of snap.docs) {
-    await dstRef.collection(name).doc(doc.id).set(
-      { ...doc.data(), note: 'migrated_from_email_doc' },
-      { merge: true }
-    );
+    await dstRef
+      .collection(name)
+      .doc(doc.id)
+      .set({ ...doc.data(), note: 'migrated_from_email_doc' }, { merge: true });
     // delete the legacy doc after copying to keep things tidy
     await doc.ref.delete().catch(() => {});
   }
@@ -102,7 +102,7 @@ export async function ensureUserDocByUid(uid, email) {
       { merge: true }
     );
     uidSnap = await uidRef.get();
-  } else if (email && (uidSnap.data()?.email !== email)) {
+  } else if (email && uidSnap.data()?.email !== email) {
     await uidRef.set({ email, updatedAt: now }, { merge: true });
   }
 
@@ -212,7 +212,9 @@ export async function debitCreditsTx(uid, amount) {
 }
 
 export async function refundCredits(uid, amount) {
-  await db.collection('users').doc(uid)
+  await db
+    .collection('users')
+    .doc(uid)
     .update({ credits: admin.firestore.FieldValue.increment(amount) });
 }
 
@@ -234,7 +236,7 @@ export async function spendCredits(uid, amount) {
   return db.runTransaction(async (tx) => {
     const userRef = db.collection('users').doc(uid);
     const snap = await tx.get(userRef);
-    
+
     if (!snap.exists) {
       const err = new Error('User not found');
       err.code = 'USER_NOT_FOUND';
@@ -252,7 +254,7 @@ export async function spendCredits(uid, amount) {
 
     tx.update(userRef, {
       credits: admin.firestore.FieldValue.increment(-amount),
-      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
 
     return { before: credits, after: credits - amount };

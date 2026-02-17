@@ -23,7 +23,7 @@ import { getAdapter } from '../services/model-registry.service.js';
 import { replicate } from '../config/replicate.js';
 
 const DIAG = process.env.DIAG === '1';
-const DBG = process.env.VAIFORM_DEBUG === "1";
+const DBG = process.env.VAIFORM_DEBUG === '1';
 
 // Helper: safe diag log
 function dlog(...args) {
@@ -86,87 +86,101 @@ export async function generate(req, res) {
   return res.status(410).json({
     success: false,
     error: 'FEATURE_DISABLED',
-    detail: 'AI image generation is not available in this version of Vaiform.'
+    detail: 'AI image generation is not available in this version of Vaiform.',
   });
-  
+
   // [AI_IMAGES] Legacy implementation (disabled for v1)
   /* eslint-disable no-unreachable */
   if (DBG) {
-    console.log("→ /generate hit");
-    console.log("CT:", req.headers["content-type"]);
-    try { console.log("BODY:", JSON.stringify(req.body)); } catch { console.log("BODY: <unstringifiable>"); }
+    console.log('→ /generate hit');
+    console.log('CT:', req.headers['content-type']);
+    try {
+      console.log('BODY:', JSON.stringify(req.body));
+    } catch {
+      console.log('BODY: <unstringifiable>');
+    }
   }
-  
+
   // --- DIAG START ---
   const startedAt = Date.now();
 
   // Token presence (no secrets leaked)
   if (DBG) {
-    console.log("[gen] token?", (process.env.REPLICATE_API_TOKEN || "").slice(0, 6) + "…");
+    console.log('[gen] token?', (process.env.REPLICATE_API_TOKEN || '').slice(0, 6) + '…');
   }
 
   // Ensure jobId is defined BEFORE any saveImageFromUrl uses it
   // (If you already define jobId later, MOVE it up here and remove the later duplicate)
-  const jobId = (crypto.randomUUID && crypto.randomUUID()) || crypto.randomBytes(16).toString("hex");
+  const jobId =
+    (crypto.randomUUID && crypto.randomUUID()) || crypto.randomBytes(16).toString('hex');
 
   // Unpack inputs safely
   const body = req.body || {};
-  const prompt = typeof body.prompt === "string" ? body.prompt.trim() : "";
+  const prompt = typeof body.prompt === 'string' ? body.prompt.trim() : '';
   const count = Number.isFinite(body.count) ? Math.max(1, Math.min(4, body.count)) : 1;
-  const mode = body.mode || "txt2img";
+  const mode = body.mode || 'txt2img';
   const options = body.options || {};
   // Map provider to style for backward compatibility
-  const provider = body.provider || "realistic";
+  const provider = body.provider || 'realistic';
   const style = body.style || provider; // fallback to provider if style not provided
 
   if (DBG) {
-    console.log("[gen] inputs", { hasPrompt: !!prompt, count, mode, style, provider });
+    console.log('[gen] inputs', { hasPrompt: !!prompt, count, mode, style, provider });
   }
   // --- DIAG END ---
-  
+
   try {
     const uid = req.user?.uid;
     if (!uid) {
       return res.status(401).json({
         success: false,
-        error: "UNAUTHENTICATED",
-        message: "Login required.",
+        error: 'UNAUTHENTICATED',
+        message: 'Login required.',
       });
     }
     const email = req.user?.email || null;
 
     const body = req.body || {};
     const prompt =
-      (typeof body.prompt === "string" && body.prompt) ||
-      (typeof body.input?.prompt === "string" && body.input.prompt) ||
-      (typeof body.data?.prompt === "string" && body.data.prompt) ||
-      "";
+      (typeof body.prompt === 'string' && body.prompt) ||
+      (typeof body.input?.prompt === 'string' && body.input.prompt) ||
+      (typeof body.data?.prompt === 'string' && body.data.prompt) ||
+      '';
     const count = Number(body.count ?? body.input?.count ?? body.data?.count ?? 1);
     const numImages = body.numImages ?? body.input?.numImages ?? body.data?.numImages;
-    const style = body.style ?? body.input?.style ?? body.data?.style ?? "realistic";
+    const style = body.style ?? body.input?.style ?? body.data?.style ?? 'realistic';
     const guidance = body.guidance ?? body.input?.guidance ?? body.data?.guidance;
     const steps = body.steps ?? body.input?.steps ?? body.data?.steps;
     const seed = body.seed ?? body.input?.seed ?? body.data?.seed;
     const scheduler = body.scheduler ?? body.input?.scheduler ?? body.data?.scheduler;
     const refiner = body.refiner ?? body.input?.refiner ?? body.data?.refiner;
-    
+
     // Handle new schema structure with provider and options
-    const provider = body.provider || "realistic";
+    const provider = body.provider || 'realistic';
     const options = body.options || {};
-    
+
     // Extract image data from options for pixar provider
     // Check both provider and style for pixar (frontend sends style)
     let imageInput = null;
-    const isPixarRequest = (provider === "pixar" || style === "pixar");
-    
+    const isPixarRequest = provider === 'pixar' || style === 'pixar';
+
     if (DBG) {
-      console.log("[gen] pixar check:", { provider, style, isPixarRequest, hasOptions: !!options, optionsKeys: options ? Object.keys(options) : [] });
+      console.log('[gen] pixar check:', {
+        provider,
+        style,
+        isPixarRequest,
+        hasOptions: !!options,
+        optionsKeys: options ? Object.keys(options) : [],
+      });
     }
-    
+
     if (isPixarRequest && options) {
-      if (typeof options.image_base64 === 'string' && options.image_base64.startsWith('data:image/')) {
+      if (
+        typeof options.image_base64 === 'string' &&
+        options.image_base64.startsWith('data:image/')
+      ) {
         imageInput = options.image_base64;
-        if (DBG) console.log("[gen] using image_base64, length:", imageInput.length);
+        if (DBG) console.log('[gen] using image_base64, length:', imageInput.length);
       } else if (typeof options.image_url === 'string' && /^https?:\/\//i.test(options.image_url)) {
         try {
           const resp = await fetch(options.image_url);
@@ -174,21 +188,26 @@ export async function generate(req, res) {
           const buf = Buffer.from(await resp.arrayBuffer());
           const b64 = buf.toString('base64');
           imageInput = `data:image/png;base64,${b64}`;
-          if (DBG) console.log("[gen] fetched image_url, converted to base64, length:", imageInput.length);
+          if (DBG)
+            console.log('[gen] fetched image_url, converted to base64, length:', imageInput.length);
         } catch (e) {
           console.warn('imageUrl fetch → base64 failed:', e?.message || e);
         }
       } else if (options.image) {
         imageInput = options.image;
-        if (DBG) console.log("[gen] using options.image, length:", imageInput?.length || 0);
+        if (DBG) console.log('[gen] using options.image, length:', imageInput?.length || 0);
       }
     }
-    
+
     if (DBG) {
-      console.log("[gen] final imageInput:", { hasImage: !!imageInput, imageLength: imageInput?.length || 0, isPixar: isPixarRequest });
+      console.log('[gen] final imageInput:', {
+        hasImage: !!imageInput,
+        imageLength: imageInput?.length || 0,
+        isPixar: isPixarRequest,
+      });
     }
     if (!prompt.trim()) {
-      return res.status(400).json({ success: false, error: "Missing prompt." });
+      return res.status(400).json({ success: false, error: 'Missing prompt.' });
     }
 
     // Basic moderation
@@ -198,86 +217,122 @@ export async function generate(req, res) {
     }
 
     // Check for async mode (Pixar style with X-Async header)
-    const isAsync = (req.get("x-async") === "1") || (req.query?.async === "1");
-    const idemKey = req.get("x-idempotency-key")?.trim();
+    const isAsync = req.get('x-async') === '1' || req.query?.async === '1';
+    const idemKey = req.get('x-idempotency-key')?.trim();
     const jobId = idemKey || uuidv4();
 
     if (isAsync) {
       // Registry chooses model + defaults (moved up to avoid TDZ)
       const { modelId, entry, params } = resolveStyle(style);
-      
+
       // 1) create pending doc (safe to overwrite fields for same jobId/idempotency)
       const genRef = admin.firestore().doc(`users/${uid}/generations/${jobId}`);
-      await genRef.set({
-        status: "pending",
-        prompt,
-        style,
-        count,
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
-      }, { merge: true });
+      await genRef.set(
+        {
+          status: 'pending',
+          prompt,
+          style,
+          count,
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
 
       // 2) charge upfront; refund later on failure (reuse your debitCreditsTx)
       const cost = costForCount(count); // use your existing pricing helper
-      await debitCreditsTx(uid, cost);               // existing atomic debit
+      await debitCreditsTx(uid, cost); // existing atomic debit
 
       // 3) return immediately
-      res.status(202).json({ success: true, data: { jobId, status: "pending" }});
+      res.status(202).json({ success: true, data: { jobId, status: 'pending' } });
 
       // 4) background work (don't await)
       setImmediate(async () => {
         // Enter processing immediately so UI never shows failed while provider is running
-        await genRef.set({
-          status: "processing",
-          startedAt: admin.firestore.FieldValue.serverTimestamp(),
-          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        }, { merge: true });
+        await genRef.set(
+          {
+            status: 'processing',
+            startedAt: admin.firestore.FieldValue.serverTimestamp(),
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          },
+          { merge: true }
+        );
 
         try {
           // reuse your existing generation path (providers, retries, uploads, etc.)
-          const result = await runGenerationInBackground({ uid, style, prompt, count, imageInput, guidance, steps, seed, scheduler, refiner, params, cost, jobId });
+          const result = await runGenerationInBackground({
+            uid,
+            style,
+            prompt,
+            count,
+            imageInput,
+            guidance,
+            steps,
+            seed,
+            scheduler,
+            refiner,
+            params,
+            cost,
+            jobId,
+          });
           const started = !!result?.started;
           const images = Array.isArray(result?.images) ? result.images : [];
 
           if (!images.length) {
             // No artifacts yet → keep processing and allow later finalization
-            await genRef.set({
-              status: "processing",
-              error: "finalizing",
-              updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-            }, { merge: true });
+            await genRef.set(
+              {
+                status: 'processing',
+                error: 'finalizing',
+                updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+              },
+              { merge: true }
+            );
             return;
           }
 
           // persist success
-          await genRef.set({
-            status: "complete",
-            images,
-            urls: images, // keep legacy field for gallery rendering
-            completedAt: admin.firestore.FieldValue.serverTimestamp(),
-            cost: result.cost,
-            error: null,
-          }, { merge: true });
+          await genRef.set(
+            {
+              status: 'complete',
+              images,
+              urls: images, // keep legacy field for gallery rendering
+              completedAt: admin.firestore.FieldValue.serverTimestamp(),
+              cost: result.cost,
+              error: null,
+            },
+            { merge: true }
+          );
         } catch (e) {
-          console.error("async generate failed", e);
+          console.error('async generate failed', e);
           // If we never actually started the remote run, mark failed and refund.
           // Heuristic: if error contains 'prediction' we likely started; otherwise assume not started.
-          const msg = String(e?.message || e || "");
+          const msg = String(e?.message || e || '');
           const likelyStarted = /prediction|replicate|poll/i.test(msg);
           if (!likelyStarted) {
-            try { await refundCredits(uid, cost); } catch (rf) { console.error("refund failed", rf); }
-            await genRef.set({
-              status: "failed",
-              error: msg,
-              updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-            }, { merge: true });
+            try {
+              await refundCredits(uid, cost);
+            } catch (rf) {
+              console.error('refund failed', rf);
+            }
+            await genRef.set(
+              {
+                status: 'failed',
+                error: msg,
+                updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+              },
+              { merge: true }
+            );
             return;
           }
           // Remote run likely in flight — keep processing; let a later pass finalize
-          await genRef.set({
-            status: "processing",
-            error: msg,
-            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-          }, { merge: true });
+          await genRef.set(
+            {
+              status: 'processing',
+              error: msg,
+              updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            },
+            { merge: true }
+          );
         }
       });
       return;
@@ -308,7 +363,11 @@ export async function generate(req, res) {
     }
 
     dlog('generate:start', {
-      uid, email, style, modelId, n,
+      uid,
+      email,
+      style,
+      modelId,
+      n,
       params: { guidance, steps, seed, scheduler, refiner },
     });
 
@@ -317,7 +376,9 @@ export async function generate(req, res) {
     const providerAdapter = ADAPTERS[entry.provider];
     if (!providerAdapter) {
       await refundCredits(uid, cost);
-      return res.status(500).json({ success: false, error: `No adapter for provider: ${entry.provider}` });
+      return res
+        .status(500)
+        .json({ success: false, error: `No adapter for provider: ${entry.provider}` });
     }
 
     // Normalize numeric inputs
@@ -349,12 +410,12 @@ export async function generate(req, res) {
       const t0 = Date.now();
       while (true) {
         const pred = await replicateClient.predictions.get(idOrUrl);
-        if (pred?.status === "succeeded") return pred;
-        if (pred?.status === "failed" || pred?.status === "canceled") {
-          throw new Error(`prediction-${pred?.status}: ${pred?.error || ""}`);
+        if (pred?.status === 'succeeded') return pred;
+        if (pred?.status === 'failed' || pred?.status === 'canceled') {
+          throw new Error(`prediction-${pred?.status}: ${pred?.error || ''}`);
         }
-        if (Date.now() - t0 > timeoutMs) throw new Error("prediction-timeout");
-        await new Promise(r => setTimeout(r, 1500));
+        if (Date.now() - t0 > timeoutMs) throw new Error('prediction-timeout');
+        await new Promise((r) => setTimeout(r, 1500));
       }
     }
 
@@ -363,24 +424,29 @@ export async function generate(req, res) {
     try {
       // Handle pixar img2img case
       if (isPixarRequest && imageInput) {
-        if (DBG) console.log("[gen] calling pixar adapter with image length:", imageInput.length);
-        
+        if (DBG) console.log('[gen] calling pixar adapter with image length:', imageInput.length);
+
         // Use the pixar adapter directly for img2img
         const pixarAdapter = getAdapter('pixar');
         const result = await withTimeoutAndRetry(
-          () => pixarAdapter.invoke({ 
-            prompt, 
-            refs: [imageInput], 
-            params: { guidance, steps, seed, scheduler, refiner, ...params } 
-          }),
+          () =>
+            pixarAdapter.invoke({
+              prompt,
+              refs: [imageInput],
+              params: { guidance, steps, seed, scheduler, refiner, ...params },
+            }),
           { timeoutMs: forceTimeout ? 100 : 600000, retries: 2 }
         );
-        
-        if (DBG) console.log("[gen] pixar adapter result:", { hasPredictionUrl: !!result?.predictionUrl, resultKeys: result ? Object.keys(result) : [] });
-        
+
+        if (DBG)
+          console.log('[gen] pixar adapter result:', {
+            hasPredictionUrl: !!result?.predictionUrl,
+            resultKeys: result ? Object.keys(result) : [],
+          });
+
         // Handle pixar adapter response format - it returns { predictionUrl }
         if (result.predictionUrl) {
-          if (DBG) console.log("[gen] polling Replicate prediction:", result.predictionUrl);
+          if (DBG) console.log('[gen] polling Replicate prediction:', result.predictionUrl);
           // Poll Replicate until the prediction completes
           const pred = await waitForPrediction(replicate, result.predictionUrl);
           prediction = pred;
@@ -390,18 +456,18 @@ export async function generate(req, res) {
           } else {
             artifacts = [];
           }
-          if (DBG) console.log("[gen] prediction completed, artifacts:", artifacts.length);
+          if (DBG) console.log('[gen] prediction completed, artifacts:', artifacts.length);
         } else {
           // Fallback if no predictionUrl
           prediction = result;
           artifacts = [];
-          if (DBG) console.log("[gen] no predictionUrl, using result directly");
+          if (DBG) console.log('[gen] no predictionUrl, using result directly');
         }
       } else if (modelAdapter?.runTextToImage) {
-        const result = await withTimeoutAndRetry(
-          () => modelAdapter.runTextToImage(input),
-          { timeoutMs: forceTimeout ? 100 : 600000, retries: 2 }
-        );
+        const result = await withTimeoutAndRetry(() => modelAdapter.runTextToImage(input), {
+          timeoutMs: forceTimeout ? 100 : 600000,
+          retries: 2,
+        });
         artifacts = result?.artifacts || [];
         prediction = result;
       } else {
@@ -420,8 +486,13 @@ export async function generate(req, res) {
       if (DBG) {
         try {
           const s = JSON.stringify(prediction, null, 2);
-          console.log("[gen] raw prediction", s.length > 4000 ? s.slice(0, 4000) + " …(truncated)" : s);
-        } catch { console.log("[gen] raw prediction <unstringifiable>"); }
+          console.log(
+            '[gen] raw prediction',
+            s.length > 4000 ? s.slice(0, 4000) + ' …(truncated)' : s
+          );
+        } catch {
+          console.log('[gen] raw prediction <unstringifiable>');
+        }
       }
     } catch (e) {
       console.error('adapter error (txt2img):', e?.message || e);
@@ -439,20 +510,20 @@ export async function generate(req, res) {
     // 1) Preferred: artifacts[].url (new Replicate SDK shape)
     if (Array.isArray(prediction?.artifacts)) {
       urls = prediction.artifacts
-        .map(a => (a && typeof a.url === "string" ? a.url : null))
+        .map((a) => (a && typeof a.url === 'string' ? a.url : null))
         .filter(Boolean);
     }
 
     // 2) Legacy/alt: prediction.output (string | string[] | object[])
     if (!urls.length) {
       const out = prediction?.output;
-      if (typeof out === "string") {
+      if (typeof out === 'string') {
         urls = [out];
       } else if (Array.isArray(out)) {
         urls = out
-          .map(x => (typeof x === "string" ? x : (x?.url || x?.image || x?.src)))
+          .map((x) => (typeof x === 'string' ? x : x?.url || x?.image || x?.src))
           .filter(Boolean);
-      } else if (out && typeof out === "object") {
+      } else if (out && typeof out === 'object') {
         urls = [out.url || out.image || out.src].filter(Boolean);
       }
     }
@@ -460,31 +531,31 @@ export async function generate(req, res) {
     // 3) Fallback: raw.output (string | string[] | object[])
     if (!urls.length && prediction?.raw) {
       const r = prediction.raw;
-      if (typeof r.output === "string") {
+      if (typeof r.output === 'string') {
         urls = [r.output];
       } else if (Array.isArray(r.output)) {
         urls = r.output
-          .map(x => (typeof x === "string" ? x : (x?.url || x?.image || x?.src)))
+          .map((x) => (typeof x === 'string' ? x : x?.url || x?.image || x?.src))
           .filter(Boolean);
-      } else if (r.output && typeof r.output === "object") {
+      } else if (r.output && typeof r.output === 'object') {
         urls = [r.output.url || r.output.image || r.output.src].filter(Boolean);
       }
     }
 
-    console.log("[gen] urls", urls);
+    console.log('[gen] urls', urls);
 
     if (!urls.length) {
       await refundCredits(uid, cost);
       return res.status(502).json({
         success: false,
-        error: "Image generation failed (no output URLs). Credits refunded.",
+        error: 'Image generation failed (no output URLs). Credits refunded.',
       });
     }
 
     // If caller asked for multiple images but we have fewer URLs,
     // run additional single-image predictions until we reach `count`.
     if (count > 1 && urls.length < count) {
-      console.log("[gen] need more images", { have: urls.length, want: count });
+      console.log('[gen] need more images', { have: urls.length, want: count });
 
       async function generateOneUrl() {
         // Use the same adapter pattern as the main generation
@@ -520,21 +591,26 @@ export async function generate(req, res) {
         if (Array.isArray(singlePrediction?.artifacts) && singlePrediction.artifacts[0]?.url) {
           return singlePrediction.artifacts[0].url;
         }
-        if (typeof singlePrediction?.output === "string") return singlePrediction.output;
+        if (typeof singlePrediction?.output === 'string') return singlePrediction.output;
         if (Array.isArray(singlePrediction?.output)) {
-          const u = singlePrediction.output.map(x => typeof x === "string" ? x : (x?.url || x?.image || x?.src)).find(Boolean);
+          const u = singlePrediction.output
+            .map((x) => (typeof x === 'string' ? x : x?.url || x?.image || x?.src))
+            .find(Boolean);
           if (u) return u;
         }
         if (singlePrediction?.raw?.output) {
           const r = singlePrediction.raw.output;
-          if (typeof r === "string") return r;
+          if (typeof r === 'string') return r;
           if (Array.isArray(r)) {
-            const u = r.map(x => typeof x === "string" ? x : (x?.url || x?.image || x?.src)).find(Boolean);
+            const u = r
+              .map((x) => (typeof x === 'string' ? x : x?.url || x?.image || x?.src))
+              .find(Boolean);
             if (u) return u;
           }
-          if (typeof r === "object" && (r.url || r.image || r.src)) return r.url || r.image || r.src;
+          if (typeof r === 'object' && (r.url || r.image || r.src))
+            return r.url || r.image || r.src;
         }
-        throw new Error("no-url-from-additional-prediction");
+        throw new Error('no-url-from-additional-prediction');
       }
 
       while (urls.length < count) {
@@ -543,7 +619,7 @@ export async function generate(req, res) {
       }
     }
 
-    console.log("[gen] urls", urls);
+    console.log('[gen] urls', urls);
 
     // Upload each image to Firebase Storage
     const srcUrls = urls;
@@ -559,8 +635,6 @@ export async function generate(req, res) {
       await new Promise((r) => setTimeout(r, 300)); // gentle pacing
     }
 
-
-
     await db.collection('users').doc(uid).collection('generations').doc(jobId).set({
       prompt,
       urls: outputUrls,
@@ -572,7 +646,7 @@ export async function generate(req, res) {
       count: outputUrls.length,
     });
 
-    console.log("[gen] done", { jobId, count, ms: Date.now() - startedAt });
+    console.log('[gen] done', { jobId, count, ms: Date.now() - startedAt });
 
     return res.json({
       success: true,
@@ -580,7 +654,9 @@ export async function generate(req, res) {
     });
   } catch (err) {
     console.error('🔥 /generate error:', err);
-    return res.status(500).json({ success: false, error: 'Something went wrong during image generation.' });
+    return res
+      .status(500)
+      .json({ success: false, error: 'Something went wrong during image generation.' });
   }
 }
 
@@ -596,9 +672,9 @@ export async function imageToImage(req, res) {
   return res.status(410).json({
     success: false,
     error: 'FEATURE_DISABLED',
-    detail: 'AI image generation is not available in this version of Vaiform.'
+    detail: 'AI image generation is not available in this version of Vaiform.',
   });
-  
+
   // [AI_IMAGES] Legacy implementation (disabled for v1)
   /* eslint-disable no-unreachable */
   const startedAt = Date.now();
@@ -607,17 +683,17 @@ export async function imageToImage(req, res) {
     if (!uid) {
       return res.status(401).json({
         success: false,
-        error: "UNAUTHENTICATED",
-        message: "Login required.",
+        error: 'UNAUTHENTICATED',
+        message: 'Login required.',
       });
     }
     const email = req.user?.email || null;
 
     let {
       prompt,
-      imageBase64,   // raw base64 (no data: header)
-      imageData,     // data URL (data:image/...;base64,AAA...)
-      imageUrl,      // https://...
+      imageBase64, // raw base64 (no data: header)
+      imageData, // data URL (data:image/...;base64,AAA...)
+      imageUrl, // https://...
       numImages,
       count,
       style = 'pixar-3d',
@@ -653,7 +729,8 @@ export async function imageToImage(req, res) {
     if (!prompt || !imageInput) {
       return res.status(400).json({
         success: false,
-        error: 'Missing required fields. Provide prompt, and an image via imageBase64, imageData, or imageUrl.',
+        error:
+          'Missing required fields. Provide prompt, and an image via imageBase64, imageData, or imageUrl.',
       });
     }
 
@@ -692,12 +769,14 @@ export async function imageToImage(req, res) {
     const providerAdapter = ADAPTERS[entry.provider];
     if (!providerAdapter) {
       await refundCredits(uid, cost);
-      return res.status(500).json({ success: false, error: `No adapter for provider: ${entry.provider}` });
+      return res
+        .status(500)
+        .json({ success: false, error: `No adapter for provider: ${entry.provider}` });
     }
 
     const input = {
       prompt,
-      image: imageInput,                         // data URL expected by many models
+      image: imageInput, // data URL expected by many models
       num_outputs: n,
       strength: toNum(strength) ?? params?.strength,
       guidance: toNum(guidance),
@@ -705,16 +784,16 @@ export async function imageToImage(req, res) {
       seed: toInt(seed),
       scheduler,
       refiner,
-      ...params,                                 // defaults/presets from registry
+      ...params, // defaults/presets from registry
     };
 
     let artifacts = [];
     try {
       if (modelAdapter?.runImageToImage) {
-        const result = await withTimeoutAndRetry(
-          () => modelAdapter.runImageToImage(input),
-          { timeoutMs: forceTimeout ? 100 : 600000, retries: 2 }
-        );
+        const result = await withTimeoutAndRetry(() => modelAdapter.runImageToImage(input), {
+          timeoutMs: forceTimeout ? 100 : 600000,
+          retries: 2,
+        });
         artifacts = result?.artifacts || [];
       } else {
         let providerRef = entry.providerRef || {};
@@ -737,8 +816,8 @@ export async function imageToImage(req, res) {
     }
 
     const srcUrls = (artifacts || [])
-      .filter(a => a?.type === 'image' && typeof a.url === 'string')
-      .map(a => a.url);
+      .filter((a) => a?.type === 'image' && typeof a.url === 'string')
+      .map((a) => a.url);
 
     const outputUrls = [];
     for (let i = 0; i < srcUrls.length; i++) {
@@ -748,16 +827,18 @@ export async function imageToImage(req, res) {
       } catch (e) {
         console.warn('saveImageFromUrl failed', { i, sourceUrl: srcUrls[i], msg: e?.message || e });
       }
-      await new Promise(r => setTimeout(r, 300));
+      await new Promise((r) => setTimeout(r, 300));
     }
 
     if (outputUrls.length === 0) {
       await refundCredits(uid, cost);
-      return res.status(502).json({ success: false, error: 'Image-to-image generation failed. Credits refunded.' });
+      return res
+        .status(502)
+        .json({ success: false, error: 'Image-to-image generation failed. Credits refunded.' });
     }
 
     const jobId = db.collection('users').doc(uid).collection('generations').doc().id;
-    
+
     await db.collection('users').doc(uid).collection('generations').doc(jobId).set({
       prompt,
       style,
@@ -769,7 +850,7 @@ export async function imageToImage(req, res) {
       count: outputUrls.length,
     });
 
-    console.log("[gen] done", { jobId, count, ms: Date.now() - startedAt });
+    console.log('[gen] done', { jobId, count, ms: Date.now() - startedAt });
 
     return res.json({
       success: true,
@@ -791,9 +872,9 @@ export async function upscale(req, res) {
   return res.status(410).json({
     success: false,
     error: 'FEATURE_DISABLED',
-    detail: 'Image upscaling is not available in this version of Vaiform.'
+    detail: 'Image upscaling is not available in this version of Vaiform.',
   });
-  
+
   // [AI_IMAGES] Legacy implementation (disabled for v1)
   /* eslint-disable no-unreachable */
   const reqId = (req.headers['x-request-id'] || '').toString();
@@ -803,8 +884,8 @@ export async function upscale(req, res) {
     if (!uid) {
       return res.status(401).json({
         success: false,
-        error: "UNAUTHENTICATED",
-        message: "Login required.",
+        error: 'UNAUTHENTICATED',
+        message: 'Login required.',
       });
     }
     const email = req.user?.email || null;
@@ -844,29 +925,37 @@ export async function upscale(req, res) {
     // 1) Create prediction (returns { predictionUrl })
     let predictionUrl;
     try {
-      const created = await withTimeoutAndRetry(
-        () => realesrgan.invoke({ refs: [imageUrl] }),
-        { timeoutMs: 300000, retries: 2 }
-      );
+      const created = await withTimeoutAndRetry(() => realesrgan.invoke({ refs: [imageUrl] }), {
+        timeoutMs: 300000,
+        retries: 2,
+      });
       predictionUrl = created?.predictionUrl;
       if (!predictionUrl) throw new Error('No predictionUrl returned from realesrgan.invoke');
     } catch (e) {
       console.error('[upscale] invoke failed', { reqId, msg: e?.message || e });
       await refundCredits(uid, UPSCALE_COST);
-      return res.status(502).json({ success: false, error: 'Upscale create failed.', detail: e?.message });
+      return res
+        .status(502)
+        .json({ success: false, error: 'Upscale create failed.', detail: e?.message });
     }
 
     // 2) Poll until done (add timeout/retry)
     let finalOutput;
     try {
-      finalOutput = await withTimeoutAndRetry(
-        () => jobs.pollUntilDone(predictionUrl),
-        { timeoutMs: 600000, retries: 2 }
-      );
+      finalOutput = await withTimeoutAndRetry(() => jobs.pollUntilDone(predictionUrl), {
+        timeoutMs: 600000,
+        retries: 2,
+      });
     } catch (e) {
-      console.error('[upscale] pollUntilDone failed', { reqId, predictionUrl, msg: e?.message || e });
+      console.error('[upscale] pollUntilDone failed', {
+        reqId,
+        predictionUrl,
+        msg: e?.message || e,
+      });
       await refundCredits(uid, UPSCALE_COST);
-      return res.status(502).json({ success: false, error: 'Upscale timed out or failed while polling.' });
+      return res
+        .status(502)
+        .json({ success: false, error: 'Upscale timed out or failed while polling.' });
     }
 
     // 3) Extract URLs (be generous in parsing)
@@ -875,13 +964,13 @@ export async function upscale(req, res) {
       const urls = new Set();
 
       if (Array.isArray(out)) {
-        out.forEach(x => (typeof x === 'string' && x.startsWith('http')) && urls.add(x));
+        out.forEach((x) => typeof x === 'string' && x.startsWith('http') && urls.add(x));
       }
       if (out?.output) {
         const o = out.output;
         if (typeof o === 'string' && o.startsWith('http')) urls.add(o);
         if (Array.isArray(o)) {
-          o.forEach(x => {
+          o.forEach((x) => {
             if (typeof x === 'string' && x.startsWith('http')) urls.add(x);
             if (x && typeof x.url === 'string' && x.url.startsWith('http')) urls.add(x.url);
           });
@@ -891,7 +980,7 @@ export async function upscale(req, res) {
         }
       }
       if (Array.isArray(out?.urls)) {
-        out.urls.forEach(u => (typeof u === 'string' && u.startsWith('http')) && urls.add(u));
+        out.urls.forEach((u) => typeof u === 'string' && u.startsWith('http') && urls.add(u));
       }
       return [...urls];
     };
@@ -917,11 +1006,11 @@ export async function upscale(req, res) {
     // 4) Upload first result to Firebase Storage
     let uploaded;
     try {
-      const result = await storage.saveImageFromUrl(uid, jobId, urls[0], { 
+      const result = await storage.saveImageFromUrl(uid, jobId, urls[0], {
         index: 0,
         recompress: true,
         maxSide: 3072,
-        webpQuality: 90
+        webpQuality: 90,
       });
       uploaded = result?.publicUrl;
     } catch (e) {
@@ -956,19 +1045,33 @@ export async function upscale(req, res) {
 /* ===========================
  * Background generation function for async mode
  * =========================== */
-async function runGenerationInBackground({ uid, style, prompt, count, imageInput, guidance, steps, seed, scheduler, refiner, params, cost, jobId }) {
+async function runGenerationInBackground({
+  uid,
+  style,
+  prompt,
+  count,
+  imageInput,
+  guidance,
+  steps,
+  seed,
+  scheduler,
+  refiner,
+  params,
+  cost,
+  jobId,
+}) {
   try {
     // Local poller to avoid scope issues
     async function waitForPredictionLocal(replicateClient, idOrUrl, timeoutMs = 600000) {
       const t0 = Date.now();
       while (true) {
         const pred = await replicateClient.predictions.get(idOrUrl);
-        if (pred?.status === "succeeded") return pred;
-        if (pred?.status === "failed" || pred?.status === "canceled") {
-          throw new Error(`prediction-${pred?.status}: ${pred?.error || ""}`);
+        if (pred?.status === 'succeeded') return pred;
+        if (pred?.status === 'failed' || pred?.status === 'canceled') {
+          throw new Error(`prediction-${pred?.status}: ${pred?.error || ''}`);
         }
-        if (Date.now() - t0 > timeoutMs) throw new Error("prediction-timeout");
-        await new Promise(r => setTimeout(r, 1500));
+        if (Date.now() - t0 > timeoutMs) throw new Error('prediction-timeout');
+        await new Promise((r) => setTimeout(r, 1500));
       }
     }
 
@@ -1005,17 +1108,18 @@ async function runGenerationInBackground({ uid, style, prompt, count, imageInput
     let prediction = null;
 
     // Handle pixar img2img case
-    if (style === "pixar" && imageInput) {
+    if (style === 'pixar' && imageInput) {
       const pixarAdapter = getAdapter('pixar');
       const result = await withTimeoutAndRetry(
-        () => pixarAdapter.invoke({ 
-          prompt, 
-          refs: [imageInput], 
-          params: { guidance, steps, seed, scheduler, refiner, ...modelParams } 
-        }),
+        () =>
+          pixarAdapter.invoke({
+            prompt,
+            refs: [imageInput],
+            params: { guidance, steps, seed, scheduler, refiner, ...modelParams },
+          }),
         { timeoutMs: 600000, retries: 2 }
       );
-      
+
       if (result.predictionUrl) {
         // Poll Replicate until the prediction completes
         const pred = await waitForPredictionLocal(replicate, result.predictionUrl);
@@ -1026,10 +1130,12 @@ async function runGenerationInBackground({ uid, style, prompt, count, imageInput
         } catch {}
         if (!urls.length) {
           const out = pred?.output;
-          if (typeof out === "string") urls = [out];
+          if (typeof out === 'string') urls = [out];
           else if (Array.isArray(out)) {
-            urls = out.map(x => (typeof x === "string" ? x : (x?.url || x?.image || x?.src))).filter(Boolean);
-          } else if (out && typeof out === "object") {
+            urls = out
+              .map((x) => (typeof x === 'string' ? x : x?.url || x?.image || x?.src))
+              .filter(Boolean);
+          } else if (out && typeof out === 'object') {
             urls = [out.url || out.image || out.src].filter(Boolean);
           }
         }
@@ -1041,7 +1147,7 @@ async function runGenerationInBackground({ uid, style, prompt, count, imageInput
         () => providerAdapter.invoke({ prompt, count: n, options: input }),
         { timeoutMs: 600000, retries: 2 }
       );
-      
+
       if (result.predictionUrl) {
         const pred = await waitForPredictionLocal(replicate, result.predictionUrl);
         // Normalize output to URLs
@@ -1051,10 +1157,12 @@ async function runGenerationInBackground({ uid, style, prompt, count, imageInput
         } catch {}
         if (!urls.length) {
           const out = pred?.output;
-          if (typeof out === "string") urls = [out];
+          if (typeof out === 'string') urls = [out];
           else if (Array.isArray(out)) {
-            urls = out.map(x => (typeof x === "string" ? x : (x?.url || x?.image || x?.src))).filter(Boolean);
-          } else if (out && typeof out === "object") {
+            urls = out
+              .map((x) => (typeof x === 'string' ? x : x?.url || x?.image || x?.src))
+              .filter(Boolean);
+          } else if (out && typeof out === 'object') {
             urls = [out.url || out.image || out.src].filter(Boolean);
           }
         }
@@ -1067,11 +1175,11 @@ async function runGenerationInBackground({ uid, style, prompt, count, imageInput
     for (let i = 0; i < artifacts.length; i++) {
       try {
         const srcUrl = artifacts[i];
-        const result = await storage.saveImageFromUrl(uid, jobId, srcUrl, { 
+        const result = await storage.saveImageFromUrl(uid, jobId, srcUrl, {
           index: i,
           recompress: true,
           maxSide: 3072,
-          webpQuality: 90
+          webpQuality: 90,
         });
         if (result?.publicUrl) {
           outputUrls.push(result.publicUrl);
@@ -1100,9 +1208,9 @@ export async function jobStatus(req, res) {
   return res.status(410).json({
     success: false,
     error: 'FEATURE_DISABLED',
-    detail: 'Image job polling is not available in this version of Vaiform.'
+    detail: 'Image job polling is not available in this version of Vaiform.',
   });
-  
+
   // [AI_IMAGES] Legacy implementation (disabled for v1)
   /* eslint-disable no-unreachable */
   try {
@@ -1110,26 +1218,25 @@ export async function jobStatus(req, res) {
     if (!uid) {
       return res.status(401).json({
         success: false,
-        error: "UNAUTHENTICATED",
-        message: "Login required.",
+        error: 'UNAUTHENTICATED',
+        message: 'Login required.',
       });
     }
 
     const { jobId } = req.params;
     if (!jobId) {
-      return res.status(400).json({ success: false, error: "Missing jobId" });
+      return res.status(400).json({ success: false, error: 'Missing jobId' });
     }
 
     const snap = await admin.firestore().doc(`users/${uid}/generations/${jobId}`).get();
     if (!snap.exists) {
-      return res.status(404).json({ success: false, error: "NOT_FOUND" });
+      return res.status(404).json({ success: false, error: 'NOT_FOUND' });
     }
-    
+
     const data = snap.data();
     return res.json({ success: true, data });
   } catch (e) {
-    console.error("jobStatus error", e);
-    return res.status(500).json({ success: false, error: "INTERNAL" });
+    console.error('jobStatus error', e);
+    return res.status(500).json({ success: false, error: 'INTERNAL' });
   }
 }
-

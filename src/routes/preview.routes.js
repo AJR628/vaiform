@@ -82,17 +82,18 @@ router.post('/caption', requireAuth, async (req, res) => {
     }
 
     const data = parsed.data;
-    const jobId = data.jobId || `preview-${Date.now().toString(36)}-${crypto.randomBytes(4).toString('hex')}`;
-    
+    const jobId =
+      data.jobId || `preview-${Date.now().toString(36)}-${crypto.randomBytes(4).toString('hex')}`;
+
     // Detect v1 vs v2 format
     const isV2 = data.v2 === true || !data.style;
-    
+
     let overlay, style;
-    
+
     if (isV2) {
       // v2 format: normalize overlay and convert to rendering style
       overlay = normalizeOverlayCaption(data);
-      
+
       if (!overlay || !overlay.text?.trim()) {
         return res.status(400).json({
           ok: false,
@@ -100,9 +101,10 @@ router.post('/caption', requireAuth, async (req, res) => {
           detail: 'Caption text cannot be empty',
         });
       }
-      
+
       // Convert overlay to rendering style (pixel-based for renderCaptionImage)
-      const W = 1080, H = 1920;
+      const W = 1080,
+        H = 1920;
       style = {
         text: overlay.text,
         fontFamily: overlay.fontFamily,
@@ -127,19 +129,19 @@ router.post('/caption', requireAuth, async (req, res) => {
         shadowBlur: 4,
         shadowColor: 'rgba(0,0,0,0.55)',
       };
-      
+
       console.log(`[preview:v2] Rendering overlay caption for job ${jobId}:`, {
         text: overlay.text.substring(0, 50),
         xPct: overlay.xPct,
         yPct: overlay.yPct,
         wPct: overlay.wPct,
         hPct: overlay.hPct,
-        fontPx: overlay.fontPx
+        fontPx: overlay.fontPx,
       });
     } else {
       // v1 format: use style directly
       style = data.style;
-      
+
       if (!style.text?.trim()) {
         return res.status(400).json({
           ok: false,
@@ -147,7 +149,7 @@ router.post('/caption', requireAuth, async (req, res) => {
           detail: 'Caption text cannot be empty',
         });
       }
-      
+
       // Convert v1 to overlay for SSOT response
       const W = style.canvasW || 1080;
       const H = style.canvasH || 1920;
@@ -165,8 +167,10 @@ router.post('/caption', requireAuth, async (req, res) => {
         fontFamily: style.fontFamily,
         weightCss: style.fontWeight === 700 ? 'bold' : 'normal',
       };
-      
-      console.log(`[preview:v1] Rendering legacy caption for job ${jobId}, text length: ${style.text.length}`);
+
+      console.log(
+        `[preview:v1] Rendering legacy caption for job ${jobId}, text length: ${style.text.length}`
+      );
     }
 
     // Render the caption image
@@ -189,7 +193,7 @@ router.post('/caption', requireAuth, async (req, res) => {
     const W = style.canvasW || 1080;
     const H = style.canvasH || 1920;
     const placement = computeOverlayPlacement(overlay, W, H);
-    
+
     // Log placement details for verification
     console.log(`[preview] Placement computed:`, {
       xPct: overlay.xPct.toFixed(3),
@@ -198,7 +202,7 @@ router.post('/caption', requireAuth, async (req, res) => {
       hPct: overlay.hPct.toFixed(3),
       fontPx: placement.fontPx,
       totalTextH: placement.totalTextH,
-      computedY: placement.y
+      computedY: placement.y,
     });
 
     // Return normalized SSOT response
@@ -232,10 +236,10 @@ router.post('/caption', requireAuth, async (req, res) => {
     });
   } catch (error) {
     console.error('[preview] Caption render failed:', error.message);
-    
+
     let reason = 'RENDER_FAILED';
     let detail = error.message;
-    
+
     if (error.message.includes('empty')) {
       reason = 'EMPTY_TEXT';
     } else if (error.message.includes('Font')) {

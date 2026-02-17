@@ -150,9 +150,7 @@ async function main() {
 
       // Tolerant timing assertion
       if (elapsed > TIMEOUT_MS + 1500) {
-        console.warn(
-          `⚠️  WARN: Timeout took ${elapsed}ms (expected ~${TIMEOUT_MS}ms)`
-        );
+        console.warn(`⚠️  WARN: Timeout took ${elapsed}ms (expected ~${TIMEOUT_MS}ms)`);
       }
 
       return `(elapsed ${elapsed}ms)`;
@@ -202,9 +200,7 @@ async function main() {
 
       // Tolerant timing assertion
       if (elapsed > TIMEOUT_MS + 1500) {
-        console.warn(
-          `⚠️  WARN: Timeout took ${elapsed}ms (expected ~${TIMEOUT_MS}ms)`
-        );
+        console.warn(`⚠️  WARN: Timeout took ${elapsed}ms (expected ~${TIMEOUT_MS}ms)`);
       }
 
       return `(elapsed ${elapsed}ms)`;
@@ -230,4 +226,3 @@ main().catch((err) => {
   console.error('❌ Unhandled error:', err);
   process.exit(1);
 });
-

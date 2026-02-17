@@ -25,7 +25,10 @@ export function calculateReadingDuration(text, options = {}) {
   const maxDuration = options.maxDuration || 10;
 
   // Count words (split on whitespace, filter empty strings)
-  const words = text.trim().split(/\s+/).filter(w => w.length > 0);
+  const words = text
+    .trim()
+    .split(/\s+/)
+    .filter((w) => w.length > 0);
   const wordCount = words.length;
 
   // Calculate duration: base time + reading time
@@ -40,4 +43,3 @@ export function calculateReadingDuration(text, options = {}) {
 }
 
 export default { calculateReadingDuration };
-

@@ -1,6 +1,6 @@
 /**
  * DejaVu Font Registration for @napi-rs/canvas
- * 
+ *
  * Single-point, idempotent registration ensuring preview-render parity.
  * Resolves fonts from assets/fonts/ with robust path checking.
  */
@@ -17,15 +17,15 @@ import path from 'node:path';
 function resolveFontPath(filename) {
   const candidates = [
     path.resolve(process.cwd(), 'assets', 'fonts', filename),
-    path.resolve(process.cwd(), 'src', 'assets', 'fonts', filename)
+    path.resolve(process.cwd(), 'src', 'assets', 'fonts', filename),
   ];
-  
+
   for (const candidate of candidates) {
     if (fs.existsSync(candidate)) {
       return candidate;
     }
   }
-  
+
   return null;
 }
 
@@ -38,7 +38,7 @@ function resolveFontPath(filename) {
 function addFont(file, family) {
   const candidates = [
     path.join(process.cwd(), 'assets', 'fonts', file),
-    path.join(process.cwd(), 'web', 'assets', 'fonts', file)
+    path.join(process.cwd(), 'web', 'assets', 'fonts', file),
   ];
   for (const p of candidates) {
     if (fs.existsSync(p)) {
@@ -71,45 +71,45 @@ export function registerDejaVuFonts() {
     // GlobalFonts.has might not be available in all versions
     console.log('[canvas-fonts] Checking existing fonts...');
   }
-  
+
   // Register all variants with base family "DejaVu Sans" using weight/style descriptors
-  const okRegular    = addFont('DejaVuSans.ttf',             'DejaVu Sans');
-  const okBold       = addFont('DejaVuSans-Bold.ttf',        'DejaVu Sans');
-  const okItalic     = addFont('DejaVuSans-Oblique.ttf',     'DejaVu Sans');
+  const okRegular = addFont('DejaVuSans.ttf', 'DejaVu Sans');
+  const okBold = addFont('DejaVuSans-Bold.ttf', 'DejaVu Sans');
+  const okItalic = addFont('DejaVuSans-Oblique.ttf', 'DejaVu Sans');
   const okBoldItalic = addFont('DejaVuSans-BoldOblique.ttf', 'DejaVu Sans');
-  
+
   // Log registration status
   const status = { okRegular, okBold, okItalic, okBoldItalic };
   console.log('[canvas-fonts] DejaVu variants registered:', status);
-  
+
   // Log available font families
   try {
     const families = GlobalFonts.families;
     console.log('[canvas-fonts] Available families:', families);
-    
+
     // Verify all 4 DejaVu Sans variants are available (all registered as "DejaVu Sans")
-    const requiredVariants = [
-      'DejaVu Sans'
-    ];
-    
+    const requiredVariants = ['DejaVu Sans'];
+
     let allVariantsAvailable = true;
     for (const family of requiredVariants) {
-      const isAvailable = families.some(f => f.family === family);
+      const isAvailable = families.some((f) => f.family === family);
       if (!isAvailable) {
         console.error('[canvas-fonts] Missing variant family:', family);
         allVariantsAvailable = false;
       }
     }
-    
+
     if (!allVariantsAvailable) {
       console.error('[canvas-fonts] FAILED: DejaVu Sans base family not available');
       throw new Error('DejaVu Sans font registration incomplete - base family missing');
     } else {
-      console.log('[canvas-fonts] SUCCESS: DejaVu Sans base family verified (all variants registered)');
+      console.log(
+        '[canvas-fonts] SUCCESS: DejaVu Sans base family verified (all variants registered)'
+      );
     }
   } catch (e) {
     console.log('[canvas-fonts] Could not list font families:', e.message);
   }
-  
+
   return status;
 }

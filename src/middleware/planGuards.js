@@ -1,7 +1,7 @@
 // src/middleware/planGuards.js
-import admin from "../config/firebase.js";
-import { RENDER_CREDIT_COST } from "../services/credit.service.js";
-import { fail } from "../http/respond.js";
+import admin from '../config/firebase.js';
+import { RENDER_CREDIT_COST } from '../services/credit.service.js';
+import { fail } from '../http/respond.js';
 
 /**
  * Require membership (blocks free users from premium features)
@@ -10,18 +10,24 @@ export function requireMember(plan = null) {
   return (req, res, next) => {
     const u = req.user;
     if (!u?.isMember) {
-      return fail(req, res, 402, "MEMBERSHIP_REQUIRED", "This feature requires a paid plan");
+      return fail(req, res, 402, 'MEMBERSHIP_REQUIRED', 'This feature requires a paid plan');
     }
-    
+
     const kind = u.membership?.kind;
-    if (kind === "onetime" && u.membership?.expiresAt && Date.now() > u.membership.expiresAt) {
-      return fail(req, res, 402, "MEMBERSHIP_EXPIRED", "Your one-month pass has expired");
+    if (kind === 'onetime' && u.membership?.expiresAt && Date.now() > u.membership.expiresAt) {
+      return fail(req, res, 402, 'MEMBERSHIP_EXPIRED', 'Your one-month pass has expired');
     }
-    
+
     if (plan && u.plan !== plan) {
-      return fail(req, res, 403, "INSUFFICIENT_PLAN", `This feature requires ${plan} plan or higher`);
+      return fail(
+        req,
+        res,
+        403,
+        'INSUFFICIENT_PLAN',
+        `This feature requires ${plan} plan or higher`
+      );
     }
-    
+
     next();
   };
 }
@@ -34,7 +40,7 @@ export function enforceFreeDailyShortLimit(limit = 4) {
     const u = req.user;
     if (u?.isMember) return next(); // Skip limit for paid users
 
-    const userRef = admin.firestore().collection("users").doc(u.uid);
+    const userRef = admin.firestore().collection('users').doc(u.uid);
     const snap = await userRef.get();
     const doc = snap.data() || {};
     const now = Date.now();
@@ -49,15 +55,24 @@ export function enforceFreeDailyShortLimit(limit = 4) {
     }
 
     if (count >= limit) {
-      return fail(req, res, 429, "FREE_LIMIT_REACHED", `Free users can create up to ${limit} shorts per day. Upgrade to create unlimited shorts.`);
+      return fail(
+        req,
+        res,
+        429,
+        'FREE_LIMIT_REACHED',
+        `Free users can create up to ${limit} shorts per day. Upgrade to create unlimited shorts.`
+      );
     }
 
     req.incrementShortCount = async () => {
-      await userRef.set({ 
-        shortDayKey: dayKey, 
-        shortCountToday: count + 1, 
-        lastShortAt: now 
-      }, { merge: true });
+      await userRef.set(
+        {
+          shortDayKey: dayKey,
+          shortCountToday: count + 1,
+          lastShortAt: now,
+        },
+        { merge: true }
+      );
     };
     next();
   };
@@ -72,14 +87,14 @@ export function enforceFreeLifetimeShortLimit(maxFree = 4) {
     // Fail-safe: require authentication
     const uid = req.user?.uid || req.authUid;
     if (!uid) {
-      return fail(req, res, 401, "AUTH_REQUIRED", "You need to sign in to create shorts.");
+      return fail(req, res, 401, 'AUTH_REQUIRED', 'You need to sign in to create shorts.');
     }
 
     // Fetch user document from Firestore
-    const userRef = admin.firestore().collection("users").doc(uid);
+    const userRef = admin.firestore().collection('users').doc(uid);
     const snap = await userRef.get();
     if (!snap.exists) {
-      return fail(req, res, 401, "AUTH_REQUIRED", "You need to sign in to create shorts.");
+      return fail(req, res, 401, 'AUTH_REQUIRED', 'You need to sign in to create shorts.');
     }
 
     const doc = snap.data() || {};
@@ -99,7 +114,13 @@ export function enforceFreeLifetimeShortLimit(maxFree = 4) {
     const freeShortsUsed = doc.freeShortsUsed || 0;
 
     if (freeShortsUsed >= maxFree) {
-      return fail(req, res, 403, "FREE_LIMIT_REACHED", "You've used your 4 free shorts. Upgrade to keep creating.");
+      return fail(
+        req,
+        res,
+        403,
+        'FREE_LIMIT_REACHED',
+        "You've used your 4 free shorts. Upgrade to keep creating."
+      );
     }
 
     // User is free and under limit - allow request
@@ -113,7 +134,13 @@ export function enforceFreeLifetimeShortLimit(maxFree = 4) {
 export function blockAIQuotesForFree() {
   return (req, res, next) => {
     if (!req.user?.isMember) {
-      return fail(req, res, 402, "AI_QUOTES_MEMBERSHIP_REQUIRED", "AI quote generation requires a Creator or Pro plan");
+      return fail(
+        req,
+        res,
+        402,
+        'AI_QUOTES_MEMBERSHIP_REQUIRED',
+        'AI quote generation requires a Creator or Pro plan'
+      );
     }
     next();
   };
@@ -141,22 +168,28 @@ export function enforceCreditsForRender(required = RENDER_CREDIT_COST) {
     // Require authentication
     const uid = req.user?.uid;
     if (!uid) {
-      return fail(req, res, 401, "AUTH_REQUIRED", "You need to sign in to create shorts.");
+      return fail(req, res, 401, 'AUTH_REQUIRED', 'You need to sign in to create shorts.');
     }
 
     // Fetch user document from Firestore
-    const userRef = admin.firestore().collection("users").doc(uid);
+    const userRef = admin.firestore().collection('users').doc(uid);
     const snap = await userRef.get();
-    
+
     if (!snap.exists) {
-      return fail(req, res, 401, "AUTH_REQUIRED", "You need to sign in to create shorts.");
+      return fail(req, res, 401, 'AUTH_REQUIRED', 'You need to sign in to create shorts.');
     }
 
     const doc = snap.data() || {};
     const credits = doc.credits || 0;
 
     if (credits < required) {
-      return fail(req, res, 402, "INSUFFICIENT_CREDITS", `Insufficient credits. You need ${required} credits to render.`);
+      return fail(
+        req,
+        res,
+        402,
+        'INSUFFICIENT_CREDITS',
+        `Insufficient credits. You need ${required} credits to render.`
+      );
     }
 
     // User has sufficient credits - allow request
@@ -174,19 +207,19 @@ export function enforceScriptDailyCap(maxPerDay = 300) {
     // Require authentication
     const uid = req.user?.uid || req.authUid;
     if (!uid) {
-      return fail(req, res, 401, "AUTH_REQUIRED", "You need to sign in to generate scripts.");
+      return fail(req, res, 401, 'AUTH_REQUIRED', 'You need to sign in to generate scripts.');
     }
 
     const db = admin.firestore();
-    const userRef = db.collection("users").doc(uid);
+    const userRef = db.collection('users').doc(uid);
     const todayKey = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
 
     try {
       await db.runTransaction(async (t) => {
         const snap = await t.get(userRef);
-        
+
         if (!snap.exists) {
-          const err = new Error("USER_NOT_FOUND_TX");
+          const err = new Error('USER_NOT_FOUND_TX');
           throw err;
         }
 
@@ -202,7 +235,7 @@ export function enforceScriptDailyCap(maxPerDay = 300) {
 
         // Check limit
         if (scriptCountToday >= maxPerDay) {
-          const err = new Error("SCRIPT_LIMIT_REACHED_TX");
+          const err = new Error('SCRIPT_LIMIT_REACHED_TX');
           throw err;
         }
 
@@ -210,7 +243,7 @@ export function enforceScriptDailyCap(maxPerDay = 300) {
         t.update(userRef, {
           scriptDayKey: todayKey,
           scriptCountToday: scriptCountToday + 1,
-          updatedAt: admin.firestore.FieldValue.serverTimestamp()
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         });
       });
 
@@ -218,17 +251,29 @@ export function enforceScriptDailyCap(maxPerDay = 300) {
       next();
     } catch (error) {
       // Handle transaction errors
-      if (error?.message === "USER_NOT_FOUND_TX") {
-        return fail(req, res, 404, "USER_NOT_FOUND", "User account not found.");
+      if (error?.message === 'USER_NOT_FOUND_TX') {
+        return fail(req, res, 404, 'USER_NOT_FOUND', 'User account not found.');
       }
 
-      if (error?.message === "SCRIPT_LIMIT_REACHED_TX") {
-        return fail(req, res, 429, "SCRIPT_LIMIT_REACHED", "Daily script generation limit reached. Try again tomorrow.");
+      if (error?.message === 'SCRIPT_LIMIT_REACHED_TX') {
+        return fail(
+          req,
+          res,
+          429,
+          'SCRIPT_LIMIT_REACHED',
+          'Daily script generation limit reached. Try again tomorrow.'
+        );
       }
 
       // Other errors
-      console.error("[planGuards] Script cap check failed:", error);
-      return fail(req, res, 500, "SCRIPT_LIMIT_ERROR", "Something went wrong while checking script limits.");
+      console.error('[planGuards] Script cap check failed:', error);
+      return fail(
+        req,
+        res,
+        500,
+        'SCRIPT_LIMIT_ERROR',
+        'Something went wrong while checking script limits.'
+      );
     }
   };
 }
@@ -238,7 +283,7 @@ export function enforceScriptDailyCap(maxPerDay = 300) {
  */
 export async function requireAuthOptional(req, res, next) {
   try {
-    const authHeader = req.headers.authorization || "";
+    const authHeader = req.headers.authorization || '';
     const m = authHeader.match(/^Bearer\s+(.+)$/i);
     if (m) {
       const idToken = m[1];

@@ -1,7 +1,12 @@
-import { Router } from "express";
-import requireAuth from "../middleware/requireAuth.js";
-import { enforceCreditsForRender, enforceWatermarkFlag } from "../middleware/planGuards.js";
-import { createShort, getShortById, getMyShorts, deleteShort } from "../controllers/shorts.controller.js";
+import { Router } from 'express';
+import requireAuth from '../middleware/requireAuth.js';
+import { enforceCreditsForRender, enforceWatermarkFlag } from '../middleware/planGuards.js';
+import {
+  createShort,
+  getShortById,
+  getMyShorts,
+  deleteShort,
+} from '../controllers/shorts.controller.js';
 
 const r = Router();
 
@@ -9,8 +14,8 @@ const r = Router();
 // r.post("/create", requireAuth, enforceCreditsForRender(), enforceWatermarkFlag(), createShort);
 
 // Core My Shorts library endpoints (KEEP MOUNTED)
-r.get("/mine", requireAuth, getMyShorts);
-r.get("/:jobId", requireAuth, getShortById);
+r.get('/mine', requireAuth, getMyShorts);
+r.get('/:jobId', requireAuth, getShortById);
 
 // PHASE 1: Unmounted optional cleanup endpoint (code preserved)
 // r.delete("/:jobId", requireAuth, deleteShort);

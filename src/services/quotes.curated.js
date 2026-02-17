@@ -20,7 +20,7 @@ const BANK = {
     { text: 'Blisters are bookmarks in the work.', author: null },
     { text: 'Carry the brick; the wall appears.', author: null },
     { text: 'Finish lines are made of steps.', author: null },
-  ]
+  ],
 };
 
 function pick(arr, n) {
@@ -35,15 +35,13 @@ function pick(arr, n) {
 export function curatedByFeeling(feeling, count, excludeTextsNorm = new Set()) {
   const key = (feeling || '').toLowerCase();
   const pool = BANK[key] || [].concat(...Object.values(BANK));
-  const fresh = pool.filter(q => !excludeTextsNorm.has(q.text.toLowerCase()));
+  const fresh = pool.filter((q) => !excludeTextsNorm.has(q.text.toLowerCase()));
   const chosen = pick(fresh.length ? fresh : pool, count);
-  return chosen.map(q => ({
+  return chosen.map((q) => ({
     id: `q-${randomUUID()}`,
     text: q.text,
     author: q.author || null,
     attributed: !!q.author,
-    isParaphrase: false
+    isParaphrase: false,
   }));
 }
-
-

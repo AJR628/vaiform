@@ -1,13 +1,13 @@
 // src/controllers/checkout.controller.js
-import { stripe } from "../config/stripe.js";
-import { CREDIT_PRICE_MAP } from "../services/credit.service.js";
+import { stripe } from '../config/stripe.js';
+import { CREDIT_PRICE_MAP } from '../services/credit.service.js';
 
 /** Normalize FRONTEND_URL with no trailing slash, prefer env, fall back to request origin */
 function getFrontendBase(req) {
-  const envBase = (process.env.FRONTEND_URL || "https://vaiform.com").replace(/\/+$/, "");
-  const origin = (req.headers.origin || "").replace(/\/+$/, "");
-  const base = envBase || origin || "https://vaiform.com";
-  console.info(`[checkout] front-end base = ${base} (origin=${origin || "n/a"} env=${envBase})`);
+  const envBase = (process.env.FRONTEND_URL || 'https://vaiform.com').replace(/\/+$/, '');
+  const origin = (req.headers.origin || '').replace(/\/+$/, '');
+  const base = envBase || origin || 'https://vaiform.com';
+  console.info(`[checkout] front-end base = ${base} (origin=${origin || 'n/a'} env=${envBase})`);
   return base;
 }
 
@@ -26,7 +26,7 @@ export async function createCheckoutSession(req, res) {
   try {
     const { priceId, quantity = 1, credits = 0 } = req.body || {};
     if (!priceId || !CREDIT_PRICE_MAP[priceId]) {
-      return res.status(400).json({ success: false, error: "Unknown or disallowed priceId" });
+      return res.status(400).json({ success: false, error: 'Unknown or disallowed priceId' });
     }
 
     const qty = clampInt(quantity, { min: 1, max: 10 });
@@ -34,12 +34,12 @@ export async function createCheckoutSession(req, res) {
     const FRONTEND = getFrontendBase(req);
 
     const session = await stripe.checkout.sessions.create({
-      mode: "payment",
+      mode: 'payment',
       line_items: [{ price: priceId, quantity: qty }],
 
       // include session id for a tiny “receipt reference” on /success
       success_url: `${FRONTEND}/success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url:  `${FRONTEND}/buy-credits.html?canceled=1`,
+      cancel_url: `${FRONTEND}/buy-credits.html?canceled=1`,
 
       // Identity for the webhook → instant crediting
       customer_email: req.user.email,
@@ -49,8 +49,8 @@ export async function createCheckoutSession(req, res) {
         email: req.user.email,
         priceId,
         quantity: String(qty),
-        credits: String(creditHint),   // analytics hint only
-        kind: "onetime",
+        credits: String(creditHint), // analytics hint only
+        kind: 'onetime',
       },
 
       // DO NOT set payment_method_collection here (only for recurring)
@@ -61,8 +61,8 @@ export async function createCheckoutSession(req, res) {
     );
     return res.json({ url: session.url });
   } catch (err) {
-    console.error("createCheckoutSession error:", err);
-    return res.status(500).json({ success: false, error: "Checkout failed" });
+    console.error('createCheckoutSession error:', err);
+    return res.status(500).json({ success: false, error: 'Checkout failed' });
   }
 }
 
@@ -75,18 +75,18 @@ export async function createSubscriptionSession(req, res) {
   try {
     const { priceId, credits = 0 } = req.body || {};
     if (!priceId || !CREDIT_PRICE_MAP[priceId]) {
-      return res.status(400).json({ success: false, error: "Unknown or disallowed priceId" });
+      return res.status(400).json({ success: false, error: 'Unknown or disallowed priceId' });
     }
 
     const creditHint = clampInt(credits, { min: 0, max: 1e9 });
     const FRONTEND = getFrontendBase(req);
 
     const session = await stripe.checkout.sessions.create({
-      mode: "subscription",
+      mode: 'subscription',
       line_items: [{ price: priceId, quantity: 1 }],
 
       success_url: `${FRONTEND}/success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url:  `${FRONTEND}/buy-credits.html?canceled=1`,
+      cancel_url: `${FRONTEND}/buy-credits.html?canceled=1`,
 
       customer_email: req.user.email,
       client_reference_id: req.user.uid,
@@ -95,11 +95,11 @@ export async function createSubscriptionSession(req, res) {
         email: req.user.email,
         priceId,
         credits: String(creditHint), // analytics hint only
-        kind: "subscription",
+        kind: 'subscription',
       },
 
       // For subscriptions: ensure a PM is collected/saved
-      payment_method_collection: "always",
+      payment_method_collection: 'always',
 
       // Stamp the subscription too; handy for later webhooks
       subscription_data: {
@@ -108,7 +108,7 @@ export async function createSubscriptionSession(req, res) {
           email: req.user.email,
           priceId,
           credits: String(creditHint),
-          kind: "subscription",
+          kind: 'subscription',
         },
       },
     });
@@ -118,8 +118,8 @@ export async function createSubscriptionSession(req, res) {
     );
     return res.json({ url: session.url });
   } catch (err) {
-    console.error("createSubscriptionSession error:", err);
-    return res.status(500).json({ success: false, error: "Subscription checkout failed" });
+    console.error('createSubscriptionSession error:', err);
+    return res.status(500).json({ success: false, error: 'Subscription checkout failed' });
   }
 }
 
@@ -132,13 +132,19 @@ export async function createSubscriptionSession(req, res) {
 export async function startPlanCheckout(req, res) {
   try {
     const { plan, billing } = req.body;
-    
+
     // Validate inputs
     if (!['creator', 'pro'].includes(plan)) {
-      return res.status(400).json({ ok: false, reason: "INVALID_PLAN", detail: "Plan must be 'creator' or 'pro'" });
+      return res
+        .status(400)
+        .json({ ok: false, reason: 'INVALID_PLAN', detail: "Plan must be 'creator' or 'pro'" });
     }
     if (!['monthly', 'onetime'].includes(billing)) {
-      return res.status(400).json({ ok: false, reason: "INVALID_BILLING", detail: "Billing must be 'monthly' or 'onetime'" });
+      return res.status(400).json({
+        ok: false,
+        reason: 'INVALID_BILLING',
+        detail: "Billing must be 'monthly' or 'onetime'",
+      });
     }
 
     // Trust boundary: derive uid/email from authenticated req.user, ignore any client-supplied values
@@ -146,37 +152,52 @@ export async function startPlanCheckout(req, res) {
     const email = req.user.email || null;
 
     // Debug: log if client sent conflicting uid/email (security verification)
-    if (process.env.VAIFORM_DEBUG === "1" && (req.body.uid || req.body.email)) {
+    if (process.env.VAIFORM_DEBUG === '1' && (req.body.uid || req.body.email)) {
       const clientUid = req.body.uid;
       const clientEmail = req.body.email;
       if (clientUid && clientUid !== uid) {
-        console.warn(`[checkout/start:security] Client sent uid="${clientUid}" but server using req.user.uid="${uid}" (ignored)`);
+        console.warn(
+          `[checkout/start:security] Client sent uid="${clientUid}" but server using req.user.uid="${uid}" (ignored)`
+        );
       }
       if (clientEmail && clientEmail !== email) {
-        console.warn(`[checkout/start:security] Client sent email="${clientEmail}" but server using req.user.email="${email}" (ignored)`);
+        console.warn(
+          `[checkout/start:security] Client sent email="${clientEmail}" but server using req.user.email="${email}" (ignored)`
+        );
       }
     }
 
     // Map plan + billing to Stripe price ID
     const PRICE_MAP = {
-      "creator:monthly": process.env.STRIPE_PRICE_CREATOR_SUB,
-      "creator:onetime": process.env.STRIPE_PRICE_CREATOR_PASS,
-      "pro:monthly": process.env.STRIPE_PRICE_PRO_SUB,
-      "pro:onetime": process.env.STRIPE_PRICE_PRO_PASS,
+      'creator:monthly': process.env.STRIPE_PRICE_CREATOR_SUB,
+      'creator:onetime': process.env.STRIPE_PRICE_CREATOR_PASS,
+      'pro:monthly': process.env.STRIPE_PRICE_PRO_SUB,
+      'pro:onetime': process.env.STRIPE_PRICE_PRO_PASS,
     };
 
     const priceId = PRICE_MAP[`${plan}:${billing}`];
     if (!priceId) {
-      return res.status(400).json({ ok: false, reason: "UNKNOWN_PRICE", detail: `No price configured for ${plan}:${billing}` });
+      return res.status(400).json({
+        ok: false,
+        reason: 'UNKNOWN_PRICE',
+        detail: `No price configured for ${plan}:${billing}`,
+      });
     }
 
-    const mode = billing === "monthly" ? "subscription" : "payment";
+    const mode = billing === 'monthly' ? 'subscription' : 'payment';
     const FRONTEND = getFrontendBase(req);
 
-    if (process.env.VAIFORM_DEBUG === "1") {
-      console.log(`[checkout/start] Creating session with metadata:`, { uid, email, plan, billing, priceId, mode });
+    if (process.env.VAIFORM_DEBUG === '1') {
+      console.log(`[checkout/start] Creating session with metadata:`, {
+        uid,
+        email,
+        plan,
+        billing,
+        priceId,
+        mode,
+      });
     }
-    
+
     const session = await stripe.checkout.sessions.create({
       mode,
       line_items: [{ price: priceId, quantity: 1 }],
@@ -185,23 +206,27 @@ export async function startPlanCheckout(req, res) {
       success_url: `${FRONTEND}/success?plan=${plan}`,
       cancel_url: `${FRONTEND}/pricing`,
       metadata: { uid, email, plan, billing },
-      ...(mode === "subscription" && {
-        payment_method_collection: "always",
+      ...(mode === 'subscription' && {
+        payment_method_collection: 'always',
         subscription_data: {
           metadata: { uid, email, plan, billing },
         },
       }),
     });
 
-    if (process.env.VAIFORM_DEBUG === "1") {
-      console.info(`[checkout/start] ${plan} ${billing} uid=${uid} email=${email || 'null'} → ${session.url}`);
+    if (process.env.VAIFORM_DEBUG === '1') {
+      console.info(
+        `[checkout/start] ${plan} ${billing} uid=${uid} email=${email || 'null'} → ${session.url}`
+      );
     } else {
       console.info(`[checkout/start] ${plan} ${billing} → ${session.url}`);
     }
     return res.json({ url: session.url });
   } catch (e) {
-    console.error("[checkout/start] error", e);
-    return res.status(500).json({ ok: false, reason: "CHECKOUT_FAILED", detail: e?.message || "Checkout failed" });
+    console.error('[checkout/start] error', e);
+    return res
+      .status(500)
+      .json({ ok: false, reason: 'CHECKOUT_FAILED', detail: e?.message || 'Checkout failed' });
   }
 }
 
@@ -228,7 +253,10 @@ export async function createBillingPortalSession(req, res) {
     }
 
     if (!customerId) {
-      const c = await stripe.customers.create({ email: req.user.email, metadata: { uid: req.user.uid } });
+      const c = await stripe.customers.create({
+        email: req.user.email,
+        metadata: { uid: req.user.uid },
+      });
       customerId = c.id;
     }
 
@@ -237,10 +265,12 @@ export async function createBillingPortalSession(req, res) {
       return_url: `${FRONTEND}/buy-credits.html`,
     });
 
-    console.info(`[billing] portal for uid=${req.user.uid} email=${req.user.email} → ${portal.url}`);
+    console.info(
+      `[billing] portal for uid=${req.user.uid} email=${req.user.email} → ${portal.url}`
+    );
     return res.json({ url: portal.url });
   } catch (err) {
-    console.error("createBillingPortalSession error:", err);
-    return res.status(500).json({ success: false, error: "Billing portal failed" });
+    console.error('createBillingPortalSession error:', err);
+    return res.status(500).json({ success: false, error: 'Billing portal failed' });
   }
 }

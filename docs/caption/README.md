@@ -32,4 +32,3 @@
 ## Legacy Documentation
 
 - [`../caption-meta-contract.md`](../caption-meta-contract.md) - Legacy contract (deprecated, V3 raster supersedes)
-

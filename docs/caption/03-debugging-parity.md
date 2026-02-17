@@ -9,6 +9,7 @@
 **Goal**: Verify preview PNG matches expected geometry and styling.
 
 **Steps**:
+
 1. Generate preview via `POST /api/caption/preview`
 2. Check response `meta.rasterUrl` exists (PNG data URL)
 3. Verify response `meta.rasterW`, `meta.rasterH` match request (or server-recomputed if rewrap)
@@ -16,10 +17,12 @@
 5. Verify response `meta.previewFontString` matches request (font parity)
 
 **Code References**:
+
 - Request: `public/js/caption-preview.js:691-742` (`buildBeatPreviewPayload`)
 - Response: `src/routes/caption.preview.routes.js:404-414` (response structure)
 
 **Expected Logs**:
+
 ```
 [geom:server] Using client SSOT (no recomputation): { rasterW, rasterH, yPx_png, ... }
 [PARITY_CHECKLIST] { mode: 'raster', rasterW, rasterH, yPx_png, ... }
@@ -32,6 +35,7 @@
 **Goal**: Verify render uses same PNG and geometry as preview.
 
 **Steps**:
+
 1. Check `overlayCaption.rasterUrl` matches preview response `meta.rasterUrl`
 2. Check `overlayCaption.rasterW`, `overlayCaption.rasterH` match preview response
 3. Check `overlayCaption.yPx_png` matches preview response (unchanged)
@@ -39,10 +43,12 @@
 5. Check `overlayCaption.previewFontString` matches preview response (font parity)
 
 **Code References**:
+
 - Render input: `src/utils/ffmpeg.video.js:1516-1535` (`rasterPlacement` construction)
 - FFmpeg overlay: `src/utils/ffmpeg.video.js:515` (`overlay=${xExpr}:${y}`)
 
 **Expected Logs**:
+
 ```
 [PARITY_CHECKLIST] { mode: 'raster', rasterW, rasterH, yPx_png, ... }
 [v3:parity] Using preview dimensions verbatim: { rasterW, rasterH, xExpr, y }
@@ -56,16 +62,19 @@
 **Goal**: Verify beat preview overlay matches final render position.
 
 **Steps**:
+
 1. Check beat preview uses TOP-anchored positioning (no `translateY(-50%)`)
 2. Check beat preview `yPct` derived from `meta.yPx_png / meta.frameH` (TOP, not center)
 3. Check beat preview CSS uses `--y-pct` directly (no centering transform)
 4. Verify beat preview PNG matches preview response `meta.rasterUrl`
 
 **Code References**:
+
 - Beat preview application: `public/js/caption-preview.js:903-971` (`applyPreviewResultToBeatCard`)
 - yPct derivation: `public/js/caption-preview.js:935` (`const yPct = meta.yPx_png / meta.frameH`)
 
 **Expected Logs** (if `window.__beatPreviewDebug` enabled):
+
 ```
 [beat-preview] yPct calculation: { yPx_png, frameH, derivedYPct, clampedYPct }
 [beat-preview] Overlay applied: { identifier, rasterUrl }
@@ -77,35 +86,35 @@
 
 ### Client-Side Logs
 
-| Prefix | Meaning | Location |
-|--------|---------|----------|
-| `[caption-overlay]` | Overlay DOM operations | `caption-overlay.js` |
-| `[caption-preview]` | Preview generation | `caption-preview.js` |
-| `[beat-preview]` | Beat preview operations | `caption-preview.js` |
-| `[geom:client]` | Client geometry computation | `caption-overlay.js:1306` |
-| `[geom:yPx_png]` | yPx_png computation | `caption-overlay.js:1264` |
-| `[PARITY:CLIENT:REQUEST]` | Preview request payload | `caption-preview.js:792` |
+| Prefix                    | Meaning                     | Location                  |
+| ------------------------- | --------------------------- | ------------------------- |
+| `[caption-overlay]`       | Overlay DOM operations      | `caption-overlay.js`      |
+| `[caption-preview]`       | Preview generation          | `caption-preview.js`      |
+| `[beat-preview]`          | Beat preview operations     | `caption-preview.js`      |
+| `[geom:client]`           | Client geometry computation | `caption-overlay.js:1306` |
+| `[geom:yPx_png]`          | yPx_png computation         | `caption-overlay.js:1264` |
+| `[PARITY:CLIENT:REQUEST]` | Preview request payload     | `caption-preview.js:792`  |
 
 ### Server-Side Logs
 
-| Prefix | Meaning | Location |
-|--------|---------|----------|
-| `[caption-preview]` | Preview endpoint | `caption.preview.routes.js` |
-| `[geom:server]` | Server geometry | `caption.preview.routes.js:122` |
-| `[raster]` | Raster rendering | `caption.preview.routes.js:1083` |
-| `[parity:server-rewrap]` | Server rewrap detection | `caption.preview.routes.js:1235` |
-| `[PARITY_CHECKLIST]` | Parity verification | `caption.preview.routes.js:364` |
-| `[PARITY:SERVER:RESPONSE]` | Server response meta | `caption.preview.routes.js:388` |
+| Prefix                     | Meaning                 | Location                         |
+| -------------------------- | ----------------------- | -------------------------------- |
+| `[caption-preview]`        | Preview endpoint        | `caption.preview.routes.js`      |
+| `[geom:server]`            | Server geometry         | `caption.preview.routes.js:122`  |
+| `[raster]`                 | Raster rendering        | `caption.preview.routes.js:1083` |
+| `[parity:server-rewrap]`   | Server rewrap detection | `caption.preview.routes.js:1235` |
+| `[PARITY_CHECKLIST]`       | Parity verification     | `caption.preview.routes.js:364`  |
+| `[PARITY:SERVER:RESPONSE]` | Server response meta    | `caption.preview.routes.js:388`  |
 
 ### Render-Side Logs
 
-| Prefix | Meaning | Location |
-|--------|---------|----------|
-| `[render]` | Render pipeline | `ffmpeg.video.js` |
-| `[v3:parity]` | V3 parity checks | `ffmpeg.video.js:503` |
-| `[ffmpeg:overlay]` | FFmpeg overlay expression | `ffmpeg.video.js:518` |
-| `[PARITY_CHECKLIST]` | Render parity verification | `ffmpeg.video.js:1550` |
-| `[PARITY:RENDER:FFMPEG]` | FFmpeg filter graph | `ffmpeg.video.js:467` |
+| Prefix                   | Meaning                    | Location               |
+| ------------------------ | -------------------------- | ---------------------- |
+| `[render]`               | Render pipeline            | `ffmpeg.video.js`      |
+| `[v3:parity]`            | V3 parity checks           | `ffmpeg.video.js:503`  |
+| `[ffmpeg:overlay]`       | FFmpeg overlay expression  | `ffmpeg.video.js:518`  |
+| `[PARITY_CHECKLIST]`     | Render parity verification | `ffmpeg.video.js:1550` |
+| `[PARITY:RENDER:FFMPEG]` | FFmpeg filter graph        | `ffmpeg.video.js:467`  |
 
 ---
 
@@ -118,6 +127,7 @@
 **Root Cause**: Server rewraps lines and recomputes `rasterH`, but keeps `yPx_png` unchanged. If `yPx_png` was computed from center-anchored `yPct`, it becomes stale.
 
 **Detection**:
+
 - Check server logs: `[geom:server] Using server-recomputed values (rewrap occurred)`
 - Verify `meta.rasterH` increased but `meta.yPx_png` unchanged
 - Check if `yPx_png` becomes negative (400 error) - indicates stale positioning
@@ -136,6 +146,7 @@
 **Root Cause**: Beat preview uses `translateY(-50%)` centering transform, but FFmpeg uses top-left anchor.
 
 **Detection**:
+
 - Check beat preview CSS: Look for `transform: translateY(-50%)`
 - Check FFmpeg overlay: `overlay=${xExpr}:${y}` uses Y as top-left
 - Compare beat preview position vs render position
@@ -143,6 +154,7 @@
 **Fix**: Remove centering transform from beat preview. Use TOP-anchored `yPct` directly.
 
 **Verification Steps**:
+
 1. Check beat preview CSS: No `translateY(-50%)` transform (line 295: only `translateX(-50%)` for horizontal centering)
 2. Check `applyPreviewResultToBeatCard()`: Line 935 derives TOP yPct: `yPct = meta.yPx_png / meta.frameH`
 3. Check FFmpeg overlay: Line 515 uses `y` as top-left: `overlay=${xExpr}:${y}:format=auto`
@@ -159,13 +171,15 @@
 **Root Cause**: Client `previewFontString` doesn't match server font string.
 
 **Detection**:
+
 - Check server logs: `[font-parity:server]` (font comparison)
 - Check server error: `FONT_MISMATCH` (422 response)
 - Compare `meta.previewFontString` in request vs response
 
 **Fix**: Ensure client extracts exact browser font string. Server validates and echoes it back.
 
-**Code Reference**: 
+**Code Reference**:
+
 - Client: `public/js/caption-overlay.js:1451` (font string extraction)
 - Server: `src/routes/caption.preview.routes.js:1326-1338` (font validation)
 
@@ -178,11 +192,13 @@
 **Root Cause**: Client doesn't use server response meta (uses cached/stale values).
 
 **Detection**:
+
 - Check server logs: `[parity:server-rewrap]` (rewrap occurred)
 - Compare request `lines.length` vs response `meta.lines.length`
 - Verify client uses `response.meta.lines` (not request `lines`)
 
 **Server Rewrap Detection**:
+
 - Check server logs: `[parity:server-rewrap] Client lines overflow or broken words detected`
 - Check server logs: `[parity:server-rewrap:geometry]` (shows old vs new `rasterH`, `totalTextH`)
 - Verify response `meta.lines.length` differs from request `lines.length` (if rewrap occurred)
@@ -202,13 +218,15 @@
 **Root Cause**: Different PNG used in preview vs render (stale cache, wrong URL).
 
 **Detection**:
+
 - Check `overlayCaption.rasterHash` vs preview response `meta.rasterHash`
 - Check `overlayCaption.rasterUrl` vs preview response `meta.rasterUrl`
 - Verify PNG file exists at render time
 
 **Fix**: Ensure render uses same `rasterUrl` and `rasterHash` from preview response. Validate PNG integrity.
 
-**Code Reference**: 
+**Code Reference**:
+
 - Server: `src/routes/caption.preview.routes.js:234-235` (hash computation)
 - Render: `src/utils/ffmpeg.video.js:113-122` (hash validation)
 
@@ -218,25 +236,25 @@
 
 ### Client-Side Flags
 
-| Flag | Purpose | Location |
-|------|---------|----------|
+| Flag                        | Purpose                 | Location                 |
+| --------------------------- | ----------------------- | ------------------------ |
 | `window.__beatPreviewDebug` | Beat preview debug logs | `caption-preview.js:939` |
-| `window.__parityAudit` | Parity audit logs | `caption-preview.js:386` |
-| `window.__parityDebug` | Parity debug logs | `caption-preview.js:834` |
-| `window.__debugOverlay` | Overlay debug logs | `caption-overlay.js:19` |
+| `window.__parityAudit`      | Parity audit logs       | `caption-preview.js:386` |
+| `window.__parityDebug`      | Parity debug logs       | `caption-preview.js:834` |
+| `window.__debugOverlay`     | Overlay debug logs      | `caption-overlay.js:19`  |
 
 ### Server-Side Flags
 
-| Flag | Purpose | Location |
-|------|---------|----------|
-| `DEBUG_CAPTION_PARITY=1` | Parity debug logs | `caption.preview.routes.js:384` |
-| `DEBUG_RASTER_BORDER=1` | Visual debug markers | `caption.preview.routes.js:1465` |
-| `DEBUG_PARITY=1` | Parity border on PNG | `caption.preview.routes.js:1478` |
+| Flag                     | Purpose              | Location                         |
+| ------------------------ | -------------------- | -------------------------------- |
+| `DEBUG_CAPTION_PARITY=1` | Parity debug logs    | `caption.preview.routes.js:384`  |
+| `DEBUG_RASTER_BORDER=1`  | Visual debug markers | `caption.preview.routes.js:1465` |
+| `DEBUG_PARITY=1`         | Parity border on PNG | `caption.preview.routes.js:1478` |
 
 ### Render-Side Flags
 
-| Flag | Purpose | Location |
-|------|---------|----------|
+| Flag                     | Purpose           | Location              |
+| ------------------------ | ----------------- | --------------------- |
 | `DEBUG_CAPTION_PARITY=1` | Parity debug logs | `ffmpeg.video.js:466` |
 
 ---
@@ -251,6 +269,7 @@
 **Exports**: `export function compareMetaParity`
 
 **Usage**:
+
 ```javascript
 // In browser console
 const { compareMetaParity } = await import('./caption-overlay.js');
@@ -264,6 +283,7 @@ const result = compareMetaParity();
 **Exports**: `export function runYpxFirstLineSmoke`
 
 **Usage**:
+
 ```javascript
 // In browser console
 const { runYpxFirstLineSmoke } = await import('./caption-overlay.js');
@@ -277,6 +297,7 @@ const result = runYpxFirstLineSmoke();
 **Exports**: `export async function runCaptionParityTest`
 
 **Usage**:
+
 ```javascript
 // In browser console
 const { runCaptionParityTest } = await import('./caption-overlay.js');
@@ -298,12 +319,13 @@ const result = await generateBeatCaptionPreview('beat-1', 'Test caption', {
   fontFamily: 'DejaVu Sans',
   weightCss: 'bold',
   yPct: 0.5,
-  wPct: 0.8
+  wPct: 0.8,
 });
 console.log('Preview meta:', result.meta);
 ```
 
 **Check**:
+
 - `result.meta.rasterUrl` exists (PNG data URL)
 - `result.meta.rasterW`, `result.meta.rasterH` are reasonable (< 600px)
 - `result.meta.yPx_png` is in range (0-1920)
@@ -320,6 +342,7 @@ console.log('Render overlayCaption:', overlayCaption);
 ```
 
 **Check**:
+
 - `overlayCaption.rasterUrl` matches preview `meta.rasterUrl`
 - `overlayCaption.rasterW`, `overlayCaption.rasterH` match preview
 - `overlayCaption.yPx_png` matches preview (unchanged)
@@ -330,12 +353,14 @@ console.log('Render overlayCaption:', overlayCaption);
 ### Step 3: Check FFmpeg Overlay
 
 **Server logs** (during render):
+
 ```
 [ffmpeg:overlay] { overlay: "overlay=${xExpr}:${y}:format=auto" }
 [v3:parity] Using preview dimensions verbatim: { rasterW, rasterH, xExpr, y }
 ```
 
 **Check**:
+
 - `y` matches `overlayCaption.yPx_png`
 - `rasterW`, `rasterH` match preview
 - No scaling applied to overlay (Design A)
@@ -371,4 +396,3 @@ console.log('Render overlayCaption:', overlayCaption);
    - **Status**: Useful for visual verification
    - **Issue**: Adds red border to PNG (not production-ready)
    - **Action**: Keep for debugging, ensure disabled in production
-

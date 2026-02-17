@@ -1,5 +1,5 @@
 // src/adapters/index.js
-import replicate from "./replicate.adapter.js";
+import replicate from './replicate.adapter.js';
 
 export const ADAPTERS = {
   replicate,

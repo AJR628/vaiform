@@ -9,15 +9,18 @@ export function ensureStudio(required = true) {
     const id = String(raw || '').trim();
 
     let src = 'missing';
-    if (headerId) src = 'header'; else if (bodyId) src = 'body'; else if (queryId) src = 'query';
+    if (headerId) src = 'header';
+    else if (bodyId) src = 'body';
+    else if (queryId) src = 'query';
 
     if (!id) {
-      if (process.env.DEBUG_STUDIO === '1') console.log('[studio] id=<missing> src='+src+' missing');
-      if (required) return res.status(400).json({ success:false, error:'STUDIO_ID_MISSING' });
+      if (process.env.DEBUG_STUDIO === '1')
+        console.log('[studio] id=<missing> src=' + src + ' missing');
+      if (required) return res.status(400).json({ success: false, error: 'STUDIO_ID_MISSING' });
       return next();
     }
     const studio = storeEnsure(id);
-    if (!studio) return res.status(500).json({ success:false, error:'STUDIO_ENSURE_FAILED' });
+    if (!studio) return res.status(500).json({ success: false, error: 'STUDIO_ENSURE_FAILED' });
     req.studioId = id;
     req.studio = studio;
     if (process.env.DEBUG_STUDIO === '1') console.log('[studio][ensure]', req.studioId);
@@ -26,5 +29,3 @@ export function ensureStudio(required = true) {
 }
 
 export default { ensureStudio };
-
-

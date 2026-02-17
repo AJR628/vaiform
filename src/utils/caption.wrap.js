@@ -1,6 +1,6 @@
 /**
  * Caption Text Wrapping SSOT (Single Source of Truth)
- * 
+ *
  * Provides consistent text wrapping using canvas font measurement for both preview and render.
  * Ensures identical line breaks regardless of renderer (raster PNG vs ASS subtitles).
  */
@@ -20,7 +20,7 @@ let fontsRegistered = false;
  */
 function ensureFontsRegistered() {
   if (fontsRegistered) return;
-  
+
   try {
     registerDejaVuFonts();
     fontsRegistered = true;
@@ -33,10 +33,10 @@ function ensureFontsRegistered() {
 
 /**
  * Wrap text using canvas font measurement (SSOT for line wrapping)
- * 
+ *
  * Extracted from wrapLinesWithFont() in caption.preview.routes.js:1633-1662
  * Uses the same algorithm: word-by-word measurement with letter spacing accounting
- * 
+ *
  * @param {string} textRaw - Raw text to wrap
  * @param {Object} options
  * @param {number} options.fontPx - Font size in pixels
@@ -48,36 +48,39 @@ function ensureFontsRegistered() {
  * @param {number} [options.lineSpacingPx=0] - Line spacing in pixels
  * @returns {Object} { lines, linesCount, totalTextH, maxWidthPx }
  */
-export function wrapTextWithFont(textRaw, {
-  fontPx,
-  weightCss,
-  fontStyle = 'normal',
-  fontFamily = 'DejaVu Sans',
-  maxWidthPx,
-  letterSpacingPx = 0,
-  lineSpacingPx = 0
-}) {
+export function wrapTextWithFont(
+  textRaw,
+  {
+    fontPx,
+    weightCss,
+    fontStyle = 'normal',
+    fontFamily = 'DejaVu Sans',
+    maxWidthPx,
+    letterSpacingPx = 0,
+    lineSpacingPx = 0,
+  }
+) {
   if (!textRaw || typeof textRaw !== 'string') {
     return {
       lines: [],
       linesCount: 0,
       totalTextH: 0,
-      maxWidthPx
+      maxWidthPx,
     };
   }
-  
+
   // Ensure fonts are registered before measurement
   ensureFontsRegistered();
-  
+
   // Create temporary canvas for measurement
   const tempCanvas = createCanvas(1080, 1920);
   const ctx = tempCanvas.getContext('2d');
-  
+
   // Build font string using same helper as preview
   const font = canvasFontString(weightCss, fontStyle, fontPx, fontFamily);
   ctx.font = font;
   ctx.textBaseline = 'alphabetic';
-  
+
   // Helper to measure text width accounting for letter spacing
   // (Same logic as wrapLinesWithFont in caption.preview.routes.js:1639-1649)
   const measureWidth = (str) => {
@@ -91,12 +94,12 @@ export function wrapTextWithFont(textRaw, {
     }
     return totalWidth;
   };
-  
+
   // Wrap text word-by-word (same algorithm as wrapLinesWithFont)
   const words = textRaw.trim().split(/\s+/).filter(Boolean);
   const lines = [];
   let line = '';
-  
+
   for (const word of words) {
     const test = line ? `${line} ${word}` : word;
     if (measureWidth(test) > maxWidthPx && line) {
@@ -107,15 +110,14 @@ export function wrapTextWithFont(textRaw, {
     }
   }
   if (line) lines.push(line);
-  
+
   // Compute total text height (same formula as preview)
   const totalTextH = lines.length * fontPx + (lines.length - 1) * lineSpacingPx;
-  
+
   return {
     lines,
     linesCount: lines.length,
     totalTextH: Math.round(totalTextH),
-    maxWidthPx
+    maxWidthPx,
   };
 }
-

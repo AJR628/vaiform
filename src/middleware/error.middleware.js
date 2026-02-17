@@ -5,7 +5,7 @@ function fieldsFromZodIssues(issues) {
   if (!issues || !Array.isArray(issues)) return undefined;
   const fields = {};
   for (const i of issues) {
-    const path = Array.isArray(i.path) ? i.path : (i.path != null ? [i.path] : []);
+    const path = Array.isArray(i.path) ? i.path : i.path != null ? [i.path] : [];
     const key = path.length ? path.join('.') : '_root';
     fields[key] = i.message;
   }
@@ -34,7 +34,8 @@ export default function errorHandler(err, req, res, _next) {
     status,
     name: err?.name,
     message: err?.message,
-    requestId: req?.id || req?.reqId || req?.headers?.['x-request-id'] || req?.headers?.['X-Request-Id'],
+    requestId:
+      req?.id || req?.reqId || req?.headers?.['x-request-id'] || req?.headers?.['X-Request-Id'],
     route: `${req?.method} ${req?.originalUrl}`,
   };
   console.error('❌', JSON.stringify(log));

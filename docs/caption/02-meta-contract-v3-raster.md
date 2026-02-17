@@ -11,11 +11,13 @@
 **Anchor**: TOP-left (not center, not baseline).
 
 **Usage**:
+
 - **Client**: Computed from TOP-anchored `yPct` → `yPx_png = Math.round(yPct * frameH)`
 - **Server**: Echoed unchanged (even after rewrap)
 - **FFmpeg**: Used as overlay Y coordinate (top-left anchor)
 
 **Code References**:
+
 - Production: `public/js/caption-overlay.js:1502` (`computeCaptionMetaFromElements`)
 - Server echo: `src/routes/caption.preview.routes.js:242` (`const finalYPx_png = yPx_png`)
 - FFmpeg usage: `src/utils/ffmpeg.video.js:1523, 515` (`rasterPlacement.y = overlayCaption.yPx_png`)
@@ -27,6 +29,7 @@
 **Rationale**: Matches FFmpeg overlay semantics (top-left anchor).
 
 **Beat Preview Positioning**:
+
 - Beat preview overlays use TOP-left anchor (FFmpeg overlay semantics) - no `translateY(-50%)` centering transform
 - `yPct` is derived from `meta.yPx_png / meta.frameH` (TOP position, not center)
 - CSS: `top: calc(var(--y-pct) * 100%)` matches FFmpeg overlay semantics
@@ -54,12 +57,14 @@
 **Ownership**: Client computes, server echoes (unchanged even after rewrap).
 
 **Layer Usage**:
+
 - **Client DOM**: Computed from box top position
 - **Server Preview**: Echoed in response (line 242: unchanged after rewrap)
 - **Client Preview**: Used to derive TOP yPct for CSS positioning
 - **Render Pipeline**: Used as FFmpeg overlay Y coordinate
 
 **Code References**:
+
 - `public/js/caption-overlay.js:1502` - Production
 - `src/routes/caption.preview.routes.js:242` - Server echo
 - `public/js/caption-preview.js:935` - Client derivation
@@ -80,6 +85,7 @@
 **Decision**: yPct is **defined as TOP yPct only** (no center meaning anywhere in V3 raster mode). It is kept for backward compatibility and debugging but is not authoritative for positioning.
 
 **Layer Usage**:
+
 - **Client DOM**: Computed from box top (`(boxRect.top - stageRect.top) / stageHeight`)
 - **Client Payload**: Passed to server (optional, not used for positioning)
 - **Server Preview**: Ignored (comment: "Not used in raster, but pass for consistency")
@@ -87,6 +93,7 @@
 - **Client Preview**: Derived from `yPx_png / frameH` when needed
 
 **Code References**:
+
 - `public/js/caption-overlay.js:1493` - Production (TOP-anchored)
 - `src/routes/caption.preview.routes.js:59` - Optional in schema
 - `src/routes/caption.preview.routes.js:205` - Server comment (not used)
@@ -103,6 +110,7 @@
 **Ownership**: Client computes, server may recompute if rewrap occurs.
 
 **Layer Usage**:
+
 - **Client DOM**: Computed via `window.CaptionGeom.computeRasterH()`
 - **Client Payload**: Passed to server
 - **Server Preview**: Echoed (or recomputed if rewrap)
@@ -110,6 +118,7 @@
 - **Render Pipeline**: Used for validation/parity checks
 
 **Code References**:
+
 - `public/js/caption-overlay.js:1483-1489` - Production
 - `src/routes/caption.preview.routes.js:239, 291` - Server echo/recompute
 - `public/js/caption-preview.js:937` - Client consumption
@@ -125,6 +134,7 @@
 **Ownership**: Client computes, server echoes (width doesn't change on rewrap).
 
 **Layer Usage**:
+
 - **Client DOM**: Computed from box width scaled to frame space
 - **Client Payload**: Passed to server
 - **Server Preview**: Echoed unchanged
@@ -132,6 +142,7 @@
 - **Render Pipeline**: Used for validation/parity checks
 
 **Code References**:
+
 - `public/js/caption-overlay.js:1479-1480` - Production
 - `src/routes/caption.preview.routes.js:290` - Server echo
 - `public/js/caption-preview.js:936` - Client consumption
@@ -149,6 +160,7 @@
 **Ownership**: Client computes (DOM height), server may recompute if rewrap occurs (formula-based).
 
 **Layer Usage**:
+
 - **Client DOM**: Computed from `contentEl.getBoundingClientRect().height` (may differ from formula due to line-height effects)
 - **Client Payload**: Passed to server
 - **Server Preview**: Echoed (or recomputed from formula if rewrap)
@@ -156,6 +168,7 @@
 - **Render Pipeline**: Not used directly
 
 **Code References**:
+
 - `public/js/caption-overlay.js:1476` - Production (DOM height)
 - `src/routes/caption.preview.routes.js:1251` - Server recomputation (formula)
 - `src/routes/caption.preview.routes.js:240, 325` - Server echo/recompute
@@ -171,6 +184,7 @@
 **Ownership**: Client provides (browser-rendered), server is authoritative if rewrap occurs.
 
 **Layer Usage**:
+
 - **Client DOM**: Extracted via `extractRenderedLines()` using Range API
 - **Client Payload**: Passed to server (browser truth)
 - **Server Preview**: Echoed (or rewrapped if overflow detected)
@@ -178,6 +192,7 @@
 - **Render Pipeline**: Used for ASS subtitle generation (karaoke)
 
 **Code References**:
+
 - `public/js/caption-overlay.js:1442` - Production (Range API)
 - `src/routes/caption.preview.routes.js:1241` - Server rewrap
 - `src/routes/caption.preview.routes.js:238, 323` - Server echo/rewrap
@@ -197,6 +212,7 @@
 **Status**: **Debug-only** (not used for positioning in V3 raster mode).
 
 **Layer Usage**:
+
 - **Client DOM**: Computed as `yPx_png + rasterPadding`
 - **Client Payload**: Passed to server (required by schema)
 - **Server Preview**: Echoed (or derived if missing)
@@ -204,6 +220,7 @@
 - **Render Pipeline**: Not used (uses `yPx_png` only)
 
 **Code References**:
+
 - `public/js/caption-overlay.js:1509` - Production
 - `src/routes/caption.preview.routes.js:151` - Server derivation (fallback)
 - `src/routes/caption.preview.routes.js:54` - Required in schema
@@ -219,6 +236,7 @@
 **Ownership**: Client computes, server echoes.
 
 **Layer Usage**:
+
 - **Client DOM**: Computed as `Math.round((cssPaddingTop + cssPaddingBottom) / 2)`
 - **Client Payload**: Passed to server
 - **Server Preview**: Echoed unchanged
@@ -226,6 +244,7 @@
 - **Render Pipeline**: Used for validation/parity checks
 
 **Code References**:
+
 - `public/js/caption-overlay.js:1490` - Production
 - `src/routes/caption.preview.routes.js:292` - Server echo
 
@@ -240,6 +259,7 @@
 **Ownership**: Client provides (browser truth), server echoes (validates parity).
 
 **Layer Usage**:
+
 - **Client DOM**: Extracted from `getComputedStyle(contentEl).font`
 - **Client Payload**: Passed to server
 - **Server Preview**: Echoed (validates against server font)
@@ -247,6 +267,7 @@
 - **Render Pipeline**: Used for parity validation
 
 **Code References**:
+
 - `public/js/caption-overlay.js:1451` - Production
 - `src/routes/caption.preview.routes.js:1326-1338` - Server validation
 - `src/routes/caption.preview.routes.js:298` - Server echo
@@ -261,35 +282,35 @@
 
 ### Required Fields
 
-| Field | Type | Range | Description |
-|-------|------|-------|-------------|
-| `ssotVersion` | `3` (literal) | - | Must be exactly `3` |
-| `mode` | `'raster'` (literal) | - | Must be exactly `'raster'` |
-| `text` | `string` | min 1 char | Caption text content |
-| `lines` | `string[]` | min 1 element | Browser-rendered line breaks (REQUIRED) |
-| `totalTextH` | `number` (int) | min 1 | Text block height in pixels (REQUIRED) |
-| `yPxFirstLine` | `number` (int) | - | First line baseline Y (REQUIRED) |
-| `rasterW` | `number` (int) | 100-1080 | Raster PNG width (REQUIRED) |
-| `rasterH` | `number` (int) | 50-1920 | Raster PNG height (REQUIRED) |
-| `yPx_png` | `number` (int) | 0-1920 | TOP-left Y of raster PNG (REQUIRED) |
-| `fontPx` | `number` (int) | 8-400 | Font size in pixels |
+| Field          | Type                 | Range         | Description                             |
+| -------------- | -------------------- | ------------- | --------------------------------------- |
+| `ssotVersion`  | `3` (literal)        | -             | Must be exactly `3`                     |
+| `mode`         | `'raster'` (literal) | -             | Must be exactly `'raster'`              |
+| `text`         | `string`             | min 1 char    | Caption text content                    |
+| `lines`        | `string[]`           | min 1 element | Browser-rendered line breaks (REQUIRED) |
+| `totalTextH`   | `number` (int)       | min 1         | Text block height in pixels (REQUIRED)  |
+| `yPxFirstLine` | `number` (int)       | -             | First line baseline Y (REQUIRED)        |
+| `rasterW`      | `number` (int)       | 100-1080      | Raster PNG width (REQUIRED)             |
+| `rasterH`      | `number` (int)       | 50-1920       | Raster PNG height (REQUIRED)            |
+| `yPx_png`      | `number` (int)       | 0-1920        | TOP-left Y of raster PNG (REQUIRED)     |
+| `fontPx`       | `number` (int)       | 8-400         | Font size in pixels                     |
 
 ### Optional Fields (with defaults)
 
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `xPx_png` | `number` (int) | - | Absolute X position (optional) |
-| `xExpr_png` | `string` | `'(W-overlay_w)/2'` | X expression (fallback) |
-| `rasterPadding` | `number` (int) | 24 | Average vertical padding |
-| `frameW` | `number` (int) | 1080 | Frame width |
-| `frameH` | `number` (int) | 1920 | Frame height |
-| `lineSpacingPx` | `number` | 0 | Line spacing in pixels |
-| `letterSpacingPx` | `number` | 0 | Letter spacing in pixels |
-| `yPct` | `number` | - | TOP position percentage (optional, not used for positioning) |
-| `xPct` | `number` | - | X position percentage (optional) |
-| `wPct` | `number` | - | Width percentage (optional) |
-| `textRaw` | `string` | - | Raw text with newlines |
-| `previewFontString` | `string` | - | Browser font string (for parity validation) |
+| Field               | Type           | Default             | Description                                                  |
+| ------------------- | -------------- | ------------------- | ------------------------------------------------------------ |
+| `xPx_png`           | `number` (int) | -                   | Absolute X position (optional)                               |
+| `xExpr_png`         | `string`       | `'(W-overlay_w)/2'` | X expression (fallback)                                      |
+| `rasterPadding`     | `number` (int) | 24                  | Average vertical padding                                     |
+| `frameW`            | `number` (int) | 1080                | Frame width                                                  |
+| `frameH`            | `number` (int) | 1920                | Frame height                                                 |
+| `lineSpacingPx`     | `number`       | 0                   | Line spacing in pixels                                       |
+| `letterSpacingPx`   | `number`       | 0                   | Letter spacing in pixels                                     |
+| `yPct`              | `number`       | -                   | TOP position percentage (optional, not used for positioning) |
+| `xPct`              | `number`       | -                   | X position percentage (optional)                             |
+| `wPct`              | `number`       | -                   | Width percentage (optional)                                  |
+| `textRaw`           | `string`       | -                   | Raw text with newlines                                       |
+| `previewFontString` | `string`       | -                   | Browser font string (for parity validation)                  |
 
 **Note**: Server **cannot derive** required fields. Client must provide `lines`, `totalTextH`, `rasterW`, `rasterH`, `yPx_png`, `yPxFirstLine` (SSOT principle - client measurements are authoritative).
 
@@ -322,12 +343,12 @@
       rasterPadding: number,      // Client value
       xExpr_png: "(W-overlay_w)/2",
       yPx_png: number,            // Client value (unchanged even after rewrap)
-      
+
       // Integrity hashes
       rasterHash: string,         // SHA-256 hash (first 16 chars)
       previewFontString: string,  // Exact font string used
       previewFontHash: string,    // Font string hash
-      
+
       // Typography (echoed from request)
       text: string,
       fontPx: number,
@@ -337,7 +358,7 @@
       textAlign: string,
       letterSpacingPx: number,
       textTransform: string,
-      
+
       // Color & effects (echoed from request)
       color: string,
       opacity: number,
@@ -347,12 +368,12 @@
       shadowBlur: number,
       shadowOffsetX: number,
       shadowOffsetY: number,
-      
+
       // Line data (SSOT - server-wrapped if rewrap occurred)
       lines: string[],            // Server-wrapped if rewrap, else client lines
       lineSpacingPx: number,
       totalTextH: number,         // Server-recomputed if rewrap, else client value
-      
+
       // Geometry lock (for render parity)
       bgScaleExpr: string,
       bgCropExpr: string
@@ -364,12 +385,14 @@
 ### Server Authority on Rewrap
 
 **When rewrap occurs** (server detects line overflow or mid-word splits):
+
 - **Server is authoritative** for: `lines`, `totalTextH`, `rasterH`
 - **Server recomputes**: `serverTotalTextH`, `serverRasterH` from server-wrapped lines
 - **Server keeps unchanged**: `yPx_png` (no positioning policy change)
 
 **Rewrap Behavior**:
 When server detects line overflow or mid-word splits:
+
 - Server rewraps lines using `wrapLinesWithFont()` (authoritative)
 - Server recomputes `totalTextH` from formula: `lines.length * fontPx + (lines.length - 1) * lineSpacingPx`
 - Server recomputes `rasterH` from new `totalTextH` + padding + shadow
@@ -379,6 +402,7 @@ When server detects line overflow or mid-word splits:
 **Response meta is SSOT**: Client must use server-provided `lines`, `totalTextH`, `rasterH` from response when rewrap occurred.
 
 **Code References**:
+
 - Rewrap detection: `src/routes/caption.preview.routes.js:1182-1291` (`renderCaptionRaster`)
 - Server recomputation: `src/routes/caption.preview.routes.js:1251, 1260-1266`
 - Response building: `src/routes/caption.preview.routes.js:238-240, 291, 323, 325`
@@ -392,6 +416,7 @@ When server detects line overflow or mid-word splits:
 **Status**: **Outdated** (does not cover V3 raster mode).
 
 **Key Differences**:
+
 1. **yPct semantics**: Legacy doc defines `yPct` as "anchor point" with placement semantics (top/center/bottom). V3 raster uses `yPx_png` (TOP-left) only, and `yPct` is informational/debug-only.
 2. **Positioning**: Legacy doc uses `yPct` for positioning. V3 raster uses `yPx_png` (absolute pixels).
 3. **Server authority**: Legacy doc doesn't cover server rewrap authority. V3 raster explicitly defines server authority on `lines`, `totalTextH`, `rasterH` when rewrap occurs.
@@ -418,9 +443,9 @@ When implementing placement presets (`'top'`, `'center'`, `'bottom'`), compute `
  * @returns {number} yPx_png (TOP-left Y of raster PNG)
  */
 function computeYPxFromPlacement(placement, rasterH, frameH = 1920) {
-  const safeTopMargin = Math.max(50, frameH * 0.05);      // 96px for 1920px
-  const safeBottomMargin = frameH * 0.08;                 // 154px for 1920px
-  
+  const safeTopMargin = Math.max(50, frameH * 0.05); // 96px for 1920px
+  const safeBottomMargin = frameH * 0.08; // 154px for 1920px
+
   let targetTop;
   switch (placement) {
     case 'top':
@@ -429,7 +454,7 @@ function computeYPxFromPlacement(placement, rasterH, frameH = 1920) {
       break;
     case 'center':
       // Center raster vertically: frame center - half raster height
-      targetTop = (frameH / 2) - (rasterH / 2);
+      targetTop = frameH / 2 - rasterH / 2;
       break;
     case 'bottom':
       // Place raster bottom at safe bottom margin
@@ -437,20 +462,18 @@ function computeYPxFromPlacement(placement, rasterH, frameH = 1920) {
       break;
     default:
       // Default to center
-      targetTop = (frameH / 2) - (rasterH / 2);
+      targetTop = frameH / 2 - rasterH / 2;
   }
-  
+
   // Clamp to safe margins (ensure raster doesn't clip)
-  const yPx_png = Math.max(
-    safeTopMargin, 
-    Math.min(targetTop, frameH - safeBottomMargin - rasterH)
-  );
-  
+  const yPx_png = Math.max(safeTopMargin, Math.min(targetTop, frameH - safeBottomMargin - rasterH));
+
   return Math.round(yPx_png);
 }
 ```
 
 **Key Points**:
+
 - `yPx_png` remains TOP-left of raster PNG (invariant)
 - Placement affects the **target top position** calculation
 - Safe margins prevent clipping (5% top, 8% bottom)
@@ -506,4 +529,3 @@ function computeYPxFromPlacement(placement, rasterH, frameH = 1920) {
    - **Duplicate**: `BeatPreviewManager.applyPreview()` in `creative.html` (lines 6476-6518) - Inline implementation
    - **Issue**: `BeatPreviewManager.applyPreview()` duplicates logic from `applyPreviewResultToBeatCard()` (same DOM manipulation, same CSS variables)
    - **Action**: Refactor `BeatPreviewManager.applyPreview()` to call `applyPreviewResultToBeatCard()` instead of duplicating logic
-

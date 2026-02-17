@@ -1,12 +1,12 @@
 // public/js/pricingAuthHandlers.js
-import { auth, ensureUserDoc, db } from "/js/firebaseClient.js";
+import { auth, ensureUserDoc, db } from '/js/firebaseClient.js';
 import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
-  GoogleAuthProvider, 
-  signInWithPopup
-} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { doc, getDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+  GoogleAuthProvider,
+  signInWithPopup,
+} from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
+import { doc, getDoc } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
 export async function uiSignIn(email, password) {
   try {
@@ -41,17 +41,17 @@ export async function uiGoogle() {
 
 export async function routeAfterAuth(user) {
   try {
-    const snap = await getDoc(doc(db, "users", user.uid));
+    const snap = await getDoc(doc(db, 'users', user.uid));
     const userData = snap.data() || {};
-    
+
     if (userData.isMember) {
-      window.location.href = "/creative.html";
+      window.location.href = '/creative.html';
     } else {
-      window.location.href = "/pricing";
+      window.location.href = '/pricing';
     }
   } catch (error) {
-    console.error("Error routing after auth:", error);
+    console.error('Error routing after auth:', error);
     // Fallback to pricing page
-    window.location.href = "/pricing";
+    window.location.href = '/pricing';
   }
 }

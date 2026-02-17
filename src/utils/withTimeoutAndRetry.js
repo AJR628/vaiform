@@ -2,7 +2,7 @@
 
 /**
  * Run a function with timeout + retry support.
- * 
+ *
  * @param {Function} fn - async function to run
  * @param {Object} opts
  * @param {number} opts.timeoutMs - max time per attempt
@@ -22,7 +22,7 @@ export async function withTimeoutAndRetry(fn, { timeoutMs = 20000, retries = 2 }
       lastErr = err;
       if (attempt < retries) {
         console.warn(`⚠️ Attempt ${attempt + 1} failed, retrying...`, err.message);
-        await new Promise(r => setTimeout(r, 300)); // small backoff
+        await new Promise((r) => setTimeout(r, 300)); // small backoff
         continue;
       }
     }

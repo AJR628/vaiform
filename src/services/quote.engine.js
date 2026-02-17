@@ -1,71 +1,95 @@
-import { readFile } from "node:fs/promises";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { readFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 let curated = [];
 try {
-  const jsonPath = join(__dirname, "../data/quotes.curated.json");
-  const raw = await readFile(jsonPath, "utf8");
+  const jsonPath = join(__dirname, '../data/quotes.curated.json');
+  const raw = await readFile(jsonPath, 'utf8');
   curated = JSON.parse(raw);
-  if (!Array.isArray(curated)) throw new Error("curated JSON is not an array");
+  if (!Array.isArray(curated)) throw new Error('curated JSON is not an array');
 } catch (err) {
-  console.warn("[quote.engine] curated JSON missing/invalid; using fallback:", err?.code || err?.message);
+  console.warn(
+    '[quote.engine] curated JSON missing/invalid; using fallback:',
+    err?.code || err?.message
+  );
   curated = [
     {
-      id: "stoic-001",
-      text: "The impediment to action advances action. What stands in the way becomes the way.",
-      author: "Marcus Aurelius",
-      tags: ["stoic","resilience","courage"],
-      templateBias: ["calm","minimal"],
+      id: 'stoic-001',
+      text: 'The impediment to action advances action. What stands in the way becomes the way.',
+      author: 'Marcus Aurelius',
+      tags: ['stoic', 'resilience', 'courage'],
+      templateBias: ['calm', 'minimal'],
       verified: true,
       publicDomain: true,
-      length: 103
+      length: 103,
     },
     {
-      id: "stoic-002",
-      text: "We suffer more often in imagination than in reality.",
-      author: "Seneca",
-      tags: ["stoic","calm","perspective"],
-      templateBias: ["minimal","calm"],
+      id: 'stoic-002',
+      text: 'We suffer more often in imagination than in reality.',
+      author: 'Seneca',
+      tags: ['stoic', 'calm', 'perspective'],
+      templateBias: ['minimal', 'calm'],
       verified: true,
       publicDomain: true,
-      length: 54
-    }
+      length: 54,
+    },
   ];
 }
 
-const PROFANITY = ["damn","shit","fuck"]; // tiny blocklist
+const PROFANITY = ['damn', 'shit', 'fuck']; // tiny blocklist
 
 function sanitizeText(s) {
-  if (!s) return "";
-  let t = String(s).trim().replace(/\s+/g, " ");
+  if (!s) return '';
+  let t = String(s).trim().replace(/\s+/g, ' ');
   // strip surrounding quotes
-  t = t.replace(/^"+|"+$/g, "").replace(/^'+|'+$/g, "");
+  t = t.replace(/^"+|"+$/g, '').replace(/^'+|'+$/g, '');
   // length bound
-  if (t.length < 2) t = t.padEnd(2, ".");
+  if (t.length < 2) t = t.padEnd(2, '.');
   if (t.length > 280) t = t.slice(0, 280);
   // simple profanity mask
   const l = t.toLowerCase();
   for (const w of PROFANITY) {
-    const re = new RegExp(`\\b${w}\\b`, "ig");
-    t = t.replace(re, "—");
+    const re = new RegExp(`\\b${w}\\b`, 'ig');
+    t = t.replace(re, '—');
   }
   return t;
 }
 
 function tagsForFeeling(feeling) {
-  const t = (feeling || "").toLowerCase();
+  const t = (feeling || '').toLowerCase();
   const set = new Set();
-  if (/calm|peace|soft|breathe|still/.test(t)) { set.add("calm"); set.add("presence"); }
-  if (/anxious|worry|fear|stress/.test(t)) { set.add("resilience"); set.add("calm"); }
-  if (/tired|stuck|blocked/.test(t)) { set.add("perseverance"); set.add("hope"); }
-  if (/hopeless|sad|down/.test(t)) { set.add("hope"); set.add("resilience"); }
-  if (/angry|mad|rage/.test(t)) { set.add("calm"); set.add("patience"); }
-  if (/brave|bold|risk|try/.test(t)) { set.add("courage"); set.add("perseverance"); }
-  if (/present|now|mindful|focus/.test(t)) { set.add("presence"); set.add("calm"); }
+  if (/calm|peace|soft|breathe|still/.test(t)) {
+    set.add('calm');
+    set.add('presence');
+  }
+  if (/anxious|worry|fear|stress/.test(t)) {
+    set.add('resilience');
+    set.add('calm');
+  }
+  if (/tired|stuck|blocked/.test(t)) {
+    set.add('perseverance');
+    set.add('hope');
+  }
+  if (/hopeless|sad|down/.test(t)) {
+    set.add('hope');
+    set.add('resilience');
+  }
+  if (/angry|mad|rage/.test(t)) {
+    set.add('calm');
+    set.add('patience');
+  }
+  if (/brave|bold|risk|try/.test(t)) {
+    set.add('courage');
+    set.add('perseverance');
+  }
+  if (/present|now|mindful|focus/.test(t)) {
+    set.add('presence');
+    set.add('calm');
+  }
   return Array.from(set);
 }
 
@@ -93,29 +117,32 @@ function pickCurated(feeling, template) {
     if (!q.publicDomain || !q.verified) continue;
     if (q.length > 140) continue;
     const s = scoreQuote(q, wanted, template);
-    if (s > bestScore) { bestScore = s; best = q; }
+    if (s > bestScore) {
+      bestScore = s;
+      best = q;
+    }
   }
   return best;
 }
 
 async function generateAphorism(feeling) {
-  const f = (feeling || "").trim();
+  const f = (feeling || '').trim();
   // Minimal heuristic phrases without external providers
   const seeds = [
-    `Breathe. ${f ? f.charAt(0).toUpperCase() + f.slice(1) + " " : ""}passes like weather.`,
-    "One steady breath, one honest step.",
-    "Small courage, repeated, becomes strength.",
-    "Be here. Be kind. Begin again.",
-    "You are allowed to go slowly.",
-    "Noisy mind, quiet heart, chosen action.",
-    "Hold on to the thread of the present.",
+    `Breathe. ${f ? f.charAt(0).toUpperCase() + f.slice(1) + ' ' : ''}passes like weather.`,
+    'One steady breath, one honest step.',
+    'Small courage, repeated, becomes strength.',
+    'Be here. Be kind. Begin again.',
+    'You are allowed to go slowly.',
+    'Noisy mind, quiet heart, chosen action.',
+    'Hold on to the thread of the present.',
   ];
   const pick = seeds[Math.floor(Math.random() * seeds.length)];
   return pick.length > 140 ? pick.slice(0, 140) : pick;
 }
 
 export async function getQuote({ mode, text, template }) {
-  if (mode === "quote") {
+  if (mode === 'quote') {
     const t = sanitizeText(text);
     return { text: t, author: null, attributed: false, isParaphrase: false };
   }
@@ -135,5 +162,3 @@ export async function getQuote({ mode, text, template }) {
 }
 
 export default { getQuote };
-
-

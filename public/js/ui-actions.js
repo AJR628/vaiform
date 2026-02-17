@@ -30,7 +30,7 @@ const ACTIONS = {
     } else {
       console.error('[ui-actions] renderArticle function not found');
     }
-  }
+  },
 };
 
 /**
@@ -39,13 +39,13 @@ const ACTIONS = {
  */
 function initUIActions() {
   console.log('[ui-actions] Initializing delegated event system');
-  
+
   // Remove any existing delegated handler to prevent duplicates
   document.removeEventListener('click', handleDelegatedClick, true);
-  
+
   // Add the delegated click handler in capture phase
   document.addEventListener('click', handleDelegatedClick, true);
-  
+
   console.log('[ui-actions] Delegated event system initialized');
 }
 
@@ -55,11 +55,11 @@ function initUIActions() {
  */
 function handleDelegatedClick(event) {
   const target = event.target;
-  
+
   // Check if the clicked element or its parent has a data-action attribute
   let actionElement = target;
   let action = null;
-  
+
   // Walk up the DOM tree to find the action element
   while (actionElement && actionElement !== document) {
     if (actionElement.dataset && actionElement.dataset.action) {
@@ -68,17 +68,17 @@ function handleDelegatedClick(event) {
     }
     actionElement = actionElement.parentElement;
   }
-  
+
   if (!action) {
     return; // No action to handle
   }
-  
+
   // Prevent default behavior for action buttons
   event.preventDefault();
   event.stopPropagation();
-  
+
   console.log('[ui-actions] Action triggered:', action, 'from element:', target);
-  
+
   // Route to the appropriate handler
   if (ACTIONS[action]) {
     try {

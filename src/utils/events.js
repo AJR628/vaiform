@@ -10,5 +10,3 @@ export function sendEvent(studioId, event, data = {}) {
 }
 
 export default { bus, sendEvent };
-
-

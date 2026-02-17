@@ -1,6 +1,6 @@
 /**
  * Temporary file utilities for SSOT v3 rasterized overlays
- * 
+ *
  * Handles downloading and caching raster PNGs from various sources (http, data URLs, Firebase Storage)
  */
 
@@ -85,26 +85,28 @@ async function httpToTmp(url, ext = '.png') {
     const writeStream = fs.createWriteStream(tmpPath);
     const client = url.startsWith('https') ? https : http;
 
-    client.get(url, (response) => {
-      if (response.statusCode !== 200) {
-        reject(new Error(`HTTP ${response.statusCode} fetching ${url}`));
-        return;
-      }
+    client
+      .get(url, (response) => {
+        if (response.statusCode !== 200) {
+          reject(new Error(`HTTP ${response.statusCode} fetching ${url}`));
+          return;
+        }
 
-      response.pipe(writeStream);
+        response.pipe(writeStream);
 
-      writeStream.on('finish', () => {
-        writeStream.close();
-        const stats = fs.statSync(tmpPath);
-        console.log(`[tmp] Downloaded ${url} to ${tmpPath} (${stats.size} bytes)`);
-        resolve(tmpPath);
-      });
+        writeStream.on('finish', () => {
+          writeStream.close();
+          const stats = fs.statSync(tmpPath);
+          console.log(`[tmp] Downloaded ${url} to ${tmpPath} (${stats.size} bytes)`);
+          resolve(tmpPath);
+        });
 
-      writeStream.on('error', (err) => {
-        fs.unlinkSync(tmpPath);
-        reject(err);
-      });
-    }).on('error', reject);
+        writeStream.on('error', (err) => {
+          fs.unlinkSync(tmpPath);
+          reject(err);
+        });
+      })
+      .on('error', reject);
   });
 }
 
@@ -154,4 +156,3 @@ export async function bufferToTmp(buffer, ext = '.png') {
   console.log(`[tmp] Wrote buffer to ${tmpPath} (${buffer.length} bytes)`);
   return tmpPath;
 }
-

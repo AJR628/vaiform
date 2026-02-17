@@ -7,11 +7,11 @@ const __dirname = path.dirname(__filename);
 
 function copyDir(src, dest) {
   fs.mkdirSync(dest, { recursive: true });
-  
-  fs.readdirSync(src).forEach(file => {
+
+  fs.readdirSync(src).forEach((file) => {
     const srcPath = path.join(src, file);
     const destPath = path.join(dest, file);
-    
+
     if (fs.statSync(srcPath).isDirectory()) {
       copyDir(srcPath, destPath);
     } else {

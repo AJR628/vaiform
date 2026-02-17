@@ -8,14 +8,14 @@ const __dirname = path.dirname(__filename);
 function copyDir(src, dest) {
   try {
     fs.mkdirSync(dest, { recursive: true });
-    
+
     const files = fs.readdirSync(src);
     console.log(`Found ${files.length} items in ${src}`);
-    
-    files.forEach(file => {
+
+    files.forEach((file) => {
       const srcPath = path.join(src, file);
       const destPath = path.join(dest, file);
-      
+
       if (fs.statSync(srcPath).isDirectory()) {
         console.log(`Copying directory: ${file}`);
         copyDir(srcPath, destPath);

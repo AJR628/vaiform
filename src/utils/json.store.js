@@ -1,19 +1,19 @@
-import admin from "../config/firebase.js";
+import admin from '../config/firebase.js';
 
-export async function loadJSON({ uid, studioId, file = "session.json" }) {
+export async function loadJSON({ uid, studioId, file = 'session.json' }) {
   const bucket = admin.storage().bucket();
   const path = `drafts/${uid}/${studioId}/${file}`;
   const f = bucket.file(path);
   try {
     const [buf] = await f.download();
-    return JSON.parse(buf.toString("utf8"));
+    return JSON.parse(buf.toString('utf8'));
   } catch (e) {
     if (e?.code === 404 || e?.code === 2) return null;
     throw e;
   }
 }
 
-export async function saveJSON({ uid, studioId, file = "session.json", data }) {
+export async function saveJSON({ uid, studioId, file = 'session.json', data }) {
   const bucket = admin.storage().bucket();
   const path = `drafts/${uid}/${studioId}/${file}`;
   const f = bucket.file(path);
@@ -29,14 +29,12 @@ export async function saveJSON({ uid, studioId, file = "session.json", data }) {
   }
   const buf = Buffer.from(json, 'utf8');
   await f.save(buf, {
-    contentType: "application/json",
+    contentType: 'application/json',
     resumable: false,
     validation: false,
-    metadata: { cacheControl: "no-store" },
+    metadata: { cacheControl: 'no-store' },
   });
   return { path };
 }
 
 export default { loadJSON, saveJSON };
-
-

@@ -9,7 +9,7 @@ const colors = {
   yellow: '\x1b[33m',
   blue: '\x1b[34m',
   reset: '\x1b[0m',
-  bold: '\x1b[1m'
+  bold: '\x1b[1m',
 };
 
 function log(color, message) {
@@ -19,9 +19,9 @@ function log(color, message) {
 async function main() {
   log(colors.bold, '🚀 Creative Page Authentication Integration Test');
   log(colors.yellow, 'Testing Firebase auth integration\n');
-  
+
   const baseUrl = 'https://vaiform.com';
-  
+
   // Test 1: Verify Creative Page loads
   log(colors.blue, '🔍 Testing Creative Page loads...');
   try {
@@ -39,26 +39,26 @@ async function main() {
   } catch (error) {
     log(colors.red, `❌ Creative Page error: ${error.message}`);
   }
-  
+
   // Test 2: Verify API endpoints are accessible (should return 401 without auth)
   log(colors.blue, '\n🔍 Testing API endpoints (expecting 401 without auth)...');
-  
-  const endpoints = [
-    '/api/limits/usage',
-    '/api/quotes/generate-quote',
-    '/api/assets/options'
-  ];
-  
+
+  const endpoints = ['/api/limits/usage', '/api/quotes/generate-quote', '/api/assets/options'];
+
   for (const endpoint of endpoints) {
     try {
       const response = await fetch(`${baseUrl}${endpoint}`, {
-        method: endpoint.includes('generate-quote') || endpoint.includes('options') ? 'POST' : 'GET',
+        method:
+          endpoint.includes('generate-quote') || endpoint.includes('options') ? 'POST' : 'GET',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
         },
-        body: endpoint.includes('generate-quote') || endpoint.includes('options') ? JSON.stringify({}) : undefined
+        body:
+          endpoint.includes('generate-quote') || endpoint.includes('options')
+            ? JSON.stringify({})
+            : undefined,
       });
-      
+
       if (response.status === 401) {
         log(colors.green, `✅ ${endpoint} - Auth required (expected)`);
       } else {
@@ -68,7 +68,7 @@ async function main() {
       log(colors.red, `❌ ${endpoint} - Error: ${error.message}`);
     }
   }
-  
+
   // Summary
   log(colors.bold, '\n📊 Authentication Integration Summary');
   log(colors.green, '✅ Creative Page updated with Firebase authentication');
@@ -79,11 +79,11 @@ async function main() {
   log(colors.yellow, '2. Test login functionality on Creative Page');
   log(colors.yellow, '3. Verify quote generation works after login');
   log(colors.yellow, '4. Test asset loading and AI image generation');
-  
+
   log(colors.green, '\n🎉 Creative Page authentication integration complete!');
 }
 
-main().catch(error => {
+main().catch((error) => {
   log(colors.red, `Script failed: ${error.message}`);
   process.exit(1);
 });
