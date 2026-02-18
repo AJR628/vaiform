@@ -39,18 +39,18 @@
 
 ### 🟡 In Progress / Partial (implemented but not fully conforming)
 
-- **No active partials in C4–C6.** Next active work starts at C7.
+- **C7** App-entry contract cleanup is in progress: `src/app.js` envelope pass is done; `src/handlers/credits.get.js` remains.
 
 ### 🔴 Not Started (still planned work)
 
-- **C7–C9** Active contract passes for remaining controllers/routes
+- **C8-C9** Active contract passes for remaining controllers/routes
 - **C10–C12** SSOT consolidation (auth/plan guards/validation/idempotency duplicate removal)
 - **C13–C15** Canonical `/api` router + remove duplicate mounts + credits dedupe
 - **C16–C17** Launch posture verification + final cohesion publication
 
 ### Current Priority (next few commits)
 
-1. **Start C7 app-entry cleanup** (`src/app.js` envelope conformance on touched handlers)
+1. **Finish C7 app-entry cleanup** (`src/handlers/credits.get.js` envelope conformance)
 2. **Continue C8/C9 active contract passes** (controllers/routes still returning legacy envelopes)
 3. **Begin C10–C12 SSOT dedupe** (auth/plan guards/validation/idempotency)
 
@@ -157,18 +157,19 @@
 
 ---
 
-### C7 — App Entry Contract Cleanup _(legacy ref: 1.2)_
+### C7 � App Entry Contract Cleanup _(legacy ref: 1.2)_
 
-**Status:** 🔴 NOT STARTED
+**Status:** IN PROGRESS
 
-1. Scope: `src/app.js`, `src/handlers/credits.get.js`.
-2. Remove remaining app-entry legacy response keys (e.g., `/health` returning `{ ok:true }`).
-3. Gate: touched-file contract scan clean; behavior unchanged.
-4. Scope note: `/api/health` parity may remain for later continuation if `src/routes/health.routes.js` is untouched in this phase.
+1. Scope: src/app.js, src/handlers/credits.get.js.
+2. Completed in src/app.js: canonicalized /health, debug /diag/echo, and GET /generate guard envelopes.
+3. Remaining: canonicalize src/handlers/credits.get.js while preserving current status semantics.
+4. Gate: touched-file contract scan clean; behavior unchanged.
+5. Scope note: /api/health parity may remain for later continuation if src/routes/health.routes.js is untouched in this phase.
 
 ---
 
-### C8 — Active Contract Pass A _(legacy ref: 1.3)_
+### C8 � Active Contract Pass A _(legacy ref: 1.3)_
 
 **Status:** 🔴 NOT STARTED
 
