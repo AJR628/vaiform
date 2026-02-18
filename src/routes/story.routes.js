@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { z, ZodError } from 'zod';
+import { z } from 'zod';
 import requireAuth from '../middleware/requireAuth.js';
 import { enforceCreditsForRender, enforceScriptDailyCap } from '../middleware/planGuards.js';
 import { idempotencyFinalize } from '../middleware/idempotency.firestore.js';
@@ -38,6 +38,15 @@ const finalizeSuccess = (req, session, shortId) => ({
   shortId,
   requestId: requestIdOf(req),
 });
+const zodFields = (error) => {
+  const fields = {};
+  for (const issue of error?.issues || []) {
+    const key = issue?.path?.length ? issue.path.join('.') : '_root';
+    // Keep the first message per path for deterministic, string-only fields.
+    if (!(key in fields)) fields[key] = issue.message;
+  }
+  return fields;
+};
 
 const serverBusyFailure = (req, retryAfter = 30) => ({
   success: false,
@@ -68,14 +77,7 @@ r.post('/start', async (req, res) => {
   try {
     const parsed = StartSchema.safeParse(req.body || {});
     if (!parsed.success) {
-      return fail(
-        req,
-        res,
-        400,
-        'INVALID_INPUT',
-        'Invalid request',
-        parsed.error.flatten().fieldErrors
-      );
+      return fail(req, res, 400, 'INVALID_INPUT', 'Invalid request', zodFields(parsed.error));
     }
 
     const { input, inputType, styleKey } = parsed.data;
@@ -104,14 +106,7 @@ r.post('/generate', enforceScriptDailyCap(300), async (req, res) => {
   try {
     const parsed = GenerateSchema.safeParse(req.body || {});
     if (!parsed.success) {
-      return fail(
-        req,
-        res,
-        400,
-        'INVALID_INPUT',
-        'Invalid request',
-        parsed.error.flatten().fieldErrors
-      );
+      return fail(req, res, 400, 'INVALID_INPUT', 'Invalid request', zodFields(parsed.error));
     }
 
     const { sessionId, input, inputType } = parsed.data;
@@ -139,14 +134,7 @@ r.post('/update-script', async (req, res) => {
 
     const parsed = UpdateScriptSchema.safeParse(req.body || {});
     if (!parsed.success) {
-      return fail(
-        req,
-        res,
-        400,
-        'INVALID_INPUT',
-        'Invalid request',
-        parsed.error.flatten().fieldErrors
-      );
+      return fail(req, res, 400, 'INVALID_INPUT', 'Invalid request', zodFields(parsed.error));
     }
 
     const { sessionId, sentences } = parsed.data;
@@ -210,14 +198,7 @@ r.post('/update-caption-style', async (req, res) => {
       .safeParse(req.body || {});
 
     if (!parsed.success) {
-      return fail(
-        req,
-        res,
-        400,
-        'INVALID_INPUT',
-        'Invalid request',
-        parsed.error.flatten().fieldErrors
-      );
+      return fail(req, res, 400, 'INVALID_INPUT', 'Invalid request', zodFields(parsed.error));
     }
 
     const { sessionId, overlayCaption } = parsed.data;
@@ -302,14 +283,7 @@ r.post('/update-caption-meta', requireAuth, async (req, res) => {
       : SingleBeatSchema.safeParse(req.body);
 
     if (!parsed.success) {
-      return fail(
-        req,
-        res,
-        400,
-        'INVALID_INPUT',
-        'Invalid request',
-        parsed.error.flatten().fieldErrors
-      );
+      return fail(req, res, 400, 'INVALID_INPUT', 'Invalid request', zodFields(parsed.error));
     }
 
     const { sessionId } = parsed.data;
@@ -457,14 +431,7 @@ r.post('/plan', enforceScriptDailyCap(300), async (req, res) => {
   try {
     const parsed = SessionSchema.safeParse(req.body || {});
     if (!parsed.success) {
-      return fail(
-        req,
-        res,
-        400,
-        'INVALID_INPUT',
-        'Invalid request',
-        parsed.error.flatten().fieldErrors
-      );
+      return fail(req, res, 400, 'INVALID_INPUT', 'Invalid request', zodFields(parsed.error));
     }
 
     const { sessionId } = parsed.data;
@@ -485,14 +452,7 @@ r.post('/search', async (req, res) => {
   try {
     const parsed = SessionSchema.safeParse(req.body || {});
     if (!parsed.success) {
-      return fail(
-        req,
-        res,
-        400,
-        'INVALID_INPUT',
-        'Invalid request',
-        parsed.error.flatten().fieldErrors
-      );
+      return fail(req, res, 400, 'INVALID_INPUT', 'Invalid request', zodFields(parsed.error));
     }
 
     const { sessionId } = parsed.data;
@@ -519,14 +479,7 @@ r.post('/update-shot', async (req, res) => {
 
     const parsed = UpdateShotSchema.safeParse(req.body || {});
     if (!parsed.success) {
-      return fail(
-        req,
-        res,
-        400,
-        'INVALID_INPUT',
-        'Invalid request',
-        parsed.error.flatten().fieldErrors
-      );
+      return fail(req, res, 400, 'INVALID_INPUT', 'Invalid request', zodFields(parsed.error));
     }
 
     const { sessionId, sentenceIndex, clipId } = parsed.data;
@@ -565,14 +518,7 @@ r.post('/update-video-cuts', async (req, res) => {
   try {
     const parsed = UpdateVideoCutsSchema.safeParse(req.body || {});
     if (!parsed.success) {
-      return fail(
-        req,
-        res,
-        400,
-        'INVALID_INPUT',
-        'Invalid request',
-        parsed.error.flatten().fieldErrors
-      );
+      return fail(req, res, 400, 'INVALID_INPUT', 'Invalid request', zodFields(parsed.error));
     }
     const { sessionId, videoCutsV1 } = parsed.data;
     const session = await updateVideoCuts({
@@ -610,14 +556,7 @@ r.post('/search-shot', async (req, res) => {
 
     const parsed = SearchShotSchema.safeParse(req.body || {});
     if (!parsed.success) {
-      return fail(
-        req,
-        res,
-        400,
-        'INVALID_INPUT',
-        'Invalid request',
-        parsed.error.flatten().fieldErrors
-      );
+      return fail(req, res, 400, 'INVALID_INPUT', 'Invalid request', zodFields(parsed.error));
     }
 
     const { sessionId, sentenceIndex, query, page = 1 } = parsed.data;
@@ -657,14 +596,7 @@ r.post('/insert-beat', async (req, res) => {
 
     const parsed = InsertBeatSchema.safeParse(req.body || {});
     if (!parsed.success) {
-      return fail(
-        req,
-        res,
-        400,
-        'INVALID_INPUT',
-        'Invalid request',
-        parsed.error.flatten().fieldErrors
-      );
+      return fail(req, res, 400, 'INVALID_INPUT', 'Invalid request', zodFields(parsed.error));
     }
 
     const { sessionId, insertAfterIndex, text } = parsed.data;
@@ -692,14 +624,7 @@ r.post('/delete-beat', async (req, res) => {
 
     const parsed = DeleteBeatSchema.safeParse(req.body || {});
     if (!parsed.success) {
-      return fail(
-        req,
-        res,
-        400,
-        'INVALID_INPUT',
-        'Invalid request',
-        parsed.error.flatten().fieldErrors
-      );
+      return fail(req, res, 400, 'INVALID_INPUT', 'Invalid request', zodFields(parsed.error));
     }
 
     const { sessionId, sentenceIndex } = parsed.data;
@@ -725,7 +650,11 @@ const UpdateBeatTextSchema = z.object({
 
 r.post('/update-beat-text', async (req, res) => {
   try {
-    const { sessionId, sentenceIndex, text } = UpdateBeatTextSchema.parse(req.body);
+    const parsed = UpdateBeatTextSchema.safeParse(req.body || {});
+    if (!parsed.success) {
+      return fail(req, res, 400, 'INVALID_INPUT', 'Invalid request', zodFields(parsed.error));
+    }
+    const { sessionId, sentenceIndex, text } = parsed.data;
     const uid = req.user.uid;
 
     const { sentences, shots } = await updateBeatText({
@@ -737,13 +666,14 @@ r.post('/update-beat-text', async (req, res) => {
 
     return ok(req, res, { sentences, shots });
   } catch (e) {
-    const isZod = e instanceof ZodError;
-    const status = isZod ? 400 : 500;
-    const errorCode = isZod ? 'STORY_UPDATE_BEAT_TEXT_INVALID' : 'STORY_UPDATE_BEAT_TEXT_FAILED';
-
     console.error('[story][update-beat-text] error:', e);
-
-    return fail(req, res, status, errorCode, e?.message || 'Failed to update beat text');
+    return fail(
+      req,
+      res,
+      500,
+      'STORY_UPDATE_BEAT_TEXT_FAILED',
+      e?.message || 'Failed to update beat text'
+    );
   }
 });
 
@@ -752,14 +682,7 @@ r.post('/timeline', async (req, res) => {
   try {
     const parsed = SessionSchema.safeParse(req.body || {});
     if (!parsed.success) {
-      return fail(
-        req,
-        res,
-        400,
-        'INVALID_INPUT',
-        'Invalid request',
-        parsed.error.flatten().fieldErrors
-      );
+      return fail(req, res, 400, 'INVALID_INPUT', 'Invalid request', zodFields(parsed.error));
     }
 
     const { sessionId } = parsed.data;
@@ -780,14 +703,7 @@ r.post('/captions', async (req, res) => {
   try {
     const parsed = SessionSchema.safeParse(req.body || {});
     if (!parsed.success) {
-      return fail(
-        req,
-        res,
-        400,
-        'INVALID_INPUT',
-        'Invalid request',
-        parsed.error.flatten().fieldErrors
-      );
+      return fail(req, res, 400, 'INVALID_INPUT', 'Invalid request', zodFields(parsed.error));
     }
 
     const { sessionId } = parsed.data;
@@ -824,14 +740,7 @@ r.post(
     try {
       const parsed = SessionSchema.safeParse(req.body || {});
       if (!parsed.success) {
-        return fail(
-          req,
-          res,
-          400,
-          'INVALID_INPUT',
-          'Invalid request',
-          parsed.error.flatten().fieldErrors
-        );
+        return fail(req, res, 400, 'INVALID_INPUT', 'Invalid request', zodFields(parsed.error));
       }
 
       const { sessionId } = parsed.data;
@@ -863,14 +772,7 @@ r.post(
     try {
       const parsed = SessionSchema.safeParse(req.body || {});
       if (!parsed.success) {
-        return fail(
-          req,
-          res,
-          400,
-          'INVALID_INPUT',
-          'Invalid request',
-          parsed.error.flatten().fieldErrors
-        );
+        return fail(req, res, 400, 'INVALID_INPUT', 'Invalid request', zodFields(parsed.error));
       }
 
       const { sessionId } = parsed.data;
@@ -908,14 +810,7 @@ r.post('/manual', async (req, res) => {
 
     const parsed = ManualSchema.safeParse(req.body || {});
     if (!parsed.success) {
-      return fail(
-        req,
-        res,
-        400,
-        'INVALID_INPUT',
-        'Invalid request',
-        parsed.error.flatten().fieldErrors
-      );
+      return fail(req, res, 400, 'INVALID_INPUT', 'Invalid request', zodFields(parsed.error));
     }
 
     const { scriptText } = parsed.data;
@@ -961,14 +856,7 @@ r.post('/create-manual-session', async (req, res) => {
 
     const parsed = CreateManualSessionSchema.safeParse(req.body || {});
     if (!parsed.success) {
-      return fail(
-        req,
-        res,
-        400,
-        'INVALID_INPUT',
-        'Invalid request',
-        parsed.error.flatten().fieldErrors
-      );
+      return fail(req, res, 400, 'INVALID_INPUT', 'Invalid request', zodFields(parsed.error));
     }
 
     let { beats } = parsed.data;
