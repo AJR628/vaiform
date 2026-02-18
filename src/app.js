@@ -27,6 +27,7 @@ import generateRoutes from './routes/generate.routes.js';
 import { getCreditsHandler } from './handlers/credits.get.js';
 import diagHeadersRoutes from './routes/diag.headers.routes.js';
 import cdnRoutes from './routes/cdn.routes.js';
+import { ok, fail } from './http/respond.js';
 
 dotenv.config();
 envCheck(); // presence-only checks; CI bypasses via NODE_ENV=test
@@ -171,17 +172,16 @@ app.use((req, res, next) => {
 // ---------- API ROUTES BEFORE STATIC ----------
 // Healthcheck (GET + HEAD) and simple diag echo
 app.get('/health', (req, res) => {
-  res
-    .set('Cache-Control', 'no-store')
-    .json({ ok: true, service: 'vaiform-backend', time: Date.now() });
+  res.set('Cache-Control', 'no-store');
+  return ok(req, res, { service: 'vaiform-backend', time: Date.now() });
 });
 app.head('/health', (req, res) => {
   res.set('Cache-Control', 'no-store').end();
 });
 if (DBG) {
   app.post('/diag/echo', (req, res) => {
-    res.set('Cache-Control', 'no-store').json({
-      ok: true,
+    res.set('Cache-Control', 'no-store');
+    return ok(req, res, {
       method: req.method,
       headers: req.headers,
       body: req.body,
@@ -235,9 +235,7 @@ if (process.env.VAIFORM_DEBUG === '1') {
 
 // Guard: prevent GET/HEAD on /generate from being hijacked by static/proxy
 app.get(['/generate', '/generate/'], (req, res) =>
-  res
-    .status(405)
-    .json({ success: false, code: 'METHOD_NOT_ALLOWED', message: 'Use POST for /generate' })
+  fail(req, res, 405, 'METHOD_NOT_ALLOWED', 'Use POST for /generate')
 );
 app.head(['/generate', '/generate/'], (req, res) => res.status(405).end());
 
