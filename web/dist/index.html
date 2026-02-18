@@ -37,7 +37,7 @@
       </div>
       <p class="text-sm text-gray-500 dark:text-gray-400 mt-4">
         If you are not redirected automatically, 
-        <a href="/creative.html" class="text-indigo-600 dark:text-indigo-400 hover:underline">click here</a>
+        <a href="/creative" class="text-indigo-600 dark:text-indigo-400 hover:underline">click here</a>
       </p>
     </section>
   </main>
@@ -139,7 +139,7 @@
     if (isHomePage && isNotCreativePage) {
       console.log('Redirecting to creative studio...');
       setTimeout(() => {
-        window.location.href = '/creative.html';
+        window.location.href = '/creative';
       }, 2000);
     } else {
       console.log('Not redirecting - not on home page or already on creative page');

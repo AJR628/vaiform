@@ -31,7 +31,7 @@ export function createUnifiedHeader() {
         </div>
         <!-- Nav row: All navigation links in a wrapping row -->
         <nav class="mt-2 flex flex-wrap gap-2 text-sm sm:text-base md:justify-start md:gap-4 px-4 sm:px-6 lg:px-8">
-          <a href="/creative.html" class="px-2 py-1 rounded hover:bg-gray-100 dark:hover:bg-white/5 hover:text-indigo-600 dark:hover:text-indigo-400 nav-link text-gray-700 dark:text-gray-300 font-medium" data-page="creative">Creative Studio</a>
+          <a href="/creative" class="px-2 py-1 rounded hover:bg-gray-100 dark:hover:bg-white/5 hover:text-indigo-600 dark:hover:text-indigo-400 nav-link text-gray-700 dark:text-gray-300 font-medium" data-page="creative">Creative Studio</a>
           <a href="/image-creator.html" class="px-2 py-1 rounded hover:bg-gray-100 dark:hover:bg-white/5 hover:text-indigo-600 dark:hover:text-indigo-400 nav-link text-gray-700 dark:text-gray-300 font-medium" data-page="image-creator">Image Creator</a>
           <a href="/my-shorts.html" class="px-2 py-1 rounded hover:bg-gray-100 dark:hover:bg-white/5 hover:text-indigo-600 dark:hover:text-indigo-400 nav-link text-gray-700 dark:text-gray-300 font-medium" data-page="shorts">My Shorts</a>
           <a href="/my-images.html" class="px-2 py-1 rounded hover:bg-gray-100 dark:hover:bg-white/5 hover:text-indigo-600 dark:hover:text-indigo-400 nav-link text-gray-700 dark:text-gray-300 font-medium" data-page="images">My Images</a>
@@ -61,8 +61,8 @@ export function initializeHeader() {
     const href = link.getAttribute('href');
     const isActive =
       currentPath === href ||
-      (currentPath === '/' && href === '/creative.html') ||
-      (currentPath === '/creative.html' && href === '/creative.html') ||
+      (currentPath === '/' && href === '/creative') ||
+      (currentPath === '/creative' && href === '/creative') ||
       (currentPath === '/image-creator.html' && href === '/image-creator.html');
 
     if (isActive) {

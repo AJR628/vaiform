@@ -16,10 +16,10 @@ Callsite path mapping rule:
 
 ## 1) Dist-First Runtime Rules
 
-- Dist static + SPA fallback are registered before `public` static (`src/app.js:343-347`, `src/app.js:366`).
+- Dist static is registered first, then `public` static, with SPA fallback last (`src/app.js:356`, `src/app.js:376-380`).
 - `web/dist` exists in this repo, so dist-first behavior is active.
-- Rule: **When `web/dist` exists, treat `web/dist` as the canonical source for served static assets and entrypoint call evidence. `public/` is served only via explicit routes (for example `/creative`) or when a file is missing from dist.**
-- Explicit `/creative` route still serves `public/creative.html` (`src/app.js:289`, `src/routes/creative.routes.js:11-13`).
+- Rule: **When `web/dist` exists, overlapping static paths are served from `web/dist` first; missing files fall through to `public/` before SPA fallback.**
+- Explicit `/creative` route still serves `public/creative.html` (`src/app.js:298`, `src/routes/creative.routes.js:11-13`).
 
 Default flags:
 
@@ -28,14 +28,14 @@ Default flags:
 
 ## 2) Default Entrypoints (Caller Scope)
 
-Entrypoints proven by dist nav/redirect behavior:
+Entrypoints proven by nav/redirect behavior:
 
-- `/` (`web/dist/index.html`) redirects/links to `/creative.html` (`web/dist/index.html:40`, `web/dist/index.html:142`).
-- Header links: `/creative.html`, `/image-creator.html`, `/my-shorts.html`, `/my-images.html`, `/pricing.html`, `/buy-credits.html` (`web/dist/components/header.js:13-17`, `web/dist/components/header.js:26`).
+- `/` redirects/links to `/creative` (`web/dist/index.html:40`, `web/dist/index.html:142`, `public/index.html:43`, `public/index.html:146`).
+- Header links include canonical `/creative` (`web/dist/components/header.js:13`, `public/components/header.js:34`).
 
 Loaded script examples from entrypoint HTML:
 
-- `creative.html` loads `./frontend.js`, `./auth-bridge.js`, `./js/firebaseClient.js`, `/js/credits-ui.js` (`web/dist/creative.html:24-34`).
+- `/creative` serves `public/creative.html`, which loads `/js/pages/creative/creative.article.mjs` and shared creative dependencies (`public/creative.html:39-52`, `public/creative.html:904`).
 - `buy-credits.html` loads `/js/buy-credits.js`, `/auth-bridge.js`, `/js/config.js`, `/js/credits-ui.js` (`web/dist/buy-credits.html:195-201`).
 - `pricing.html` loads `js/pricing.js` and `./api.mjs` bridge setup (`web/dist/pricing.html:171-197`).
 - `my-images.html` loads `./js/my-images.js` (`web/dist/my-images.html:152-155`).
@@ -56,11 +56,11 @@ Confirmed caller-backed default surfaces include:
 - `/checkout/start` via pricing (`web/dist/js/pricing.js:138`; mounted at `src/routes/checkout.routes.js:16`).
 - `/api/session`, `/api/subscription`, `/api/portal` via buy credits (`web/dist/js/buy-credits.js:40`, `web/dist/js/buy-credits.js:52`, `web/dist/js/buy-credits.js:123`; mounted via `src/app.js:248`, `src/routes/checkout.routes.js:20-26`).
 - `/api/shorts/mine`, `/api/shorts/:jobId` via my-shorts (`web/dist/js/my-shorts.js:35`, `web/dist/js/my-shorts.js:172`).
-- `/api/assets/options` via creative (`web/dist/creative.html:1266`).
-- `/api/assets/ai-images` via creative (`web/dist/creative.html:2229`) (handler still responds `410` by design: `src/routes/assets.routes.js:12-17`).
-- `/api/caption/preview` via dynamic import path (`web/dist/creative.html:1043`, `web/dist/js/caption-preview.js:82`).
+- `/api/story/start`, `/api/story/generate`, `/api/story/update-script`, `/api/story/plan`, `/api/story/search`, `/api/story/create-manual-session`, `/api/story/finalize` via `/creative` article flow (`public/js/pages/creative/creative.article.mjs:1091`, `public/js/pages/creative/creative.article.mjs:1108`, `public/js/pages/creative/creative.article.mjs:1377`, `public/js/pages/creative/creative.article.mjs:1394`, `public/js/pages/creative/creative.article.mjs:1404`, `public/js/pages/creative/creative.article.mjs:3782`, `public/js/pages/creative/creative.article.mjs:3853`).
+- `/api/assets/options` via creative (`public/js/pages/creative/creative.article.mjs:3484`).
+- `/api/caption/preview` via `/creative` caption preview module (`public/js/caption-preview.js:636`, `public/js/caption-preview.js:1165`).
 - `/api/enhance` via frontend (`web/dist/frontend.js:272`) with `apiFetch("/enhance") -> /api/enhance` (`web/dist/api.mjs:152`).
-- `/cdn` via creative image proxying (`web/dist/creative.html:2253`; mounted `src/app.js:257`).
+- `/cdn` via my-shorts proxying (`web/dist/js/my-shorts.js:157`; mounted `src/app.js:266`).
 
 ## 4) Default-Reachable but Not Caller-Backed (Attack Surface)
 
@@ -68,10 +68,9 @@ Reachable under defaults, but no proven dist-entrypoint caller:
 
 - `/api/limits/usage`, `/limits/usage` (`src/app.js:279-280`, `src/routes/limits.routes.js:7`).
 - `/credits`, `/enhance`, `/generate`, `/job/:jobId` are root aliases not default caller-backed from dist `apiFetch` flows; `/credits` root use is conditional fallback only (`web/dist/api.mjs:156-163`).
-- `/creative` route itself (dist nav points to `/creative.html`, not `/creative`) (`web/dist/components/header.js:13`).
+- `/api/assets/ai-images` is reachable, but no longer caller-backed from canonical `/creative`; only legacy `creative.html` callers reference it (`web/dist/creative.html:2229`).
 - `/api/user/me` and `/api/user/setup` router route (`src/routes/user.routes.js:12-67`) (inline alias remains shadowed by router order: `src/app.js:321`, `src/app.js:330-333`).
 - `/api/users/ensure` (`src/routes/users.routes.js:14-100`) (dist `firebaseClient` writes Firestore directly: `web/dist/js/firebaseClient.js:23-53`).
-- `/api/story/*` (`src/app.js:303`) has no proven dist-entrypoint caller in current snapshot.
 
 ## 5) Caller-Backed but Not Default-Reachable (Broken Under Defaults)
 

@@ -10,7 +10,7 @@ export function createUnifiedHeader() {
             <a href="/">Vaiform</a>
           </h1>
           <nav class="space-x-4 text-sm font-medium text-gray-300">
-            <a href="/creative.html" class="hover:text-indigo-400 nav-link" data-page="creative">Creative Studio</a>
+            <a href="/creative" class="hover:text-indigo-400 nav-link" data-page="creative">Creative Studio</a>
             <a href="/image-creator.html" class="hover:text-indigo-400 nav-link" data-page="image-creator">Image Creator</a>
             <a href="/my-shorts.html" class="hover:text-indigo-400 nav-link" data-page="shorts">My Shorts</a>
             <a href="/my-images.html" class="hover:text-indigo-400 nav-link" data-page="images">My Images</a>
@@ -49,8 +49,8 @@ export function initializeHeader() {
   navLinks.forEach(link => {
     const href = link.getAttribute('href');
     const isActive = currentPath === href || 
-                    (currentPath === '/' && href === '/creative.html') ||
-                    (currentPath === '/creative.html' && href === '/creative.html') ||
+                    (currentPath === '/' && href === '/creative') ||
+                    (currentPath === '/creative' && href === '/creative') ||
                     (currentPath === '/image-creator.html' && href === '/image-creator.html');
     
     if (isActive) {
