@@ -15,4 +15,17 @@ export default [
       'no-console': 'off',
     },
   },
+  {
+    files: ['src/app.js'],
+    rules: {
+      'no-empty': 'warn',
+    },
+  },
+  {
+    files: ['src/routes/caption.preview.routes.js'],
+    rules: {
+      'no-unreachable': 'warn',
+      'no-undef': 'warn',
+    },
+  },
 ];
