@@ -32,19 +32,17 @@
 - **C2** Cohesion guardrails spec — SSOT ownership + anti-duplication rules exist.
 - **C3** CI changed-files contract gate — blocks _new_ drift without forcing full-repo cleanup.
 - **C4** Story spine contract pass — Zod validation `fields` normalized to `{path: string}` in `src/routes/story.routes.js`.
+- **C5** Assets contract pass — disabled AI images route + controller now use canonical disabled behavior and contain no legacy response payload keys.
+- **C6** Post-spine truth refresh — `ACTIVE_SURFACES`, `VAIFORM_REPO_COHESION_AUDIT`, and `ROUTE_TRUTH_TABLE` reconciled with current runtime truth.
 - **Green-path caller hardening:** `/creative` is canonical caller surface; static ordering fixed to `dist -> public -> SPA fallback`.
 - **Lint posture hardening:** `lint` scoped to green-path server surfaces; `lint:full` retained for broader cleanup.
 
 ### 🟡 In Progress / Partial (implemented but not fully conforming)
 
-- **C5** Assets contract pass:
-  - `/api/assets/options` is using canonical envelopes in controller.
-  - `/api/assets/ai-images` route is now canonical (410 via `fail(...)` + `requestId`, no legacy `planGuard('pro')`/`validate(...)`).
-  - **Remaining drift:** `src/controllers/assets.controller.js` still contains legacy/unreachable response payload shapes; touching this file requires full-file cleanup to satisfy changed-file contract checks.
+- **No active partials in C4–C6.** Next active work starts at C7.
 
 ### 🔴 Not Started (still planned work)
 
-- **C6** Post-spine truth refresh (docs)
 - **C7–C9** Active contract passes for remaining controllers/routes
 - **C10–C12** SSOT consolidation (auth/plan guards/validation/idempotency duplicate removal)
 - **C13–C15** Canonical `/api` router + remove duplicate mounts + credits dedupe
@@ -52,9 +50,9 @@
 
 ### Current Priority (next few commits)
 
-1. **Finish C5 controller cleanup** (`src/controllers/assets.controller.js` full-file contract conformity)
-2. **C6 post-spine truth refresh** (docs reconciliation after C5)
-3. **Start C7 app-entry cleanup** (`src/app.js` envelope conformance on touched handlers)
+1. **Start C7 app-entry cleanup** (`src/app.js` envelope conformance on touched handlers)
+2. **Continue C8/C9 active contract passes** (controllers/routes still returning legacy envelopes)
+3. **Begin C10–C12 SSOT dedupe** (auth/plan guards/validation/idempotency)
 
 ---
 
@@ -134,7 +132,7 @@
 
 ### C5 — Assets Contract Pass _(legacy ref: 2.4d)_
 
-**Status:** 🟡 IN PROGRESS (controller-file cleanup remains)
+**Status:** ✅ DONE
 
 1. Scope: `src/routes/assets.routes.js`, `src/controllers/assets.controller.js`.
 2. `/api/assets/options`: canonical envelopes only.
@@ -142,8 +140,8 @@
    - Keep `requireAuth`.
    - Remove `planGuard('pro')` and request validation from this disabled route.
    - Return canonical `410 FEATURE_DISABLED` **with requestId** directly (or via `fail`).
-4. Allowed cleanup:
-   - Delete unreachable legacy response blocks in `src/controllers/assets.controller.js` that are dead due to hard disable.
+4. Completed cleanup:
+   - Deleted unreachable legacy response blocks in `src/controllers/assets.controller.js` tied to disabled AI generation.
 5. Out of scope: re-enabling AI image generation.
 6. Gate: assets files contain no legacy response payload shapes.
 
@@ -151,11 +149,11 @@
 
 ### C6 — Post-Spine Truth Refresh (Docs Only) _(legacy ref: 2.4e)_
 
-**Status:** 🔴 NOT STARTED
+**Status:** ✅ DONE
 
 1. Scope: `docs/ACTIVE_SURFACES.md`, `VAIFORM_REPO_COHESION_AUDIT.md`, `ROUTE_TRUTH_TABLE.md`.
-2. Capture post-story/assets contract status and CI ratchet position.
-3. Gate: docs match code 1:1.
+2. Completed: captured post-story/assets contract status and caller-backed `/creative` truth.
+3. Gate achieved: docs match code 1:1 for current active-surface and route-truth baseline.
 
 ---
 

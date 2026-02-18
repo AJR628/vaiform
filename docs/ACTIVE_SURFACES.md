@@ -1,6 +1,6 @@
 # Active Surfaces (C1 Dist-Aware Truth Snapshot)
 
-**Audit date**: 2026-02-16  
+**Audit date**: 2026-02-18  
 **Branch**: `feat/voice-ssot-tts`
 
 Definitions used here:
@@ -68,7 +68,7 @@ Reachable under defaults, but no proven dist-entrypoint caller:
 
 - `/api/limits/usage`, `/limits/usage` (`src/app.js:279-280`, `src/routes/limits.routes.js:7`).
 - `/credits`, `/enhance`, `/generate`, `/job/:jobId` are root aliases not default caller-backed from dist `apiFetch` flows; `/credits` root use is conditional fallback only (`web/dist/api.mjs:156-163`).
-- `/api/assets/ai-images` is reachable, but no longer caller-backed from canonical `/creative`; only legacy `creative.html` callers reference it (`web/dist/creative.html:2229`).
+- `/api/assets/ai-images` is reachable, but no longer caller-backed from canonical `/creative`; only legacy `creative.html` callers reference it (`web/dist/creative.html:2229`). Route behavior is canonical disabled `410 FEATURE_DISABLED` via `fail(...)` (`src/routes/assets.routes.js:12-20`).
 - `/api/user/me` and `/api/user/setup` router route (`src/routes/user.routes.js:12-67`) (inline alias remains shadowed by router order: `src/app.js:321`, `src/app.js:330-333`).
 - `/api/users/ensure` (`src/routes/users.routes.js:14-100`) (dist `firebaseClient` writes Firestore directly: `web/dist/js/firebaseClient.js:23-53`).
 

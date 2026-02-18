@@ -1,6 +1,6 @@
 # Vaiform Repo Cohesion Audit (C1 Baseline Truth Snapshot)
 
-**Audit date**: 2026-02-16  
+**Audit date**: 2026-02-18  
 **Branch**: `feat/voice-ssot-tts`  
 **Scope**: Docs-only truth snapshot from current code. No runtime changes.
 
@@ -17,7 +17,7 @@ Companion docs:
 | Legacy gate predicate               | `ENABLE_LEGACY_ROUTES === "1"`                                                           | `src/app.js:35`, `src/app.js:259`, `src/app.js:283`, `src/app.js:298`, `src/app.js:314`                                                                                                                               |
 | Debug gate predicate                | `VAIFORM_DEBUG === "1"`                                                                  | `src/app.js:34`, `src/app.js:216`, `src/app.js:225`, `src/app.js:369`                                                                                                                                                 |
 | Default flag values                 | legacy/debug both OFF by default                                                         | `env.example:3`, `env.example:7`                                                                                                                                                                                      |
-| Default static mode                 | dist-first (`web/dist` exists and is mounted before `public`)                            | `src/app.js:343-347`, `src/app.js:366`, `web/dist`                                                                                                                                                                    |
+| Default static mode                 | dist static first, then `public` static, SPA fallback last                               | `src/app.js:356`, `src/app.js:376-380`, `web/dist`                                                                                                                                                                    |
 | Dual mounts exist                   | yes (`/` and `/api`, plus `/limits` and `/api/limits`)                                   | `src/app.js:211-223`, `src/app.js:279-280`                                                                                                                                                                            |
 | Precedence/shadowing risk           | yes (ordered root routers include multiple `GET /`)                                      | `src/app.js:211`, `src/app.js:212`, `src/app.js:214`, `src/app.js:237`; route defs in `src/routes/health.routes.js:10`, `src/routes/whoami.routes.js:10`, `src/routes/credits.routes.js:11`, `src/routes/index.js:24` |
 | Whoami surface truth                | `/whoami` and `/api/whoami` are not mounted API routes; whoami router roots are shadowed | `src/routes/whoami.routes.js:10`, `src/app.js:211-212`, `src/app.js:219-220`; runtime probe: `/api/whoami` -> `404`                                                                                                   |
@@ -42,7 +42,7 @@ Companion docs:
 - CDN: `/cdn`: `src/app.js:257`
 - Assets: `/api/assets`: `src/app.js:275`
 - Limits: `/api/limits` and `/limits`: `src/app.js:279-280`
-- Creative page route: `/creative`: `src/app.js:289`
+- Creative page route: `/creative`: `src/app.js:298`
 - Story: `/api/story`: `src/app.js:303`
 - Caption preview: `/api/caption/preview` via `/api` mount: `src/app.js:308-310`, `src/routes/caption.preview.routes.js:101`
 - User routes: `/api/user`, `/api/users`: `src/app.js:321`, `src/app.js:326`
@@ -82,10 +82,10 @@ C1 classification uses separate facts:
 
 Primary evidence for served entrypoints:
 
-- Dist entrypoints redirect/link to `/creative.html` and other dist pages: `web/dist/index.html:40`, `web/dist/index.html:142`, `web/dist/components/header.js:13-17`
-- `creative.html` loads runtime modules (`frontend.js`, `auth-bridge.js`, `firebaseClient.js`): `web/dist/creative.html:24-34`
-- `web/dist` is served when present: `src/app.js:341-347`
-- Dist/static precedence: with dist present, SPA static + fallback run before `express.static(\"public\")`: `src/app.js:343-347`, `src/app.js:366`
+- Default entrypoints redirect/link to `/creative`: `web/dist/index.html:40`, `web/dist/index.html:142`, `web/dist/components/header.js:13`, `public/components/header.js:34`
+- `/creative` serves `public/creative.html` and article flow modules: `src/routes/creative.routes.js:11-13`, `public/creative.html:904`
+- `web/dist` is served when present: `src/app.js:356`
+- Dist/static precedence: with dist present, dist static is first, then `public` static, then SPA fallback: `src/app.js:356`, `src/app.js:376-380`
 
 ## 2.1 Dist-Mode Implication (C1 Caller Evidence Rule)
 
@@ -113,12 +113,12 @@ Primary evidence for served entrypoints:
 
 ## 4. SSOT Collision Truth
 
-| Concern         | Current operational SSOT                   | Parallel/legacy surface             | Notes                                                                                                                                                        |
-| --------------- | ------------------------------------------ | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Auth middleware | `src/middleware/requireAuth.js`            | `src/middleware/auth.middleware.js` | Mounted routes import `requireAuth` directly.                                                                                                                |
-| Plan guards     | split usage                                | `planGuards.js` and `planGuard.js`  | `story.routes.js` uses `planGuards.js`; `assets.routes.js` still imports `planGuard.js` (`src/routes/assets.routes.js:4`, `src/routes/assets.routes.js:12`). |
-| Idempotency     | `idempotency.firestore.js`                 | `idempotency.js` exists             | Generate/finalize paths reference Firestore middleware (`src/routes/generate.routes.js:3`, `src/routes/story.routes.js:5`).                                  |
-| Validation      | `src/schemas/*` + `validate.middleware.js` | inline Zod in route files           | Story routes perform inline `safeParse` checks (`src/routes/story.routes.js`, multiple).                                                                     |
+| Concern         | Current operational SSOT                   | Parallel/legacy surface             | Notes                                                                                                                                               |
+| --------------- | ------------------------------------------ | ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Auth middleware | `src/middleware/requireAuth.js`            | `src/middleware/auth.middleware.js` | Mounted routes import `requireAuth` directly.                                                                                                       |
+| Plan guards     | split usage                                | `planGuards.js` and `planGuard.js`  | `story.routes.js` uses `planGuards.js`; disabled `/api/assets/ai-images` route no longer uses `planGuard.js` (`src/routes/assets.routes.js:12-20`). |
+| Idempotency     | `idempotency.firestore.js`                 | `idempotency.js` exists             | Generate/finalize paths reference Firestore middleware (`src/routes/generate.routes.js:3`, `src/routes/story.routes.js:5`).                         |
+| Validation      | `src/schemas/*` + `validate.middleware.js` | inline Zod in route files           | Story routes perform inline `safeParse` checks (`src/routes/story.routes.js`, multiple).                                                            |
 
 ## 5. CI Truth Snapshot
 
