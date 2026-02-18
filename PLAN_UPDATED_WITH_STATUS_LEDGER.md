@@ -1,9 +1,9 @@
 # Vaiform Cohesion Hardening Plan (Living SSOT)
 
 > This file is the **single living plan** for repo cohesion.  
-> It is intentionally “broad but detailed” so we don’t drift while hardening + adding features.
+> It is intentionally â€œbroad but detailedâ€ so we donâ€™t drift while hardening + adding features.
 
-**North Star:** make the repo easy to understand, secure by default, and stable enough for 100s → 1000s of users.
+**North Star:** make the repo easy to understand, secure by default, and stable enough for 100s â†’ 1000s of users.
 
 **Canonical API Contract (must not drift):**
 
@@ -13,46 +13,46 @@
 
 **Flags posture (secure-by-default):**
 
-- `ENABLE_LEGACY_ROUTES=0` (default) → legacy/orphan mounts are unreachable
-- `VAIFORM_DEBUG=0` (default) → diag endpoints are unreachable
+- `ENABLE_LEGACY_ROUTES=0` (default) â†’ legacy/orphan mounts are unreachable
+- `VAIFORM_DEBUG=0` (default) â†’ diag endpoints are unreachable
 
 **As-of:** 2026-02-18
 
 ---
 
-## Status Ledger (what’s set vs what’s left)
+## Status Ledger (whatâ€™s set vs whatâ€™s left)
 
-### ✅ Completed / Locked In
+### âœ… Completed / Locked In
 
 - **Docs hygiene:** historical audits/plans archived under `docs/_archive/**/2026-02-16/`, with `docs/_archive/INDEX.md`.
 - **Legacy caption contract:** `docs/caption-meta-contract.md` is a stub linking to the archived legacy contract + pointing to the V3 contract doc.
-- **Prettier stability:** `.prettierignore` excludes archives + build output so CI isn’t blocked by old artifacts.
+- **Prettier stability:** `.prettierignore` excludes archives + build output so CI isnâ€™t blocked by old artifacts.
 - **Truth-docs front door:** `README.md` links only to SSOT docs.
-- **C1** Baseline truth snapshot (docs) — in place and aligned to repo reality.
-- **C2** Cohesion guardrails spec — SSOT ownership + anti-duplication rules exist.
-- **C3** CI changed-files contract gate — blocks _new_ drift without forcing full-repo cleanup.
-- **C4** Story spine contract pass — Zod validation `fields` normalized to `{path: string}` in `src/routes/story.routes.js`.
-- **C5** Assets contract pass — disabled AI images route + controller now use canonical disabled behavior and contain no legacy response payload keys.
-- **C6** Post-spine truth refresh — `ACTIVE_SURFACES`, `VAIFORM_REPO_COHESION_AUDIT`, and `ROUTE_TRUTH_TABLE` reconciled with current runtime truth.
+- **C1** Baseline truth snapshot (docs) â€” in place and aligned to repo reality.
+- **C2** Cohesion guardrails spec â€” SSOT ownership + anti-duplication rules exist.
+- **C3** CI changed-files contract gate â€” blocks _new_ drift without forcing full-repo cleanup.
+- **C4** Story spine contract pass â€” Zod validation `fields` normalized to `{path: string}` in `src/routes/story.routes.js`.
+- **C5** Assets contract pass â€” disabled AI images route + controller now use canonical disabled behavior and contain no legacy response payload keys.
+- **C6** Post-spine truth refresh â€” `ACTIVE_SURFACES`, `VAIFORM_REPO_COHESION_AUDIT`, and `ROUTE_TRUTH_TABLE` reconciled with current runtime truth.
 - **Green-path caller hardening:** `/creative` is canonical caller surface; static ordering fixed to `dist -> public -> SPA fallback`.
 - **Lint posture hardening:** `lint` scoped to green-path server surfaces; `lint:full` retained for broader cleanup.
 
-### 🟡 In Progress / Partial (implemented but not fully conforming)
+### ðŸŸ¡ In Progress / Partial (implemented but not fully conforming)
 
-- **C7** App-entry contract cleanup is in progress: `src/app.js` envelope pass is done; `src/handlers/credits.get.js` remains.
+- **No active partials in C4-C7.** Next active work starts at C8.
 
-### 🔴 Not Started (still planned work)
+### ðŸ”´ Not Started (still planned work)
 
 - **C8-C9** Active contract passes for remaining controllers/routes
-- **C10–C12** SSOT consolidation (auth/plan guards/validation/idempotency duplicate removal)
-- **C13–C15** Canonical `/api` router + remove duplicate mounts + credits dedupe
-- **C16–C17** Launch posture verification + final cohesion publication
+- **C10â€“C12** SSOT consolidation (auth/plan guards/validation/idempotency duplicate removal)
+- **C13â€“C15** Canonical `/api` router + remove duplicate mounts + credits dedupe
+- **C16â€“C17** Launch posture verification + final cohesion publication
 
 ### Current Priority (next few commits)
 
-1. **Finish C7 app-entry cleanup** (`src/handlers/credits.get.js` envelope conformance)
-2. **Continue C8/C9 active contract passes** (controllers/routes still returning legacy envelopes)
-3. **Begin C10–C12 SSOT dedupe** (auth/plan guards/validation/idempotency)
+1. **Start C8 active contract pass** (`src/controllers/credits.controller.js`, `src/controllers/checkout.controller.js`, `src/controllers/limits.controller.js`, `src/routes/user.routes.js`)
+2. **Continue C9 active contract pass** (`src/controllers/generate.controller.js`, `src/controllers/shorts.controller.js`, `src/routes/stripe.webhook.js`)
+3. **Begin C10â€“C12 SSOT dedupe** (auth/plan guards/validation/idempotency)
 
 ---
 
@@ -67,19 +67,19 @@
 
 ## Commit-by-Commit Plan (with status)
 
-> **Rule:** One commit = one cohesion goal. Avoid mixing “format the world” with behavior changes unless the goal is formatting.
+> **Rule:** One commit = one cohesion goal. Avoid mixing â€œformat the worldâ€ with behavior changes unless the goal is formatting.
 
-### C0 — Repo Hygiene (Docs archive + Prettierignore) _(pre-plan but now SSOT)_
+### C0 â€” Repo Hygiene (Docs archive + Prettierignore) _(pre-plan but now SSOT)_
 
-**Status:** ✅ DONE  
+**Status:** âœ… DONE  
 **Scope:** `docs/_archive/**`, stub `docs/caption-meta-contract.md`, `.prettierignore`, `docs/_archive/INDEX.md`  
 **Gate:** `npm run format:check` passes without touching archives
 
 ---
 
-### C1 — Baseline Truth Snapshot (Docs Only) _(legacy ref: 0.1)_
+### C1 â€” Baseline Truth Snapshot (Docs Only) _(legacy ref: 0.1)_
 
-**Status:** ✅ DONE
+**Status:** âœ… DONE
 
 1. Scope: `VAIFORM_REPO_COHESION_AUDIT.md`, `ROUTE_TRUTH_TABLE.md`, `docs/ACTIVE_SURFACES.md`.
 2. Update as-of reality for mounts, gating, CI coverage, and response drift.
@@ -88,9 +88,9 @@
 
 ---
 
-### C2 — Cohesion Guardrails Spec (Docs Only) _(legacy ref: 0.2)_
+### C2 â€” Cohesion Guardrails Spec (Docs Only) _(legacy ref: 0.2)_
 
-**Status:** ✅ DONE
+**Status:** âœ… DONE
 
 1. Scope: `docs/COHESION_GUARDRAILS.md`.
 2. SSOT ownership table (canonical vs deprecated) for auth, plan guards, idempotency, validation, routing, response helpers.
@@ -99,9 +99,9 @@
 
 ---
 
-### C3 — CI Contract Gate (Changed Files Only) _(legacy ref: 1.1)_
+### C3 â€” CI Contract Gate (Changed Files Only) _(legacy ref: 1.1)_
 
-**Status:** ✅ DONE
+**Status:** âœ… DONE
 
 1. Scope: `.github/workflows/ci.yml`, `scripts/check-responses-changed.mjs` and wiring.
 2. Required-now CI checks:
@@ -115,9 +115,9 @@
 
 ---
 
-### C4 — Story Spine Contract Pass (Routes + Required Middleware) _(legacy ref: 2.4c)_
+### C4 â€” Story Spine Contract Pass (Routes + Required Middleware) _(legacy ref: 2.4c)_
 
-**Status:** ✅ DONE
+**Status:** âœ… DONE
 
 1. Scope: `src/routes/story.routes.js`, `src/middleware/idempotency.firestore.js`, `src/middleware/planGuards.js` (envelope/output only).
 2. Objective: all `/api/story/*` reachable responses use canonical envelope + `requestId`.
@@ -130,9 +130,9 @@
 
 ---
 
-### C5 — Assets Contract Pass _(legacy ref: 2.4d)_
+### C5 â€” Assets Contract Pass _(legacy ref: 2.4d)_
 
-**Status:** ✅ DONE
+**Status:** âœ… DONE
 
 1. Scope: `src/routes/assets.routes.js`, `src/controllers/assets.controller.js`.
 2. `/api/assets/options`: canonical envelopes only.
@@ -147,9 +147,9 @@
 
 ---
 
-### C6 — Post-Spine Truth Refresh (Docs Only) _(legacy ref: 2.4e)_
+### C6 â€” Post-Spine Truth Refresh (Docs Only) _(legacy ref: 2.4e)_
 
-**Status:** ✅ DONE
+**Status:** âœ… DONE
 
 1. Scope: `docs/ACTIVE_SURFACES.md`, `VAIFORM_REPO_COHESION_AUDIT.md`, `ROUTE_TRUTH_TABLE.md`.
 2. Completed: captured post-story/assets contract status and caller-backed `/creative` truth.
@@ -157,21 +157,21 @@
 
 ---
 
-### C7 � App Entry Contract Cleanup _(legacy ref: 1.2)_
+### C7 — App Entry Contract Cleanup _(legacy ref: 1.2)_
 
-**Status:** IN PROGRESS
+**Status:** DONE
 
 1. Scope: src/app.js, src/handlers/credits.get.js.
 2. Completed in src/app.js: canonicalized /health, debug /diag/echo, and GET /generate guard envelopes.
-3. Remaining: canonicalize src/handlers/credits.get.js while preserving current status semantics.
-4. Gate: touched-file contract scan clean; behavior unchanged.
-5. Scope note: /api/health parity may remain for later continuation if src/routes/health.routes.js is untouched in this phase.
+3. Completed in src/handlers/credits.get.js: canonicalized success/failure envelopes with preserved status semantics.
+4. Gate achieved: touched-file contract scan clean; behavior unchanged.
+5. Scope note: /api/health parity remains a continuation item if src/routes/health.routes.js stays untouched.
 
 ---
 
-### C8 � Active Contract Pass A _(legacy ref: 1.3)_
+### C8 — Active Contract Pass A _(legacy ref: 1.3)_
 
-**Status:** 🔴 NOT STARTED
+**Status:** ðŸ”´ NOT STARTED
 
 1. Scope: `src/controllers/credits.controller.js`, `src/controllers/checkout.controller.js`, `src/controllers/limits.controller.js`, `src/routes/user.routes.js`.
 2. Canonical envelope migration only.
@@ -179,9 +179,9 @@
 
 ---
 
-### C9 — Active Contract Pass B _(legacy ref: 1.4)_
+### C9 â€” Active Contract Pass B _(legacy ref: 1.4)_
 
-**Status:** 🔴 NOT STARTED
+**Status:** ðŸ”´ NOT STARTED
 
 1. Scope: `src/controllers/generate.controller.js`, `src/controllers/shorts.controller.js`, `src/routes/stripe.webhook.js`.
 2. Canonical envelope migration only.
@@ -189,9 +189,9 @@
 
 ---
 
-### C10 — Auth SSOT Consolidation _(legacy ref: 2.1)_
+### C10 â€” Auth SSOT Consolidation _(legacy ref: 2.1)_
 
-**Status:** 🔴 NOT STARTED
+**Status:** ðŸ”´ NOT STARTED
 
 1. Scope: `src/middleware/requireAuth.js`, `src/middleware/auth.middleware.js`, related imports.
 2. Keep one canonical auth module; gate or delete the duplicate after import proof.
@@ -199,9 +199,9 @@
 
 ---
 
-### C11 — Plan Guard SSOT Consolidation _(legacy ref: 2.2)_
+### C11 â€” Plan Guard SSOT Consolidation _(legacy ref: 2.2)_
 
-**Status:** 🔴 NOT STARTED
+**Status:** ðŸ”´ NOT STARTED
 
 1. Scope: `src/middleware/planGuard.js`, `src/middleware/planGuards.js`, import sites.
 2. Remove semantic duplication; stop mixing APIs in the same route file.
@@ -209,9 +209,9 @@
 
 ---
 
-### C12 — Validation/Idempotency Dead Code Cleanup _(legacy ref: 2.3)_
+### C12 â€” Validation/Idempotency Dead Code Cleanup _(legacy ref: 2.3)_
 
-**Status:** 🔴 NOT STARTED
+**Status:** ðŸ”´ NOT STARTED
 
 1. Scope: `src/validation/schema.js`, `src/middleware/idempotency.js`, references.
 2. Remove orphaned duplicates after import proof.
@@ -219,9 +219,9 @@
 
 ---
 
-### C13 — Canonical API Router Introduction _(legacy ref: 3.1)_
+### C13 â€” Canonical API Router Introduction _(legacy ref: 3.1)_
 
-**Status:** 🔴 NOT STARTED
+**Status:** ðŸ”´ NOT STARTED
 
 1. Scope: `src/routes/api.router.js` (new), `src/app.js`.
 2. Introduce single canonical `/api` aggregation surface.
@@ -229,9 +229,9 @@
 
 ---
 
-### C14 — Remove Duplicate Root API Mounts _(legacy ref: 3.2)_
+### C14 â€” Remove Duplicate Root API Mounts _(legacy ref: 3.2)_
 
-**Status:** 🔴 NOT STARTED
+**Status:** ðŸ”´ NOT STARTED
 
 1. Scope: `src/app.js`.
 2. Remove duplicate `/` + `/api` registrations for API surfaces.
@@ -239,9 +239,9 @@
 
 ---
 
-### C15 — Credits De-duplication _(legacy ref: 3.3)_
+### C15 â€” Credits De-duplication _(legacy ref: 3.3)_
 
-**Status:** 🔴 NOT STARTED
+**Status:** ðŸ”´ NOT STARTED
 
 1. Scope: `src/app.js`, `src/routes/credits.routes.js`, `src/handlers/credits.get.js`.
 2. Eliminate direct-handler + router duplication.
@@ -249,9 +249,9 @@
 
 ---
 
-### C16 — Launch Surface Lock Verification _(legacy ref: 4.1)_
+### C16 â€” Launch Surface Lock Verification _(legacy ref: 4.1)_
 
-**Status:** 🔴 NOT STARTED
+**Status:** ðŸ”´ NOT STARTED
 
 1. Scope: `src/app.js`, `env.example`, `docs/ACTIVE_SURFACES.md`.
 2. Verify default launch posture (`ENABLE_LEGACY_ROUTES=0`, `VAIFORM_DEBUG=0`).
@@ -259,9 +259,9 @@
 
 ---
 
-### C17 — Final Cohesion Publication _(legacy ref: 4.2)_
+### C17 â€” Final Cohesion Publication _(legacy ref: 4.2)_
 
-**Status:** 🔴 NOT STARTED
+**Status:** ðŸ”´ NOT STARTED
 
 1. Scope: `VAIFORM_REPO_COHESION_AUDIT.md`, `ROUTE_TRUTH_TABLE.md`, `docs/API_CONTRACT.md`.
 2. Publish final true state and residual backlog.
@@ -271,7 +271,7 @@
 
 ## SSOT Dedupe Constraint (Explicit)
 
-For `C10`–`C12`: **no behavioral changes**.  
+For `C10`â€“`C12`: **no behavioral changes**.  
 Allowed: import rewiring, canonical module selection, dead duplicate removal, envelope normalization where already required.  
 Not allowed: changing guard conditions, entitlements, or route behavior.
 

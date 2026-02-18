@@ -105,7 +105,6 @@ Primary evidence for served entrypoints:
 
 - Full drift scan command: `node scripts/check-responses.js`
 - Latest audit run confirms violations in reachable files (examples):
-  - `src/handlers/credits.get.js` (`code/message`)
   - `src/routes/user.routes.js` (`ok/reason`)
   - `src/routes/stripe.webhook.js` (`ok/reason`)
 - Latest run also confirms many gated/unmounted legacy drifts.
