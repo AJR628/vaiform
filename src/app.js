@@ -348,13 +348,12 @@ console.log(
 
 // ---------- STATIC LAST (disable directory redirects like /dir -> /dir/) ----------
 // --- SPA static hosting (after API routes) ---
+const distDir = path.resolve(process.cwd(), 'web', 'dist');
+let hasDist = false;
 try {
-  const distDir = path.resolve(process.cwd(), 'web', 'dist');
-  if (fs.existsSync(distDir)) {
+  hasDist = fs.existsSync(distDir);
+  if (hasDist) {
     app.use(express.static(distDir, { index: false }));
-    app.get(/^\/(?!api\/|assets\/).*/, (req, res) => {
-      res.sendFile(path.join(distDir, 'index.html'));
-    });
     console.log(`[web] Serving SPA from ${distDir}`);
   } else {
     console.warn(
@@ -374,7 +373,12 @@ app.use((req, res, next) => {
   } catch {}
   next();
 });
-app.use(express.static('public', { redirect: false }));
+app.use(express.static('public', { index: false, redirect: false }));
+if (hasDist) {
+  app.get(/^\/(?!api\/|assets\/).*/, (req, res) => {
+    res.sendFile(path.join(distDir, 'index.html'));
+  });
+}
 
 // Optional route table when VAIFORM_DEBUG=1
 if (process.env.VAIFORM_DEBUG === '1' && app?._router?.stack) {
