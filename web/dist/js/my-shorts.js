@@ -131,7 +131,7 @@ async function refreshCredits(){
     const res = await fetch(`${API_BASE}/credits`, { headers: { 'Authorization': `Bearer ${token}` }, credentials: 'include' });
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const j = await res.json();
-    setCreditCount(j?.credits ?? '--');
+    setCreditCount(j?.credits ?? j?.data?.credits ?? '--');
   } catch(e){
     console.warn('credits fetch failed', e?.message || e);
     setCreditCount('--');

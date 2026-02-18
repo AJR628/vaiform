@@ -130,7 +130,7 @@ async function refreshCredits(force = true, retries = 1) {
   if (!auth.currentUser) { updateCreditUI(0); return; }
   try {
     const data = await apiFetch("/credits");
-    const credits = Number(data?.credits ?? 0);
+    const credits = Number(data?.credits ?? data?.data?.credits ?? 0);
     updateCreditUI(Number.isNaN(credits) ? 0 : credits);
   } catch (err) {
     if (retries > 0) return refreshCredits(false, retries - 1);

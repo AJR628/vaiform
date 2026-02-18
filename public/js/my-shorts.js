@@ -160,7 +160,7 @@ async function refreshCredits() {
     });
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const j = await res.json();
-    setCreditCount(j?.credits ?? '--');
+    setCreditCount(j?.credits ?? j?.data?.credits ?? '--');
   } catch (e) {
     console.warn('credits fetch failed', e?.message || e);
     setCreditCount('--');
