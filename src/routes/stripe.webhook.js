@@ -2,6 +2,7 @@ import express from 'express';
 import Stripe from 'stripe';
 import admin from '../config/firebase.js';
 import { PLAN_CREDITS_MAP, getCreditsForPlan } from '../services/credit.service.js';
+import { ok, fail } from '../http/respond.js';
 
 const router = express.Router();
 const stripe = process.env.STRIPE_SECRET_KEY
@@ -65,10 +66,10 @@ router.post('/', express.raw({ type: 'application/json', limit: '1mb' }), async 
         console.log('[webhook] unhandled event type:', event.type);
         break;
     }
-    return res.json({ received: true });
+    return ok(req, res, { received: true });
   } catch (e) {
     console.error('[webhook] handler error', e);
-    return res.status(500).json({ ok: false, reason: 'WEBHOOK_ERROR', detail: e?.message });
+    return fail(req, res, 500, 'WEBHOOK_ERROR', e?.message || 'WEBHOOK_ERROR');
   }
 });
 
@@ -155,8 +156,8 @@ async function grantCreditsAndUpdatePlan(metadata, eventId, eventType) {
   }
 }
 
-router.get('/', (_req, res) => {
-  res.status(200).json({ ok: true, msg: 'Webhook endpoint (GET) alive' });
+router.get('/', (req, res) => {
+  return ok(req, res, { alive: true });
 });
 
 export default router;
