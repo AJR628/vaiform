@@ -105,8 +105,8 @@ Primary evidence for served entrypoints:
 
 - Full drift scan command: `node scripts/check-responses.js`
 - Latest audit run confirms violations in reachable files (examples):
-  - `src/routes/user.routes.js` (`ok/reason`)
   - `src/routes/stripe.webhook.js` (`ok/reason`)
+  - `src/controllers/generate.controller.js` (`message` on error paths)
 - Latest run also confirms many gated/unmounted legacy drifts.
 
 ## 4. SSOT Collision Truth

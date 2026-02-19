@@ -34,25 +34,26 @@
 - **C4** Story spine contract pass - Zod validation `fields` normalized to `{path: string}` in `src/routes/story.routes.js`.
 - **C5** Assets contract pass - disabled AI images route + controller now use canonical disabled behavior and contain no legacy response payload keys.
 - **C6** Post-spine truth refresh - `ACTIVE_SURFACES`, `VAIFORM_REPO_COHESION_AUDIT`, and `ROUTE_TRUTH_TABLE` reconciled with current runtime truth.
+- **C8** Active contract pass A - canonical envelopes now applied to checkout, limits, user routes, and credits controller scope.
 - **Green-path caller hardening:** `/creative` is canonical caller surface; static ordering fixed to `dist -> public -> SPA fallback`.
 - **Lint posture hardening:** `lint` scoped to green-path server surfaces; `lint:full` retained for broader cleanup.
 
 ### IN PROGRESS In Progress / Partial (implemented but not fully conforming)
 
-- **No active partials in C4-C7.** Next active work starts at C8.
+- **No active partials in C4-C8.** Next active work starts at C9.
 
 ### NOT STARTED Not Started (still planned work)
 
-- **C8-C9** Active contract passes for remaining controllers/routes
+- **C9** Active contract pass B for remaining controllers/routes
 - **C10-C12** SSOT consolidation (auth/plan guards/validation/idempotency duplicate removal)
 - **C13-C15** Canonical `/api` router + remove duplicate mounts + credits dedupe
 - **C16-C17** Launch posture verification + final cohesion publication
 
 ### Current Priority (next few commits)
 
-1. **Start C8 active contract pass** (`src/controllers/credits.controller.js`, `src/controllers/checkout.controller.js`, `src/controllers/limits.controller.js`, `src/routes/user.routes.js`)
-2. **Continue C9 active contract pass** (`src/controllers/generate.controller.js`, `src/controllers/shorts.controller.js`, `src/routes/stripe.webhook.js`)
-3. **Begin C10-C12 SSOT dedupe** (auth/plan guards/validation/idempotency)
+1. **Continue C9 active contract pass** (`src/controllers/generate.controller.js`, `src/controllers/shorts.controller.js`, `src/routes/stripe.webhook.js`)
+2. **Begin C10-C12 SSOT dedupe** (auth/plan guards/validation/idempotency)
+3. **Begin C13-C15 mount topology consolidation** (canonical `/api` router + duplicate mount cleanup + credits dedupe)
 
 ---
 
@@ -171,11 +172,11 @@
 
 ### C8 — Active Contract Pass A _(legacy ref: 1.3)_
 
-**Status:** NOT STARTED
+**Status:** DONE
 
 1. Scope: `src/controllers/credits.controller.js`, `src/controllers/checkout.controller.js`, `src/controllers/limits.controller.js`, `src/routes/user.routes.js`.
-2. Canonical envelope migration only.
-3. Gate: touched-file contract scan clean.
+2. Completed: canonical envelope migration only (`ok/fail`) with status-code preservation and no route/auth/business logic changes.
+3. Gate achieved: touched-file contract scans clean for all four C8 scope files.
 
 ---
 
