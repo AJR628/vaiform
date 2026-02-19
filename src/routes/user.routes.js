@@ -2,6 +2,7 @@
 import { Router } from 'express';
 import requireAuth from '../middleware/requireAuth.js';
 import { ensureFreeUser, getUserData } from '../services/user.service.js';
+import { ok, fail } from '../http/respond.js';
 
 const r = Router();
 
@@ -15,22 +16,15 @@ r.post('/setup', requireAuth, async (req, res) => {
 
     const result = await ensureFreeUser(uid, email);
 
-    return res.json({
-      ok: true,
-      data: {
-        uid,
-        email,
-        plan: 'free',
-        isMember: false,
-      },
+    return ok(req, res, {
+      uid,
+      email,
+      plan: 'free',
+      isMember: false,
     });
   } catch (e) {
     console.error('[user/setup] error', e);
-    return res.status(500).json({
-      ok: false,
-      reason: 'SETUP_FAILED',
-      detail: e?.message || 'User setup failed',
-    });
+    return fail(req, res, 500, 'SETUP_FAILED', e?.message || 'User setup failed');
   }
 });
 
@@ -44,31 +38,20 @@ r.get('/me', requireAuth, async (req, res) => {
     const userData = await getUserData(uid);
 
     if (!userData) {
-      return res.status(404).json({
-        ok: false,
-        reason: 'USER_NOT_FOUND',
-        detail: 'User document not found',
-      });
+      return fail(req, res, 404, 'USER_NOT_FOUND', 'User document not found');
     }
 
-    return res.json({
-      ok: true,
-      data: {
-        uid,
-        email: userData.email,
-        plan: userData.plan || 'free',
-        isMember: userData.isMember || false,
-        credits: userData.credits || 0,
-        membership: userData.membership || null,
-      },
+    return ok(req, res, {
+      uid,
+      email: userData.email,
+      plan: userData.plan || 'free',
+      isMember: userData.isMember || false,
+      credits: userData.credits || 0,
+      membership: userData.membership || null,
     });
   } catch (e) {
     console.error('[user/me] error', e);
-    return res.status(500).json({
-      ok: false,
-      reason: 'FETCH_FAILED',
-      detail: e?.message || 'Failed to fetch user data',
-    });
+    return fail(req, res, 500, 'FETCH_FAILED', e?.message || 'Failed to fetch user data');
   }
 });
 
