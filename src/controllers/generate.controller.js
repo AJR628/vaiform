@@ -12,6 +12,7 @@ import {
 import { costForCount } from '../config/pricing.js';
 import * as storage from '../services/storage.service.js';
 import * as jobs from '../services/job.service.js';
+import { ok, fail } from '../http/respond.js';
 
 // ⏱️ Timeout + retry wrapper
 import { withTimeoutAndRetry } from '../utils/withTimeoutAndRetry.js';
@@ -47,7 +48,7 @@ function toNum(val) {
  * =========================== */
 export async function enhance(req, res) {
   const { prompt } = req.body;
-  if (!prompt) return res.status(400).json({ success: false, error: 'Missing prompt' });
+  if (!prompt) return fail(req, res, 400, 'Missing prompt', 'Missing prompt');
 
   try {
     const result = await openai.chat.completions.create({
@@ -65,10 +66,10 @@ export async function enhance(req, res) {
 
     const enhanced = result.choices?.[0]?.message?.content?.trim?.() ?? '';
     if (!enhanced) throw new Error('Empty enhancement from OpenAI');
-    res.json({ success: true, data: { enhanced } });
+    return ok(req, res, { enhanced });
   } catch (err) {
     console.error('❌ Enhance error:', err?.message || err);
-    res.status(500).json({ success: false, error: 'Enhancement failed.' });
+    return fail(req, res, 500, 'Enhancement failed.', 'Enhancement failed.');
   }
 }
 
@@ -83,11 +84,13 @@ export async function enhance(req, res) {
  * =========================== */
 export async function generate(req, res) {
   // [AI_IMAGES] Kill-switch - AI image generation disabled for v1
-  return res.status(410).json({
-    success: false,
-    error: 'FEATURE_DISABLED',
-    detail: 'AI image generation is not available in this version of Vaiform.',
-  });
+  return fail(
+    req,
+    res,
+    410,
+    'FEATURE_DISABLED',
+    'AI image generation is not available in this version of Vaiform.'
+  );
 
   // [AI_IMAGES] Legacy implementation (disabled for v1)
   /* eslint-disable no-unreachable */
@@ -132,11 +135,7 @@ export async function generate(req, res) {
   try {
     const uid = req.user?.uid;
     if (!uid) {
-      return res.status(401).json({
-        success: false,
-        error: 'UNAUTHENTICATED',
-        message: 'Login required.',
-      });
+      return fail(req, res, 401, 'UNAUTHENTICATED', 'Login required.');
     }
     const email = req.user?.email || null;
 
@@ -207,13 +206,19 @@ export async function generate(req, res) {
       });
     }
     if (!prompt.trim()) {
-      return res.status(400).json({ success: false, error: 'Missing prompt.' });
+      return fail(req, res, 400, 'Missing prompt.', 'Missing prompt.');
     }
 
     // Basic moderation
     const mod = await openai.moderations.create({ input: prompt });
     if (mod.results?.[0]?.flagged) {
-      return res.status(400).json({ success: false, error: 'Inappropriate prompt detected.' });
+      return fail(
+        req,
+        res,
+        400,
+        'Inappropriate prompt detected.',
+        'Inappropriate prompt detected.'
+      );
     }
 
     // Check for async mode (Pixar style with X-Async header)
@@ -243,7 +248,11 @@ export async function generate(req, res) {
       await debitCreditsTx(uid, cost); // existing atomic debit
 
       // 3) return immediately
-      res.status(202).json({ success: true, data: { jobId, status: 'pending' } });
+      res.status(202).json({
+        success: true,
+        data: { jobId, status: 'pending' },
+        requestId: req?.id ?? null,
+      });
 
       // 4) background work (don't await)
       setImmediate(async () => {
@@ -357,7 +366,7 @@ export async function generate(req, res) {
       await debitCreditsTx(uid, cost);
     } catch (e) {
       if (e?.code === 'INSUFFICIENT_CREDITS') {
-        return res.status(400).json({ success: false, error: 'Insufficient credits' });
+        return fail(req, res, 400, 'Insufficient credits', 'Insufficient credits');
       }
       throw e;
     }
@@ -376,9 +385,8 @@ export async function generate(req, res) {
     const providerAdapter = ADAPTERS[entry.provider];
     if (!providerAdapter) {
       await refundCredits(uid, cost);
-      return res
-        .status(500)
-        .json({ success: false, error: `No adapter for provider: ${entry.provider}` });
+      const adapterError = `No adapter for provider: ${entry.provider}`;
+      return fail(req, res, 500, adapterError, adapterError);
     }
 
     // Normalize numeric inputs
@@ -497,11 +505,13 @@ export async function generate(req, res) {
     } catch (e) {
       console.error('adapter error (txt2img):', e?.message || e);
       await refundCredits(uid, cost);
-      return res.status(500).json({
-        success: false,
-        error: 'GENERATION_FAILED',
-        detail: e?.message || 'Image generation failed (timeout/provider). Credits refunded.',
-      });
+      return fail(
+        req,
+        res,
+        500,
+        'GENERATION_FAILED',
+        e?.message || 'Image generation failed (timeout/provider). Credits refunded.'
+      );
     }
 
     // --- NORMALIZE OUTPUT (updated) ---
@@ -546,10 +556,13 @@ export async function generate(req, res) {
 
     if (!urls.length) {
       await refundCredits(uid, cost);
-      return res.status(502).json({
-        success: false,
-        error: 'Image generation failed (no output URLs). Credits refunded.',
-      });
+      return fail(
+        req,
+        res,
+        502,
+        'Image generation failed (no output URLs). Credits refunded.',
+        'Image generation failed (no output URLs). Credits refunded.'
+      );
     }
 
     // If caller asked for multiple images but we have fewer URLs,
@@ -648,15 +661,16 @@ export async function generate(req, res) {
 
     console.log('[gen] done', { jobId, count, ms: Date.now() - startedAt });
 
-    return res.json({
-      success: true,
-      data: { images: outputUrls, jobId, cost },
-    });
+    return ok(req, res, { images: outputUrls, jobId, cost });
   } catch (err) {
     console.error('🔥 /generate error:', err);
-    return res
-      .status(500)
-      .json({ success: false, error: 'Something went wrong during image generation.' });
+    return fail(
+      req,
+      res,
+      500,
+      'Something went wrong during image generation.',
+      'Something went wrong during image generation.'
+    );
   }
 }
 
@@ -669,11 +683,13 @@ export async function generate(req, res) {
  * =========================== */
 export async function imageToImage(req, res) {
   // [AI_IMAGES] Kill-switch - image-to-image disabled for v1
-  return res.status(410).json({
-    success: false,
-    error: 'FEATURE_DISABLED',
-    detail: 'AI image generation is not available in this version of Vaiform.',
-  });
+  return fail(
+    req,
+    res,
+    410,
+    'FEATURE_DISABLED',
+    'AI image generation is not available in this version of Vaiform.'
+  );
 
   // [AI_IMAGES] Legacy implementation (disabled for v1)
   /* eslint-disable no-unreachable */
@@ -681,11 +697,7 @@ export async function imageToImage(req, res) {
   try {
     const uid = req.user?.uid;
     if (!uid) {
-      return res.status(401).json({
-        success: false,
-        error: 'UNAUTHENTICATED',
-        message: 'Login required.',
-      });
+      return fail(req, res, 401, 'UNAUTHENTICATED', 'Login required.');
     }
     const email = req.user?.email || null;
 
@@ -727,11 +739,9 @@ export async function imageToImage(req, res) {
     }
 
     if (!prompt || !imageInput) {
-      return res.status(400).json({
-        success: false,
-        error:
-          'Missing required fields. Provide prompt, and an image via imageBase64, imageData, or imageUrl.',
-      });
+      const missingFieldsError =
+        'Missing required fields. Provide prompt, and an image via imageBase64, imageData, or imageUrl.';
+      return fail(req, res, 400, missingFieldsError, missingFieldsError);
     }
 
     // Resolve style/model (img2img)
@@ -748,7 +758,7 @@ export async function imageToImage(req, res) {
       await debitCreditsTx(uid, cost);
     } catch (e) {
       if (e?.code === 'INSUFFICIENT_CREDITS') {
-        return res.status(400).json({ success: false, error: 'Insufficient credits' });
+        return fail(req, res, 400, 'Insufficient credits', 'Insufficient credits');
       }
       throw e;
     }
@@ -769,9 +779,8 @@ export async function imageToImage(req, res) {
     const providerAdapter = ADAPTERS[entry.provider];
     if (!providerAdapter) {
       await refundCredits(uid, cost);
-      return res
-        .status(500)
-        .json({ success: false, error: `No adapter for provider: ${entry.provider}` });
+      const adapterError = `No adapter for provider: ${entry.provider}`;
+      return fail(req, res, 500, adapterError, adapterError);
     }
 
     const input = {
@@ -808,11 +817,13 @@ export async function imageToImage(req, res) {
     } catch (e) {
       console.error('adapter error (img2img):', e?.message || e);
       await refundCredits(uid, cost);
-      return res.status(500).json({
-        success: false,
-        error: 'GENERATION_FAILED',
-        detail: e?.message || 'Image-to-image failed (timeout/provider). Credits refunded.',
-      });
+      return fail(
+        req,
+        res,
+        500,
+        'GENERATION_FAILED',
+        e?.message || 'Image-to-image failed (timeout/provider). Credits refunded.'
+      );
     }
 
     const srcUrls = (artifacts || [])
@@ -832,9 +843,13 @@ export async function imageToImage(req, res) {
 
     if (outputUrls.length === 0) {
       await refundCredits(uid, cost);
-      return res
-        .status(502)
-        .json({ success: false, error: 'Image-to-image generation failed. Credits refunded.' });
+      return fail(
+        req,
+        res,
+        502,
+        'Image-to-image generation failed. Credits refunded.',
+        'Image-to-image generation failed. Credits refunded.'
+      );
     }
 
     const jobId = db.collection('users').doc(uid).collection('generations').doc().id;
@@ -852,13 +867,10 @@ export async function imageToImage(req, res) {
 
     console.log('[gen] done', { jobId, count, ms: Date.now() - startedAt });
 
-    return res.json({
-      success: true,
-      data: { images: outputUrls, jobId, cost },
-    });
+    return ok(req, res, { images: outputUrls, jobId, cost });
   } catch (err) {
     console.error('❌ /image-to-image error:', err);
-    return res.status(500).json({ success: false, error: 'Image-to-image failed.' });
+    return fail(req, res, 500, 'Image-to-image failed.', 'Image-to-image failed.');
   }
 }
 
@@ -869,11 +881,13 @@ export async function imageToImage(req, res) {
  * =========================== */
 export async function upscale(req, res) {
   // [AI_IMAGES] Kill-switch - image upscaling disabled for v1
-  return res.status(410).json({
-    success: false,
-    error: 'FEATURE_DISABLED',
-    detail: 'Image upscaling is not available in this version of Vaiform.',
-  });
+  return fail(
+    req,
+    res,
+    410,
+    'FEATURE_DISABLED',
+    'Image upscaling is not available in this version of Vaiform.'
+  );
 
   // [AI_IMAGES] Legacy implementation (disabled for v1)
   /* eslint-disable no-unreachable */
@@ -882,11 +896,7 @@ export async function upscale(req, res) {
   try {
     const uid = req.user?.uid;
     if (!uid) {
-      return res.status(401).json({
-        success: false,
-        error: 'UNAUTHENTICATED',
-        message: 'Login required.',
-      });
+      return fail(req, res, 401, 'UNAUTHENTICATED', 'Login required.');
     }
     const email = req.user?.email || null;
 
@@ -901,7 +911,7 @@ export async function upscale(req, res) {
       await debitCreditsTx(uid, UPSCALE_COST);
     } catch (e) {
       if (e?.code === 'INSUFFICIENT_CREDITS') {
-        return res.status(400).json({ success: false, error: 'Insufficient credits' });
+        return fail(req, res, 400, 'Insufficient credits', 'Insufficient credits');
       }
       throw e;
     }
@@ -913,10 +923,7 @@ export async function upscale(req, res) {
     const imgRef = imagesCol.doc(imgId);
     const imgSnap = await imgRef.get();
     if (imgSnap.exists && imgSnap.data()?.upscaledUrl) {
-      return res.json({
-        success: true,
-        data: { upscaledUrl: imgSnap.data().upscaledUrl, alreadyUpscaled: true },
-      });
+      return ok(req, res, { upscaledUrl: imgSnap.data().upscaledUrl, alreadyUpscaled: true });
     }
 
     // Adapter: realesrgan
@@ -934,9 +941,7 @@ export async function upscale(req, res) {
     } catch (e) {
       console.error('[upscale] invoke failed', { reqId, msg: e?.message || e });
       await refundCredits(uid, UPSCALE_COST);
-      return res
-        .status(502)
-        .json({ success: false, error: 'Upscale create failed.', detail: e?.message });
+      return fail(req, res, 502, 'Upscale create failed.', e?.message || 'Upscale create failed.');
     }
 
     // 2) Poll until done (add timeout/retry)
@@ -953,9 +958,13 @@ export async function upscale(req, res) {
         msg: e?.message || e,
       });
       await refundCredits(uid, UPSCALE_COST);
-      return res
-        .status(502)
-        .json({ success: false, error: 'Upscale timed out or failed while polling.' });
+      return fail(
+        req,
+        res,
+        502,
+        'Upscale timed out or failed while polling.',
+        'Upscale timed out or failed while polling.'
+      );
     }
 
     // 3) Extract URLs (be generous in parsing)
@@ -996,11 +1005,11 @@ export async function upscale(req, res) {
     if (!urls.length) {
       console.error('[upscale] no URLs extracted', { reqId, finalShape: typeof finalOutput });
       await refundCredits(uid, UPSCALE_COST);
-      return res.status(502).json({
-        success: false,
-        error: 'Upscale returned no URL.',
-        hint: process.env.DIAG === '1' ? 'Check adapter output shape in logs.' : undefined,
-      });
+      const detail =
+        process.env.DIAG === '1'
+          ? 'Upscale returned no URL. Check adapter output shape in logs.'
+          : 'Upscale returned no URL.';
+      return fail(req, res, 502, 'Upscale returned no URL.', detail);
     }
 
     // 4) Upload first result to Firebase Storage
@@ -1019,7 +1028,13 @@ export async function upscale(req, res) {
 
     if (!uploaded) {
       await refundCredits(uid, UPSCALE_COST);
-      return res.status(500).json({ success: false, error: 'Failed to store upscaled image.' });
+      return fail(
+        req,
+        res,
+        500,
+        'Failed to store upscaled image.',
+        'Failed to store upscaled image.'
+      );
     }
 
     await imgRef.set(
@@ -1032,13 +1047,10 @@ export async function upscale(req, res) {
       { merge: true }
     );
 
-    return res.json({
-      success: true,
-      data: { upscaledUrl: uploaded, alreadyUpscaled: false },
-    });
+    return ok(req, res, { upscaledUrl: uploaded, alreadyUpscaled: false });
   } catch (err) {
     console.error('🔥 /upscale error:', err);
-    return res.status(500).json({ success: false, error: 'Upscale failed.' });
+    return fail(req, res, 500, 'Upscale failed.', 'Upscale failed.');
   }
 }
 
@@ -1205,38 +1217,36 @@ async function runGenerationInBackground({
  * =========================== */
 export async function jobStatus(req, res) {
   // [AI_IMAGES] Kill-switch - image job polling disabled for v1
-  return res.status(410).json({
-    success: false,
-    error: 'FEATURE_DISABLED',
-    detail: 'Image job polling is not available in this version of Vaiform.',
-  });
+  return fail(
+    req,
+    res,
+    410,
+    'FEATURE_DISABLED',
+    'Image job polling is not available in this version of Vaiform.'
+  );
 
   // [AI_IMAGES] Legacy implementation (disabled for v1)
   /* eslint-disable no-unreachable */
   try {
     const uid = req.user?.uid;
     if (!uid) {
-      return res.status(401).json({
-        success: false,
-        error: 'UNAUTHENTICATED',
-        message: 'Login required.',
-      });
+      return fail(req, res, 401, 'UNAUTHENTICATED', 'Login required.');
     }
 
     const { jobId } = req.params;
     if (!jobId) {
-      return res.status(400).json({ success: false, error: 'Missing jobId' });
+      return fail(req, res, 400, 'Missing jobId', 'Missing jobId');
     }
 
     const snap = await admin.firestore().doc(`users/${uid}/generations/${jobId}`).get();
     if (!snap.exists) {
-      return res.status(404).json({ success: false, error: 'NOT_FOUND' });
+      return fail(req, res, 404, 'NOT_FOUND', 'NOT_FOUND');
     }
 
     const data = snap.data();
-    return res.json({ success: true, data });
+    return ok(req, res, data);
   } catch (e) {
     console.error('jobStatus error', e);
-    return res.status(500).json({ success: false, error: 'INTERNAL' });
+    return fail(req, res, 500, 'INTERNAL', 'INTERNAL');
   }
 }
