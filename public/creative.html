@@ -2247,9 +2247,10 @@
                     }
                 });
                 
-                if (data?.ok === true && data?.data?.images) {
+                const payload = data?.data ?? data;
+                if ((data?.success === true || data?.ok === true) && payload?.images) {
                     // Handle successful generation
-                    const imgs = data.data.images || [];
+                    const imgs = payload.images || [];
                     const first = imgs[0];
                     const url = typeof first === 'string' ? first : (first?.url || first);
                     if (url) {
