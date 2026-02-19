@@ -1,6 +1,6 @@
 # Vaiform Repo Cohesion Audit (C1 Baseline Truth Snapshot)
 
-**Audit date**: 2026-02-18  
+**Audit date**: 2026-02-19  
 **Branch**: `feat/voice-ssot-tts`  
 **Scope**: Docs-only truth snapshot from current code. No runtime changes.
 
@@ -34,7 +34,7 @@ Companion docs:
 ### 1.1 Always-mounted core surfaces
 
 - `GET/HEAD /health` inline route: `src/app.js:170-177`
-- `POST /stripe/webhook` and `GET /stripe/webhook`: `src/app.js:120`, `src/routes/stripe.webhook.js:12`, `src/routes/stripe.webhook.js:144`
+- `POST /stripe/webhook` and `GET /stripe/webhook`: `src/app.js:120`, `src/routes/stripe.webhook.js:15`, `src/routes/stripe.webhook.js:159`
 - Root + `/api` mounts for health/whoami/credits/generate: `src/app.js:211-223`
 - Enhance: `/`, `/enhance`, `/api`: `src/app.js:241-243`
 - Checkout: `/checkout` and `/api` prefixes; concrete paths become `/checkout/start|session|subscription|portal` and `/api/start|session|subscription|portal`: `src/app.js:247-248`, `src/routes/checkout.routes.js:16-26`
@@ -104,10 +104,11 @@ Primary evidence for served entrypoints:
 ### 3.2 Observed baseline (full scan, informational)
 
 - Full drift scan command: `node scripts/check-responses.js`
-- Latest audit run confirms violations in reachable files (examples):
-  - `src/routes/stripe.webhook.js` (`ok/reason`)
-  - `src/controllers/generate.controller.js` (`message` on error paths)
-- Latest run also confirms many gated/unmounted legacy drifts.
+- Latest audit run confirms C9 scope is canonicalized for:
+  - `src/routes/stripe.webhook.js`
+  - `src/controllers/generate.controller.js`
+  - `src/controllers/shorts.controller.js`
+- Latest run still confirms many non-C9 gated/unmounted legacy drifts.
 
 ## 4. SSOT Collision Truth
 
