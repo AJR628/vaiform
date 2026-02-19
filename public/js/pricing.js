@@ -11,6 +11,14 @@ console.log('[api] BACKEND_BASE =', API);
 
 let currentUser = null;
 
+function checkoutUrlFrom(data) {
+  return data?.url ?? data?.data?.url ?? null;
+}
+
+function checkoutErrorFrom(data, fallback) {
+  return data?.detail ?? data?.error ?? data?.reason ?? fallback;
+}
+
 // Auth state listener
 onAuthStateChanged(auth, async (user) => {
   currentUser = user;
@@ -134,11 +142,12 @@ async function proceedWithCheckout(plan, billing) {
       );
     }
 
-    const data = body;
-    if (data.url) {
-      window.location.href = data.url;
+    const data = typeof body === 'string' ? null : body;
+    const checkoutUrl = checkoutUrlFrom(data);
+    if (checkoutUrl) {
+      window.location.href = checkoutUrl;
     } else {
-      alert('Checkout failed: ' + (data.reason || 'Unknown error'));
+      alert('Checkout failed: ' + checkoutErrorFrom(data, 'Unknown error'));
     }
   } catch (error) {
     console.error('Checkout error:', error);

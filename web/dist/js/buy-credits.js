@@ -13,6 +13,26 @@ const manageBtn = document.getElementById("manage-billing");
 
 let mode = "onetime";
 
+function checkoutUrlFrom(data) {
+  return data?.url ?? data?.data?.url ?? null;
+}
+
+function checkoutErrorFrom(data, fallback) {
+  return data?.detail ?? data?.error ?? data?.reason ?? fallback;
+}
+
+function checkoutErrorFromThrown(err, fallback) {
+  const raw = String(err?.message || "");
+  const jsonStart = raw.indexOf("{");
+  if (jsonStart >= 0) {
+    try {
+      const parsed = JSON.parse(raw.slice(jsonStart));
+      return checkoutErrorFrom(parsed, fallback);
+    } catch {}
+  }
+  return fallback;
+}
+
 function toast(msg) {
   if (!toastEl) return alert(msg);
   toastEl.textContent = msg;
@@ -36,25 +56,35 @@ async function ensureAuth() {
 async function startOneTime({ priceId, credits = 0, quantity = 1 }) {
   const user = await ensureAuth();
   if (!user) return toast("Please sign in to buy credits.");
-
-  const data = await apiFetch("/session", {
-    method: "POST",
-    body: { priceId, quantity, credits } // credits optional (for analytics/metadata)
-  });
-  if (!data?.url) return toast(data?.error || "Checkout failed");
-  window.location = data.url;
+  try {
+    const data = await apiFetch("/session", {
+      method: "POST",
+      body: { priceId, quantity, credits } // credits optional (for analytics/metadata)
+    });
+    const checkoutUrl = checkoutUrlFrom(data);
+    if (!checkoutUrl) return toast(checkoutErrorFrom(data, "Checkout failed"));
+    window.location = checkoutUrl;
+  } catch (e) {
+    console.error(e);
+    toast(checkoutErrorFromThrown(e, "Checkout failed"));
+  }
 }
 
 async function startSubscription({ priceId, credits = 0 }) {
   const user = await ensureAuth();
   if (!user) return toast("Please sign in to subscribe.");
-
-  const data = await apiFetch("/subscription", {
-    method: "POST",
-    body: { priceId, credits } // credits optional (for analytics/metadata)
-  });
-  if (!data?.url) return toast(data?.error || "Subscription checkout failed");
-  window.location = data.url;
+  try {
+    const data = await apiFetch("/subscription", {
+      method: "POST",
+      body: { priceId, credits } // credits optional (for analytics/metadata)
+    });
+    const checkoutUrl = checkoutUrlFrom(data);
+    if (!checkoutUrl) return toast(checkoutErrorFrom(data, "Subscription checkout failed"));
+    window.location = checkoutUrl;
+  } catch (e) {
+    console.error(e);
+    toast(checkoutErrorFromThrown(e, "Subscription checkout failed"));
+  }
 }
 
 function applyMode(newMode) {
@@ -123,11 +153,12 @@ manageBtn?.addEventListener("click", async () => {
     const data = await apiFetch("/portal", {
       method: "POST"
     });
-    if (!data?.url) return toast(data?.error || "Could not open billing portal");
-    window.location = data.url;
+    const checkoutUrl = checkoutUrlFrom(data);
+    if (!checkoutUrl) return toast(checkoutErrorFrom(data, "Could not open billing portal"));
+    window.location = checkoutUrl;
   } catch (e) {
     console.error(e);
-    toast("Something went wrong opening the billing portal.");
+    toast(checkoutErrorFromThrown(e, "Could not open billing portal"));
   } finally {
     manageBtn.disabled = false;
     manageBtn.textContent = old;
