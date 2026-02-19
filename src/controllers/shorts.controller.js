@@ -3,6 +3,7 @@ import { createShortService } from '../services/shorts.service.js';
 import admin from '../config/firebase.js';
 import { buildPublicUrl, getDownloadToken } from '../utils/storage.js';
 import { quickValidateAssetUrl } from '../utils/assetValidation.js';
+import { ok, fail } from '../http/respond.js';
 
 const BackgroundSchema = z
   .object({
@@ -319,13 +320,33 @@ const CreateShortSchema = z
     }
   });
 
+function toValidationFields(zodError) {
+  const flat = zodError?.flatten?.();
+  const fields = {};
+  const fieldErrors = flat?.fieldErrors || {};
+  for (const [path, messages] of Object.entries(fieldErrors)) {
+    if (Array.isArray(messages) && messages.length > 0) {
+      fields[path] = String(messages[0]);
+    }
+  }
+  if (Array.isArray(flat?.formErrors) && flat.formErrors.length > 0) {
+    fields._form = String(flat.formErrors[0]);
+  }
+  return Object.keys(fields).length > 0 ? fields : undefined;
+}
+
 export async function createShort(req, res) {
   try {
     const parsed = CreateShortSchema.safeParse(req.body || {});
     if (!parsed.success) {
-      return res
-        .status(400)
-        .json({ success: false, error: 'INVALID_INPUT', detail: parsed.error.flatten() });
+      return fail(
+        req,
+        res,
+        400,
+        'INVALID_INPUT',
+        'Invalid input',
+        toValidationFields(parsed.error)
+      );
     }
     const {
       mode = 'quote',
@@ -353,9 +374,7 @@ export async function createShort(req, res) {
 
     const ownerUid = req.user?.uid;
     if (!ownerUid) {
-      return res
-        .status(401)
-        .json({ success: false, error: 'UNAUTHENTICATED', message: 'Login required' });
+      return fail(req, res, 401, 'UNAUTHENTICATED', 'Login required');
     }
 
     // Validate asset URL accessibility for non-solid backgrounds
@@ -365,11 +384,13 @@ export async function createShort(req, res) {
 
       if (!validation.valid) {
         console.error(`[shorts] Asset validation failed: ${validation.error}`);
-        return res.status(400).json({
-          success: false,
-          error: 'INVALID_ASSET',
-          message: `Asset URL is not accessible: ${validation.error}`,
-        });
+        return fail(
+          req,
+          res,
+          400,
+          'INVALID_ASSET',
+          `Asset URL is not accessible: ${validation.error}`
+        );
       }
 
       console.log(`[shorts] Asset validation passed: ${background.url}`);
@@ -449,7 +470,7 @@ export async function createShort(req, res) {
       await req.incrementShortCount();
     }
 
-    return res.json({ success: true, data: result });
+    return ok(req, res, result);
   } catch (e) {
     const msg = e?.message || 'Short creation failed';
     // Provide a helpful hint when ffmpeg is missing
@@ -458,9 +479,7 @@ export async function createShort(req, res) {
         ? 'ffmpeg is not installed or not in PATH. Install ffmpeg and retry.'
         : undefined;
     console.error('/shorts/create error', msg, e?.stderr || '');
-    return res
-      .status(500)
-      .json({ success: false, error: 'SHORTS_CREATE_FAILED', message: hint || msg });
+    return fail(req, res, 500, 'SHORTS_CREATE_FAILED', hint || msg);
   }
 }
 
@@ -468,9 +487,7 @@ export async function getMyShorts(req, res) {
   try {
     const ownerUid = req.user?.uid;
     if (!ownerUid) {
-      return res
-        .status(401)
-        .json({ success: false, error: 'UNAUTHENTICATED', message: 'Login required' });
+      return fail(req, res, 401, 'UNAUTHENTICATED', 'Login required');
     }
 
     const limit = Math.min(Number(req.query.limit) || 24, 100);
@@ -504,13 +521,10 @@ export async function getMyShorts(req, res) {
         `[shorts] PRIMARY path used for uid=${ownerUid}, loaded ${snapshot.docs.length} docs, limit=${limit}`
       );
 
-      return res.json({
-        success: true,
-        data: {
-          items,
-          nextCursor: nextCursor ? nextCursor.toISOString() : null,
-          hasMore: items.length === limit,
-        },
+      return ok(req, res, {
+        items,
+        nextCursor: nextCursor ? nextCursor.toISOString() : null,
+        hasMore: items.length === limit,
       });
     } catch (err) {
       // Firestore code=9 FAILED_PRECONDITION → requires an index
@@ -550,19 +564,16 @@ export async function getMyShorts(req, res) {
         `[shorts] FALLBACK path used for uid=${ownerUid}, loaded ${snapshot.docs.length} docs, returning ${items.length}, limit=${limit}`
       );
 
-      return res.json({
-        success: true,
-        data: {
-          items,
-          nextCursor: null,
-          hasMore: false,
-          note: 'INDEX_FALLBACK',
-        },
+      return ok(req, res, {
+        items,
+        nextCursor: null,
+        hasMore: false,
+        note: 'INDEX_FALLBACK',
       });
     }
   } catch (error) {
     console.error('/shorts/mine error:', error);
-    return res.status(500).json({ success: false, error: 'FETCH_FAILED', message: error.message });
+    return fail(req, res, 500, 'FETCH_FAILED', error?.message || 'FETCH_FAILED');
   }
 }
 
@@ -570,15 +581,10 @@ export async function getShortById(req, res) {
   try {
     const ownerUid = req.user?.uid;
     if (!ownerUid) {
-      return res
-        .status(401)
-        .json({ success: false, error: 'UNAUTHENTICATED', message: 'Login required' });
+      return fail(req, res, 401, 'UNAUTHENTICATED', 'Login required');
     }
     const jobId = String(req.params?.jobId || '').trim();
-    if (!jobId)
-      return res
-        .status(400)
-        .json({ success: false, error: 'INVALID_INPUT', message: 'jobId required' });
+    if (!jobId) return fail(req, res, 400, 'INVALID_INPUT', 'jobId required');
 
     const debug = req.query?.debug === '1';
 
@@ -612,15 +618,15 @@ export async function getShortById(req, res) {
         credits: meta.credits ?? null,
         createdAt: meta.createdAt ?? null,
       };
-      if (debug) return res.json({ ok: true, source: 'meta.urls', diag, data: payload });
-      return res.json({ success: true, data: payload });
+      if (debug) return ok(req, res, { source: 'meta.urls', diag, payload });
+      return ok(req, res, payload);
     }
 
     // Fallback: use admin metadata tokens
     const [existsVideo] = await fVideo.exists();
     if (!existsVideo) {
-      if (debug) return res.json({ ok: false, code: 'NO_VIDEO_OBJECT', diag });
-      return res.status(404).json({ success: false, error: 'NOT_FOUND' });
+      if (debug) return fail(req, res, 200, 'NO_VIDEO_OBJECT', 'NO_VIDEO_OBJECT');
+      return fail(req, res, 404, 'NOT_FOUND', 'NOT_FOUND');
     }
     const tokenVideo = await getDownloadToken(fVideo);
     const videoUrl = buildPublicUrl({
@@ -650,11 +656,11 @@ export async function getShortById(req, res) {
       credits: meta?.credits ?? null,
       createdAt: meta?.createdAt ?? null,
     };
-    if (debug) return res.json({ ok: true, source: 'metadata.tokens', diag, data: payload });
-    return res.json({ success: true, data: payload });
+    if (debug) return ok(req, res, { source: 'metadata.tokens', diag, payload });
+    return ok(req, res, payload);
   } catch (e) {
     console.error('/shorts/:jobId error', e?.message || e);
-    return res.status(500).json({ success: false, error: 'GET_SHORT_FAILED' });
+    return fail(req, res, 500, 'GET_SHORT_FAILED', 'GET_SHORT_FAILED');
   }
 }
 
@@ -662,22 +668,16 @@ export async function deleteShort(req, res) {
   try {
     const ownerUid = req.user?.uid;
     if (!ownerUid) {
-      return res
-        .status(401)
-        .json({ success: false, error: 'UNAUTHENTICATED', message: 'Login required' });
+      return fail(req, res, 401, 'UNAUTHENTICATED', 'Login required');
     }
 
     const jobId = String(req.params?.jobId || '').trim();
     if (!jobId) {
-      return res
-        .status(400)
-        .json({ success: false, error: 'INVALID_INPUT', message: 'jobId required' });
+      return fail(req, res, 400, 'INVALID_INPUT', 'jobId required');
     }
     // Prevent path traversal in jobId
     if (jobId.includes('/') || jobId.includes('\\') || jobId.includes('..')) {
-      return res
-        .status(400)
-        .json({ success: false, error: 'INVALID_INPUT', message: 'Invalid jobId format' });
+      return fail(req, res, 400, 'INVALID_INPUT', 'Invalid jobId format');
     }
 
     const db = admin.firestore();
@@ -686,18 +686,12 @@ export async function deleteShort(req, res) {
     // Check if the short exists and belongs to the user
     const doc = await shortsRef.get();
     if (!doc.exists) {
-      return res
-        .status(404)
-        .json({ success: false, error: 'NOT_FOUND', message: 'Short not found' });
+      return fail(req, res, 404, 'NOT_FOUND', 'Short not found');
     }
 
     const shortData = doc.data();
     if (shortData.ownerId !== ownerUid) {
-      return res.status(403).json({
-        success: false,
-        error: 'FORBIDDEN',
-        message: 'You can only delete your own shorts',
-      });
+      return fail(req, res, 403, 'FORBIDDEN', 'You can only delete your own shorts');
     }
 
     // Delete Firestore document
@@ -724,9 +718,9 @@ export async function deleteShort(req, res) {
       console.warn(`[shorts] Failed to delete storage files for ${jobId}:`, storageError.message);
     }
 
-    return res.json({ success: true, message: 'Short deleted successfully' });
+    return ok(req, res, { detail: 'Short deleted successfully' });
   } catch (error) {
     console.error('/shorts/:jobId/delete error:', error);
-    return res.status(500).json({ success: false, error: 'DELETE_FAILED', message: error.message });
+    return fail(req, res, 500, 'DELETE_FAILED', error?.message || 'DELETE_FAILED');
   }
 }
