@@ -1,10 +1,11 @@
 import admin from '../config/firebase.js';
+import { ok, fail } from '../http/respond.js';
 
 export async function getUsageLimits(req, res) {
   try {
     const uid = req.user?.uid;
     if (!uid) {
-      return res.status(401).json({ ok: false, reason: 'UNAUTHENTICATED' });
+      return fail(req, res, 401, 'UNAUTHENTICATED', 'Missing auth');
     }
 
     const userRef = admin.firestore().doc(`users/${uid}`);
@@ -50,21 +51,14 @@ export async function getUsageLimits(req, res) {
       remainingQuotes: Math.max(0, planLimits.monthlyQuotes - Math.floor(monthlyCount * 1.5)),
     };
 
-    return res.json({
-      ok: true,
-      data: {
-        plan,
-        isPro,
-        usage,
-        limits: planLimits,
-        resetDate: new Date(now.getFullYear(), now.getMonth() + 1, 1).toISOString(),
-      },
+    return ok(req, res, {
+      plan,
+      isPro,
+      usage,
+      limits: planLimits,
+      resetDate: new Date(now.getFullYear(), now.getMonth() + 1, 1).toISOString(),
     });
   } catch (e) {
-    return res.status(500).json({
-      ok: false,
-      reason: 'SERVER_ERROR',
-      detail: e?.message || 'usage limits fetch failed',
-    });
+    return fail(req, res, 500, 'SERVER_ERROR', e?.message || 'usage limits fetch failed');
   }
 }
