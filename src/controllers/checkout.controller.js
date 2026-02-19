@@ -1,6 +1,7 @@
 // src/controllers/checkout.controller.js
 import { stripe } from '../config/stripe.js';
 import { CREDIT_PRICE_MAP } from '../services/credit.service.js';
+import { ok, fail } from '../http/respond.js';
 
 /** Normalize FRONTEND_URL with no trailing slash, prefer env, fall back to request origin */
 function getFrontendBase(req) {
@@ -26,7 +27,7 @@ export async function createCheckoutSession(req, res) {
   try {
     const { priceId, quantity = 1, credits = 0 } = req.body || {};
     if (!priceId || !CREDIT_PRICE_MAP[priceId]) {
-      return res.status(400).json({ success: false, error: 'Unknown or disallowed priceId' });
+      return fail(req, res, 400, 'INVALID_PRICE_ID', 'Unknown or disallowed priceId');
     }
 
     const qty = clampInt(quantity, { min: 1, max: 10 });
@@ -59,10 +60,10 @@ export async function createCheckoutSession(req, res) {
     console.info(
       `[checkout] one-time price=${priceId} qty=${qty} uid=${req.user.uid} email=${req.user.email} → success=${FRONTEND}/success`
     );
-    return res.json({ url: session.url });
+    return ok(req, res, { url: session.url });
   } catch (err) {
     console.error('createCheckoutSession error:', err);
-    return res.status(500).json({ success: false, error: 'Checkout failed' });
+    return fail(req, res, 500, 'CHECKOUT_FAILED', 'Checkout failed');
   }
 }
 
@@ -75,7 +76,7 @@ export async function createSubscriptionSession(req, res) {
   try {
     const { priceId, credits = 0 } = req.body || {};
     if (!priceId || !CREDIT_PRICE_MAP[priceId]) {
-      return res.status(400).json({ success: false, error: 'Unknown or disallowed priceId' });
+      return fail(req, res, 400, 'INVALID_PRICE_ID', 'Unknown or disallowed priceId');
     }
 
     const creditHint = clampInt(credits, { min: 0, max: 1e9 });
@@ -116,10 +117,10 @@ export async function createSubscriptionSession(req, res) {
     console.info(
       `[checkout] subscription price=${priceId} uid=${req.user.uid} email=${req.user.email} → success=${FRONTEND}/success`
     );
-    return res.json({ url: session.url });
+    return ok(req, res, { url: session.url });
   } catch (err) {
     console.error('createSubscriptionSession error:', err);
-    return res.status(500).json({ success: false, error: 'Subscription checkout failed' });
+    return fail(req, res, 500, 'SUBSCRIPTION_CHECKOUT_FAILED', 'Subscription checkout failed');
   }
 }
 
@@ -135,16 +136,10 @@ export async function startPlanCheckout(req, res) {
 
     // Validate inputs
     if (!['creator', 'pro'].includes(plan)) {
-      return res
-        .status(400)
-        .json({ ok: false, reason: 'INVALID_PLAN', detail: "Plan must be 'creator' or 'pro'" });
+      return fail(req, res, 400, 'INVALID_PLAN', "Plan must be 'creator' or 'pro'");
     }
     if (!['monthly', 'onetime'].includes(billing)) {
-      return res.status(400).json({
-        ok: false,
-        reason: 'INVALID_BILLING',
-        detail: "Billing must be 'monthly' or 'onetime'",
-      });
+      return fail(req, res, 400, 'INVALID_BILLING', "Billing must be 'monthly' or 'onetime'");
     }
 
     // Trust boundary: derive uid/email from authenticated req.user, ignore any client-supplied values
@@ -177,11 +172,7 @@ export async function startPlanCheckout(req, res) {
 
     const priceId = PRICE_MAP[`${plan}:${billing}`];
     if (!priceId) {
-      return res.status(400).json({
-        ok: false,
-        reason: 'UNKNOWN_PRICE',
-        detail: `No price configured for ${plan}:${billing}`,
-      });
+      return fail(req, res, 400, 'UNKNOWN_PRICE', `No price configured for ${plan}:${billing}`);
     }
 
     const mode = billing === 'monthly' ? 'subscription' : 'payment';
@@ -221,12 +212,10 @@ export async function startPlanCheckout(req, res) {
     } else {
       console.info(`[checkout/start] ${plan} ${billing} → ${session.url}`);
     }
-    return res.json({ url: session.url });
+    return ok(req, res, { url: session.url });
   } catch (e) {
     console.error('[checkout/start] error', e);
-    return res
-      .status(500)
-      .json({ ok: false, reason: 'CHECKOUT_FAILED', detail: e?.message || 'Checkout failed' });
+    return fail(req, res, 500, 'CHECKOUT_FAILED', e?.message || 'Checkout failed');
   }
 }
 
@@ -268,9 +257,9 @@ export async function createBillingPortalSession(req, res) {
     console.info(
       `[billing] portal for uid=${req.user.uid} email=${req.user.email} → ${portal.url}`
     );
-    return res.json({ url: portal.url });
+    return ok(req, res, { url: portal.url });
   } catch (err) {
     console.error('createBillingPortalSession error:', err);
-    return res.status(500).json({ success: false, error: 'Billing portal failed' });
+    return fail(req, res, 500, 'BILLING_PORTAL_FAILED', 'Billing portal failed');
   }
 }
