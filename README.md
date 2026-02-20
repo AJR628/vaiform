@@ -12,6 +12,7 @@ Defaults and precedence to remember:
 
 - Default flags: `ENABLE_LEGACY_ROUTES=0`, `VAIFORM_DEBUG=0`.
 - Dist-first runtime precedence: `web/dist` is served before `public` when present.
+- Line endings: `.gitattributes` normalizes repo text files to LF; Prettier uses `endOfLine: "auto"` for cross-platform check stability.
 - Route-change rule: when routes/callers change, update both:
   - `ROUTE_TRUTH_TABLE.md`
   - `docs/ACTIVE_SURFACES.md`

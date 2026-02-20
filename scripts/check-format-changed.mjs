@@ -121,10 +121,21 @@ function isEligible(file) {
 }
 
 function runPrettierCheck(files) {
-  const npxCmd = process.platform === 'win32' ? 'npx.cmd' : 'npx';
-  const result = spawnSync(npxCmd, ['prettier', '--check', ...files], {
+  const prettierBin = path.resolve(
+    process.cwd(),
+    'node_modules',
+    'prettier',
+    'bin',
+    'prettier.cjs'
+  );
+  const useLocalBin = fs.existsSync(prettierBin);
+  const command = useLocalBin ? process.execPath : process.platform === 'win32' ? 'npx.cmd' : 'npx';
+  const args = useLocalBin ? [prettierBin, '--check', ...files] : ['prettier', '--check', ...files];
+
+  const result = spawnSync(command, args, {
     cwd: process.cwd(),
     stdio: 'inherit',
+    shell: !useLocalBin && process.platform === 'win32',
   });
 
   if (result.error) {
