@@ -13,7 +13,6 @@
 
 **Flags posture (secure-by-default):**
 
-- `ENABLE_LEGACY_ROUTES=0` (default) -> legacy/orphan mounts are unreachable
 - `VAIFORM_DEBUG=0` (default) -> diag endpoints are unreachable
 
 **As-of:** 2026-02-20
@@ -39,6 +38,7 @@
 - **C10** Auth SSOT consolidation - removed unused `src/middleware/auth.middleware.js`; `src/middleware/requireAuth.js` is now the single auth middleware SSOT.
 - **C11** Plan guard SSOT consolidation - removed unused legacy plan-guard duplicate; route plan-guard imports remain on `src/middleware/planGuards.js`.
 - **C12** Validation/Idempotency dead code cleanup - removed unreferenced duplicate modules (`src/validation/schema.js`, `src/middleware/idempotency.js`) plus dead utility/service files (`src/utils/logger.js`, `src/utils/async.js`, `src/utils/audio.mix.js`, `src/services/moderation.service.js`) after import-proof.
+- **Legacy route removal pass (Phase 2):** removed legacy/unmounted route modules and mount wiring (`uploads`, `voice`, `tts`, `caption.render`, `studio`, `quotes`, `preview`) plus now-unreachable support modules.
 - **Green-path caller hardening:** `/creative` is canonical caller surface; static ordering fixed to `dist -> public -> SPA fallback`.
 - **Lint posture hardening:** `lint` scoped to green-path server surfaces; `lint:full` retained for broader cleanup.
 
@@ -54,7 +54,7 @@
 ### Current Priority (next few commits)
 
 1. **Begin C13-C15 mount topology consolidation** (canonical `/api` router + duplicate mount cleanup + credits dedupe)
-2. **Begin C16-C17 launch posture verification + final cohesion publication**
+2. **Begin C17 final cohesion publication**
 
 ---
 
@@ -253,11 +253,11 @@
 
 ### C16 - Launch Surface Lock Verification _(legacy ref: 4.1)_
 
-**Status:** NOT STARTED
+**Status:** DONE
 
-1. Scope: `src/app.js`, `env.example`, `docs/ACTIVE_SURFACES.md`.
-2. Verify default launch posture (`ENABLE_LEGACY_ROUTES=0`, `VAIFORM_DEBUG=0`).
-3. Gate: intended active surface only under defaults.
+1. Scope completed: `src/app.js`, `src/routes/index.js`, `env.example`, `docs/ACTIVE_SURFACES.md`, `ROUTE_TRUTH_TABLE.md`, `VAIFORM_REPO_COHESION_AUDIT.md`.
+2. Completed: removed `ENABLE_LEGACY_ROUTES` mount wiring and deleted legacy/unmounted route modules (`uploads`, `voice`, `tts`, `caption.render`, `studio`, `quotes`, `preview`) plus zero-ref support modules exposed by that removal.
+3. Gate achieved: intended active surface remains under defaults; removed legacy paths are no longer mounted.
 
 ---
 

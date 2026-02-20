@@ -1,11 +1,11 @@
 # Active Surfaces (C1 Dist-Aware Truth Snapshot)
 
-**Audit date**: 2026-02-18  
+**Audit date**: 2026-02-20  
 **Branch**: `feat/voice-ssot-tts`
 
 Definitions used here:
 
-- `Default-Reachable`: reachable with `ENABLE_LEGACY_ROUTES=0` and `VAIFORM_DEBUG=0`.
+- `Default-Reachable`: reachable with `VAIFORM_DEBUG=0`.
 - `Caller-Backed`: called by default-runtime entrypoints and the JS they load.
 - `Active`: `Default-Reachable && Caller-Backed`.
 
@@ -23,8 +23,7 @@ Callsite path mapping rule:
 
 Default flags:
 
-- `ENABLE_LEGACY_ROUTES=0`: `env.example:3`
-- `VAIFORM_DEBUG=0`: `env.example:7`
+- `VAIFORM_DEBUG=0`: `env.example:3`
 
 ## 2) Default Entrypoints (Caller Scope)
 
@@ -84,16 +83,9 @@ C3 changes that removed prior broken caller attempts:
   - `apiFetch("/portal")` -> `/api/portal`
   - evidence: `web/dist/js/buy-credits.js:40`, `web/dist/js/buy-credits.js:52`, `web/dist/js/buy-credits.js:123`, `src/app.js:248`.
 - Upscale callsites were removed/gated from default dist callers (`web/dist/js/my-images.js:205-213`, `web/dist/frontend.js:525-528`).
-- Creative legacy/unmounted call paths (quotes/voice/uploads/register/shorts/create) are now UI-gated and hard-guarded in default dist runtime (`web/dist/creative.html:906-935`, `web/dist/creative.html:1201-1203`, `web/dist/creative.html:2025-2026`, `web/dist/creative.html:2077-2083`, `web/dist/creative.html:2269-2276`).
+- Legacy call paths (quotes/voice/uploads/caption-render/preview/studio) are removed from server mounts; any residual static strings are non-caller evidence and do not imply reachability under defaults.
 
-## 6) Legacy-Gated and Debug-Gated
-
-Legacy-gated (only with `ENABLE_LEGACY_ROUTES=1`):
-
-- `/api/uploads/*` (`src/app.js:259-262`)
-- `/api/voice/*` and `/voice/*` (`src/app.js:283-287`)
-- `/api/tts/preview` (`src/app.js:298-301`)
-- `/api/caption/render` (`src/app.js:314-317`)
+## 6) Debug-Gated
 
 Debug-gated (only with `VAIFORM_DEBUG=1`):
 

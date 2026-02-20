@@ -33,7 +33,6 @@ dotenv.config();
 envCheck(); // presence-only checks; CI bypasses via NODE_ENV=test
 
 const DBG = process.env.VAIFORM_DEBUG === '1';
-const ENABLE_LEGACY = process.env.ENABLE_LEGACY_ROUTES === '1';
 
 const app = express();
 
@@ -124,7 +123,7 @@ app.use('/stripe/webhook', stripeWebhook);
 console.log('✅ Mounted stripe webhook at /stripe/webhook');
 
 // 1.5) Conditional 200kb JSON parser for specific routes (BEFORE global parser)
-const CAPTION_PREVIEW_PATHS = ['/api/caption/preview', '/api/caption/render', '/api/tts/preview'];
+const CAPTION_PREVIEW_PATHS = ['/api/caption/preview'];
 const json200kb = express.json({ limit: '200kb' });
 app.use((req, res, next) => {
   if (CAPTION_PREVIEW_PATHS.includes(req.path)) {
@@ -263,21 +262,6 @@ if (routes?.shorts) {
 // Same-origin CDN proxy (optional)
 app.use('/cdn', cdnRoutes);
 console.log('✅ Mounted cdn at /cdn');
-if (ENABLE_LEGACY) {
-  app.use('/api', routes.uploads);
-  console.log('✅ Mounted uploads at /api/uploads (ENABLE_LEGACY_ROUTES=1)');
-}
-// PHASE 1: Unmounted non-core studio routes (code preserved)
-// if (routes?.studio) {
-//   app.use("/api/studio", routes.studio);
-//   console.log("✅ Mounted studio at /api/studio");
-// }
-// PHASE 1: Unmounted non-core quotes routes (code preserved)
-// if (routes?.quotes) {
-//   app.use("/api/quotes", routes.quotes);
-//   app.use("/quotes", routes.quotes);
-//   console.log("✅ Mounted quotes at /quotes and /api/quotes");
-// }
 if (routes?.assets) {
   app.use('/api/assets', routes.assets);
   console.log('✅ Mounted assets API at /api/assets');
@@ -287,24 +271,9 @@ if (routes?.limits) {
   app.use('/limits', routes.limits);
   console.log('✅ Mounted limits at /limits and /api/limits');
 }
-if (ENABLE_LEGACY) {
-  app.use('/api/voice', routes.voice);
-  app.use('/voice', routes.voice);
-  console.log('✅ Mounted voice at /voice and /api/voice (ENABLE_LEGACY_ROUTES=1)');
-}
 if (routes?.creative) {
   app.use('/creative', routes.creative);
   console.log('✅ Mounted creative at /creative');
-}
-// PHASE 1: Unmounted legacy preview routes (code preserved)
-// Legacy /api/preview/caption replaced by /api/caption/preview (V3 raster mode)
-// if (routes?.preview) {
-//   app.use("/api/preview", routes.preview);
-//   console.log("✅ Mounted preview at /api/preview");
-// }
-if (ENABLE_LEGACY) {
-  app.use('/api/tts', routes.tts);
-  console.log('✅ Mounted tts at /api/tts (ENABLE_LEGACY_ROUTES=1)');
 }
 if (routes?.story) {
   app.use('/api/story', routes.story);
@@ -315,13 +284,6 @@ if (routes?.story) {
 import captionPreviewRoutes from './routes/caption.preview.routes.js';
 app.use('/api', captionPreviewRoutes);
 console.log('✅ Mounted caption preview at /api/caption/preview');
-
-// Mount caption render routes (legacy flow only; Article finalize burns in-process via ffmpeg)
-import captionRenderRoutes from './routes/caption.render.routes.js';
-if (ENABLE_LEGACY) {
-  app.use('/api', captionRenderRoutes);
-  console.log('✅ Mounted caption render at /api/caption/render (ENABLE_LEGACY_ROUTES=1)');
-}
 
 // Mount user routes
 import userRoutes from './routes/user.routes.js';
@@ -339,7 +301,7 @@ app.post('/api/user/setup', (req, res) => {
   res.status(204).end(); // no content – frontend no longer relies on this
 });
 
-// Core routers summary (legacy: voice, tts, uploads, caption/render only when ENABLE_LEGACY_ROUTES=1)
+// Core routers summary
 console.log(
   '📋 Mounted core routes: story, caption preview, checkout, credits (GET only), users, user, shorts-readonly'
 );

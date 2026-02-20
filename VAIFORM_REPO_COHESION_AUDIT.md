@@ -14,9 +14,8 @@ Companion docs:
 | Category                            | Current truth                                                                                             | Evidence                                                                                                                                                                                                              |
 | ----------------------------------- | --------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Runtime entrypoint                  | `server.js` boots `src/app.js`                                                                            | `server.js`, `src/app.js:1-398`                                                                                                                                                                                       |
-| Legacy gate predicate               | `ENABLE_LEGACY_ROUTES === "1"`                                                                            | `src/app.js:35`, `src/app.js:259`, `src/app.js:283`, `src/app.js:298`, `src/app.js:314`                                                                                                                               |
 | Debug gate predicate                | `VAIFORM_DEBUG === "1"`                                                                                   | `src/app.js:34`, `src/app.js:223`, `src/app.js:232`, `src/app.js:384`                                                                                                                                                 |
-| Default flag values                 | legacy/debug both OFF by default                                                                          | `env.example:3`, `env.example:7`                                                                                                                                                                                      |
+| Default flag values                 | debug OFF by default                                                                                      | `env.example:3`                                                                                                                                                                                                       |
 | Default static mode                 | dist static first, then `public` static, SPA fallback last                                                | `src/app.js:354`, `src/app.js:374-378`, `web/dist`                                                                                                                                                                    |
 | Dual mounts exist                   | yes (`/` and `/api`, plus `/limits` and `/api/limits`)                                                    | `src/app.js:218-230`, `src/app.js:279-280`                                                                                                                                                                            |
 | Precedence/shadowing risk           | yes (ordered root routers include multiple `GET /`)                                                       | `src/app.js:218`, `src/app.js:219`, `src/app.js:221`, `src/app.js:244`; route defs in `src/routes/health.routes.js:10`, `src/routes/whoami.routes.js:10`, `src/routes/credits.routes.js:11`, `src/routes/index.js:24` |
@@ -25,7 +24,7 @@ Companion docs:
 | Caller mapping truth                | `apiFetch("/x")` resolves to `/api/x`; fallback only for GET `/credits`, `/whoami`, `/health`             | `web/dist/api.mjs:152`, `web/dist/api.mjs:156-163`                                                                                                                                                                    |
 | CI enforced checks                  | `format:check`, `test:security`, `check:responses:changed`                                                | `.github/workflows/ci.yml:35-45`                                                                                                                                                                                      |
 | CI non-blocking check               | `npm audit --audit-level=high`                                                                            | `.github/workflows/ci.yml:31-33`                                                                                                                                                                                      |
-| Repo-wide envelope drift (observed) | still present in reachable and gated files                                                                | `node scripts/check-responses.js` output (latest audit run)                                                                                                                                                           |
+| Repo-wide envelope drift (observed) | still present in reachable and debug-gated files                                                          | `node scripts/check-responses.js` output (latest audit run)                                                                                                                                                           |
 
 ## 1. Mount Topology Truth
 
@@ -48,16 +47,7 @@ Companion docs:
 - User routes: `/api/user`, `/api/users`: `src/app.js:321`, `src/app.js:326`
 - Inline no-op alias `POST /api/user/setup` exists but is shadowed by earlier `/api/user` router mount (`userRoutes` handles the request first): `src/app.js:321`, `src/routes/user.routes.js:12`, `src/app.js:330-333`
 
-### 1.2 Legacy-gated surfaces
-
-Mounted only when `ENABLE_LEGACY_ROUTES === "1"`:
-
-- Uploads: `src/app.js:259-262`
-- Voice: `src/app.js:283-287`
-- TTS preview route mount: `src/app.js:298-301`
-- Caption render: `src/app.js:314-317`
-
-### 1.3 Debug-gated surfaces
+### 1.2 Debug-gated surfaces
 
 Mounted only when `VAIFORM_DEBUG === "1"`:
 
@@ -65,17 +55,11 @@ Mounted only when `VAIFORM_DEBUG === "1"`:
 - `app.use("/diag", diagRoutes)`: `src/app.js:216`
 - `app.use("/api", diagHeadersRoutes)`: `src/app.js:225-227`
 
-### 1.4 Commented/unmounted surfaces
-
-- Studio routes (`/api/studio`): `src/app.js:264-267`
-- Quotes routes (`/api/quotes`, `/quotes`): `src/app.js:269-273`
-- Preview routes (`/api/preview`): `src/app.js:294-297`
-
 ## 2. Active vs Reachable Classification
 
 C1 classification uses separate facts:
 
-- `Default-Reachable`: endpoint is reachable with default env flags (`ENABLE_LEGACY_ROUTES=0`, `VAIFORM_DEBUG=0`).
+- `Default-Reachable`: endpoint is reachable with default env flags (`VAIFORM_DEBUG=0`).
 - `Caller-Backed`: endpoint is called by files actually served/loaded by runtime entrypoints.
 - `Active`: `Default-Reachable && Caller-Backed`.
 - Callsite mapping: `apiFetch(\"/x\")` targets `/api/x`, with fallback only for GET `/credits|/whoami|/health`.
@@ -132,7 +116,7 @@ Current `.github/workflows/ci.yml` behavior:
 ## 6. What Was Corrected From Prior Docs
 
 - Removed stale claim that CI does not run response/security checks.
-- Corrected gating truth to exact predicates (`ENABLE_LEGACY_ROUTES === "1"`, `VAIFORM_DEBUG === "1"`).
+- Corrected gating truth to current predicate (`VAIFORM_DEBUG === "1"`) after legacy-gated route removals.
 - Corrected active-surface logic to computed `Active = Default-Reachable && Caller-Backed`.
 - Added explicit precedence/shadowing treatment for ordered root mounts.
 - Corrected whoami route truth: `/whoami` and `/api/whoami` are not mounted API endpoints.

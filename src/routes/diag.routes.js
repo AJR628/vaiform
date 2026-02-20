@@ -40,9 +40,9 @@ router.get('/store', async (_req, res) => {
   try {
     const all = storeDump ? storeDump() : {};
     const sample = Object.values(all).slice(-5).reverse();
-    return res.json({ ok: true, size: Object.keys(all).length, sample });
+    return res.json({ success: true, size: Object.keys(all).length, sample });
   } catch {
-    return res.json({ ok: false, size: 0, sample: [] });
+    return res.json({ success: false, size: 0, sample: [] });
   }
 });
 
@@ -61,13 +61,13 @@ router.get('/tts', (_req, res) => {
     provider === 'openai'
       ? process.env.OPENAI_TTS_VOICE || 'alloy'
       : process.env.ELEVEN_VOICE_ID || null;
-  res.json({ ok: true, provider, configured, model, voiceOrVoiceId });
+  res.json({ success: true, provider, configured, model, voiceOrVoiceId });
 });
 
 router.get('/tts_state', (_req, res) => {
   const provider = process.env.TTS_PROVIDER || 'openai';
   const configured = Boolean(process.env.OPENAI_API_KEY) || Boolean(process.env.ELEVENLABS_API_KEY);
-  res.json({ ok: true, provider, configured, last: getLastTtsState() });
+  res.json({ success: true, provider, configured, last: getLastTtsState() });
 });
 
 router.get('/caption-smoke', async (_req, res) => {
@@ -100,7 +100,7 @@ router.get('/caption-smoke', async (_req, res) => {
     const result = await renderCaptionImage(jobId, testStyle);
 
     res.json({
-      ok: true,
+      success: true,
       jobId,
       result: {
         pngPath: result.pngPath,
@@ -115,7 +115,7 @@ router.get('/caption-smoke', async (_req, res) => {
   } catch (error) {
     console.error('[diag] Caption smoke test failed:', error);
     res.status(500).json({
-      ok: false,
+      success: false,
       error: error.message,
       stack: error.stack,
     });
