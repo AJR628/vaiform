@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -35,11 +35,54 @@ jobs:
       - name: Prettier format check
         run: npm run format:check
 
+      - name: Lint
+        run: npm run lint
+
       - name: Security tests
         run: npm run test:security
 
-      - name: Response contract check (changed files)
+      - name: Debug CI context
+        run: |
+          echo "event=${{ github.event_name }}"
+          echo "ref=${{ github.ref }}"
+          echo "sha=${{ github.sha }}"
+
+      - name: Debug SHA context (pull_request)
+        if: github.event_name == 'pull_request'
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          echo "BASE_SHA=$BASE_SHA"
+          echo "HEAD_SHA=$HEAD_SHA"
+
+      - name: Response contract check (changed files, pull_request)
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          ALLOW_BROAD_SCAN: '1'
+        run: npm run check:responses:changed
+
+      - name: Debug SHA context (push)
+        if: github.event_name == 'push'
+        env:
+          BASE_SHA: ${{ github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          echo "BASE_SHA=$BASE_SHA"
+          echo "HEAD_SHA=$HEAD_SHA"
+
+      - name: Response contract check (changed files, push)
+        if: github.event_name == 'push'
+        env:
+          BASE_SHA: ${{ github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+          ALLOW_BROAD_SCAN: '1'
+        run: npm run check:responses:changed
+
+      - name: Response contract check (changed files, workflow_dispatch)
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          ALLOW_BROAD_SCAN: '1'
         run: npm run check:responses:changed
