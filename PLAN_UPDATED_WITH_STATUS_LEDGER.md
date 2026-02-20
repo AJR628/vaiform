@@ -16,7 +16,7 @@
 - `ENABLE_LEGACY_ROUTES=0` (default) -> legacy/orphan mounts are unreachable
 - `VAIFORM_DEBUG=0` (default) -> diag endpoints are unreachable
 
-**As-of:** 2026-02-19
+**As-of:** 2026-02-20
 
 ---
 
@@ -37,24 +37,24 @@
 - **C8** Active contract pass A - canonical envelopes now applied to checkout, limits, user routes, and credits controller scope.
 - **C9** Active contract pass B - canonical envelopes now applied to generate controller, shorts controller, and stripe webhook scope.
 - **C10** Auth SSOT consolidation - removed unused `src/middleware/auth.middleware.js`; `src/middleware/requireAuth.js` is now the single auth middleware SSOT.
+- **C11** Plan guard SSOT consolidation - removed unused legacy plan-guard duplicate; route plan-guard imports remain on `src/middleware/planGuards.js`.
+- **C12** Validation/Idempotency dead code cleanup - removed unreferenced duplicate modules (`src/validation/schema.js`, `src/middleware/idempotency.js`) plus dead utility/service files (`src/utils/logger.js`, `src/utils/async.js`, `src/utils/audio.mix.js`, `src/services/moderation.service.js`) after import-proof.
 - **Green-path caller hardening:** `/creative` is canonical caller surface; static ordering fixed to `dist -> public -> SPA fallback`.
 - **Lint posture hardening:** `lint` scoped to green-path server surfaces; `lint:full` retained for broader cleanup.
 
 ### IN PROGRESS In Progress / Partial (implemented but not fully conforming)
 
-- **No active partials in C4-C10.** Next active work starts at C11.
+- **No active partials in C4-C12.** Next active work starts at C13.
 
 ### NOT STARTED Not Started (still planned work)
 
-- **C11-C12** SSOT consolidation (plan guards/validation/idempotency duplicate removal)
 - **C13-C15** Canonical `/api` router + remove duplicate mounts + credits dedupe
 - **C16-C17** Launch posture verification + final cohesion publication
 
 ### Current Priority (next few commits)
 
-1. **Begin C11-C12 SSOT dedupe** (plan guards/validation/idempotency)
-2. **Begin C13-C15 mount topology consolidation** (canonical `/api` router + duplicate mount cleanup + credits dedupe)
-3. **Begin C16-C17 launch posture verification + final cohesion publication**
+1. **Begin C13-C15 mount topology consolidation** (canonical `/api` router + duplicate mount cleanup + credits dedupe)
+2. **Begin C16-C17 launch posture verification + final cohesion publication**
 
 ---
 
@@ -213,11 +213,11 @@
 
 ### C12 - Validation/Idempotency Dead Code Cleanup _(legacy ref: 2.3)_
 
-**Status:** NOT STARTED
+**Status:** DONE
 
-1. Scope: `src/validation/schema.js`, `src/middleware/idempotency.js`, references.
-2. Remove orphaned duplicates after import proof.
-3. Gate: zero remaining imports of removed files.
+1. Scope completed: removed unreferenced duplicate modules `src/validation/schema.js` and `src/middleware/idempotency.js` after import-proof.
+2. Additional dead-file cleanup completed in the same no-behavior-change pass: `src/utils/logger.js`, `src/utils/async.js`, `src/utils/audio.mix.js`, `src/services/moderation.service.js`.
+3. Gate achieved: zero runtime imports of removed modules in `src/`, `web/`, `public/`, `scripts/`, and `server.js`; SSOT docs updated to reflect post-delete truth.
 
 ---
 

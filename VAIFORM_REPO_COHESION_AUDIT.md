@@ -1,6 +1,6 @@
 # Vaiform Repo Cohesion Audit (C1 Baseline Truth Snapshot)
 
-**Audit date**: 2026-02-19  
+**Audit date**: 2026-02-20  
 **Branch**: `feat/voice-ssot-tts`  
 **Scope**: Docs-only truth snapshot from current code. No runtime changes.
 
@@ -112,12 +112,12 @@ Primary evidence for served entrypoints:
 
 ## 4. SSOT Collision Truth
 
-| Concern         | Current operational SSOT                   | Parallel/legacy surface             | Notes                                                                                                                                               |
-| --------------- | ------------------------------------------ | ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Auth middleware | `src/middleware/requireAuth.js`            | _Removed in C10_                    | Mounted routes import `requireAuth` directly; duplicate `src/middleware/auth.middleware.js` was removed after import-proof confirmed no runtime usage. |
-| Plan guards     | `src/middleware/planGuards.js`             | _Removed in C11_                    | Route imports use `planGuards.js` in story/shorts/quotes/studio; `/api/assets/ai-images` is hard-disabled with canonical `410` (`src/routes/assets.routes.js:12-20`). |
-| Idempotency     | `idempotency.firestore.js`                 | `idempotency.js` exists             | Generate/finalize paths reference Firestore middleware (`src/routes/generate.routes.js:3`, `src/routes/story.routes.js:5`).                         |
-| Validation      | `src/schemas/*` + `validate.middleware.js` | inline Zod in route files           | Story routes perform inline `safeParse` checks (`src/routes/story.routes.js`, multiple).                                                            |
+| Concern         | Current operational SSOT                   | Parallel/legacy surface   | Notes                                                                                                                                                                 |
+| --------------- | ------------------------------------------ | ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Auth middleware | `src/middleware/requireAuth.js`            | _Removed in C10_          | Mounted routes import `requireAuth` directly; duplicate `src/middleware/auth.middleware.js` was removed after import-proof confirmed no runtime usage.                |
+| Plan guards     | `src/middleware/planGuards.js`             | _Removed in C11_          | Route imports use `planGuards.js` in story/shorts/quotes/studio; `/api/assets/ai-images` is hard-disabled with canonical `410` (`src/routes/assets.routes.js:12-20`). |
+| Idempotency     | `idempotency.firestore.js`                 | _Removed in C12_          | Generate/finalize paths reference Firestore middleware (`src/routes/generate.routes.js:3`, `src/routes/story.routes.js:5`).                                           |
+| Validation      | `src/schemas/*` + `validate.middleware.js` | inline Zod in route files | Story routes perform inline `safeParse` checks (`src/routes/story.routes.js`, multiple).                                                                              |
 
 ## 5. CI Truth Snapshot
 
