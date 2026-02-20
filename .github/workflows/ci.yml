@@ -32,7 +32,8 @@ jobs:
         continue-on-error: true
         run: npm audit --audit-level=high
 
-      - name: Prettier format check
+      - name: Prettier format check (full baseline, non-blocking)
+        continue-on-error: true
         run: npm run format:check
 
       - name: Lint
@@ -56,6 +57,14 @@ jobs:
           echo "BASE_SHA=$BASE_SHA"
           echo "HEAD_SHA=$HEAD_SHA"
 
+      - name: Format check (changed files, pull_request)
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          ALLOW_BROAD_SCAN: '1'
+        run: npm run check:format:changed
+
       - name: Response contract check (changed files, pull_request)
         if: github.event_name == 'pull_request'
         env:
@@ -73,6 +82,14 @@ jobs:
           echo "BASE_SHA=$BASE_SHA"
           echo "HEAD_SHA=$HEAD_SHA"
 
+      - name: Format check (changed files, push)
+        if: github.event_name == 'push'
+        env:
+          BASE_SHA: ${{ github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+          ALLOW_BROAD_SCAN: '1'
+        run: npm run check:format:changed
+
       - name: Response contract check (changed files, push)
         if: github.event_name == 'push'
         env:
@@ -80,6 +97,12 @@ jobs:
           HEAD_SHA: ${{ github.sha }}
           ALLOW_BROAD_SCAN: '1'
         run: npm run check:responses:changed
+
+      - name: Format check (changed files, workflow_dispatch)
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          ALLOW_BROAD_SCAN: '1'
+        run: npm run check:format:changed
 
       - name: Response contract check (changed files, workflow_dispatch)
         if: github.event_name == 'workflow_dispatch'
