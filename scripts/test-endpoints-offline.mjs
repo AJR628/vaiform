@@ -149,18 +149,25 @@ async function main() {
     }
   });
 
-  // Test 5: Verify planGuard middleware exports
-  await verifyFileStructure('PlanGuard Middleware Exports', async () => {
-    const middlewarePath = 'src/middleware/planGuard.js';
+  // Test 5: Verify planGuards middleware exports
+  await verifyFileStructure('PlanGuards Middleware Exports', async () => {
+    const middlewarePath = 'src/middleware/planGuards.js';
     const content = readFileSync(middlewarePath, 'utf8');
 
-    const requiredExports = ['export function planGuard', 'export default planGuard'];
-    const hasExport = requiredExports.some((exp) => content.includes(exp));
+    const requiredExports = [
+      'export function enforceCreditsForRender',
+      'export function enforceScriptDailyCap',
+    ];
+    const hasExports = requiredExports.every((exp) => content.includes(exp));
+    const usesFailHelper = content.includes("from '../http/respond.js'") && content.includes('fail(');
 
-    if (hasExport) {
-      return { success: true, data: { message: 'PlanGuard middleware exported correctly' } };
+    if (hasExports && usesFailHelper) {
+      return {
+        success: true,
+        data: { message: 'PlanGuards middleware exported correctly and uses fail helper' },
+      };
     } else {
-      return { success: false, error: 'PlanGuard middleware not properly exported' };
+      return { success: false, error: 'PlanGuards middleware exports/checks not found as expected' };
     }
   });
 

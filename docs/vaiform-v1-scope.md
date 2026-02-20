@@ -419,10 +419,10 @@
 **POST /api/assets/ai-images**
 
 - **File**: `src/routes/assets.routes.js`
-- **Handler**: `generateAiImages`
-- **Controller**: `assets.controller.js → generateAiImages()`
-- **Middleware**: `requireAuth`, `planGuard('pro')`
-- **Purpose**: Generate AI images (Pro only)
+- **Handler**: Inline disabled response
+- **Controller**: None (endpoint returns early)
+- **Middleware**: `requireAuth`
+- **Purpose**: Compatibility endpoint; returns `410 FEATURE_DISABLED` in v1
 
 **POST /api/quotes/generate-quote**
 
@@ -493,10 +493,10 @@
 - Blocks AI quote generation for free users
 - Requires `req.user.isMember = true`
 
-**planGuard('pro')** (`src/middleware/planGuard.js`)
+**Legacy single-plan guard middleware**
 
-- Requires specific plan tier
-- Used for Pro-only features (AI images - non-core feature)
+- Removed in C11 SSOT consolidation
+- Plan-guard enforcement now references `src/middleware/planGuards.js` helpers
 
 ---
 
@@ -759,7 +759,7 @@
 
 **Non-Core Middleware**:
 
-- `planGuard('pro')` (only used for AI images - non-core)
+- Legacy single-plan guard middleware (removed in C11)
 - `blockAIQuotesForFree()` (only used for quotes - non-core)
 
 **Legacy Caption Modes**:
@@ -775,3 +775,4 @@
 ---
 
 **End of Vaiform v1 Scope Document**
+

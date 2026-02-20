@@ -140,7 +140,7 @@
 2. `/api/assets/options`: canonical envelopes only.
 3. `/api/assets/ai-images` while disabled:
    - Keep `requireAuth`.
-   - Remove `planGuard('pro')` and request validation from this disabled route.
+   - Remove legacy Pro plan guard and request validation from this disabled route.
    - Return canonical `410 FEATURE_DISABLED` **with requestId** directly (or via `fail`).
 4. Completed cleanup:
    - Deleted unreachable legacy response blocks in `src/controllers/assets.controller.js` tied to disabled AI generation.
@@ -203,11 +203,11 @@
 
 ### C11 - Plan Guard SSOT Consolidation _(legacy ref: 2.2)_
 
-**Status:** NOT STARTED
+**Status:** DONE
 
-1. Scope: `src/middleware/planGuard.js`, `src/middleware/planGuards.js`, import sites.
-2. Remove semantic duplication; stop mixing APIs in the same route file.
-3. Gate: single canonical plan guard implementation.
+1. Scope completed: removed unused legacy plan-guard duplicate; canonical middleware remains `src/middleware/planGuards.js`.
+2. Retargeted offline endpoint-structure check to validate `planGuards.js` exports instead of deleted legacy middleware.
+3. Gate achieved: no runtime imports of the removed duplicate module; route plan-guard imports remain on `../middleware/planGuards.js`.
 
 ---
 
