@@ -30,7 +30,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "check:format:changed": "node scripts/check-format-changed.mjs",
-    "lint": "eslint src/app.js src/routes/creative.routes.js src/routes/story.routes.js src/routes/caption.preview.routes.js src/routes/assets.routes.js src/http/respond.js src/middleware/requireAuth.js src/middleware/validate.middleware.js src/middleware/planGuards.js server.js scripts/check-responses.js scripts/check-responses-changed.mjs",
+    "lint": "eslint src/app.js src/routes/story.routes.js src/routes/caption.preview.routes.js src/routes/assets.routes.js src/http/respond.js src/middleware/requireAuth.js src/middleware/validate.middleware.js src/middleware/planGuards.js server.js scripts/check-responses.js scripts/check-responses-changed.mjs",
     "lint:full": "eslint .",
     "lint:fix": "eslint . --fix",
     "test": "echo \"(no tests yet)\" && exit 0",

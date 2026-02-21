@@ -10,7 +10,6 @@ import whoamiRouter from './whoami.routes.js';
 import shortsRouter from './shorts.routes.js';
 import assetsRouter from './assets.routes.js';
 import limitsRouter from './limits.routes.js';
-import creativeRouter from './creative.routes.js';
 import storyRouter from './story.routes.js';
 
 // Lightweight root
@@ -30,6 +29,5 @@ export default {
   shorts: shortsRouter, // "/shorts"
   assets: assetsRouter, // "/assets"
   limits: limitsRouter, // "/limits"
-  creative: creativeRouter, // "/creative"
   story: storyRouter, // "/story"
 };

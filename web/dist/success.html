@@ -1,109 +1,111 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Success - Vaiform</title>
-    <link rel="stylesheet" href="creative.css">
+    <link rel="stylesheet" href="creative.css" />
     <style>
-        .success-container {
-            max-width: 600px;
-            margin: 0 auto;
-            padding: 2rem;
-            text-align: center;
-        }
-        
-        .success-icon {
-            font-size: 4rem;
-            color: #10b981;
-            margin-bottom: 1rem;
-        }
-        
-        .success-title {
-            font-size: 2rem;
-            font-weight: 700;
-            margin-bottom: 1rem;
-            color: #1f2937;
-        }
-        
-        .success-message {
-            font-size: 1.125rem;
-            color: #6b7280;
-            margin-bottom: 2rem;
-        }
-        
-        .plan-info {
-            background: #f8fafc;
-            padding: 1.5rem;
-            border-radius: 8px;
-            margin-bottom: 2rem;
-        }
-        
-        .plan-badge {
-            display: inline-block;
-            padding: 0.5rem 1rem;
-            border-radius: 20px;
-            font-weight: 600;
-            margin-bottom: 1rem;
-        }
-        
-        .plan-badge.creator {
-            background: #dbeafe;
-            color: #1e40af;
-        }
-        
-        .plan-badge.pro {
-            background: #f3e8ff;
-            color: #6b21a8;
-        }
-        
-        .btn-primary {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 0.75rem 2rem;
-            border: none;
-            border-radius: 8px;
-            font-weight: 600;
-            cursor: pointer;
-            text-decoration: none;
-            display: inline-block;
-            transition: all 0.3s ease;
-        }
-        
-        .btn-primary:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
-        }
-        
-        .loading {
-            display: none;
-        }
-        
-        .loading.show {
-            display: block;
-        }
+      .success-container {
+        max-width: 600px;
+        margin: 0 auto;
+        padding: 2rem;
+        text-align: center;
+      }
+
+      .success-icon {
+        font-size: 4rem;
+        color: #10b981;
+        margin-bottom: 1rem;
+      }
+
+      .success-title {
+        font-size: 2rem;
+        font-weight: 700;
+        margin-bottom: 1rem;
+        color: #1f2937;
+      }
+
+      .success-message {
+        font-size: 1.125rem;
+        color: #6b7280;
+        margin-bottom: 2rem;
+      }
+
+      .plan-info {
+        background: #f8fafc;
+        padding: 1.5rem;
+        border-radius: 8px;
+        margin-bottom: 2rem;
+      }
+
+      .plan-badge {
+        display: inline-block;
+        padding: 0.5rem 1rem;
+        border-radius: 20px;
+        font-weight: 600;
+        margin-bottom: 1rem;
+      }
+
+      .plan-badge.creator {
+        background: #dbeafe;
+        color: #1e40af;
+      }
+
+      .plan-badge.pro {
+        background: #f3e8ff;
+        color: #6b21a8;
+      }
+
+      .btn-primary {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 0.75rem 2rem;
+        border: none;
+        border-radius: 8px;
+        font-weight: 600;
+        cursor: pointer;
+        text-decoration: none;
+        display: inline-block;
+        transition: all 0.3s ease;
+      }
+
+      .btn-primary:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+      }
+
+      .loading {
+        display: none;
+      }
+
+      .loading.show {
+        display: block;
+      }
     </style>
-</head>
-<body>
+  </head>
+  <body>
     <div class="success-container">
-        <div class="success-icon">✅</div>
-        <h1 class="success-title">Payment Successful!</h1>
-        <p class="success-message">Your plan has been activated. You're all set to start creating amazing content!</p>
-        
-        <div id="planInfo" class="plan-info" style="display: none;">
-            <div id="planBadge" class="plan-badge"></div>
-            <h3 id="planName"></h3>
-            <p id="planDetails"></p>
-        </div>
-        
-        <div id="loading" class="loading">
-            <p>Activating your plan...</p>
-        </div>
-        
-        <a href="/creative.html" class="btn-primary">Go to Creative</a>
+      <div class="success-icon">✅</div>
+      <h1 class="success-title">Payment Successful!</h1>
+      <p class="success-message">
+        Your plan has been activated. You're all set to start creating amazing content!
+      </p>
+
+      <div id="planInfo" class="plan-info" style="display: none">
+        <div id="planBadge" class="plan-badge"></div>
+        <h3 id="planName"></h3>
+        <p id="planDetails"></p>
+      </div>
+
+      <div id="loading" class="loading">
+        <p>Activating your plan...</p>
+      </div>
+
+      <a href="/creative.html" class="btn-primary">Go to Creative</a>
     </div>
-    
+
     <script src="js/env.js"></script>
     <script type="module" src="js/success.js"></script>
-</body>
+  </body>
 </html>

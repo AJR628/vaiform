@@ -1,110 +1,56 @@
-# Active Surfaces (C1 Dist-Aware Truth Snapshot)
+# Active Surfaces (Post A/B/C Snapshot)
 
-**Audit date**: 2026-02-20  
-**Branch**: `feat/voice-ssot-tts`
+Audit date: 2026-02-20
 
-Definitions used here:
+## Runtime model
 
-- `Default-Reachable`: reachable with `VAIFORM_DEBUG=0`.
-- `Caller-Backed`: called by default-runtime entrypoints and the JS they load.
-- `Active`: `Default-Reachable && Caller-Backed`.
+- Frontend is served by Netlify from `web/dist`.
+- Frontend source files live in `web/public`.
+- Backend is API-only and does not serve SPA/HTML pages.
 
-Callsite path mapping rule:
+## Netlify bridge surfaces
 
-- `apiFetch("/x") => /api/x` because `API_ROOT` already ends with `/api` (`web/dist/api.mjs:7`, `web/dist/api.mjs:9`, `web/dist/api.mjs:152`).
-- Fallback to root path applies only for GET `/credits|/whoami|/health` (`web/dist/api.mjs:156-163`).
+- `/api/*` -> backend `/api/:splat` (proxy in `netlify.toml`).
+- `/assets/fonts/*` -> backend `/assets/fonts/:splat`.
+- `/stripe/webhook` -> backend `/stripe/webhook`.
 
-## 1) Dist-First Runtime Rules
+## Backend default reachable surfaces (`VAIFORM_DEBUG=0`)
 
-- Dist static is registered first, then `public` static, with SPA fallback last (`src/app.js:356`, `src/app.js:376-380`).
-- `web/dist` exists in this repo, so dist-first behavior is active.
-- Rule: **When `web/dist` exists, overlapping static paths are served from `web/dist` first; missing files fall through to `public/` before SPA fallback.**
-- Explicit `/creative` route still serves `public/creative.html` (`src/app.js:298`, `src/routes/creative.routes.js:11-13`).
+- Health:
+  - `GET /health`
+  - `HEAD /health`
+  - `GET /` (API root JSON from `routes.index`)
+- Webhook:
+  - `GET /stripe/webhook`
+  - `POST /stripe/webhook`
+- Core API mounts:
+  - `/api/generate`, `/api/job/:jobId`
+  - `/api/credits`
+  - `/api/enhance`
+  - `/api/start`, `/api/session`, `/api/subscription`, `/api/portal`
+  - `/api/shorts/mine`, `/api/shorts/:jobId`
+  - `/api/assets/options`, `/api/assets/ai-images` (disabled 410)
+  - `/api/limits/usage`
+  - `/api/story/*`
+  - `/api/caption/preview`
+  - `/api/user/*`, `/api/users/ensure`
+- Backend static (required only):
+  - `/assets/*` (including `/assets/fonts/*`)
 
-Default flags:
+## Removed/non-active surfaces
 
-- `VAIFORM_DEBUG=0`: `env.example:3`
+- Removed from backend:
+  - `/creative` HTML route
+  - frontend static serving from `web/dist`
+  - frontend static serving from root `public`
+  - `/cdn` proxy route
+  - inline no-op `POST /api/user/setup` alias in `src/app.js`
+- Debug-only (`VAIFORM_DEBUG=1`):
+  - `/diag/*`
+  - `/api/diag/headers`
 
-## 2) Default Entrypoints (Caller Scope)
+## Caller-backed notes
 
-Entrypoints proven by nav/redirect behavior:
-
-- `/` redirects/links to `/creative` (`web/dist/index.html:40`, `web/dist/index.html:142`, `public/index.html:43`, `public/index.html:146`).
-- Header links include canonical `/creative` (`web/dist/components/header.js:13`, `public/components/header.js:34`).
-
-Loaded script examples from entrypoint HTML:
-
-- `/creative` serves `public/creative.html`, which loads `/js/pages/creative/creative.article.mjs` and shared creative dependencies (`public/creative.html:39-52`, `public/creative.html:904`).
-- `buy-credits.html` loads `/js/buy-credits.js`, `/auth-bridge.js`, `/js/config.js`, `/js/credits-ui.js` (`web/dist/buy-credits.html:195-201`).
-- `pricing.html` loads `js/pricing.js` and `./api.mjs` bridge setup (`web/dist/pricing.html:171-197`).
-- `my-images.html` loads `./js/my-images.js` (`web/dist/my-images.html:152-155`).
-- `my-shorts.html` loads `./js/my-shorts.js` (`web/dist/my-shorts.html:198`).
-
-Important exclusion rule:
-
-- Do not treat `web/dist/assets/*.js` as caller evidence unless referenced by a served entrypoint HTML.
-- Example: `web/dist/assets/index-DmIxHPfx.js` contains API strings but is not referenced by the entrypoint HTML set above, so it is excluded from Caller-Backed classification.
-
-## 3) Active (Default-Reachable + Caller-Backed)
-
-Confirmed caller-backed default surfaces include:
-
-- `/api/credits` via dist pages (`web/dist/js/my-images.js:132`, `web/dist/js/my-shorts.js:131`, `web/dist/creative.html:1183`) with `apiFetch("/credits") -> /api/credits` (`web/dist/api.mjs:152`).
-- `/api/generate` via creative/frontend (`web/dist/frontend.js:490`, `web/dist/creative.html:2120`) with `apiFetch("/generate") -> /api/generate` (`web/dist/api.mjs:152`).
-- `/api/job/:jobId` via my-images (`web/dist/js/my-images.js:357`) with `apiFetch("/job/:jobId") -> /api/job/:jobId` (`web/dist/api.mjs:152`).
-- `/checkout/start` via pricing (`web/dist/js/pricing.js:138`; mounted at `src/routes/checkout.routes.js:16`).
-- `/api/session`, `/api/subscription`, `/api/portal` via buy credits (`web/dist/js/buy-credits.js:40`, `web/dist/js/buy-credits.js:52`, `web/dist/js/buy-credits.js:123`; mounted via `src/app.js:248`, `src/routes/checkout.routes.js:20-26`).
-- `/api/shorts/mine`, `/api/shorts/:jobId` via my-shorts (`web/dist/js/my-shorts.js:35`, `web/dist/js/my-shorts.js:172`).
-- `/api/story/start`, `/api/story/generate`, `/api/story/update-script`, `/api/story/plan`, `/api/story/search`, `/api/story/create-manual-session`, `/api/story/finalize` via `/creative` article flow (`public/js/pages/creative/creative.article.mjs:1091`, `public/js/pages/creative/creative.article.mjs:1108`, `public/js/pages/creative/creative.article.mjs:1377`, `public/js/pages/creative/creative.article.mjs:1394`, `public/js/pages/creative/creative.article.mjs:1404`, `public/js/pages/creative/creative.article.mjs:3782`, `public/js/pages/creative/creative.article.mjs:3853`).
-- `/api/assets/options` via creative (`public/js/pages/creative/creative.article.mjs:3484`).
-- `/api/caption/preview` via `/creative` caption preview module (`public/js/caption-preview.js:636`, `public/js/caption-preview.js:1165`).
-- `/api/enhance` via frontend (`web/dist/frontend.js:272`) with `apiFetch("/enhance") -> /api/enhance` (`web/dist/api.mjs:152`).
-- `/cdn` via my-shorts proxying (`web/dist/js/my-shorts.js:157`; mounted `src/app.js:266`).
-
-## 4) Default-Reachable but Not Caller-Backed (Attack Surface)
-
-Reachable under defaults, but no proven dist-entrypoint caller:
-
-- `/api/limits/usage`, `/limits/usage` (`src/app.js:279-280`, `src/routes/limits.routes.js:7`).
-- `/credits`, `/enhance`, `/generate`, `/job/:jobId` are root aliases not default caller-backed from dist `apiFetch` flows; `/credits` root use is conditional fallback only (`web/dist/api.mjs:156-163`).
-- `/api/assets/ai-images` is reachable, but no longer caller-backed from canonical `/creative`; only legacy `creative.html` callers reference it (`web/dist/creative.html:2229`). Route behavior is canonical disabled `410 FEATURE_DISABLED` via `fail(...)` (`src/routes/assets.routes.js:12-20`).
-- `/api/user/me` and `/api/user/setup` router route (`src/routes/user.routes.js:12-67`) (inline alias remains shadowed by router order: `src/app.js:321`, `src/app.js:330-333`).
-- `/api/users/ensure` (`src/routes/users.routes.js:14-100`) (dist `firebaseClient` writes Firestore directly: `web/dist/js/firebaseClient.js:23-53`).
-
-## 5) Caller-Backed but Not Default-Reachable (Broken Under Defaults)
-
-None currently proven from default dist entrypoint callers.
-
-C3 changes that removed prior broken caller attempts:
-
-- Checkout callers now resolve to mounted aliases:
-  - `apiFetch("/session")` -> `/api/session`
-  - `apiFetch("/subscription")` -> `/api/subscription`
-  - `apiFetch("/portal")` -> `/api/portal`
-  - evidence: `web/dist/js/buy-credits.js:40`, `web/dist/js/buy-credits.js:52`, `web/dist/js/buy-credits.js:123`, `src/app.js:248`.
-- Upscale callsites were removed/gated from default dist callers (`web/dist/js/my-images.js:205-213`, `web/dist/frontend.js:525-528`).
-- Legacy call paths (quotes/voice/uploads/caption-render/preview/studio) are removed from server mounts; any residual static strings are non-caller evidence and do not imply reachability under defaults.
-
-## 6) Debug-Gated
-
-Debug-gated (only with `VAIFORM_DEBUG=1`):
-
-- `/diag/*` (`src/app.js:216`)
-- `/api/diag/headers` (`src/app.js:225-227`)
-- optional route-table logging gate (`src/app.js:369`)
-
-## 7) Shadowing and Alias Truth (Kept from Prior C1)
-
-- Ordered root mounts shadow practical `GET /` winners (`src/app.js:211`, `src/app.js:212`, `src/app.js:214`, `src/app.js:237`).
-- Whoami route truth: `/whoami` and `/api/whoami` are not mounted standalone API paths; root mounts are shadowed in practice.
-- Checkout alias truth: `/api/checkout/*` is absent; mounted alias via `/api` is `/api/start|session|subscription|portal` (`src/routes/checkout.routes.js:16-26`, `src/app.js:247-248`).
-- Inline `POST /api/user/setup` no-op is shadowed by earlier `/api/user` router mount (`src/app.js:321`, `src/app.js:330-333`).
-
-## 8) CI Truth (Surface Governance)
-
-Enforced in CI:
-
-- `npm run format:check`
-- `npm run test:security`
-- `npm run check:responses:changed`
-- evidence: `.github/workflows/ci.yml:35-45`
+- Article explainer pipeline remains caller-backed via `web/public/creative.html` -> `web/public/js/pages/creative/creative.article.mjs`.
+- Caption preview remains caller-backed via `web/public/js/caption-preview.js`.
+- Checkout, credits, shorts, and limits callers remain in `web/public/js/*`.

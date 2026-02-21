@@ -20,8 +20,8 @@ function copyDir(src, dest) {
   });
 }
 
-// Copy from ../public to ./dist
-const publicDir = path.join(__dirname, '..', '..', 'public');
+// Copy from ./public to ./dist
+const publicDir = path.join(__dirname, '..', 'public');
 const distDir = path.join(__dirname, '..', 'dist');
 
 console.log(`Copying from ${publicDir} to ${distDir}`);

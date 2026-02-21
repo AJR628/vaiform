@@ -4,14 +4,14 @@
 export async function updateCreditsDisplay(credits) {
   const creditCountElements = document.querySelectorAll('#credit-count, .credit-count');
   const creditBadgeElements = document.querySelectorAll('#credits-badge, .credits-badge');
-  
+
   // Update all credit count displays
-  creditCountElements.forEach(el => {
+  creditCountElements.forEach((el) => {
     if (el) el.textContent = credits || '--';
   });
-  
+
   // Update all credit badge displays
-  creditBadgeElements.forEach(el => {
+  creditBadgeElements.forEach((el) => {
     if (el) el.textContent = credits || '--';
   });
 }
@@ -19,14 +19,16 @@ export async function updateCreditsDisplay(credits) {
 export async function fetchAndUpdateCredits() {
   try {
     // Import Firebase functions dynamically
-    const { doc, getDoc } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
-    
+    const { doc, getDoc } = await import(
+      'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js'
+    );
+
     // Check if Firebase is available
     if (typeof window.auth === 'undefined' || typeof window.db === 'undefined') {
       console.warn('Firebase not yet available for credits update');
       return;
     }
-    
+
     const user = window.auth.currentUser;
     if (!user) return;
 
@@ -53,6 +55,6 @@ export function initCreditsDisplay() {
       setTimeout(checkFirebaseReady, 100);
     }
   };
-  
+
   checkFirebaseReady();
 }

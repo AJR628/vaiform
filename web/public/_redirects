@@ -1,3 +1,3 @@
+# Redirect and proxy rules are managed in netlify.toml.
+# Keep this file minimal to avoid conflicting route definitions.
 /*  /index.html  200
-
-

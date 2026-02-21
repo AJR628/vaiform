@@ -4,8 +4,6 @@ import bodyParser from 'body-parser';
 import helmet from 'helmet';
 import dotenv from 'dotenv';
 import path from 'path';
-import { fileURLToPath } from 'url';
-import fs from 'fs';
 
 import routes from './routes/index.js';
 import './config/firebase.js'; // ensure Firebase Admin is initialized
@@ -26,7 +24,6 @@ import generateRoutes from './routes/generate.routes.js';
 // Old webhook routes removed - using /stripe/webhook instead
 import { getCreditsHandler } from './handlers/credits.get.js';
 import diagHeadersRoutes from './routes/diag.headers.routes.js';
-import cdnRoutes from './routes/cdn.routes.js';
 import { ok, fail } from './http/respond.js';
 
 dotenv.config();
@@ -214,6 +211,10 @@ app.use('/assets/fonts', (req, res, next) => {
 console.log('✅ Mounted static /assets (fonts) before API routes');
 
 // ---------- API ROUTES ----------
+if (routes?.index) {
+  app.use('/', routes.index);
+  console.log('✅ Mounted index at /');
+}
 app.use('/', healthRoutes);
 app.use('/', whoamiRoutes);
 // Keep existing creditsRoutes mount if present, but also provide a direct handler to avoid 404s.
@@ -239,10 +240,6 @@ app.get(['/generate', '/generate/'], (req, res) =>
 app.head(['/generate', '/generate/'], (req, res) => res.status(405).end());
 
 // Mount other routes that were previously handled by the mount function
-if (routes?.index) {
-  app.use('/', routes.index);
-  console.log('✅ Mounted index at /');
-}
 if (routes?.enhance) {
   app.use('/', routes.enhance);
   app.use('/enhance', routes.enhance);
@@ -259,9 +256,6 @@ if (routes?.shorts) {
   app.use('/api/shorts', routes.shorts);
   console.log('✅ Mounted shorts at /api/shorts');
 }
-// Same-origin CDN proxy (optional)
-app.use('/cdn', cdnRoutes);
-console.log('✅ Mounted cdn at /cdn');
 if (routes?.assets) {
   app.use('/api/assets', routes.assets);
   console.log('✅ Mounted assets API at /api/assets');
@@ -270,10 +264,6 @@ if (routes?.limits) {
   app.use('/api/limits', routes.limits);
   app.use('/limits', routes.limits);
   console.log('✅ Mounted limits at /limits and /api/limits');
-}
-if (routes?.creative) {
-  app.use('/creative', routes.creative);
-  console.log('✅ Mounted creative at /creative');
 }
 if (routes?.story) {
   app.use('/api/story', routes.story);
@@ -295,34 +285,10 @@ import usersRoutes from './routes/users.routes.js';
 app.use('/api/users', usersRoutes);
 console.log('✅ Mounted users routes at /api/users');
 
-// Optional no-op alias for legacy /api/user/setup calls (frontend now uses Firestore)
-app.post('/api/user/setup', (req, res) => {
-  console.log('[legacy] /api/user/setup called - no-op (frontend uses Firestore)');
-  res.status(204).end(); // no content – frontend no longer relies on this
-});
-
 // Core routers summary
 console.log(
   '📋 Mounted core routes: story, caption preview, checkout, credits (GET only), users, user, shorts-readonly'
 );
-
-// ---------- STATIC LAST (disable directory redirects like /dir -> /dir/) ----------
-// --- SPA static hosting (after API routes) ---
-const distDir = path.resolve(process.cwd(), 'web', 'dist');
-let hasDist = false;
-try {
-  hasDist = fs.existsSync(distDir);
-  if (hasDist) {
-    app.use(express.static(distDir, { index: false }));
-    console.log(`[web] Serving SPA from ${distDir}`);
-  } else {
-    console.warn(
-      `[web] WARNING: ${distDir} not found. Build the web app with: "cd web && npm install && npm run build"`
-    );
-  }
-} catch (e) {
-  console.warn('[web] SPA hosting setup failed:', e?.message || e);
-}
 
 // Minimal MIME fix for .woff2 (no behavior change for other assets)
 app.use((req, res, next) => {
@@ -333,12 +299,6 @@ app.use((req, res, next) => {
   } catch {}
   next();
 });
-app.use(express.static('public', { index: false, redirect: false }));
-if (hasDist) {
-  app.get(/^\/(?!api\/|assets\/).*/, (req, res) => {
-    res.sendFile(path.join(distDir, 'index.html'));
-  });
-}
 
 // Optional route table when VAIFORM_DEBUG=1
 if (process.env.VAIFORM_DEBUG === '1' && app?._router?.stack) {

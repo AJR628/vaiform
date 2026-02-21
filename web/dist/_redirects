@@ -1,16 +1,3 @@
-/cdn    https://17e0d1d1-e327-483d-b1ea-c41bea08fb59-00-1ef93t84nlhq6.janeway.replit.dev/cdn  200
-/api/*  https://17e0d1d1-e327-483d-b1ea-c41bea08fb59-00-1ef93t84nlhq6.janeway.replit.dev/:splat  200
-
-# API routes - proxy to your backend
-/api/*  https://17e0d1d1-e327-483d-b1ea-c41bea08fb59-00-1ef93t84nlhq6.janeway.replit.dev/api/:splat  200
-
-# Serve HTML files directly first
-/creative.html  /creative.html  200
-/pricing.html  /pricing.html  200
-/my-shorts.html  /my-shorts.html  200
-/my-images.html  /my-images.html  200
-/login.html  /login.html  200
-/success.html  /success.html  200
-
-# SPA fallback for client-side routing (only for non-HTML routes)
+# Redirect and proxy rules are managed in netlify.toml.
+# Keep this file minimal to avoid conflicting route definitions.
 /*  /index.html  200

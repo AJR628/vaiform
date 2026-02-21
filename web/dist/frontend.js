@@ -1,10 +1,20 @@
 // /frontend.js
-import { db, ensureUserDoc } from "./js/firebaseClient.js";
-const BACKEND_URL = "https://17e0d1d1-e327-483d-b1ea-c41bea08fb59-00-1ef93t84nlhq6.janeway.replit.dev/api";
+import { db, ensureUserDoc } from './js/firebaseClient.js';
+const BACKEND_URL =
+  'https://17e0d1d1-e327-483d-b1ea-c41bea08fb59-00-1ef93t84nlhq6.janeway.replit.dev/api';
 const UPSCALE_COST = 10;
-import { onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { doc, getDoc, updateDoc, increment, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import { apiFetch, setTokenProvider } from "./api.mjs";
+import {
+  onAuthStateChanged,
+  signOut,
+} from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
+import {
+  doc,
+  getDoc,
+  updateDoc,
+  increment,
+  onSnapshot,
+} from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+import { apiFetch, setTokenProvider } from './api.mjs';
 
 // Use the auth instance from the auth bridge (window.auth)
 const auth = window.auth;
@@ -14,72 +24,81 @@ const auth = window.auth;
 async function awaitAuthReadyOnce() {
   if (auth.currentUser != null) return;
   await new Promise((resolve) => {
-    const off = onAuthStateChanged(auth, () => { off(); resolve(); });
+    const off = onAuthStateChanged(auth, () => {
+      off();
+      resolve();
+    });
   });
 }
-
 
 // Handy: get & copy a fresh Firebase ID token
 window.getIdTokenDebug = async (forceRefresh = true) => {
   await awaitAuthReadyOnce();
   const u = auth.currentUser;
-  if (!u) { console.warn("⚠️ No user signed in"); return null; }
+  if (!u) {
+    console.warn('⚠️ No user signed in');
+    return null;
+  }
   const t = await u.getIdToken(forceRefresh);
-  try { await navigator.clipboard.writeText(t); console.log("✅ ID token copied to clipboard"); }
-  catch { console.log("🔑 ID token:", t); }
+  try {
+    await navigator.clipboard.writeText(t);
+    console.log('✅ ID token copied to clipboard');
+  } catch {
+    console.log('🔑 ID token:', t);
+  }
   return t;
 };
 
 /* ========================= DOM ========================= */
-const loginBtn = document.getElementById("login-button");
-const signupBtn = document.getElementById("signup-button");
-const logoutBtn = document.getElementById("logout-button");
-const creditDisplay = document.getElementById("credit-display");
-const creditCount = document.getElementById("credit-count");
-const themeToggle = document.getElementById("theme-toggle");
+const loginBtn = document.getElementById('login-button');
+const signupBtn = document.getElementById('signup-button');
+const logoutBtn = document.getElementById('logout-button');
+const creditDisplay = document.getElementById('credit-display');
+const creditCount = document.getElementById('credit-count');
+const themeToggle = document.getElementById('theme-toggle');
 
-const promptInput = document.getElementById("prompt");
-const enhanceBtn = document.getElementById("enhance-button");
-const enhanceSpinner = document.getElementById("enhance-spinner");
+const promptInput = document.getElementById('prompt');
+const enhanceBtn = document.getElementById('enhance-button');
+const enhanceSpinner = document.getElementById('enhance-spinner');
 
-const generateForm = document.getElementById("generate-form");
-const generateButton = document.getElementById("generate-button");
-const loadingSpinner = document.getElementById("loading-spinner");
+const generateForm = document.getElementById('generate-form');
+const generateButton = document.getElementById('generate-button');
+const loadingSpinner = document.getElementById('loading-spinner');
 
-const styleSelect = document.getElementById("style");
-const numImagesSelect = document.getElementById("numImages");
-const upscaleToggle = document.getElementById("upscale-toggle");
+const styleSelect = document.getElementById('style');
+const numImagesSelect = document.getElementById('numImages');
+const upscaleToggle = document.getElementById('upscale-toggle');
 
-const guidanceInput = document.getElementById("guidance");
-const stepsInput = document.getElementById("steps");
-const seedInput = document.getElementById("seed");
-const schedulerInput = document.getElementById("scheduler");
-const refinerInput = document.getElementById("refiner");
+const guidanceInput = document.getElementById('guidance');
+const stepsInput = document.getElementById('steps');
+const seedInput = document.getElementById('seed');
+const schedulerInput = document.getElementById('scheduler');
+const refinerInput = document.getElementById('refiner');
 
-const dropZone = document.getElementById("dropZone");
-const fileInput = document.getElementById("referenceImage");
-const referencePreview = document.getElementById("referencePreview");
-const removeImageBtn = document.getElementById("removeImageBtn");
-const styleHelper = document.getElementById("style-helper");
-const generationMode = document.getElementById("generationMode");
-const imageToggleWrapper = document.getElementById("imageToggleWrapper");
-const imageModeToggle = document.getElementById("imageModeToggle");
-const emailHidden = document.getElementById("email");
-const toastEl = document.getElementById("toast");
+const dropZone = document.getElementById('dropZone');
+const fileInput = document.getElementById('referenceImage');
+const referencePreview = document.getElementById('referencePreview');
+const removeImageBtn = document.getElementById('removeImageBtn');
+const styleHelper = document.getElementById('style-helper');
+const generationMode = document.getElementById('generationMode');
+const imageToggleWrapper = document.getElementById('imageToggleWrapper');
+const imageModeToggle = document.getElementById('imageModeToggle');
+const emailHidden = document.getElementById('email');
+const toastEl = document.getElementById('toast');
 
 // Enforce auth-visibility classes via JS (belt & suspenders)
-loginBtn?.classList.add("logged-out");
-logoutBtn?.classList.add("logged-in");
-creditDisplay?.classList.add("logged-in");
+loginBtn?.classList.add('logged-out');
+logoutBtn?.classList.add('logged-in');
+creditDisplay?.classList.add('logged-in');
 
 // Click to refresh credits
-creditDisplay?.setAttribute("title", "Click to refresh credits");
-creditDisplay?.addEventListener("click", () => refreshCredits(true));
+creditDisplay?.setAttribute('title', 'Click to refresh credits');
+creditDisplay?.addEventListener('click', () => refreshCredits(true));
 
 /* ========================= STATE ========================= */
 let currentUserEmail = null;
 let currentCredits = 0;
-let uploadedImageBase64 = ""; // we store a Data URL here (image/webp)
+let uploadedImageBase64 = ''; // we store a Data URL here (image/webp)
 let enhancingBusy = false;
 let firestoreUnsubscribe = null;
 
@@ -87,13 +106,13 @@ let firestoreUnsubscribe = null;
 const showToast = (msg, ms = 2200) => {
   if (!toastEl) return;
   toastEl.textContent = msg;
-  toastEl.classList.remove("hidden");
-  setTimeout(() => toastEl.classList.add("hidden"), ms);
+  toastEl.classList.remove('hidden');
+  setTimeout(() => toastEl.classList.add('hidden'), ms);
 };
 
 const updateCreditUI = (credits) => {
-  currentCredits = typeof credits === "number" ? credits : 0;
-  creditDisplay?.classList.remove("hidden");
+  currentCredits = typeof credits === 'number' ? credits : 0;
+  creditDisplay?.classList.remove('hidden');
   if (creditCount) creditCount.textContent = String(currentCredits);
 };
 
@@ -101,15 +120,16 @@ const updateCreditUI = (credits) => {
 async function getIdToken(forceRefresh = false) {
   if (!auth.currentUser) {
     await new Promise((resolve) => {
-      const unsub = onAuthStateChanged(auth, () => { unsub(); resolve(); });
+      const unsub = onAuthStateChanged(auth, () => {
+        unsub();
+        resolve();
+      });
     });
   }
   const u = auth.currentUser;
-  if (!u) throw new Error("Please sign in first.");
+  if (!u) throw new Error('Please sign in first.');
   return u.getIdToken(forceRefresh);
 }
-
-
 
 /* ========================= CREDITS ========================= */
 function setupFirestoreListener(user) {
@@ -117,62 +137,69 @@ function setupFirestoreListener(user) {
   if (firestoreUnsubscribe) {
     firestoreUnsubscribe();
   }
-  
+
   const userRef = doc(db, 'users', user.uid);
-  
+
   // Real-time listener for user data changes
-  firestoreUnsubscribe = onSnapshot(userRef, (snap) => {
-    if (!snap.exists()) return;
-    
-    const userData = snap.data();
-    const credits = Number(userData.credits ?? 0);
-    updateCreditUI(credits);
-    console.log('[frontend] user credits:', credits);
-  }, (error) => {
-    console.error('[frontend] Firestore listener error:', error);
-  });
+  firestoreUnsubscribe = onSnapshot(
+    userRef,
+    (snap) => {
+      if (!snap.exists()) return;
+
+      const userData = snap.data();
+      const credits = Number(userData.credits ?? 0);
+      updateCreditUI(credits);
+      console.log('[frontend] user credits:', credits);
+    },
+    (error) => {
+      console.error('[frontend] Firestore listener error:', error);
+    }
+  );
 }
 
 // Keep the old function for backward compatibility (click to refresh)
 async function refreshCredits(force = true, retries = 1) {
-  if (!auth.currentUser) { updateCreditUI(0); return; }
+  if (!auth.currentUser) {
+    updateCreditUI(0);
+    return;
+  }
   try {
-    const data = await apiFetch("/credits", { method: "GET" });
+    const data = await apiFetch('/credits', { method: 'GET' });
     const credits = Number(data?.credits ?? data?.data?.credits ?? 0);
     updateCreditUI(Number.isNaN(credits) ? 0 : credits);
   } catch (err) {
     if (retries > 0) return refreshCredits(false, retries - 1);
     showToast("Couldn't load credits. Try again in a moment.");
-    console.warn("Credits fetch failed:", err);
+    console.warn('Credits fetch failed:', err);
   }
 }
 
 const computeGenCost = (n) => (n === 1 ? 20 : n === 2 ? 40 : 70);
 
 // Treat both "pixar" and "pixar-3d" as img2img style
-const isPixarish = (style) => style === "pixar" || style === "pixar-3d";
+const isPixarish = (style) => style === 'pixar' || style === 'pixar-3d';
 
 // Mode indicator reflects: pixarish OR uploaded image OR user toggle
 const updateModeIndicator = () => {
   const style = styleSelect?.value;
   const usingImage = isPixarish(style) || !!uploadedImageBase64 || !!imageModeToggle?.checked;
   if (generationMode) {
-    generationMode.textContent = usingImage ? "🖼️ Image-to-Image" : "📝 Text-to-Image";
+    generationMode.textContent = usingImage ? '🖼️ Image-to-Image' : '📝 Text-to-Image';
   }
 };
 
 // Spinner fade helpers
 function showLoading() {
   if (!loadingSpinner) return;
-  loadingSpinner.classList.remove("hidden");
+  loadingSpinner.classList.remove('hidden');
   requestAnimationFrame(() => {
-    requestAnimationFrame(() => loadingSpinner.classList.remove("opacity-0"));
+    requestAnimationFrame(() => loadingSpinner.classList.remove('opacity-0'));
   });
 }
 function hideLoading() {
   if (!loadingSpinner) return;
-  loadingSpinner.classList.add("opacity-0");
-  setTimeout(() => loadingSpinner.classList.add("hidden"), 300);
+  loadingSpinner.classList.add('opacity-0');
+  setTimeout(() => loadingSpinner.classList.add('hidden'), 300);
 }
 
 /* ========================= IMAGE HELPERS ========================= */
@@ -185,7 +212,7 @@ const readFileAsDataURL = (file) =>
   });
 
 // Downscale + re-encode to webp Data URL for transport
-async function downscaleToDataURL(file, maxSide = 1536, mime = "image/webp", quality = 0.9) {
+async function downscaleToDataURL(file, maxSide = 1536, mime = 'image/webp', quality = 0.9) {
   const srcDataUrl = await readFileAsDataURL(file);
   const img = await new Promise((res, rej) => {
     const i = new Image();
@@ -197,46 +224,53 @@ async function downscaleToDataURL(file, maxSide = 1536, mime = "image/webp", qua
   const scale = Math.min(1, maxSide / Math.max(width, height));
   const w = Math.round(width * scale);
   const h = Math.round(height * scale);
-  const canvas = document.createElement("canvas");
+  const canvas = document.createElement('canvas');
   canvas.width = w;
   canvas.height = h;
-  const ctx = canvas.getContext("2d");
+  const ctx = canvas.getContext('2d');
   ctx.drawImage(img, 0, 0, w, h);
   return canvas.toDataURL(mime, quality);
 }
 
 /* ========================= THEME ========================= */
-themeToggle?.addEventListener("click", () => {
-  const isDark = document.documentElement.classList.toggle("dark");
-  localStorage.setItem("theme", isDark ? "dark" : "light");
+themeToggle?.addEventListener('click', () => {
+  const isDark = document.documentElement.classList.toggle('dark');
+  localStorage.setItem('theme', isDark ? 'dark' : 'light');
 });
 
 /* ========================= AUTH BUTTONS ========================= */
 // Login button opens home login modal (for existing users)
-loginBtn?.addEventListener("click", () => {
+loginBtn?.addEventListener('click', () => {
   showHomeLoginModal();
 });
 
 // Sign up button redirects to pricing page (to choose a plan)
-signupBtn?.addEventListener("click", () => {
-  window.location.href = "/pricing?auth=open";
+signupBtn?.addEventListener('click', () => {
+  window.location.href = '/pricing?auth=open';
 });
 
-logoutBtn?.addEventListener("click", async () => {
-  try { await signOut(auth); }
-  catch (err) { console.error("Logout failed:", err); }
+logoutBtn?.addEventListener('click', async () => {
+  try {
+    await signOut(auth);
+  } catch (err) {
+    console.error('Logout failed:', err);
+  }
 });
 
 onAuthStateChanged(auth, async (user) => {
   const loggedIn = !!user;
-  document.querySelectorAll(".logged-in")?.forEach(el => el.classList.toggle("hidden", !loggedIn));
-  document.querySelectorAll(".logged-out")?.forEach(el => el.classList.toggle("hidden", loggedIn));
+  document
+    .querySelectorAll('.logged-in')
+    ?.forEach((el) => el.classList.toggle('hidden', !loggedIn));
+  document
+    .querySelectorAll('.logged-out')
+    ?.forEach((el) => el.classList.toggle('hidden', loggedIn));
 
   if (!loggedIn) {
     currentUserEmail = null;
-    creditDisplay?.classList.add("hidden");
+    creditDisplay?.classList.add('hidden');
     updateCreditUI(0);
-    
+
     // Clean up Firestore listener when logged out
     if (firestoreUnsubscribe) {
       firestoreUnsubscribe();
@@ -250,31 +284,37 @@ onAuthStateChanged(auth, async (user) => {
 
   // Ensure user document exists with free plan setup
   await ensureUserDoc(user);
-  
+
   // Setup real-time Firestore listener for credits
   setupFirestoreListener(user);
 });
 
 /* ========================= ENHANCE PROMPT ========================= */
-enhanceBtn?.addEventListener("click", async () => {
+enhanceBtn?.addEventListener('click', async () => {
+  // [AI_IMAGES] Kill-switch guard
+  if (window.VAIFORM_FEATURES && !window.VAIFORM_FEATURES.ENABLE_IMAGE_CREATOR) {
+    showToast('Image prompt enhancement is disabled in this version of Vaiform.');
+    return;
+  }
+
   const original = promptInput?.value.trim();
-  if (!original) return showToast("Please enter a prompt to enhance.");
-  if (!auth.currentUser) return showToast("Please log in to enhance prompts.");
-  if (currentCredits < 1) return showToast("Not enough credits for enhancement (1 credit).");
+  if (!original) return showToast('Please enter a prompt to enhance.');
+  if (!auth.currentUser) return showToast('Please log in to enhance prompts.');
+  if (currentCredits < 1) return showToast('Not enough credits for enhancement (1 credit).');
 
   if (enhancingBusy) return;
   enhancingBusy = true;
 
   try {
     enhanceBtn.disabled = true;
-    enhanceSpinner?.classList.remove("hidden");
+    enhanceSpinner?.classList.remove('hidden');
 
-    const response = await apiFetch("/enhance", {
-      method: "POST",
-      body: { prompt: original, strength: 0.6 }
+    const response = await apiFetch('/enhance', {
+      method: 'POST',
+      body: { prompt: original, strength: 0.6 },
     });
 
-    console.log("Enhance response:", response); // Debug log
+    console.log('Enhance response:', response); // Debug log
 
     // Handle different possible response structures
     let enhancedPrompt = null;
@@ -291,21 +331,21 @@ enhanceBtn?.addEventListener("click", async () => {
 
     if (enhancedPrompt) {
       promptInput.value = enhancedPrompt;
-      console.log("Updated prompt to:", enhancedPrompt);
+      console.log('Updated prompt to:', enhancedPrompt);
     } else {
-      console.log("No enhanced prompt found in response. Response structure:", response);
+      console.log('No enhanced prompt found in response. Response structure:', response);
       showToast("Enhancement succeeded but couldn't update prompt. Check console for details.");
     }
 
     await refreshCredits(false);
-    showToast("✨ Prompt enhanced");
+    showToast('✨ Prompt enhanced');
   } catch (e) {
     console.error(e);
-    showToast(e.message || "Enhancement failed. Try again.");
+    showToast(e.message || 'Enhancement failed. Try again.');
   } finally {
     enhancingBusy = false;
     enhanceBtn.disabled = false;
-    enhanceSpinner?.classList.add("hidden");
+    enhanceSpinner?.classList.add('hidden');
   }
 });
 
@@ -321,9 +361,9 @@ const handleFiles = async (files) => {
 
   let dataUrl;
   try {
-    dataUrl = await downscaleToDataURL(file, maxSide, "image/webp", quality);
+    dataUrl = await downscaleToDataURL(file, maxSide, 'image/webp', quality);
   } catch (err) {
-    console.warn("Downscale failed, using original image:", err);
+    console.warn('Downscale failed, using original image:', err);
     dataUrl = await readFileAsDataURL(file);
   }
 
@@ -331,10 +371,10 @@ const handleFiles = async (files) => {
 
   if (referencePreview) {
     referencePreview.src = dataUrl;
-    referencePreview.classList.remove("hidden");
+    referencePreview.classList.remove('hidden');
   }
-  removeImageBtn?.classList.remove("hidden");
-  dropZone?.classList.add("hidden");
+  removeImageBtn?.classList.remove('hidden');
+  dropZone?.classList.add('hidden');
 
   if (imageModeToggle && !pixarish) {
     imageModeToggle.checked = true;
@@ -342,55 +382,57 @@ const handleFiles = async (files) => {
   updateModeIndicator();
 };
 
-dropZone?.addEventListener("dragover", (e) => {
+dropZone?.addEventListener('dragover', (e) => {
   e.preventDefault();
-  dropZone.classList.add("border-indigo-500");
+  dropZone.classList.add('border-indigo-500');
 });
-dropZone?.addEventListener("dragleave", () => {
-  dropZone.classList.remove("border-indigo-500");
+dropZone?.addEventListener('dragleave', () => {
+  dropZone.classList.remove('border-indigo-500');
 });
-dropZone?.addEventListener("drop", async (e) => {
+dropZone?.addEventListener('drop', async (e) => {
   e.preventDefault();
-  dropZone.classList.remove("border-indigo-500");
+  dropZone.classList.remove('border-indigo-500');
   await handleFiles(e.dataTransfer.files);
 });
-fileInput?.addEventListener("change", async (e) => {
+fileInput?.addEventListener('change', async (e) => {
   await handleFiles(e.target.files);
 });
-removeImageBtn?.addEventListener("click", () => {
-  uploadedImageBase64 = "";
-  referencePreview?.classList.add("hidden");
-  removeImageBtn?.classList.add("hidden");
-  dropZone?.classList.remove("hidden");
+removeImageBtn?.addEventListener('click', () => {
+  uploadedImageBase64 = '';
+  referencePreview?.classList.add('hidden');
+  removeImageBtn?.classList.add('hidden');
+  dropZone?.classList.remove('hidden');
   if (imageModeToggle) imageModeToggle.checked = false;
   updateModeIndicator();
 });
 
-imageModeToggle?.addEventListener("change", updateModeIndicator);
+imageModeToggle?.addEventListener('change', updateModeIndicator);
 
 /* ========================= STYLE DEFAULTS ========================= */
 function applyStyleDefaults(style) {
   const pixarish = isPixarish(style);
 
   if (pixarish) {
-    styleHelper && (styleHelper.textContent = "Pixar mode transforms your photo into a 3D animated look. Please upload an image to continue.");
-    imageToggleWrapper?.classList.add("hidden");
+    styleHelper &&
+      (styleHelper.textContent =
+        'Pixar mode transforms your photo into a 3D animated look. Please upload an image to continue.');
+    imageToggleWrapper?.classList.add('hidden');
     imageModeToggle && (imageModeToggle.checked = true);
 
     if (!uploadedImageBase64) {
-      dropZone?.classList.remove("hidden");
-      referencePreview?.classList.add("hidden");
-      removeImageBtn?.classList.add("hidden");
+      dropZone?.classList.remove('hidden');
+      referencePreview?.classList.add('hidden');
+      removeImageBtn?.classList.add('hidden');
     }
 
     // Auto-prompt: when selecting Pixar and an image is attached,
     // ensure there is a sensible default prompt users can edit/replace
     if (uploadedImageBase64 && promptInput) {
-      const directive = "Convert the image into a 3D animated style.";
-      const current = (promptInput.value || "").trim();
+      const directive = 'Convert the image into a 3D animated style.';
+      const current = (promptInput.value || '').trim();
       if (current.length < 3) {
         promptInput.value = directive;
-      } else if (!current.toLowerCase().includes("3d animated")) {
+      } else if (!current.toLowerCase().includes('3d animated')) {
         // keep user text, gently append the directive once
         promptInput.value = `${current} ${directive}`;
       }
@@ -398,54 +440,60 @@ function applyStyleDefaults(style) {
 
     guidanceInput && (guidanceInput.value = 3.0);
     stepsInput && (stepsInput.value = 28);
-    schedulerInput && (schedulerInput.value = "K_EULER");
-    refinerInput && (refinerInput.value = "none");
+    schedulerInput && (schedulerInput.value = 'K_EULER');
+    refinerInput && (refinerInput.value = 'none');
   } else {
-    styleHelper && (styleHelper.textContent = "");
-    imageToggleWrapper?.classList.remove("hidden");
+    styleHelper && (styleHelper.textContent = '');
+    imageToggleWrapper?.classList.remove('hidden');
 
-    if (style === "realistic") {
+    if (style === 'realistic') {
       guidanceInput && (guidanceInput.value = 3.5);
       stepsInput && (stepsInput.value = 28);
-      schedulerInput && (schedulerInput.value = "K_EULER");
-      refinerInput && (refinerInput.value = "expert_ensemble_refiner");
-    } else if (style === "cartoon") {
+      schedulerInput && (schedulerInput.value = 'K_EULER');
+      refinerInput && (refinerInput.value = 'expert_ensemble_refiner');
+    } else if (style === 'cartoon') {
       guidanceInput && (guidanceInput.value = 4.5);
       stepsInput && (stepsInput.value = 30);
-      schedulerInput && (schedulerInput.value = "K_EULER");
-      refinerInput && (refinerInput.value = "none");
+      schedulerInput && (schedulerInput.value = 'K_EULER');
+      refinerInput && (refinerInput.value = 'none');
     }
 
     imageModeToggle && (imageModeToggle.checked = false);
-    dropZone?.classList.remove("hidden");
+    dropZone?.classList.remove('hidden');
   }
 
   updateModeIndicator();
 }
 
-styleSelect?.addEventListener("change", () => {
+styleSelect?.addEventListener('change', () => {
   applyStyleDefaults(styleSelect.value);
 });
 
 /* ========================= GENERATE ========================= */
-generateForm?.addEventListener("submit", async (e) => {
+generateForm?.addEventListener('submit', async (e) => {
   e.preventDefault();
-  if (!auth.currentUser) return showToast("Please log in first.");
+  // [AI_IMAGES] Kill-switch guard
+  if (window.VAIFORM_FEATURES && !window.VAIFORM_FEATURES.ENABLE_IMAGE_CREATOR) {
+    showToast('AI image generation is disabled in this version of Vaiform.');
+    return;
+  }
+
+  if (!auth.currentUser) return showToast('Please log in first.');
 
   // ✅ Minimal schema-aligned payload for /generate
   // Root keys allowed by backend schema: style|provider, prompt, count, options
   // When using "pixar", image must be provided as options.image_url or options.image_base64
-  
+
   const style = styleSelect?.value;
   const pixarish = isPixarish(style);
   const wantsImageMode = pixarish || !!uploadedImageBase64 || !!imageModeToggle?.checked;
 
-  const prompt = (promptInput?.value || "").trim();
+  const prompt = (promptInput?.value || '').trim();
   if (!prompt && !wantsImageMode) {
-    return showToast("Please enter a prompt.");
+    return showToast('Please enter a prompt.');
   }
 
-  const numImages = parseInt(numImagesSelect?.value || "1", 10);
+  const numImages = parseInt(numImagesSelect?.value || '1', 10);
 
   const needed = computeGenCost(numImages);
   if (currentCredits < needed) {
@@ -453,7 +501,7 @@ generateForm?.addEventListener("submit", async (e) => {
   }
 
   if (pixarish && !uploadedImageBase64) {
-    return showToast("Please upload an image for Pixar mode.");
+    return showToast('Please upload an image for Pixar mode.');
   }
 
   // Build a clean payload with only allowed root keys
@@ -461,13 +509,13 @@ generateForm?.addEventListener("submit", async (e) => {
     style,
     prompt,
     count: Number(numImages),
-    options: {}
+    options: {},
   };
 
   // If the effective kind is "pixar", move the uploaded image into options.image_base64
   if (pixarish) {
     if (!uploadedImageBase64) {
-      showToast("Pixar needs an image — please upload one.");
+      showToast('Pixar needs an image — please upload one.');
       return;
     }
     payload.options.image_base64 = uploadedImageBase64; // backend accepts image_base64
@@ -482,23 +530,30 @@ generateForm?.addEventListener("submit", async (e) => {
 
   try {
     // Add async header for Pixar style
-    const headers = { "Content-Type": "application/json" };
-    if ((styleSelect.value || "").toLowerCase() === "pixar") {
-      headers["X-Async"] = "1";
+    const headers = { 'Content-Type': 'application/json' };
+    if ((styleSelect.value || '').toLowerCase() === 'pixar') {
+      headers['X-Async'] = '1';
     }
 
-    const resp = await apiFetch("/generate", { method: "POST", headers, body: payload });
-    
+    const resp = await apiFetch('/generate', { method: 'POST', headers, body: payload });
+
     // Handle 202 async response
-    if (resp?.status === 202 || resp?.data?.status === "pending") {
+    if (resp?.status === 202 || resp?.data?.status === 'pending') {
       const jobId = resp?.data?.jobId;
       if (jobId) {
         // stash pending id so My Images can show a placeholder immediately
         const key = `pending:${jobId}`;
-        sessionStorage.setItem(key, JSON.stringify({ jobId, style: (styleSelect.value||"").toLowerCase(), createdAt: Date.now() }));
+        sessionStorage.setItem(
+          key,
+          JSON.stringify({
+            jobId,
+            style: (styleSelect.value || '').toLowerCase(),
+            createdAt: Date.now(),
+          })
+        );
       }
       // redirect to My Images
-      window.location.assign("/my-images.html");
+      window.location.assign('/my-images.html');
       return;
     }
 
@@ -509,12 +564,15 @@ generateForm?.addEventListener("submit", async (e) => {
     // If not, treat it as queued and just redirect to the gallery page.
 
     // Optionally: store returned data for the gallery page
-    sessionStorage.setItem("vaiform_toast", "✅ Images are generating — they'll appear here shortly.");
-    window.location.href = "/my-images.html?from=generate";
+    sessionStorage.setItem(
+      'vaiform_toast',
+      "✅ Images are generating — they'll appear here shortly."
+    );
+    window.location.href = '/my-images.html?from=generate';
     return;
   } catch (err) {
     console.error(err);
-    showToast(err.message || "❌ Something went wrong during generation.");
+    showToast(err.message || '❌ Something went wrong during generation.');
   } finally {
     generateButton.disabled = false;
     hideLoading();
@@ -524,7 +582,7 @@ generateForm?.addEventListener("submit", async (e) => {
 /* ========================= UPSCALE ========================= */
 async function requestUpscale(imageUrl, btnEl) {
   btnEl && (btnEl.disabled = true);
-  showToast("Upscale is temporarily unavailable in this build.");
+  showToast('Upscale is temporarily unavailable in this build.');
   btnEl && (btnEl.disabled = false);
 }
 
@@ -533,20 +591,26 @@ window.getId = async (forceRefresh = true) => {
   try {
     await awaitAuthReadyOnce();
     const u = auth.currentUser;
-    if (!u) { console.warn("⚠️ No user signed in"); return null; }
+    if (!u) {
+      console.warn('⚠️ No user signed in');
+      return null;
+    }
     const t = await u.getIdToken(forceRefresh);
-    console.log("ID_TOKEN:", t);
-    try { await navigator.clipboard.writeText(t); console.log("✅ Copied ID token to clipboard"); } catch {}
+    console.log('ID_TOKEN:', t);
+    try {
+      await navigator.clipboard.writeText(t);
+      console.log('✅ Copied ID token to clipboard');
+    } catch {}
     return t;
   } catch (e) {
-    console.error("getId error:", e);
+    console.error('getId error:', e);
     return null;
   }
 };
 
-(function attachPixarHintUX(){
+(function attachPixarHintUX() {
   // --- Pixar auto-hint UX: inject on select, remove on change ---
-  const HINT = "Convert the image into a 3D animated style.";
+  const HINT = 'Convert the image into a 3D animated style.';
   const styleSel =
     document.querySelector('#style-select') ||
     document.querySelector('#style') ||
@@ -563,34 +627,37 @@ window.getId = async (forceRefresh = true) => {
 
   if (!styleSel || !promptEl) return; // quietly bail if elements missing
 
-  const hasHint = () => promptEl.dataset.hasPixarHint === "1";
+  const hasHint = () => promptEl.dataset.hasPixarHint === '1';
   const containsHint = () => promptEl.value.includes(HINT);
 
   function injectHintIfNeeded() {
     if (containsHint()) {
       // We didn't inject it this session, but it's already there—mark so we can cleanly remove if needed.
-      if (!hasHint()) promptEl.dataset.hasPixarHint = "1";
+      if (!hasHint()) promptEl.dataset.hasPixarHint = '1';
       return;
     }
     if (!promptEl.value.trim()) {
       promptEl.value = HINT;
-      promptEl.dataset.hasPixarHint = "1";
+      promptEl.dataset.hasPixarHint = '1';
     } else {
       // Append once, non-destructive
       promptEl.value = `${promptEl.value.trim()} ${HINT}`.trim();
-      promptEl.dataset.hasPixarHint = "1";
+      promptEl.dataset.hasPixarHint = '1';
     }
   }
 
   function removeHintIfInjected() {
     if (!hasHint()) return;
-    const next = promptEl.value.replace(HINT, "").replace(/\s{2,}/g, " ").trim();
+    const next = promptEl.value
+      .replace(HINT, '')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
     promptEl.value = next;
     delete promptEl.dataset.hasPixarHint;
   }
 
   function isPixar(v) {
-    return String(v || "").toLowerCase() === "pixar";
+    return String(v || '').toLowerCase() === 'pixar';
   }
 
   function handleStyleChange() {
@@ -610,8 +677,8 @@ window.getId = async (forceRefresh = true) => {
   }
 
   // Attach listeners
-  styleSel.addEventListener("change", handleStyleChange);
-  fileEl?.addEventListener("change", handleFileChange);
+  styleSel.addEventListener('change', handleStyleChange);
+  fileEl?.addEventListener('change', handleFileChange);
 
   // Run once on load to match current UI state
   handleStyleChange();
@@ -641,14 +708,16 @@ document.getElementById('loginModal')?.addEventListener('click', (e) => {
 document.getElementById('homeSignInBtn')?.addEventListener('click', async () => {
   const email = document.getElementById('homeLoginEmail').value;
   const password = document.getElementById('homeLoginPassword').value;
-  
+
   if (!email || !password) {
     alert('Please enter both email and password');
     return;
   }
-  
+
   try {
-    const { signInWithEmailAndPassword } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js");
+    const { signInWithEmailAndPassword } = await import(
+      'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js'
+    );
     await signInWithEmailAndPassword(auth, email, password);
     await ensureUserDoc(auth.currentUser);
     hideHomeLoginModal();
@@ -662,7 +731,9 @@ document.getElementById('homeSignInBtn')?.addEventListener('click', async () => 
 // Home Google sign in
 document.getElementById('homeGoogleSignInBtn')?.addEventListener('click', async () => {
   try {
-    const { GoogleAuthProvider, signInWithPopup } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js");
+    const { GoogleAuthProvider, signInWithPopup } = await import(
+      'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js'
+    );
     const provider = new GoogleAuthProvider();
     const result = await signInWithPopup(auth, provider);
     await ensureUserDoc(result.user);
@@ -677,18 +748,18 @@ document.getElementById('homeGoogleSignInBtn')?.addEventListener('click', async 
 // "Sign up here" link in login modal
 document.getElementById('goToSignUpBtn')?.addEventListener('click', () => {
   hideHomeLoginModal();
-  window.location.href = "/pricing?auth=open";
+  window.location.href = '/pricing?auth=open';
 });
 
 /* ========================= INIT ========================= */
 (() => {
-  applyStyleDefaults(styleSelect?.value || "realistic");
+  applyStyleDefaults(styleSelect?.value || 'realistic');
   updateModeIndicator();
-  
+
   // After Firebase auth init is available on the page:
   try {
     setTokenProvider(async () => {
-      const u = (window.auth?.currentUser) || (window.firebase?.auth?.().currentUser);
+      const u = window.auth?.currentUser || window.firebase?.auth?.().currentUser;
       return u?.getIdToken ? u.getIdToken() : null;
     });
   } catch {}
