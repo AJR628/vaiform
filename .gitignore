@@ -145,3 +145,4 @@ Thumbs.db
 
 # Generated/manual backup clutter in built web output
 web/dist/*.backup
+web/dist/
