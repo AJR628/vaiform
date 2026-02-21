@@ -117,7 +117,7 @@ async function proceedWithCheckout(plan, billing) {
   try {
     const user = auth.currentUser;
     const idToken = await user.getIdToken(true);
-    const response = await fetch(`${API}/checkout/start`, {
+    const response = await fetch(`${API}/api/checkout/start`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

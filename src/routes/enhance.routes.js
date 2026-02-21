@@ -25,7 +25,4 @@ const r = Router();
 // Auth required; NO idempotency
 r.post('/enhance', requireAuth, validate(EnhanceSchema), enhance);
 
-// Optional legacy alias
-r.post('/', requireAuth, validate(EnhanceSchema), enhance);
-
 export default r;

@@ -4,7 +4,7 @@ import requireAuth from '../middleware/requireAuth.js';
 const r = Router();
 
 /**
- * GET /whoami
+ * GET /api/whoami
  * Returns authenticated user info
  */
 r.get('/', requireAuth, (req, res) => {

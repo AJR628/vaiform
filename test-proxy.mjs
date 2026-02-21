@@ -40,7 +40,7 @@ async function runTests() {
 
   const tests = [
     ['/stripe/webhook', 'Stripe Webhook Health Check'],
-    ['/api/health', 'API Health Check (if exists)'],
+    ['/api/health', 'API Health Check'],
     ['/', 'Home Page (SPA fallback)'],
   ];
 

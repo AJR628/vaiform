@@ -178,8 +178,7 @@ export async function apiFetch(path, opts = {}) {
 
   // Graceful fallback for simple GETs if /api/* alias isn't mounted
   const isGet = !opts.method || opts.method.toUpperCase() === 'GET';
-  const eligibleFallback =
-    isGet && (path === '/credits' || path === '/whoami' || path === '/health');
+  const eligibleFallback = isGet && path === '/health';
   if (eligibleFallback && res.status === 404) {
     const urlRoot = BACKEND.replace(/\/$/, '') + path;
     dlog('fallback fetch →', urlRoot);

@@ -1,17 +1,17 @@
-# Active Surfaces (Post A/B/C Snapshot)
+# Active Surfaces (Visual SSOT + API Prune)
 
-Audit date: 2026-02-20
+Audit date: 2026-02-21
 
 ## Runtime model
 
 - Frontend is served by Netlify from `web/dist`.
 - Frontend source files live in `web/public`.
-- Backend is API-only and does not serve SPA/HTML pages.
+- Netlify redirect/proxy SSOT is `netlify.toml` (no `_redirects` files under `web/`).
+- Backend serves API + required static assets only.
 
 ## Netlify bridge surfaces
 
 - `/api/*` -> backend `/api/:splat` (proxy in `netlify.toml`).
-- `/assets/fonts/*` -> backend `/assets/fonts/:splat`.
 - `/stripe/webhook` -> backend `/stripe/webhook`.
 
 ## Backend default reachable surfaces (`VAIFORM_DEBUG=0`)
@@ -19,15 +19,17 @@ Audit date: 2026-02-20
 - Health:
   - `GET /health`
   - `HEAD /health`
-  - `GET /` (API root JSON from `routes.index`)
+  - `GET /api/health`
+  - `HEAD /api/health`
 - Webhook:
   - `GET /stripe/webhook`
   - `POST /stripe/webhook`
 - Core API mounts:
   - `/api/generate`, `/api/job/:jobId`
   - `/api/credits`
+  - `/api/whoami`
   - `/api/enhance`
-  - `/api/start`, `/api/session`, `/api/subscription`, `/api/portal`
+  - `/api/checkout/start`, `/api/checkout/session`, `/api/checkout/subscription`, `/api/checkout/portal`
   - `/api/shorts/mine`, `/api/shorts/:jobId`
   - `/api/assets/options`, `/api/assets/ai-images` (disabled 410)
   - `/api/limits/usage`
@@ -40,9 +42,12 @@ Audit date: 2026-02-20
 ## Removed/non-active surfaces
 
 - Removed from backend:
+  - `GET /` (root API JSON)
+  - `GET /api/` (accidental root collisions from router `/` mounts)
+  - root aliases: `/credits`, `/whoami`, `/generate`, `/enhance`, `/limits/*`
+  - old checkout aliases: `/checkout/*`, `/api/start`, `/api/session`, `/api/subscription`, `/api/portal`
   - `/creative` HTML route
-  - frontend static serving from `web/dist`
-  - frontend static serving from root `public`
+  - frontend static serving from backend `web/dist` or root `public`
   - `/cdn` proxy route
   - inline no-op `POST /api/user/setup` alias in `src/app.js`
 - Debug-only (`VAIFORM_DEBUG=1`):

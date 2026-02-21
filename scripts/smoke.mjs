@@ -55,15 +55,15 @@ function idem() {
     if (!r.ok) throw new Error(`status ${r.status}: ${r.raw}`);
   });
 
-  await test('GET /credits shape', async () => {
-    const r = await api('/credits');
+  await test('GET /api/credits shape', async () => {
+    const r = await api('/api/credits');
     if (!r.ok) throw new Error(`status ${r.status}: ${r.raw}`);
     expectSuccessData(r.json, ['credits']);
     if (!Number.isFinite(r.json.data.credits)) throw new Error('credits not a number');
   });
 
-  await test('POST /enhance success shape', async () => {
-    const r = await api('/enhance', {
+  await test('POST /api/enhance success shape', async () => {
+    const r = await api('/api/enhance', {
       method: 'POST',
       headers: { 'X-Idempotency-Key': idem() },
       body: { prompt: 'make colors pop', strength: 0.6 },
@@ -72,8 +72,8 @@ function idem() {
     expectSuccessData(r.json, ['enhancedPrompt', 'cost']);
   });
 
-  await test('POST /generate (txt2img) success shape', async () => {
-    const r = await api('/generate', {
+  await test('POST /api/generate (txt2img) success shape', async () => {
+    const r = await api('/api/generate', {
       method: 'POST',
       headers: { 'X-Idempotency-Key': idem() },
       body: { prompt: 'a single sunflower', count: 1, style: 'realistic' },
@@ -84,8 +84,8 @@ function idem() {
       throw new Error('images empty');
   });
 
-  await test('POST /generate validation error', async () => {
-    const r = await api('/generate', {
+  await test('POST /api/generate validation error', async () => {
+    const r = await api('/api/generate', {
       method: 'POST',
       headers: { 'X-Idempotency-Key': idem() },
       body: { prompt: '', count: 0, style: 'invalid-style' },

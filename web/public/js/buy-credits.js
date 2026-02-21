@@ -66,7 +66,7 @@ async function startOneTime({ priceId, credits = 0, quantity = 1 }) {
   const user = await ensureAuth();
   if (!user) return toast('Please sign in to buy credits.');
   try {
-    const data = await apiFetch('/session', {
+    const data = await apiFetch('/checkout/session', {
       method: 'POST',
       body: { priceId, quantity, credits }, // credits optional (for analytics/metadata)
     });
@@ -83,7 +83,7 @@ async function startSubscription({ priceId, credits = 0 }) {
   const user = await ensureAuth();
   if (!user) return toast('Please sign in to subscribe.');
   try {
-    const data = await apiFetch('/subscription', {
+    const data = await apiFetch('/checkout/subscription', {
       method: 'POST',
       body: { priceId, credits }, // credits optional (for analytics/metadata)
     });
@@ -166,7 +166,7 @@ manageBtn?.addEventListener('click', async () => {
       return;
     }
 
-    const data = await apiFetch('/portal', {
+    const data = await apiFetch('/checkout/portal', {
       method: 'POST',
     });
     const checkoutUrl = checkoutUrlFrom(data);

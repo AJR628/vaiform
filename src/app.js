@@ -16,15 +16,13 @@ import reqId from './middleware/reqId.js';
 import errorHandler from './middleware/error.middleware.js';
 
 // Direct route imports for explicit mounting
-import healthRoutes from './routes/health.routes.js';
 import whoamiRoutes from './routes/whoami.routes.js';
 import creditsRoutes from './routes/credits.routes.js';
 import diagRoutes from './routes/diag.routes.js';
 import generateRoutes from './routes/generate.routes.js';
 // Old webhook routes removed - using /stripe/webhook instead
-import { getCreditsHandler } from './handlers/credits.get.js';
 import diagHeadersRoutes from './routes/diag.headers.routes.js';
-import { ok, fail } from './http/respond.js';
+import { ok } from './http/respond.js';
 
 dotenv.config();
 envCheck(); // presence-only checks; CI bypasses via NODE_ENV=test
@@ -149,9 +147,6 @@ app.use((req, res, next) => {
   if (req.method !== 'GET') return next();
   const p = req.path || '';
   if (
-    p.startsWith('/generate') ||
-    p.startsWith('/credits') ||
-    p.startsWith('/whoami') ||
     p.startsWith('/diag') ||
     p.startsWith('/health') ||
     p.startsWith('/stripe/webhook') ||
@@ -172,6 +167,13 @@ app.get('/health', (req, res) => {
   return ok(req, res, { service: 'vaiform-backend', time: Date.now() });
 });
 app.head('/health', (req, res) => {
+  res.set('Cache-Control', 'no-store').end();
+});
+app.get('/api/health', (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  return ok(req, res, { service: 'vaiform-backend', time: Date.now() });
+});
+app.head('/api/health', (req, res) => {
   res.set('Cache-Control', 'no-store').end();
 });
 if (DBG) {
@@ -211,45 +213,23 @@ app.use('/assets/fonts', (req, res, next) => {
 console.log('✅ Mounted static /assets (fonts) before API routes');
 
 // ---------- API ROUTES ----------
-if (routes?.index) {
-  app.use('/', routes.index);
-  console.log('✅ Mounted index at /');
-}
-app.use('/', healthRoutes);
-app.use('/', whoamiRoutes);
-// Keep existing creditsRoutes mount if present, but also provide a direct handler to avoid 404s.
-app.use('/', creditsRoutes);
-app.get('/credits', getCreditsHandler);
 if (process.env.VAIFORM_DEBUG === '1') app.use('/diag', diagRoutes);
-app.use('/', generateRoutes);
-// /api alias for ALL API endpoints (ensure all four are mounted)
-app.use('/api', healthRoutes);
-app.use('/api', whoamiRoutes);
-app.use('/api', creditsRoutes);
-app.get('/api/credits', getCreditsHandler);
 app.use('/api', generateRoutes);
+app.use('/api/whoami', whoamiRoutes);
+app.use('/api/credits', creditsRoutes);
 // Mount diag headers only when VAIFORM_DEBUG=1
 if (process.env.VAIFORM_DEBUG === '1') {
   app.use('/api', diagHeadersRoutes);
 }
 
-// Guard: prevent GET/HEAD on /generate from being hijacked by static/proxy
-app.get(['/generate', '/generate/'], (req, res) =>
-  fail(req, res, 405, 'METHOD_NOT_ALLOWED', 'Use POST for /generate')
-);
-app.head(['/generate', '/generate/'], (req, res) => res.status(405).end());
-
 // Mount other routes that were previously handled by the mount function
 if (routes?.enhance) {
-  app.use('/', routes.enhance);
-  app.use('/enhance', routes.enhance);
   app.use('/api', routes.enhance);
-  console.log('✅ Mounted enhance at /, /enhance, and /api');
+  console.log('✅ Mounted enhance at /api');
 }
 if (routes?.checkout) {
-  app.use('/checkout', routes.checkout);
-  app.use('/api', routes.checkout);
-  console.log('✅ Mounted checkout at /checkout and /api');
+  app.use('/api/checkout', routes.checkout);
+  console.log('✅ Mounted checkout at /api/checkout');
 }
 if (routes?.shorts) {
   // Mount Shorts API for quote-to-shorts MVP
@@ -262,8 +242,7 @@ if (routes?.assets) {
 }
 if (routes?.limits) {
   app.use('/api/limits', routes.limits);
-  app.use('/limits', routes.limits);
-  console.log('✅ Mounted limits at /limits and /api/limits');
+  console.log('✅ Mounted limits at /api/limits');
 }
 if (routes?.story) {
   app.use('/api/story', routes.story);

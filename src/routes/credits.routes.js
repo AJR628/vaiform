@@ -6,7 +6,7 @@ const router = Router();
 
 /**
  * Authenticated credits endpoint
- * GET /credits   → { email, credits }
+ * GET /api/credits   → { email, credits }
  */
 router.get('/', requireAuth, getCredits);
 

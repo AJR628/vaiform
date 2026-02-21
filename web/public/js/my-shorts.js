@@ -1,13 +1,11 @@
 import { auth, provider } from './firebaseClient.js';
-const BACKEND_URL =
-  'https://17e0d1d1-e327-483d-b1ea-c41bea08fb59-00-1ef93t84nlhq6.janeway.replit.dev/api';
 const BACKEND = 'https://17e0d1d1-e327-483d-b1ea-c41bea08fb59-00-1ef93t84nlhq6.janeway.replit.dev/';
+const API_ROOT = BACKEND.replace(/\/$/, '');
 import {
   onAuthStateChanged,
   signInWithPopup,
   signOut,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
-import { API_BASE } from './apiBase.js';
 
 // Auth state management
 onAuthStateChanged(auth, (user) => {
@@ -48,8 +46,7 @@ let loading = false;
 const myShortsIndex = new Map();
 
 async function fetchMine(cursor) {
-  const base = BACKEND_URL.replace(/\/$/, '');
-  const url = `${base}/shorts/mine${cursor ? `?limit=24&cursor=${encodeURIComponent(cursor)}` : `?limit=24`}`;
+  const url = `${API_ROOT}/api/shorts/mine${cursor ? `?limit=24&cursor=${encodeURIComponent(cursor)}` : `?limit=24`}`;
   const headers = { Accept: 'application/json' };
   if (auth.currentUser)
     headers['Authorization'] = 'Bearer ' + (await auth.currentUser.getIdToken());
@@ -154,7 +151,7 @@ async function refreshCredits() {
       return;
     }
     const token = await auth.currentUser.getIdToken();
-    const res = await fetch(`${API_BASE}/credits`, {
+    const res = await fetch(`${API_ROOT}/api/credits`, {
       headers: { Authorization: `Bearer ${token}` },
       credentials: 'include',
     });
@@ -201,7 +198,7 @@ async function fetchShortDetail(id) {
   try {
     if (!id || !auth.currentUser) return null;
     const token = await auth.currentUser.getIdToken();
-    const res = await fetch(`${API_BASE}/shorts/${id}`, {
+    const res = await fetch(`${API_ROOT}/api/shorts/${id}`, {
       headers: { Authorization: `Bearer ${token}` },
       credentials: 'include',
     });

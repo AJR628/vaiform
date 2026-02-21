@@ -47,7 +47,7 @@ async function testCheckoutWithSpoofedUid(idToken, realUid) {
   console.log(`   Spoofed email: ${spoofedEmail}`);
 
   try {
-    const response = await fetch(`${API_BASE}/checkout/start`, {
+    const response = await fetch(`${API_BASE}/api/checkout/start`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -87,7 +87,7 @@ async function testCheckoutWithoutSpoofedFields(idToken) {
   console.log('\n🧪 Test 2: Request without uid/email in body (normal flow)');
 
   try {
-    const response = await fetch(`${API_BASE}/checkout/start`, {
+    const response = await fetch(`${API_BASE}/api/checkout/start`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
