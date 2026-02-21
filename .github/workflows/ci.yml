@@ -28,6 +28,12 @@ jobs:
       - name: Install
         run: npm ci
 
+      - name: Netlify redirect SSOT guard
+        run: npm run check:netlify-redirects
+
+      - name: Root API caller guard
+        run: npm run check:root-api-callers
+
       - name: Security audit (non-blocking)
         continue-on-error: true
         run: npm audit --audit-level=high
