@@ -159,7 +159,8 @@ async function main() {
       'export function enforceScriptDailyCap',
     ];
     const hasExports = requiredExports.every((exp) => content.includes(exp));
-    const usesFailHelper = content.includes("from '../http/respond.js'") && content.includes('fail(');
+    const usesFailHelper =
+      content.includes("from '../http/respond.js'") && content.includes('fail(');
 
     if (hasExports && usesFailHelper) {
       return {
@@ -167,7 +168,10 @@ async function main() {
         data: { message: 'PlanGuards middleware exported correctly and uses fail helper' },
       };
     } else {
-      return { success: false, error: 'PlanGuards middleware exports/checks not found as expected' };
+      return {
+        success: false,
+        error: 'PlanGuards middleware exports/checks not found as expected',
+      };
     }
   });
 
