@@ -1,0 +1,90 @@
+---
+description: 
+alwaysApply: true
+---
+
+A. Repo Posture & Zero-Assumption Policy
+
+No guessing. No assumptions. Before planning or coding, Cursor must audit the repo (open files + grep) for:
+
+current routes and mounts (src/app.js)
+
+current callers (web/public/**, scripts/**)
+
+SSOT docs (PLAN_UPDATED_WITH_STATUS_LEDGER.md, docs/ACTIVE_SURFACES.md, ROUTE_TRUTH_TABLE.md, VAIFORM_REPO_COHESION_AUDIT.md)
+
+If anything is unclear, Cursor must produce evidence (file:line), then propose a plan.
+
+B. API-First Surface Contract (Hard rule)
+
+Backend serves no SPA.
+
+Root allowed surfaces only:
+
+GET/HEAD /health
+
+GET/HEAD /api/health
+
+GET/POST /stripe/webhook
+
+GET /assets/*
+
+All other functionality is under /api/* only.
+
+Never add root aliases (e.g. /credits, /whoami, /generate, /checkout/*).
+
+C. Canonical API Envelope (Hard rule)
+
+Success: { success: true, data: <any>, requestId: string }
+
+Failure: { success: false, error: string, detail: string, fields?: object, requestId: string }
+
+Use src/http/respond.js ok/fail for all default-reachable routes.
+
+Never reintroduce legacy payload keys like { ok, reason }, { code, message }, { issues }.
+
+D. Drift Prevention (Hard rule)
+
+Any change that affects surfaces/callers/contracts must update SSOT docs in the same PR:
+
+PLAN_UPDATED_WITH_STATUS_LEDGER.md
+
+docs/ACTIVE_SURFACES.md
+
+ROUTE_TRUTH_TABLE.md
+
+VAIFORM_REPO_COHESION_AUDIT.md
+
+If docs are unchanged, Cursor must justify why (with grep proof).
+
+E. Netlify/Web Build SSOT (Hard rule)
+
+Netlify builds from web/, publish web/dist.
+
+Web build is copy-only (no Vite/Rollup pipeline reintroduced).
+
+web/scripts/copy-public.mjs must clean dist before copy.
+
+_redirects under web/ is forbidden (guard scripts must stay passing).
+
+web/dist must remain ignored/untracked.
+
+F. Testing & Evidence Requirements (Hard rule)
+
+Every change must include:
+
+Plan → Patches → Tests → Notes/Risks → Revert
+
+Exact commands to run (CI-equivalent where possible):
+
+npm run lint
+
+npm run format:check
+
+node scripts/check-responses.js
+
+npm run check:netlify-redirects
+
+npm run check:root-api-callers
+
+optional: node scripts/smoke.mjs (requires env)
