@@ -22,7 +22,6 @@ Audit date: 2026-02-21
 | GET      | `/api/whoami`                | Canonical auth info endpoint    |
 | POST     | `/api/generate`              | Canonical frontend target       |
 | GET      | `/api/job/:jobId`            | Canonical frontend target       |
-| POST     | `/api/enhance`               | Canonical frontend target       |
 | POST     | `/api/checkout/start`        | Canonical checkout start        |
 | POST     | `/api/checkout/session`      | Canonical checkout session      |
 | POST     | `/api/checkout/subscription` | Canonical subscription checkout |
@@ -57,6 +56,7 @@ Audit date: 2026-02-21
 | GET    | `/whoami`                                            | Visual SSOT + API prune         |
 | POST   | `/generate`                                          | Visual SSOT + API prune         |
 | POST   | `/enhance`                                           | Visual SSOT + API prune         |
+| POST   | `/api/enhance`                                       | C17 (feature retired)           |
 | GET    | `/limits/usage`                                      | Visual SSOT + API prune         |
 | POST   | `/checkout/start`                                    | Visual SSOT + API prune         |
 | POST   | `/api/start`                                         | Visual SSOT + API prune         |

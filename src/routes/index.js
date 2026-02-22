@@ -1,7 +1,6 @@
 import generateRouter from './generate.routes.js';
 import creditsRouter from './credits.routes.js';
 import webhookRouter from './stripe.webhook.js';
-import enhanceRouter from './enhance.routes.js';
 import checkoutRouter from './checkout.routes.js';
 import diagRouter from './diag.routes.js';
 import whoamiRouter from './whoami.routes.js';
@@ -11,15 +10,14 @@ import limitsRouter from './limits.routes.js';
 import storyRouter from './story.routes.js';
 
 export default {
-  credits: creditsRouter, // "/credits"
-  whoami: whoamiRouter, // "/whoami"
-  enhance: enhanceRouter, // "/" and "/enhance"
-  generate: generateRouter, // "/generate"
-  webhook: webhookRouter, // "/webhook"
-  checkout: checkoutRouter, // "/checkout"
-  diag: diagRouter, // "/diag"
-  shorts: shortsRouter, // "/shorts"
-  assets: assetsRouter, // "/assets"
-  limits: limitsRouter, // "/limits"
-  story: storyRouter, // "/story"
+  credits: creditsRouter,
+  whoami: whoamiRouter,
+  generate: generateRouter,
+  webhook: webhookRouter,
+  checkout: checkoutRouter,
+  diag: diagRouter,
+  shorts: shortsRouter,
+  assets: assetsRouter,
+  limits: limitsRouter,
+  story: storyRouter,
 };

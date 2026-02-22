@@ -28,7 +28,6 @@ Audit date: 2026-02-21
   - `/api/generate`, `/api/job/:jobId`
   - `/api/credits`
   - `/api/whoami`
-  - `/api/enhance`
   - `/api/checkout/start`, `/api/checkout/session`, `/api/checkout/subscription`, `/api/checkout/portal`
   - `/api/shorts/mine`, `/api/shorts/:jobId`
   - `/api/assets/options`, `/api/assets/ai-images` (disabled 410)
@@ -45,6 +44,7 @@ Audit date: 2026-02-21
   - `GET /` (root API JSON)
   - `GET /api/` (accidental root collisions from router `/` mounts)
   - root aliases: `/credits`, `/whoami`, `/generate`, `/enhance`, `/limits/*`
+  - `/api/enhance` (feature retired)
   - old checkout aliases: `/checkout/*`, `/api/start`, `/api/session`, `/api/subscription`, `/api/portal`
   - `/creative` HTML route
   - frontend static serving from backend `web/dist` or root `public`

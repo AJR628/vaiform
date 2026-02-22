@@ -1,20 +1,20 @@
 # Vaiform Repo Cohesion Audit (Post A/B/C)
 
-Audit date: 2026-02-20
+Audit date: 2026-02-22
 
 ## Executive summary
 
-| Category                 | Current truth                                             |
-| ------------------------ | --------------------------------------------------------- |
-| Frontend build root      | `web`                                                     |
-| Frontend source-of-truth | `web/public`                                              |
-| Frontend publish output  | `web/dist`                                                |
-| Netlify build command    | `npm ci --no-audit --no-fund && npm run build`            |
-| Backend posture          | API-only                                                  |
-| Backend frontend serving | Removed (`web/dist` + root `public` removed)              |
-| Netlify API proxy        | `/api/* -> backend /api/:splat`                           |
-| Font proxy               | `/assets/fonts/* -> backend /assets/fonts/:splat`         |
-| Removed backend surfaces | `/creative`, `/cdn`, inline `/api/user/setup` no-op alias |
+| Category                 | Current truth                                                                               |
+| ------------------------ | ------------------------------------------------------------------------------------------- |
+| Frontend build root      | `web`                                                                                       |
+| Frontend source-of-truth | `web/public`                                                                                |
+| Frontend publish output  | `web/dist`                                                                                  |
+| Netlify build command    | `npm ci --no-audit --no-fund && npm run build`                                              |
+| Backend posture          | API-only                                                                                    |
+| Backend frontend serving | Removed (`web/dist` + root `public` removed)                                                |
+| Netlify API proxy        | `/api/* -> backend /api/:splat`                                                             |
+| Font proxy               | `/assets/fonts/* -> backend /assets/fonts/:splat`                                           |
+| Removed backend surfaces | `/creative`, `/cdn`, `/api/enhance` (feature retired), inline `/api/user/setup` no-op alias |
 
 ## Architecture truth
 
@@ -28,7 +28,9 @@ Audit date: 2026-02-20
 - Eliminated dual frontend serving paths in backend.
 - Removed unused `/cdn` proxy surface.
 - Removed shadowing-prone inline no-op alias route in app entry.
+- Removed `/api/enhance` route surface and shipped frontend enhance caller/UI.
 - Reduced deployment instability by switching from destructive install to deterministic `npm ci`.
+- Closed remaining default-reachable envelope partials on `/api/whoami` and `/api/users/ensure`.
 
 ## Remaining intentional deferment
 

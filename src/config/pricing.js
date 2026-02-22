@@ -1,6 +1,4 @@
 // src/config/pricing.js
-export const ENHANCE_COST = 1;
-
 export function costForCount(count) {
   const n = Number(count) || 1;
   if (n <= 1) return 20;

@@ -2,6 +2,7 @@
 import { Router } from 'express';
 import requireAuth from '../middleware/requireAuth.js';
 import admin from '../config/firebase.js';
+import { ok, fail } from '../http/respond.js';
 
 const r = Router();
 
@@ -18,11 +19,7 @@ r.post('/ensure', requireAuth, async (req, res) => {
     const email = req.user.email ?? null;
 
     if (!uid) {
-      return res.status(400).json({
-        success: false,
-        error: 'INVALID_REQUEST',
-        detail: 'User ID not found in auth token',
-      });
+      return fail(req, res, 400, 'INVALID_REQUEST', 'User ID not found in auth token');
     }
 
     const db = admin.firestore();
@@ -51,17 +48,14 @@ r.post('/ensure', requireAuth, async (req, res) => {
 
       console.log(`[users/ensure] User doc created with 100 welcome credits: ${uid} (${email})`);
 
-      return res.json({
-        success: true,
-        data: {
-          uid,
-          email,
-          plan: 'free',
-          isMember: false,
-          subscriptionStatus: null,
-          credits: 100,
-          freeShortsUsed: 0,
-        },
+      return ok(req, res, {
+        uid,
+        email,
+        plan: 'free',
+        isMember: false,
+        subscriptionStatus: null,
+        credits: 100,
+        freeShortsUsed: 0,
       });
     } else {
       // Existing user: only update email and updatedAt, preserve all other fields
@@ -83,25 +77,18 @@ r.post('/ensure', requireAuth, async (req, res) => {
 
       // Return existing data (preserving credits, membership, etc.)
       const currentData = (await userRef.get()).data() || {};
-      return res.json({
-        success: true,
-        data: {
-          uid,
-          email: currentData.email || email,
-          isMember: currentData.isMember ?? false,
-          subscriptionStatus: currentData.subscriptionStatus ?? null,
-          credits: currentData.credits ?? 0,
-          freeShortsUsed: currentData.freeShortsUsed ?? 0,
-        },
+      return ok(req, res, {
+        uid,
+        email: currentData.email || email,
+        isMember: currentData.isMember ?? false,
+        subscriptionStatus: currentData.subscriptionStatus ?? null,
+        credits: currentData.credits ?? 0,
+        freeShortsUsed: currentData.freeShortsUsed ?? 0,
       });
     }
   } catch (e) {
     console.error('[users/ensure] error:', e);
-    return res.status(500).json({
-      success: false,
-      error: 'ENSURE_FAILED',
-      detail: e?.message || 'Failed to ensure user document',
-    });
+    return fail(req, res, 500, 'ENSURE_FAILED', e?.message || 'Failed to ensure user document');
   }
 });
 

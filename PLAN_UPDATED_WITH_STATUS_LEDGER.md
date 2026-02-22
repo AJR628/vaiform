@@ -15,7 +15,7 @@
 
 - `VAIFORM_DEBUG=0` (default) -> diag endpoints are unreachable
 
-**As-of:** 2026-02-21
+**As-of:** 2026-02-22
 
 **Posture:** Web frontend SSOT moved to `web/` (Netlify build/publish); backend is API-first.
 
@@ -45,22 +45,18 @@
 - **Netlify redirect/proxy SSOT lock:** no `_redirects` under `web/`; CI guard enforces.
 - **Web build determinism:** copy-only build; cleans `web/dist` before copy; `web/dist` is build output (untracked).
 - **API surface prune:** root aliases removed; canonical `/api/*` surfaces; explicit `/api/health`; eliminated `/api/` collision.
+- **Contract completion:** `/api/whoami` and `/api/users/ensure` now emit canonical `ok/fail` envelopes with `requestId`.
+- **Enhance retirement:** `/api/enhance` removed end-to-end (feature retired; backend route + frontend caller/UI deleted).
+- **CI ratchet:** full `check:responses` now runs in CI (push/PR) in addition to changed-files checks.
 - **Lint posture hardening:** `lint` scoped to green-path server surfaces; `lint:full` retained for broader cleanup.
-
-### IN PROGRESS In Progress / Partial (implemented but not fully conforming)
-
-- **Contract envelope partial remains:** `/api/whoami` and `/api/users/ensure` are default-reachable but still return non-canonical response shapes (missing `requestId` and/or non-`data` success payload). Needs migration to `ok/fail`.
 
 ### NOT STARTED Not Started (still planned work)
 
-- **C17** Final cohesion publication
 - **C18** Tailwind CDN removal + CSS pinning
 
 ### Current Priority (next few commits)
 
-1. **Close remaining envelope partial** (`/api/whoami` and `/api/users/ensure` to canonical `ok/fail` with `requestId`)
-2. **C17 final cohesion publication** (publish final true state + residual backlog)
-3. **C18 Tailwind CDN removal + CSS pinning** (remove `cdn.tailwindcss.com` and define a local CSS build strategy)
+1. **C18 Tailwind CDN removal + CSS pinning** (remove `cdn.tailwindcss.com` and define a local CSS build strategy)
 
 ---
 
@@ -73,8 +69,9 @@
 
 5. Health endpoints include `/health` and `/api/health` (GET/HEAD).
 6. Canonical checkout endpoints: `/api/checkout/start|session|subscription|portal`.
-7. Canonical path surfaces for identity/credits: `/api/credits` and `/api/whoami` (whoami envelope migration still pending).
+7. Canonical path surfaces for identity/credits: `/api/credits` and `/api/whoami`.
 8. Root aliases removed: `/credits`, `/whoami`, `/generate`, `/enhance`, `/limits/*`, `/checkout/*`.
+9. `/api/enhance` removed (feature retired).
 
 ---
 
@@ -278,11 +275,13 @@
 
 ### C17 - Final Cohesion Publication _(legacy ref: 4.2)_
 
-**Status:** NOT STARTED
+**Status:** DONE
 
-1. Scope: `VAIFORM_REPO_COHESION_AUDIT.md`, `ROUTE_TRUTH_TABLE.md`, `docs/API_CONTRACT.md`.
-2. Publish final true state and residual backlog.
-3. Include CI ratchet stage achieved.
+1. Scope completed: `src/routes/whoami.routes.js`, `src/routes/users.routes.js`, enhance surface cleanup (`src/app.js`, `src/routes/index.js`, deleted enhance route/controller/service/schema), `scripts/smoke.mjs`, CI workflow + truth docs.
+2. Completed: canonical envelope migration for `/api/whoami` and `/api/users/ensure` via `respond.ok/fail`.
+3. Completed: removed `/api/enhance` surface end-to-end (backend + frontend caller/UI), plus docs statement that the feature is retired.
+4. Completed: CI ratchet now runs full `npm run check:responses` on push/PR, while keeping changed-files checks.
+5. Publication hygiene: deterministic Prettier fix command is `npx prettier --write PLAN_UPDATED_WITH_STATUS_LEDGER.md`.
 
 ---
 
@@ -326,4 +325,3 @@ Not allowed: changing guard conditions, entitlements, or route behavior.
 3. CI ratchet starts with changed-files-only by design.
 4. Active-surface and full repo-wide contract checks are phased in later.
 5. This plan introduces no code changes by itself.
-

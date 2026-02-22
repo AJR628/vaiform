@@ -34,6 +34,9 @@ jobs:
       - name: Root API caller guard
         run: npm run check:root-api-callers
 
+      - name: Response contract check (full)
+        run: npm run check:responses
+
       - name: Security audit (non-blocking)
         continue-on-error: true
         run: npm audit --audit-level=high

@@ -44,36 +44,6 @@ function toNum(val) {
 }
 
 /* ===========================
- * POST /enhance
- * =========================== */
-export async function enhance(req, res) {
-  const { prompt } = req.body;
-  if (!prompt) return fail(req, res, 400, 'Missing prompt', 'Missing prompt');
-
-  try {
-    const result = await openai.chat.completions.create({
-      model: 'gpt-4',
-      messages: [
-        {
-          role: 'system',
-          content:
-            'You are an AI prompt enhancer. Make this image prompt more vivid, imaginative, and descriptive. Avoid changing the meaning.',
-        },
-        { role: 'user', content: prompt },
-      ],
-      temperature: 0.85,
-    });
-
-    const enhanced = result.choices?.[0]?.message?.content?.trim?.() ?? '';
-    if (!enhanced) throw new Error('Empty enhancement from OpenAI');
-    return ok(req, res, { enhanced });
-  } catch (err) {
-    console.error('❌ Enhance error:', err?.message || err);
-    return fail(req, res, 500, 'Enhancement failed.', 'Enhancement failed.');
-  }
-}
-
-/* ===========================
  * POST /generate  (text → image)
  * - Trusts req.user.uid/email
  * - Atomic credit debit

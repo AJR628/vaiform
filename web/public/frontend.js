@@ -58,8 +58,6 @@ const creditCount = document.getElementById('credit-count');
 const themeToggle = document.getElementById('theme-toggle');
 
 const promptInput = document.getElementById('prompt');
-const enhanceBtn = document.getElementById('enhance-button');
-const enhanceSpinner = document.getElementById('enhance-spinner');
 
 const generateForm = document.getElementById('generate-form');
 const generateButton = document.getElementById('generate-button');
@@ -99,7 +97,6 @@ creditDisplay?.addEventListener('click', () => refreshCredits(true));
 let currentUserEmail = null;
 let currentCredits = 0;
 let uploadedImageBase64 = ''; // we store a Data URL here (image/webp)
-let enhancingBusy = false;
 let firestoreUnsubscribe = null;
 
 /* ========================= UI HELPERS ========================= */
@@ -287,66 +284,6 @@ onAuthStateChanged(auth, async (user) => {
 
   // Setup real-time Firestore listener for credits
   setupFirestoreListener(user);
-});
-
-/* ========================= ENHANCE PROMPT ========================= */
-enhanceBtn?.addEventListener('click', async () => {
-  // [AI_IMAGES] Kill-switch guard
-  if (window.VAIFORM_FEATURES && !window.VAIFORM_FEATURES.ENABLE_IMAGE_CREATOR) {
-    showToast('Image prompt enhancement is disabled in this version of Vaiform.');
-    return;
-  }
-
-  const original = promptInput?.value.trim();
-  if (!original) return showToast('Please enter a prompt to enhance.');
-  if (!auth.currentUser) return showToast('Please log in to enhance prompts.');
-  if (currentCredits < 1) return showToast('Not enough credits for enhancement (1 credit).');
-
-  if (enhancingBusy) return;
-  enhancingBusy = true;
-
-  try {
-    enhanceBtn.disabled = true;
-    enhanceSpinner?.classList.remove('hidden');
-
-    const response = await apiFetch('/enhance', {
-      method: 'POST',
-      body: { prompt: original, strength: 0.6 },
-    });
-
-    console.log('Enhance response:', response); // Debug log
-
-    // Handle different possible response structures
-    let enhancedPrompt = null;
-    // prefer the current shape; keep minimal legacy fallbacks
-    if (response?.data?.enhancedPrompt) {
-      enhancedPrompt = response.data.enhancedPrompt;
-    } else if (response?.enhancedPrompt) {
-      enhancedPrompt = response.enhancedPrompt;
-    } else if (response?.data?.prompt) {
-      enhancedPrompt = response.data.prompt; // legacy fallback if ever used
-    } else if (response?.enhanced) {
-      enhancedPrompt = response.enhanced; // legacy fallback
-    }
-
-    if (enhancedPrompt) {
-      promptInput.value = enhancedPrompt;
-      console.log('Updated prompt to:', enhancedPrompt);
-    } else {
-      console.log('No enhanced prompt found in response. Response structure:', response);
-      showToast("Enhancement succeeded but couldn't update prompt. Check console for details.");
-    }
-
-    await refreshCredits(false);
-    showToast('✨ Prompt enhanced');
-  } catch (e) {
-    console.error(e);
-    showToast(e.message || 'Enhancement failed. Try again.');
-  } finally {
-    enhancingBusy = false;
-    enhanceBtn.disabled = false;
-    enhanceSpinner?.classList.add('hidden');
-  }
 });
 
 /* ========================= IMAGE UPLOAD ========================= */

@@ -223,10 +223,6 @@ if (process.env.VAIFORM_DEBUG === '1') {
 }
 
 // Mount other routes that were previously handled by the mount function
-if (routes?.enhance) {
-  app.use('/api', routes.enhance);
-  console.log('✅ Mounted enhance at /api');
-}
 if (routes?.checkout) {
   app.use('/api/checkout', routes.checkout);
   console.log('✅ Mounted checkout at /api/checkout');

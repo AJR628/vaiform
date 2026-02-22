@@ -287,15 +287,15 @@ All routes mounted and active:
 
 ---
 
-## 5. Disabled Routes (Mounted but Return 410)
+## 5. Disabled / Retired Image Routes
 
-These routes are **mounted** in Express but immediately return `410 FEATURE_DISABLED`:
+These image-related routes are either mounted with `410 FEATURE_DISABLED` responses or fully retired:
 
 ### AI Image Generation (Kill-Switches)
 
-- `POST /enhance` - Prompt enhancement
-  - **File:** `src/controllers/enhance.controller.js`
-  - **Response:** `{ success: false, error: "FEATURE_DISABLED" }`
+- `POST /api/enhance` - Prompt enhancement route
+  - **Status:** Removed (feature retired)
+  - **Expected:** `404` (no route mounted)
 - `POST /generate` - Text-to-image generation
   - **File:** `src/controllers/generate.controller.js`
   - **Response:** `{ success: false, error: "FEATURE_DISABLED" }`
@@ -453,7 +453,7 @@ In the browser console, try to manually read another user's `/users/{uid}` or `/
 
 ### Disabled endpoints:
 
-- `POST /enhance`
+- `POST /api/enhance` (removed; expect 404)
 - `POST /generate`
 - `POST /generate/image-to-image`
 - `POST /generate/upscale`
@@ -497,7 +497,7 @@ Verify shared download URLs (if you generate any) work even when logged out, but
 | `/api/user/me`              | ✅      | Active         | Yes           | User data         |
 | `/api/shorts/mine`          | ✅      | Active         | Yes           | Read-only         |
 | `/api/shorts/:jobId`        | ✅      | Active         | Yes           | Read-only         |
-| `/enhance`                  | ✅      | Disabled (410) | Yes           | AI images         |
+| `/api/enhance`              | ❌      | Removed        | N/A           | Feature retired   |
 | `/generate`                 | ✅      | Disabled (410) | Yes           | AI images         |
 | `/job/:jobId`               | ✅      | Disabled (410) | Yes           | AI images         |
 | `/api/studio/*`             | ❌      | Unmounted      | N/A           | Non-core          |
