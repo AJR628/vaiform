@@ -1,6 +1,6 @@
 # Route Truth Table (Visual SSOT + API Prune)
 
-Audit date: 2026-02-21
+Audit date: 2026-02-22
 
 ## Status definitions
 
@@ -10,33 +10,33 @@ Audit date: 2026-02-21
 
 ## Default-Reachable routes
 
-| Method   | Path                         | Notes                           |
-| -------- | ---------------------------- | ------------------------------- |
-| GET      | `/health`                    | Inline health endpoint          |
-| HEAD     | `/health`                    | Inline liveness                 |
-| GET      | `/api/health`                | Netlify-proxy health endpoint   |
-| HEAD     | `/api/health`                | Netlify-proxy liveness          |
-| GET      | `/stripe/webhook`            | Webhook alive check             |
-| POST     | `/stripe/webhook`            | Stripe webhook handler          |
-| GET      | `/api/credits`               | Canonical frontend target       |
-| GET      | `/api/whoami`                | Canonical auth info endpoint    |
-| POST     | `/api/generate`              | Canonical frontend target       |
-| GET      | `/api/job/:jobId`            | Canonical frontend target       |
-| POST     | `/api/checkout/start`        | Canonical checkout start        |
-| POST     | `/api/checkout/session`      | Canonical checkout session      |
-| POST     | `/api/checkout/subscription` | Canonical subscription checkout |
-| POST     | `/api/checkout/portal`       | Canonical billing portal        |
-| GET      | `/api/shorts/mine`           | My shorts list                  |
-| GET      | `/api/shorts/:jobId`         | Short detail                    |
-| POST     | `/api/assets/options`        | Asset options                   |
-| POST     | `/api/assets/ai-images`      | Disabled with canonical 410     |
-| GET      | `/api/limits/usage`          | Usage limits                    |
-| POST     | `/api/story/*`               | Story pipeline routes           |
-| POST     | `/api/caption/preview`       | Caption preview                 |
-| GET/POST | `/api/user/*`                | User profile/setup routes       |
-| POST     | `/api/users/ensure`          | Ensure user doc                 |
-| GET      | `/assets/*`                  | Backend static asset serving    |
-| GET      | `/assets/fonts/*`            | Font serving for Netlify proxy  |
+| Method   | Path                         | Notes                                                     |
+| -------- | ---------------------------- | --------------------------------------------------------- |
+| GET      | `/health`                    | Inline health endpoint                                    |
+| HEAD     | `/health`                    | Inline liveness                                           |
+| GET      | `/api/health`                | Netlify-proxy health endpoint                             |
+| HEAD     | `/api/health`                | Netlify-proxy liveness                                    |
+| GET      | `/stripe/webhook`            | Webhook alive check                                       |
+| POST     | `/stripe/webhook`            | Stripe webhook handler                                    |
+| GET      | `/api/credits`               | Canonical frontend target                                 |
+| GET      | `/api/whoami`                | Canonical auth info endpoint                              |
+| POST     | `/api/generate`              | Canonical frontend target                                 |
+| GET      | `/api/job/:jobId`            | Canonical frontend target                                 |
+| POST     | `/api/checkout/start`        | Canonical checkout start                                  |
+| POST     | `/api/checkout/session`      | Canonical checkout session                                |
+| POST     | `/api/checkout/subscription` | Canonical subscription checkout                           |
+| POST     | `/api/checkout/portal`       | Canonical billing portal                                  |
+| GET      | `/api/shorts/mine`           | My shorts list                                            |
+| GET      | `/api/shorts/:jobId`         | Short detail                                              |
+| POST     | `/api/assets/options`        | Asset options                                             |
+| POST     | `/api/assets/ai-images`      | Disabled with canonical 410                               |
+| GET      | `/api/limits/usage`          | Usage limits                                              |
+| POST     | `/api/story/*`               | Story pipeline routes                                     |
+| POST     | `/api/caption/preview`       | Caption preview                                           |
+| GET/POST | `/api/user/*`                | User profile/setup routes                                 |
+| POST     | `/api/users/ensure`          | Ensure user doc                                           |
+| GET      | `/assets/*`                  | Backend static asset serving                              |
+| GET      | `/assets/fonts/*`            | Backend serves font assets (Netlify does not proxy fonts) |
 
 ## Debug-Gated routes
 

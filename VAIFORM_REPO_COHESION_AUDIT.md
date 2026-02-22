@@ -4,17 +4,17 @@ Audit date: 2026-02-22
 
 ## Executive summary
 
-| Category                 | Current truth                                                                               |
-| ------------------------ | ------------------------------------------------------------------------------------------- |
-| Frontend build root      | `web`                                                                                       |
-| Frontend source-of-truth | `web/public`                                                                                |
-| Frontend publish output  | `web/dist`                                                                                  |
-| Netlify build command    | `npm ci --no-audit --no-fund && npm run build`                                              |
-| Backend posture          | API-only                                                                                    |
-| Backend frontend serving | Removed (`web/dist` + root `public` removed)                                                |
-| Netlify API proxy        | `/api/* -> backend /api/:splat`                                                             |
-| Font proxy               | `/assets/fonts/* -> backend /assets/fonts/:splat`                                           |
-| Removed backend surfaces | `/creative`, `/cdn`, `/api/enhance` (feature retired), inline `/api/user/setup` no-op alias |
+| Category                 | Current truth                                                                                                          |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
+| Frontend build root      | `web`                                                                                                                  |
+| Frontend source-of-truth | `web/public`                                                                                                           |
+| Frontend publish output  | `web/dist`                                                                                                             |
+| Netlify build command    | `npm ci --no-audit --no-fund && npm run build`                                                                         |
+| Backend posture          | API-only                                                                                                               |
+| Backend frontend serving | Removed (`web/dist` + root `public` removed)                                                                           |
+| Netlify API proxy        | `/api/* -> backend /api/:splat`                                                                                        |
+| Font serving             | Backend serves `/assets/*` directly (including `/assets/fonts/*`); Netlify proxies only `/api/*` and `/stripe/webhook` |
+| Removed backend surfaces | `/creative`, `/cdn`, `/api/enhance` (feature retired), inline `/api/user/setup` no-op alias                            |
 
 ## Architecture truth
 
@@ -34,7 +34,7 @@ Audit date: 2026-02-22
 
 ## Remaining intentional deferment
 
-- Toolchain simplification (removing Vite/React scaffolding) is deferred as a separate architecture decision and not part of A/B/C.
+- Toolchain simplification completed: web build is copy-only, and the Vite/React toolchain is removed from the active deployment pipeline.
 
 ## Verification baseline used
 

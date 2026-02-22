@@ -1,6 +1,6 @@
 # Active Surfaces (Visual SSOT + API Prune)
 
-Audit date: 2026-02-21
+Audit date: 2026-02-22
 
 ## Runtime model
 
