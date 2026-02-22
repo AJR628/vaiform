@@ -49,7 +49,7 @@
 
 ### IN PROGRESS In Progress / Partial (implemented but not fully conforming)
 
-- **No active partials through C16.** Next work starts at C17.
+- **Contract envelope partial remains:** `/api/whoami` and `/api/users/ensure` are default-reachable but still return non-canonical response shapes (missing `requestId` and/or non-`data` success payload). Needs migration to `ok/fail`.
 
 ### NOT STARTED Not Started (still planned work)
 
@@ -58,8 +58,9 @@
 
 ### Current Priority (next few commits)
 
-1. **C17 final cohesion publication** (publish final true state + residual backlog)
-2. **C18 Tailwind CDN removal + CSS pinning** (remove `cdn.tailwindcss.com` and define a local CSS build strategy)
+1. **Close remaining envelope partial** (`/api/whoami` and `/api/users/ensure` to canonical `ok/fail` with `requestId`)
+2. **C17 final cohesion publication** (publish final true state + residual backlog)
+3. **C18 Tailwind CDN removal + CSS pinning** (remove `cdn.tailwindcss.com` and define a local CSS build strategy)
 
 ---
 
@@ -72,7 +73,7 @@
 
 5. Health endpoints include `/health` and `/api/health` (GET/HEAD).
 6. Canonical checkout endpoints: `/api/checkout/start|session|subscription|portal`.
-7. Canonical credits/whoami endpoints: `/api/credits` and `/api/whoami`.
+7. Canonical path surfaces for identity/credits: `/api/credits` and `/api/whoami` (whoami envelope migration still pending).
 8. Root aliases removed: `/credits`, `/whoami`, `/generate`, `/enhance`, `/limits/*`, `/checkout/*`.
 
 ---
