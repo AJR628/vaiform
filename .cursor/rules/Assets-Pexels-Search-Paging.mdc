@@ -1,0 +1,22 @@
+---
+globs: src/services/pexels*.jssrc/routes/assets*.js
+alwaysApply: false
+---
+
+Assets/Pexels Search & Paging
+
+Applies to:
+
+src/services/pexels*.js
+
+src/routes/assets*.js
+
+Rules
+
+Honor paging, return nextPage when available.
+
+De-dupe results by provider ID.
+
+Backoff + jitter on 429; cap concurrency to 3.
+
+Preserve response field names consumed by frontend (don’t rename).

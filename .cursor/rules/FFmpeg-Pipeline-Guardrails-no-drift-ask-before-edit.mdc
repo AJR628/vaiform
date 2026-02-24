@@ -1,0 +1,39 @@
+---
+description: 
+globs: src/utils/ffmpeg.video.jssrc/utils/ffmpeg.js
+alwaysApply: false
+---
+
+Applies to:
+
+src/utils/ffmpeg.video.js
+
+src/utils/ffmpeg.js
+
+Rules
+
+Do not remove/rename labels:
+
+Video chain must start [0:v] and end [vout]
+
+Audio chain must end [aout]
+
+Final args must map:
+
+-map [vout] -map [aout]
+
+Never emit empty segments (,, or trailing commas).
+
+Preserve portrait render invariants:
+
+1080×1920 via scale + pad, no stretching
+
+format=yuv420p
+
+-movflags +faststart
+
+Respect options: voiceoverDelaySec, tailPadSec, keepVideoAudio, bgAudioVolume, -shortest
+
+Before editing: summarize intended graph change and ask: “Proceed to modify ffmpeg.*? (yes/no)”
+
+After editing: log RAW + FINAL -filter_complex and the final args[].

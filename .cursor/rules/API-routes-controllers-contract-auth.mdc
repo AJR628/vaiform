@@ -1,0 +1,26 @@
+---
+globs: src/routes/**src/controllers/**src/middleware/**src/http/respond.js
+alwaysApply: false
+---
+
+API routes + controllers (contract & auth)
+
+Applies to:
+
+src/routes/**
+
+src/controllers/**
+
+src/middleware/**
+
+src/http/respond.js
+
+Rules
+
+All default-reachable routes must use ok/fail envelope.
+
+No direct res.json unless explicitly documented as non-API/diag.
+
+Preserve semantics and externally consumed field names.
+
+Never add new endpoints without updating SSOT docs + route truth table.

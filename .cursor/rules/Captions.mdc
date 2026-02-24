@@ -1,0 +1,47 @@
+---
+description: 
+globs: web/public/js/caption-preview.js (and any caption preview/overlay modules under web/public/js/
+alwaysApply: false
+---
+
+Caption Preview SSOT (server ↔ client)
+
+Applies to:
+
+src/routes/caption.preview.routes.js
+
+web/public/js/caption-preview.js (and any caption preview/overlay modules under web/public/js/**)
+
+Rules
+
+Client must use server meta keys verbatim. Do not rename.
+
+Allowed meta keys: yPct, totalTextH, lineSpacingPx, fontPx, internalPadding, placement, wPx, hPx, splitLines, baselines
+
+No duplicate positioning logic:
+
+Vertical placement is driven by server yPct. Client may clamp to safe margins only.
+
+Mutability discipline:
+
+Variables that get reassigned must be let.
+
+Visibility gate:
+
+Ensure preview container is visible before measuring/drawing.
+
+If 0×0, allow one requestAnimationFrame retry only.
+
+Payload completeness:
+
+POST payload must include style: text, fontFamily, weightCss, fontPx, lineSpacingPx, fill/color, opacity/textAlpha, placement, internalPadding, maxWidthPct (+ optional yPct)
+
+Do not send partial payloads.
+
+Logs allowed temporarily:
+
+[caption-preview] payload (before fetch)
+
+[caption-preview] positioning (after clamp)
+
+Remove after verification.

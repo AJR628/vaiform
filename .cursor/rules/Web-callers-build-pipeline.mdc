@@ -1,0 +1,24 @@
+---
+globs: web/public/**web/scripts/**netlify.toml
+alwaysApply: false
+---
+
+Web callers & build pipeline
+
+Applies to:
+
+web/public/**
+
+web/scripts/**
+
+netlify.toml
+
+Rules
+
+Call backend only via /api/* (Netlify proxy).
+
+Never add _redirects files under web/.
+
+Do not reintroduce Vite/Rollup build steps.
+
+Keep api.mjs fallback health-only.

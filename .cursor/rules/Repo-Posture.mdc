@@ -5,7 +5,7 @@ alwaysApply: true
 
 A. Repo Posture & Zero-Assumption Policy
 
-No guessing. No assumptions. Before planning or coding, Cursor must audit the repo (open files + grep) for:
+No guessing. No assumptions. Before planning or coding, You must audit the repo (open files + grep) for:
 
 current routes and mounts (src/app.js)
 
