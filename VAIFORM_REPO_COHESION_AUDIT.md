@@ -31,6 +31,7 @@ Audit date: 2026-02-22
 - Removed `/api/enhance` route surface and shipped frontend enhance caller/UI.
 - Reduced deployment instability by switching from destructive install to deterministic `npm ci`.
 - Closed remaining default-reachable envelope partials on `/api/whoami` and `/api/users/ensure`.
+- Removed `cdn.tailwindcss.com` CDN dependency; Tailwind CSS is now built locally via CLI (`tailwindcss@3`) and output to `web/dist/tailwind.css` at build time.
 
 ## Remaining intentional deferment
 

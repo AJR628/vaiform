@@ -28,6 +28,9 @@ jobs:
       - name: Install
         run: npm ci
 
+      - name: Web build (Tailwind + copy)
+        run: npm ci --prefix web && npm run build --prefix web
+
       - name: Netlify redirect SSOT guard
         run: npm run check:netlify-redirects
 

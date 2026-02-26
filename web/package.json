@@ -4,10 +4,11 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "build": "node scripts/copy-public.mjs",
+    "build": "node scripts/copy-public.mjs && npx tailwindcss -c tailwind.config.js -i src/tailwind.css -o dist/tailwind.css --minify",
     "copy-public": "node scripts/copy-public.mjs",
     "deploy:netlify": "bash scripts/deploy-netlify.sh"
   },
-  "dependencies": {},
-  "devDependencies": {}
+  "devDependencies": {
+    "tailwindcss": "^3.4.19"
+  }
 }
