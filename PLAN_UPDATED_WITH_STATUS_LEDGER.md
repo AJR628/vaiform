@@ -49,7 +49,7 @@
 - **Enhance retirement:** `/api/enhance` removed end-to-end (feature retired; backend route + frontend caller/UI deleted).
 - **CI ratchet:** full `check:responses` now runs in CI (push/PR) in addition to changed-files checks.
 - **Lint posture hardening:** `lint` scoped to green-path server surfaces; `lint:full` retained for broader cleanup.
-- **C18** Tailwind CDN removal + CSS pinning: `cdn.tailwindcss.com` removed from all HTML; `tailwindcss@3` CLI generates deterministic `dist/tailwind.css` at build time; CI verifies web build on every push/PR.
+- **C18** Tailwind CDN removal + CSS pinning: `cdn.tailwindcss.com` removed from all HTML; `tailwindcss@3` CLI generates deterministic `dist/tailwind.css` at build time; Tailwind content scan includes `.mjs`; CI verifies web build plus `.mjs`-sourced CSS sentinels.
 
 ### NOT STARTED Not Started (still planned work)
 
@@ -293,11 +293,11 @@ _(all planned cohesion items complete)_
 1. Scope: `web/public/*.html`, `web/tailwind.config.js`, `web/src/tailwind.css`, `web/package.json`, `.github/workflows/ci.yml`.
 2. Removed `cdn.tailwindcss.com` usage from all 10 HTML files; replaced with `<link rel="stylesheet" href="/tailwind.css" />`.
 3. Added `tailwindcss@^3.4.19` as a dev dependency in `web/package.json`.
-4. Created `web/tailwind.config.js` (`darkMode: 'class'`, content scans `./public/**/*.html` and `./public/**/*.js`).
+4. Created `web/tailwind.config.js` (`darkMode: 'class'`, content scans `./public/**/*.{html,js,mjs}`).
 5. Created `web/src/tailwind.css` (Tailwind base/components/utilities directives).
 6. Updated web build script to run Tailwind CLI (`--minify`) after the copy step, outputting to `dist/tailwind.css`.
-7. Added CI step to install web deps and run the web build on every push/PR.
-8. Gate achieved: no references to `cdn.tailwindcss.com` remain in `web/public/**`; Netlify build produces a deterministic, locally-generated CSS file.
+7. Added CI steps to install web deps and run the web build on every push/PR, plus a Tailwind `.mjs` sentinel check for `.h-\[420px\]` and `.dark\:bg-yellow-900\/20` in `web/dist/tailwind.css`.
+8. Gate achieved: no references to `cdn.tailwindcss.com` remain in `web/public/**`; Netlify build produces a deterministic, locally-generated CSS file; CI fails if `.mjs`-sourced sentinel classes are missing from the built CSS.
 
 ---
 

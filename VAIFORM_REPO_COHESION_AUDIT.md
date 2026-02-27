@@ -32,6 +32,7 @@ Audit date: 2026-02-22
 - Reduced deployment instability by switching from destructive install to deterministic `npm ci`.
 - Closed remaining default-reachable envelope partials on `/api/whoami` and `/api/users/ensure`.
 - Removed `cdn.tailwindcss.com` CDN dependency; Tailwind CSS is now built locally via CLI (`tailwindcss@3`) and output to `web/dist/tailwind.css` at build time.
+- CI now verifies `.mjs`-sourced Tailwind selectors are present in built CSS (`.h-\[420px\]` and `.dark\:bg-yellow-900\/20`) to catch content-glob drift.
 
 ## Remaining intentional deferment
 
