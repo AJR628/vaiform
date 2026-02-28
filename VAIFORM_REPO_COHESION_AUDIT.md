@@ -1,6 +1,8 @@
-# Vaiform Repo Cohesion Audit (Post A/B/C)
+﻿# Vaiform Repo Cohesion Audit (Post A/B/C)
 
 Audit date: 2026-02-22
+
+Latest truth-freeze audit: `docs/TRUTH_FREEZE_AUDIT_2026-02-28.md`
 
 ## Executive summary
 

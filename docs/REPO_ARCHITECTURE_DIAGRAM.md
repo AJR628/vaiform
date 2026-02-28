@@ -84,12 +84,12 @@ sequenceDiagram
   Note over API: Adds /api prefix, attaches token, normalizes errors
 ```
 
-| Order | File | Role |
-|-------|------|------|
-| 1 | `web/public/js/firebaseClient.js` | Firebase app/auth/db; `ensureUserDoc()` → `/api/users/ensure` |
-| 2 | `web/public/auth-bridge.js` | Connects Firebase auth to api.mjs token provider; reacts to auth changes |
-| 3 | `web/public/js/credits-ui.js` | Credits display; `updateCreditsDisplay`, `fetchAndUpdateCredits` |
-| 4 | `web/public/js/pages/creative/creative.article.mjs` | Main UI pipeline (state, API calls, captions, storyboard, finalize, polling) |
+| Order | File                                                | Role                                                                         |
+| ----- | --------------------------------------------------- | ---------------------------------------------------------------------------- |
+| 1     | `web/public/js/firebaseClient.js`                   | Firebase app/auth/db; `ensureUserDoc()` → `/api/users/ensure`                |
+| 2     | `web/public/auth-bridge.js`                         | Connects Firebase auth to api.mjs token provider; reacts to auth changes     |
+| 3     | `web/public/js/credits-ui.js`                       | Credits display; `updateCreditsDisplay`, `fetchAndUpdateCredits`             |
+| 4     | `web/public/js/pages/creative/creative.article.mjs` | Main UI pipeline (state, API calls, captions, storyboard, finalize, polling) |
 
 **Important:** `api.mjs` is not a top-level script in creative.html; `creative.article.mjs` (and caption-preview) dynamically import it when making requests. If script order or globals change, routes can appear broken without any backend change.
 
@@ -117,11 +117,11 @@ flowchart LR
   ApiMjs -->|"All /api/* requests"| Backend["Backend /api/*"]
 ```
 
-| File | Responsibility |
-|------|----------------|
-| **api.mjs** | Transport: adds `/api` prefix, attaches auth token, normalizes errors; exposes `apiFetch()`. Most frontend code does not know backend URL details. |
-| **auth-bridge.js** | Auth bridge: connects Firebase auth to API token provider; ensures user record on first login. |
-| **firebaseClient.js** | Firebase client: initializes app/auth/db; `ensureUserDoc()` calls `/api/users/ensure`. |
+| File                  | Responsibility                                                                                                                                     |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **api.mjs**           | Transport: adds `/api` prefix, attaches auth token, normalizes errors; exposes `apiFetch()`. Most frontend code does not know backend URL details. |
+| **auth-bridge.js**    | Auth bridge: connects Firebase auth to API token provider; ensures user record on first login.                                                     |
+| **firebaseClient.js** | Firebase client: initializes app/auth/db; `ensureUserDoc()` calls `/api/users/ensure`.                                                             |
 
 ---
 
@@ -169,19 +169,19 @@ flowchart LR
   Index --> Story["story"]
 ```
 
-| Mount in app.js | Path | Router source |
-|-----------------|------|----------------|
-| (direct) | `/api` | generate.routes.js → POST /generate, GET /job/:jobId |
-| (direct) | `/api/whoami` | whoami.routes.js |
-| (direct) | `/api/credits` | credits.routes.js |
-| (direct) | `/api/checkout` | checkout.routes.js |
-| (direct) | `/api/shorts` | shorts.routes.js |
-| (direct) | `/api/assets` | assets.routes.js |
-| (direct) | `/api/limits` | limits.routes.js |
-| (direct) | `/api/story` | story.routes.js |
-| (direct) | `/api` | caption.preview.routes.js → POST /caption/preview |
-| (direct) | `/api/user` | user.routes.js |
-| (direct) | `/api/users` | users.routes.js |
+| Mount in app.js | Path            | Router source                                        |
+| --------------- | --------------- | ---------------------------------------------------- |
+| (direct)        | `/api`          | generate.routes.js → POST /generate, GET /job/:jobId |
+| (direct)        | `/api/whoami`   | whoami.routes.js                                     |
+| (direct)        | `/api/credits`  | credits.routes.js                                    |
+| (direct)        | `/api/checkout` | checkout.routes.js                                   |
+| (direct)        | `/api/shorts`   | shorts.routes.js                                     |
+| (direct)        | `/api/assets`   | assets.routes.js                                     |
+| (direct)        | `/api/limits`   | limits.routes.js                                     |
+| (direct)        | `/api/story`    | story.routes.js                                      |
+| (direct)        | `/api`          | caption.preview.routes.js → POST /caption/preview    |
+| (direct)        | `/api/user`     | user.routes.js                                       |
+| (direct)        | `/api/users`    | users.routes.js                                      |
 
 **Note on drift:** If you ever see references to `./routes/index.routes.js`, `./middleware/requestLogger.js`, `./config/cors.js`, `./config/helmet.js`, `./middleware/session.middleware.js`, or `./middleware/limits.middleware.js` in app.js, that is the “old” mental model. The current repo uses `./routes/index.js`, inline CORS/helmet in app.js, `reqId.js`, `error.middleware.js`, etc. Keeping app.js and this diagram in sync avoids two mental models.
 
@@ -321,11 +321,11 @@ flowchart TB
   CaptionRoute -->|"raster metadata (SSOT)"| Session
 ```
 
-| Piece | File(s) | Role |
-|-------|---------|------|
-| Frontend | `web/public/js/caption-preview.js` | Uses `apiFetch('/caption/preview')`; batches writes to `/story/update-caption-meta`. |
-| Preview API | `src/routes/caption.preview.routes.js` | POST `/caption/preview`; requireAuth + rate limit; SSOT raster metadata logic. |
-| Persistence | `src/routes/story.routes.js` | POST `/story/update-caption-meta` writes into story session. |
+| Piece       | File(s)                                | Role                                                                                 |
+| ----------- | -------------------------------------- | ------------------------------------------------------------------------------------ |
+| Frontend    | `web/public/js/caption-preview.js`     | Uses `apiFetch('/caption/preview')`; batches writes to `/story/update-caption-meta`. |
+| Preview API | `src/routes/caption.preview.routes.js` | POST `/caption/preview`; requireAuth + rate limit; SSOT raster metadata logic.       |
+| Persistence | `src/routes/story.routes.js`           | POST `/story/update-caption-meta` writes into story session.                         |
 
 Caption changes often touch all three; changing only one can cause drift.
 
@@ -364,13 +364,13 @@ flowchart LR
   Render --> Firestore["Write shorts doc → Firestore"]
 ```
 
-| Data store | Use during finalize |
-|------------|----------------------|
+| Data store         | Use during finalize                            |
+| ------------------ | ---------------------------------------------- |
 | Draft session JSON | Firebase Storage `drafts/{uid}/.../story.json` |
-| Credits | Firestore `users/{uid}` (credit.service.js) |
-| Idempotency | Firestore idempotency collection |
-| Final artifacts | Firebase Storage `artifacts/{uid}/{jobId}/...` |
-| Short job/status | Firestore `shorts/{jobId}` |
+| Credits            | Firestore `users/{uid}` (credit.service.js)    |
+| Idempotency        | Firestore idempotency collection               |
+| Final artifacts    | Firebase Storage `artifacts/{uid}/{jobId}/...` |
+| Short job/status   | Firestore `shorts/{jobId}`                     |
 
 Touching finalize can affect credits, idempotency, storage, and shorts status.
 
@@ -428,32 +428,32 @@ The caption branch is tightly tied to the main render branch via shared session 
 
 Scope by **surface**, not by single file.
 
-| Surface | If you touch… | Always review |
-|---------|----------------|----------------|
-| **Story session contract** | Session shape (beats, shots, captions, styles) | story.routes.js, story.service.js, creative.article.mjs, caption-preview.js (if captions) |
-| **Finalize / render safety** | Render, credits, retries | story.routes.js finalize stack, idempotency.firestore.js, planGuards.js, render.semaphore.js, credit.service.js, story.service.js (finalizeStory + renderStory), creative.article.mjs finalize + polling |
-| **Auth / API plumbing** | Auth, login, API errors | api.mjs, auth-bridge.js, firebaseClient.js, requireAuth.js, /users, /whoami, /credits routes |
+| Surface                      | If you touch…                                  | Always review                                                                                                                                                                                            |
+| ---------------------------- | ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Story session contract**   | Session shape (beats, shots, captions, styles) | story.routes.js, story.service.js, creative.article.mjs, caption-preview.js (if captions)                                                                                                                |
+| **Finalize / render safety** | Render, credits, retries                       | story.routes.js finalize stack, idempotency.firestore.js, planGuards.js, render.semaphore.js, credit.service.js, story.service.js (finalizeStory + renderStory), creative.article.mjs finalize + polling |
+| **Auth / API plumbing**      | Auth, login, API errors                        | api.mjs, auth-bridge.js, firebaseClient.js, requireAuth.js, /users, /whoami, /credits routes                                                                                                             |
 
 ---
 
 ## 9. Quick Reference: Key Files
 
-| Layer | Key files |
-|-------|-----------|
-| Page shell | `web/public/creative.html` |
-| Orchestrator | `web/public/js/pages/creative/creative.article.mjs` |
-| API/auth glue | `web/public/api.mjs`, `web/public/auth-bridge.js`, `web/public/js/firebaseClient.js` |
-| Backend entry | `server.js`, `src/app.js` |
-| Route registry | `src/routes/index.js` |
-| Story API | `src/routes/story.routes.js` |
-| Caption preview API | `src/routes/caption.preview.routes.js` |
-| Shorts read | `src/routes/shorts.routes.js`, `src/controllers/shorts.controller.js` |
-| Story brain | `src/services/story.service.js` |
-| Story LLM | `src/services/story.llm.service.js` |
-| Session storage | `src/utils/json.store.js` (Storage path: drafts/…) |
-| Finalize guards | `src/middleware/requireAuth.js`, `src/middleware/idempotency.firestore.js`, `src/middleware/planGuards.js`, `src/utils/render.semaphore.js` |
-| Credits | `src/services/credit.service.js` |
+| Layer               | Key files                                                                                                                                   |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| Page shell          | `web/public/creative.html`                                                                                                                  |
+| Orchestrator        | `web/public/js/pages/creative/creative.article.mjs`                                                                                         |
+| API/auth glue       | `web/public/api.mjs`, `web/public/auth-bridge.js`, `web/public/js/firebaseClient.js`                                                        |
+| Backend entry       | `server.js`, `src/app.js`                                                                                                                   |
+| Route registry      | `src/routes/index.js`                                                                                                                       |
+| Story API           | `src/routes/story.routes.js`                                                                                                                |
+| Caption preview API | `src/routes/caption.preview.routes.js`                                                                                                      |
+| Shorts read         | `src/routes/shorts.routes.js`, `src/controllers/shorts.controller.js`                                                                       |
+| Story brain         | `src/services/story.service.js`                                                                                                             |
+| Story LLM           | `src/services/story.llm.service.js`                                                                                                         |
+| Session storage     | `src/utils/json.store.js` (Storage path: drafts/…)                                                                                          |
+| Finalize guards     | `src/middleware/requireAuth.js`, `src/middleware/idempotency.firestore.js`, `src/middleware/planGuards.js`, `src/utils/render.semaphore.js` |
+| Credits             | `src/services/credit.service.js`                                                                                                            |
 
 ---
 
-*This diagram is documentation only; no application code or files were changed, added, or deleted.*
+_This diagram is documentation only; no application code or files were changed, added, or deleted._

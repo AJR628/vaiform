@@ -1,13 +1,31 @@
-# Active Surfaces (Visual SSOT + API Prune)
+﻿# Active Surfaces (Visual SSOT + API Prune)
 
-Audit date: 2026-02-22
+Audit date: 2026-02-28
 
 ## Runtime model
 
+- Detailed file:line audit is in `docs/TRUTH_FREEZE_AUDIT_2026-02-28.md`.
 - Frontend is served by Netlify from `web/dist`.
 - Frontend source files live in `web/public`.
 - Netlify redirect/proxy SSOT is `netlify.toml` (no `_redirects` files under `web/`).
 - Backend serves API + required static assets only.
+
+## Frontend entry surfaces
+
+- Core beta entry pages:
+  - `/creative` -> `/creative.html`
+  - `/my-shorts.html`
+  - `/pricing.html`
+  - `/buy-credits.html`
+  - `/login.html`
+- Legacy image pages still exposed:
+  - `/image-creator.html`
+  - `/my-images.html`
+  - `/retry.html`
+- Static/support pages:
+  - `/` and `/index.html`
+  - `/legal.html`
+  - `/success.html`
 
 ## Netlify bridge surfaces
 
@@ -49,13 +67,18 @@ Audit date: 2026-02-22
   - `/creative` HTML route
   - frontend static serving from backend `web/dist` or root `public`
   - `/cdn` proxy route
-  - inline no-op `POST /api/user/setup` alias in `src/app.js`
 - Debug-only (`VAIFORM_DEBUG=1`):
   - `/diag/*`
   - `/api/diag/headers`
+  - `/api/diag/caption-smoke`
 
 ## Caller-backed notes
 
 - Article explainer pipeline remains caller-backed via `web/public/creative.html` -> `web/public/js/pages/creative/creative.article.mjs`.
 - Caption preview remains caller-backed via `web/public/js/caption-preview.js`.
-- Checkout, credits, shorts, and limits callers remain in `web/public/js/*`.
+- Shorts library remains caller-backed via `web/public/my-shorts.html` -> `web/public/js/my-shorts.js`.
+- Checkout start remains caller-backed via `web/public/pricing.html` -> `web/public/js/pricing.js`.
+- Checkout session/subscription/portal remain caller-backed via `web/public/buy-credits.html` -> `web/public/js/buy-credits.js`.
+- User bootstrap remains caller-backed via `web/public/js/firebaseClient.js` -> `/api/users/ensure`.
+- Legacy image generation surfaces remain caller-backed today via `web/public/image-creator.html`, `web/public/my-images.html`, and `web/public/retry.html`.
+- `/api/whoami`, `/api/limits/usage`, and `/api/user/*` are mounted but have no current user-facing web caller in `web/public`.

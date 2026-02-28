@@ -1,4 +1,9 @@
-# Vaiform – Security Notes (v1)
+﻿# Vaiform â€“ Security Notes (v1)
+
+> Stale Document Notice (2026-02-28)
+> This file is not current runtime SSOT for beta.
+> Use `docs/ACTIVE_SURFACES.md`, `ROUTE_TRUTH_TABLE.md`, `docs/API_CONTRACT.md`, and `docs/TRUTH_FREEZE_AUDIT_2026-02-28.md` as the current source of truth.
+> Known drift includes route inventory, auth requirements, and root-vs-`/api` path canonicalization.
 
 **Purpose:** Capture the current security posture for Vaiform v1 so future changes don't accidentally re-open old attack surfaces.
 
@@ -22,7 +27,7 @@ This document is the **single source of truth** for:
   `users/{uid}`
 
 - All user-specific content is either:
-  - Nested under `users/{uid}/…` (e.g. `generations`, `transactions`), or
+  - Nested under `users/{uid}/â€¦` (e.g. `generations`, `transactions`), or
   - In top-level collections with an explicit `ownerId` field (e.g. `shorts/{id}` with `ownerId = uid`).
 
 **Client vs server responsibilities:**
@@ -198,7 +203,7 @@ service firebase.storage {
 
 **In-app access (SDK):**
 
-- Only the owner (`uid`) can list/get their files under `artifacts/{uid}/…`.
+- Only the owner (`uid`) can list/get their files under `artifacts/{uid}/â€¦`.
 
 **Sharing out to the world:**
 
@@ -300,7 +305,7 @@ These image-related routes are either mounted with `410 FEATURE_DISABLED` respon
   - **File:** `src/controllers/generate.controller.js`
   - **Response:** `{ success: false, error: "FEATURE_DISABLED" }`
 - `GET /job/:jobId` - Image job polling
-  - **File:** `src/controllers/generate.controller.js` → `jobStatus()`
+  - **File:** `src/controllers/generate.controller.js` â†’ `jobStatus()`
   - **Response:** `{ success: false, error: "FEATURE_DISABLED" }`
 
 ### AI Image Routes (Not Mounted, But Controllers Exist)
@@ -464,7 +469,7 @@ In the browser console, try to manually read another user's `/users/{uid}` or `/
 
 ### Happy-path Article Explainer:
 
-Run full pipeline: start → generate script → plan → search → captions → finalize.
+Run full pipeline: start â†’ generate script â†’ plan â†’ search â†’ captions â†’ finalize.
 
 **Confirm:**
 
@@ -474,7 +479,7 @@ Run full pipeline: start → generate script → plan → search → captions �
 
 ### Storage access:
 
-From the browser SDK, verify you can only list/get `artifacts/{currentUid}/…` and not for another UID.
+From the browser SDK, verify you can only list/get `artifacts/{currentUid}/â€¦` and not for another UID.
 
 Verify shared download URLs (if you generate any) work even when logged out, but only expose that one asset.
 
@@ -484,30 +489,30 @@ Verify shared download URLs (if you generate any) work even when logged out, but
 
 | Route                       | Mounted | Status         | Auth Required | Notes             |
 | --------------------------- | ------- | -------------- | ------------- | ----------------- |
-| `/api/story/*`              | ✅      | Active         | Yes           | Core feature      |
-| `/api/caption/preview`      | ✅      | Active         | No            | Public preview    |
-| `/api/caption/render`       | ✅      | Active         | No            | Public render     |
-| `/api/tts/preview`          | ✅      | Active         | Yes           | Core feature      |
-| `/api/voice/voices`         | ✅      | Active         | Yes           | Core feature      |
-| `/api/voice/preview`        | ✅      | Active         | Yes           | Core feature      |
-| `/checkout/*`               | ✅      | Active         | Yes           | Payments          |
-| `/stripe/webhook`           | ✅      | Active         | Stripe sig    | Webhook           |
-| `/credits`                  | ✅      | Active         | Yes           | Read-only         |
-| `/api/users/ensure`         | ✅      | Active         | Yes           | User setup        |
-| `/api/user/me`              | ✅      | Active         | Yes           | User data         |
-| `/api/shorts/mine`          | ✅      | Active         | Yes           | Read-only         |
-| `/api/shorts/:jobId`        | ✅      | Active         | Yes           | Read-only         |
-| `/api/enhance`              | ❌      | Removed        | N/A           | Feature retired   |
-| `/generate`                 | ✅      | Disabled (410) | Yes           | AI images         |
-| `/job/:jobId`               | ✅      | Disabled (410) | Yes           | AI images         |
-| `/api/studio/*`             | ❌      | Unmounted      | N/A           | Non-core          |
-| `/api/quotes/*`             | ❌      | Unmounted      | N/A           | Non-core          |
-| `/api/assets/*`             | ❌      | Unmounted      | N/A           | Non-core          |
-| `/api/preview/caption`      | ❌      | Unmounted      | N/A           | Legacy            |
-| `/api/shorts/create`        | ❌      | Commented      | N/A           | Legacy            |
-| `/api/shorts/:jobId` DELETE | ❌      | Commented      | N/A           | Optional          |
-| `/generate/image-to-image`  | ❌      | Not mounted    | N/A           | Controller exists |
-| `/generate/upscale`         | ❌      | Not mounted    | N/A           | Controller exists |
+| `/api/story/*`              | âœ…     | Active         | Yes           | Core feature      |
+| `/api/caption/preview`      | âœ…     | Active         | No            | Public preview    |
+| `/api/caption/render`       | âœ…     | Active         | No            | Public render     |
+| `/api/tts/preview`          | âœ…     | Active         | Yes           | Core feature      |
+| `/api/voice/voices`         | âœ…     | Active         | Yes           | Core feature      |
+| `/api/voice/preview`        | âœ…     | Active         | Yes           | Core feature      |
+| `/checkout/*`               | âœ…     | Active         | Yes           | Payments          |
+| `/stripe/webhook`           | âœ…     | Active         | Stripe sig    | Webhook           |
+| `/credits`                  | âœ…     | Active         | Yes           | Read-only         |
+| `/api/users/ensure`         | âœ…     | Active         | Yes           | User setup        |
+| `/api/user/me`              | âœ…     | Active         | Yes           | User data         |
+| `/api/shorts/mine`          | âœ…     | Active         | Yes           | Read-only         |
+| `/api/shorts/:jobId`        | âœ…     | Active         | Yes           | Read-only         |
+| `/api/enhance`              | âŒ      | Removed        | N/A           | Feature retired   |
+| `/generate`                 | âœ…     | Disabled (410) | Yes           | AI images         |
+| `/job/:jobId`               | âœ…     | Disabled (410) | Yes           | AI images         |
+| `/api/studio/*`             | âŒ      | Unmounted      | N/A           | Non-core          |
+| `/api/quotes/*`             | âŒ      | Unmounted      | N/A           | Non-core          |
+| `/api/assets/*`             | âŒ      | Unmounted      | N/A           | Non-core          |
+| `/api/preview/caption`      | âŒ      | Unmounted      | N/A           | Legacy            |
+| `/api/shorts/create`        | âŒ      | Commented      | N/A           | Legacy            |
+| `/api/shorts/:jobId` DELETE | âŒ      | Commented      | N/A           | Optional          |
+| `/generate/image-to-image`  | âŒ      | Not mounted    | N/A           | Controller exists |
+| `/generate/upscale`         | âŒ      | Not mounted    | N/A           | Controller exists |
 
 ---
 
@@ -515,12 +520,12 @@ Verify shared download URLs (if you generate any) work even when logged out, but
 
 | Collection                 | Rules Exist | Client Read | Client Write            | Server Access  |
 | -------------------------- | ----------- | ----------- | ----------------------- | -------------- |
-| `users/{uid}`              | ✅          | Self only   | Self (no server fields) | Admin SDK      |
-| `users/{uid}/generations`  | ✅          | Self only   | Self only               | Admin SDK      |
-| `users/{uid}/transactions` | ✅          | Self only   | Blocked                 | Admin SDK only |
-| `usersByEmail/{emailId}`   | ✅          | Email match | Blocked                 | Admin SDK      |
-| `pending_credits_by_email` | ✅          | Blocked     | Blocked                 | Admin SDK only |
-| `shorts/{id}`              | ✅          | Owner only  | Owner only              | Admin SDK      |
+| `users/{uid}`              | âœ…         | Self only   | Self (no server fields) | Admin SDK      |
+| `users/{uid}/generations`  | âœ…         | Self only   | Self only               | Admin SDK      |
+| `users/{uid}/transactions` | âœ…         | Self only   | Blocked                 | Admin SDK only |
+| `usersByEmail/{emailId}`   | âœ…         | Email match | Blocked                 | Admin SDK      |
+| `pending_credits_by_email` | âœ…         | Blocked     | Blocked                 | Admin SDK only |
+| `shorts/{id}`              | âœ…         | Owner only  | Owner only              | Admin SDK      |
 
 ---
 

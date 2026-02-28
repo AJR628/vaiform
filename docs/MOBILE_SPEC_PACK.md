@@ -1,4 +1,9 @@
-# Vaiform Mobile Spec Pack
+﻿# Vaiform Mobile Spec Pack
+
+> Stale Document Notice (2026-02-28)
+> This mobile spec no longer matches current beta runtime truth.
+> Use `docs/ACTIVE_SURFACES.md`, `ROUTE_TRUTH_TABLE.md`, `docs/API_CONTRACT.md`, and `docs/TRUTH_FREEZE_AUDIT_2026-02-28.md` before relying on any endpoint in this file.
+> Known drift includes root-vs-`/api` paths and references to unmounted voice/TTS/user-profile endpoints.
 
 > **Target**: Expo (React Native) client consuming existing Vaiform backend  
 > **Generated**: January 2026  
@@ -56,34 +61,34 @@ x-client: mobile
 ### Authentication Flow
 
 ```
-┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
-│  Mobile App     │     │  Firebase Auth   │     │  Vaiform API    │
-└────────┬────────┘     └────────┬─────────┘     └────────┬────────┘
-         │                       │                        │
-         │  1. signInWithGoogle()│                        │
-         │──────────────────────>│                        │
-         │                       │                        │
-         │  2. UserCredential    │                        │
-         │<──────────────────────│                        │
-         │                       │                        │
-         │  3. getIdToken()      │                        │
-         │──────────────────────>│                        │
-         │                       │                        │
-         │  4. idToken (JWT)     │                        │
-         │<──────────────────────│                        │
-         │                       │                        │
-         │  5. POST /api/users/ensure                     │
-         │  Authorization: Bearer <idToken>               │
-         │───────────────────────────────────────────────>│
-         │                       │                        │
-         │                       │  6. verifyIdToken()    │
-         │                       │<───────────────────────│
-         │                       │                        │
-         │                       │  7. decoded token      │
-         │                       │───────────────────────>│
-         │                       │                        │
-         │  8. { success: true, data: { uid, credits } }  │
-         │<───────────────────────────────────────────────│
+â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”     â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”     â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+â”‚  Mobile App     â”‚     â”‚  Firebase Auth   â”‚     â”‚  Vaiform API    â”‚
+â””â”€â”€â”€â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”€â”€â”˜     â””â”€â”€â”€â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜     â””â”€â”€â”€â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”€â”€â”˜
+         â”‚                       â”‚                        â”‚
+         â”‚  1. signInWithGoogle()â”‚                        â”‚
+         â”‚â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€>â”‚                        â”‚
+         â”‚                       â”‚                        â”‚
+         â”‚  2. UserCredential    â”‚                        â”‚
+         â”‚<â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”‚                        â”‚
+         â”‚                       â”‚                        â”‚
+         â”‚  3. getIdToken()      â”‚                        â”‚
+         â”‚â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€>â”‚                        â”‚
+         â”‚                       â”‚                        â”‚
+         â”‚  4. idToken (JWT)     â”‚                        â”‚
+         â”‚<â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”‚                        â”‚
+         â”‚                       â”‚                        â”‚
+         â”‚  5. POST /api/users/ensure                     â”‚
+         â”‚  Authorization: Bearer <idToken>               â”‚
+         â”‚â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€>â”‚
+         â”‚                       â”‚                        â”‚
+         â”‚                       â”‚  6. verifyIdToken()    â”‚
+         â”‚                       â”‚<â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”‚
+         â”‚                       â”‚                        â”‚
+         â”‚                       â”‚  7. decoded token      â”‚
+         â”‚                       â”‚â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€>â”‚
+         â”‚                       â”‚                        â”‚
+         â”‚  8. { success: true, data: { uid, credits } }  â”‚
+         â”‚<â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”‚
 ```
 
 **Backend Middleware**: `requireAuth` ([src/middleware/requireAuth.js:4-29](src/middleware/requireAuth.js))
@@ -1327,22 +1332,22 @@ const playPreview = async (base64Audio: string) => {
 
 **Network Calls**:
 
-1. `GoogleSignin.signIn()` → Get Google credential
-2. `auth().signInWithCredential(credential)` → Firebase sign-in
-3. `user.getIdToken()` → Get ID token
-4. `POST /api/users/ensure` → Create/update user doc
+1. `GoogleSignin.signIn()` â†’ Get Google credential
+2. `auth().signInWithCredential(credential)` â†’ Firebase sign-in
+3. `user.getIdToken()` â†’ Get ID token
+4. `POST /api/users/ensure` â†’ Create/update user doc
 
 **Flow**:
 
 ```
 User taps "Continue with Google"
-  → Show loading
-  → Google sign-in popup
-  → Firebase auth
-  → Get ID token
-  → POST /api/users/ensure
-  → Store token + user data
-  → Navigate to Home
+  â†’ Show loading
+  â†’ Google sign-in popup
+  â†’ Firebase auth
+  â†’ Get ID token
+  â†’ POST /api/users/ensure
+  â†’ Store token + user data
+  â†’ Navigate to Home
 ```
 
 **Empty/Loading/Error States**:
@@ -1376,19 +1381,19 @@ User taps "Continue with Google"
 
 **Network Calls**:
 
-1. `GET /credits` → Load credit balance on mount
-2. `POST /api/story/start` → Create session
-3. `POST /api/story/generate` → Generate script
+1. `GET /credits` â†’ Load credit balance on mount
+2. `POST /api/story/start` â†’ Create session
+3. `POST /api/story/generate` â†’ Generate script
 
 **Flow**:
 
 ```
 User enters input + taps "Create"
-  → Validate input not empty
-  → Show loading
-  → POST /api/story/start
-  → POST /api/story/generate
-  → Navigate to Editor with sessionId
+  â†’ Validate input not empty
+  â†’ Show loading
+  â†’ POST /api/story/start
+  â†’ POST /api/story/generate
+  â†’ Navigate to Editor with sessionId
 ```
 
 **Empty/Loading/Error States**:
@@ -1426,36 +1431,36 @@ User enters input + taps "Create"
 
 **Network Calls**:
 
-1. `GET /api/story/:sessionId` → Load session on mount
-2. `POST /api/story/plan` → Generate shot plan (if not done)
-3. `POST /api/story/search` → Search clips (if not done)
-4. `POST /api/story/update-beat-text` → Edit beat
-5. `POST /api/story/insert-beat` → Add beat
-6. `POST /api/story/delete-beat` → Remove beat
-7. `POST /api/story/search-shot` → Search clips for beat
-8. `POST /api/story/update-shot` → Select clip
-9. `POST /api/story/finalize` → Render video
+1. `GET /api/story/:sessionId` â†’ Load session on mount
+2. `POST /api/story/plan` â†’ Generate shot plan (if not done)
+3. `POST /api/story/search` â†’ Search clips (if not done)
+4. `POST /api/story/update-beat-text` â†’ Edit beat
+5. `POST /api/story/insert-beat` â†’ Add beat
+6. `POST /api/story/delete-beat` â†’ Remove beat
+7. `POST /api/story/search-shot` â†’ Search clips for beat
+8. `POST /api/story/update-shot` â†’ Select clip
+9. `POST /api/story/finalize` â†’ Render video
 
 **Flow (Initial Load)**:
 
 ```
 Screen mounts with sessionId
-  → GET /api/story/:sessionId
-  → If status == "story_generated":
-      → POST /api/story/plan
-      → POST /api/story/search
-  → Display beats with clips
+  â†’ GET /api/story/:sessionId
+  â†’ If status == "story_generated":
+      â†’ POST /api/story/plan
+      â†’ POST /api/story/search
+  â†’ Display beats with clips
 ```
 
 **Flow (Render)**:
 
 ```
 User taps "Render"
-  → Check credits >= 20
-  → Show full-screen "Rendering..." modal
-  → POST /api/story/finalize (long request)
-  → On success: Navigate to Short Detail
-  → On error: Show error, allow retry
+  â†’ Check credits >= 20
+  â†’ Show full-screen "Rendering..." modal
+  â†’ POST /api/story/finalize (long request)
+  â†’ On success: Navigate to Short Detail
+  â†’ On error: Show error, allow retry
 ```
 
 **Empty/Loading/Error States**:
@@ -1490,20 +1495,20 @@ User taps "Render"
 
 **Network Calls**:
 
-1. `POST /api/story/search-shot` → Search clips
-2. `POST /api/story/update-shot` → Select clip
+1. `POST /api/story/search-shot` â†’ Search clips
+2. `POST /api/story/update-shot` â†’ Select clip
 
 **Flow**:
 
 ```
 User opens modal for beat
-  → Load current candidates
-  → User types search query
-  → POST /api/story/search-shot
-  → Display results
-  → User taps clip
-  → POST /api/story/update-shot
-  → Close modal, update beat
+  â†’ Load current candidates
+  â†’ User types search query
+  â†’ POST /api/story/search-shot
+  â†’ Display results
+  â†’ User taps clip
+  â†’ POST /api/story/update-shot
+  â†’ Close modal, update beat
 ```
 
 ---
@@ -1534,23 +1539,23 @@ User opens modal for beat
 
 **Network Calls**:
 
-1. `GET /api/shorts/mine` → Load shorts
-2. `GET /api/shorts/mine?cursor=...` → Load more
+1. `GET /api/shorts/mine` â†’ Load shorts
+2. `GET /api/shorts/mine?cursor=...` â†’ Load more
 
 **Flow**:
 
 ```
 Screen mounts
-  → GET /api/shorts/mine?limit=20
-  → Display grid
+  â†’ GET /api/shorts/mine?limit=20
+  â†’ Display grid
 
 User scrolls to bottom (hasMore == true)
-  → GET /api/shorts/mine?limit=20&cursor=...
-  → Append to list
+  â†’ GET /api/shorts/mine?limit=20&cursor=...
+  â†’ Append to list
 
 User pulls to refresh
-  → GET /api/shorts/mine?limit=20
-  → Replace list
+  â†’ GET /api/shorts/mine?limit=20
+  â†’ Replace list
 ```
 
 **Empty/Loading/Error States**:
@@ -1586,15 +1591,15 @@ User pulls to refresh
 
 **Network Calls**:
 
-1. `GET /api/shorts/:jobId` → Load short details
+1. `GET /api/shorts/:jobId` â†’ Load short details
 
 **Flow**:
 
 ```
 Screen mounts with jobId
-  → GET /api/shorts/:jobId
-  → Load video player with videoUrl
-  → Auto-play or show play button
+  â†’ GET /api/shorts/:jobId
+  â†’ Load video player with videoUrl
+  â†’ Auto-play or show play button
 ```
 
 **Video Playback (Expo AV)**:
@@ -1635,8 +1640,8 @@ import { Video } from 'expo-av';
 
 **Network Calls**:
 
-1. `GET /api/user/me` → Load user profile
-2. `GET /credits` → Load credit balance
+1. `GET /api/user/me` â†’ Load user profile
+2. `GET /credits` â†’ Load credit balance
 
 **Buy Credits Flow**:
 
@@ -1737,7 +1742,7 @@ All errors follow this structure ([src/middleware/error.middleware.js](src/middl
 }
 ```
 
-### Error Code → User Action Mapping
+### Error Code â†’ User Action Mapping
 
 | Status | Error Code             | User Message                                         | Action                          |
 | ------ | ---------------------- | ---------------------------------------------------- | ------------------------------- |

@@ -1,0 +1,80 @@
+﻿# Truth Freeze Audit
+
+Audit date: 2026-02-28
+
+Purpose: freeze current runtime truth before cleanup so Phase 1+ can delete and align surfaces without guessing.
+
+## Runtime baseline
+
+- Frontend build copies `web/public` into `web/dist`, then emits Tailwind CSS to `web/dist/tailwind.css`: `web/package.json:7`, `web/scripts/copy-public.mjs:39`, `web/scripts/copy-public.mjs:47`, `web/scripts/copy-public.mjs:48`.
+- Netlify publishes `web/dist` and proxies only `/api/*` and `/stripe/webhook`: `netlify.toml:2`, `netlify.toml:3`, `netlify.toml:21`, `netlify.toml:28`.
+- Backend mounts current default-reachable routes from `src/app.js`: `src/app.js:165`, `src/app.js:172`, `src/app.js:195`, `src/app.js:217`, `src/app.js:260`.
+
+## Active Surface Matrix
+
+| Surface                                                  | Mount evidence                                                                                                               | Caller-backed evidence                                                                                                                                            | Docs mention                                      | Target           |
+| -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- | ---------------- |
+| `GET/HEAD /health`, `GET/HEAD /api/health`               | `src/app.js:165`, `src/app.js:169`, `src/app.js:172`, `src/app.js:176`                                                       | Health-only surface; no frontend caller required                                                                                                                  | `docs/ACTIVE_SURFACES.md`, `ROUTE_TRUTH_TABLE.md` | Keep             |
+| `GET/POST /stripe/webhook`                               | `src/app.js:117`, `src/routes/stripe.webhook.js:15`, `src/routes/stripe.webhook.js:159`                                      | External Stripe caller via Netlify proxy: `netlify.toml:28`, `netlify.toml:29`                                                                                    | `docs/ACTIVE_SURFACES.md`, `ROUTE_TRUTH_TABLE.md` | Keep             |
+| `GET /assets/*`                                          | `src/app.js:195`, `src/app.js:207`                                                                                           | `web/public/creative.html:48`, `web/public/creative.html:49`                                                                                                      | `docs/ACTIVE_SURFACES.md`, `ROUTE_TRUTH_TABLE.md` | Keep             |
+| `/api/story/*`                                           | `src/app.js:244`, `src/routes/story.routes.js:32`, `src/routes/story.routes.js:76`, `src/routes/story.routes.js:948`         | `web/public/creative.html:899`, `web/public/js/pages/creative/creative.article.mjs:1091`, `web/public/js/pages/creative/creative.article.mjs:3853`                | `docs/ACTIVE_SURFACES.md`, `ROUTE_TRUTH_TABLE.md` | Keep             |
+| `POST /api/caption/preview`                              | `src/app.js:250`, `src/routes/caption.preview.routes.js:109`, `src/routes/caption.preview.routes.js:111`                     | `web/public/js/pages/creative/creative.article.mjs:1578`, `web/public/js/caption-preview.js:636`                                                                  | `docs/ACTIVE_SURFACES.md`, `ROUTE_TRUTH_TABLE.md` | Keep             |
+| `POST /api/assets/options`                               | `src/app.js:236`, `src/routes/assets.routes.js:10`                                                                           | `web/public/js/pages/creative/creative.article.mjs:3484`                                                                                                          | `docs/ACTIVE_SURFACES.md`, `ROUTE_TRUTH_TABLE.md` | Keep             |
+| `GET /api/shorts/mine`, `GET /api/shorts/:jobId`         | `src/app.js:232`, `src/routes/shorts.routes.js:17`, `src/routes/shorts.routes.js:18`                                         | `web/public/my-shorts.html:205`, `web/public/js/my-shorts.js:49`, `web/public/js/my-shorts.js:201`                                                                | `docs/ACTIVE_SURFACES.md`, `ROUTE_TRUTH_TABLE.md` | Keep             |
+| `POST /api/users/ensure`                                 | `src/app.js:260`, `src/routes/users.routes.js:15`                                                                            | `web/public/js/firebaseClient.js:25`, `web/public/js/firebaseClient.js:32`                                                                                        | `docs/ACTIVE_SURFACES.md`, `ROUTE_TRUTH_TABLE.md` | Keep             |
+| `GET /api/credits`                                       | `src/app.js:219`, `src/routes/credits.routes.js:11`                                                                          | `web/public/js/my-shorts.js:154`                                                                                                                                  | `docs/ACTIVE_SURFACES.md`, `ROUTE_TRUTH_TABLE.md` | Keep             |
+| `POST /api/checkout/start`                               | `src/app.js:227`, `src/routes/checkout.routes.js:16`                                                                         | `web/public/pricing.html:252`, `web/public/js/pricing.js:120`                                                                                                     | `docs/ACTIVE_SURFACES.md`, `ROUTE_TRUTH_TABLE.md` | Keep             |
+| `POST /api/checkout/session`, `/subscription`, `/portal` | `src/app.js:227`, `src/routes/checkout.routes.js:20`, `src/routes/checkout.routes.js:23`, `src/routes/checkout.routes.js:31` | `web/public/buy-credits.html:272`, `web/public/js/buy-credits.js:69`, `web/public/js/buy-credits.js:86`, `web/public/js/buy-credits.js:169`                       | `docs/ACTIVE_SURFACES.md`, `ROUTE_TRUTH_TABLE.md` | Keep             |
+| `POST /api/generate`, `GET /api/job/:jobId`              | `src/app.js:217`, `src/routes/generate.routes.js:11`, `src/routes/generate.routes.js:12`                                     | `web/public/image-creator.html:413`, `web/public/frontend.js:475`, `web/public/my-images.html:193`, `web/public/js/my-images.js:390`, `web/public/retry.html:203` | `docs/ACTIVE_SURFACES.md`, `ROUTE_TRUTH_TABLE.md` | Delete target    |
+| `POST /api/assets/ai-images`                             | `src/app.js:236`, `src/routes/assets.routes.js:12`                                                                           | No current entry-backed caller; only unreferenced legacy module call at `web/public/js/pages/creative/creative.legacy-quotes.mjs:9236`                            | `docs/ACTIVE_SURFACES.md`, `ROUTE_TRUTH_TABLE.md` | Delete target    |
+| `POST /api/user/setup`, `GET /api/user/me`               | `src/app.js:255`, `src/routes/user.routes.js:13`, `src/routes/user.routes.js:34`                                             | No current `web/public` caller found                                                                                                                              | `docs/ACTIVE_SURFACES.md`, `ROUTE_TRUTH_TABLE.md` | Delete candidate |
+| `GET /api/whoami`                                        | `src/app.js:218`, `src/routes/whoami.routes.js:11`                                                                           | Console helper only: `web/public/api.mjs:233`, `web/public/api.mjs:234`                                                                                           | `docs/ACTIVE_SURFACES.md`, `ROUTE_TRUTH_TABLE.md` | Delete candidate |
+| `GET /api/limits/usage`                                  | `src/app.js:240`, `src/routes/limits.routes.js:7`                                                                            | No current `web/public` caller found                                                                                                                              | `docs/ACTIVE_SURFACES.md`, `ROUTE_TRUTH_TABLE.md` | Delete candidate |
+
+## Frontend Entry Surface Map
+
+All HTML entry pages under `web/public` are published because the build copies `web/public` to `web/dist`: `web/scripts/copy-public.mjs:39`, `web/scripts/copy-public.mjs:47`, `web/scripts/copy-public.mjs:48`.
+
+### Core beta entry pages
+
+| Page                            | Evidence                                                              | Primary scripts/callers                                                                                                                                                      | Notes                                      |
+| ------------------------------- | --------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
+| `/creative` -> `/creative.html` | `netlify.toml:15`, `netlify.toml:16`, `web/public/creative.html:899`  | `web/public/js/pages/creative/creative.article.mjs:1091`, `web/public/js/pages/creative/creative.article.mjs:3484`, `web/public/js/pages/creative/creative.article.mjs:3853` | Main article explainer entry               |
+| `/my-shorts.html`               | `netlify.toml:49`, `netlify.toml:50`, `web/public/my-shorts.html:205` | `web/public/js/my-shorts.js:49`, `web/public/js/my-shorts.js:201`                                                                                                            | Current shorts library entry               |
+| `/pricing.html`                 | `netlify.toml:42`, `netlify.toml:43`, `web/public/pricing.html:252`   | `web/public/js/pricing.js:120`                                                                                                                                               | Caller-backed checkout start entry         |
+| `/buy-credits.html`             | `web/public/buy-credits.html:272`                                     | `web/public/js/buy-credits.js:69`, `web/public/js/buy-credits.js:86`, `web/public/js/buy-credits.js:169`                                                                     | One-time/subscription/billing portal entry |
+| `/login.html`                   | `netlify.toml:63`, `netlify.toml:64`, `web/public/login.html:115`     | Login shell; linked from auth utilities at `web/public/components/auth-utils.js:45`, `web/public/components/auth-utils.js:117`                                               | Auth entry                                 |
+
+### Legacy image pages still exposed
+
+| Page                  | Evidence                                                                                                    | Primary scripts/callers                                        | Notes                                                       |
+| --------------------- | ----------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- | ----------------------------------------------------------- |
+| `/image-creator.html` | `web/public/components/header.js:35`, `web/public/image-creator.html:413`                                   | `web/public/frontend.js:475`                                   | Legacy image generation page still exposed in header        |
+| `/my-images.html`     | `netlify.toml:56`, `netlify.toml:57`, `web/public/components/header.js:37`, `web/public/my-images.html:193` | `web/public/js/my-images.js:390`                               | Legacy image gallery still exposed in header and page links |
+| `/retry.html`         | `web/public/retry.html:29`, `web/public/retry.html:203`, `web/public/retry.html:212`                        | Inline fetch to `/api/generate` at `web/public/retry.html:203` | Legacy image retry path                                     |
+
+### Static/support pages
+
+| Page                  | Evidence                                                            | Primary scripts/callers                         | Notes                              |
+| --------------------- | ------------------------------------------------------------------- | ----------------------------------------------- | ---------------------------------- |
+| `/` and `/index.html` | `web/public/index.html:40`, `web/public/index.html:151`             | Redirects user toward `/creative`               | Landing/redirect shell             |
+| `/legal.html`         | `web/public/legal.html:16`                                          | Static legal page, still links to legacy images | Support page with stale legacy nav |
+| `/success.html`       | `netlify.toml:70`, `netlify.toml:71`, `web/public/success.html:109` | Checkout success page                           | Support page                       |
+
+## Doc contradictions frozen in this pass
+
+| Doc                        | Problem                                                                                  | Evidence                                                                                                                                                                          |
+| -------------------------- | ---------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `docs/security-notes.md`   | Says `/api/caption/preview` is public and `/api/caption/render` is active                | `docs/security-notes.md:246`, `docs/security-notes.md:247`, `src/routes/caption.preview.routes.js:109`, `src/routes/caption.preview.routes.js:111`                                |
+| `docs/security-notes.md`   | Lists voice/TTS routes as active, but current route registry does not mount them         | `docs/security-notes.md:253`, `docs/security-notes.md:254`, `docs/security-notes.md:255`, `src/routes/index.js:1`, `src/routes/index.js:22`, `src/app.js:216`, `src/app.js:260`   |
+| `docs/security-notes.md`   | Says `/api/assets/*` is unmounted                                                        | `docs/security-notes.md:350`, `docs/security-notes.md:510`, `src/app.js:236`, `src/routes/assets.routes.js:10`                                                                    |
+| `docs/MOBILE_SPEC_PACK.md` | Uses `/credits` and `/api/user/me` as current client endpoints                           | `docs/MOBILE_SPEC_PACK.md:121`, `docs/MOBILE_SPEC_PACK.md:122`, `src/app.js:219`, `src/app.js:255`                                                                                |
+| `docs/vaiform-v1-scope.md` | Treats `/api/caption/render`, `/api/tts/preview`, `/api/voice/*` as active current scope | `docs/vaiform-v1-scope.md:248`, `docs/vaiform-v1-scope.md:266`, `docs/vaiform-v1-scope.md:277`, `docs/vaiform-v1-scope.md:284`, `src/routes/index.js:1`, `src/routes/index.js:22` |
+
+## Known contract drift
+
+- Contract SSOT says success is `{ success, data, requestId }` and failure is `{ success, error, detail, fields?, requestId }`: `docs/API_CONTRACT.md:41`, `docs/API_CONTRACT.md:42`.
+- Active story finalize and server-busy responses add undocumented top-level keys:
+  - `shortId` in finalize success: `src/routes/story.routes.js:35`, `src/routes/story.routes.js:38`, `src/routes/story.routes.js:790`
+  - `retryAfter` in server-busy failure: `src/routes/story.routes.js:51`, `src/routes/story.routes.js:56`, `src/routes/story.routes.js:759`, `src/routes/story.routes.js:795`
+- This is documented here as known drift only. Phase 0 does not change runtime behavior.
