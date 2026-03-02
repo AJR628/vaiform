@@ -1,4 +1,4 @@
-﻿# Truth Freeze Audit
+# Truth Freeze Audit
 
 Audit date: 2026-02-28
 
@@ -9,6 +9,11 @@ Purpose: freeze current runtime truth before cleanup so Phase 1+ can delete and 
 - Frontend build copies `web/public` into `web/dist`, then emits Tailwind CSS to `web/dist/tailwind.css`: `web/package.json:7`, `web/scripts/copy-public.mjs:39`, `web/scripts/copy-public.mjs:47`, `web/scripts/copy-public.mjs:48`.
 - Netlify publishes `web/dist` and proxies only `/api/*` and `/stripe/webhook`: `netlify.toml:2`, `netlify.toml:3`, `netlify.toml:21`, `netlify.toml:28`.
 - Backend mounts current default-reachable routes from `src/app.js`: `src/app.js:165`, `src/app.js:172`, `src/app.js:195`, `src/app.js:217`, `src/app.js:260`.
+
+## Phase 1 ingress note
+
+- Browser-side API callers under `web/public/**` now use same-origin relative `/api/*` via the Netlify proxy.
+- Hardcoded backend origins were removed from the active callers and a CI guard now blocks their reintroduction.
 
 ## Active Surface Matrix
 

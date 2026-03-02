@@ -43,6 +43,9 @@ jobs:
       - name: Root API caller guard
         run: npm run check:root-api-callers
 
+      - name: Hardcoded backend origin guard
+        run: npm run check:hardcoded-backend-origins
+
       - name: Response contract check (full)
         run: npm run check:responses
 

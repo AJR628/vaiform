@@ -8,11 +8,9 @@ try {
   }
 } catch {}
 
-// Use hardcoded constants to avoid Firebase initialization conflicts
-const BACKEND_URL =
-  'https://17e0d1d1-e327-483d-b1ea-c41bea08fb59-00-1ef93t84nlhq6.janeway.replit.dev/api';
-const BACKEND = 'https://17e0d1d1-e327-483d-b1ea-c41bea08fb59-00-1ef93t84nlhq6.janeway.replit.dev/';
-const API_ROOT = BACKEND_URL;
+// Browser calls go through same-origin /api via the Netlify proxy.
+const BACKEND = typeof window !== 'undefined' ? window.location.origin : '';
+const API_ROOT = '/api';
 
 // Allow pages to provide a token-getter (Firebase)
 let tokenProvider = null;

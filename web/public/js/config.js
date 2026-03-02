@@ -5,6 +5,7 @@ import {
   GoogleAuthProvider,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 import { getFirestore } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+import { BACKEND, API_ROOT as CANONICAL_API_ROOT } from '../config.js';
 
 // ====== CONFIG ======
 export const firebaseConfig = {
@@ -17,23 +18,21 @@ export const firebaseConfig = {
   measurementId: 'G-971DTZ5PEN',
 };
 
-// Pull canonical BACKEND and compute our own base, so we don't rely on API_ROOT here.
-import { BACKEND } from '../config.js';
-export const BACKEND_URL = BACKEND.replace(/\/$/, '') + '/api';
-export const BASE_URL = BACKEND_URL;
+export const BACKEND_URL = CANONICAL_API_ROOT;
+export const BASE_URL = BACKEND;
 if (typeof window !== 'undefined') {
   window.BACKEND_URL = BACKEND_URL;
   window.BASE_URL = BASE_URL;
 }
-// === Compatibility exports for modules expecting these ===
-export const API_ROOT = BACKEND_URL;
+
+// Compatibility exports for modules expecting these names.
+export const API_ROOT = CANONICAL_API_ROOT;
 export { BACKEND };
 
 export const FRONTEND_URL = 'https://vaiform.com';
 export const UPSCALE_COST = 10;
 
 // ====== INIT ======
-// ✅ Prevent duplicate Firebase initialization
 const app = getApps().length ? getApps()[0] : initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const db = getFirestore(app);

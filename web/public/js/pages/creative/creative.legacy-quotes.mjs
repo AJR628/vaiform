@@ -43,10 +43,8 @@ const ENABLE_LEGACY_STUDIO = false;
 // Use ?? consistently or add parentheses.
 
 const API_BASE_FALLBACK =
-  'https://17e0d1d1-e327-483d-b1ea-c41bea08fb59-00-1ef93t84nlhq6.janeway.replit.dev';
-// Hard-force the backend origin to Replit to avoid Netlify handling /cdn
-const API_BASE_FIXED =
-  'https://17e0d1d1-e327-483d-b1ea-c41bea08fb59-00-1ef93t84nlhq6.janeway.replit.dev';
+  BACKEND_FROM_CONFIG || (typeof window !== 'undefined' ? window.location.origin : '');
+const API_BASE_FIXED = API_BASE_FALLBACK;
 function getApiBase() {
   return API_BASE_FIXED.replace(/\/$/, '');
 }

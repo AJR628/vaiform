@@ -3,12 +3,6 @@ import { auth, db, ensureUserDoc } from '/js/firebaseClient.js';
 import { onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 import { doc, onSnapshot } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
-// Use backend URL directly to bypass Netlify redirects
-const API = window.location.hostname.includes('localhost')
-  ? 'http://localhost:3000'
-  : 'https://17e0d1d1-e327-483d-b1ea-c41bea08fb59-00-1ef93t84nlhq6.janeway.replit.dev';
-console.log('[api] BACKEND_BASE =', API);
-
 let currentUser = null;
 
 function checkoutUrlFrom(data) {
@@ -117,7 +111,7 @@ async function proceedWithCheckout(plan, billing) {
   try {
     const user = auth.currentUser;
     const idToken = await user.getIdToken(true);
-    const response = await fetch(`${API}/api/checkout/start`, {
+    const response = await fetch('/api/checkout/start', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

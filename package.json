@@ -31,6 +31,7 @@
     "format:check": "prettier --check .",
     "check:netlify-redirects": "node scripts/check-no-netlify-redirects.mjs",
     "check:root-api-callers": "node scripts/check-no-root-api-callers.mjs",
+    "check:hardcoded-backend-origins": "node scripts/check-no-hardcoded-backend-origins.mjs",
     "check:format:changed": "node scripts/check-format-changed.mjs",
     "lint": "eslint src/app.js src/routes/story.routes.js src/routes/caption.preview.routes.js src/routes/assets.routes.js src/http/respond.js src/middleware/requireAuth.js src/middleware/validate.middleware.js src/middleware/planGuards.js server.js scripts/check-responses.js scripts/check-responses-changed.mjs",
     "lint:full": "eslint .",
@@ -52,3 +53,4 @@
     "prettier": "^3.3.3"
   }
 }
+

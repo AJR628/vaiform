@@ -3,9 +3,6 @@
 // Upscale is gated in default runtime.
 
 import { auth, db } from './firebaseClient.js';
-// Import constants without Firebase initialization
-const BACKEND_URL =
-  'https://17e0d1d1-e327-483d-b1ea-c41bea08fb59-00-1ef93t84nlhq6.janeway.replit.dev/api';
 const UPSCALE_COST = 10;
 import { onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 import {

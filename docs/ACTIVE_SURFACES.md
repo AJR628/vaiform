@@ -1,4 +1,4 @@
-﻿# Active Surfaces (Visual SSOT + API Prune)
+# Active Surfaces (Visual SSOT + API Prune)
 
 Audit date: 2026-02-28
 
@@ -8,6 +8,8 @@ Audit date: 2026-02-28
 - Frontend is served by Netlify from `web/dist`.
 - Frontend source files live in `web/public`.
 - Netlify redirect/proxy SSOT is `netlify.toml` (no `_redirects` files under `web/`).
+- Frontend browser API ingress is same-origin relative `/api/*` via the Netlify proxy.
+- Direct backend origins are not allowed in `web/public/**` and are guarded by `npm run check:hardcoded-backend-origins`.
 - Backend serves API + required static assets only.
 
 ## Frontend entry surfaces

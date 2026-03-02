@@ -104,8 +104,7 @@
     <!-- Logic -->
     <script type="module">
       import { auth, db } from '/js/firebaseClient.js';
-      const BACKEND_URL =
-        'https://17e0d1d1-e327-483d-b1ea-c41bea08fb59-00-1ef93t84nlhq6.janeway.replit.dev';
+      const API_ROOT = '/api';
       import { onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
       import {
         doc,
@@ -200,7 +199,7 @@
             refiner: '',
           };
 
-          const res = await fetch(`${BACKEND_URL}/api/generate`, {
+          const res = await fetch('/api/generate', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload),
