@@ -267,28 +267,6 @@ async function main() {
     }
   });
 
-  // Test 7: /api/assets/ai-images with correct payload
-  await verifyEndpoint('/api/assets/ai-images (payload validation)', async () => {
-    const payload = {
-      prompt: 'A serene mountain landscape at sunset',
-      style: 'realistic',
-      count: 2,
-    };
-
-    const { status, data } = await makeRequest(`${baseUrl}/api/assets/ai-images`, {
-      method: 'POST',
-      body: JSON.stringify(payload),
-    });
-
-    if (status === 200 && data.ok && data.data) {
-      return { success: true, data: data.data };
-    } else if (status === 403 && data.reason === 'PLAN_UPGRADE_REQUIRED') {
-      return { success: true, data: { message: 'Pro plan required (expected)', status } };
-    } else {
-      return { success: false, error: `Status: ${status}, Response: ${JSON.stringify(data)}` };
-    }
-  });
-
   // Summary
   log(colors.bold, '\n📊 Verification Summary');
   if (allPassed) {

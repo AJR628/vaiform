@@ -141,7 +141,7 @@ flowchart TB
     E["express.json 10mb"]
     F["/health, /api/health"]
     G["/assets static"]
-    H["/api: generate, whoami, credits, diag(debug)"]
+    H["/api: whoami, credits, diag(debug)"]
     I["/api/checkout, /api/shorts, /api/assets, /api/limits, /api/story"]
     J["/api → caption.preview.routes"]
     K["/api/user, /api/users"]
@@ -159,7 +159,6 @@ flowchart LR
   Index["src/routes/index.js"]
   Index --> Credits["credits"]
   Index --> Whoami["whoami"]
-  Index --> Generate["generate"]
   Index --> Webhook["stripe.webhook"]
   Index --> Checkout["checkout"]
   Index --> Diag["diag"]
@@ -169,19 +168,18 @@ flowchart LR
   Index --> Story["story"]
 ```
 
-| Mount in app.js | Path            | Router source                                        |
-| --------------- | --------------- | ---------------------------------------------------- |
-| (direct)        | `/api`          | generate.routes.js → POST /generate, GET /job/:jobId |
-| (direct)        | `/api/whoami`   | whoami.routes.js                                     |
-| (direct)        | `/api/credits`  | credits.routes.js                                    |
-| (direct)        | `/api/checkout` | checkout.routes.js                                   |
-| (direct)        | `/api/shorts`   | shorts.routes.js                                     |
-| (direct)        | `/api/assets`   | assets.routes.js                                     |
-| (direct)        | `/api/limits`   | limits.routes.js                                     |
-| (direct)        | `/api/story`    | story.routes.js                                      |
-| (direct)        | `/api`          | caption.preview.routes.js → POST /caption/preview    |
-| (direct)        | `/api/user`     | user.routes.js                                       |
-| (direct)        | `/api/users`    | users.routes.js                                      |
+| Mount in app.js | Path            | Router source                                     |
+| --------------- | --------------- | ------------------------------------------------- |
+| (direct)        | `/api/whoami`   | whoami.routes.js                                  |
+| (direct)        | `/api/credits`  | credits.routes.js                                 |
+| (direct)        | `/api/checkout` | checkout.routes.js                                |
+| (direct)        | `/api/shorts`   | shorts.routes.js                                  |
+| (direct)        | `/api/assets`   | assets.routes.js                                  |
+| (direct)        | `/api/limits`   | limits.routes.js                                  |
+| (direct)        | `/api/story`    | story.routes.js                                   |
+| (direct)        | `/api`          | caption.preview.routes.js → POST /caption/preview |
+| (direct)        | `/api/user`     | user.routes.js                                    |
+| (direct)        | `/api/users`    | users.routes.js                                   |
 
 **Note on drift:** If you ever see references to `./routes/index.routes.js`, `./middleware/requestLogger.js`, `./config/cors.js`, `./config/helmet.js`, `./middleware/session.middleware.js`, or `./middleware/limits.middleware.js` in app.js, that is the “old” mental model. The current repo uses `./routes/index.js`, inline CORS/helmet in app.js, `reqId.js`, `error.middleware.js`, etc. Keeping app.js and this diagram in sync avoids two mental models.
 

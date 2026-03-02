@@ -21,9 +21,6 @@
             <a href="/creative.html" class="hover:text-indigo-600 dark:hover:text-indigo-400"
               >Creative Studio</a
             >
-            <a href="/my-images.html" class="hover:text-indigo-600 dark:hover:text-indigo-400"
-              >My Images</a
-            >
             <a
               href="/buy-credits.html"
               class="hover:text-indigo-600 dark:hover:text-indigo-400 font-semibold underline"
@@ -50,7 +47,7 @@
             Manage Billing
           </button>
 
-          <!-- Auth buttons are toggled by /frontend.js -->
+          <!-- Auth buttons are toggled by the shared auth bridge -->
           <button
             id="login-button"
             class="px-3 py-1 rounded-lg bg-indigo-600 text-white text-sm hover:bg-indigo-700 logged-out hidden"
@@ -101,10 +98,8 @@
               Fuel Your Creations with Credits
             </h2>
             <p class="text-indigo-100 max-w-2xl">
-              Generate stunning AI images on Vaiform.
-              <span class="font-semibold">1 image = 20 credits</span>,
-              <span class="font-semibold">2 images = 40 credits</span>,
-              <span class="font-semibold">4 images = 70 credits</span>.
+              Use credits for render-heavy workflows when they are available in the current beta.
+              Costs vary by feature and are shown in-product before submission.
             </p>
 
             <!-- Billing Toggle -->
@@ -128,13 +123,13 @@
                 href="/"
                 class="px-4 py-2 rounded-lg bg-white/20 hover:bg-white/30 backdrop-blur transition text-sm"
               >
-                Generate Images
+                Open Creative Studio
               </a>
               <a
-                href="/my-images.html"
+                href="/my-shorts.html"
                 class="px-4 py-2 rounded-lg bg-white text-indigo-700 hover:bg-indigo-50 transition text-sm font-semibold"
               >
-                View My Images
+                View My Shorts
               </a>
             </div>
           </div>

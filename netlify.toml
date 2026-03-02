@@ -53,13 +53,6 @@ command = "npm ci --no-audit --no-fund && npm run build"
   conditions = {Country = ["*"]}
 
 [[redirects]]
-  from = "/my-images.html"
-  to = "/my-images.html"
-  status = 200
-  force = true
-  conditions = {Country = ["*"]}
-
-[[redirects]]
   from = "/login.html"
   to = "/login.html"
   status = 200

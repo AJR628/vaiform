@@ -71,12 +71,7 @@ async function main() {
     const schemaPath = 'src/schemas/quotes.schema.js';
     const content = readFileSync(schemaPath, 'utf8');
 
-    const requiredSchemas = [
-      'GenerateQuoteSchema',
-      'RemixQuoteSchema',
-      'AssetsOptionsSchema',
-      'AiImagesSchema',
-    ];
+    const requiredSchemas = ['GenerateQuoteSchema', 'RemixQuoteSchema', 'AssetsOptionsSchema'];
     const missing = requiredSchemas.filter((schema) => !content.includes(schema));
 
     if (missing.length === 0) {
@@ -114,7 +109,7 @@ async function main() {
     const controllerPath = 'src/controllers/assets.controller.js';
     const content = readFileSync(controllerPath, 'utf8');
 
-    const requiredFunctions = ['getAssetsOptions', 'generateAiImages'];
+    const requiredFunctions = ['getAssetsOptions'];
     const missing = requiredFunctions.filter(
       (func) => !content.includes(`export async function ${func}`)
     );
@@ -240,7 +235,6 @@ async function main() {
       GenerateQuoteSchema: ['text', 'tone', 'maxChars'],
       RemixQuoteSchema: ['originalText', 'mode', 'targetTone', 'maxChars'],
       AssetsOptionsSchema: ['type', 'query', 'page', 'perPage'],
-      AiImagesSchema: ['prompt', 'style', 'count'],
     };
 
     let allSchemasValid = true;

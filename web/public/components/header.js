@@ -32,9 +32,7 @@ export function createUnifiedHeader() {
         <!-- Nav row: All navigation links in a wrapping row -->
         <nav class="mt-2 flex flex-wrap gap-2 text-sm sm:text-base md:justify-start md:gap-4 px-4 sm:px-6 lg:px-8">
           <a href="/creative" class="px-2 py-1 rounded hover:bg-gray-100 dark:hover:bg-white/5 hover:text-indigo-600 dark:hover:text-indigo-400 nav-link text-gray-700 dark:text-gray-300 font-medium" data-page="creative">Creative Studio</a>
-          <a href="/image-creator.html" class="px-2 py-1 rounded hover:bg-gray-100 dark:hover:bg-white/5 hover:text-indigo-600 dark:hover:text-indigo-400 nav-link text-gray-700 dark:text-gray-300 font-medium" data-page="image-creator">Image Creator</a>
           <a href="/my-shorts.html" class="px-2 py-1 rounded hover:bg-gray-100 dark:hover:bg-white/5 hover:text-indigo-600 dark:hover:text-indigo-400 nav-link text-gray-700 dark:text-gray-300 font-medium" data-page="shorts">My Shorts</a>
-          <a href="/my-images.html" class="px-2 py-1 rounded hover:bg-gray-100 dark:hover:bg-white/5 hover:text-indigo-600 dark:hover:text-indigo-400 nav-link text-gray-700 dark:text-gray-300 font-medium" data-page="images">My Images</a>
           <a href="/pricing.html" class="px-2 py-1 rounded hover:bg-gray-100 dark:hover:bg-white/5 hover:text-indigo-600 dark:hover:text-indigo-400 nav-link text-gray-700 dark:text-gray-300 font-medium" data-page="pricing">Plans & Pricing</a>
         </nav>
       </div>
@@ -45,14 +43,6 @@ export function createUnifiedHeader() {
 }
 
 export function initializeHeader() {
-  // [AI_IMAGES] Hide Image Creator nav if disabled
-  if (window.VAIFORM_FEATURES && !window.VAIFORM_FEATURES.ENABLE_IMAGE_CREATOR) {
-    const link = document.querySelector(
-      'a[data-page="image-creator"], a[href="/image-creator.html"]'
-    );
-    if (link) link.style.display = 'none';
-  }
-
   // Set active navigation link based on current page
   const currentPath = window.location.pathname;
   const navLinks = document.querySelectorAll('.nav-link');
@@ -62,8 +52,7 @@ export function initializeHeader() {
     const isActive =
       currentPath === href ||
       (currentPath === '/' && href === '/creative') ||
-      (currentPath === '/creative' && href === '/creative') ||
-      (currentPath === '/image-creator.html' && href === '/image-creator.html');
+      (currentPath === '/creative' && href === '/creative');
 
     if (isActive) {
       link.classList.add('text-indigo-600', 'dark:text-indigo-400');

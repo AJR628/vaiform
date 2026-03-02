@@ -96,23 +96,6 @@ function idem() {
     }
   });
 
-  if (process.env.SMOKE_INCLUDE_GENERATE === '1') {
-    await test('POST /api/generate contract', async () => {
-      const r = await api('/api/generate', {
-        method: 'POST',
-        headers: { 'X-Idempotency-Key': idem() },
-        body: { prompt: 'a single sunflower', count: 1, style: 'realistic' },
-      });
-      if (r.status === 404) throw new Error('generate route not mounted');
-      if (!r.json || typeof r.json !== 'object') throw new Error(`non-json response: ${r.raw}`);
-      if (r.json.success === true) {
-        expectSuccessData(r.json, ['images', 'cost', 'jobId']);
-        return;
-      }
-      expectFailureEnvelope(r.json);
-    });
-  }
-
   if (failures.length) {
     console.error(`\n${failures.length} test(s) failed.`);
     process.exit(1);

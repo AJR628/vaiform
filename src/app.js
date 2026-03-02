@@ -19,7 +19,6 @@ import errorHandler from './middleware/error.middleware.js';
 import whoamiRoutes from './routes/whoami.routes.js';
 import creditsRoutes from './routes/credits.routes.js';
 import diagRoutes from './routes/diag.routes.js';
-import generateRoutes from './routes/generate.routes.js';
 // Old webhook routes removed - using /stripe/webhook instead
 import diagHeadersRoutes from './routes/diag.headers.routes.js';
 import { ok } from './http/respond.js';
@@ -134,7 +133,7 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 // 🔎 Diag after parser (keep existing debug middleware)
 if (DBG) {
   app.use((req, _res, next) => {
-    if (req.path.startsWith('/diag') || req.path.startsWith('/generate')) {
+    if (req.path.startsWith('/diag')) {
       const ctor = req.body && req.body.constructor ? req.body.constructor.name : typeof req.body;
       console.log('[post-json] body ctor/type =', ctor, '| body =', req.body);
     }
@@ -214,7 +213,6 @@ console.log('✅ Mounted static /assets (fonts) before API routes');
 
 // ---------- API ROUTES ----------
 if (process.env.VAIFORM_DEBUG === '1') app.use('/diag', diagRoutes);
-app.use('/api', generateRoutes);
 app.use('/api/whoami', whoamiRoutes);
 app.use('/api/credits', creditsRoutes);
 // Mount diag headers only when VAIFORM_DEBUG=1

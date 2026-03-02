@@ -20,10 +20,6 @@ Audit date: 2026-02-28
   - `/pricing.html`
   - `/buy-credits.html`
   - `/login.html`
-- Legacy image pages still exposed:
-  - `/image-creator.html`
-  - `/my-images.html`
-  - `/retry.html`
 - Static/support pages:
   - `/` and `/index.html`
   - `/legal.html`
@@ -45,12 +41,11 @@ Audit date: 2026-02-28
   - `GET /stripe/webhook`
   - `POST /stripe/webhook`
 - Core API mounts:
-  - `/api/generate`, `/api/job/:jobId`
   - `/api/credits`
   - `/api/whoami`
   - `/api/checkout/start`, `/api/checkout/session`, `/api/checkout/subscription`, `/api/checkout/portal`
   - `/api/shorts/mine`, `/api/shorts/:jobId`
-  - `/api/assets/options`, `/api/assets/ai-images` (disabled 410)
+  - `/api/assets/options`
   - `/api/limits/usage`
   - `/api/story/*`
   - `/api/caption/preview`
@@ -65,8 +60,11 @@ Audit date: 2026-02-28
   - `GET /api/` (accidental root collisions from router `/` mounts)
   - root aliases: `/credits`, `/whoami`, `/generate`, `/enhance`, `/limits/*`
   - `/api/enhance` (feature retired)
+  - `/api/generate`, `/api/job/:jobId`
+  - `/api/assets/ai-images`
   - old checkout aliases: `/checkout/*`, `/api/start`, `/api/session`, `/api/subscription`, `/api/portal`
   - `/creative` HTML route
+  - `/image-creator.html`, `/my-images.html`, `/retry.html`
   - frontend static serving from backend `web/dist` or root `public`
   - `/cdn` proxy route
 - Debug-only (`VAIFORM_DEBUG=1`):
@@ -82,5 +80,4 @@ Audit date: 2026-02-28
 - Checkout start remains caller-backed via `web/public/pricing.html` -> `web/public/js/pricing.js`.
 - Checkout session/subscription/portal remain caller-backed via `web/public/buy-credits.html` -> `web/public/js/buy-credits.js`.
 - User bootstrap remains caller-backed via `web/public/js/firebaseClient.js` -> `/api/users/ensure`.
-- Legacy image generation surfaces remain caller-backed today via `web/public/image-creator.html`, `web/public/my-images.html`, and `web/public/retry.html`.
 - `/api/whoami`, `/api/limits/usage`, and `/api/user/*` are mounted but have no current user-facing web caller in `web/public`.
