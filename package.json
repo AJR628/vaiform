@@ -8,7 +8,6 @@
   },
   "dependencies": {
     "@napi-rs/canvas": "^0.1.80",
-    "body-parser": "^1.20.3",
     "cors": "^2.8.5",
     "dotenv": "^17.2.1",
     "express": "^4.19.2",
@@ -16,7 +15,6 @@
     "ffmpeg-static": "^5.2.0",
     "firebase-admin": "^12.6.0",
     "helmet": "^8.1.0",
-    "multer": "^1.4.5-lts.1",
     "node-fetch": "^3.3.2",
     "openai": "^4.104.0",
     "sharp": "^0.33.5",
