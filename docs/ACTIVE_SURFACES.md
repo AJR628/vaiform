@@ -39,7 +39,7 @@ Audit date: 2026-02-28
   - `HEAD /api/health`
 - Webhook:
   - `GET /stripe/webhook`
-  - `POST /stripe/webhook`
+  - `POST /stripe/webhook` (Stripe checkout completion, renewal crediting, and plan-subscription deletion handling)
 - Core API mounts:
   - `/api/credits`
   - `/api/whoami`
@@ -79,5 +79,6 @@ Audit date: 2026-02-28
 - Shorts library remains caller-backed via `web/public/my-shorts.html` -> `web/public/js/my-shorts.js`.
 - Checkout start remains caller-backed via `web/public/pricing.html` -> `web/public/js/pricing.js`.
 - Checkout session/subscription/portal remain caller-backed via `web/public/buy-credits.html` -> `web/public/js/buy-credits.js`.
+- Stripe webhook remains externally caller-backed via Netlify proxy and is required for initial checkout grants plus monthly renewal crediting.
 - User bootstrap remains caller-backed via `web/public/js/firebaseClient.js` -> `/api/users/ensure`.
 - `/api/whoami`, `/api/limits/usage`, and `/api/user/*` are mounted but have no current user-facing web caller in `web/public`.

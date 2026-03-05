@@ -63,3 +63,11 @@ Use `src/http/respond.js`:
 
 - `respond.ok(req, res, data)` — success response.
 - `respond.fail(req, res, status, error, detail, fields?)` — failure response.
+
+## Webhook Retry Note
+
+`POST /stripe/webhook` is machine-to-machine, but when it emits JSON it still uses this envelope.
+
+- Return `200` only after the webhook event was safely committed, was already committed (duplicate no-op), or was intentionally ignored.
+- Return `400` only for signature/body verification failures that cannot succeed on retry.
+- Return `500` for retryable processing failures after signature verification so Stripe retries.

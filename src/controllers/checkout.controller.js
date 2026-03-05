@@ -48,6 +48,7 @@ export async function createCheckoutSession(req, res) {
       metadata: {
         uid: req.user.uid,
         email: req.user.email,
+        purchaseType: 'credit_pack',
         priceId,
         quantity: String(qty),
         credits: String(creditHint), // analytics hint only
@@ -94,6 +95,7 @@ export async function createSubscriptionSession(req, res) {
       metadata: {
         uid: req.user.uid,
         email: req.user.email,
+        purchaseType: 'credit_pack',
         priceId,
         credits: String(creditHint), // analytics hint only
         kind: 'subscription',
@@ -107,6 +109,7 @@ export async function createSubscriptionSession(req, res) {
         metadata: {
           uid: req.user.uid,
           email: req.user.email,
+          purchaseType: 'credit_pack',
           priceId,
           credits: String(creditHint),
           kind: 'subscription',
@@ -196,11 +199,11 @@ export async function startPlanCheckout(req, res) {
       client_reference_id: uid,
       success_url: `${FRONTEND}/success?plan=${plan}`,
       cancel_url: `${FRONTEND}/pricing`,
-      metadata: { uid, email, plan, billing },
+      metadata: { uid, email, purchaseType: 'plan', plan, billing },
       ...(mode === 'subscription' && {
         payment_method_collection: 'always',
         subscription_data: {
-          metadata: { uid, email, plan, billing },
+          metadata: { uid, email, purchaseType: 'plan', plan, billing },
         },
       }),
     });

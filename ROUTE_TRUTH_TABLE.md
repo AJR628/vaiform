@@ -10,30 +10,30 @@ Audit date: 2026-02-28
 
 ## Default-Reachable routes
 
-| Method   | Path                         | Notes                                                     |
-| -------- | ---------------------------- | --------------------------------------------------------- |
-| GET      | `/health`                    | Inline health endpoint                                    |
-| HEAD     | `/health`                    | Inline liveness                                           |
-| GET      | `/api/health`                | Netlify-proxy health endpoint                             |
-| HEAD     | `/api/health`                | Netlify-proxy liveness                                    |
-| GET      | `/stripe/webhook`            | Webhook alive check                                       |
-| POST     | `/stripe/webhook`            | Stripe webhook handler                                    |
-| GET      | `/api/credits`               | My Shorts caller-backed                                   |
-| GET      | `/api/whoami`                | Mounted; console/helper caller only                       |
-| POST     | `/api/checkout/start`        | Pricing page checkout start                               |
-| POST     | `/api/checkout/session`      | Buy credits page checkout session                         |
-| POST     | `/api/checkout/subscription` | Buy credits page subscription checkout                    |
-| POST     | `/api/checkout/portal`       | Buy credits page billing portal                           |
-| GET      | `/api/shorts/mine`           | My shorts list                                            |
-| GET      | `/api/shorts/:jobId`         | Short detail                                              |
-| POST     | `/api/assets/options`        | Article draft clip search                                 |
-| GET      | `/api/limits/usage`          | Mounted; no current web caller found                      |
-| POST     | `/api/story/*`               | Article pipeline via `creative.article.mjs`               |
-| POST     | `/api/caption/preview`       | Caption preview (auth-required)                           |
-| GET/POST | `/api/user/*`                | Mounted; no current web caller found                      |
-| POST     | `/api/users/ensure`          | Firebase login bootstrap                                  |
-| GET      | `/assets/*`                  | Backend static asset serving                              |
-| GET      | `/assets/fonts/*`            | Backend serves font assets (Netlify does not proxy fonts) |
+| Method   | Path                         | Notes                                                                                    |
+| -------- | ---------------------------- | ---------------------------------------------------------------------------------------- |
+| GET      | `/health`                    | Inline health endpoint                                                                   |
+| HEAD     | `/health`                    | Inline liveness                                                                          |
+| GET      | `/api/health`                | Netlify-proxy health endpoint                                                            |
+| HEAD     | `/api/health`                | Netlify-proxy liveness                                                                   |
+| GET      | `/stripe/webhook`            | Webhook alive check                                                                      |
+| POST     | `/stripe/webhook`            | Stripe webhook handler for checkout completion, renewals, and plan subscription deletion |
+| GET      | `/api/credits`               | My Shorts caller-backed                                                                  |
+| GET      | `/api/whoami`                | Mounted; console/helper caller only                                                      |
+| POST     | `/api/checkout/start`        | Pricing page checkout start                                                              |
+| POST     | `/api/checkout/session`      | Buy credits page checkout session                                                        |
+| POST     | `/api/checkout/subscription` | Buy credits page subscription checkout                                                   |
+| POST     | `/api/checkout/portal`       | Buy credits page billing portal                                                          |
+| GET      | `/api/shorts/mine`           | My shorts list                                                                           |
+| GET      | `/api/shorts/:jobId`         | Short detail                                                                             |
+| POST     | `/api/assets/options`        | Article draft clip search                                                                |
+| GET      | `/api/limits/usage`          | Mounted; no current web caller found                                                     |
+| POST     | `/api/story/*`               | Article pipeline via `creative.article.mjs`                                              |
+| POST     | `/api/caption/preview`       | Caption preview (auth-required)                                                          |
+| GET/POST | `/api/user/*`                | Mounted; no current web caller found                                                     |
+| POST     | `/api/users/ensure`          | Firebase login bootstrap                                                                 |
+| GET      | `/assets/*`                  | Backend static asset serving                                                             |
+| GET      | `/assets/fonts/*`            | Backend serves font assets (Netlify does not proxy fonts)                                |
 
 ## Debug-Gated routes
 
