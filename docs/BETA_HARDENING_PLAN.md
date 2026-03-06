@@ -51,22 +51,22 @@ Do not use this file as runtime truth for routes, callers, or contracts.
 - Current render model note:
   render/finalize are synchronous HTTP handlers; server timeout is 15 minutes (`server.js:24`, `server.js:32`)
 - Remaining implementation order:
-  Phase A -> Phase D -> Phase C -> Phase E
+  Phase D -> Phase C -> Phase E
 - Closed / deferred note:
-  Phase B is code-landed pending live Stripe replay smoke; Phase F is post-critical-cluster only.
+  Phase A runtime landed pending sacred smoke; Phase B is code-landed pending live Stripe replay smoke; Phase F is post-critical-cluster only.
 
 ## Current Triage (Repo-Derived, 2026-03-05)
 
 ### A - Launch-Critical Before Beta
 
-- Close the active outbound URL trust boundaries on link input and manual clip URLs (`src/services/story.llm.service.js:151-161`, `src/utils/link.extract.js:43-65`, `src/routes/story.routes.js:836-850`, `src/services/story.service.js:1752`, `src/utils/video.fetch.js:11-25`).
-- Add targeted rate limits to expensive story and assets routes and default-disable the unused `/api/story/render` path (`src/routes/assets.routes.js:9`, `src/routes/story.routes.js:451-467`, `src/routes/story.routes.js:548-585`, `src/routes/story.routes.js:728-800`, `src/routes/story.routes.js:836-945`, `src/utils/render.semaphore.js:1-22`).
-- Put explicit aborts on the remaining unbounded LLM/provider calls that still sit on sacred story/search paths (`src/services/story.llm.service.js:303-360`, `src/services/story.llm.service.js:609-616`, `src/utils/link.extract.js:121-128`, `src/services/pixabay.videos.provider.js:42-44`, `src/services/nasa.videos.provider.js:52-54`, `src/services/nasa.videos.provider.js:92-94`, `src/utils/video.fetch.js:16`).
+- Add targeted rate limits to expensive story and assets routes and default-disable the unused `/api/story/render` path (`src/routes/assets.routes.js:9`, `src/routes/story.routes.js:498-518`, `src/routes/story.routes.js:595-633`, `src/routes/story.routes.js:778-856`, `src/routes/story.routes.js:891-992`, `src/utils/render.semaphore.js:1-22`).
+- Put explicit aborts on the remaining unbounded LLM/provider calls that still sit on sacred story/search paths (`src/services/story.llm.service.js:307-360`, `src/services/story.llm.service.js:613-620`, `src/utils/link.extract.js:112-145`, `src/services/pixabay.videos.provider.js:42-44`, `src/services/nasa.videos.provider.js:52-54`, `src/services/nasa.videos.provider.js:92-94`).
+- Re-run sacred story smoke on the landed outbound URL guardrails, covering blocked-host probes plus both manual and provider-backed clip finalize paths (`src/routes/story.routes.js:155-170`, `src/routes/story.routes.js:842-853`, `src/services/story.service.js:1528`, `src/services/story.service.js:1752`).
 - Re-run live Stripe replay and sacred billing smoke before beta sign-off. The code path is landed, but this audit did not re-verify real Stripe delivery/replay behavior (`src/routes/stripe.webhook.js:339-523`, `src/controllers/checkout.controller.js:26-123`, `web/public/js/buy-credits.js:67-167`, `web/public/js/pricing.js:114`).
 
 ### B - Important, But Can Wait Until After The Cluster Above
 
-- Add revoked-token checks to checkout and finalize once the trust-boundary and admission-control work is closed (`src/middleware/requireAuth.js:13`, `src/routes/checkout.routes.js:16-31`, `src/routes/story.routes.js:768-790`).
+- Add revoked-token checks to checkout and finalize once the trust-boundary and admission-control work is closed (`src/middleware/requireAuth.js:13`, `src/routes/checkout.routes.js:16-31`, `src/routes/story.routes.js:820-842`).
 - Clean up CORS / preview-origin gating so `FRONTEND_URL` actually drives allowlisted origins instead of a hardcoded list plus `NODE_ENV`-based Replit preview matching (`src/app.js:47-55`, `src/app.js:61-99`).
 - If beta traffic shows Stripe session spam, add low-rate per-UID throttles to `/api/checkout/*`; this is secondary to the story/render abuse surface (`src/routes/checkout.routes.js:16-31`).
 
@@ -74,69 +74,89 @@ Do not use this file as runtime truth for routes, callers, or contracts.
 
 - `tmp.js` external URL hardening. The current active callers only pass data URLs, so this is not an active beta trust boundary today (`src/utils/tmp.js:19-39`, `src/utils/ffmpeg.js:440`, `src/utils/ffmpeg.video.js:1129`).
 - `req.session` / `req.isPro` cleanup in assets flow. The assumptions are misleading, but the effect is UX polish, not launch-blocking security or billing risk (`src/controllers/assets.controller.js:20-31`, `src/controllers/assets.controller.js:84-92`).
-- Finalize response normalization for top-level `shortId`; keep it out of the beta hardening critical path unless a caller-backed contract change is already happening (`src/routes/story.routes.js:35-40`, `src/routes/story.routes.js:789-790`, `web/public/js/pages/creative/creative.article.mjs:3921-3931`).
+- Finalize response normalization for top-level `shortId`; keep it out of the beta hardening critical path unless a caller-backed contract change is already happening (`src/routes/story.routes.js:36-40`, `src/routes/story.routes.js:840-841`, `web/public/js/pages/creative/creative.article.mjs:3921-3931`).
 - Observability expansion and fatal-error exit policy. Existing request IDs and error envelopes are sufficient for the current hardening pass; revisit only after the critical surface work lands and runtime supervision is clear (`src/middleware/reqId.js:4-8`, `src/middleware/error.middleware.js:15-50`, `server.js:12-17`).
 
 ## Phased Hardening Backlog
 
 ### Phase A - Outbound Fetch + SSRF Hardening
 
-Status: Not started (2026-03-05 audit)
+Status: Runtime landed; sacred smoke and blocked-host probes pending (2026-03-05 implementation)
 
 #### Objective
 
-Lock down the active user-controlled outbound URL paths without widening scope into unused helpers.
+Lock down the active user-controlled outbound URL paths without widening scope into unused helpers or unrelated route cleanup.
 
-#### Why It Matters
+#### Repo Truth
 
-- Link-mode story input fetches a user-supplied URL through `extractContentFromUrl(...)`.
-- Manual clip sessions accept arbitrary `selectedClip.url` values that later flow into `fetchVideoToTmp(...)` during render.
-- `link.extract.js` already has a 20s timeout, but it still follows redirects without host re-validation and does not cap response bytes.
-- `video.fetch.js` enforces `https:` and a download size cap, but it still lacks private-host blocking and a timed HEAD probe.
+- `/api/story/start` stores link input; `/api/story/generate` is the route that actually triggers `generateStory(...) -> generateStoryFromInput(...) -> extractContentFromUrl(...)` (`src/routes/story.routes.js:118-139`, `src/routes/story.routes.js:145-170`, `src/services/story.service.js:125-155`, `src/services/story.llm.service.js:158-168`).
+- `src/utils/outbound.fetch.js` now centralizes `https://`-only enforcement, DNS-backed public-host checks, redirect-hop limits, and bounded text reads for active user-controlled outbound URLs (`src/utils/outbound.fetch.js:148-219`, `src/utils/outbound.fetch.js:221-267`).
+- `src/utils/link.extract.js` now uses that shared policy with the existing 20s HTML fetch timeout plus a response-bytes cap before LLM/fallback parsing (`src/utils/link.extract.js:21-107`).
+- `fetchVideoToTmp(...)` now applies the same policy on both HEAD and GET, and the helper is shared by manual finalize plus provider-backed render/timeline fetches (`src/utils/video.fetch.js:21-95`, `src/services/story.service.js:1528`, `src/services/story.service.js:1752`, `src/utils/ffmpeg.timeline.js:298`).
+- Story route wrappers now map outbound-policy/media validation failures instead of collapsing them into generic 500s (`src/routes/story.routes.js:60-101`, `src/routes/story.routes.js:164-170`, `src/routes/story.routes.js:802-853`).
+
+#### Why It Still Matters
+
+- Beta sign-off still needs real blocked-host probes and sacred render smoke because this patch was source-verified, not full end-to-end smoked.
+- HEAD preflight must remain timed best-effort. If providers mishandle HEAD, GET should still proceed unless policy already rejects the target or a successful HEAD already proved a size violation.
+- Do not reopen this phase for `tmp.js`, `image.fetch.js`, auth, rate limiting, or generic fetch cleanup. Those belong to other phases or remain intentionally deferred.
 
 #### Evidence Pointers
 
-- `src/services/story.llm.service.js:151`
-- `src/utils/link.extract.js:43`
-- `src/utils/link.extract.js:65`
-- `src/routes/story.routes.js:836`
-- `src/routes/story.routes.js:913`
+- `src/routes/story.routes.js:118`
+- `src/routes/story.routes.js:145`
+- `src/services/story.service.js:125`
+- `src/services/story.llm.service.js:160`
+- `src/utils/outbound.fetch.js:148`
+- `src/utils/outbound.fetch.js:172`
+- `src/utils/link.extract.js:21`
+- `src/utils/link.extract.js:51`
+- `src/utils/video.fetch.js:21`
+- `src/utils/video.fetch.js:49`
+- `src/services/story.service.js:1528`
 - `src/services/story.service.js:1752`
-- `src/utils/video.fetch.js:11`
-- `src/utils/video.fetch.js:16`
+- `src/utils/ffmpeg.timeline.js:298`
 
 #### Scope Boundaries
 
 Out of scope:
 
 - `src/utils/tmp.js` and `src/utils/image.fetch.js` unless they gain active callers
-- async job queue work
+- auth, rate limiting, parser/body-limit work
 - provider replacement or search-ranking changes
-- cleanup of currently unused generic helpers unless they become caller-backed
+- cleanup of unused generic helpers unless they become caller-backed
 
 #### Patch Inventory
 
+- `src/utils/outbound.fetch.js`
 - `src/utils/link.extract.js`
 - `src/utils/video.fetch.js`
-- `src/routes/story.routes.js` (only if upfront URL validation is added)
+- `src/services/story.llm.service.js`
+- `src/routes/story.routes.js`
 
 #### Acceptance Criteria
 
-- Only public `https://` outbound fetches are allowed on active user-controlled paths.
+- Only public `https://` outbound fetches are allowed on active user-controlled link and clip paths.
 - Redirects are capped and re-validated on every hop.
 - Private, loopback, link-local, and localhost targets are rejected.
-- Link extraction keeps its timeout and gains a response-bytes cap.
-- Video download helpers keep their size cap and gain the same host policy.
-- Creative story flow and manual finalize flow still work with valid public URLs.
+- Link extraction keeps its 20s fetch timeout and now caps response bytes before LLM/fallback parsing.
+- Video HEAD preflight is timed but remains best-effort; GET still proceeds unless policy or confirmed size checks block the target.
+- Manual clip finalize and normal provider-backed clip fetch paths both still work with valid public URLs.
 
 #### Checklist
 
-- [ ] Scope locked (files to touch listed)
-- [ ] Patch landed
-- [ ] SSOT docs updated (ACTIVE_SURFACES / ROUTE_TRUTH_TABLE / API_CONTRACT as needed)
-- [ ] Verification suite green
+- [x] Scope locked (files to touch listed)
+- [x] Patch landed
+- [x] SSOT docs updated (ACTIVE_SURFACES / ROUTE_TRUTH_TABLE / API_CONTRACT as needed)
+- [x] Verification suite green
 - [ ] Manual sacred-pipeline smoke passed
-- [ ] Revert notes captured
+- [x] Revert notes captured
+
+#### Revert Notes
+
+- Roll back `src/utils/outbound.fetch.js`, `src/utils/link.extract.js`, `src/utils/video.fetch.js`, `src/services/story.llm.service.js`, and `src/routes/story.routes.js` together so fetch policy, caller behavior, and error mapping stay aligned.
+- If reverting runtime behavior, revert this plan/audit update in the same PR so Phase A does not appear landed when repo truth has moved backward.
+- Do not partially revert only the route mapping or only one caller; mismatched policy coverage would recreate drift across sacred story surfaces.
 
 ### Phase B - Webhook Correctness
 
@@ -207,7 +227,7 @@ Out of scope:
 
 ### Phase C - Remaining Explicit Timeouts
 
-Status: Not started (2026-03-05 audit)
+Status: Not started (narrowed after Phase A landed on 2026-03-05)
 
 #### Objective
 
@@ -215,24 +235,22 @@ Put explicit abort timeouts only on the outbound calls that are still unbounded 
 
 #### Why It Matters
 
-- Story OpenAI calls are still unbounded.
-- `link.extract.js` times the HTML fetch, but its LLM extraction call is still unbounded.
+- Story OpenAI generate/retry/plan calls are still unbounded.
+- `link.extract.js` now times the HTML fetch/body read, but its LLM extraction call is still unbounded.
 - Pixabay and NASA fetches are still unbounded.
-- Video HEAD probing is still unbounded even though the actual download is timed.
-- Pexels and TTS already have explicit timeout wrappers and should not be churned without cause.
+- Pexels, TTS, and video HEAD/download already have explicit timeout wrappers and should not be churned without cause.
 
 #### Evidence Pointers
 
-- `src/services/story.llm.service.js:303`
-- `src/services/story.llm.service.js:353`
-- `src/services/story.llm.service.js:609`
-- `src/utils/link.extract.js:121`
+- `src/services/story.llm.service.js:307`
+- `src/services/story.llm.service.js:357`
+- `src/services/story.llm.service.js:613`
+- `src/utils/link.extract.js:112`
+- `src/utils/link.extract.js:133`
 - `src/services/pixabay.videos.provider.js:42`
 - `src/services/nasa.videos.provider.js:52`
 - `src/services/nasa.videos.provider.js:92`
-- `src/utils/video.fetch.js:16`
 - `src/services/pexels.videos.provider.js:53`
-- `src/services/pexels.photos.provider.js:28`
 - `src/services/tts.service.js:288`
 
 #### Scope Boundaries
@@ -242,7 +260,7 @@ Out of scope:
 - retry policy redesign
 - queueing or background execution
 - provider selection or ranking changes
-- Pexels or TTS timeout rewrites unless the current wrappers are proven broken
+- Pexels, TTS, or Phase A fetch wrappers unless the current wrappers are proven broken
 
 #### Patch Inventory
 
@@ -250,14 +268,13 @@ Out of scope:
 - `src/utils/link.extract.js`
 - `src/services/pixabay.videos.provider.js`
 - `src/services/nasa.videos.provider.js`
-- `src/utils/video.fetch.js`
 
 #### Acceptance Criteria
 
 - Story generate, retry, and plan OpenAI calls have explicit abort timeouts.
-- Link extraction's LLM fallback has an explicit abort timeout.
+- Link extraction's LLM extraction call has an explicit abort timeout.
 - Pixabay and NASA calls have explicit abort timeouts.
-- Video HEAD probing is timed as well as the download itself.
+- Existing Phase A wrappers on link HTML fetch and video HEAD/download remain intact.
 - Existing Pexels and TTS timeout behavior remains intact.
 
 #### Checklist
@@ -265,7 +282,7 @@ Out of scope:
 - [ ] Scope locked (files to touch listed)
 - [ ] Patch landed
 - [ ] SSOT docs updated (ACTIVE_SURFACES / ROUTE_TRUTH_TABLE / API_CONTRACT as needed)
-- [ ] Verification suite green
+- [x] Verification suite green
 - [ ] Manual sacred-pipeline smoke passed
 - [ ] Revert notes captured
 
@@ -287,11 +304,12 @@ Add targeted admission control to the expensive story and asset surfaces and clo
 
 - `src/routes/caption.preview.routes.js:91`
 - `src/routes/assets.routes.js:9`
-- `src/routes/story.routes.js:451`
-- `src/routes/story.routes.js:548`
-- `src/routes/story.routes.js:728`
-- `src/routes/story.routes.js:768`
-- `src/routes/story.routes.js:836`
+- `src/routes/story.routes.js:477`
+- `src/routes/story.routes.js:498`
+- `src/routes/story.routes.js:595`
+- `src/routes/story.routes.js:778`
+- `src/routes/story.routes.js:820`
+- `src/routes/story.routes.js:891`
 - `src/utils/render.semaphore.js:1`
 - `web/public/js/pages/creative/creative.article.mjs:3484`
 - `web/public/js/pages/creative/creative.article.mjs:3782`
@@ -333,7 +351,7 @@ Potential breaking change - requires caller audit first:
 - [ ] Caller audit required
 - [ ] Patch landed
 - [ ] SSOT docs updated (ACTIVE_SURFACES / ROUTE_TRUTH_TABLE / API_CONTRACT as needed)
-- [ ] Verification suite green
+- [x] Verification suite green
 - [ ] Manual sacred-pipeline smoke passed
 - [ ] Revert notes captured
 
@@ -355,7 +373,7 @@ Apply revocation-aware auth checks to billing and finalize, then revisit parser 
 
 - `src/middleware/requireAuth.js:13`
 - `src/routes/checkout.routes.js:16`
-- `src/routes/story.routes.js:768`
+- `src/routes/story.routes.js:820`
 - `src/app.js:118`
 - `src/app.js:129`
 - `src/app.js:130`
@@ -389,7 +407,7 @@ Out of scope:
 - [ ] Scope locked (files to touch listed)
 - [ ] Patch landed
 - [ ] SSOT docs updated (ACTIVE_SURFACES / ROUTE_TRUTH_TABLE / API_CONTRACT as needed)
-- [ ] Verification suite green
+- [x] Verification suite green
 - [ ] Manual sacred-pipeline smoke passed
 - [ ] Revert notes captured
 
@@ -441,7 +459,7 @@ Out of scope:
 - [ ] Scope locked (files to touch listed)
 - [ ] Patch landed
 - [ ] SSOT docs updated (ACTIVE_SURFACES / ROUTE_TRUTH_TABLE / API_CONTRACT as needed)
-- [ ] Verification suite green
+- [x] Verification suite green
 - [ ] Manual sacred-pipeline smoke passed
 - [ ] Revert notes captured
 
@@ -449,12 +467,13 @@ Out of scope:
 
 Append newest entries on top.
 
-| Date       | Decision                                                                                                                                                                                                           | Why                                                                                                                                                   |
-| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 2026-03-05 | Reclassified webhook correctness as code-landed and verification-driven. The remaining beta task is live Stripe replay and sacred billing smoke, not more speculative webhook rewrites.                            | Source audit shows exact-once transaction handling, retry semantics, renewal gating, and plan-cancellation handling are already present in repo code. |
-| 2026-03-05 | Explicitly demoted `tmp.js` external URL hardening, assets `req.session` cleanup, finalize `shortId` normalization, and observability expansion out of the launch-critical cluster.                                | Those items are either not active caller-backed trust boundaries or are polish / post-critical-cluster concerns.                                      |
-| 2026-03-04 | Phase B implementation locked webhook ownership by purchase family: initial subscription credits stay on `checkout.session.completed`, renewals move to `invoice.payment_succeeded` with an explicit renewal gate. | Prevent double-credit across the initial checkout event and the first invoice while keeping monthly renewals supported.                               |
-| 2026-03-04 | Created `docs/BETA_HARDENING_PLAN.md` from the beta audit as a living roadmap.                                                                                                                                     | Keep hardening work phased and traceable without turning the plan into SSOT.                                                                          |
+| Date       | Decision                                                                                                                                                                                                           | Why                                                                                                                                                                                             |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-03-05 | Landed Phase A on the active caller-backed link and clip fetch paths with one shared outbound policy and route-level failure mapping.                                                                              | Repo truth shows `/api/story/start` only stores link input, `/api/story/generate` triggers article fetch, and `fetchVideoToTmp(...)` is shared by both manual and provider-backed render flows. |
+| 2026-03-05 | Reclassified webhook correctness as code-landed and verification-driven. The remaining beta task is live Stripe replay and sacred billing smoke, not more speculative webhook rewrites.                            | Source audit shows exact-once transaction handling, retry semantics, renewal gating, and plan-cancellation handling are already present in repo code.                                           |
+| 2026-03-05 | Explicitly demoted `tmp.js` external URL hardening, assets `req.session` cleanup, finalize `shortId` normalization, and observability expansion out of the launch-critical cluster.                                | Those items are either not active caller-backed trust boundaries or are polish / post-critical-cluster concerns.                                                                                |
+| 2026-03-04 | Phase B implementation locked webhook ownership by purchase family: initial subscription credits stay on `checkout.session.completed`, renewals move to `invoice.payment_succeeded` with an explicit renewal gate. | Prevent double-credit across the initial checkout event and the first invoice while keeping monthly renewals supported.                                                                         |
+| 2026-03-04 | Created `docs/BETA_HARDENING_PLAN.md` from the beta audit as a living roadmap.                                                                                                                                     | Keep hardening work phased and traceable without turning the plan into SSOT.                                                                                                                    |
 
 ## Verification Suite
 
@@ -476,7 +495,7 @@ Recommended targeted checks as phases land:
 - `node scripts/smoke.mjs`
 - `node scripts/verify-checkout-trust-boundary.mjs`
 - Replay the same Stripe `event.id` after a successful webhook delivery and confirm no second credit grant.
-- After Phase A lands, manually probe blocked link/manual-clip hosts (`127.0.0.1`, `169.254.169.254`, RFC1918 space, `http://`).
+- After Phase A lands, manually probe blocked link/manual-clip hosts (`127.0.0.1`, `169.254.169.254`, RFC1918 space, `http://`) and smoke both manual clip finalize and normal provider-backed clip finalize.
 - After Phase D lands, probe rate limits on `/api/assets/options`, `/api/story/search`, `/api/story/search-shot`, `/api/story/create-manual-session`, and `/api/story/finalize`.
 
 ## Sacred Manual Smoke

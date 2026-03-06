@@ -27,6 +27,7 @@ import {
 } from '../services/story.service.js';
 import { extractStyleOnly } from '../utils/caption-style-helper.js';
 import { ok, fail } from '../http/respond.js';
+import { isOutboundPolicyError } from '../utils/outbound.fetch.js';
 
 const r = Router();
 r.use(requireAuth);
@@ -56,6 +57,48 @@ const serverBusyFailure = (req, retryAfter = 30) => ({
   retryAfter,
 });
 
+function storyFailureFromError(error) {
+  if (isOutboundPolicyError(error)) {
+    return {
+      status: error?.status || 400,
+      error: error?.code || 'OUTBOUND_URL_REJECTED',
+      detail: error?.message || 'Outbound URL rejected',
+    };
+  }
+
+  switch (error?.code) {
+    case 'LINK_EXTRACT_TOO_LARGE':
+    case 'VIDEO_SIZE':
+    case 'VIDEO_TYPE':
+      return {
+        status: error?.status || 400,
+        error: error.code,
+        detail: error?.message || 'Invalid outbound media',
+      };
+    case 'LINK_EXTRACT_TIMEOUT':
+    case 'VIDEO_DOWNLOAD_TIMEOUT':
+      return {
+        status: 504,
+        error: error.code,
+        detail: error?.message || 'Outbound fetch timed out',
+      };
+    case 'VIDEO_FETCH_BODY_MISSING':
+      return {
+        status: error?.status || 502,
+        error: error.code,
+        detail: error?.message || 'Remote video fetch failed',
+      };
+    default:
+      if (typeof error?.code === 'string' && error.code.startsWith('VIDEO_FETCH_')) {
+        return {
+          status: error?.status || 502,
+          error: error.code,
+          detail: error?.message || 'Remote video fetch failed',
+        };
+      }
+      return null;
+  }
+}
 const StartSchema = z.object({
   input: z.string().min(1).max(2000),
   inputType: z.enum(['link', 'idea', 'paragraph']).default('paragraph'),
@@ -119,6 +162,10 @@ r.post('/generate', enforceScriptDailyCap(300), async (req, res) => {
 
     return ok(req, res, session);
   } catch (e) {
+    const mapped = storyFailureFromError(e);
+    if (mapped) {
+      return fail(req, res, mapped.status, mapped.error, mapped.detail);
+    }
     console.error('[story][generate] error:', e);
     return fail(req, res, 500, 'STORY_GENERATE_FAILED', e?.message || 'Failed to generate story');
   }
@@ -758,6 +805,10 @@ r.post(
         res.set('Retry-After', '30');
         return res.status(503).json(serverBusyFailure(req, 30));
       }
+      const mapped = storyFailureFromError(e);
+      if (mapped) {
+        return fail(req, res, mapped.status, mapped.error, mapped.detail);
+      }
       console.error('[story][render] error:', e);
       return fail(req, res, 500, 'STORY_RENDER_FAILED', e?.message || 'Failed to render story');
     }
@@ -793,6 +844,10 @@ r.post(
       if (e?.code === 'SERVER_BUSY' || e?.message === 'SERVER_BUSY') {
         res.set('Retry-After', '30');
         return res.status(503).json(serverBusyFailure(req, 30));
+      }
+      const mapped = storyFailureFromError(e);
+      if (mapped) {
+        return fail(req, res, mapped.status, mapped.error, mapped.detail);
       }
       console.error('[story][finalize] error:', e);
       return fail(req, res, 500, 'STORY_FINALIZE_FAILED', e?.message || 'Failed to finalize story');

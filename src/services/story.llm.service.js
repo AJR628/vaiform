@@ -4,6 +4,7 @@
 
 import { randomUUID } from 'crypto';
 import { extractContentFromUrl } from '../utils/link.extract.js';
+import { isOutboundPolicyError } from '../utils/outbound.fetch.js';
 import { calculateReadingDuration } from '../utils/text.duration.js';
 
 const OPENAI_BASE = process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1';
@@ -160,6 +161,9 @@ export async function generateStoryFromInput({ input, inputType, styleKey = 'def
     try {
       extracted = await extractContentFromUrl(input);
     } catch (error) {
+      if (isOutboundPolicyError(error) || error?.code === 'LINK_EXTRACT_TOO_LARGE') {
+        throw error;
+      }
       console.warn('[story.llm] Link extraction failed, using URL as-is:', error?.message);
       extracted = null;
     }
@@ -660,7 +664,8 @@ export async function planVisualShots({ sentences }) {
   // Calculate start times and normalize durations
   let cumulativeTime = 0;
   shots = shots.map((shot, index) => {
-    const sentenceIndex = Number(shot.sentenceIndex) ?? index;
+    const parsedSentenceIndex = Number(shot.sentenceIndex);
+    const sentenceIndex = Number.isFinite(parsedSentenceIndex) ? parsedSentenceIndex : index;
     const sentence = sentences[sentenceIndex] || sentences[index] || '';
 
     // Calculate duration from text, but respect LLM-provided duration if reasonable

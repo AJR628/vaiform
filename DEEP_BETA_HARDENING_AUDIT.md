@@ -5,6 +5,15 @@
 
 ---
 
+## Status Update (2026-03-05 implementation)
+
+- P0-1 is reduced on the active caller-backed link path. `/api/story/start` stores link input, and `POST /api/story/generate` is the route that now triggers the guarded outbound fetch through `generateStory(...) -> generateStoryFromInput(...) -> extractContentFromUrl(...)` (`src/routes/story.routes.js:118-170`, `src/services/story.service.js:125-155`, `src/services/story.llm.service.js:158-168`, `src/utils/outbound.fetch.js:148-267`, `src/utils/link.extract.js:21-107`).
+- P0-2 is reduced on the active clip fetch surfaces. `fetchVideoToTmp(...)` now uses the same shared outbound policy for HEAD and GET, HEAD remains timed best-effort, and the helper is shared by manual finalize plus provider-backed render/timeline flows (`src/utils/video.fetch.js:21-95`, `src/services/story.service.js:1528`, `src/services/story.service.js:1752`, `src/utils/ffmpeg.timeline.js:298`).
+- P0-3 remains intentionally deferred because `tmp.js` still has no active caller-backed `http://` or `https://` path in repo truth (`src/utils/tmp.js:30-31`, `src/utils/ffmpeg.js:440`, `src/utils/ffmpeg.video.js:1129`).
+- The original findings below remain the 2026-03-02 audit snapshot; use this status note plus `docs/BETA_HARDENING_PLAN.md` for current implementation state.
+
+---
+
 ## 1) Active Surface Map (Code Truth)
 
 ### A) Backend route/middleware topology
