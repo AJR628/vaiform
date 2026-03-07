@@ -1,8 +1,67 @@
-# MOBILE_USED_SURFACES
+﻿# MOBILE_USED_SURFACES
 
 Generated from source on 2026-03-07.
 
-Scope: exact current mobile repo behavior only. This file describes what the app actually calls today, what it sends, what it reads back, and which spec-sheet endpoints are still unwired. It does not describe intended behavior unless the repo already implements it.
+Scope: exact current mobile repo behavior only. This file describes what the app actually calls
+today, what it sends, what it reads back, and which spec-sheet endpoints are still unwired. It
+does not describe intended behavior unless the repo already implements it.
+
+## Mobile-First Scope Freeze
+
+This document is the source of truth for mobile launch scope. Use it before
+`docs/MOBILE_SPEC_PACK.md` when deciding what to harden in the backend.
+
+### Canonical Backend Path Notes
+
+- The backend mount in this repo is `GET /api/credits`, not root `GET /credits`
+  (`src/app.js:216`, `src/routes/credits.routes.js:11`). Older mobile audit notes used
+  helper-relative notation. Mobile hardening docs and tests must treat `/api/credits` as the
+  canonical server path.
+- The shorts detail route is mounted as `GET /api/shorts/:jobId`
+  (`src/routes/shorts.routes.js:8-9`). Current mobile navigation and wrappers use the name
+  `shortId`, but in current runtime they refer to the same identifier.
+- `POST /api/story/finalize` requires `X-Idempotency-Key`
+  (`src/middleware/idempotency.firestore.js:33-52`). Mobile launch docs must preserve that
+  requirement explicitly.
+
+### Launch Scope Snapshot
+
+#### MOBILE_CORE_NOW
+
+- `POST /api/users/ensure`
+- `GET /api/credits`
+- `POST /api/story/start`
+- `POST /api/story/generate`
+- `GET /api/story/:sessionId`
+- `POST /api/story/plan`
+- `POST /api/story/search`
+- `POST /api/story/update-beat-text`
+- `POST /api/story/delete-beat`
+- `POST /api/story/search-shot`
+- `POST /api/story/update-shot`
+- `POST /api/caption/preview`
+- `POST /api/story/update-caption-style`
+- `POST /api/story/finalize`
+- `GET /api/shorts/mine`
+- `GET /api/shorts/:jobId`
+
+#### MOBILE_CORE_SOON
+
+- `POST /api/story/insert-beat`
+
+#### Not Mobile-First For Launch
+
+- Legacy web/manual/editor: `POST /api/assets/options`, `POST /api/story/manual`,
+  `POST /api/story/create-manual-session`, `POST /api/story/update-video-cuts`,
+  `POST /api/story/update-caption-meta`, checkout routes, Stripe webhook
+  (`docs/ACTIVE_SURFACES.md:78-85`, `web/public/js/pages/creative/creative.article.mjs`,
+  `web/public/js/buy-credits.js`, `web/public/js/pricing.js`).
+- Remove-later candidates with no current mobile caller and no current user-facing web caller:
+  `POST /api/user/setup`, `GET /api/user/me`, `GET /api/whoami`, `GET /api/limits/usage`,
+  `POST /api/story/update-script`, `POST /api/story/timeline`, `POST /api/story/captions`,
+  `POST /api/story/render` (`docs/TRUTH_FREEZE_AUDIT_2026-02-28.md:41-43`,
+  `docs/ACTIVE_SURFACES.md:79`, `ROUTE_TRUTH_TABLE.md:22`, `ROUTE_TRUTH_TABLE.md:30`,
+  `ROUTE_TRUTH_TABLE.md:33`).
 
 ## Ground Rules
 
@@ -17,7 +76,7 @@ Scope: exact current mobile repo behavior only. This file describes what the app
 | Endpoint | Trigger | Payload sent | Response fields read now | Evidence |
 |---|---|---|---|---|
 | `POST /api/users/ensure` | Firebase auth state change after sign-in; runs once per UID | No body | On success, stores the whole `UserProfile` object in context. Downstream UI currently reads `userProfile.credits`; other returned fields are stored but not screen-read in this audit. Error path reads `ok`, `code`, `message`. | `client/contexts/AuthContext.tsx:58-85`, `client/api/client.ts:460-475`, `client/api/client.ts:250-257` |
-| `GET /credits` | `refreshCredits()` helper used from `SettingsScreen` and after successful render in `StoryEditorScreen` | No body | Reads `data.credits` only and merges it into `userProfile`. Error path reads `ok`, `code`, `message`. | `client/contexts/AuthContext.tsx:87-103`, `client/api/client.ts:477-485`, `client/api/client.ts:259-263` |
+| `GET /api/credits` | `refreshCredits()` helper used from `SettingsScreen` and after successful render in `StoryEditorScreen` | No body | Reads `data.credits` only and merges it into `userProfile`. Error path reads `ok`, `code`, `message`. | `client/contexts/AuthContext.tsx:87-103`, `client/api/client.ts:477-485`, `client/api/client.ts:259-263` |
 
 ## Screen-by-Screen Backend Usage
 
@@ -48,7 +107,7 @@ Scope: exact current mobile repo behavior only. This file describes what the app
 | `POST /api/story/delete-beat` | Delete confirmation from the beat actions modal | `{ sessionId, sentenceIndex: deletedIndex }` | Reads only `ok`, `success`, `message`; immediately refetches `GET /api/story/:sessionId`, then rebuilds local beat text state from the refetched session. | `client/screens/StoryEditorScreen.tsx:715-749`, `client/api/client.ts:607-622` |
 | `POST /api/story/update-caption-style` | User taps Top / Center / Bottom placement control | `{ sessionId, overlayCaption: { placement, yPct } }` | Reads only `ok`, `success`, `message`. The returned `overlayCaption` is not consumed; the screen relies on local optimistic state and fallback refs. | `client/screens/StoryEditorScreen.tsx:765-820`, `client/api/client.ts:655-670` |
 | `POST /api/story/finalize` | Render confirmation in the storyboard header | `{ sessionId }` | Reads `ok`, `retryAfter`, `code`, `status`, `message`, and `shortId`. It does not read `data`. On success it refreshes credits and cross-navigates to `LibraryTab -> ShortDetail` with `{ shortId }`. | `client/screens/StoryEditorScreen.tsx:834-927`, `client/api/client.ts:672-760` |
-| `GET /credits` | Indirect, after successful finalize, via `refreshCredits()` | No body | Reads `data.credits` through `AuthContext.refreshCredits()`. | `client/screens/StoryEditorScreen.tsx:875-880`, `client/contexts/AuthContext.tsx:87-103`, `client/api/client.ts:477-485` |
+| `GET /api/credits` | Indirect, after successful finalize, via `refreshCredits()` | No body | Reads `data.credits` through `AuthContext.refreshCredits()`. | `client/screens/StoryEditorScreen.tsx:875-880`, `client/contexts/AuthContext.tsx:87-103`, `client/api/client.ts:477-485` |
 
 ### `ClipSearchModal`
 
@@ -76,7 +135,7 @@ Current `ShortDetailScreen` UI reads these fields from the resolved `short` obje
 
 | Endpoint | Trigger | Payload sent | Response fields read now | Evidence |
 |---|---|---|---|---|
-| `GET /credits` | "Refresh credits" button, via `refreshCredits()` | No body | Reads `data.credits` through `AuthContext`, then renders `userProfile?.credits` in the settings card. | `client/screens/SettingsScreen.tsx:42-58`, `client/screens/SettingsScreen.tsx:121-145`, `client/contexts/AuthContext.tsx:87-103`, `client/api/client.ts:477-485` |
+| `GET /api/credits` | "Refresh credits" button, via `refreshCredits()` | No body | Reads `data.credits` through `AuthContext`, then renders `userProfile?.credits` in the settings card. | `client/screens/SettingsScreen.tsx:42-58`, `client/screens/SettingsScreen.tsx:121-145`, `client/contexts/AuthContext.tsx:87-103`, `client/api/client.ts:477-485` |
 
 ## Live Endpoints Missing From `vaiform-mobile-spec-sheet`
 
@@ -112,3 +171,23 @@ These routes are present in `vaiform-mobile-spec-sheet` but have no current scre
 - The spec sheet names the detail route as `GET /api/shorts/:jobId` (`vaiform-mobile-spec-sheet:137`, `vaiform-mobile-spec-sheet:1024`).
 - The current mobile client wrapper is `getShortDetail(id)` and calls `GET /api/shorts/${id}` (`client/api/client.ts:506-518`).
 - Current screen code treats `short.id`, `shortId`, and the spec's `jobId` as the same identifier for navigation and fetch purposes (`client/screens/LibraryScreen.tsx:140-141`, `client/screens/StoryEditorScreen.tsx:887-891`, `client/screens/ShortDetailScreen.tsx:92-95`, `client/screens/ShortDetailScreen.tsx:233-248`).
+
+## Launch-Critical Failure And Recovery Notes
+
+- `POST /api/story/finalize` is the only current mobile route with mandatory idempotency. Missing
+  `X-Idempotency-Key` returns `400 MISSING_IDEMPOTENCY_KEY`; concurrent replay returns
+  `409 IDEMPOTENT_IN_PROGRESS`; insufficient credits returns `402 INSUFFICIENT_CREDITS`; render
+  admission-control failure returns `503 SERVER_BUSY`; transport-level failures should recover by
+  re-checking `GET /api/story/:sessionId` (`src/middleware/idempotency.firestore.js:33-84`,
+  `src/routes/story.routes.js:819-855`).
+- `POST /api/caption/preview` is already auth-required, body-limited to `200kb`, and rate-limited
+  to `20/min` (`src/app.js:118-126`, `src/routes/caption.preview.routes.js:91-113`).
+- `GET /api/shorts/:jobId` is currently important for mobile launch, but mobile already carries a
+  fallback to `GET /api/shorts/mine` during eventual consistency or detail-route misses
+  (`client/screens/ShortDetailScreen.tsx:212-276`). Backend hardening should remove the need for
+  that fallback before launch.
+- `POST /api/story/search`, `POST /api/story/search-shot`, and `POST /api/story/finalize` are
+  mobile-core-now and still need focused route-level admission control beyond the existing script
+  cap and render semaphore (`src/routes/story.routes.js:148`, `src/routes/story.routes.js:477`,
+  `src/routes/story.routes.js:498`, `src/routes/story.routes.js:595`, `src/routes/story.routes.js:819`,
+  `src/utils/render.semaphore.js:1-22`).
