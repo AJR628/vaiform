@@ -3704,6 +3704,9 @@ function setupStoryboardHover() {
 
 let renderStatusTimeouts = [];
 let renderStatusActive = false;
+const STORY_RENDER_POLL_INTERVAL_MS = 5000;
+const STORY_RENDER_POLL_MAX_ATTEMPTS = 60;
+const FINALIZE_RECOVERABLE_ERRORS = new Set(['HTTP_502', 'HTTP_504', 'IDEMPOTENT_IN_PROGRESS']);
 
 function showRenderStatus() {
   // Clear any existing timeouts
@@ -3760,6 +3763,151 @@ function hideRenderStatus() {
   }
 }
 
+function showRenderVerificationStatus(
+  message = 'Render request timed out, checking final status...'
+) {
+  hideRenderStatus();
+
+  const banner = document.getElementById('render-status-banner');
+  const textEl = document.getElementById('render-status-text');
+
+  if (!banner || !textEl) {
+    console.warn('[render-status] Banner elements not found');
+    return;
+  }
+
+  renderStatusActive = true;
+  banner.classList.remove('hidden');
+  textEl.textContent = message;
+}
+
+function isRenderedStorySession(session) {
+  return session?.status === 'rendered' && !!session?.finalVideo?.url;
+}
+
+function isRecoverableFinalizeResponse(resp, sessionId) {
+  return !!sessionId && resp?.success === false && FINALIZE_RECOVERABLE_ERRORS.has(resp.error);
+}
+
+function isRecoverableFinalizeException(error, sessionId) {
+  if (!sessionId || !error) return false;
+  if (error?.code === 'AUTH_NOT_READY' || error?.name === 'AbortError') return false;
+  if (!(error instanceof TypeError) && error?.name !== 'TypeError') return false;
+
+  const message = String(error?.message || '').toLowerCase();
+  return (
+    message.includes('failed to fetch') ||
+    message.includes('fetch failed') ||
+    message.includes('network request failed') ||
+    message.includes('networkerror') ||
+    message.includes('network error') ||
+    message.includes('load failed')
+  );
+}
+
+function finalizeRecoveryMessage(errorOrCode) {
+  const code =
+    typeof errorOrCode === 'string'
+      ? errorOrCode
+      : errorOrCode?.error || errorOrCode?.code || errorOrCode?.message || '';
+
+  if (code === 'IDEMPOTENT_IN_PROGRESS') {
+    return 'Render already in progress, checking final status...';
+  }
+  if (code === 'HTTP_502' || code === 'HTTP_504') {
+    return 'Render request timed out, checking final status...';
+  }
+  return 'Render connection was interrupted, checking final status...';
+}
+
+function applyRenderedStorySession(session, { resultDiv, videoEl, videoUrlEl }) {
+  if (!session?.finalVideo?.url) {
+    throw new Error('Rendered session is missing final video');
+  }
+
+  const prev = window.currentStorySession;
+  preserveCaptionOverrides(session, prev);
+  window.currentStorySession = session;
+  if (session?.id) {
+    window.currentStorySessionId = session.id;
+  }
+
+  if (videoEl) {
+    videoEl.src = session.finalVideo.url;
+  }
+  if (videoUrlEl) {
+    videoUrlEl.href = session.finalVideo.url;
+  }
+  if (resultDiv) {
+    resultDiv.classList.remove('hidden');
+  }
+
+  console.log('[article] Render complete:', session.finalVideo.url);
+
+  const jobId = session.finalVideo?.jobId;
+  if (jobId) {
+    setTimeout(() => {
+      window.location.assign(`/my-shorts.html?id=${encodeURIComponent(jobId)}`);
+    }, 800);
+    return;
+  }
+
+  const urlMatch = session.finalVideo?.url?.match(/artifacts\/[^/]+\/([^/]+)\//);
+  if (urlMatch) {
+    setTimeout(() => {
+      window.location.assign(`/my-shorts.html?id=${encodeURIComponent(urlMatch[1])}`);
+    }, 800);
+  }
+}
+
+async function waitForRenderedStorySession({ sessionId, apiFetch, renderBtn, recoveryMessage }) {
+  if (!sessionId) {
+    throw new Error('Render session is missing');
+  }
+
+  if (renderBtn) {
+    renderBtn.textContent = 'Checking status...';
+  }
+  showRenderVerificationStatus(recoveryMessage);
+
+  let lastRecoverableError = null;
+
+  for (let attempt = 0; attempt < STORY_RENDER_POLL_MAX_ATTEMPTS; attempt++) {
+    if (attempt > 0) {
+      await new Promise((resolve) => setTimeout(resolve, STORY_RENDER_POLL_INTERVAL_MS));
+    }
+
+    try {
+      const statusResp = await apiFetch(`/story/${sessionId}`, {
+        method: 'GET',
+      });
+
+      if (!statusResp?.success || !statusResp?.data) {
+        if (statusResp?.error === 'HTTP_502' || statusResp?.error === 'HTTP_504') {
+          lastRecoverableError = statusResp.error;
+          continue;
+        }
+        throw new Error(statusResp?.error || statusResp?.detail || 'Failed to check render status');
+      }
+
+      const polledSession = statusResp.data;
+      if (isRenderedStorySession(polledSession)) {
+        return polledSession;
+      }
+    } catch (error) {
+      if (isRecoverableFinalizeException(error, sessionId)) {
+        lastRecoverableError = error;
+        continue;
+      }
+      throw error;
+    }
+  }
+
+  if (lastRecoverableError) {
+    throw new Error('Render status check timed out - please check My Shorts in a moment.');
+  }
+  throw new Error('Render timed out - please try again');
+}
 async function ensureSessionFromDraft() {
   // Validate draft is dirty (before any API calls or UI changes)
   if (!isStoryboardDirty()) {
@@ -3848,125 +3996,72 @@ async function renderArticle() {
     const voicePreset = voicePresetEl?.value || 'male_calm';
 
     const { apiFetch } = await import('/api.mjs');
+    const sessionId = window.currentStorySessionId;
+    let session = null;
+    let finalizeResp = null;
 
-    // Call finalize with voice preset
-    const finalizeResp = await apiFetch('/story/finalize', {
-      method: 'POST',
-      headers: { 'X-Idempotency-Key': window.currentStorySessionId },
-      body: {
-        sessionId: window.currentStorySessionId,
-        options: {
-          voicePreset: voicePreset,
+    try {
+      finalizeResp = await apiFetch('/story/finalize', {
+        method: 'POST',
+        headers: { 'X-Idempotency-Key': sessionId },
+        body: {
+          sessionId,
+          options: {
+            voicePreset: voicePreset,
+          },
         },
-      },
-    });
-
-    if (!finalizeResp.success) {
-      if (finalizeResp.error === 'AUTH_REQUIRED') {
-        showAuthRequiredModal();
-        return;
+      });
+    } catch (error) {
+      if (!isRecoverableFinalizeException(error, sessionId)) {
+        throw error;
       }
-      if (finalizeResp.error === 'FREE_LIMIT_REACHED') {
-        showFreeLimitModal();
-        return;
-      }
-      throw new Error(
-        finalizeResp.error ||
-          finalizeResp.message ||
-          finalizeResp.detail ||
-          'Failed to finalize story'
-      );
+      session = await waitForRenderedStorySession({
+        sessionId,
+        apiFetch,
+        renderBtn,
+        recoveryMessage: finalizeRecoveryMessage(error),
+      });
     }
 
-    const session = finalizeResp.data;
-
-    // Check if video is already ready
-    if (session.finalVideo?.url) {
-      // Render complete immediately!
-      if (videoEl) {
-        videoEl.src = session.finalVideo.url;
-      }
-      if (videoUrlEl) {
-        videoUrlEl.href = session.finalVideo.url;
-      }
-      if (resultDiv) {
-        resultDiv.classList.remove('hidden');
-      }
-      console.log('[article] Render complete:', session.finalVideo.url);
-
-      // Redirect to My Shorts after brief preview
-      const jobId = session.finalVideo?.jobId;
-      if (jobId) {
-        setTimeout(() => {
-          window.location.assign(`/my-shorts.html?id=${encodeURIComponent(jobId)}`);
-        }, 800);
+    if (!session) {
+      if (!finalizeResp.success) {
+        if (finalizeResp.error === 'AUTH_REQUIRED') {
+          showAuthRequiredModal();
+          return;
+        }
+        if (finalizeResp.error === 'FREE_LIMIT_REACHED') {
+          showFreeLimitModal();
+          return;
+        }
+        if (isRecoverableFinalizeResponse(finalizeResp, sessionId)) {
+          session = await waitForRenderedStorySession({
+            sessionId,
+            apiFetch,
+            renderBtn,
+            recoveryMessage: finalizeRecoveryMessage(finalizeResp.error),
+          });
+        } else {
+          throw new Error(
+            finalizeResp.error ||
+              finalizeResp.message ||
+              finalizeResp.detail ||
+              'Failed to finalize story'
+          );
+        }
       } else {
-        // Fallback: try to extract from URL path
-        const urlMatch = session.finalVideo?.url?.match(/artifacts\/[^/]+\/([^/]+)\//);
-        if (urlMatch) {
-          setTimeout(() => {
-            window.location.assign(`/my-shorts.html?id=${encodeURIComponent(urlMatch[1])}`);
-          }, 800);
+        session = finalizeResp.data;
+        if (!session?.finalVideo?.url) {
+          session = await waitForRenderedStorySession({
+            sessionId,
+            apiFetch,
+            renderBtn,
+            recoveryMessage: 'Render is still being checked...',
+          });
         }
-      }
-    } else {
-      // Poll for completion (similar to oneClickShortFromLink)
-      const sessionId = window.currentStorySessionId;
-      let attempts = 0;
-      const maxAttempts = 60; // 5 minutes max
-
-      while (attempts < maxAttempts) {
-        await new Promise((resolve) => setTimeout(resolve, 5000)); // Poll every 5 seconds
-
-        const statusResp = await apiFetch(`/story/${sessionId}`, {
-          method: 'GET',
-        });
-
-        if (!statusResp.success || !statusResp.data) {
-          throw new Error('Failed to check render status');
-        }
-
-        const polledSession = statusResp.data;
-
-        if (polledSession.finalVideo?.url) {
-          // Render complete!
-          if (videoEl) {
-            videoEl.src = polledSession.finalVideo.url;
-          }
-          if (videoUrlEl) {
-            videoUrlEl.href = polledSession.finalVideo.url;
-          }
-          if (resultDiv) {
-            resultDiv.classList.remove('hidden');
-          }
-
-          console.log('[article] Render complete:', polledSession.finalVideo.url);
-
-          // Redirect to My Shorts after brief preview
-          const jobId = polledSession.finalVideo?.jobId;
-          if (jobId) {
-            setTimeout(() => {
-              window.location.assign(`/my-shorts.html?id=${encodeURIComponent(jobId)}`);
-            }, 800);
-          } else {
-            // Fallback: try to extract from URL path
-            const urlMatch = polledSession.finalVideo?.url?.match(/artifacts\/[^/]+\/([^/]+)\//);
-            if (urlMatch) {
-              setTimeout(() => {
-                window.location.assign(`/my-shorts.html?id=${encodeURIComponent(urlMatch[1])}`);
-              }, 800);
-            }
-          }
-          break;
-        }
-
-        attempts++;
-      }
-
-      if (attempts >= maxAttempts) {
-        throw new Error('Render timed out - please try again');
       }
     }
+
+    applyRenderedStorySession(session, { resultDiv, videoEl, videoUrlEl });
   } catch (error) {
     console.error('[article] Render failed:', error);
     showError('article-error', error.message || 'Failed to render video');
@@ -3986,7 +4081,6 @@ async function renderArticle() {
     }
   }
 }
-
 // Initialize script preview input handler
 (function () {
   const scriptPreviewEl = document.getElementById('article-script-preview');

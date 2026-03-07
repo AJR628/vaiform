@@ -50,12 +50,14 @@ Do not use this file as runtime truth for routes, callers, or contracts.
   3 concurrent renders per process (`src/utils/render.semaphore.js:2`)
 - Current render model note:
   render/finalize are synchronous HTTP handlers; server timeout is 15 minutes (`server.js:24`, `server.js:32`)
+- Current caller recovery note:
+  creative article render now treats transport-level finalize failures (`HTTP_502`, `HTTP_504`, `IDEMPOTENT_IN_PROGRESS`) as status-verification mode, immediately polling `GET /api/story/:sessionId` before falling back to 5-second cadence (`web/public/js/pages/creative/creative.article.mjs:3766`, `web/public/js/pages/creative/creative.article.mjs:3861`, `web/public/js/pages/creative/creative.article.mjs:3964`, `src/middleware/idempotency.firestore.js:60-84`, `web/public/api.mjs:186-214`)
 - Remaining implementation order:
   Phase D -> Phase C -> Phase E
 - Closed / deferred note:
   Phase A runtime landed pending sacred smoke; Phase B is code-landed pending live Stripe replay smoke; Phase F is post-critical-cluster only.
 
-## Current Triage (Repo-Derived, 2026-03-05)
+## Current Triage (Repo-Derived, 2026-03-07)
 
 ### A - Launch-Critical Before Beta
 
@@ -74,7 +76,7 @@ Do not use this file as runtime truth for routes, callers, or contracts.
 
 - `tmp.js` external URL hardening. The current active callers only pass data URLs, so this is not an active beta trust boundary today (`src/utils/tmp.js:19-39`, `src/utils/ffmpeg.js:440`, `src/utils/ffmpeg.video.js:1129`).
 - `req.session` / `req.isPro` cleanup in assets flow. The assumptions are misleading, but the effect is UX polish, not launch-blocking security or billing risk (`src/controllers/assets.controller.js:20-31`, `src/controllers/assets.controller.js:84-92`).
-- Finalize response normalization for top-level `shortId`; keep it out of the beta hardening critical path unless a caller-backed contract change is already happening (`src/routes/story.routes.js:36-40`, `src/routes/story.routes.js:840-841`, `web/public/js/pages/creative/creative.article.mjs:3921-3931`).
+- Finalize response normalization for top-level `shortId`; keep it out of the beta hardening critical path unless a caller-backed contract change is already happening (`src/routes/story.routes.js:36-40`, `src/routes/story.routes.js:840-841`, `web/public/js/pages/creative/creative.article.mjs:3845-3856`).
 - Observability expansion and fatal-error exit policy. Existing request IDs and error envelopes are sufficient for the current hardening pass; revisit only after the critical surface work lands and runtime supervision is clear (`src/middleware/reqId.js:4-8`, `src/middleware/error.middleware.js:15-50`, `server.js:12-17`).
 
 ## Phased Hardening Backlog
@@ -297,8 +299,8 @@ Add targeted admission control to the expensive story and asset surfaces and clo
 #### Why It Matters
 
 - Caption preview already has a real rate limit, but story search/manual/finalize and assets options do not.
-- Current web callers finalize through `/api/story/finalize` and poll `GET /api/story/:sessionId`; `/api/story/render` remains mounted without a caller-backed need.
-- Render capacity is still 3 concurrent jobs per process.
+- Current web callers finalize through `/api/story/finalize`; the active creative caller now recovers transport-level `HTTP_502` / `HTTP_504` and `IDEMPOTENT_IN_PROGRESS` by polling `GET /api/story/:sessionId`, while `/api/story/render` remains mounted without a caller-backed need.
+- Render capacity is still 3 concurrent jobs per process, so the remaining beta work here is admission control rather than more finalize UX band-aids.
 
 #### Evidence Pointers
 
@@ -311,10 +313,11 @@ Add targeted admission control to the expensive story and asset surfaces and clo
 - `src/routes/story.routes.js:820`
 - `src/routes/story.routes.js:891`
 - `src/utils/render.semaphore.js:1`
-- `web/public/js/pages/creative/creative.article.mjs:3484`
-- `web/public/js/pages/creative/creative.article.mjs:3782`
-- `web/public/js/pages/creative/creative.article.mjs:3853`
-- `web/public/js/pages/creative/creative.article.mjs:3921`
+- `web/public/js/pages/creative/creative.article.mjs:3766`
+- `web/public/js/pages/creative/creative.article.mjs:3861`
+- `web/public/js/pages/creative/creative.article.mjs:3964`
+- `src/middleware/idempotency.firestore.js:60`
+- `web/public/api.mjs:186`
 
 #### Scope Boundaries
 
@@ -323,6 +326,7 @@ Out of scope:
 - WAF or CDN-level rate limiting
 - distributed quota systems
 - background job queue rollout
+- adding a persisted `rendering` status purely to mask transport timeouts; the active caller now recovers through canonical session polling instead
 - duplicate rate limiting on `/generate` and `/plan` unless the existing daily script cap proves insufficient
 
 #### Patch Inventory
@@ -467,13 +471,14 @@ Out of scope:
 
 Append newest entries on top.
 
-| Date       | Decision                                                                                                                                                                                                           | Why                                                                                                                                                                                             |
-| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 2026-03-05 | Landed Phase A on the active caller-backed link and clip fetch paths with one shared outbound policy and route-level failure mapping.                                                                              | Repo truth shows `/api/story/start` only stores link input, `/api/story/generate` triggers article fetch, and `fetchVideoToTmp(...)` is shared by both manual and provider-backed render flows. |
-| 2026-03-05 | Reclassified webhook correctness as code-landed and verification-driven. The remaining beta task is live Stripe replay and sacred billing smoke, not more speculative webhook rewrites.                            | Source audit shows exact-once transaction handling, retry semantics, renewal gating, and plan-cancellation handling are already present in repo code.                                           |
-| 2026-03-05 | Explicitly demoted `tmp.js` external URL hardening, assets `req.session` cleanup, finalize `shortId` normalization, and observability expansion out of the launch-critical cluster.                                | Those items are either not active caller-backed trust boundaries or are polish / post-critical-cluster concerns.                                                                                |
-| 2026-03-04 | Phase B implementation locked webhook ownership by purchase family: initial subscription credits stay on `checkout.session.completed`, renewals move to `invoice.payment_succeeded` with an explicit renewal gate. | Prevent double-credit across the initial checkout event and the first invoice while keeping monthly renewals supported.                                                                         |
-| 2026-03-04 | Created `docs/BETA_HARDENING_PLAN.md` from the beta audit as a living roadmap.                                                                                                                                     | Keep hardening work phased and traceable without turning the plan into SSOT.                                                                                                                    |
+| Date       | Decision                                                                                                                                                                                                                                                | Why                                                                                                                                                                                             |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-03-07 | Landed creative finalize transport-timeout recovery in the active caller by reusing `GET /api/story/:sessionId` polling for non-JSON `HTTP_502` / `HTTP_504` and `IDEMPOTENT_IN_PROGRESS`, with an immediate first poll and neutral verification state. | Live repro showed the backend finishing render after a transport timeout; the smallest safe fix was frontend-only recovery rather than widening backend state or introducing jobs.              |
+| 2026-03-05 | Landed Phase A on the active caller-backed link and clip fetch paths with one shared outbound policy and route-level failure mapping.                                                                                                                   | Repo truth shows `/api/story/start` only stores link input, `/api/story/generate` triggers article fetch, and `fetchVideoToTmp(...)` is shared by both manual and provider-backed render flows. |
+| 2026-03-05 | Reclassified webhook correctness as code-landed and verification-driven. The remaining beta task is live Stripe replay and sacred billing smoke, not more speculative webhook rewrites.                                                                 | Source audit shows exact-once transaction handling, retry semantics, renewal gating, and plan-cancellation handling are already present in repo code.                                           |
+| 2026-03-05 | Explicitly demoted `tmp.js` external URL hardening, assets `req.session` cleanup, finalize `shortId` normalization, and observability expansion out of the launch-critical cluster.                                                                     | Those items are either not active caller-backed trust boundaries or are polish / post-critical-cluster concerns.                                                                                |
+| 2026-03-04 | Phase B implementation locked webhook ownership by purchase family: initial subscription credits stay on `checkout.session.completed`, renewals move to `invoice.payment_succeeded` with an explicit renewal gate.                                      | Prevent double-credit across the initial checkout event and the first invoice while keeping monthly renewals supported.                                                                         |
+| 2026-03-04 | Created `docs/BETA_HARDENING_PLAN.md` from the beta audit as a living roadmap.                                                                                                                                                                          | Keep hardening work phased and traceable without turning the plan into SSOT.                                                                                                                    |
 
 ## Verification Suite
 
@@ -495,6 +500,8 @@ Recommended targeted checks as phases land:
 - `node scripts/smoke.mjs`
 - `node scripts/verify-checkout-trust-boundary.mjs`
 - Replay the same Stripe `event.id` after a successful webhook delivery and confirm no second credit grant.
+- After frontend finalize timeout recovery lands, force a long render until the browser sees non-JSON `HTTP_502` / `HTTP_504` or `IDEMPOTENT_IN_PROGRESS`, confirm the UI stays in neutral verification mode, does an immediate first `GET /api/story/:sessionId` poll, then continues at 5-second cadence until `status === rendered` with `finalVideo.url`.
+- Refresh or reopen the same session after a transport timeout and confirm `GET /api/story/:sessionId` still reflects rendered truth; broader refresh-resume UX remains a separate follow-up from this frontend-only patch.
 - After Phase A lands, manually probe blocked link/manual-clip hosts (`127.0.0.1`, `169.254.169.254`, RFC1918 space, `http://`) and smoke both manual clip finalize and normal provider-backed clip finalize.
 - After Phase D lands, probe rate limits on `/api/assets/options`, `/api/story/search`, `/api/story/search-shot`, `/api/story/create-manual-session`, and `/api/story/finalize`.
 
