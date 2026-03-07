@@ -1,243 +1,242 @@
-﻿# MOBILE_BACKEND_CONTRACT
+# MOBILE_BACKEND_CONTRACT
 
-Audit date: 2026-03-07
+Cross-repo verification date: 2026-03-07.
 
-Purpose: canonical backend contract for mobile production. If a route is not
-`MOBILE_CORE_NOW` or `MOBILE_CORE_SOON` here, it is not first-class for mobile launch.
+Purpose: canonical backend contract for mobile production, verified against both the mobile repo and the mounted backend. If a route is not `MOBILE_CORE_NOW` or `MOBILE_CORE_SOON` here, it is not first-class for mobile launch.
 
 ## Source Order
 
-1. `docs/MOBILE_USED_SURFACES.md`
-2. Mounted runtime in `src/app.js`
-3. Route/controller/service code under `src/routes`, `src/controllers`, and `src/services`
-4. `docs/ACTIVE_SURFACES.md`, `ROUTE_TRUTH_TABLE.md`, and
-   `docs/TRUTH_FREEZE_AUDIT_2026-02-28.md` for legacy containment
-5. `docs/MOBILE_SPEC_PACK.md` only as historical context
+1. Actual current mobile repo usage
+2. Actual mounted backend behavior
+3. `docs/MOBILE_USED_SURFACES.md`
+4. `docs/MOBILE_HARDENING_PLAN.md`
+5. Older spec docs only as historical context
 
-## Canonical Request Rules
+## Request Rules
 
-- Authenticated mobile requests use `Authorization: Bearer <Firebase ID token>`
-  (`src/middleware/requireAuth.js:5-19`).
-- JSON writes use `Content-Type: application/json`.
-- Mobile callers identify themselves with `x-client: mobile`; caption preview uses that header to
-  select server-measured mobile behavior when `measure` is omitted
-  (`src/routes/caption.preview.routes.js:131-145`).
-- `POST /api/story/finalize` requires `X-Idempotency-Key`
-  (`src/middleware/idempotency.firestore.js:33-52`).
+- Authenticated mobile requests use `Authorization: Bearer <Firebase ID token>` when a token is available (`client/api/client.ts:138-145`, `client/api/client.ts:198-205`, `src/middleware/requireAuth.js:5-19`).
+- JSON requests use `Content-Type: application/json`.
+- Mobile callers send `x-client: mobile` (`client/api/client.ts:132-136`, `client/api/client.ts:192-196`). Caption preview uses that header as part of the mobile/server-measured path selection when `measure` is omitted (`src/routes/caption.preview.routes.js:131-145`).
+- Backend finalize requires `X-Idempotency-Key` (`src/middleware/idempotency.firestore.js:33-37`). Current mobile code does not send it (`client/api/client.ts:679-703`).
+- Mobile credits wrapper currently calls `"/credits"` (`client/api/client.ts:478-484`), while the backend mount is `GET /api/credits` (`src/app.js:215-217`, `src/routes/credits.routes.js:7-11`). Treat that as a verified path/config dependency until code or env is made explicit.
 
-## Canonical Response Rules
+## Response Rules
 
-- Standard success envelope: `{ success: true, data, requestId }`
-  (`src/http/respond.js:14-17`).
-- Standard failure envelope: `{ success: false, error, detail, requestId, fields? }`
-  (`src/http/respond.js:28-34`).
-- Current mobile launch exception: `POST /api/story/finalize` also returns top-level `shortId`
-  because current mobile navigation depends on it (`src/routes/story.routes.js:36-41`,
-  `src/routes/story.routes.js:840-841`, `docs/MOBILE_USED_SURFACES.md`).
+- Standard backend success envelope: `{ success: true, data, requestId }` (`src/http/respond.js:14-17`).
+- Standard backend failure envelope: `{ success: false, error, detail, requestId, fields? }` (`src/http/respond.js:28-34`).
+- Mobile normalization layer converts success envelopes to `{ ok: true, data }` and failure envelopes to `{ ok: false, status, code, message }` (`client/api/client.ts:95-122`, `client/api/client.ts:184-235`).
+- Finalize is the current launch exception: the backend returns top-level `shortId`, and the mobile client explicitly extracts it from the raw response (`src/routes/story.routes.js:35-41`, `src/routes/story.routes.js:840-841`, `client/api/client.ts:740-760`).
+
+## Current Open Contract Mismatches
+
+- `CORRECTED`: Mobile finalize does not currently satisfy backend idempotency requirements.
+  - Mobile caller: `client/api/client.ts:679-703`
+  - Backend handler/middleware: `src/middleware/idempotency.firestore.js:33-37`, `src/routes/story.routes.js:818-856`
+  - Why it matters: backend can reject the current mobile request with `400 MISSING_IDEMPOTENCY_KEY` before render starts.
+
+- `CORRECTED`: Mobile credits wrapper path is not proven to match mounted backend path.
+  - Mobile caller: `client/api/client.ts:478-484`
+  - Backend mount: `src/app.js:215-217`, `src/routes/credits.routes.js:7-11`
+  - Why it matters: repo truth only lines up if runtime config already bakes `/api` into the mobile base URL.
+
+- `CORRECTED`: Shorts detail payload shape does not match the mobile detail adapter.
+  - Mobile reader: `client/api/client.ts:291-307`, `client/screens/ShortDetailScreen.tsx:357-379`
+  - Backend payload: `src/controllers/shorts.controller.js:123-134`, `src/controllers/shorts.controller.js:160-171`
+  - Why it matters: backend returns `jobId`; mobile expects `id`.
+
+- `CORRECTED`: Shorts detail storage probing does not match story finalize outputs.
+  - Mobile reader/fallback: `client/screens/ShortDetailScreen.tsx:203-303`
+  - Backend detail probe: `src/controllers/shorts.controller.js:104-158`
+  - Backend writer: `src/services/story.service.js:1921-1945`
+  - Why it matters: backend detail still probes `short.mp4` and `cover.jpg`, while story finalize writes `story.mp4` and `thumb.jpg`.
 
 ## MOBILE_CORE_NOW Contract
 
 ### Auth Bootstrap And Credits
 
 - `POST /api/users/ensure`
-  - Mobile sends now: no body.
-  - Mobile reads now: stores the returned profile and screen-reads `credits`.
-  - Auth: required.
-  - Failure modes: `AUTH_REQUIRED`, `INVALID_REQUEST`, `ENSURE_FAILED`
-    (`src/routes/users.routes.js:15-92`).
-  - Contract note: new-user and existing-user responses are not fully symmetric; existing-user
-    responses omit `plan` today (`src/routes/users.routes.js:51-59`, `src/routes/users.routes.js:80-87`).
+  - Mobile caller(s): `client/contexts/AuthContext.tsx:63-76`
+  - Backend handler(s): `src/routes/users.routes.js:15-92`
+  - Mobile sends: no body.
+  - Backend returns: full success envelope with profile data.
+  - Mobile reads: stores the returned profile; current screens only read `userProfile.credits`.
+  - Contract caveat: existing-user backend response omits `plan`; mobile wrapper patches missing `plan` to `"free"` (`client/api/client.ts:469-472`).
 
 - `GET /api/credits`
-  - Mobile sends now: no body.
-  - Mobile reads now: `data.credits` only.
-  - Auth: required.
-  - Failure modes: `AUTH_REQUIRED`, `CREDITS_ERROR`
-    (`src/routes/credits.routes.js:11`, `src/controllers/credits.controller.js:5-17`).
+  - Mobile caller(s): `client/contexts/AuthContext.tsx:87-103`, `client/screens/SettingsScreen.tsx:42-58`, `client/screens/StoryEditorScreen.tsx:875-880`
+  - Backend handler(s): `src/routes/credits.routes.js:7-11`, `src/controllers/credits.controller.js:5-17`
+  - Mobile sends: no body; current wrapper path is `"/credits"`.
+  - Backend returns: `{ success: true, data: { uid, email, credits }, requestId }`.
+  - Mobile reads: `data.credits` only.
+  - Contract caveat: mobile path and mounted backend path are not identical in repo code.
 
 ### Story Creation And Session Truth
 
 - `POST /api/story/start`
-  - Mobile sends now: `{ input, inputType }`.
-  - Mobile reads now: `data.id`.
-  - Auth: required through router-level `requireAuth`.
-  - Failure modes: `INVALID_INPUT`, `STORY_START_FAILED`
-    (`src/routes/story.routes.js:118-145`).
+  - Mobile caller(s): `client/screens/HomeScreen.tsx:79-107`
+  - Backend handler(s): `src/routes/story.routes.js:118-145`, `src/services/story.service.js:88-113`
+  - Mobile sends: `{ input, inputType }`.
+  - Backend returns: full session in `data`.
+  - Mobile reads: `data.id` only.
 
 - `POST /api/story/generate`
-  - Mobile sends now: `{ sessionId }`.
-  - Mobile reads now: success/failure control flow only.
-  - Auth: required.
-  - Guardrails: `enforceScriptDailyCap(300)` (`src/routes/story.routes.js:148`).
-  - Failure modes: `INVALID_INPUT`, `SCRIPT_LIMIT_REACHED`, outbound-link validation/timeouts,
-    `STORY_GENERATE_FAILED` (`src/routes/story.routes.js:147-172`).
+  - Mobile caller(s): `client/screens/HomeScreen.tsx:109-127`
+  - Backend handler(s): `src/routes/story.routes.js:147-172`, `src/services/story.service.js:125-156`
+  - Mobile sends: `{ sessionId }`.
+  - Backend returns: full session in `data`.
+  - Mobile reads: success/failure only.
+  - Guardrail: `enforceScriptDailyCap(300)` (`src/routes/story.routes.js:148`).
 
 - `GET /api/story/:sessionId`
-  - Mobile sends now: no body.
-  - Mobile reads now: `story.sentences`, `shots`, `overlayCaption.placement`, selected clip
-    thumb/searchQuery, and later `finalVideo`.
-  - Auth: required.
-  - Failure modes: `INVALID_INPUT`, `NOT_FOUND`, `STORY_GET_FAILED`
-    (`src/routes/story.routes.js:1002-1024`).
-  - Recovery role: this is the canonical status-check path after finalize retries or transport loss.
+  - Mobile caller(s): `client/screens/ScriptScreen.tsx:64-84`, `client/screens/StoryEditorScreen.tsx:367-449`, `client/screens/StoryEditorScreen.tsx:432-449`
+  - Backend handler(s): `src/routes/story.routes.js:1002-1024`, `src/services/story.service.js:118-120`
+  - Mobile sends: no body.
+  - Backend returns: full session in `data`.
+  - Mobile reads: `story.sentences` with helper fallbacks, `shots`, `overlayCaption.placement`, `shot.selectedClip.thumbUrl`, and `shot.searchQuery`.
+  - Recovery role: this is the verified status-check route after finalize retries or transport loss.
 
 - `POST /api/story/plan`
-  - Mobile sends now: `{ sessionId }`.
-  - Mobile reads now: success/failure only.
-  - Auth: required.
-  - Guardrails: `enforceScriptDailyCap(300)` (`src/routes/story.routes.js:477`).
-  - Failure modes: `INVALID_INPUT`, `STORY_PLAN_FAILED`
-    (`src/routes/story.routes.js:476-495`).
+  - Mobile caller(s): `client/screens/ScriptScreen.tsx:126-159`
+  - Backend handler(s): `src/routes/story.routes.js:476-495`, `src/services/story.service.js:189-201`
+  - Mobile sends: `{ sessionId }`.
+  - Backend returns: full session in `data`.
+  - Mobile reads: success/failure only.
+  - Guardrail: `enforceScriptDailyCap(300)`.
 
 - `POST /api/story/search`
-  - Mobile sends now: `{ sessionId }`.
-  - Mobile reads now: success/failure only.
-  - Auth: required.
-  - Failure modes today: `INVALID_INPUT`, otherwise generic `STORY_SEARCH_FAILED`
-    (`src/routes/story.routes.js:497-516`).
-  - Contract risk: service-level `SESSION_NOT_FOUND` and `PLAN_REQUIRED` collapse into 500 today
-    (`src/services/story.service.js:427-462`).
+  - Mobile caller(s): `client/screens/ScriptScreen.tsx:141-159`
+  - Backend handler(s): `src/routes/story.routes.js:497-516`, `src/services/story.service.js:427-462`
+  - Mobile sends: `{ sessionId }`.
+  - Backend returns: full session in `data`.
+  - Mobile reads: success/failure only.
+  - Contract caveat: service-level `SESSION_NOT_FOUND` and `PLAN_REQUIRED` still collapse into generic 500s today.
 
 ### Story Editing And Caption Preview
 
 - `POST /api/story/update-beat-text`
-  - Mobile sends now: `{ sessionId, sentenceIndex, text }`.
-  - Mobile reads now: success/failure only in `StoryEditorScreen`; `ScriptScreen` also accepts the
-    returned data and re-reads beats from session shape.
-  - Auth: required.
-  - Failure modes today: `INVALID_INPUT`, otherwise generic `STORY_UPDATE_BEAT_TEXT_FAILED`
-    (`src/routes/story.routes.js:691-725`).
-  - Contract risk: `updateBeatText()` dereferences session state before a session-null check and
-    collapses domain errors into 500 (`src/services/story.service.js:670-700`).
+  - Mobile caller(s): `client/screens/ScriptScreen.tsx:162-209`, `client/screens/StoryEditorScreen.tsx:679-701`
+  - Backend handler(s): `src/routes/story.routes.js:691-725`, `src/services/story.service.js:670-700`
+  - Mobile sends: `{ sessionId, sentenceIndex, text }`.
+  - Backend returns: partial `{ sentences, shots }` in `data`, not a full session.
+  - Mobile reads:
+    - `ScriptScreen`: re-runs `extractBeats()` against the partial payload.
+    - `StoryEditorScreen`: ignores returned data and updates local state.
+  - Contract caveat: service dereferences `session.story` before a session-null check, so some domain errors turn into 500s.
 
 - `POST /api/story/delete-beat`
-  - Mobile sends now: `{ sessionId, sentenceIndex }`.
-  - Mobile reads now: success/failure only, then refetches session.
-  - Auth: required.
-  - Failure modes today: `INVALID_INPUT`, otherwise generic `STORY_DELETE_BEAT_FAILED`
-    (`src/routes/story.routes.js:664-689`).
-  - Contract risk: service-level `SESSION_NOT_FOUND`, `STORY_REQUIRED`, `SHOTS_REQUIRED`, and
-    `INVALID_SENTENCE_INDEX` collapse into 500 (`src/services/story.service.js:628-665`).
+  - Mobile caller(s): `client/screens/ScriptScreen.tsx:222-235`, `client/screens/StoryEditorScreen.tsx:715-749`
+  - Backend handler(s): `src/routes/story.routes.js:664-689`, `src/services/story.service.js:628-665`
+  - Mobile sends: `{ sessionId, sentenceIndex }`.
+  - Backend returns: partial `{ sentences, shots }` in `data`.
+  - Mobile reads: success/failure only, then refetches `GET /api/story/:sessionId`.
+  - Contract caveat: service-level `SESSION_NOT_FOUND`, `STORY_REQUIRED`, `SHOTS_REQUIRED`, and `INVALID_SENTENCE_INDEX` collapse into generic 500s today.
 
 - `POST /api/story/search-shot`
-  - Mobile sends now: `{ sessionId, sentenceIndex, query, page }`.
-  - Mobile reads now: `data.shot`, `data.page`, `data.hasMore`.
-  - Auth: required.
-  - Failure modes today: `INVALID_INPUT`, otherwise generic `STORY_SEARCH_SHOT_FAILED`
-    (`src/routes/story.routes.js:594-633`).
-  - Contract risk: service-level `SESSION_NOT_FOUND`, `SHOTS_REQUIRED`, `SHOT_NOT_FOUND`, and
-    `NO_SEARCH_QUERY_AVAILABLE` collapse into 500 (`src/services/story.service.js:468-523`).
+  - Mobile caller(s): `client/screens/ClipSearchModal.tsx:49-80`
+  - Backend handler(s): `src/routes/story.routes.js:594-633`, `src/services/story.service.js:468-523`, `src/services/story.service.js:286-421`
+  - Mobile sends: `{ sessionId, sentenceIndex, query, page }`.
+  - Backend returns: `{ shot, page, hasMore }` in `data`.
+  - Mobile reads: `shot.candidates`, `page`, `hasMore`, and candidate `id`, `thumbUrl`, `provider`, `duration`.
+  - Contract caveat: several domain errors still collapse into generic 500s today.
 
 - `POST /api/story/update-shot`
-  - Mobile sends now: `{ sessionId, sentenceIndex, clipId }`.
-  - Mobile reads now: success/failure only.
-  - Auth: required.
-  - Failure modes today: `INVALID_INPUT`, otherwise generic `STORY_UPDATE_SHOT_FAILED`
-    (`src/routes/story.routes.js:518-545`).
-  - Contract risk: service-level `SESSION_NOT_FOUND`, `SHOTS_REQUIRED`, `SHOT_NOT_FOUND`,
-    `NO_CANDIDATES_AVAILABLE`, and `CLIP_NOT_FOUND_IN_CANDIDATES` collapse into 500
-    (`src/services/story.service.js:528-550`).
+  - Mobile caller(s): `client/screens/ClipSearchModal.tsx:83-104`
+  - Backend handler(s): `src/routes/story.routes.js:518-545`, `src/services/story.service.js:528-550`
+  - Mobile sends: `{ sessionId, sentenceIndex, clipId }`.
+  - Backend returns: `{ shots }` in `data`.
+  - Mobile reads: success/failure only.
+  - Contract caveat: `SESSION_NOT_FOUND`, `SHOTS_REQUIRED`, `SHOT_NOT_FOUND`, `NO_CANDIDATES_AVAILABLE`, and `CLIP_NOT_FOUND_IN_CANDIDATES` still collapse into generic 500s today.
 
 - `POST /api/caption/preview`
-  - Mobile sends now: `{ ssotVersion: 3, mode: "raster", measure: "server", text, placement, yPct, frameW, frameH }`.
-  - Mobile reads now: `data.meta.rasterUrl`, `rasterW`, `rasterH`, optional `xPx_png`, `yPx_png`.
-  - Auth: required.
-  - Guardrails: `20/min` rate limit and `200kb` parser cap
-    (`src/routes/caption.preview.routes.js:91-113`, `src/app.js:118-126`).
-  - Failure modes: `AUTH_REQUIRED`, `RATE_LIMIT_EXCEEDED`, `V3_RASTER_REQUIRED`,
-    `VALIDATION_FAILED`, `EMPTY_TEXT`.
+  - Mobile caller(s): `client/hooks/useCaptionPreview.ts:59-120`, `client/screens/StoryEditorScreen.tsx:507-516`
+  - Backend handler(s): `src/routes/caption.preview.routes.js:109-313`
+  - Mobile sends: `{ ssotVersion: 3, mode: "raster", measure: "server", text, placement, yPct, frameW, frameH }`; current screen does not send `style`.
+  - Backend returns: `data.meta` including `rasterUrl`, `rasterW`, `rasterH`, `yPx_png`, `frameW`, `frameH`, and other compiler metadata.
+  - Mobile reads: `meta.rasterUrl`, `rasterW`, `rasterH`, `yPx_png`, and uses fallback centering when `xPx_png` is absent.
+  - Guardrails: auth-required, `20/min`, `200kb` body cap.
 
 - `POST /api/story/update-caption-style`
-  - Mobile sends now: `{ sessionId, overlayCaption: { placement, yPct } }`.
-  - Mobile reads now: success/failure only.
-  - Auth: required.
-  - Failure modes: `INVALID_INPUT`, `SESSION_NOT_FOUND`, `STORY_UPDATE_CAPTION_STYLE_FAILED`
-    (`src/routes/story.routes.js:207-283`).
+  - Mobile caller(s): `client/screens/StoryEditorScreen.tsx:765-820`
+  - Backend handler(s): `src/routes/story.routes.js:207-283`
+  - Mobile sends: `{ sessionId, overlayCaption: { placement, yPct } }`.
+  - Backend returns: `{ overlayCaption }` in `data`.
+  - Mobile reads: success/failure only.
 
-### Render, Recovery, And Shorts Library
+### Render, Recovery, And Shorts
 
 - `POST /api/story/finalize`
-  - Mobile sends now: `{ sessionId }` plus `X-Idempotency-Key`.
-  - Mobile reads now: `shortId`, and on failures `retryAfter`, `error/code`, and `detail/message`.
-  - Auth: required.
-  - Guardrails: Firestore-backed idempotency and credit reservation, `withRenderSlot()` semaphore
-    of 3 concurrent renders, synchronous HTTP render path
-    (`src/middleware/idempotency.firestore.js:12-208`, `src/utils/render.semaphore.js:1-22`,
-    `server.js:32-39`).
-  - Failure modes: `MISSING_IDEMPOTENCY_KEY`, `INVALID_INPUT`, `INSUFFICIENT_CREDITS`,
-    `IDEMPOTENT_IN_PROGRESS`, `SERVER_BUSY`, `STORY_FINALIZE_FAILED`
-    (`src/routes/story.routes.js:818-856`).
+  - Mobile caller(s): `client/screens/StoryEditorScreen.tsx:834-911`, `client/api/client.ts:676-760`
+  - Backend handler(s): `src/routes/story.routes.js:818-856`, `src/middleware/idempotency.firestore.js:12-208`, `src/services/story.service.js:2060-2105`
+  - Mobile sends now: `{ sessionId }`.
+  - Backend requires now: `{ sessionId }` plus `X-Idempotency-Key`.
+  - Backend returns on success: full session in `data` plus top-level `shortId`.
+  - Mobile reads: `shortId`, and on failures `retryAfter`, `code/error`, `message/detail`, `status`.
+  - Guardrails: Firestore-backed idempotency and credit reservation, `withRenderSlot()` semaphore, synchronous HTTP render path.
+  - Contract caveat: current mobile client does not send the required idempotency header.
 
 - `GET /api/shorts/mine`
-  - Mobile sends now: `limit` and optional `cursor`.
-  - Mobile reads now: `data.items`, `data.nextCursor`, `data.hasMore`.
-  - Auth: required.
-  - Failure modes: `UNAUTHENTICATED`, `FETCH_FAILED`
-    (`src/controllers/shorts.controller.js:5-90`).
-  - Stability note: repo includes the required Firestore composite index
-    (`firestore.indexes.json:1-11`), but the controller still has a fallback path that disables
-    pagination if the index is missing (`src/controllers/shorts.controller.js:47-85`).
+  - Mobile caller(s): `client/screens/LibraryScreen.tsx:80-118`, `client/screens/ShortDetailScreen.tsx:227-248`
+  - Backend handler(s): `src/routes/shorts.routes.js:7-9`, `src/controllers/shorts.controller.js:5-90`
+  - Mobile sends: `limit` and optional `cursor`.
+  - Backend returns: `{ items, nextCursor, hasMore }` in `data`.
+  - Mobile reads: list items and pagination fields.
+  - Stability note: controller has an index-missing fallback path that disables pagination semantics when the composite index is absent.
 
 - `GET /api/shorts/:jobId`
-  - Mobile sends now: no body.
-  - Mobile reads now: `jobId/id`, `videoUrl`, `coverImageUrl`, `durationSec`, `usedQuote`,
-    `usedTemplate`, `createdAt`.
-  - Auth: required.
-  - Failure modes: `INVALID_INPUT`, `NOT_FOUND`, `GET_SHORT_FAILED`
-    (`src/controllers/shorts.controller.js:93-175`).
-  - Contract risk: story finalize writes `story.mp4` and `thumb.jpg`, but detail fallback probing
-    still looks for `short.mp4`, `cover.jpg`, and `meta.json`
-    (`src/services/story.service.js:1921-1945`, `src/controllers/shorts.controller.js:104-168`).
+  - Mobile caller(s): `client/screens/ShortDetailScreen.tsx:143-333`, `client/screens/ShortDetailScreen.tsx:513-529`
+  - Backend handler(s): `src/routes/shorts.routes.js:7-9`, `src/controllers/shorts.controller.js:93-175`
+  - Mobile sends: no body.
+  - Backend returns today: payload keyed by `jobId`, not `id`.
+  - Mobile reads: `id`, `videoUrl`, `coverImageUrl`, `durationSec`, `usedQuote.text`, `usedTemplate`, `createdAt`.
+  - Contract caveats:
+    - payload key mismatch: `jobId` vs `id`
+    - storage-name drift: detail probes `short.mp4` and `cover.jpg`, while story finalize writes `story.mp4` and `thumb.jpg`
+    - mobile already falls back to `GET /api/shorts/mine` during repeated 404s
 
 ## MOBILE_CORE_SOON Contract
 
 - `POST /api/story/insert-beat`
-  - Reason: directly adjacent to the live mobile beat editor, but unwired today.
-  - Auth: required.
-  - Failure modes today: `INVALID_INPUT`, otherwise generic `STORY_INSERT_BEAT_FAILED`
-    (`src/routes/story.routes.js:635-662`).
-  - Promotion rule: harden only when the mobile caller lands; do not pre-harden voice/TTS or
-    profile routes in anticipation.
+  - Backend route exists: `src/routes/story.routes.js:635-662`
+  - Backend service exists: `src/services/story.service.js:555-623`
+  - Current mobile caller: none.
+  - Promotion rule: only harden when a real mobile caller lands.
 
 ## Route Classification Table
 
-Product API routes only. Infrastructure surfaces such as `/health`, `/assets/*`, and debug routes
-are intentionally excluded from this table.
-
-| Route | Classification | Current caller evidence | Handling policy |
+| Route | Classification | Verified caller evidence | Handling policy |
 | --- | --- | --- | --- |
-| `POST /api/users/ensure` | `MOBILE_CORE_NOW` | Mobile auth bootstrap; also web Firebase bootstrap (`src/routes/users.routes.js:15-92`, `web/public/js/firebaseClient.js:32`) | Harden and document now. |
-| `GET /api/credits` | `MOBILE_CORE_NOW` | Mobile credits refresh and shorts/settings surfaces (`src/routes/credits.routes.js:11`, `web/public/js/my-shorts.js:154`) | Harden and document now. |
-| `POST /api/story/start` | `MOBILE_CORE_NOW` | Mobile home create flow; shared with creative web (`src/routes/story.routes.js:119-145`, `web/public/js/pages/creative/creative.article.mjs:1091`) | Harden now because it is the mobile create entrypoint. |
-| `POST /api/story/generate` | `MOBILE_CORE_NOW` | Mobile create flow; shared with creative web (`src/routes/story.routes.js:148-172`, `web/public/js/pages/creative/creative.article.mjs:1108`) | Harden now. |
-| `GET /api/story/:sessionId` | `MOBILE_CORE_NOW` | Mobile script/editor/finalize recovery; shared with creative web (`src/routes/story.routes.js:1002-1024`, `docs/MOBILE_USED_SURFACES.md`) | Harden now; this is recovery truth after finalize. |
-| `POST /api/story/plan` | `MOBILE_CORE_NOW` | Mobile storyboard step; shared with creative web (`src/routes/story.routes.js:476-495`, `web/public/js/pages/creative/creative.article.mjs:1394`) | Harden now. |
-| `POST /api/story/search` | `MOBILE_CORE_NOW` | Mobile storyboard step; shared with creative web (`src/routes/story.routes.js:497-516`, `web/public/js/pages/creative/creative.article.mjs:1404`) | Harden now. |
-| `POST /api/story/update-beat-text` | `MOBILE_CORE_NOW` | Mobile script/editor beat edit; shared with creative web (`src/routes/story.routes.js:691-725`, `web/public/js/pages/creative/creative.article.mjs:838`) | Harden now. |
-| `POST /api/story/delete-beat` | `MOBILE_CORE_NOW` | Mobile script/editor delete; shared with creative web (`src/routes/story.routes.js:664-689`, `web/public/js/pages/creative/creative.article.mjs:2500`) | Harden now. |
-| `POST /api/story/search-shot` | `MOBILE_CORE_NOW` | Mobile clip picker; shared with creative web (`src/routes/story.routes.js:594-633`, `web/public/js/pages/creative/creative.article.mjs:3394`) | Harden now. |
-| `POST /api/story/update-shot` | `MOBILE_CORE_NOW` | Mobile clip replacement; shared with creative web (`src/routes/story.routes.js:518-545`, `web/public/js/pages/creative/creative.article.mjs:3272`) | Harden now. |
-| `POST /api/caption/preview` | `MOBILE_CORE_NOW` | Mobile beat-card caption preview; shared with creative web caption preview (`src/routes/caption.preview.routes.js:109-113`, `web/public/js/caption-preview.js:636`) | Harden now; already rate-limited. |
-| `POST /api/story/update-caption-style` | `MOBILE_CORE_NOW` | Mobile caption placement persistence; shared with creative web (`src/routes/story.routes.js:207-283`, `web/public/js/pages/creative/creative.article.mjs:1272`) | Harden now. |
-| `POST /api/story/finalize` | `MOBILE_CORE_NOW` | Mobile render action; shared with creative web (`src/routes/story.routes.js:818-856`, `web/public/js/pages/creative/creative.article.mjs:4004`) | Harden now; highest-value write surface. |
-| `GET /api/shorts/mine` | `MOBILE_CORE_NOW` | Mobile library list; shared with web my-shorts (`src/routes/shorts.routes.js:8`, `web/public/js/my-shorts.js:48`) | Harden now. |
-| `GET /api/shorts/:jobId` | `MOBILE_CORE_NOW` | Mobile short detail; shared with web my-shorts (`src/routes/shorts.routes.js:9`, `web/public/js/my-shorts.js:200`) | Harden now. |
-| `POST /api/story/insert-beat` | `MOBILE_CORE_SOON` | No current mobile caller; current creative web caller only (`src/routes/story.routes.js:635-662`, `web/public/js/pages/creative/creative.article.mjs:2456`) | Do not harden until mobile adopts it. |
-| `POST /api/assets/options` | `LEGACY_WEB` | Creative draft/manual asset picker only (`src/routes/assets.routes.js:9`, `web/public/js/pages/creative/creative.article.mjs:3484`) | Ignore unless shared security risk crosses into mobile. |
-| `POST /api/story/manual` | `LEGACY_WEB` | Creative manual script path only (`src/routes/story.routes.js:858-888`, `web/public/js/pages/creative/creative.article.mjs:1487`) | Ignore for mobile launch. |
-| `POST /api/story/create-manual-session` | `LEGACY_WEB` | Creative manual-first render path only (`src/routes/story.routes.js:890-1000`, `web/public/js/pages/creative/creative.article.mjs:3930`) | Ignore for mobile launch. |
-| `POST /api/story/update-video-cuts` | `LEGACY_WEB` | Creative web editor only (`src/routes/story.routes.js:563-592`, `web/public/js/pages/creative/creative.article.mjs:1922`) | Ignore for mobile launch. |
-| `POST /api/story/update-caption-meta` | `LEGACY_WEB` | Creative caption preview persistence only (`src/routes/story.routes.js:285-474`, `web/public/js/caption-preview.js:108`) | Ignore unless it breaks shared render stability. |
-| `POST /api/checkout/start` | `LEGACY_WEB` | Pricing page only (`src/routes/checkout.routes.js:16`, `web/public/js/pricing.js:114`) | Touch only for direct billing risk to mobile launch. |
-| `POST /api/checkout/session` | `LEGACY_WEB` | Buy-credits page only (`src/routes/checkout.routes.js:20`, `web/public/js/buy-credits.js:67`) | Touch only for direct billing risk to mobile launch. |
-| `POST /api/checkout/subscription` | `LEGACY_WEB` | Buy-credits page only (`src/routes/checkout.routes.js:23-28`, `web/public/js/buy-credits.js:84`) | Touch only for direct billing risk to mobile launch. |
-| `POST /api/checkout/portal` | `LEGACY_WEB` | Buy-credits page only (`src/routes/checkout.routes.js:31`, `web/public/js/buy-credits.js:167`) | Touch only for direct billing risk to mobile launch. |
-| `POST /stripe/webhook` | `LEGACY_WEB` | External Stripe caller; no mobile API caller (`src/app.js:115`, `src/routes/stripe.webhook.js`) | Keep because billing still matters to mobile, but do not expand scope beyond correctness. |
-| `POST /api/story/update-script` | `REMOVE_LATER` | No current mobile caller; no current web/public caller (`src/routes/story.routes.js:174-205`, `docs/MOBILE_USED_SURFACES.md`, `docs/ACTIVE_SURFACES.md`) | Retire after freeze. |
-| `POST /api/story/timeline` | `REMOVE_LATER` | No current mobile caller; no current web/public caller (`src/routes/story.routes.js:727-746`) | Retire after freeze. |
-| `POST /api/story/captions` | `REMOVE_LATER` | No current mobile caller; no current web/public caller (`src/routes/story.routes.js:748-773`) | Retire after freeze. |
-| `POST /api/story/render` | `REMOVE_LATER` | No current mobile caller; no current web/public caller (`src/routes/story.routes.js:775-816`, `docs/ACTIVE_SURFACES.md:79`) | Default-disable now; remove later. |
-| `POST /api/user/setup` | `REMOVE_LATER` | No current mobile caller; no current web/public caller (`src/routes/user.routes.js:13-29`, `docs/TRUTH_FREEZE_AUDIT_2026-02-28.md:41`) | Retire after freeze. |
-| `GET /api/user/me` | `REMOVE_LATER` | No current mobile caller; no current web/public caller (`src/routes/user.routes.js:34-56`, `docs/MOBILE_USED_SURFACES.md:96`) | Retire after freeze. |
-| `GET /api/whoami` | `REMOVE_LATER` | Console/helper only (`src/routes/whoami.routes.js:11-16`, `docs/TRUTH_FREEZE_AUDIT_2026-02-28.md:42`) | Retire after freeze. |
-| `GET /api/limits/usage` | `REMOVE_LATER` | No current user-facing caller (`src/routes/limits.routes.js:7`, `docs/TRUTH_FREEZE_AUDIT_2026-02-28.md:43`) | Retire after freeze. |
+| `POST /api/users/ensure` | `MOBILE_CORE_NOW` | Mobile auth bootstrap (`client/contexts/AuthContext.tsx:63-76`) | Harden and document now. |
+| `GET /api/credits` | `MOBILE_CORE_NOW` | Mobile credits refresh depends on this backend route, even though the current wrapper path is `"/credits"` (`client/api/client.ts:478-484`, `client/contexts/AuthContext.tsx:87-103`) | Harden and document now; resolve path truth. |
+| `POST /api/story/start` | `MOBILE_CORE_NOW` | Mobile home create flow (`client/screens/HomeScreen.tsx:79-107`) | Harden now. |
+| `POST /api/story/generate` | `MOBILE_CORE_NOW` | Mobile create flow (`client/screens/HomeScreen.tsx:109-127`) | Harden now. |
+| `GET /api/story/:sessionId` | `MOBILE_CORE_NOW` | Mobile script/editor recovery truth (`client/screens/ScriptScreen.tsx:64-84`, `client/screens/StoryEditorScreen.tsx:367-449`) | Harden now. |
+| `POST /api/story/plan` | `MOBILE_CORE_NOW` | Mobile storyboard step (`client/screens/ScriptScreen.tsx:126-159`) | Harden now. |
+| `POST /api/story/search` | `MOBILE_CORE_NOW` | Mobile storyboard step (`client/screens/ScriptScreen.tsx:141-159`) | Harden now. |
+| `POST /api/story/update-beat-text` | `MOBILE_CORE_NOW` | Mobile script/editor beat editing (`client/screens/ScriptScreen.tsx:162-209`, `client/screens/StoryEditorScreen.tsx:679-701`) | Harden now. |
+| `POST /api/story/delete-beat` | `MOBILE_CORE_NOW` | Mobile script/editor deletion (`client/screens/ScriptScreen.tsx:222-235`, `client/screens/StoryEditorScreen.tsx:715-749`) | Harden now. |
+| `POST /api/story/search-shot` | `MOBILE_CORE_NOW` | Mobile clip picker (`client/screens/ClipSearchModal.tsx:49-80`) | Harden now. |
+| `POST /api/story/update-shot` | `MOBILE_CORE_NOW` | Mobile clip replacement (`client/screens/ClipSearchModal.tsx:83-104`) | Harden now. |
+| `POST /api/caption/preview` | `MOBILE_CORE_NOW` | Mobile beat-card preview (`client/hooks/useCaptionPreview.ts:59-120`) | Harden now. |
+| `POST /api/story/update-caption-style` | `MOBILE_CORE_NOW` | Mobile caption placement persistence (`client/screens/StoryEditorScreen.tsx:765-820`) | Harden now. |
+| `POST /api/story/finalize` | `MOBILE_CORE_NOW` | Mobile render action (`client/screens/StoryEditorScreen.tsx:834-911`) | Harden now; highest-risk contract surface. |
+| `GET /api/shorts/mine` | `MOBILE_CORE_NOW` | Mobile library list and detail fallback (`client/screens/LibraryScreen.tsx:80-118`, `client/screens/ShortDetailScreen.tsx:227-248`) | Harden now. |
+| `GET /api/shorts/:jobId` | `MOBILE_CORE_NOW` | Mobile post-render detail path (`client/screens/ShortDetailScreen.tsx:143-333`) | Harden now; contract drift is already visible. |
+| `POST /api/story/insert-beat` | `MOBILE_CORE_SOON` | No current mobile caller | Do not harden until mobile adopts it. |
+| `POST /api/assets/options` | `LEGACY_WEB` | Web creative editor only (`web/public/js/pages/creative/creative.article.mjs:3483`) | Ignore unless shared security risk crosses into mobile. |
+| `POST /api/story/manual` | `LEGACY_WEB` | Web manual flow only (`web/public/js/pages/creative/creative.article.mjs:1487`) | Ignore for mobile launch. |
+| `POST /api/story/create-manual-session` | `LEGACY_WEB` | Web manual-first render only (`web/public/js/pages/creative/creative.article.mjs:3930`) | Ignore for mobile launch. |
+| `POST /api/story/update-video-cuts` | `LEGACY_WEB` | Web editor only (`web/public/js/pages/creative/creative.article.mjs:1922`, `web/public/js/pages/creative/creative.article.mjs:1950`) | Ignore for mobile launch. |
+| `POST /api/story/update-caption-meta` | `LEGACY_WEB` | Web caption preview persistence only (`web/public/js/caption-preview.js:108`) | Ignore unless it breaks shared render stability. |
+| `POST /api/checkout/start` | `LEGACY_WEB` | Web pricing page only (`web/public/js/pricing.js:114`) | Touch only for direct billing risk to mobile launch. |
+| `POST /api/checkout/session` | `LEGACY_WEB` | Web buy-credits only (`web/public/js/buy-credits.js:67`) | Touch only for direct billing risk to mobile launch. |
+| `POST /api/checkout/subscription` | `LEGACY_WEB` | Web buy-credits only (`web/public/js/buy-credits.js:84`) | Touch only for direct billing risk to mobile launch. |
+| `POST /api/checkout/portal` | `LEGACY_WEB` | Web billing portal only (`web/public/js/buy-credits.js:167`) | Touch only for direct billing risk to mobile launch. |
+| `POST /stripe/webhook` | `LEGACY_WEB` | External Stripe caller; no mobile API caller (`src/app.js:111-116`) | Keep correct, but do not broaden launch scope around it. |
+| `POST /api/story/update-script` | `REMOVE_LATER` | No current mobile caller; no current `web/public` caller found in repo search | Retire after freeze. |
+| `POST /api/story/timeline` | `REMOVE_LATER` | No current mobile caller; no current `web/public` caller found in repo search | Retire after freeze. |
+| `POST /api/story/captions` | `REMOVE_LATER` | No current mobile caller; no current `web/public` caller found in repo search | Retire after freeze. |
+| `POST /api/story/render` | `REMOVE_LATER` | No current mobile caller; no current `web/public` caller found in repo search | Default-disable now; remove later. |
+| `POST /api/user/setup` | `REMOVE_LATER` | No current mobile caller; no current `web/public` caller found in repo search | Retire after freeze. |
+| `GET /api/user/me` | `REMOVE_LATER` | No current mobile caller; no current `web/public` caller found in repo search | Retire after freeze unless mobile adopts it explicitly. |
+| `GET /api/whoami` | `REMOVE_LATER` | No current mobile caller; no current `web/public` caller found in repo search | Retire after freeze. |
+| `GET /api/limits/usage` | `REMOVE_LATER` | No current mobile caller; no current `web/public` caller found in repo search | Retire after freeze. |
