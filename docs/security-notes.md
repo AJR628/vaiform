@@ -1,8 +1,8 @@
-﻿# Vaiform â€“ Security Notes (v1)
+# Vaiform â€“ Security Notes (v1)
 
 > Stale Document Notice (2026-02-28)
 > This file is not current runtime SSOT for beta.
-> Use `docs/ACTIVE_SURFACES.md`, `ROUTE_TRUTH_TABLE.md`, `docs/API_CONTRACT.md`, and `docs/TRUTH_FREEZE_AUDIT_2026-02-28.md` as the current source of truth.
+> Start at `docs/DOCS_INDEX.md` for current backend docs ownership and canonical docs.
 > Known drift includes route inventory, auth requirements, and root-vs-`/api` path canonicalization.
 
 **Purpose:** Capture the current security posture for Vaiform v1 so future changes don't accidentally re-open old attack surfaces.

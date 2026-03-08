@@ -1,5 +1,10 @@
 # MOBILE_DOCS_VERIFICATION_REPORT
 
+> Evidence Notice (2026-03-07)
+> This file is a dated verification report, not canonical contract truth.
+> Some findings in this report were later resolved in code.
+> Start at `docs/DOCS_INDEX.md` for the current backend docs front door.
+
 Cross-repo verification date: 2026-03-07.
 
 Purpose: verify the mobile-first truth docs against actual code in both repos:
@@ -183,7 +188,7 @@ Primary focus was `MOBILE_CORE_NOW`:
 
 - `docs/MOBILE_HARDENING_PLAN.md`
   - reordered Phase 0 around the proven launch blockers from code
-  - replaced the incorrect ìnormalize to `/api/credits`î claim with a real path-resolution task
+  - replaced the incorrect ‚Äúnormalize to `/api/credits`‚Äù claim with a real path-resolution task
   - added finalize idempotency mismatch as the top blocker
 
 - `docs/LEGACY_WEB_SURFACES.md`

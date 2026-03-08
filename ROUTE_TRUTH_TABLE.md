@@ -1,5 +1,10 @@
 # Route Truth Table (Visual SSOT + API Prune)
 
+> Evidence Notice (2026-03-07)
+> This file is retained as route inventory and historical evidence.
+> It is not the primary docs front door for mobile/backend contract work.
+> Start at docs/DOCS_INDEX.md.
+
 Audit date: 2026-03-05
 
 ## Status definitions

@@ -1,4 +1,9 @@
-﻿# Vaiform Repo Cohesion Audit (Post A/B/C)
+# Vaiform Repo Cohesion Audit (Post A/B/C)
+
+> Historical Notice (2026-03-07)
+> This file is retained as repo architecture and cleanup history.
+> It is not the primary docs front door for mobile/backend contract work.
+> Start at docs/DOCS_INDEX.md.
 
 Audit date: 2026-02-22
 

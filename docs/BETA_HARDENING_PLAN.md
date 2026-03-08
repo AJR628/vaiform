@@ -2,15 +2,22 @@
 
 **This doc is a plan/roadmap, not runtime truth.**
 
-Runtime SSOT remains:
+Current docs front door is `docs/DOCS_INDEX.md`.
 
-- `docs/ACTIVE_SURFACES.md`
-- `ROUTE_TRUTH_TABLE.md`
+For current backend/mobile contract truth, use:
+
+- `docs/MOBILE_BACKEND_CONTRACT.md`
+- `docs/MOBILE_HARDENING_PLAN.md`
+- `docs/LEGACY_WEB_SURFACES.md`
 - `docs/API_CONTRACT.md`
-- `docs/TRUTH_FREEZE_AUDIT_2026-02-28.md` (evidence/history)
+- `docs/COHESION_GUARDRAILS.md`
+
+Evidence/history remains in:
+
+- `docs/MOBILE_DOCS_VERIFICATION_REPORT.md`
+- `docs/TRUTH_FREEZE_AUDIT_2026-02-28.md`
 
 ## Purpose
-
 Use this file as the living beta hardening roadmap and implementation checklist.
 
 Use it to:

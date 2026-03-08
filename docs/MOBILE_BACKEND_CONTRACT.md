@@ -2,14 +2,14 @@
 
 Cross-repo verification date: 2026-03-07.
 
-Purpose: canonical backend contract for mobile production, verified against both the mobile repo and the mounted backend. If a route is not `MOBILE_CORE_NOW` or `MOBILE_CORE_SOON` here, it is not first-class for mobile launch.
+Purpose: canonical backend-owned contract, guarantees, and open mismatch record for mobile production. Current mobile caller-truth lives in the mobile repo. If a route is not `MOBILE_CORE_NOW` or `MOBILE_CORE_SOON` here, it is not first-class for mobile launch.
 
 ## Source Order
 
-1. Actual current mobile repo usage
+1. Actual current mobile repo usage and callsites
 2. Actual mounted backend behavior
-3. `docs/MOBILE_USED_SURFACES.md`
-4. `docs/MOBILE_HARDENING_PLAN.md`
+3. mobile repo `docs/MOBILE_USED_SURFACES.md`
+4. this doc and `docs/MOBILE_HARDENING_PLAN.md`
 5. Older spec docs only as historical context
 
 ## Request Rules
@@ -17,8 +17,8 @@ Purpose: canonical backend contract for mobile production, verified against both
 - Authenticated mobile requests use `Authorization: Bearer <Firebase ID token>` when a token is available (`client/api/client.ts:138-145`, `client/api/client.ts:198-205`, `src/middleware/requireAuth.js:5-19`).
 - JSON requests use `Content-Type: application/json`.
 - Mobile callers send `x-client: mobile` (`client/api/client.ts:132-136`, `client/api/client.ts:192-196`). Caption preview uses that header as part of the mobile/server-measured path selection when `measure` is omitted (`src/routes/caption.preview.routes.js:131-145`).
-- Backend finalize requires `X-Idempotency-Key` (`src/middleware/idempotency.firestore.js:33-37`). Current mobile code does not send it (`client/api/client.ts:679-703`).
-- Mobile credits wrapper currently calls `"/credits"` (`client/api/client.ts:478-484`), while the backend mount is `GET /api/credits` (`src/app.js:215-217`, `src/routes/credits.routes.js:7-11`). Treat that as a verified path/config dependency until code or env is made explicit.
+- Backend finalize requires `X-Idempotency-Key`, and the current mobile finalize caller sends it (`src/middleware/idempotency.firestore.js:33-37`, `client/api/client.ts:676-695`).
+- Mobile credits currently call `GET /api/credits`, which matches the mounted backend path (`client/api/client.ts:478-484`, `src/app.js:215-217`, `src/routes/credits.routes.js:7-11`).
 
 ## Response Rules
 
@@ -29,29 +29,33 @@ Purpose: canonical backend contract for mobile production, verified against both
 
 ## Current Open Contract Mismatches
 
-- `CORRECTED`: Mobile finalize does not currently satisfy backend idempotency requirements.
-  - Mobile caller: `client/api/client.ts:679-703`
-  - Backend handler/middleware: `src/middleware/idempotency.firestore.js:33-37`, `src/routes/story.routes.js:818-856`
-  - Why it matters: backend can reject the current mobile request with `400 MISSING_IDEMPOTENCY_KEY` before render starts.
-
-- `CORRECTED`: Mobile credits wrapper path is not proven to match mounted backend path.
-  - Mobile caller: `client/api/client.ts:478-484`
-  - Backend mount: `src/app.js:215-217`, `src/routes/credits.routes.js:7-11`
-  - Why it matters: repo truth only lines up if runtime config already bakes `/api` into the mobile base URL.
-
-- `CORRECTED`: Shorts detail payload shape does not match the mobile detail adapter.
+- `OPEN`: Shorts detail payload shape does not match the mobile detail adapter.
   - Mobile reader: `client/api/client.ts:291-307`, `client/screens/ShortDetailScreen.tsx:357-379`
   - Backend payload: `src/controllers/shorts.controller.js:123-134`, `src/controllers/shorts.controller.js:160-171`
   - Why it matters: backend returns `jobId`; mobile expects `id`.
 
-- `CORRECTED`: Shorts detail storage probing does not match story finalize outputs.
+- `OPEN`: Shorts detail storage probing does not match story finalize outputs.
   - Mobile reader/fallback: `client/screens/ShortDetailScreen.tsx:203-303`
   - Backend detail probe: `src/controllers/shorts.controller.js:104-158`
   - Backend writer: `src/services/story.service.js:1921-1945`
   - Why it matters: backend detail still probes `short.mp4` and `cover.jpg`, while story finalize writes `story.mp4` and `thumb.jpg`.
 
-## MOBILE_CORE_NOW Contract
+- `OPEN`: `/api/users/ensure` returns asymmetric shapes for new vs existing users.
+  - Mobile caller: `client/contexts/AuthContext.tsx:63-76`, `client/api/client.ts:469-472`
+  - Backend handler: `src/routes/users.routes.js:32-87`
+  - Why it matters: mobile stores the returned profile and still patches missing `plan` to `"free"` for existing users.
 
+- `OPEN`: Finalize timeout recovery is incomplete across the current mobile/backend contract flow.
+  - Mobile timeout handling: `client/api/client.ts:703-724`, `client/screens/StoryEditorScreen.tsx:894-899`
+  - Backend render posture: `src/routes/story.routes.js:830-841`, `server.js:32-37`
+  - Why it matters: the client still treats a 15-minute transport abort as terminal error instead of a recovery/status path.
+
+- `OPEN`: Several live mobile editor/search routes still collapse service-level domain failures into generic 500s.
+  - Backend routes: `src/routes/story.routes.js:497-725`
+  - Backend services: `src/services/story.service.js:468-550`, `src/services/story.service.js:628-700`
+  - Why it matters: mobile cannot reliably distinguish session-state errors from real server faults.
+
+## MOBILE_CORE_NOW Contract
 ### Auth Bootstrap And Credits
 
 - `POST /api/users/ensure`
@@ -65,10 +69,10 @@ Purpose: canonical backend contract for mobile production, verified against both
 - `GET /api/credits`
   - Mobile caller(s): `client/contexts/AuthContext.tsx:87-103`, `client/screens/SettingsScreen.tsx:42-58`, `client/screens/StoryEditorScreen.tsx:875-880`
   - Backend handler(s): `src/routes/credits.routes.js:7-11`, `src/controllers/credits.controller.js:5-17`
-  - Mobile sends: no body; current wrapper path is `"/credits"`.
+  - Mobile sends: no body; current wrapper path is `"/api/credits"`.
   - Backend returns: `{ success: true, data: { uid, email, credits }, requestId }`.
   - Mobile reads: `data.credits` only.
-  - Contract caveat: mobile path and mounted backend path are not identical in repo code.
+  - Contract caveat: current mobile screens only read `data.credits`; the rest of the payload is not mobile contract-critical today.
 
 ### Story Creation And Session Truth
 
@@ -167,12 +171,12 @@ Purpose: canonical backend contract for mobile production, verified against both
 - `POST /api/story/finalize`
   - Mobile caller(s): `client/screens/StoryEditorScreen.tsx:834-911`, `client/api/client.ts:676-760`
   - Backend handler(s): `src/routes/story.routes.js:818-856`, `src/middleware/idempotency.firestore.js:12-208`, `src/services/story.service.js:2060-2105`
-  - Mobile sends now: `{ sessionId }`.
+  - Mobile sends now: `{ sessionId }` plus `X-Idempotency-Key`.
   - Backend requires now: `{ sessionId }` plus `X-Idempotency-Key`.
   - Backend returns on success: full session in `data` plus top-level `shortId`.
   - Mobile reads: `shortId`, and on failures `retryAfter`, `code/error`, `message/detail`, `status`.
   - Guardrails: Firestore-backed idempotency and credit reservation, `withRenderSlot()` semaphore, synchronous HTTP render path.
-  - Contract caveat: current mobile client does not send the required idempotency header.
+  - Contract caveat: timeout recovery is still incomplete if the transport aborts after 15 minutes.
 
 - `GET /api/shorts/mine`
   - Mobile caller(s): `client/screens/LibraryScreen.tsx:80-118`, `client/screens/ShortDetailScreen.tsx:227-248`
@@ -206,7 +210,7 @@ Purpose: canonical backend contract for mobile production, verified against both
 | Route | Classification | Verified caller evidence | Handling policy |
 | --- | --- | --- | --- |
 | `POST /api/users/ensure` | `MOBILE_CORE_NOW` | Mobile auth bootstrap (`client/contexts/AuthContext.tsx:63-76`) | Harden and document now. |
-| `GET /api/credits` | `MOBILE_CORE_NOW` | Mobile credits refresh depends on this backend route, even though the current wrapper path is `"/credits"` (`client/api/client.ts:478-484`, `client/contexts/AuthContext.tsx:87-103`) | Harden and document now; resolve path truth. |
+| `GET /api/credits` | `MOBILE_CORE_NOW` | Mobile credits refresh depends on this backend route (`client/api/client.ts:478-484`, `client/contexts/AuthContext.tsx:87-103`) | Harden and document now. |
 | `POST /api/story/start` | `MOBILE_CORE_NOW` | Mobile home create flow (`client/screens/HomeScreen.tsx:79-107`) | Harden now. |
 | `POST /api/story/generate` | `MOBILE_CORE_NOW` | Mobile create flow (`client/screens/HomeScreen.tsx:109-127`) | Harden now. |
 | `GET /api/story/:sessionId` | `MOBILE_CORE_NOW` | Mobile script/editor recovery truth (`client/screens/ScriptScreen.tsx:64-84`, `client/screens/StoryEditorScreen.tsx:367-449`) | Harden now. |

@@ -1,8 +1,10 @@
-﻿# Cohesion Guardrails
+# Cohesion Guardrails
 
 ## 1) Purpose + Definitions
 
 This document is the SSOT policy for ownership, anti-duplication, and route/middleware cohesion in this repo. It is docs-only governance and does not itself change runtime behavior.
+
+For mobile/backend contract work, start at `docs/DOCS_INDEX.md`. Historical inventories such as `ROUTE_TRUTH_TABLE.md` and `docs/ACTIVE_SURFACES.md` are retained as evidence, not as the primary route-truth docs to update.
 
 Definitions used here:
 
@@ -10,7 +12,7 @@ Definitions used here:
 - `Deprecated/Duplicate`: parallel surface kept only for legacy compatibility until consolidation.
 - `Default-Reachable`: reachable with default flags (`VAIFORM_DEBUG=0`) (`env.example:3`).
 - `Debug-Gated`: only reachable when `VAIFORM_DEBUG=1` (`src/app.js:216`, `src/app.js:225-227`, `src/routes/caption.preview.routes.js:1219-1224`).
-- `Caller-Backed`: called by default-served entrypoints/assets, not by unreferenced strings (`docs/ACTIVE_SURFACES.md:29-41`).
+- `Caller-Backed`: called by verified entrypoints/assets, not by unreferenced strings.
 
 ## 2) SSOT Ownership Table
 
@@ -25,12 +27,12 @@ Definitions used here:
 
 ## 3) Guardrail Rules
 
-1. Use dist-first caller evidence when `web/dist` exists. Treat dist entrypoints/assets as canonical for runtime caller proof before `public/` (`src/app.js:341-347`, `src/app.js:366`, `docs/ACTIVE_SURFACES.md:17-20`, `docs/ACTIVE_SURFACES.md:29-41`).
+1. Use dist-first caller evidence when `web/dist` exists. Treat dist entrypoints/assets as canonical for runtime caller proof before `public/` (`src/app.js:341-347`, `src/app.js:366`).
 2. Apply API path mapping truth: `apiFetch("/x")` targets `/api/x`; root fallback is only GET `/credits|/whoami|/health` (`web/dist/api.mjs:7-9`, `web/dist/api.mjs:152-163`).
 3. Avoid introducing NEW dual mounts on both `/` and `/api`; existing compatibility aliases remain until a dedicated consolidation pass (`src/app.js:211-223`, `src/app.js:241-243`, `src/app.js:247-248`, `src/app.js:279-280`).
-4. Do not add new competing `GET "/"` handlers without precedence review; ordered mounts can shadow intended handlers (`src/app.js:211`, `src/app.js:212`, `src/app.js:214`, `src/app.js:237`; `ROUTE_TRUTH_TABLE.md:22-24`).
-5. Classify route status with explicit evidence: `Default-Reachable`, `Debug-Gated`, `Caller-Backed`, and `Active=Default-Reachable && Caller-Backed` (`ROUTE_TRUTH_TABLE.md:8-13`, `docs/ACTIVE_SURFACES.md:7-10`).
-6. Do not create phantom callers: unreferenced bundle strings are not caller evidence (`docs/ACTIVE_SURFACES.md:39-41`).
+4. Do not add new competing `GET "/"` handlers without precedence review; ordered mounts can shadow intended handlers (`src/app.js:211`, `src/app.js:212`, `src/app.js:214`, `src/app.js:237`).
+5. Classify route status with explicit code-backed evidence: mounted backend path, real caller, and current ownership (`Default-Reachable`, `Debug-Gated`, `Caller-Backed`, and `Active=Default-Reachable && Caller-Backed`).
+6. Do not create phantom callers: unreferenced bundle strings or stale docs are not caller evidence.
 7. Response envelope for JSON APIs must be `{success,data,requestId}` or `{success:false,error,detail,fields?,requestId}` (`src/http/respond.js:3-4`, `src/http/respond.js:15-16`, `src/http/respond.js:30-33`, `docs/API_CONTRACT.md:41-43`).
 8. Prefer `respond.ok/fail` for JSON endpoints; manual `res.json` is limited to deliberate legacy exceptions or non-JSON/file/raw/head/redirect responses (`src/http/respond.js:14-35`, `src/routes/creative.routes.js:11-13`, `src/app.js:175-177`).
 9. Validation policy: inline `safeParse` is allowed only for quarantined legacy routers; active/default routes must use `validate.middleware.js` + `src/schemas/*.schema.js` (`src/middleware/validate.middleware.js:13-27`, `src/routes/checkout.routes.js:4-5,20,23`, `src/routes/assets.routes.js:3-4,10`).
@@ -83,9 +85,10 @@ Rules:
 
 5. Route truth docs:
 
-- Update `ROUTE_TRUTH_TABLE.md` with mount path, chain, gating, caller evidence, and envelope status (`ROUTE_TRUTH_TABLE.md:15-16`).
-- Update `docs/ACTIVE_SURFACES.md` for entrypoint caller-backed status and active/inactive classification (`docs/ACTIVE_SURFACES.md:7-10`).
-
+- Verify actual code in both repos before changing docs.
+- Update mobile caller-truth in the mobile repo's `docs/MOBILE_USED_SURFACES.md` when live mobile usage changes.
+- Update backend-owned truth in `docs/MOBILE_BACKEND_CONTRACT.md`, `docs/MOBILE_HARDENING_PLAN.md`, `docs/LEGACY_WEB_SURFACES.md`, and `docs/API_CONTRACT.md` when server contract, hardening status, or legacy classification changes.
+- Keep `docs/DOCS_INDEX.md` aligned with the current ownership split and canonical set.
 6. CI hygiene:
 
 - Keep changed-file contract gate clean (`.github/workflows/ci.yml:41-45`, `scripts/check-responses-changed.mjs:275-283`).

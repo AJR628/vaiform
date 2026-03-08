@@ -1,8 +1,8 @@
-﻿# Vaiform v1 Launch Scope - Single Source of Truth
+# Vaiform v1 Launch Scope - Single Source of Truth
 
 > Stale Document Notice (2026-02-28)
 > This file is not current runtime SSOT for beta.
-> Use `docs/ACTIVE_SURFACES.md`, `ROUTE_TRUTH_TABLE.md`, `docs/API_CONTRACT.md`, and `docs/TRUTH_FREEZE_AUDIT_2026-02-28.md` before relying on route or scope details here.
+> Start at `docs/DOCS_INDEX.md` for current backend docs ownership and canonical docs.
 > Known drift includes active route inventory, auth requirements, and legacy feature status.
 
 **Purpose**: This document defines what Vaiform v1 _is_ at launch. Everything documented here should be preserved. Anything not listed can be safely removed later.

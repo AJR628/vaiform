@@ -1,8 +1,8 @@
-﻿# Vaiform Mobile Spec Pack
+# Vaiform Mobile Spec Pack
 
 > Stale Document Notice (2026-02-28)
 > This mobile spec no longer matches current beta runtime truth.
-> Use `docs/ACTIVE_SURFACES.md`, `ROUTE_TRUTH_TABLE.md`, `docs/API_CONTRACT.md`, and `docs/TRUTH_FREEZE_AUDIT_2026-02-28.md` before relying on any endpoint in this file.
+> Start at `docs/DOCS_INDEX.md` for current backend docs ownership and canonical docs.
 > Known drift includes root-vs-`/api` paths and references to unmounted voice/TTS/user-profile endpoints.
 
 > **Target**: Expo (React Native) client consuming existing Vaiform backend  
