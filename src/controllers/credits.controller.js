@@ -1,11 +1,10 @@
-import admin from 'firebase-admin';
-import { ensureUserDoc } from '../services/credit.service.js';
+import { ensureProvisionedMobileUser } from '../services/credit.service.js';
 import { ok, fail } from '../http/respond.js';
 
 export async function getCredits(req, res) {
   try {
     const { uid, email } = req.user || {};
-    const { ref, data } = await ensureUserDoc(uid || email, email);
+    const { data } = await ensureProvisionedMobileUser(uid, email);
 
     return ok(req, res, {
       uid: data?.uid || uid,

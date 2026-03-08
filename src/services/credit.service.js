@@ -78,6 +78,14 @@ export function computeCost(n = 1) {
   return Math.max(1, Math.floor(n)) * 5;
 }
 
+export const MOBILE_USER_DEFAULTS = Object.freeze({
+  plan: 'free',
+  isMember: false,
+  subscriptionStatus: null,
+  credits: 100,
+  freeShortsUsed: 0,
+});
+
 /** -------- Canonical user doc: /users/{uid} with auto-migration --------
  * Ensures /users/{uid} exists. If a legacy /users/{email} doc exists,
  * migrates its credits + subcollections into the UID doc and deletes the legacy root.
@@ -192,6 +200,72 @@ export async function ensureUserDoc(arg1, arg2) {
   const uid = String(arg1);
   const email = arg2 && isEmailStr(arg2) ? normEmail(arg2) : null;
   return ensureUserDocByUid(uid, email);
+}
+
+function toProvisionedMobileUserProfile(doc = {}, { uid, email } = {}) {
+  return {
+    uid: doc.uid || uid || null,
+    email: doc.email ?? email ?? null,
+    plan:
+      typeof doc.plan === 'string' && doc.plan.trim().length > 0
+        ? doc.plan
+        : MOBILE_USER_DEFAULTS.plan,
+    isMember: typeof doc.isMember === 'boolean' ? doc.isMember : MOBILE_USER_DEFAULTS.isMember,
+    subscriptionStatus: Object.prototype.hasOwnProperty.call(doc, 'subscriptionStatus')
+      ? doc.subscriptionStatus ?? null
+      : MOBILE_USER_DEFAULTS.subscriptionStatus,
+    credits: typeof doc.credits === 'number' ? doc.credits : MOBILE_USER_DEFAULTS.credits,
+    freeShortsUsed:
+      typeof doc.freeShortsUsed === 'number'
+        ? doc.freeShortsUsed
+        : MOBILE_USER_DEFAULTS.freeShortsUsed,
+  };
+}
+
+/**
+ * Canonical mobile provisioning path for /api/users/ensure and GET /api/credits.
+ * Ensures a UID-backed user doc exists, migrates any legacy email doc, and
+ * backfills the mobile-required profile fields when they are missing.
+ */
+export async function ensureProvisionedMobileUser(uid, email) {
+  const { ref } = await ensureUserDocByUid(uid, email);
+  const snap = await ref.get();
+  const current = snap.data() || {};
+  const updates = {
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  };
+
+  if (!current.uid) {
+    updates.uid = uid;
+  }
+  if (email && current.email !== email) {
+    updates.email = email;
+  }
+  if (typeof current.plan !== 'string' || current.plan.trim().length === 0) {
+    updates.plan = MOBILE_USER_DEFAULTS.plan;
+  }
+  if (typeof current.isMember !== 'boolean') {
+    updates.isMember = MOBILE_USER_DEFAULTS.isMember;
+  }
+  if (!Object.prototype.hasOwnProperty.call(current, 'subscriptionStatus')) {
+    updates.subscriptionStatus = MOBILE_USER_DEFAULTS.subscriptionStatus;
+  }
+  if (typeof current.credits !== 'number') {
+    updates.credits = MOBILE_USER_DEFAULTS.credits;
+  }
+  if (typeof current.freeShortsUsed !== 'number') {
+    updates.freeShortsUsed = MOBILE_USER_DEFAULTS.freeShortsUsed;
+  }
+
+  if (Object.keys(updates).length > 1 || updates.email) {
+    await ref.set(updates, { merge: true });
+  }
+
+  const finalSnap = await ref.get();
+  return {
+    ref,
+    data: toProvisionedMobileUserProfile(finalSnap.data() || {}, { uid, email }),
+  };
 }
 
 /** -------- Atomic debit / refund -------- */

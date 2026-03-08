@@ -2,149 +2,83 @@
 
 Cross-repo verification date: 2026-03-07.
 
-Goal: harden only the backend surface that the current mobile app actually depends on. This is a continuation plan for the current repo, not a rebuild proposal.
+Goal: harden only the backend surface that the current mobile app actually depends on, in the same phase order used for implementation and docs. This is a continuation plan for the current repos, not a rebuild proposal.
 
 ## Working Rules
 
-- The mobile repo's `docs/MOBILE_USED_SURFACES.md` is the source of truth for current mobile usage.
+- The mobile repo's `docs/MOBILE_USED_SURFACES.md` is the source of truth for current mobile caller usage.
+- Backend runtime and contract truth live here and in `docs/MOBILE_BACKEND_CONTRACT.md`.
 - Only `MOBILE_CORE_NOW` and `MOBILE_CORE_SOON` routes are first-class launch scope.
 - `LEGACY_WEB` work is allowed only when it directly affects mobile auth, billing, security, credits, or shared render stability.
-- `REMOVE_LATER` work is containment or retirement only.
+- Keep the original phase numbering unchanged across code, docs, and commit history.
 
-## Must Harden Now vs Cleanup Later
+## Locked Phase Order
 
-- Must harden now: Phase 0 and Phase 1.
-- Useful after launch hardening: Phase 2.
-- Cleanup later: Phase 3.
+- `Phase 0`: bootstrap + traceability
+- `Phase 1`: finalize recovery + shorts detail bridge
+- `Phase 2`: mutation reliability + admission-control review
+- `Phase 3`: render-architecture scale track
 
-## Recently Verified As Resolved
+## Phase 0 Completed
 
-- DONE: Mobile finalize now sends X-Idempotency-Key (client/api/client.ts:676-695, src/middleware/idempotency.firestore.js:33-37).
-- DONE: Mobile credits now call GET /api/credits (client/api/client.ts:478-484, src/app.js:215-217).
+- `DONE`: Mobile normalization now preserves backend `requestId` on both success and failure envelopes.
+  - Backend evidence: `src/http/respond.js:14-34`, `src/middleware/reqId.js:4-8`
+  - Mobile evidence: `client/api/client.ts:77-145`, `client/api/client.ts:207-260`, `client/api/client.ts:697-805`
 
-## Phase 0: Blockers / Contract Mismatches
+- `DONE`: Mobile now fails fast on missing production-critical backend/Firebase env instead of silently using placeholder values.
+  - Mobile evidence: `client/api/client.ts:4-12`, `client/lib/firebase.ts:11-27`
 
-- ? Fix shorts detail contract drift.
-  - Route classification: `MOBILE_CORE_NOW`
-  - Mobile caller(s): `client/screens/ShortDetailScreen.tsx:143-333`, `client/screens/ShortDetailScreen.tsx:357-379`
+- `DONE`: `/api/users/ensure` and `GET /api/credits` now share one canonical backend provisioning helper.
+  - Backend evidence: `src/services/credit.service.js:81-87`, `src/services/credit.service.js:225-268`, `src/routes/users.routes.js:15-31`, `src/controllers/credits.controller.js:4-15`
+  - Why it mattered: the prior credits path could create a partial user doc with missing mobile profile fields.
+
+- `DONE`: `/api/users/ensure` now returns a symmetric mobile profile shape for both new and existing users.
+  - Backend evidence: `src/routes/users.routes.js:24-26`
+  - Mobile evidence: `client/api/client.ts:491-496`
+
+- `DONE`: Mobile auth readiness now waits for successful backend provisioning instead of treating Firebase auth alone as app-ready.
+  - Mobile evidence: `client/contexts/AuthContext.tsx:82-149`, `client/navigation/RootStackNavigator.tsx:20-60`
+
+- `DONE`: `refreshCredits()` can now seed a null `userProfile` instead of preserving `null` forever after a prior ensure failure.
+  - Mobile evidence: `client/contexts/AuthContext.tsx:157-179`
+
+- `DONE`: persisted active story session state is now scoped by UID so sign-out/account switch does not leak the previous account's active session.
+  - Mobile evidence: `client/contexts/ActiveStorySessionContext.tsx:28-89`, `client/navigation/HomeStackNavigator.tsx:30-57`
+
+## Phase 1 Next: Finalize Recovery + Shorts Detail Bridge
+
+- `NEXT`: Add a backend-backed finalize recovery contract.
+  - Mobile caller(s): `client/api/client.ts:697-805`, `client/screens/StoryEditorScreen.tsx:854-944`
+  - Backend handler(s): `src/routes/story.routes.js:818-856`, `src/middleware/idempotency.firestore.js:28-208`, `src/services/story.service.js:1986-2105`
+  - Proof requirement: do not treat `GET /api/story/:sessionId` as the recovery contract unless code proves it can express pending, done, and terminal failed render states.
+  - Current blocker: session state does not yet persist explicit finalize-recovery states; idempotency state exists separately in Firestore.
+
+- `NEXT`: Repair shorts detail with a compatibility bridge.
+  - Mobile caller(s): `client/screens/ShortDetailScreen.tsx:143-333`, `client/api/client.ts:291-307`, `client/api/client.ts:532-538`
   - Backend handler(s): `src/controllers/shorts.controller.js:93-175`, `src/services/story.service.js:1921-1945`
-  - Contract mismatch or risk: detail route returns `jobId` instead of `id`, and probes `short.mp4` / `cover.jpg` / `meta.json` while story finalize writes `story.mp4` / `thumb.jpg`.
-  - Why it matters to mobile launch: direct post-render detail is not a clean contract; mobile already compensates with repeated 404 retries and list fallback.
-  - Minimal fix: make detail resolve current story outputs and return the same identifier shape mobile already uses elsewhere.
-  - Docs to update when fixed: mobile repo `docs/MOBILE_USED_SURFACES.md`, `docs/MOBILE_BACKEND_CONTRACT.md`
+  - Minimal boundary: add `id`, keep `jobId` during the bridge, probe `story.mp4` / `thumb.jpg` first, retain legacy fallbacks only as compatibility.
 
-- ? Map mobile editor domain failures to stable 4xx/404 behavior.
-  - Route classification: `MOBILE_CORE_NOW`
-  - Mobile caller(s): `client/screens/ScriptScreen.tsx:162-235`, `client/screens/ClipSearchModal.tsx:49-104`, `client/screens/StoryEditorScreen.tsx:679-820`
-  - Backend handler(s): `src/routes/story.routes.js:497-725`, `src/services/story.service.js:427-550`, `src/services/story.service.js:628-700`
-  - Contract mismatch or risk: several live mobile mutation routes still collapse domain errors into generic 500s.
-  - Why it matters to mobile launch: mobile cannot distinguish bad session state from a true server fault.
-  - Minimal fix: map known service errors to explicit 400/404 responses without redesigning the routes.
-  - Docs to update when fixed: `docs/MOBILE_BACKEND_CONTRACT.md`
+## Phase 2 Next: Mutation Reliability + Admission-Control Review
 
-- ? Close the finalize timeout recovery gap.
-  - Route classification: `MOBILE_CORE_NOW`
-  - Mobile caller(s): `client/api/client.ts:703-724`, `client/screens/StoryEditorScreen.tsx:894-899`
-  - Backend handler(s): `src/routes/story.routes.js:818-856`, `server.js:32-37`
-  - Contract mismatch or risk: mobile still treats a 15-minute transport abort as terminal error instead of a recovery/status path, even though backend finalize remains synchronous and bounded by the same 15-minute server timeout.
-  - Why it matters to mobile launch: render work may continue or complete after the request path becomes unreliable, leaving recovery ambiguous.
-  - Minimal fix: document and harden one explicit timeout-recovery path before launch rather than broadening into queue redesign.
-  - Docs to update when fixed: mobile repo `docs/MOBILE_USED_SURFACES.md`, `docs/MOBILE_BACKEND_CONTRACT.md`
+- `NEXT`: Map editor/search domain failures to stable 4xx/404 responses.
+  - Backend routes: `src/routes/story.routes.js:497-725`
+  - Backend services: `src/services/story.service.js:468-550`, `src/services/story.service.js:628-700`
+  - Minimal boundary: keep envelopes stable; fix the error mapping and `updateBeatText()` null-session guard.
 
-## Phase 1: Launch-Critical Hardening
-- ? Add focused rate limits to `POST /api/story/search`, `POST /api/story/search-shot`, and `POST /api/story/finalize`.
-  - Route classification: `MOBILE_CORE_NOW`
-  - Mobile caller(s): `client/screens/ScriptScreen.tsx:141-159`, `client/screens/ClipSearchModal.tsx:49-80`, `client/screens/StoryEditorScreen.tsx:834-911`
-  - Backend handler(s): `src/routes/story.routes.js:497-516`, `src/routes/story.routes.js:594-633`, `src/routes/story.routes.js:818-856`
-  - Contract mismatch or risk: caption preview already has rate limiting and plan/generate already have daily caps, but the remaining expensive mobile-core routes are still exposed.
-  - Why it matters to mobile launch: protects shared search/render capacity.
-  - Minimal fix: add per-UID/per-IP rate limits without changing envelopes.
-  - Docs to update when fixed: `docs/MOBILE_BACKEND_CONTRACT.md`
+- `NEXT`: Review explicit admission control for expensive mobile-used routes.
+  - Review set: `POST /api/story/generate`, `POST /api/story/search`, `POST /api/story/search-shot`, `POST /api/story/finalize`
+  - Current evidence: `src/routes/story.routes.js:148`, `src/routes/story.routes.js:497-516`, `src/routes/story.routes.js:594-633`, `src/routes/story.routes.js:818-856`, `src/routes/caption.preview.routes.js:91-108`
+  - Important nuance: `generate` already has a daily cap; review it before adding new per-request rate limits.
 
-- ? Default-disable `POST /api/story/render`.
-  - Route classification: `REMOVE_LATER`
-  - Mobile caller(s): none
-  - Backend handler(s): `src/routes/story.routes.js:775-816`
-  - Contract mismatch or risk: legacy render route bypasses finalize's idempotent credit-reservation path while still competing for render slots.
-  - Why it matters to mobile launch: unnecessary shared risk on the same render infrastructure.
-  - Minimal fix: keep `DISABLE_STORY_RENDER_ROUTE=1` behavior on by default.
-  - Docs to update when fixed: `docs/LEGACY_WEB_SURFACES.md`
+## Phase 3 Explicit Scale Track
 
-- ? Apply revocation-aware auth at least to finalize.
-  - Route classification: `MOBILE_CORE_NOW`
-  - Mobile caller(s): `client/screens/StoryEditorScreen.tsx:834-911`
-  - Backend handler(s): `src/middleware/requireAuth.js:5-19`, `src/routes/story.routes.js:818-856`
-  - Contract mismatch or risk: current auth verifies token validity, not revocation.
-  - Why it matters to mobile launch: finalize is the highest-value authenticated write surface.
-  - Minimal fix: add revocation checking on finalize first; expand only if latency is acceptable.
-  - Docs to update when fixed: `docs/MOBILE_BACKEND_CONTRACT.md`
-
-- ? Preserve `GET /api/story/:sessionId` as the render-recovery contract.
-  - Route classification: `MOBILE_CORE_NOW`
-  - Mobile caller(s): `client/screens/ScriptScreen.tsx:64-84`, `client/screens/StoryEditorScreen.tsx:367-449`
-  - Backend handler(s): `src/routes/story.routes.js:1002-1024`, `server.js:32-39`, `src/utils/render.semaphore.js:1-22`
-  - Contract mismatch or risk: renders remain synchronous and bounded to three concurrent slots.
-  - Why it matters to mobile launch: this is the existing repo shape mobile already fits.
-  - Minimal fix: harden around this route rather than adding a queue prelaunch.
-  - Docs to update when fixed: `docs/MOBILE_BACKEND_CONTRACT.md`
-
-## Phase 2: Reliability Improvements
-
-- ? Canonicalize mobile mutation envelopes around the fields mobile actually reads.
-  - Route classification: `MOBILE_CORE_NOW`
-  - Mobile caller(s): `client/screens/ScriptScreen.tsx:184-195`, `client/screens/ClipSearchModal.tsx:61-70`, `client/screens/StoryEditorScreen.tsx:686-701`
-  - Backend handler(s): `src/routes/story.routes.js:518-725`
-  - Contract mismatch or risk: mobile currently survives because it either ignores mutation payloads or uses fallback helpers on partial envelopes.
-  - Why it matters to mobile launch: fewer fallback assumptions and cleaner error recovery.
-  - Minimal fix: keep current routes, but make the envelopes and failure semantics consistent.
-  - Docs to update when fixed: mobile repo `docs/MOBILE_USED_SURFACES.md`, `docs/MOBILE_BACKEND_CONTRACT.md`
-
-- ? Make `POST /api/users/ensure` symmetric enough for mobile profile bootstrap.
-  - Route classification: `MOBILE_CORE_NOW`
-  - Mobile caller(s): `client/contexts/AuthContext.tsx:63-76`, `client/api/client.ts:469-472`
-  - Backend handler(s): `src/routes/users.routes.js:15-92`
-  - Contract mismatch or risk: mobile stores the returned profile, but new-user and existing-user responses do not expose the same fields.
-  - Why it matters to mobile launch: current wrapper has to patch missing `plan` defensively.
-  - Minimal fix: return the same shape for both new and existing users.
-  - Docs to update when fixed: mobile repo `docs/MOBILE_USED_SURFACES.md`, `docs/MOBILE_BACKEND_CONTRACT.md`
-
-- ?? Promote `POST /api/story/insert-beat` only when the mobile caller lands.
-  - Route classification: `MOBILE_CORE_SOON`
-  - Mobile caller(s): none yet
-  - Backend handler(s): `src/routes/story.routes.js:635-662`, `src/services/story.service.js:555-623`
-  - Why it matters to mobile launch: it does not today.
-  - Minimal fix: none until caller exists.
-  - Docs to update when fixed: mobile repo `docs/MOBILE_USED_SURFACES.md`, `docs/MOBILE_BACKEND_CONTRACT.md`
-
-- ?? Revisit checkout/webhook surfaces only if mobile billing is blocked.
-  - Route classification: `LEGACY_WEB`
-  - Mobile caller(s): none direct
-  - Backend handler(s): `src/routes/checkout.routes.js`, `src/routes/stripe.webhook.js`
-  - Why it matters to mobile launch: only through credits acquisition, not through direct mobile API usage.
-  - Minimal fix: keep scope narrow to billing correctness.
-  - Docs to update when fixed: `docs/LEGACY_WEB_SURFACES.md`
-
-## Phase 3: Legacy Containment / Cleanup
-
-- ? Freeze non-mobile product routes into `LEGACY_WEB` and `REMOVE_LATER` buckets.
-  - Why: backend drift already came from treating every mounted route as equal launch scope.
-  - Docs: `docs/LEGACY_WEB_SURFACES.md`
-
-- ?? Retire `REMOVE_LATER` routes after current caller freeze.
-  - Routes: `POST /api/story/update-script`, `POST /api/story/timeline`, `POST /api/story/captions`, `POST /api/story/render`, `POST /api/user/setup`, `GET /api/user/me`, `GET /api/whoami`, `GET /api/limits/usage`
-  - Why: no current mobile caller and no current user-facing web caller.
-
-- ? Do not expand scope into voice/TTS, stale profile routes, or old web-studio cleanup.
-  - Why: not caller-backed for the current mobile product.
-
-- ? Do not propose a full backend rebuild or queue migration before mobile launch.
-  - Why: the lower-risk path is narrow contract repair, route gating, and admission control on the existing code.
+- `TRACK`: keep render-architecture scale visible without letting it jump ahead of launch-critical fixes.
+  - Current backend evidence: `src/utils/render.semaphore.js:4-22`, `src/routes/story.routes.js:830-841`, `server.js:32-37`
+  - Direction: queue-backed or async job/status finalize path with multi-instance-safe concurrency.
 
 ## Exit Criteria
 
-- Mobile finalize and backend finalize agree on idempotency behavior.
-- Credits path truth is explicit in code, not hidden in env assumptions.
-- Shorts detail resolves current story outputs and returns the identifier shape the mobile app reads.
-- Mobile editor mutations return diagnosable failures instead of generic 500s.
-- Only `MOBILE_CORE_NOW` routes remain in the launch-critical hardening queue.
-- `LEGACY_WEB` and `REMOVE_LATER` surfaces stay documented and out of the mobile-first queue.
+- `Phase 0`: no mobile user can appear app-ready before backend provisioning succeeds, and request correlation is preserved in the mobile normalization layer.
+- `Phase 1`: timeout/network-loss recovery is backend-backed, and newly rendered shorts load directly from detail without relying on list fallback.
+- `Phase 2`: editor/search routes stop collapsing known domain failures into generic 500s, and expensive mobile-used routes have explicit admission-control coverage.
+- `Phase 3`: render work no longer depends on a long-lived blocking HTTP request or per-process-only concurrency control.

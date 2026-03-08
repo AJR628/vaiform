@@ -14,17 +14,17 @@ Purpose: canonical backend-owned contract, guarantees, and open mismatch record 
 
 ## Request Rules
 
-- Authenticated mobile requests use `Authorization: Bearer <Firebase ID token>` when a token is available (`client/api/client.ts:138-145`, `client/api/client.ts:198-205`, `src/middleware/requireAuth.js:5-19`).
+- Authenticated mobile requests use `Authorization: Bearer <Firebase ID token>` when a token is available (`client/api/client.ts:161-167`, `client/api/client.ts:221-227`, `src/middleware/requireAuth.js:5-19`).
 - JSON requests use `Content-Type: application/json`.
-- Mobile callers send `x-client: mobile` (`client/api/client.ts:132-136`, `client/api/client.ts:192-196`). Caption preview uses that header as part of the mobile/server-measured path selection when `measure` is omitted (`src/routes/caption.preview.routes.js:131-145`).
-- Backend finalize requires `X-Idempotency-Key`, and the current mobile finalize caller sends it (`src/middleware/idempotency.firestore.js:33-37`, `client/api/client.ts:676-695`).
-- Mobile credits currently call `GET /api/credits`, which matches the mounted backend path (`client/api/client.ts:478-484`, `src/app.js:215-217`, `src/routes/credits.routes.js:7-11`).
+- Mobile callers send `x-client: mobile` (`client/api/client.ts:155-159`, `client/api/client.ts:215-219`). Caption preview uses that header as part of the mobile/server-measured path selection when `measure` is omitted (`src/routes/caption.preview.routes.js:131-145`).
+- Backend finalize requires `X-Idempotency-Key`, and the current mobile finalize caller sends it (`src/middleware/idempotency.firestore.js:33-37`, `client/api/client.ts:697-720`).
+- Mobile credits currently call `GET /api/credits`, which matches the mounted backend path (`client/api/client.ts:501-505`, `src/app.js:215-217`, `src/routes/credits.routes.js:7-11`).
 
 ## Response Rules
 
 - Standard backend success envelope: `{ success: true, data, requestId }` (`src/http/respond.js:14-17`).
 - Standard backend failure envelope: `{ success: false, error, detail, requestId, fields? }` (`src/http/respond.js:28-34`).
-- Mobile normalization layer converts success envelopes to `{ ok: true, data }` and failure envelopes to `{ ok: false, status, code, message }` (`client/api/client.ts:95-122`, `client/api/client.ts:184-235`).
+- Mobile normalization layer now preserves `requestId` while converting success envelopes to `{ ok: true, data, requestId }` and failure envelopes to `{ ok: false, status, code, message, requestId }` (`client/api/client.ts:77-145`, `client/api/client.ts:207-260`).
 - Finalize is the current launch exception: the backend returns top-level `shortId`, and the mobile client explicitly extracts it from the raw response (`src/routes/story.routes.js:35-41`, `src/routes/story.routes.js:840-841`, `client/api/client.ts:740-760`).
 
 ## Current Open Contract Mismatches
@@ -40,13 +40,8 @@ Purpose: canonical backend-owned contract, guarantees, and open mismatch record 
   - Backend writer: `src/services/story.service.js:1921-1945`
   - Why it matters: backend detail still probes `short.mp4` and `cover.jpg`, while story finalize writes `story.mp4` and `thumb.jpg`.
 
-- `OPEN`: `/api/users/ensure` returns asymmetric shapes for new vs existing users.
-  - Mobile caller: `client/contexts/AuthContext.tsx:63-76`, `client/api/client.ts:469-472`
-  - Backend handler: `src/routes/users.routes.js:32-87`
-  - Why it matters: mobile stores the returned profile and still patches missing `plan` to `"free"` for existing users.
-
 - `OPEN`: Finalize timeout recovery is incomplete across the current mobile/backend contract flow.
-  - Mobile timeout handling: `client/api/client.ts:703-724`, `client/screens/StoryEditorScreen.tsx:894-899`
+  - Mobile timeout handling: `client/api/client.ts:723-745`, `client/screens/StoryEditorScreen.tsx:894-899`
   - Backend render posture: `src/routes/story.routes.js:830-841`, `server.js:32-37`
   - Why it matters: the client still treats a 15-minute transport abort as terminal error instead of a recovery/status path.
 
@@ -59,20 +54,20 @@ Purpose: canonical backend-owned contract, guarantees, and open mismatch record 
 ### Auth Bootstrap And Credits
 
 - `POST /api/users/ensure`
-  - Mobile caller(s): `client/contexts/AuthContext.tsx:63-76`
-  - Backend handler(s): `src/routes/users.routes.js:15-92`
+  - Mobile caller(s): `client/contexts/AuthContext.tsx:82-149`
+  - Backend handler(s): `src/routes/users.routes.js:15-31`, `src/services/credit.service.js:225-268`
   - Mobile sends: no body.
-  - Backend returns: full success envelope with profile data.
-  - Mobile reads: stores the returned profile; current screens only read `userProfile.credits`.
-  - Contract caveat: existing-user backend response omits `plan`; mobile wrapper patches missing `plan` to `"free"` (`client/api/client.ts:469-472`).
+  - Backend returns: full success envelope with a symmetric mobile profile shape.
+  - Mobile reads: stores the returned profile; current screens still only screen-read `userProfile.credits`.
+  - Contract note: the app now waits for this provisioning call to succeed before treating the signed-in user as app-ready.
 
 - `GET /api/credits`
-  - Mobile caller(s): `client/contexts/AuthContext.tsx:87-103`, `client/screens/SettingsScreen.tsx:42-58`, `client/screens/StoryEditorScreen.tsx:875-880`
-  - Backend handler(s): `src/routes/credits.routes.js:7-11`, `src/controllers/credits.controller.js:5-17`
+  - Mobile caller(s): `client/contexts/AuthContext.tsx:157-179`, `client/screens/SettingsScreen.tsx:42-58`, `client/screens/StoryEditorScreen.tsx:912-918`
+  - Backend handler(s): `src/routes/credits.routes.js:7-11`, `src/controllers/credits.controller.js:4-15`, `src/services/credit.service.js:225-268`
   - Mobile sends: no body; current wrapper path is `"/api/credits"`.
   - Backend returns: `{ success: true, data: { uid, email, credits }, requestId }`.
-  - Mobile reads: `data.credits` only.
-  - Contract caveat: current mobile screens only read `data.credits`; the rest of the payload is not mobile contract-critical today.
+  - Mobile reads: `data.credits`; if `userProfile` is unexpectedly null, the client now seeds a minimal profile instead of preserving `null`.
+  - Contract note: `GET /api/credits` now shares the same canonical provisioning helper as `POST /api/users/ensure`.
 
 ### Story Creation And Session Truth
 
@@ -97,7 +92,7 @@ Purpose: canonical backend-owned contract, guarantees, and open mismatch record 
   - Mobile sends: no body.
   - Backend returns: full session in `data`.
   - Mobile reads: `story.sentences` with helper fallbacks, `shots`, `overlayCaption.placement`, `shot.selectedClip.thumbUrl`, and `shot.searchQuery`.
-  - Recovery role: this is the verified status-check route after finalize retries or transport loss.
+  - Recovery role: mobile already uses this route, but it is not yet a proven finalize-recovery contract because current session data does not express explicit pending/terminal render states.
 
 - `POST /api/story/plan`
   - Mobile caller(s): `client/screens/ScriptScreen.tsx:126-159`
@@ -210,7 +205,7 @@ Purpose: canonical backend-owned contract, guarantees, and open mismatch record 
 | Route | Classification | Verified caller evidence | Handling policy |
 | --- | --- | --- | --- |
 | `POST /api/users/ensure` | `MOBILE_CORE_NOW` | Mobile auth bootstrap (`client/contexts/AuthContext.tsx:63-76`) | Harden and document now. |
-| `GET /api/credits` | `MOBILE_CORE_NOW` | Mobile credits refresh depends on this backend route (`client/api/client.ts:478-484`, `client/contexts/AuthContext.tsx:87-103`) | Harden and document now. |
+| `GET /api/credits` | `MOBILE_CORE_NOW` | Mobile credits refresh depends on this backend route (`client/api/client.ts:501-505`, `client/contexts/AuthContext.tsx:87-103`) | Harden and document now. |
 | `POST /api/story/start` | `MOBILE_CORE_NOW` | Mobile home create flow (`client/screens/HomeScreen.tsx:79-107`) | Harden now. |
 | `POST /api/story/generate` | `MOBILE_CORE_NOW` | Mobile create flow (`client/screens/HomeScreen.tsx:109-127`) | Harden now. |
 | `GET /api/story/:sessionId` | `MOBILE_CORE_NOW` | Mobile script/editor recovery truth (`client/screens/ScriptScreen.tsx:64-84`, `client/screens/StoryEditorScreen.tsx:367-449`) | Harden now. |
