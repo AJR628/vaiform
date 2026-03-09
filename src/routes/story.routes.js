@@ -827,6 +827,7 @@ r.post(
       }
 
       const { sessionId } = parsed.data;
+      const attemptId = String(req.get('X-Idempotency-Key') || '').trim();
       // NOTE: finalizeStory() blocks the HTTP request until render completes (synchronous operation).
       // Credits were already reserved by idempotency middleware; on 5xx middleware refunds.
       const session = await withRenderSlot(() =>
@@ -834,6 +835,7 @@ r.post(
           uid: req.user.uid,
           sessionId,
           options: req.body.options || {},
+          attemptId,
         })
       );
 
@@ -923,9 +925,9 @@ r.post('/create-manual-session', async (req, res) => {
       const trimmed = text.trim();
       return (
         trimmed === '' ||
-        trimmed === 'Add text…' ||
+        trimmed === 'Add textâ€¦' ||
         trimmed === 'Add text' ||
-        trimmed.toLowerCase() === 'add text…'
+        trimmed.toLowerCase() === 'add textâ€¦'
       );
     }
 

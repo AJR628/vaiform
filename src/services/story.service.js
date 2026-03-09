@@ -1,6 +1,6 @@
 /**
  * Story-based video pipeline service
- * Orchestrates: input → story → visual plan → stock search → timeline → render
+ * Orchestrates: input Ã¢â€ â€™ story Ã¢â€ â€™ visual plan Ã¢â€ â€™ stock search Ã¢â€ â€™ timeline Ã¢â€ â€™ render
  */
 
 import crypto from 'node:crypto';
@@ -58,6 +58,70 @@ function ensureSessionDefaults(session) {
   return session;
 }
 
+function normalizeRenderRecoveryAttemptId(attemptId, previous = null) {
+  if (typeof attemptId === 'string' && attemptId.trim().length > 0) {
+    return attemptId.trim();
+  }
+  if (typeof previous === 'string' && previous.trim().length > 0) {
+    return previous.trim();
+  }
+  return null;
+}
+
+function renderRecoveryFromState({ state, attemptId, previous = {}, shortId = null, error = null }) {
+  const now = new Date().toISOString();
+  const normalizedAttemptId = normalizeRenderRecoveryAttemptId(attemptId, previous.attemptId);
+  const priorShortId =
+    typeof previous?.shortId === 'string' && previous.shortId.trim().length > 0 ? previous.shortId : null;
+
+  if (state === 'pending') {
+    return {
+      state: 'pending',
+      attemptId: normalizedAttemptId,
+      startedAt: now,
+      updatedAt: now,
+      shortId: null,
+      finishedAt: null,
+      failedAt: null,
+      code: null,
+      message: null,
+    };
+  }
+
+  if (state === 'done') {
+    return {
+      state: 'done',
+      attemptId: normalizedAttemptId,
+      startedAt: previous?.startedAt || now,
+      updatedAt: now,
+      shortId:
+        typeof shortId === 'string' && shortId.trim().length > 0 ? shortId.trim() : priorShortId,
+      finishedAt: now,
+      failedAt: null,
+      code: null,
+      message: null,
+    };
+  }
+
+  return {
+    state: 'failed',
+    attemptId: normalizedAttemptId,
+    startedAt: previous?.startedAt || now,
+    updatedAt: now,
+    shortId: priorShortId,
+    finishedAt: null,
+    failedAt: now,
+    code:
+      typeof error?.code === 'string' && error.code.trim().length > 0
+        ? error.code
+        : 'STORY_FINALIZE_FAILED',
+    message:
+      typeof error?.message === 'string' && error.message.trim().length > 0
+        ? error.message
+        : 'Failed to finalize story',
+  };
+}
+
 /**
  * Save story session
  */
@@ -79,6 +143,26 @@ async function loadStorySession({ uid, sessionId }) {
     return null;
   }
 
+  return session;
+}
+
+async function persistRenderRecovery({ uid, sessionId, attemptId, state, shortId = null, error = null }) {
+  const session = await loadStorySession({ uid, sessionId });
+  if (!session) return null;
+
+  const previous =
+    session.renderRecovery && typeof session.renderRecovery === 'object' ? session.renderRecovery : {};
+  const next = renderRecoveryFromState({
+    state,
+    attemptId,
+    previous,
+    shortId,
+    error,
+  });
+
+  session.renderRecovery = next;
+  session.updatedAt = next.updatedAt;
+  await saveStorySession({ uid, sessionId, data: session });
   return session;
 }
 
@@ -921,7 +1005,7 @@ const CLOSING_PUNCT = new Set([
 
 /**
  * Terminal punctuation class: scan backward skipping whitespace and closing quotes/brackets.
- * Detects ellipsis (... or …), strong (.!?), semi (; : — –), soft (comma), else none.
+ * Detects ellipsis (... or Ã¢â‚¬Â¦), strong (.!?), semi (; : Ã¢â‚¬â€ Ã¢â‚¬â€œ), soft (comma), else none.
  * @param {string} sentence
  * @returns {'ellipsis'|'strong'|'semi'|'soft'|'none'}
  */
@@ -1400,7 +1484,7 @@ export async function renderStory({ uid, sessionId }) {
 
   try {
     if (useVideoCutsV1) {
-      // --- ENABLE_VIDEO_CUTS_V1: single flow — beatsDurSec → cutTimes → globalTimeline → slice per beat → overlay
+      // --- ENABLE_VIDEO_CUTS_V1: single flow Ã¢â‚¬â€ beatsDurSec Ã¢â€ â€™ cutTimes Ã¢â€ â€™ globalTimeline Ã¢â€ â€™ slice per beat Ã¢â€ â€™ overlay
       const { getDurationMsFromMedia } = await import('../utils/media.duration.js');
       const overlayCaption = session.overlayCaption || session.captionStyle;
       const beatsDurSecArr = [];
@@ -1642,14 +1726,14 @@ export async function renderStory({ uid, sessionId }) {
                   }
                 }
 
-                // ✅ CORRECT PRECEDENCE: Prefer beat-specific captionMeta (SSOT persisted), but verify staleness
+                // Ã¢Å“â€¦ CORRECT PRECEDENCE: Prefer beat-specific captionMeta (SSOT persisted), but verify staleness
                 // Each beat has different text, so meta must be per-beat
                 let wrappedText = null;
                 let meta = null;
 
                 const beatMeta = session.beats?.[i]?.captionMeta;
 
-                // ✅ STALENESS DETECTION: Verify beatMeta is still valid before using
+                // Ã¢Å“â€¦ STALENESS DETECTION: Verify beatMeta is still valid before using
                 let isStale = false;
                 if (beatMeta?.lines && beatMeta?.styleHash && beatMeta?.textHash) {
                   // Compute current text hash (canonical source: session.story.sentences[i])
@@ -1716,7 +1800,7 @@ export async function renderStory({ uid, sessionId }) {
                   durationMs: ttsDurationMs,
                   audioPath: ttsPath, // Pass audio path for duration verification and scaling
                   wrappedText: wrappedText, // Pass wrapped text for line breaks
-                  overlayCaption: meta.effectiveStyle, // ✅ Pass compiler output (SSOT) as overlayCaption
+                  overlayCaption: meta.effectiveStyle, // Ã¢Å“â€¦ Pass compiler output (SSOT) as overlayCaption
                   width: 1080,
                   height: 1920,
                 });
@@ -2057,11 +2141,19 @@ export async function createManualStorySession({ uid, scriptText }) {
 /**
  * Finalize story - run full pipeline (Phase 7)
  */
-export async function finalizeStory({ uid, sessionId, options = {} }) {
+export async function finalizeStory({ uid, sessionId, options = {}, attemptId = null }) {
   let session = await loadStorySession({ uid, sessionId });
   if (!session) throw new Error('SESSION_NOT_FOUND');
 
   try {
+    session = await persistRenderRecovery({
+      uid,
+      sessionId,
+      attemptId,
+      state: 'pending',
+    });
+    if (!session) throw new Error('SESSION_NOT_FOUND_AFTER_PENDING');
+
     // Step 1: Generate story if not done
     if (!session.story) {
       await generateStory({
@@ -2098,9 +2190,29 @@ export async function finalizeStory({ uid, sessionId, options = {} }) {
       if (!session) throw new Error('SESSION_NOT_FOUND_AFTER_RENDER');
     }
 
+    session = await persistRenderRecovery({
+      uid,
+      sessionId,
+      attemptId,
+      state: 'done',
+      shortId: session?.finalVideo?.jobId || null,
+    });
+    if (!session) throw new Error('SESSION_NOT_FOUND_AFTER_RENDER');
+
     return session;
   } catch (error) {
     console.error('[story.service] Finalize failed:', error);
+    try {
+      await persistRenderRecovery({
+        uid,
+        sessionId,
+        attemptId,
+        state: 'failed',
+        error,
+      });
+    } catch (persistError) {
+      console.error('[story.service] Failed to persist renderRecovery failure:', persistError);
+    }
     throw error;
   }
 }

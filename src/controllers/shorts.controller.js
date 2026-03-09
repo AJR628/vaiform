@@ -104,11 +104,29 @@ export async function getShortById(req, res) {
     const destBase = `artifacts/${ownerUid}/${jobId}/`;
     const bucket = admin.storage().bucket();
     const bucketName = bucket.name;
-    const fVideo = bucket.file(`${destBase}short.mp4`);
-    const fCover = bucket.file(`${destBase}cover.jpg`);
+    const storyVideoPath = `${destBase}story.mp4`;
+    const legacyVideoPath = `${destBase}short.mp4`;
+    const storyCoverPath = `${destBase}thumb.jpg`;
+    const legacyCoverPath = `${destBase}cover.jpg`;
+    const fStoryVideo = bucket.file(storyVideoPath);
+    const fLegacyVideo = bucket.file(legacyVideoPath);
+    const fStoryCover = bucket.file(storyCoverPath);
+    const fLegacyCover = bucket.file(legacyCoverPath);
     const fMeta = bucket.file(`${destBase}meta.json`);
 
     const diag = { bucket: bucketName, uid: ownerUid, jobId, base: destBase, steps: [] };
+
+    const buildPayload = ({ videoUrl, coverImageUrl, meta = null }) => ({
+      id: jobId,
+      jobId,
+      videoUrl,
+      coverImageUrl,
+      durationSec: meta?.durationSec ?? null,
+      usedTemplate: meta?.usedTemplate ?? null,
+      usedQuote: meta?.usedQuote ?? null,
+      credits: meta?.credits ?? null,
+      createdAt: meta?.createdAt ?? null,
+    });
 
     let meta = null;
     try {
@@ -120,54 +138,73 @@ export async function getShortById(req, res) {
     }
 
     if (meta?.urls?.video) {
-      const payload = {
-        jobId,
+      const payload = buildPayload({
         videoUrl: meta.urls.video,
         coverImageUrl: meta.urls.cover || null,
-        durationSec: meta.durationSec ?? null,
-        usedTemplate: meta.usedTemplate ?? null,
-        usedQuote: meta.usedQuote ?? null,
-        credits: meta.credits ?? null,
-        createdAt: meta.createdAt ?? null,
-      };
+        meta,
+      });
       if (debug) return ok(req, res, { source: 'meta.urls', diag, payload });
       return ok(req, res, payload);
     }
 
-    const [existsVideo] = await fVideo.exists();
-    if (!existsVideo) {
+    let videoFile = null;
+    let videoPath = null;
+    const [storyVideoExists] = await fStoryVideo.exists();
+    if (storyVideoExists) {
+      videoFile = fStoryVideo;
+      videoPath = storyVideoPath;
+      diag.steps.push('video_story_exists');
+    } else {
+      const [legacyVideoExists] = await fLegacyVideo.exists();
+      if (legacyVideoExists) {
+        videoFile = fLegacyVideo;
+        videoPath = legacyVideoPath;
+        diag.steps.push('video_legacy_exists');
+      }
+    }
+
+    if (!videoFile || !videoPath) {
       if (debug) return fail(req, res, 200, 'NO_VIDEO_OBJECT', 'NO_VIDEO_OBJECT');
       return fail(req, res, 404, 'NOT_FOUND', 'NOT_FOUND');
     }
-    const tokenVideo = await getDownloadToken(fVideo);
+
+    const tokenVideo = await getDownloadToken(videoFile);
     const videoUrl = buildPublicUrl({
       bucket: bucketName,
-      path: `${destBase}short.mp4`,
+      path: videoPath,
       token: tokenVideo,
     });
 
-    const [existsCover] = await fCover.exists();
     let coverImageUrl = null;
-    if (existsCover) {
-      const tokenCover = await getDownloadToken(fCover);
+    let coverPath = null;
+    const [storyCoverExists] = await fStoryCover.exists();
+    if (storyCoverExists) {
+      coverPath = storyCoverPath;
+      diag.steps.push('cover_story_exists');
+    } else {
+      const [legacyCoverExists] = await fLegacyCover.exists();
+      if (legacyCoverExists) {
+        coverPath = legacyCoverPath;
+        diag.steps.push('cover_legacy_exists');
+      }
+    }
+
+    if (coverPath) {
+      const coverFile = coverPath === storyCoverPath ? fStoryCover : fLegacyCover;
+      const tokenCover = await getDownloadToken(coverFile);
       coverImageUrl = buildPublicUrl({
         bucket: bucketName,
-        path: `${destBase}cover.jpg`,
+        path: coverPath,
         token: tokenCover,
       });
     }
 
-    const payload = {
-      jobId,
+    const payload = buildPayload({
       videoUrl,
       coverImageUrl,
-      durationSec: meta?.durationSec ?? null,
-      usedTemplate: meta?.usedTemplate ?? null,
-      usedQuote: meta?.usedQuote ?? null,
-      credits: meta?.credits ?? null,
-      createdAt: meta?.createdAt ?? null,
-    };
-    if (debug) return ok(req, res, { source: 'metadata.tokens', diag, payload });
+      meta,
+    });
+    if (debug) return ok(req, res, { source: 'storage.tokens', diag, payload });
     return ok(req, res, payload);
   } catch (e) {
     console.error('/shorts/:jobId error', e?.message || e);

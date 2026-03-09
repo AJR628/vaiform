@@ -1,6 +1,6 @@
 # MOBILE_BACKEND_CONTRACT
 
-Cross-repo verification date: 2026-03-07.
+Cross-repo verification date: 2026-03-09.
 
 Purpose: canonical backend-owned contract, guarantees, and open mismatch record for mobile production. Current mobile caller-truth lives in the mobile repo. If a route is not `MOBILE_CORE_NOW` or `MOBILE_CORE_SOON` here, it is not first-class for mobile launch.
 
@@ -28,22 +28,6 @@ Purpose: canonical backend-owned contract, guarantees, and open mismatch record 
 - Finalize is the current launch exception: the backend returns top-level `shortId`, and the mobile client explicitly extracts it from the raw response (`src/routes/story.routes.js:35-41`, `src/routes/story.routes.js:840-841`, `client/api/client.ts:740-760`).
 
 ## Current Open Contract Mismatches
-
-- `OPEN`: Shorts detail payload shape does not match the mobile detail adapter.
-  - Mobile reader: `client/api/client.ts:291-307`, `client/screens/ShortDetailScreen.tsx:357-379`
-  - Backend payload: `src/controllers/shorts.controller.js:123-134`, `src/controllers/shorts.controller.js:160-171`
-  - Why it matters: backend returns `jobId`; mobile expects `id`.
-
-- `OPEN`: Shorts detail storage probing does not match story finalize outputs.
-  - Mobile reader/fallback: `client/screens/ShortDetailScreen.tsx:203-303`
-  - Backend detail probe: `src/controllers/shorts.controller.js:104-158`
-  - Backend writer: `src/services/story.service.js:1921-1945`
-  - Why it matters: backend detail still probes `short.mp4` and `cover.jpg`, while story finalize writes `story.mp4` and `thumb.jpg`.
-
-- `OPEN`: Finalize timeout recovery is incomplete across the current mobile/backend contract flow.
-  - Mobile timeout handling: `client/api/client.ts:723-745`, `client/screens/StoryEditorScreen.tsx:894-899`
-  - Backend render posture: `src/routes/story.routes.js:830-841`, `server.js:32-37`
-  - Why it matters: the client still treats a 15-minute transport abort as terminal error instead of a recovery/status path.
 
 - `OPEN`: Several live mobile editor/search routes still collapse service-level domain failures into generic 500s.
   - Backend routes: `src/routes/story.routes.js:497-725`
@@ -87,12 +71,13 @@ Purpose: canonical backend-owned contract, guarantees, and open mismatch record 
   - Guardrail: `enforceScriptDailyCap(300)` (`src/routes/story.routes.js:148`).
 
 - `GET /api/story/:sessionId`
-  - Mobile caller(s): `client/screens/ScriptScreen.tsx:64-84`, `client/screens/StoryEditorScreen.tsx:367-449`, `client/screens/StoryEditorScreen.tsx:432-449`
-  - Backend handler(s): `src/routes/story.routes.js:1002-1024`, `src/services/story.service.js:118-120`
+  - Mobile caller(s): `client/screens/ScriptScreen.tsx:64-84`, `client/screens/StoryEditorScreen.tsx:367-449`, `client/screens/StoryEditorScreen.tsx:943-999`
+  - Backend handler(s): `src/routes/story.routes.js:1002-1024`, `src/services/story.service.js:202-203`
+  - Recovery-state writer(s): `src/services/story.service.js:149-167`, `src/services/story.service.js:2144-2218`
   - Mobile sends: no body.
   - Backend returns: full session in `data`.
-  - Mobile reads: `story.sentences` with helper fallbacks, `shots`, `overlayCaption.placement`, `shot.selectedClip.thumbUrl`, and `shot.searchQuery`.
-  - Recovery role: mobile already uses this route, but it is not yet a proven finalize-recovery contract because current session data does not express explicit pending/terminal render states.
+  - Mobile reads: `story.sentences` with helper fallbacks, `shots`, `overlayCaption.placement`, `shot.selectedClip.thumbUrl`, `shot.searchQuery`, and `renderRecovery` during finalize recovery polling.
+  - Recovery role: this route is now the backend-backed finalize recovery contract. Additive `renderRecovery` fields expose `{ state, attemptId, startedAt, updatedAt, shortId, finishedAt, failedAt, code, message }`, and mobile trusts them only when `renderRecovery.attemptId` matches the active finalize attempt.
 
 - `POST /api/story/plan`
   - Mobile caller(s): `client/screens/ScriptScreen.tsx:126-159`
@@ -164,14 +149,15 @@ Purpose: canonical backend-owned contract, guarantees, and open mismatch record 
 ### Render, Recovery, And Shorts
 
 - `POST /api/story/finalize`
-  - Mobile caller(s): `client/screens/StoryEditorScreen.tsx:834-911`, `client/api/client.ts:676-760`
-  - Backend handler(s): `src/routes/story.routes.js:818-856`, `src/middleware/idempotency.firestore.js:12-208`, `src/services/story.service.js:2060-2105`
+  - Mobile caller(s): `client/screens/StoryEditorScreen.tsx:915-1099`, `client/api/client.ts:696-804`
+  - Backend handler(s): `src/routes/story.routes.js:818-856`, `src/middleware/idempotency.firestore.js:12-208`, `src/services/story.service.js:2144-2218`
   - Mobile sends now: `{ sessionId }` plus `X-Idempotency-Key`.
   - Backend requires now: `{ sessionId }` plus `X-Idempotency-Key`.
   - Backend returns on success: full session in `data` plus top-level `shortId`.
   - Mobile reads: `shortId`, and on failures `retryAfter`, `code/error`, `message/detail`, `status`.
   - Guardrails: Firestore-backed idempotency and credit reservation, `withRenderSlot()` semaphore, synchronous HTTP render path.
-  - Contract caveat: timeout recovery is still incomplete if the transport aborts after 15 minutes.
+  - Recovery contract: backend persists additive `renderRecovery.pending` before the blocking render starts, then persists `renderRecovery.done` or `renderRecovery.failed` with the same `attemptId` used for `X-Idempotency-Key`. On `TIMEOUT`, `NETWORK_ERROR`, or `IDEMPOTENT_IN_PROGRESS`, mobile keeps the active attempt key and polls `GET /api/story/:sessionId` until that same-attempt recovery state reaches a terminal result.
+  - Contract caveat: recovery is currently same-screen and bounded. If polling exhausts its attempts while state remains `pending`, mobile leaves the attempt key in memory and asks the user to resume the same attempt or check Library shortly.
 
 - `GET /api/shorts/mine`
   - Mobile caller(s): `client/screens/LibraryScreen.tsx:80-118`, `client/screens/ShortDetailScreen.tsx:227-248`
@@ -183,14 +169,14 @@ Purpose: canonical backend-owned contract, guarantees, and open mismatch record 
 
 - `GET /api/shorts/:jobId`
   - Mobile caller(s): `client/screens/ShortDetailScreen.tsx:143-333`, `client/screens/ShortDetailScreen.tsx:513-529`
-  - Backend handler(s): `src/routes/shorts.routes.js:7-9`, `src/controllers/shorts.controller.js:93-175`
+  - Backend handler(s): `src/routes/shorts.routes.js:7-9`, `src/controllers/shorts.controller.js:93-208`
   - Mobile sends: no body.
-  - Backend returns today: payload keyed by `jobId`, not `id`.
+  - Backend returns now: bridge payload containing both `id` and `jobId`.
   - Mobile reads: `id`, `videoUrl`, `coverImageUrl`, `durationSec`, `usedQuote.text`, `usedTemplate`, `createdAt`.
-  - Contract caveats:
-    - payload key mismatch: `jobId` vs `id`
-    - storage-name drift: detail probes `short.mp4` and `cover.jpg`, while story finalize writes `story.mp4` and `thumb.jpg`
-    - mobile already falls back to `GET /api/shorts/mine` during repeated 404s
+  - Compatibility bridge:
+    - detail now probes `story.mp4` / `thumb.jpg` first and falls back to `short.mp4` / `cover.jpg`
+    - mobile still ignores `jobId`
+    - mobile still keeps `GET /api/shorts/mine` fallback during the bridge period
 
 ## MOBILE_CORE_SOON Contract
 
@@ -208,7 +194,7 @@ Purpose: canonical backend-owned contract, guarantees, and open mismatch record 
 | `GET /api/credits` | `MOBILE_CORE_NOW` | Mobile credits refresh depends on this backend route (`client/api/client.ts:501-505`, `client/contexts/AuthContext.tsx:87-103`) | Harden and document now. |
 | `POST /api/story/start` | `MOBILE_CORE_NOW` | Mobile home create flow (`client/screens/HomeScreen.tsx:79-107`) | Harden now. |
 | `POST /api/story/generate` | `MOBILE_CORE_NOW` | Mobile create flow (`client/screens/HomeScreen.tsx:109-127`) | Harden now. |
-| `GET /api/story/:sessionId` | `MOBILE_CORE_NOW` | Mobile script/editor recovery truth (`client/screens/ScriptScreen.tsx:64-84`, `client/screens/StoryEditorScreen.tsx:367-449`) | Harden now. |
+| `GET /api/story/:sessionId` | `MOBILE_CORE_NOW` | Mobile script/editor and finalize-recovery truth (`client/screens/ScriptScreen.tsx:64-84`, `client/screens/StoryEditorScreen.tsx:367-449`, `client/screens/StoryEditorScreen.tsx:943-999`) | Harden now. |
 | `POST /api/story/plan` | `MOBILE_CORE_NOW` | Mobile storyboard step (`client/screens/ScriptScreen.tsx:126-159`) | Harden now. |
 | `POST /api/story/search` | `MOBILE_CORE_NOW` | Mobile storyboard step (`client/screens/ScriptScreen.tsx:141-159`) | Harden now. |
 | `POST /api/story/update-beat-text` | `MOBILE_CORE_NOW` | Mobile script/editor beat editing (`client/screens/ScriptScreen.tsx:162-209`, `client/screens/StoryEditorScreen.tsx:679-701`) | Harden now. |
@@ -217,9 +203,9 @@ Purpose: canonical backend-owned contract, guarantees, and open mismatch record 
 | `POST /api/story/update-shot` | `MOBILE_CORE_NOW` | Mobile clip replacement (`client/screens/ClipSearchModal.tsx:83-104`) | Harden now. |
 | `POST /api/caption/preview` | `MOBILE_CORE_NOW` | Mobile beat-card preview (`client/hooks/useCaptionPreview.ts:59-120`) | Harden now. |
 | `POST /api/story/update-caption-style` | `MOBILE_CORE_NOW` | Mobile caption placement persistence (`client/screens/StoryEditorScreen.tsx:765-820`) | Harden now. |
-| `POST /api/story/finalize` | `MOBILE_CORE_NOW` | Mobile render action (`client/screens/StoryEditorScreen.tsx:834-911`) | Harden now; highest-risk contract surface. |
+| `POST /api/story/finalize` | `MOBILE_CORE_NOW` | Mobile render action (`client/screens/StoryEditorScreen.tsx:915-1099`) | Harden now; highest-risk contract surface. |
 | `GET /api/shorts/mine` | `MOBILE_CORE_NOW` | Mobile library list and detail fallback (`client/screens/LibraryScreen.tsx:80-118`, `client/screens/ShortDetailScreen.tsx:227-248`) | Harden now. |
-| `GET /api/shorts/:jobId` | `MOBILE_CORE_NOW` | Mobile post-render detail path (`client/screens/ShortDetailScreen.tsx:143-333`) | Harden now; contract drift is already visible. |
+| `GET /api/shorts/:jobId` | `MOBILE_CORE_NOW` | Mobile post-render detail path (`client/screens/ShortDetailScreen.tsx:143-333`) | Harden now; compatibility bridge is active. |
 | `POST /api/story/insert-beat` | `MOBILE_CORE_SOON` | No current mobile caller | Do not harden until mobile adopts it. |
 | `POST /api/assets/options` | `LEGACY_WEB` | Web creative editor only (`web/public/js/pages/creative/creative.article.mjs:3483`) | Ignore unless shared security risk crosses into mobile. |
 | `POST /api/story/manual` | `LEGACY_WEB` | Web manual flow only (`web/public/js/pages/creative/creative.article.mjs:1487`) | Ignore for mobile launch. |

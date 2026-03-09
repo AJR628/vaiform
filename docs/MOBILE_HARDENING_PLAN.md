@@ -1,6 +1,6 @@
 # MOBILE_HARDENING_PLAN
 
-Cross-repo verification date: 2026-03-07.
+Cross-repo verification date: 2026-03-09.
 
 Goal: harden only the backend surface that the current mobile app actually depends on, in the same phase order used for implementation and docs. This is a continuation plan for the current repos, not a rebuild proposal.
 
@@ -45,18 +45,25 @@ Goal: harden only the backend surface that the current mobile app actually depen
 - `DONE`: persisted active story session state is now scoped by UID so sign-out/account switch does not leak the previous account's active session.
   - Mobile evidence: `client/contexts/ActiveStorySessionContext.tsx:28-89`, `client/navigation/HomeStackNavigator.tsx:30-57`
 
-## Phase 1 Next: Finalize Recovery + Shorts Detail Bridge
+## Phase 1 Completed: Finalize Recovery + Shorts Detail Bridge
 
-- `NEXT`: Add a backend-backed finalize recovery contract.
-  - Mobile caller(s): `client/api/client.ts:697-805`, `client/screens/StoryEditorScreen.tsx:854-944`
-  - Backend handler(s): `src/routes/story.routes.js:818-856`, `src/middleware/idempotency.firestore.js:28-208`, `src/services/story.service.js:1986-2105`
-  - Proof requirement: do not treat `GET /api/story/:sessionId` as the recovery contract unless code proves it can express pending, done, and terminal failed render states.
-  - Current blocker: session state does not yet persist explicit finalize-recovery states; idempotency state exists separately in Firestore.
+- `DONE`: Finalize recovery is now backend-backed through additive session `renderRecovery` state.
+  - Backend evidence: `src/routes/story.routes.js:829-843`, `src/services/story.service.js:61-167`, `src/services/story.service.js:2144-2218`
+  - Mobile evidence: `client/screens/StoryEditorScreen.tsx:122-155`, `client/screens/StoryEditorScreen.tsx:943-1099`
+  - Contract: `renderRecovery` now persists `pending`, `done`, and `failed` states with the active finalize `attemptId`, and mobile only trusts those states when the attempt identity matches the active `X-Idempotency-Key`.
 
-- `NEXT`: Repair shorts detail with a compatibility bridge.
-  - Mobile caller(s): `client/screens/ShortDetailScreen.tsx:143-333`, `client/api/client.ts:291-307`, `client/api/client.ts:532-538`
-  - Backend handler(s): `src/controllers/shorts.controller.js:93-175`, `src/services/story.service.js:1921-1945`
-  - Minimal boundary: add `id`, keep `jobId` during the bridge, probe `story.mp4` / `thumb.jpg` first, retain legacy fallbacks only as compatibility.
+- `DONE`: `renderRecovery.pending` is persisted before the blocking finalize work begins, and existing session readers remain untouched.
+  - Backend evidence: `src/services/story.service.js:2148-2156`
+  - Guardrail: Phase 1 adds only additive session fields; it does not repurpose top-level pipeline `status`.
+
+- `DONE`: Mobile timeout/network-loss recovery now keeps the same finalize attempt identity and polls `GET /api/story/:sessionId` until that same-attempt recovery state becomes terminal.
+  - Mobile evidence: `client/api/client.ts:696-804`, `client/screens/StoryEditorScreen.tsx:1001-1099`
+  - Current limit: recovery remains same-screen and bounded; if polling stays `pending`, the active attempt key remains in memory and the user is prompted to resume the same attempt or check Library shortly.
+
+- `DONE`: Shorts detail now uses a compatibility bridge.
+  - Backend evidence: `src/controllers/shorts.controller.js:107-129`, `src/controllers/shorts.controller.js:150-208`
+  - Mobile evidence: `client/api/client.ts:318-334`, `client/screens/ShortDetailScreen.tsx:356-379`
+  - Contract: detail now returns `id` while keeping `jobId`, probes `story.mp4` / `thumb.jpg` first, and retains legacy filename fallback during the bridge period.
 
 ## Phase 2 Next: Mutation Reliability + Admission-Control Review
 
