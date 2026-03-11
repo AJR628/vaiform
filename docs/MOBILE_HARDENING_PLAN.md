@@ -8,7 +8,8 @@ Goal: harden only the backend surface that the current mobile app actually depen
 
 - The canonical billing-model replacement plan is `docs/TIME_BASED_RENDER_USAGE_MIGRATION_PLAN.md`.
 - Phase 1 of that plan adds backend-only `GET /api/usage` and additive session `billingEstimate`.
-- Current mobile callers remain credit-native until the later caller cutover phase; do not treat the Phase 1 backend billing foundation as a release-ready mobile end state by itself.
+- Phase 2 of that plan cuts backend finalize reservation/settlement over to usage seconds and adds additive finalize `data.billing`, but the estimate-proof gate still requires representative manual verification before the backend cutover can be marked verified.
+- Current mobile callers remain credit-native until the later caller cutover phase; do not treat the backend billing foundation or backend-only Phase 2 cutover as a release-ready mobile end state by itself.
 
 ## Working Rules
 

@@ -1,9 +1,8 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import requireAuth from '../middleware/requireAuth.js';
-import { enforceCreditsForRender, enforceScriptDailyCap } from '../middleware/planGuards.js';
+import { enforceRenderTimeForRender, enforceScriptDailyCap } from '../middleware/planGuards.js';
 import { idempotencyFinalize } from '../middleware/idempotency.firestore.js';
-import { RENDER_CREDIT_COST } from '../services/credit.service.js';
 import { withRenderSlot } from '../utils/render.semaphore.js';
 import {
   createStorySession,
@@ -782,7 +781,7 @@ r.post(
     }
     next();
   },
-  enforceCreditsForRender(),
+  enforceRenderTimeForRender(getStorySession),
   async (req, res) => {
     try {
       const parsed = SessionSchema.safeParse(req.body || {});
@@ -815,10 +814,10 @@ r.post(
   }
 );
 
-// POST /api/story/finalize - Run full pipeline (Phase 7). Credits reserved in idempotency middleware; no double charge on retry.
+// POST /api/story/finalize - Run full pipeline (Phase 7). Render time reserved in idempotency middleware; no double charge on retry.
 r.post(
   '/finalize',
-  idempotencyFinalize({ getSession: getStorySession, creditCost: RENDER_CREDIT_COST }),
+  idempotencyFinalize({ getSession: getStorySession }),
   async (req, res) => {
     try {
       const parsed = SessionSchema.safeParse(req.body || {});
@@ -829,7 +828,7 @@ r.post(
       const { sessionId } = parsed.data;
       const attemptId = String(req.get('X-Idempotency-Key') || '').trim();
       // NOTE: finalizeStory() blocks the HTTP request until render completes (synchronous operation).
-      // Credits were already reserved by idempotency middleware; on 5xx middleware refunds.
+      // Render time was already reserved by idempotency middleware; on 5xx middleware releases it.
       const session = await withRenderSlot(() =>
         finalizeStory({
           uid: req.user.uid,
@@ -840,6 +839,9 @@ r.post(
       );
 
       const shortId = session?.finalVideo?.jobId || null;
+      if (typeof res.finishIdempotentFinalize === 'function') {
+        return await res.finishIdempotentFinalize({ session, shortId, status: 200 });
+      }
       return res.status(200).json(finalizeSuccess(req, session, shortId));
     } catch (e) {
       if (res.headersSent) return;

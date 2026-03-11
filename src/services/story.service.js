@@ -33,6 +33,10 @@ import { deriveCaptionWrapWidthPx } from '../utils/caption.wrapWidth.js';
 import { compileCaptionSSOT } from '../captions/compile.js';
 
 const TTL_HOURS = Number(process.env.STORY_TTL_HOURS || 48);
+const BILLING_ESTIMATE_PER_BEAT_BUFFER_SEC = Math.max(
+  0,
+  Number(process.env.BILLING_ESTIMATE_PER_BEAT_BUFFER_SEC || 1)
+);
 
 // Manual script mode constants
 const MAX_BEATS = 8;
@@ -93,11 +97,30 @@ function totalReadingDurationSec(session) {
   return total;
 }
 
+function billingEstimateBeatCount(session) {
+  if (Array.isArray(session?.story?.sentences) && session.story.sentences.length > 0) {
+    return session.story.sentences.length;
+  }
+  if (Array.isArray(session?.shots) && session.shots.length > 0) {
+    return session.shots.length;
+  }
+  if (Array.isArray(session?.captions) && session.captions.length > 0) {
+    return session.captions.length;
+  }
+  return 0;
+}
+
+function withBillingEstimateSafetyBuffer(session, baseEstimatedSec) {
+  const beatCount = billingEstimateBeatCount(session);
+  const bufferedSec = baseEstimatedSec + beatCount * BILLING_ESTIMATE_PER_BEAT_BUFFER_SEC;
+  return Math.max(1, Math.ceil(bufferedSec));
+}
+
 function deriveBillingEstimate(session) {
   const captionTimelineSec = totalCaptionTimelineSec(session);
   if (Number.isFinite(captionTimelineSec) && captionTimelineSec > 0) {
     return {
-      estimatedSec: Math.ceil(captionTimelineSec),
+      estimatedSec: withBillingEstimateSafetyBuffer(session, captionTimelineSec),
       source: 'caption_timeline',
       computedAt: new Date().toISOString(),
     };
@@ -106,7 +129,7 @@ function deriveBillingEstimate(session) {
   const shotDurationSec = totalShotDurationSec(session);
   if (Number.isFinite(shotDurationSec) && shotDurationSec > 0) {
     return {
-      estimatedSec: Math.ceil(shotDurationSec),
+      estimatedSec: withBillingEstimateSafetyBuffer(session, shotDurationSec),
       source: 'shot_durations',
       computedAt: new Date().toISOString(),
     };
@@ -114,7 +137,7 @@ function deriveBillingEstimate(session) {
 
   const readingDurationSec = totalReadingDurationSec(session);
   return {
-    estimatedSec: Math.ceil(readingDurationSec),
+    estimatedSec: withBillingEstimateSafetyBuffer(session, readingDurationSec),
     source: 'reading_duration',
     computedAt: new Date().toISOString(),
   };

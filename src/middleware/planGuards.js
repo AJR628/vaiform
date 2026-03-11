@@ -1,6 +1,6 @@
 // src/middleware/planGuards.js
 import admin from '../config/firebase.js';
-import { RENDER_CREDIT_COST } from '../services/credit.service.js';
+import { getUsageSummary } from '../services/usage.service.js';
 import { fail } from '../http/respond.js';
 
 /**
@@ -159,40 +159,84 @@ export function enforceWatermarkFlag() {
 }
 
 /**
- * Enforce sufficient credits before render
- * Pre-check only - does not spend credits
+ * Enforce sufficient render time before render.
+ * Pre-check only - does not reserve or settle usage.
  * Must be used after requireAuth middleware
  */
-export function enforceCreditsForRender(required = RENDER_CREDIT_COST) {
+export function enforceRenderTimeForRender(getSession) {
+  if (typeof getSession !== 'function') {
+    throw new Error('enforceRenderTimeForRender requires getSession');
+  }
   return async (req, res, next) => {
-    // Require authentication
     const uid = req.user?.uid;
     if (!uid) {
       return fail(req, res, 401, 'AUTH_REQUIRED', 'You need to sign in to create shorts.');
     }
 
-    // Fetch user document from Firestore
-    const userRef = admin.firestore().collection('users').doc(uid);
-    const snap = await userRef.get();
-
-    if (!snap.exists) {
-      return fail(req, res, 401, 'AUTH_REQUIRED', 'You need to sign in to create shorts.');
+    const sessionId = typeof req.body?.sessionId === 'string' ? req.body.sessionId.trim() : '';
+    if (sessionId.length < 3) {
+      return fail(
+        req,
+        res,
+        400,
+        'INVALID_INPUT',
+        'sessionId required and must be at least 3 characters.'
+      );
     }
 
-    const doc = snap.data() || {};
-    const credits = doc.credits || 0;
+    let session = null;
+    try {
+      session = await getSession({ uid, sessionId });
+    } catch (error) {
+      console.error('[planGuards] Failed to load session for render-time gate:', error);
+      return fail(
+        req,
+        res,
+        500,
+        'RENDER_TIME_GATE_FAILED',
+        'Something went wrong while checking render-time availability.'
+      );
+    }
 
-    if (credits < required) {
+    if (!session) {
+      return fail(req, res, 404, 'SESSION_NOT_FOUND', 'Session not found');
+    }
+
+    const estimatedSec = Number(session?.billingEstimate?.estimatedSec);
+    if (!Number.isFinite(estimatedSec) || estimatedSec <= 0) {
+      return fail(
+        req,
+        res,
+        409,
+        'BILLING_ESTIMATE_UNAVAILABLE',
+        'Render-time estimate is unavailable for this session.'
+      );
+    }
+
+    let usageSummary = null;
+    try {
+      usageSummary = await getUsageSummary(uid, req.user?.email || null);
+    } catch (error) {
+      console.error('[planGuards] Failed to load usage summary for render-time gate:', error);
+      return fail(
+        req,
+        res,
+        500,
+        'RENDER_TIME_GATE_FAILED',
+        'Something went wrong while checking render-time availability.'
+      );
+    }
+
+    if ((usageSummary?.usage?.availableSec ?? 0) < estimatedSec) {
       return fail(
         req,
         res,
         402,
-        'INSUFFICIENT_CREDITS',
-        `Insufficient credits. You need ${required} credits to render.`
+        'INSUFFICIENT_RENDER_TIME',
+        `Insufficient render time. You need ${estimatedSec} seconds to render.`
       );
     }
 
-    // User has sufficient credits - allow request
     next();
   };
 }

@@ -9,7 +9,7 @@ export const PLAN_CYCLE_INCLUDED_SEC = Object.freeze({
   pro: 1800,
 });
 
-function normalizePlan(plan) {
+export function normalizePlan(plan) {
   return typeof plan === 'string' && PLAN_CYCLE_INCLUDED_SEC[plan] != null ? plan : 'free';
 }
 
@@ -25,7 +25,7 @@ function toInt(value, fallback = 0) {
   return Number.isInteger(value) && value >= 0 ? value : fallback;
 }
 
-function normalizeMembership(doc = {}, plan = 'free') {
+export function normalizeMembership(doc = {}, plan = 'free') {
   const stored = doc.membership && typeof doc.membership === 'object' ? doc.membership : {};
   const legacyStatus =
     typeof doc.subscriptionStatus === 'string' && doc.subscriptionStatus.trim().length > 0
@@ -59,7 +59,7 @@ function normalizeMembership(doc = {}, plan = 'free') {
   };
 }
 
-function normalizeUsage(usage = {}, plan = 'free') {
+export function normalizeUsage(usage = {}, plan = 'free') {
   return {
     version: 1,
     billingUnit: 'sec',
@@ -72,11 +72,15 @@ function normalizeUsage(usage = {}, plan = 'free') {
   };
 }
 
-function buildUsagePayload(doc = {}) {
+export function getAvailableSec(usage = {}) {
+  return Math.max(0, usage.cycleIncludedSec - usage.cycleUsedSec - usage.cycleReservedSec);
+}
+
+export function buildUsagePayload(doc = {}) {
   const plan = normalizePlan(doc.plan);
   const membership = normalizeMembership(doc, plan);
   const usage = normalizeUsage(doc.usage, plan);
-  const availableSec = Math.max(0, usage.cycleIncludedSec - usage.cycleUsedSec - usage.cycleReservedSec);
+  const availableSec = getAvailableSec(usage);
 
   return {
     plan,
@@ -137,6 +141,11 @@ export async function getUsageSummary(uid, email) {
 
 export default {
   PLAN_CYCLE_INCLUDED_SEC,
+  normalizePlan,
+  normalizeMembership,
+  normalizeUsage,
+  getAvailableSec,
+  buildUsagePayload,
   ensureCanonicalUsageState,
   getUsageSummary,
 };

@@ -23,8 +23,10 @@ Purpose: canonical backend-owned contract, guarantees, and open mismatch record 
 ## Billing Cutover Note
 
 - Phase 1 of the hard-cutover billing migration adds canonical backend `GET /api/usage` and additive session `billingEstimate`, but mobile does not consume either yet.
+- Phase 2 of the hard-cutover billing migration moves backend render reservation/settlement to canonical usage seconds and adds additive finalize `data.billing`, but mobile still does not consume those billing fields yet.
 - Current mobile caller-truth still uses `GET /api/credits` until the later caller cutover phase.
-- Phases 1 through 3 of the billing migration are one continuous branch track; Phase 1 backend additions are truthful and additive, but they are not meant to represent a release-coherent end state by themselves.
+- Current backend `billingEstimate.estimatedSec` is reservation-safe, not raw; Phase 2 now applies a server-side per-beat safety buffer before reserve and still requires representative manual verification before the estimate-proof gate is considered complete.
+- Phases 1 through 3 of the billing migration are one continuous branch track; backend billing truth is being cut over before mobile caller migration, so the branch is not meant to represent a release-coherent end state until all three phases land and verify together.
 
 ## Response Rules
 
@@ -63,7 +65,7 @@ Purpose: canonical backend-owned contract, guarantees, and open mismatch record 
   - Mobile caller(s): none yet in the current mobile repo.
   - Backend handler(s): `src/routes/usage.routes.js`, `src/controllers/usage.controller.js`, `src/services/usage.service.js`
   - Backend returns: `{ success: true, data: { plan, membership, usage }, requestId }`.
-  - Contract note: this is the canonical backend billing surface introduced in the time-based cutover. It is additive in Phase 1 and not yet mobile-consumed.
+  - Contract note: this is the canonical backend billing surface introduced in the time-based cutover. It is additive through Phase 2 and not yet mobile-consumed.
 
 ### Story Creation And Session Truth
 
@@ -165,9 +167,10 @@ Purpose: canonical backend-owned contract, guarantees, and open mismatch record 
   - Backend handler(s): `src/routes/story.routes.js:818-856`, `src/middleware/idempotency.firestore.js:12-208`, `src/services/story.service.js:2144-2218`
   - Mobile sends now: `{ sessionId }` plus `X-Idempotency-Key`.
   - Backend requires now: `{ sessionId }` plus `X-Idempotency-Key`.
-  - Backend returns on success: full session in `data` plus top-level `shortId`.
+  - Backend returns on success: full session in `data`, additive `data.billing`, plus top-level `shortId`.
   - Mobile reads: `shortId`, and on failures `retryAfter`, `code/error`, `message/detail`, `status`.
-  - Guardrails: Firestore-backed idempotency and credit reservation, `withRenderSlot()` semaphore, synchronous HTTP render path.
+  - Guardrails: Firestore-backed idempotency and usage-second reservation/settlement, `withRenderSlot()` semaphore, synchronous HTTP render path.
+  - Current 402 semantics: backend now uses time-based billing failures such as `INSUFFICIENT_RENDER_TIME`; current mobile copy is still credit-native until Phase 3.
   - Recovery contract: backend persists additive `renderRecovery.pending` before the blocking render starts, then persists `renderRecovery.done` or `renderRecovery.failed` with the same `attemptId` used for `X-Idempotency-Key`. On `TIMEOUT`, `NETWORK_ERROR`, or `IDEMPOTENT_IN_PROGRESS`, mobile keeps the active attempt key and polls `GET /api/story/:sessionId` until that same-attempt recovery state reaches a terminal result.
   - Contract caveat: recovery is currently same-screen and bounded. If polling exhausts its attempts while state remains `pending`, mobile leaves the attempt key in memory and asks the user to resume the same attempt or check Library shortly.
 
@@ -177,6 +180,7 @@ Purpose: canonical backend-owned contract, guarantees, and open mismatch record 
   - Mobile sends: `limit` and optional `cursor`.
   - Backend returns: `{ items, nextCursor, hasMore }` in `data`.
   - Mobile reads: list items and pagination fields.
+  - Additive Phase 2 note: finalized short docs now persist backend-owned `billing` metadata in Firestore; current mobile callers ignore it.
   - Stability note: controller has an index-missing fallback path that disables pagination semantics when the composite index is absent.
 
 - `GET /api/shorts/:jobId`

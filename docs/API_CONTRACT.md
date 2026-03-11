@@ -57,6 +57,8 @@ Existing endpoints may still emit these until migrated; new code and framework-l
 
 - `GET /api/usage` uses the standard success envelope defined above.
 - Additive session `billingEstimate` and additive billing payloads must stay nested under `data`; do not introduce top-level billing fields outside established exceptions like finalize `shortId`.
+- Current Phase 2 finalize success includes additive `data.billing = { billedSec, settledAt }` while keeping top-level `shortId`.
+- Current backend `billingEstimate.estimatedSec` is reservation-safe and may include a documented server-side safety buffer; callers must treat it as backend truth, not recompute it locally.
 
 ## requestId
 

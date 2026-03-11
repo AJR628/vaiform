@@ -17,7 +17,7 @@ Explicitly out of scope:
 - Billing retry time.
 - Billing network delay time.
 - Preserving credits as an active billing concept.
-- Runtime implementation in this pass.
+- Runtime changes outside the currently landed phases recorded in the status ledger below.
 
 Hard-cutover policy:
 - There are no live users.
@@ -32,15 +32,15 @@ Hard-cutover policy:
 Credits are currently wired into the product as a real billing system, not a copy artifact.
 
 Evidence-backed current state:
-- Provisioning defaults write `credits: 100` and related credit-native fields into `users/{uid}` through `src/services/credit.service.js`.
+- Provisioning now establishes canonical `users/{uid}.usage` while legacy mobile-profile compatibility fields still physically exist on `users/{uid}` through `src/services/usage.service.js`, `src/routes/users.routes.js`, and `src/services/credit.service.js`.
 - `GET /api/credits` is a mounted live backend contract through `src/app.js`, `src/routes/credits.routes.js`, and `src/controllers/credits.controller.js`.
-- Finalize currently reserves and refunds credits through `src/middleware/idempotency.firestore.js`.
-- Render gating still checks credit balance in `src/middleware/planGuards.js` and `src/routes/story.routes.js`.
-- Paid/pro entitlement heuristics still infer entitlement from `credits > 0` or related legacy fields in `src/middleware/planGuards.js`, `src/services/user.service.js`, and `src/controllers/limits.controller.js`.
+- Finalize now reserves and settles canonical usage seconds through `src/middleware/idempotency.firestore.js`.
+- Backend `/api/story/render` gating now checks canonical usage availability in `src/middleware/planGuards.js` and `src/routes/story.routes.js`, but finalize remains the canonical settled billing path and `/api/story/render` stays default-disabled/no-caller.
+- Credit-derived paid/pro heuristics still exist in remaining legacy backend surfaces such as `src/middleware/planGuards.js`, `src/services/user.service.js`, and `src/controllers/limits.controller.js`, but render/finalize billing paths no longer depend on them.
 - Stripe plan checkout, Stripe pack checkout, and renewal webhooks still grant credits through `src/controllers/checkout.controller.js` and `src/routes/stripe.webhook.js`.
 - Mobile still reads credits in `client/api/client.ts`, `client/contexts/AuthContext.tsx`, `client/screens/StoryEditorScreen.tsx`, and `client/screens/SettingsScreen.tsx`.
 - Web still sells and displays credits in `web/public/pricing.html`, `web/public/buy-credits.html`, `web/public/js/pricing.js`, `web/public/js/buy-credits.js`, `web/public/js/credits-ui.js`, `web/public/js/my-shorts.js`, and `web/public/js/success.js`.
-- Short detail still exposes a legacy credit-shaped field from `meta.json` in `src/controllers/shorts.controller.js`.
+- Finalized short docs now persist additive `billing` metadata in Firestore, while short detail still exposes a legacy credit-shaped field from `meta.json` in `src/controllers/shorts.controller.js`.
 - Canonical docs and smoke scripts still describe `/api/credits` and fixed credit cost in `docs/MOBILE_BACKEND_CONTRACT.md`, `docs/LEGACY_WEB_SURFACES.md`, `scripts/smoke.mjs`, and the mobile repo docs/spec.
 
 Why this is a model refactor, not a rename:
@@ -156,7 +156,8 @@ Locked source order:
 Rules:
 - Estimate is backend-owned only.
 - Estimate is a conservative reservation target, not client-derived math.
-- Phase verification must prove the estimate is not below billed duration for supported flows.
+- Phase 2 runtime now applies a server-side safety buffer of `1` second per beat via `BILLING_ESTIMATE_PER_BEAT_BUFFER_SEC` before reserving usage.
+- Phase 2 cannot be marked verified until representative supported stories prove the buffered estimate is not below billed duration for supported flows.
 
 ### Finalize reserve/settle model
 
@@ -356,8 +357,14 @@ Verification gates:
 - Failure releases reserved seconds.
 - Successful finalize persists short `billing`.
 - Backend no longer debits credits or throws `INSUFFICIENT_CREDITS`.
-- Backend no longer infers paid/pro from credit balance.
-- Phase 2 is blocked from going live until representative supported stories prove `estimatedSec >= billedSec`, or a documented server-side safety buffer is added and verified when the raw estimate is not conservative enough.
+- Render/finalize billing paths no longer infer paid/pro from credit balance.
+- Phase 2 runtime currently uses the documented per-beat server-side safety buffer above.
+- Phase 2 is still blocked from being marked verified or release-ready until representative supported stories prove the buffered `estimatedSec >= billedSec`.
+- The representative estimate-proof set must include:
+  - a session whose reservation source is `caption_timeline` at finalize start
+  - a session whose reservation source is `shot_durations` at finalize start
+  - a session whose reservation source is `reading_duration` at finalize start
+  - at least one manual-script session that still finalizes through the normal TTS render path
 
 Docs:
 - `docs/TIME_BASED_RENDER_USAGE_MIGRATION_PLAN.md`
@@ -507,7 +514,7 @@ Docs:
 
 ### Phase-specific
 - Phase 1: user docs carry canonical `usage`; session payloads carry `billingEstimate`.
-- Phase 2: no backend billing path depends on credits; finalize settles in seconds only; estimate-proof verification demonstrates `estimatedSec >= billedSec` on representative supported stories or records the server-side safety buffer that makes that true.
+- Phase 2: no backend billing path depends on credits; finalize settles in seconds only; estimate-proof verification demonstrates the buffered `estimatedSec >= billedSec` on representative supported stories.
 - Phase 3: no active caller uses `/api/credits`; mobile shows time-based language only.
 - Phase 4: no checkout or webhook path grants credits; web catalog is time-only.
 - Phase 5: no active code, docs, or tests encode credit semantics.
@@ -524,8 +531,8 @@ Docs:
 
 | Phase | Status |
 | --- | --- |
-| Phase 1 — Backend time-model foundation | Planned |
-| Phase 2 — Backend finalize/time-billing cutover | Planned |
+| Phase 1 — Backend time-model foundation | Landed |
+| Phase 2 — Backend finalize/time-billing cutover | In progress |
 | Phase 3 — Caller migration and active contract cutover | Planned |
 | Phase 4 — Stripe/catalog hard rewrite | Planned |
 | Phase 5 — Credit removal and cleanup | Planned |
