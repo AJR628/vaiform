@@ -58,6 +58,68 @@ function ensureSessionDefaults(session) {
   return session;
 }
 
+function totalCaptionTimelineSec(session) {
+  if (!Array.isArray(session?.captions) || session.captions.length === 0) return null;
+  let maxEnd = null;
+  for (const caption of session.captions) {
+    const end = Number(caption?.endTimeSec);
+    if (!Number.isFinite(end) || end <= 0) continue;
+    maxEnd = maxEnd == null ? end : Math.max(maxEnd, end);
+  }
+  return maxEnd;
+}
+
+function totalShotDurationSec(session) {
+  const shots = Array.isArray(session?.shots) && session.shots.length > 0 ? session.shots : session?.plan;
+  if (!Array.isArray(shots) || shots.length === 0) return null;
+  let total = 0;
+  let count = 0;
+  for (const shot of shots) {
+    const durationSec = Number(shot?.durationSec);
+    if (!Number.isFinite(durationSec) || durationSec <= 0) continue;
+    total += durationSec;
+    count += 1;
+  }
+  return count > 0 ? total : null;
+}
+
+function totalReadingDurationSec(session) {
+  const sentences = session?.story?.sentences;
+  if (!Array.isArray(sentences) || sentences.length === 0) return 0;
+  let total = 0;
+  for (const sentence of sentences) {
+    total += calculateReadingDuration(String(sentence || ''));
+  }
+  return total;
+}
+
+function deriveBillingEstimate(session) {
+  const captionTimelineSec = totalCaptionTimelineSec(session);
+  if (Number.isFinite(captionTimelineSec) && captionTimelineSec > 0) {
+    return {
+      estimatedSec: Math.ceil(captionTimelineSec),
+      source: 'caption_timeline',
+      computedAt: new Date().toISOString(),
+    };
+  }
+
+  const shotDurationSec = totalShotDurationSec(session);
+  if (Number.isFinite(shotDurationSec) && shotDurationSec > 0) {
+    return {
+      estimatedSec: Math.ceil(shotDurationSec),
+      source: 'shot_durations',
+      computedAt: new Date().toISOString(),
+    };
+  }
+
+  const readingDurationSec = totalReadingDurationSec(session);
+  return {
+    estimatedSec: Math.ceil(readingDurationSec),
+    source: 'reading_duration',
+    computedAt: new Date().toISOString(),
+  };
+}
+
 function normalizeRenderRecoveryAttemptId(attemptId, previous = null) {
   if (typeof attemptId === 'string' && attemptId.trim().length > 0) {
     return attemptId.trim();
@@ -126,7 +188,9 @@ function renderRecoveryFromState({ state, attemptId, previous = {}, shortId = nu
  * Save story session
  */
 export async function saveStorySession({ uid, sessionId, data }) {
-  await saveJSON({ uid, studioId: sessionId, file: 'story.json', data });
+  const next = ensureSessionDefaults(data);
+  next.billingEstimate = deriveBillingEstimate(next);
+  await saveJSON({ uid, studioId: sessionId, file: 'story.json', data: next });
 }
 
 /**
@@ -137,6 +201,7 @@ async function loadStorySession({ uid, sessionId }) {
   if (!data) return null;
 
   const session = ensureSessionDefaults(data);
+  session.billingEstimate = deriveBillingEstimate(session);
 
   // Check expiration
   if (session.expiresAt && Date.now() > Date.parse(session.expiresAt)) {

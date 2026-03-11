@@ -20,6 +20,12 @@ Purpose: canonical backend-owned contract, guarantees, and open mismatch record 
 - Backend finalize requires `X-Idempotency-Key`, and the current mobile finalize caller sends it (`src/middleware/idempotency.firestore.js:33-37`, `client/api/client.ts:697-720`).
 - Mobile credits currently call `GET /api/credits`, which matches the mounted backend path (`client/api/client.ts:501-505`, `src/app.js:215-217`, `src/routes/credits.routes.js:7-11`).
 
+## Billing Cutover Note
+
+- Phase 1 of the hard-cutover billing migration adds canonical backend `GET /api/usage` and additive session `billingEstimate`, but mobile does not consume either yet.
+- Current mobile caller-truth still uses `GET /api/credits` until the later caller cutover phase.
+- Phases 1 through 3 of the billing migration are one continuous branch track; Phase 1 backend additions are truthful and additive, but they are not meant to represent a release-coherent end state by themselves.
+
 ## Response Rules
 
 - Standard backend success envelope: `{ success: true, data, requestId }` (`src/http/respond.js:14-17`).
@@ -52,6 +58,12 @@ Purpose: canonical backend-owned contract, guarantees, and open mismatch record 
   - Backend returns: `{ success: true, data: { uid, email, credits }, requestId }`.
   - Mobile reads: `data.credits`; if `userProfile` is unexpectedly null, the client now seeds a minimal profile instead of preserving `null`.
   - Contract note: `GET /api/credits` now shares the same canonical provisioning helper as `POST /api/users/ensure`.
+
+- `GET /api/usage`
+  - Mobile caller(s): none yet in the current mobile repo.
+  - Backend handler(s): `src/routes/usage.routes.js`, `src/controllers/usage.controller.js`, `src/services/usage.service.js`
+  - Backend returns: `{ success: true, data: { plan, membership, usage }, requestId }`.
+  - Contract note: this is the canonical backend billing surface introduced in the time-based cutover. It is additive in Phase 1 and not yet mobile-consumed.
 
 ### Story Creation And Session Truth
 
@@ -192,6 +204,7 @@ Purpose: canonical backend-owned contract, guarantees, and open mismatch record 
 | --- | --- | --- | --- |
 | `POST /api/users/ensure` | `MOBILE_CORE_NOW` | Mobile auth bootstrap (`client/contexts/AuthContext.tsx:63-76`) | Harden and document now. |
 | `GET /api/credits` | `MOBILE_CORE_NOW` | Mobile credits refresh depends on this backend route (`client/api/client.ts:501-505`, `client/contexts/AuthContext.tsx:87-103`) | Harden and document now. |
+| `GET /api/usage` | `MOBILE_CORE_SOON` | No current mobile caller; backend canonical billing replacement path for the hard cutover | Add in backend now; migrate callers later. |
 | `POST /api/story/start` | `MOBILE_CORE_NOW` | Mobile home create flow (`client/screens/HomeScreen.tsx:79-107`) | Harden now. |
 | `POST /api/story/generate` | `MOBILE_CORE_NOW` | Mobile create flow (`client/screens/HomeScreen.tsx:109-127`) | Harden now. |
 | `GET /api/story/:sessionId` | `MOBILE_CORE_NOW` | Mobile script/editor and finalize-recovery truth (`client/screens/ScriptScreen.tsx:64-84`, `client/screens/StoryEditorScreen.tsx:367-449`, `client/screens/StoryEditorScreen.tsx:943-999`) | Harden now. |

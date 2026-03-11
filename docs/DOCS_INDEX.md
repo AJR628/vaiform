@@ -18,6 +18,7 @@ Update these first when backend/mobile contract or hardening truth changes:
 
 - `docs/MOBILE_BACKEND_CONTRACT.md`
 - `docs/MOBILE_HARDENING_PLAN.md`
+- `docs/TIME_BASED_RENDER_USAGE_MIGRATION_PLAN.md`
 - `docs/LEGACY_WEB_SURFACES.md`
 - `docs/API_CONTRACT.md`
 - `docs/COHESION_GUARDRAILS.md`

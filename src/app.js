@@ -17,6 +17,7 @@ import errorHandler from './middleware/error.middleware.js';
 // Direct route imports for explicit mounting
 import whoamiRoutes from './routes/whoami.routes.js';
 import creditsRoutes from './routes/credits.routes.js';
+import usageRoutes from './routes/usage.routes.js';
 import diagRoutes from './routes/diag.routes.js';
 // Old webhook routes removed - using /stripe/webhook instead
 import diagHeadersRoutes from './routes/diag.headers.routes.js';
@@ -214,6 +215,7 @@ console.log('✅ Mounted static /assets (fonts) before API routes');
 if (process.env.VAIFORM_DEBUG === '1') app.use('/diag', diagRoutes);
 app.use('/api/whoami', whoamiRoutes);
 app.use('/api/credits', creditsRoutes);
+app.use('/api/usage', usageRoutes);
 // Mount diag headers only when VAIFORM_DEBUG=1
 if (process.env.VAIFORM_DEBUG === '1') {
   app.use('/api', diagHeadersRoutes);
@@ -259,7 +261,7 @@ console.log('✅ Mounted users routes at /api/users');
 
 // Core routers summary
 console.log(
-  '📋 Mounted core routes: story, caption preview, checkout, credits (GET only), users, user, shorts-readonly'
+  '📋 Mounted core routes: story, caption preview, checkout, credits (GET only), usage (GET only), users, user, shorts-readonly'
 );
 
 // Minimal MIME fix for .woff2 (no behavior change for other assets)

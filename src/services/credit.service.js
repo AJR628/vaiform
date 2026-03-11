@@ -82,7 +82,8 @@ export const MOBILE_USER_DEFAULTS = Object.freeze({
   plan: 'free',
   isMember: false,
   subscriptionStatus: null,
-  credits: 100,
+  // Legacy-only compatibility field until the caller cutover removes /api/credits.
+  credits: 0,
   freeShortsUsed: 0,
 });
 
@@ -223,9 +224,9 @@ function toProvisionedMobileUserProfile(doc = {}, { uid, email } = {}) {
 }
 
 /**
- * Canonical mobile provisioning path for /api/users/ensure and GET /api/credits.
+ * Legacy mobile profile provisioning path for /api/users/ensure and GET /api/credits.
  * Ensures a UID-backed user doc exists, migrates any legacy email doc, and
- * backfills the mobile-required profile fields when they are missing.
+ * backfills the current mobile-required legacy profile fields when they are missing.
  */
 export async function ensureProvisionedMobileUser(uid, email) {
   const { ref } = await ensureUserDocByUid(uid, email);

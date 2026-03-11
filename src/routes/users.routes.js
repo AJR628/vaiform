@@ -3,6 +3,7 @@ import { Router } from 'express';
 import requireAuth from '../middleware/requireAuth.js';
 import { ok, fail } from '../http/respond.js';
 import { ensureProvisionedMobileUser } from '../services/credit.service.js';
+import { ensureCanonicalUsageState } from '../services/usage.service.js';
 
 const r = Router();
 
@@ -22,6 +23,7 @@ r.post('/ensure', requireAuth, async (req, res) => {
     }
 
     const { data } = await ensureProvisionedMobileUser(uid, email);
+    await ensureCanonicalUsageState(uid, email);
     console.log('[users/ensure] Mobile user provisioned:', uid, email);
     return ok(req, res, data);
   } catch (e) {

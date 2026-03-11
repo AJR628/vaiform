@@ -4,6 +4,12 @@ Cross-repo verification date: 2026-03-09.
 
 Goal: harden only the backend surface that the current mobile app actually depends on, in the same phase order used for implementation and docs. This is a continuation plan for the current repos, not a rebuild proposal.
 
+## Parallel Billing Cutover Note
+
+- The canonical billing-model replacement plan is `docs/TIME_BASED_RENDER_USAGE_MIGRATION_PLAN.md`.
+- Phase 1 of that plan adds backend-only `GET /api/usage` and additive session `billingEstimate`.
+- Current mobile callers remain credit-native until the later caller cutover phase; do not treat the Phase 1 backend billing foundation as a release-ready mobile end state by itself.
+
 ## Working Rules
 
 - The mobile repo's `docs/MOBILE_USED_SURFACES.md` is the source of truth for current mobile caller usage.

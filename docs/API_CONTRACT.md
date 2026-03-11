@@ -53,6 +53,11 @@ Do not use these in JSON API responses (they are legacy; target is this contract
 
 Existing endpoints may still emit these until migrated; new code and framework-level middleware (e.g. validate, error handler) must use the contract.
 
+## Additive Billing Migration Fields
+
+- `GET /api/usage` uses the standard success envelope defined above.
+- Additive session `billingEstimate` and additive billing payloads must stay nested under `data`; do not introduce top-level billing fields outside established exceptions like finalize `shortId`.
+
 ## requestId
 
 Set by `reqId` middleware from the `X-Request-Id` request header or a generated UUID. Must be included in every JSON response so clients can correlate logs and support requests.
