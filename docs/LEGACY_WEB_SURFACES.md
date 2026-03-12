@@ -52,7 +52,7 @@ These routes are mounted in the backend but had no current mobile caller and no 
 The following routes also have web callers, but they remain `MOBILE_CORE_NOW` because the mobile app uses them directly today:
 
 - `POST /api/users/ensure`
-- `GET /api/credits`
+- `GET /api/usage`
 - `POST /api/story/start`
 - `POST /api/story/generate`
 - `POST /api/story/plan`
@@ -69,3 +69,5 @@ The following routes also have web callers, but they remain `MOBILE_CORE_NOW` be
 - `GET /api/shorts/:jobId`
 
 Those shared routes stay in the mobile-first hardening queue even though the old web studio or legacy web surfaces still touch some of them.
+
+`GET /api/credits` no longer belongs in this shared list. Phase 3 moved active callers to `GET /api/usage`, and `/api/credits` is now a dead/deprecated endpoint on the backend.

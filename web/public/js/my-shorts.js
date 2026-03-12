@@ -15,11 +15,11 @@ onAuthStateChanged(auth, (user) => {
     .querySelectorAll('.logged-out')
     ?.forEach((el) => el.classList.toggle('hidden', loggedIn));
   if (loggedIn) {
-    refreshCredits();
+    refreshUsage();
     loadShorts();
   } else {
     showEmptyState('Please log in to view your shorts', 'login');
-    setCreditCount('--');
+    setUsageCount('--');
   }
 });
 
@@ -132,35 +132,49 @@ document.getElementById('loadMoreBtn')?.addEventListener('click', () => loadShor
 document.addEventListener('DOMContentLoaded', () => {
   const unsub = onAuthStateChanged(auth, async (u) => {
     if (u) {
-      await refreshCredits();
+      await refreshUsage();
       await loadShorts();
       unsub && unsub();
     }
   });
 });
 
-function setCreditCount(val) {
-  const el = document.getElementById('credit-count');
+function formatRenderTimeAmount(totalSec) {
+  const numeric = Number(totalSec);
+  if (!Number.isFinite(numeric) || numeric <= 0) return '0s';
+  const wholeSec = Math.ceil(numeric);
+  const minutes = Math.floor(wholeSec / 60);
+  const seconds = wholeSec % 60;
+  return minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
+}
+
+function setUsageCount(val) {
+  const el = document.getElementById('usage-count');
   if (el) el.textContent = String(val);
 }
 
-async function refreshCredits() {
+async function refreshUsage() {
   try {
     if (!auth.currentUser) {
-      setCreditCount('--');
+      setUsageCount('--');
       return;
     }
     const token = await auth.currentUser.getIdToken();
-    const res = await fetch('/api/credits', {
+    const res = await fetch('/api/usage', {
       headers: { Authorization: `Bearer ${token}` },
       credentials: 'include',
     });
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const j = await res.json();
-    setCreditCount(j?.credits ?? j?.data?.credits ?? '--');
+    const availableSec = j?.data?.usage?.availableSec;
+    setUsageCount(
+      Number.isFinite(Number(availableSec))
+        ? `${formatRenderTimeAmount(availableSec)} left`
+        : '--'
+    );
   } catch (e) {
-    console.warn('credits fetch failed', e?.message || e);
-    setCreditCount('--');
+    console.warn('render time fetch failed', e?.message || e);
+    setUsageCount('--');
   }
 }
 

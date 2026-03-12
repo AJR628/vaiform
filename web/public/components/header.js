@@ -6,20 +6,19 @@ export function createUnifiedHeader() {
   const headerHTML = `
     <header class="bg-white dark:bg-gray-800 shadow sticky top-0 z-50">
       <div class="w-full md:max-w-6xl md:mx-auto py-2">
-        <!-- Top bar row: Logo left, Credits + Theme + Logout right -->
+        <!-- Top bar row: Logo left, render time + Theme + Logout right -->
         <div class="flex items-center justify-between gap-3 md:gap-4 px-4 sm:px-6 lg:px-8">
           <!-- Logo/Brand -->
           <h1 class="text-2xl font-bold text-indigo-600 dark:text-indigo-400">
             <a href="/">Vaiform</a>
           </h1>
-          <!-- Right cluster: Credits + Theme + Auth buttons -->
+          <!-- Right cluster: render time + Theme + Auth buttons -->
           <div class="flex items-center gap-2">
-            <!-- Credits display for logged-in users -->
-            <div id="credit-display" class="text-sm text-gray-700 dark:text-gray-300 logged-in hidden">
+            <!-- Render-time display for logged-in users -->
+            <div id="usage-display" class="text-sm text-gray-700 dark:text-gray-300 logged-in hidden">
               <span class="bg-indigo-100 dark:bg-indigo-900 text-indigo-700 dark:text-indigo-300 px-2 py-1 rounded-full text-xs font-medium">
-                Credits: <span id="credit-count">--</span>
+                Render time: <span id="usage-count">--</span>
               </span>
-              <a href="/buy-credits.html" class="ml-2 text-xs text-indigo-600 dark:text-indigo-400 hover:underline">buy more</a>
             </div>
             <!-- Theme toggle -->
             <button id="theme-toggle" class="text-yellow-500 dark:text-yellow-400 hover:text-yellow-600 dark:hover:text-yellow-300 text-base" title="Toggle theme">🌙</button>

@@ -36,10 +36,9 @@
     <script type="module" src="./auth-bridge.js"></script>
     <script type="module" src="/js/credits-ui.js?v=20250920b"></script>
     <script type="module">
-      // Make credits functions globally available
-      import { updateCreditsDisplay, fetchAndUpdateCredits } from '/js/credits-ui.js?v=20250920b';
-      window.updateCreditsDisplay = updateCreditsDisplay;
-      window.fetchAndUpdateCredits = fetchAndUpdateCredits;
+      import { updateUsageDisplay, fetchAndUpdateUsage } from '/js/credits-ui.js?v=20250920b';
+      window.updateUsageDisplay = updateUsageDisplay;
+      window.fetchAndUpdateUsage = fetchAndUpdateUsage;
     </script>
     <!-- Shared geometry utilities for caption positioning -->
     <script src="./js/caption-geom.js"></script>

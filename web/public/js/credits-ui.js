@@ -1,56 +1,77 @@
-// Credits display utility functions
-// Centralized credit management for consistent UI updates
+function formatRenderTimeAmount(totalSec) {
+  const numeric = Number(totalSec);
+  if (!Number.isFinite(numeric) || numeric <= 0) return '0s';
 
-export async function updateCreditsDisplay(credits) {
-  const creditCountElements = document.querySelectorAll('#credit-count, .credit-count');
-  const creditBadgeElements = document.querySelectorAll('#credits-badge, .credits-badge');
+  const wholeSec = Math.ceil(numeric);
+  const minutes = Math.floor(wholeSec / 60);
+  const seconds = wholeSec % 60;
 
-  // Update all credit count displays
-  creditCountElements.forEach((el) => {
-    if (el) el.textContent = credits || '--';
+  if (minutes <= 0) return `${seconds}s`;
+  return `${minutes}m ${seconds}s`;
+}
+
+export function formatRenderTimeLeft(totalSec) {
+  const numeric = Number(totalSec);
+  if (!Number.isFinite(numeric) || numeric < 0) return '--';
+  return `${formatRenderTimeAmount(numeric)} left`;
+}
+
+export async function updateUsageDisplay(renderTimeLabel) {
+  const usageCountElements = document.querySelectorAll(
+    '#usage-count, .usage-count, #credit-count, .credit-count'
+  );
+  const usageBadgeElements = document.querySelectorAll(
+    '#usage-badge, .usage-badge, #credits-badge, .credits-badge'
+  );
+
+  usageCountElements.forEach((el) => {
+    if (el) el.textContent = renderTimeLabel || '--';
   });
 
-  // Update all credit badge displays
-  creditBadgeElements.forEach((el) => {
-    if (el) el.textContent = credits || '--';
+  usageBadgeElements.forEach((el) => {
+    if (el) el.textContent = renderTimeLabel || '--';
   });
 }
 
-export async function fetchAndUpdateCredits() {
+export async function fetchAndUpdateUsage() {
   try {
-    // Import Firebase functions dynamically
-    const { doc, getDoc } = await import(
-      'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js'
-    );
-
-    // Check if Firebase is available
-    if (typeof window.auth === 'undefined' || typeof window.db === 'undefined') {
-      console.warn('Firebase not yet available for credits update');
-      return;
+    if (typeof window.auth === 'undefined') {
+      console.warn('Firebase auth not yet available for usage update');
+      await updateUsageDisplay('--');
+      return null;
     }
 
     const user = window.auth.currentUser;
-    if (!user) return;
-
-    const userDoc = await getDoc(doc(window.db, 'users', user.uid));
-    if (userDoc.exists()) {
-      const userData = userDoc.data();
-      const credits = userData.credits || 0;
-      await updateCreditsDisplay(credits);
-      return credits;
+    if (!user) {
+      await updateUsageDisplay('--');
+      return null;
     }
+
+    const token = await user.getIdToken();
+    const res = await fetch('/api/usage', {
+      headers: { Authorization: `Bearer ${token}` },
+      credentials: 'include',
+    });
+
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}`);
+    }
+
+    const payload = await res.json();
+    const availableSec = payload?.data?.usage?.availableSec ?? 0;
+    await updateUsageDisplay(formatRenderTimeLeft(availableSec));
+    return availableSec;
   } catch (error) {
-    console.error('Error fetching credits:', error);
-    await updateCreditsDisplay('--');
+    console.error('Error fetching render time:', error);
+    await updateUsageDisplay('--');
+    return null;
   }
 }
 
-// Initialize credits display when page loads
-export function initCreditsDisplay() {
-  // Wait for Firebase to be ready
+export function initUsageDisplay() {
   const checkFirebaseReady = () => {
-    if (window.auth && window.db) {
-      fetchAndUpdateCredits();
+    if (window.auth) {
+      fetchAndUpdateUsage();
     } else {
       setTimeout(checkFirebaseReady, 100);
     }
@@ -58,3 +79,7 @@ export function initCreditsDisplay() {
 
   checkFirebaseReady();
 }
+
+export const updateCreditsDisplay = updateUsageDisplay;
+export const fetchAndUpdateCredits = fetchAndUpdateUsage;
+export const initCreditsDisplay = initUsageDisplay;

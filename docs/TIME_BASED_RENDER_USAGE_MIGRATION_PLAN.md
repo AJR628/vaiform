@@ -33,15 +33,15 @@ Credits are currently wired into the product as a real billing system, not a cop
 
 Evidence-backed current state:
 - Provisioning now establishes canonical `users/{uid}.usage` while legacy mobile-profile compatibility fields still physically exist on `users/{uid}` through `src/services/usage.service.js`, `src/routes/users.routes.js`, and `src/services/credit.service.js`.
-- `GET /api/credits` is a mounted live backend contract through `src/app.js`, `src/routes/credits.routes.js`, and `src/controllers/credits.controller.js`.
+- `GET /api/credits` remains mounted only as a deprecated/dead endpoint through `src/app.js`, `src/routes/credits.routes.js`, and `src/controllers/credits.controller.js`.
 - Finalize now reserves and settles canonical usage seconds through `src/middleware/idempotency.firestore.js`.
 - Backend `/api/story/render` gating now checks canonical usage availability in `src/middleware/planGuards.js` and `src/routes/story.routes.js`, but finalize remains the canonical settled billing path and `/api/story/render` stays default-disabled/no-caller.
 - Credit-derived paid/pro heuristics still exist in remaining legacy backend surfaces such as `src/middleware/planGuards.js`, `src/services/user.service.js`, and `src/controllers/limits.controller.js`, but render/finalize billing paths no longer depend on them.
 - Stripe plan checkout, Stripe pack checkout, and renewal webhooks still grant credits through `src/controllers/checkout.controller.js` and `src/routes/stripe.webhook.js`.
-- Mobile still reads credits in `client/api/client.ts`, `client/contexts/AuthContext.tsx`, `client/screens/StoryEditorScreen.tsx`, and `client/screens/SettingsScreen.tsx`.
-- Web still sells and displays credits in `web/public/pricing.html`, `web/public/buy-credits.html`, `web/public/js/pricing.js`, `web/public/js/buy-credits.js`, `web/public/js/credits-ui.js`, `web/public/js/my-shorts.js`, and `web/public/js/success.js`.
+- Mobile active billing callers now read canonical usage in `client/api/client.ts`, `client/contexts/AuthContext.tsx`, `client/screens/StoryEditorScreen.tsx`, and `client/screens/SettingsScreen.tsx`.
+- Web pricing/catalog still sells credits in `web/public/pricing.html`, `web/public/buy-credits.html`, `web/public/js/pricing.js`, `web/public/js/buy-credits.js`, and `web/public/js/success.js`, while the minimum active current-balance readers now use render-time semantics through `web/public/js/credits-ui.js`, `web/public/js/my-shorts.js`, and shared header/auth callers.
 - Finalized short docs now persist additive `billing` metadata in Firestore, while short detail still exposes a legacy credit-shaped field from `meta.json` in `src/controllers/shorts.controller.js`.
-- Canonical docs and smoke scripts still describe `/api/credits` and fixed credit cost in `docs/MOBILE_BACKEND_CONTRACT.md`, `docs/LEGACY_WEB_SURFACES.md`, `scripts/smoke.mjs`, and the mobile repo docs/spec.
+- Some canonical docs and smoke scripts still describe `/api/credits` and fixed credit cost in `scripts/smoke.mjs` and older historical/spec materials; active backend/mobile contract docs are now aligned to the time-based caller cutover.
 
 Why this is a model refactor, not a rename:
 - Credits currently drive balance, gating, reservation, refund, purchase grants, entitlement inference, UI copy, and tests.
@@ -387,7 +387,10 @@ Why now:
 Touches:
 - mobile API client and auth context.
 - mobile settings and story editor screens.
-- any active web surface that still reads current balance from backend.
+- the minimum active non-mobile current-balance readers required to remove `/api/credits` from active caller usage:
+  - `web/public/js/my-shorts.js`
+  - `web/public/js/credits-ui.js`
+  - active shared callers of `web/public/js/credits-ui.js`
 - `/api/credits` route removal or immediate deprecation.
 
 Temporary bridge:
@@ -533,6 +536,6 @@ Docs:
 | --- | --- |
 | Phase 1 — Backend time-model foundation | Landed |
 | Phase 2 — Backend finalize/time-billing cutover | In progress |
-| Phase 3 — Caller migration and active contract cutover | Planned |
+| Phase 3 — Caller migration and active contract cutover | Landed |
 | Phase 4 — Stripe/catalog hard rewrite | Planned |
 | Phase 5 — Credit removal and cleanup | Planned |

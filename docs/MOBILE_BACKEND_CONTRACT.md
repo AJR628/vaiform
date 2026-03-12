@@ -1,6 +1,6 @@
 # MOBILE_BACKEND_CONTRACT
 
-Cross-repo verification date: 2026-03-09.
+Cross-repo verification date: 2026-03-12.
 
 Purpose: canonical backend-owned contract, guarantees, and open mismatch record for mobile production. Current mobile caller-truth lives in the mobile repo. If a route is not `MOBILE_CORE_NOW` or `MOBILE_CORE_SOON` here, it is not first-class for mobile launch.
 
@@ -18,13 +18,13 @@ Purpose: canonical backend-owned contract, guarantees, and open mismatch record 
 - JSON requests use `Content-Type: application/json`.
 - Mobile callers send `x-client: mobile` (`client/api/client.ts:155-159`, `client/api/client.ts:215-219`). Caption preview uses that header as part of the mobile/server-measured path selection when `measure` is omitted (`src/routes/caption.preview.routes.js:131-145`).
 - Backend finalize requires `X-Idempotency-Key`, and the current mobile finalize caller sends it (`src/middleware/idempotency.firestore.js:33-37`, `client/api/client.ts:697-720`).
-- Mobile credits currently call `GET /api/credits`, which matches the mounted backend path (`client/api/client.ts:501-505`, `src/app.js:215-217`, `src/routes/credits.routes.js:7-11`).
+- `GET /api/usage` is now the active mobile billing surface, and `GET /api/credits` is mounted only as an explicit deprecated/dead endpoint (`client/api/client.ts:519-527`, `client/contexts/AuthContext.tsx:142-178`, `src/app.js:217-218`, `src/routes/credits.routes.js:1-11`).
 
 ## Billing Cutover Note
 
-- Phase 1 of the hard-cutover billing migration adds canonical backend `GET /api/usage` and additive session `billingEstimate`, but mobile does not consume either yet.
-- Phase 2 of the hard-cutover billing migration moves backend render reservation/settlement to canonical usage seconds and adds additive finalize `data.billing`, but mobile still does not consume those billing fields yet.
-- Current mobile caller-truth still uses `GET /api/credits` until the later caller cutover phase.
+- Phase 1 of the hard-cutover billing migration adds canonical backend `GET /api/usage` and additive session `billingEstimate`.
+- Phase 2 of the hard-cutover billing migration moves backend render reservation/settlement to canonical usage seconds and adds additive finalize `data.billing`.
+- Phase 3 moves active mobile callers to `GET /api/usage`, updates mobile billing copy/gating to render-time semantics, and removes `/api/credits` from active caller usage.
 - Current backend `billingEstimate.estimatedSec` is reservation-safe, not raw; Phase 2 now applies a server-side per-beat safety buffer before reserve and still requires representative manual verification before the estimate-proof gate is considered complete.
 - Phases 1 through 3 of the billing migration are one continuous branch track; backend billing truth is being cut over before mobile caller migration, so the branch is not meant to represent a release-coherent end state until all three phases land and verify together.
 
@@ -43,29 +43,28 @@ Purpose: canonical backend-owned contract, guarantees, and open mismatch record 
   - Why it matters: mobile cannot reliably distinguish session-state errors from real server faults.
 
 ## MOBILE_CORE_NOW Contract
-### Auth Bootstrap And Credits
+### Auth Bootstrap And Usage
 
 - `POST /api/users/ensure`
-  - Mobile caller(s): `client/contexts/AuthContext.tsx:82-149`
+  - Mobile caller(s): `client/contexts/AuthContext.tsx:78-170`
   - Backend handler(s): `src/routes/users.routes.js:15-31`, `src/services/credit.service.js:225-268`
   - Mobile sends: no body.
   - Backend returns: full success envelope with a symmetric mobile profile shape.
-  - Mobile reads: stores the returned profile; current screens still only screen-read `userProfile.credits`.
-  - Contract note: the app now waits for this provisioning call to succeed before treating the signed-in user as app-ready.
-
-- `GET /api/credits`
-  - Mobile caller(s): `client/contexts/AuthContext.tsx:157-179`, `client/screens/SettingsScreen.tsx:42-58`, `client/screens/StoryEditorScreen.tsx:912-918`
-  - Backend handler(s): `src/routes/credits.routes.js:7-11`, `src/controllers/credits.controller.js:4-15`, `src/services/credit.service.js:225-268`
-  - Mobile sends: no body; current wrapper path is `"/api/credits"`.
-  - Backend returns: `{ success: true, data: { uid, email, credits }, requestId }`.
-  - Mobile reads: `data.credits`; if `userProfile` is unexpectedly null, the client now seeds a minimal profile instead of preserving `null`.
-  - Contract note: `GET /api/credits` now shares the same canonical provisioning helper as `POST /api/users/ensure`.
+  - Mobile reads: stores the returned profile for auth/account bootstrap only; active billing screens no longer read `userProfile.credits`.
+  - Contract note: the app now waits for both provisioning and canonical usage fetch to succeed before treating the signed-in user as app-ready.
 
 - `GET /api/usage`
-  - Mobile caller(s): none yet in the current mobile repo.
+  - Mobile caller(s): `client/contexts/AuthContext.tsx:142-178`, `client/screens/SettingsScreen.tsx:43-59`, `client/screens/StoryEditorScreen.tsx:926-951`
   - Backend handler(s): `src/routes/usage.routes.js`, `src/controllers/usage.controller.js`, `src/services/usage.service.js`
   - Backend returns: `{ success: true, data: { plan, membership, usage }, requestId }`.
-  - Contract note: this is the canonical backend billing surface introduced in the time-based cutover. It is additive through Phase 2 and not yet mobile-consumed.
+  - Mobile reads: `data.usage.availableSec` for render-time balance, plus the rest of the usage snapshot for canonical billing state.
+  - Contract note: this is now the active mobile billing surface.
+
+- `GET /api/credits`
+  - Mobile caller(s): none in the current mobile repo.
+  - Backend handler(s): `src/routes/credits.routes.js:1-11`, `src/controllers/credits.controller.js:1-10`
+  - Backend returns: `410 CREDITS_REMOVED`.
+  - Contract note: this endpoint is intentionally dead and must not be revived for compatibility.
 
 ### Story Creation And Session Truth
 
@@ -85,12 +84,12 @@ Purpose: canonical backend-owned contract, guarantees, and open mismatch record 
   - Guardrail: `enforceScriptDailyCap(300)` (`src/routes/story.routes.js:148`).
 
 - `GET /api/story/:sessionId`
-  - Mobile caller(s): `client/screens/ScriptScreen.tsx:64-84`, `client/screens/StoryEditorScreen.tsx:367-449`, `client/screens/StoryEditorScreen.tsx:943-999`
+  - Mobile caller(s): `client/screens/ScriptScreen.tsx:64-84`, `client/screens/StoryEditorScreen.tsx:459-541`, `client/screens/StoryEditorScreen.tsx:954-1009`
   - Backend handler(s): `src/routes/story.routes.js:1002-1024`, `src/services/story.service.js:202-203`
   - Recovery-state writer(s): `src/services/story.service.js:149-167`, `src/services/story.service.js:2144-2218`
   - Mobile sends: no body.
   - Backend returns: full session in `data`.
-  - Mobile reads: `story.sentences` with helper fallbacks, `shots`, `overlayCaption.placement`, `shot.selectedClip.thumbUrl`, `shot.searchQuery`, and `renderRecovery` during finalize recovery polling.
+  - Mobile reads: `story.sentences` with helper fallbacks, `shots`, `overlayCaption.placement`, additive `billingEstimate.estimatedSec`, `shot.selectedClip.thumbUrl`, `shot.searchQuery`, and `renderRecovery` during finalize recovery polling.
   - Recovery role: this route is now the backend-backed finalize recovery contract. Additive `renderRecovery` fields expose `{ state, attemptId, startedAt, updatedAt, shortId, finishedAt, failedAt, code, message }`, and mobile trusts them only when `renderRecovery.attemptId` matches the active finalize attempt.
 
 - `POST /api/story/plan`
@@ -163,14 +162,14 @@ Purpose: canonical backend-owned contract, guarantees, and open mismatch record 
 ### Render, Recovery, And Shorts
 
 - `POST /api/story/finalize`
-  - Mobile caller(s): `client/screens/StoryEditorScreen.tsx:915-1099`, `client/api/client.ts:696-804`
+  - Mobile caller(s): `client/screens/StoryEditorScreen.tsx:1012-1139`, `client/api/client.ts:716-804`
   - Backend handler(s): `src/routes/story.routes.js:818-856`, `src/middleware/idempotency.firestore.js:12-208`, `src/services/story.service.js:2144-2218`
   - Mobile sends now: `{ sessionId }` plus `X-Idempotency-Key`.
   - Backend requires now: `{ sessionId }` plus `X-Idempotency-Key`.
   - Backend returns on success: full session in `data`, additive `data.billing`, plus top-level `shortId`.
-  - Mobile reads: `shortId`, and on failures `retryAfter`, `code/error`, `message/detail`, `status`.
+  - Mobile reads: `shortId`, additive `data.billing.billedSec` when available, and on failures `retryAfter`, `code/error`, `message/detail`, `status`.
   - Guardrails: Firestore-backed idempotency and usage-second reservation/settlement, `withRenderSlot()` semaphore, synchronous HTTP render path.
-  - Current 402 semantics: backend now uses time-based billing failures such as `INSUFFICIENT_RENDER_TIME`; current mobile copy is still credit-native until Phase 3.
+  - Current 402 semantics: backend uses time-based billing failures such as `INSUFFICIENT_RENDER_TIME`, and mobile now mirrors that render-time wording.
   - Recovery contract: backend persists additive `renderRecovery.pending` before the blocking render starts, then persists `renderRecovery.done` or `renderRecovery.failed` with the same `attemptId` used for `X-Idempotency-Key`. On `TIMEOUT`, `NETWORK_ERROR`, or `IDEMPOTENT_IN_PROGRESS`, mobile keeps the active attempt key and polls `GET /api/story/:sessionId` until that same-attempt recovery state reaches a terminal result.
   - Contract caveat: recovery is currently same-screen and bounded. If polling exhausts its attempts while state remains `pending`, mobile leaves the attempt key in memory and asks the user to resume the same attempt or check Library shortly.
 
@@ -207,8 +206,8 @@ Purpose: canonical backend-owned contract, guarantees, and open mismatch record 
 | Route | Classification | Verified caller evidence | Handling policy |
 | --- | --- | --- | --- |
 | `POST /api/users/ensure` | `MOBILE_CORE_NOW` | Mobile auth bootstrap (`client/contexts/AuthContext.tsx:63-76`) | Harden and document now. |
-| `GET /api/credits` | `MOBILE_CORE_NOW` | Mobile credits refresh depends on this backend route (`client/api/client.ts:501-505`, `client/contexts/AuthContext.tsx:87-103`) | Harden and document now. |
-| `GET /api/usage` | `MOBILE_CORE_SOON` | No current mobile caller; backend canonical billing replacement path for the hard cutover | Add in backend now; migrate callers later. |
+| `GET /api/credits` | `REMOVE_LATER` | No current mobile caller; endpoint now returns `410 CREDITS_REMOVED` | Keep dead until final removal. |
+| `GET /api/usage` | `MOBILE_CORE_NOW` | Mobile auth bootstrap and billing refresh (`client/api/client.ts:519-527`, `client/contexts/AuthContext.tsx:142-178`) | Harden and document now. |
 | `POST /api/story/start` | `MOBILE_CORE_NOW` | Mobile home create flow (`client/screens/HomeScreen.tsx:79-107`) | Harden now. |
 | `POST /api/story/generate` | `MOBILE_CORE_NOW` | Mobile create flow (`client/screens/HomeScreen.tsx:109-127`) | Harden now. |
 | `GET /api/story/:sessionId` | `MOBILE_CORE_NOW` | Mobile script/editor and finalize-recovery truth (`client/screens/ScriptScreen.tsx:64-84`, `client/screens/StoryEditorScreen.tsx:367-449`, `client/screens/StoryEditorScreen.tsx:943-999`) | Harden now. |

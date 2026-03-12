@@ -1,5 +1,5 @@
 // Shared authentication utilities for consistent auth handling across pages
-import { updateCreditsDisplay, fetchAndUpdateCredits } from '/js/credits-ui.js?v=20250920b';
+import { updateUsageDisplay, fetchAndUpdateUsage } from '/js/credits-ui.js?v=20250920b';
 
 export function initializeAuth() {
   // Wait for Firebase to be available
@@ -13,8 +13,8 @@ export function initializeAuth() {
   const loginBtn = document.getElementById('login-button');
   const signupBtn = document.getElementById('signup-button');
   const logoutBtn = document.getElementById('logout-button');
-  const creditDisplay = document.getElementById('credit-display');
-  const creditCount = document.getElementById('credit-count');
+  const usageDisplay = document.getElementById('usage-display');
+  const usageCount = document.getElementById('usage-count');
 
   // Import Firebase auth functions
   import('https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js').then(
@@ -23,7 +23,7 @@ export function initializeAuth() {
       onAuthStateChanged(auth, (user) => {
         updateAuthUI(user);
         if (user) {
-          fetchAndUpdateCredits();
+          fetchAndUpdateUsage();
         }
       });
 

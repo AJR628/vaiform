@@ -1,6 +1,6 @@
 # MOBILE_HARDENING_PLAN
 
-Cross-repo verification date: 2026-03-09.
+Cross-repo verification date: 2026-03-12.
 
 Goal: harden only the backend surface that the current mobile app actually depends on, in the same phase order used for implementation and docs. This is a continuation plan for the current repos, not a rebuild proposal.
 
@@ -9,7 +9,8 @@ Goal: harden only the backend surface that the current mobile app actually depen
 - The canonical billing-model replacement plan is `docs/TIME_BASED_RENDER_USAGE_MIGRATION_PLAN.md`.
 - Phase 1 of that plan adds backend-only `GET /api/usage` and additive session `billingEstimate`.
 - Phase 2 of that plan cuts backend finalize reservation/settlement over to usage seconds and adds additive finalize `data.billing`, but the estimate-proof gate still requires representative manual verification before the backend cutover can be marked verified.
-- Current mobile callers remain credit-native until the later caller cutover phase; do not treat the backend billing foundation or backend-only Phase 2 cutover as a release-ready mobile end state by itself.
+- Phase 3 moves active mobile billing callers to `GET /api/usage`, render-time copy, and backend-owned estimate/availability checks; `GET /api/credits` is now a dead endpoint.
+- The overall cutover is still not release-ready until the Phase 2 estimate-proof gate is manually closed and the later Stripe/catalog rewrite lands.
 
 ## Working Rules
 
@@ -35,7 +36,7 @@ Goal: harden only the backend surface that the current mobile app actually depen
 - `DONE`: Mobile now fails fast on missing production-critical backend/Firebase env instead of silently using placeholder values.
   - Mobile evidence: `client/api/client.ts:4-12`, `client/lib/firebase.ts:11-27`
 
-- `DONE`: `/api/users/ensure` and `GET /api/credits` now share one canonical backend provisioning helper.
+- `DONE`: `/api/users/ensure` and the original `GET /api/credits` path were unified onto one canonical backend provisioning helper before the hard cutover deprecated `/api/credits`.
   - Backend evidence: `src/services/credit.service.js:81-87`, `src/services/credit.service.js:225-268`, `src/routes/users.routes.js:15-31`, `src/controllers/credits.controller.js:4-15`
   - Why it mattered: the prior credits path could create a partial user doc with missing mobile profile fields.
 
