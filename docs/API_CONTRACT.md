@@ -55,8 +55,10 @@ Existing endpoints may still emit these until migrated; new code and framework-l
 
 ## Additive Billing Migration Fields
 
-- `GET /api/usage` uses the standard success envelope defined above.
+- `GET /api/usage` uses the standard success envelope defined above and is now the backend-owned billing/account confirmation surface for active web pricing and success flows.
 - `GET /api/credits` is deprecated and now returns `410 CREDITS_REMOVED`; callers must use `GET /api/usage`.
+- `POST /api/checkout/start` now accepts `{ "plan": "creator" | "pro" }` only and returns the standard success envelope with `data.url`.
+- `POST /api/checkout/session` and `POST /api/checkout/subscription` now return `410 CHECKOUT_ROUTE_REMOVED` and must not be used by callers.
 - Additive session `billingEstimate` and additive billing payloads must stay nested under `data`; do not introduce top-level billing fields outside established exceptions like finalize `shortId`.
 - Current Phase 2 finalize success includes additive `data.billing = { billedSec, settledAt }` while keeping top-level `shortId`.
 - Current backend `billingEstimate.estimatedSec` is reservation-safe and may include a documented server-side safety buffer; callers must treat it as backend truth, not recompute it locally.
@@ -76,6 +78,6 @@ Use `src/http/respond.js`:
 
 `POST /stripe/webhook` is machine-to-machine, but when it emits JSON it still uses this envelope.
 
-- Return `200` only after the webhook event was safely committed, was already committed (duplicate no-op), or was intentionally ignored.
+- Return `200` only after the webhook event was safely committed, was already committed (duplicate no-op), or was intentionally ignored. Current Stripe billing events now update entitlement plus usage-period state and never grant credits.
 - Return `400` only for signature/body verification failures that cannot succeed on retry.
 - Return `500` for retryable processing failures after signature verification so Stripe retries.

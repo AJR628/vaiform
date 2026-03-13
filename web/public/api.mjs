@@ -128,7 +128,9 @@ export async function apiFetch(path, opts = {}) {
   const headers = { ...(opts.headers || {}) };
   const needsAuth =
     path === '/credits' ||
+    path === '/usage' ||
     path === '/whoami' ||
+    path.startsWith('/checkout/') ||
     path.startsWith('/generate') ||
     path.startsWith('/v2/') ||
     path.startsWith('/jobs') ||
@@ -171,7 +173,7 @@ export async function apiFetch(path, opts = {}) {
   }
 
   const urlApi = `${API_ROOT}${path}`;
-  dlog('fetch →', urlApi);
+  dlog('fetch â†’', urlApi);
   let res = await fetch(urlApi, { ...opts, body, headers, credentials: 'omit' });
 
   // Graceful fallback for simple GETs if /api/* alias isn't mounted
@@ -179,7 +181,7 @@ export async function apiFetch(path, opts = {}) {
   const eligibleFallback = isGet && path === '/health';
   if (eligibleFallback && res.status === 404) {
     const urlRoot = BACKEND.replace(/\/$/, '') + path;
-    dlog('fallback fetch →', urlRoot);
+    dlog('fallback fetch â†’', urlRoot);
     res = await fetch(urlRoot, { ...opts, headers, credentials: 'omit' });
   }
 
@@ -234,3 +236,4 @@ try {
     };
   }
 } catch {}
+

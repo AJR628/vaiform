@@ -1,6 +1,6 @@
 import admin, { db } from '../config/firebase.js';
 import { ok, fail } from '../http/respond.js';
-import { getAvailableSec, normalizePlan, normalizeUsage } from '../services/usage.service.js';
+import { buildCanonicalUsageState, getAvailableSec } from '../services/usage.service.js';
 
 const requestIdOf = (req) => req?.id ?? null;
 const requestBillingOf = (settlement) => {
@@ -167,8 +167,8 @@ export function idempotencyFinalize({ ttlMinutes = 60, getSession } = {}) {
         }
 
         const userData = userSnap.data() || {};
-        const plan = normalizePlan(userData.plan);
-        const usage = normalizeUsage(userData.usage, plan);
+        const accountState = buildCanonicalUsageState(userData);
+        const usage = accountState.usage;
         if (getAvailableSec(usage) < estimatedSec) {
           const err = new Error(`Insufficient render time. You need ${estimatedSec} seconds to render.`);
           err.code = 'INSUFFICIENT_RENDER_TIME';
@@ -190,6 +190,9 @@ export function idempotencyFinalize({ ttlMinutes = 60, getSession } = {}) {
         tx.set(
           userRef,
           {
+            plan: accountState.plan,
+            membership: accountState.membership,
+            ...(accountState.plan === 'free' ? { isMember: false, subscriptionStatus: 'canceled' } : {}),
             usage: {
               ...usage,
               cycleReservedSec: usage.cycleReservedSec + estimatedSec,
@@ -287,13 +290,16 @@ export function idempotencyFinalize({ ttlMinutes = 60, getSession } = {}) {
           throw err;
         }
         const userData = userSnap.data() || {};
-        const plan = normalizePlan(userData.plan);
-        const usage = normalizeUsage(userData.usage, plan);
+        const accountState = buildCanonicalUsageState(userData);
+        const usage = accountState.usage;
         const nextReservedSec = Math.max(0, usage.cycleReservedSec - estimatedSec);
 
         tx.set(
           userRef,
           {
+            plan: accountState.plan,
+            membership: accountState.membership,
+            ...(accountState.plan === 'free' ? { isMember: false, subscriptionStatus: 'canceled' } : {}),
             usage: {
               ...usage,
               cycleUsedSec: usage.cycleUsedSec + billedSec,
@@ -350,11 +356,14 @@ export function idempotencyFinalize({ ttlMinutes = 60, getSession } = {}) {
           const userSnap = await tx.get(userRef);
           if (!userSnap.exists) return;
           const userData = userSnap.data() || {};
-          const plan = normalizePlan(userData.plan);
-          const usage = normalizeUsage(userData.usage, plan);
+        const accountState = buildCanonicalUsageState(userData);
+        const usage = accountState.usage;
           tx.set(
             userRef,
             {
+              plan: accountState.plan,
+              membership: accountState.membership,
+              ...(accountState.plan === 'free' ? { isMember: false, subscriptionStatus: 'canceled' } : {}),
               usage: {
                 ...usage,
                 cycleReservedSec: Math.max(

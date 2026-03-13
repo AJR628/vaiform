@@ -10,7 +10,7 @@ Goal: harden only the backend surface that the current mobile app actually depen
 - Phase 1 of that plan adds backend-only `GET /api/usage` and additive session `billingEstimate`.
 - Phase 2 of that plan cuts backend finalize reservation/settlement over to usage seconds and adds additive finalize `data.billing`, but the estimate-proof gate still requires representative manual verification before the backend cutover can be marked verified.
 - Phase 3 moves active mobile billing callers to `GET /api/usage`, render-time copy, and backend-owned estimate/availability checks; `GET /api/credits` is now a dead endpoint.
-- The overall cutover is still not release-ready until the Phase 2 estimate-proof gate is manually closed and the later Stripe/catalog rewrite lands.
+- The overall cutover is still not release-ready until the Phase 2 estimate-proof gate is manually closed and the remaining Phase 5 cleanup/removal work lands.
 
 ## Working Rules
 

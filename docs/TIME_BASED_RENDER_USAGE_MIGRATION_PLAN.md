@@ -1,4 +1,4 @@
-﻿# TIME_BASED_RENDER_USAGE_MIGRATION_PLAN
+# TIME_BASED_RENDER_USAGE_MIGRATION_PLAN
 
 ## 1. Purpose
 
@@ -37,9 +37,9 @@ Evidence-backed current state:
 - Finalize now reserves and settles canonical usage seconds through `src/middleware/idempotency.firestore.js`.
 - Backend `/api/story/render` gating now checks canonical usage availability in `src/middleware/planGuards.js` and `src/routes/story.routes.js`, but finalize remains the canonical settled billing path and `/api/story/render` stays default-disabled/no-caller.
 - Credit-derived paid/pro heuristics still exist in remaining legacy backend surfaces such as `src/middleware/planGuards.js`, `src/services/user.service.js`, and `src/controllers/limits.controller.js`, but render/finalize billing paths no longer depend on them.
-- Stripe plan checkout, Stripe pack checkout, and renewal webhooks still grant credits through `src/controllers/checkout.controller.js` and `src/routes/stripe.webhook.js`.
+- Stripe checkout and renewal webhooks now synchronize monthly plan entitlement plus canonical usage-period state through `src/controllers/checkout.controller.js`, `src/routes/checkout.routes.js`, `src/routes/stripe.webhook.js`, and `src/config/commerce.js`, while legacy `/api/checkout/session` and `/api/checkout/subscription` now remain only as explicit dead endpoints.
 - Mobile active billing callers now read canonical usage in `client/api/client.ts`, `client/contexts/AuthContext.tsx`, `client/screens/StoryEditorScreen.tsx`, and `client/screens/SettingsScreen.tsx`.
-- Web pricing/catalog still sells credits in `web/public/pricing.html`, `web/public/buy-credits.html`, `web/public/js/pricing.js`, `web/public/js/buy-credits.js`, and `web/public/js/success.js`, while the minimum active current-balance readers now use render-time semantics through `web/public/js/credits-ui.js`, `web/public/js/my-shorts.js`, and shared header/auth callers.
+- Web pricing/account surfaces are now time-native in `web/public/pricing.html`, `web/public/js/pricing.js`, `web/public/success.html`, and `web/public/js/success.js`; `web/public/buy-credits.html` now redirects to `pricing.html`; and the minimum active current-balance readers continue using render-time semantics through `web/public/js/credits-ui.js`, `web/public/js/my-shorts.js`, and shared header/auth callers.
 - Finalized short docs now persist additive `billing` metadata in Firestore, while short detail still exposes a legacy credit-shaped field from `meta.json` in `src/controllers/shorts.controller.js`.
 - Some canonical docs and smoke scripts still describe `/api/credits` and fixed credit cost in `scripts/smoke.mjs` and older historical/spec materials; active backend/mobile contract docs are now aligned to the time-based caller cutover.
 
@@ -395,7 +395,7 @@ Touches:
 
 Temporary bridge:
 - At most one short deprecation stub for `/api/credits` returning explicit removal error if implementation sequencing needs it.
-- That stub must be removed before this phase is marked complete.
+- That stub may remain only as an explicit dead/deprecated endpoint once active callers are cut over, and must stay tracked for final removal in Phase 5.
 
 Verification gates:
 - Mobile reads `GET /api/usage`, not `/api/credits`.
@@ -425,20 +425,22 @@ Why now:
 
 Touches:
 - checkout controller/routes/schema.
+- canonical Stripe commerce config.
 - Stripe webhook.
-- pricing and success pages.
-- buy-credits surface removal or repurpose.
-- legacy web balance display code.
+- pricing, success, and billing-management pages.
+- buy-credits surface retirement.
+- legacy web account-state reads in commerce surfaces.
 
 Temporary bridge:
-- None.
+- `POST /api/checkout/session` and `POST /api/checkout/subscription` now remain only as explicit `410 CHECKOUT_ROUTE_REMOVED` endpoints until Phase 5 deletes them.
 
 Verification gates:
-- `POST /api/checkout/start` no longer accepts credit semantics.
-- Credit-pack routes are removed or dead.
-- Webhook no longer grants credits.
-- Web pricing no longer mentions credits.
-- Web no longer reads Firestore `users/{uid}.credits` directly.
+- `POST /api/checkout/start` accepts only monthly `plan` checkout semantics for `creator` and `pro`.
+- `POST /api/checkout/session` and `POST /api/checkout/subscription` are explicit dead endpoints.
+- Webhook no longer grants credits and instead synchronizes `plan`, `membership`, and `usage` period state.
+- Pricing is the only product-facing commerce page, `buy-credits.html` redirects to `pricing.html`, and portal return URLs land on `pricing.html`.
+- Success/account confirmation uses backend-owned `GET /api/usage`, not raw Firestore membership reads.
+- Web commerce surfaces no longer sell credits or one-time passes.
 
 Docs:
 - `docs/TIME_BASED_RENDER_USAGE_MIGRATION_PLAN.md`
@@ -491,8 +493,8 @@ Docs:
 - Add `billing` fields to short detail/list payloads.
 - Remove credit-native balance fields from mobile profile/settings usage.
 - Remove credit-native pricing/buy/success payload assumptions from web.
-- Rewrite `POST /api/checkout/start` around monthly time plans only.
-- Remove credit-pack checkout endpoints and webhook grant semantics.
+- Rewrite `POST /api/checkout/start` around monthly time plans only and make `POST /api/checkout/session` plus `POST /api/checkout/subscription` explicit dead endpoints in Phase 4.
+- Remove credit-pack checkout semantics from active routes/pages and replace webhook credit grants with entitlement plus usage-period synchronization.
 
 ## 8. Anti-Drift Rules
 
@@ -537,5 +539,5 @@ Docs:
 | Phase 1 — Backend time-model foundation | Landed |
 | Phase 2 — Backend finalize/time-billing cutover | In progress |
 | Phase 3 — Caller migration and active contract cutover | Landed |
-| Phase 4 — Stripe/catalog hard rewrite | Planned |
+| Phase 4 — Stripe/catalog hard rewrite | Landed |
 | Phase 5 — Credit removal and cleanup | Planned |

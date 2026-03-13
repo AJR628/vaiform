@@ -1,43 +1,51 @@
-import admin from '../config/firebase.js';
-import { ensureUserDocByUid } from './credit.service.js';
+import admin from '../config/firebase.js'
+import { PLAN_CYCLE_INCLUDED_SEC } from '../config/commerce.js'
+import { ensureUserDocByUid } from './credit.service.js'
 
-const db = admin.firestore();
-
-export const PLAN_CYCLE_INCLUDED_SEC = Object.freeze({
-  free: 0,
-  creator: 600,
-  pro: 1800,
-});
+const db = admin.firestore()
 
 export function normalizePlan(plan) {
-  return typeof plan === 'string' && PLAN_CYCLE_INCLUDED_SEC[plan] != null ? plan : 'free';
+  return typeof plan === 'string' && PLAN_CYCLE_INCLUDED_SEC[plan] != null ? plan : 'free'
 }
 
 function toIsoOrNull(value) {
-  if (!value) return null;
-  if (typeof value === 'string') return value;
-  if (typeof value?.toDate === 'function') return value.toDate().toISOString();
-  if (value instanceof Date) return value.toISOString();
-  return null;
+  if (!value) return null
+  if (typeof value === 'string') return value
+  if (typeof value?.toDate === 'function') return value.toDate().toISOString()
+  if (value instanceof Date) return value.toISOString()
+  return null
+}
+
+function toMillisOrNull(value) {
+  if (!value) return null
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value?.toMillis === 'function') return value.toMillis()
+  if (typeof value?.toDate === 'function') return value.toDate().getTime()
+  if (value instanceof Date) return value.getTime()
+  if (typeof value === 'string') {
+    const parsed = Date.parse(value)
+    return Number.isFinite(parsed) ? parsed : null
+  }
+  return null
 }
 
 function toInt(value, fallback = 0) {
-  return Number.isInteger(value) && value >= 0 ? value : fallback;
+  return Number.isInteger(value) && value >= 0 ? value : fallback
 }
 
 export function normalizeMembership(doc = {}, plan = 'free') {
-  const stored = doc.membership && typeof doc.membership === 'object' ? doc.membership : {};
+  const stored = doc.membership && typeof doc.membership === 'object' ? doc.membership : {}
   const legacyStatus =
     typeof doc.subscriptionStatus === 'string' && doc.subscriptionStatus.trim().length > 0
       ? doc.subscriptionStatus
-      : null;
-  const isLegacyActive = legacyStatus === 'active' || doc.isMember === true;
+      : null
+  const isLegacyActive = legacyStatus === 'active' || doc.isMember === true
   const status =
     typeof stored.status === 'string' && stored.status.trim().length > 0
       ? stored.status
       : isLegacyActive
         ? 'active'
-        : 'inactive';
+        : 'inactive'
 
   return {
     status,
@@ -56,7 +64,7 @@ export function normalizeMembership(doc = {}, plan = 'free') {
     startedAt: stored.startedAt ?? null,
     expiresAt: stored.expiresAt ?? null,
     canceledAt: stored.canceledAt ?? null,
-  };
+  }
 }
 
 export function normalizeUsage(usage = {}, plan = 'free') {
@@ -69,18 +77,45 @@ export function normalizeUsage(usage = {}, plan = 'free') {
     cycleUsedSec: toInt(usage.cycleUsedSec, 0),
     cycleReservedSec: toInt(usage.cycleReservedSec, 0),
     updatedAt: usage.updatedAt ?? null,
-  };
+  }
+}
+
+export function hasExpiredCanceledSubscription(doc = {}, nowMs = Date.now()) {
+  const membership = doc.membership && typeof doc.membership === 'object' ? doc.membership : {}
+  const status = typeof membership.status === 'string' ? membership.status.trim() : ''
+  const expiresAtMs = toMillisOrNull(membership.expiresAt)
+  return status === 'canceled' && Number.isFinite(expiresAtMs) && expiresAtMs <= nowMs
+}
+
+export function buildCanonicalUsageState(doc = {}, nowMs = Date.now()) {
+  let plan = normalizePlan(doc.plan)
+  let membership = normalizeMembership(doc, plan)
+  let usage = normalizeUsage(doc.usage, plan)
+
+  if (hasExpiredCanceledSubscription(doc, nowMs)) {
+    plan = 'free'
+    membership = {
+      ...membership,
+      status: 'inactive',
+      kind: 'free',
+      billingCadence: 'none',
+    }
+    usage = {
+      ...normalizeUsage(doc.usage, 'free'),
+      cycleIncludedSec: 0,
+    }
+  }
+
+  return { plan, membership, usage }
 }
 
 export function getAvailableSec(usage = {}) {
-  return Math.max(0, usage.cycleIncludedSec - usage.cycleUsedSec - usage.cycleReservedSec);
+  return Math.max(0, usage.cycleIncludedSec - usage.cycleUsedSec - usage.cycleReservedSec)
 }
 
 export function buildUsagePayload(doc = {}) {
-  const plan = normalizePlan(doc.plan);
-  const membership = normalizeMembership(doc, plan);
-  const usage = normalizeUsage(doc.usage, plan);
-  const availableSec = getAvailableSec(usage);
+  const { plan, membership, usage } = buildCanonicalUsageState(doc)
+  const availableSec = getAvailableSec(usage)
 
   return {
     plan,
@@ -101,42 +136,45 @@ export function buildUsagePayload(doc = {}) {
       cycleReservedSec: usage.cycleReservedSec,
       availableSec,
     },
-  };
+  }
 }
 
 export async function ensureCanonicalUsageState(uid, email) {
-  const { ref } = await ensureUserDocByUid(uid, email);
-  const snap = await ref.get();
-  const current = snap.data() || {};
-  const plan = normalizePlan(current.plan);
-  const membership = normalizeMembership(current, plan);
-  const usage = normalizeUsage(current.usage, plan);
+  const { ref } = await ensureUserDocByUid(uid, email)
+  const snap = await ref.get()
+  const current = snap.data() || {}
+  const expiredCanceled = hasExpiredCanceledSubscription(current)
+  const { plan, membership, usage } = buildCanonicalUsageState(current)
 
-  await ref.set(
-    {
-      uid,
-      email: email ?? current.email ?? null,
-      plan,
-      membership,
-      usage: {
-        ...usage,
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      },
+  const patch = {
+    uid,
+    email: email ?? current.email ?? null,
+    plan,
+    membership,
+    usage: {
+      ...usage,
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     },
-    { merge: true }
-  );
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  }
 
-  const finalSnap = await ref.get();
+  if (expiredCanceled) {
+    patch.isMember = false
+    patch.subscriptionStatus = 'canceled'
+  }
+
+  await ref.set(patch, { merge: true })
+
+  const finalSnap = await ref.get()
   return {
     ref,
     data: buildUsagePayload(finalSnap.data() || {}),
-  };
+  }
 }
 
 export async function getUsageSummary(uid, email) {
-  const { data } = await ensureCanonicalUsageState(uid, email);
-  return data;
+  const { data } = await ensureCanonicalUsageState(uid, email)
+  return data
 }
 
 export default {
@@ -144,8 +182,10 @@ export default {
   normalizePlan,
   normalizeMembership,
   normalizeUsage,
+  hasExpiredCanceledSubscription,
+  buildCanonicalUsageState,
   getAvailableSec,
   buildUsagePayload,
   ensureCanonicalUsageState,
   getUsageSummary,
-};
+}

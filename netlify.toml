@@ -17,6 +17,30 @@ command = "npm ci --no-audit --no-fund && npm run build"
   status = 200
   force = true
 
+[[redirects]]
+  from = "/buy-credits.html"
+  to = "/pricing.html"
+  status = 301
+  force = true
+
+[[redirects]]
+  from = "/buy-credits"
+  to = "/pricing.html"
+  status = 301
+  force = true
+
+[[redirects]]
+  from = "/pricing"
+  to = "/pricing.html"
+  status = 301
+  force = true
+
+[[redirects]]
+  from = "/success"
+  to = "/success.html"
+  status = 301
+  force = true
+
 # proxy to Replit backend
 [[redirects]]
   from = "/api/*"

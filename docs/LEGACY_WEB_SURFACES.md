@@ -22,14 +22,14 @@ Purpose: document the backend surfaces that still exist for the old web/manual/e
 
 ## LEGACY_WEB: Billing Surfaces
 
-These are not mobile API routes, but they still matter if mobile users buy credits through the web.
+These are not mobile API routes, but they still matter if users start or manage monthly render-time billing through the web.
 
 | Route | Verified current caller evidence | Why it is not mobile-core | Touch only if... |
 | --- | --- | --- | --- |
-| `POST /api/checkout/start` | `web/public/js/pricing.js:114` | Pricing-page checkout start for web. Mobile does not call it directly. | Billing correctness blocks mobile users from purchasing credits at all. |
-| `POST /api/checkout/session` | `web/public/js/buy-credits.js:67` | Buy-credits one-time pack checkout. Web-only caller. | Credit purchase flow is broken for mobile users using deep-link billing. |
-| `POST /api/checkout/subscription` | `web/public/js/buy-credits.js:84` | Subscription checkout for web billing flow. | Subscription billing blocks mobile users from acquiring credits/plans. |
-| `POST /api/checkout/portal` | `web/public/js/buy-credits.js:167` | Web billing portal launcher. | Mobile support or billing management depends on it. |
+| `POST /api/checkout/start` | `web/public/js/pricing.js` | Pricing-page monthly plan checkout start for web. Mobile does not call it directly. | Billing correctness blocks subscription purchase from working at all. |
+| `POST /api/checkout/session` | no current source caller; backend route remains mounted as an explicit `410 CHECKOUT_ROUTE_REMOVED` dead endpoint | Legacy one-time credit checkout route kept only to expose missed callers during Phase 4. | A hidden caller still attempts the removed route. |
+| `POST /api/checkout/subscription` | no current source caller; backend route remains mounted as an explicit `410 CHECKOUT_ROUTE_REMOVED` dead endpoint | Legacy credit-native subscription checkout route kept only to expose missed callers during Phase 4. | A hidden caller still attempts the removed route. |
+| `POST /api/checkout/portal` | `web/public/js/pricing.js` | Web billing portal launcher from pricing/account state. | Billing management breaks for existing subscribers. |
 | `POST /stripe/webhook` | External Stripe delivery to `src/routes/stripe.webhook.js`; mounted in `src/app.js:111-116` | External billing callback, not a mobile API route. | Billing correctness or entitlement updates fail for mobile users. |
 
 ## REMOVE_LATER: Mounted But Not Caller-Backed

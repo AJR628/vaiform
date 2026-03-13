@@ -26,7 +26,7 @@ Purpose: canonical backend-owned contract, guarantees, and open mismatch record 
 - Phase 2 of the hard-cutover billing migration moves backend render reservation/settlement to canonical usage seconds and adds additive finalize `data.billing`.
 - Phase 3 moves active mobile callers to `GET /api/usage`, updates mobile billing copy/gating to render-time semantics, and removes `/api/credits` from active caller usage.
 - Current backend `billingEstimate.estimatedSec` is reservation-safe, not raw; Phase 2 now applies a server-side per-beat safety buffer before reserve and still requires representative manual verification before the estimate-proof gate is considered complete.
-- Phases 1 through 3 of the billing migration are one continuous branch track; backend billing truth is being cut over before mobile caller migration, so the branch is not meant to represent a release-coherent end state until all three phases land and verify together.
+- Phases 1 through 4 of the billing migration are now landed in code, but the overall integration is still not production-ready until the Phase 2 estimate-proof gate is manually closed and the remaining Phase 5 cleanup/removal work is done.
 
 ## Response Rules
 
@@ -228,10 +228,10 @@ Purpose: canonical backend-owned contract, guarantees, and open mismatch record 
 | `POST /api/story/create-manual-session` | `LEGACY_WEB` | Web manual-first render only (`web/public/js/pages/creative/creative.article.mjs:3930`) | Ignore for mobile launch. |
 | `POST /api/story/update-video-cuts` | `LEGACY_WEB` | Web editor only (`web/public/js/pages/creative/creative.article.mjs:1922`, `web/public/js/pages/creative/creative.article.mjs:1950`) | Ignore for mobile launch. |
 | `POST /api/story/update-caption-meta` | `LEGACY_WEB` | Web caption preview persistence only (`web/public/js/caption-preview.js:108`) | Ignore unless it breaks shared render stability. |
-| `POST /api/checkout/start` | `LEGACY_WEB` | Web pricing page only (`web/public/js/pricing.js:114`) | Touch only for direct billing risk to mobile launch. |
-| `POST /api/checkout/session` | `LEGACY_WEB` | Web buy-credits only (`web/public/js/buy-credits.js:67`) | Touch only for direct billing risk to mobile launch. |
-| `POST /api/checkout/subscription` | `LEGACY_WEB` | Web buy-credits only (`web/public/js/buy-credits.js:84`) | Touch only for direct billing risk to mobile launch. |
-| `POST /api/checkout/portal` | `LEGACY_WEB` | Web billing portal only (`web/public/js/buy-credits.js:167`) | Touch only for direct billing risk to mobile launch. |
+| `POST /api/checkout/start` | `LEGACY_WEB` | Web pricing page only (`web/public/js/pricing.js`) | Touch only for direct billing risk to mobile launch. |
+| `POST /api/checkout/session` | `LEGACY_WEB` | No current source caller; route now returns `410 CHECKOUT_ROUTE_REMOVED` | Keep explicit until Phase 5 removal. |
+| `POST /api/checkout/subscription` | `LEGACY_WEB` | No current source caller; route now returns `410 CHECKOUT_ROUTE_REMOVED` | Keep explicit until Phase 5 removal. |
+| `POST /api/checkout/portal` | `LEGACY_WEB` | Web pricing/account state only (`web/public/js/pricing.js`) | Touch only for direct billing risk to mobile launch. |
 | `POST /stripe/webhook` | `LEGACY_WEB` | External Stripe caller; no mobile API caller (`src/app.js:111-116`) | Keep correct, but do not broaden launch scope around it. |
 | `POST /api/story/update-script` | `REMOVE_LATER` | No current mobile caller; no current `web/public` caller found in repo search | Retire after freeze. |
 | `POST /api/story/timeline` | `REMOVE_LATER` | No current mobile caller; no current `web/public` caller found in repo search | Retire after freeze. |
