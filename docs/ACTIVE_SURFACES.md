@@ -1,11 +1,11 @@
 # Active Surfaces (Visual SSOT + API Prune)
 
-> Evidence Notice (2026-03-07)
+> Evidence Notice (2026-03-13)
 > This file is retained as caller-backed web/runtime evidence.
 > It is not the primary docs front door for mobile/backend contract work.
 > Start at docs/DOCS_INDEX.md.
 
-Audit date: 2026-03-05
+Audit date: 2026-03-13
 
 ## Runtime model
 
@@ -23,7 +23,6 @@ Audit date: 2026-03-05
   - `/creative` -> `/creative.html`
   - `/my-shorts.html`
   - `/pricing.html`
-  - `/buy-credits.html`
   - `/login.html`
 - Static/support pages:
   - `/` and `/index.html`
@@ -44,11 +43,11 @@ Audit date: 2026-03-05
   - `HEAD /api/health`
 - Webhook:
   - `GET /stripe/webhook`
-  - `POST /stripe/webhook` (Stripe checkout completion, renewal crediting, and plan-subscription deletion handling)
+  - `POST /stripe/webhook` (Stripe checkout completion, renewal entitlement/usage sync, and plan-subscription deletion handling)
 - Core API mounts:
-  - `/api/credits`
+  - `/api/usage`
   - `/api/whoami`
-  - `/api/checkout/start`, `/api/checkout/session`, `/api/checkout/subscription`, `/api/checkout/portal`
+  - `/api/checkout/start`, `/api/checkout/portal`
   - `/api/shorts/mine`, `/api/shorts/:jobId`
   - `/api/assets/options`
   - `/api/limits/usage`
@@ -67,6 +66,8 @@ Audit date: 2026-03-05
   - `/api/enhance` (feature retired)
   - `/api/generate`, `/api/job/:jobId`
   - `/api/assets/ai-images`
+  - `/api/credits` (removed in Phase 5)
+  - `/api/checkout/session`, `/api/checkout/subscription` (removed in Phase 5)
   - old checkout aliases: `/checkout/*`, `/api/start`, `/api/session`, `/api/subscription`, `/api/portal`
   - `/creative` HTML route
   - `/image-creator.html`, `/my-images.html`, `/retry.html`
@@ -85,7 +86,8 @@ Audit date: 2026-03-05
 - Caption preview remains caller-backed via `web/public/js/caption-preview.js` and `web/public/js/caption-live.js`.
 - Shorts library remains caller-backed via `web/public/my-shorts.html` -> `web/public/js/my-shorts.js`.
 - Checkout start remains caller-backed via `web/public/pricing.html` -> `web/public/js/pricing.js`.
-- Checkout session/subscription/portal remain caller-backed via `web/public/buy-credits.html` -> `web/public/js/buy-credits.js`.
-- Stripe webhook remains externally caller-backed via Netlify proxy and is required for initial checkout grants plus monthly renewal crediting.
+- Checkout portal remains caller-backed via `web/public/js/pricing.js`.
+- `/buy-credits.html` is redirect-only to `/pricing.html`; it is no longer a live commerce page.
+- Stripe webhook remains externally caller-backed via Netlify proxy and is required for checkout and monthly entitlement/usage updates.
 - User bootstrap remains caller-backed via `web/public/js/firebaseClient.js` -> `/api/users/ensure`.
 - `/api/whoami`, `/api/limits/usage`, and `/api/user/*` are mounted but have no current user-facing web caller in `web/public`.

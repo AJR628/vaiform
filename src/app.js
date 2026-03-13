@@ -9,14 +9,13 @@ import './config/firebase.js'; // ensure Firebase Admin is initialized
 
 // Font registration moved to src/caption/canvas-fonts.js and called from server.js
 
-// 🔧 Gate A helpers
+// Gate A helpers
 import envCheck from './middleware/envCheck.js';
 import reqId from './middleware/reqId.js';
 import errorHandler from './middleware/error.middleware.js';
 
 // Direct route imports for explicit mounting
 import whoamiRoutes from './routes/whoami.routes.js';
-import creditsRoutes from './routes/credits.routes.js';
 import usageRoutes from './routes/usage.routes.js';
 import diagRoutes from './routes/diag.routes.js';
 // Old webhook routes removed - using /stripe/webhook instead
@@ -41,7 +40,7 @@ app.use(
   })
 );
 
-// 🪪 assign a request ID early
+// assign a request ID early
 app.use(reqId);
 
 /** ---- FRONTEND origin (for redirects/CORS) ---- */
@@ -56,7 +55,7 @@ const extraOrigins = Array.from(
 );
 
 // Helpful boot log
-console.info(`[cfg] FRONTEND_URL → ${FRONTEND}`);
+console.info(`[cfg] FRONTEND_URL -> ${FRONTEND}`);
 
 // ----- CORS (Netlify + optional preview + local) -----
 const ALLOWED_ORIGINS = [
@@ -114,7 +113,7 @@ import stripeWebhook from './routes/stripe.webhook.js';
 
 // 1) Webhook first (raw)
 app.use('/stripe/webhook', stripeWebhook);
-console.log('✅ Mounted stripe webhook at /stripe/webhook');
+console.log('Mounted stripe webhook at /stripe/webhook');
 
 // 1.5) Conditional 200kb JSON parser for specific routes (BEFORE global parser)
 const CAPTION_PREVIEW_PATHS = ['/api/caption/preview'];
@@ -130,7 +129,7 @@ app.use((req, res, next) => {
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// 🔎 Diag after parser (keep existing debug middleware)
+// Diag after parser (keep existing debug middleware)
 if (DBG) {
   app.use((req, _res, next) => {
     if (req.path.startsWith('/diag')) {
@@ -209,12 +208,11 @@ app.use('/assets/fonts', (req, res, next) => {
   next();
 });
 
-console.log('✅ Mounted static /assets (fonts) before API routes');
+console.log('Mounted static /assets (fonts) before API routes');
 
 // ---------- API ROUTES ----------
 if (process.env.VAIFORM_DEBUG === '1') app.use('/diag', diagRoutes);
 app.use('/api/whoami', whoamiRoutes);
-app.use('/api/credits', creditsRoutes);
 app.use('/api/usage', usageRoutes);
 // Mount diag headers only when VAIFORM_DEBUG=1
 if (process.env.VAIFORM_DEBUG === '1') {
@@ -224,44 +222,44 @@ if (process.env.VAIFORM_DEBUG === '1') {
 // Mount other routes that were previously handled by the mount function
 if (routes?.checkout) {
   app.use('/api/checkout', routes.checkout);
-  console.log('✅ Mounted checkout at /api/checkout');
+  console.log('Mounted checkout at /api/checkout');
 }
 if (routes?.shorts) {
   // Mount Shorts API for quote-to-shorts MVP
   app.use('/api/shorts', routes.shorts);
-  console.log('✅ Mounted shorts at /api/shorts');
+  console.log('Mounted shorts at /api/shorts');
 }
 if (routes?.assets) {
   app.use('/api/assets', routes.assets);
-  console.log('✅ Mounted assets API at /api/assets');
+  console.log('Mounted assets API at /api/assets');
 }
 if (routes?.limits) {
   app.use('/api/limits', routes.limits);
-  console.log('✅ Mounted limits at /api/limits');
+  console.log('Mounted limits at /api/limits');
 }
 if (routes?.story) {
   app.use('/api/story', routes.story);
-  console.log('✅ Mounted story at /api/story');
+  console.log('Mounted story at /api/story');
 }
 
 // Mount caption preview routes
 import captionPreviewRoutes from './routes/caption.preview.routes.js';
 app.use('/api', captionPreviewRoutes);
-console.log('✅ Mounted caption preview at /api/caption/preview');
+console.log('Mounted caption preview at /api/caption/preview');
 
 // Mount user routes
 import userRoutes from './routes/user.routes.js';
 app.use('/api/user', userRoutes);
-console.log('✅ Mounted user routes at /api/user');
+console.log('Mounted user routes at /api/user');
 
 // Mount users routes (plural) for /api/users/ensure
 import usersRoutes from './routes/users.routes.js';
 app.use('/api/users', usersRoutes);
-console.log('✅ Mounted users routes at /api/users');
+console.log('Mounted users routes at /api/users');
 
 // Core routers summary
 console.log(
-  '📋 Mounted core routes: story, caption preview, checkout, credits (GET only), usage (GET only), users, user, shorts-readonly'
+  'Mounted core routes: story, caption preview, checkout, usage (GET only), users, user, shorts-readonly'
 );
 
 // Minimal MIME fix for .woff2 (no behavior change for other assets)
@@ -283,7 +281,7 @@ if (process.env.VAIFORM_DEBUG === '1' && app?._router?.stack) {
       list.push(`${methods.padEnd(6)} ${m.route.path}`);
     }
   });
-  console.log('🛣️  Routes:\n' + list.sort().join('\n'));
+  console.log('Routes:\n' + list.sort().join('\n'));
 }
 
 /** ---- Centralized error handler (last) ---- */

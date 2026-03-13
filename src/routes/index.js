@@ -1,4 +1,3 @@
-import creditsRouter from './credits.routes.js';
 import webhookRouter from './stripe.webhook.js';
 import checkoutRouter from './checkout.routes.js';
 import diagRouter from './diag.routes.js';
@@ -9,7 +8,6 @@ import limitsRouter from './limits.routes.js';
 import storyRouter from './story.routes.js';
 
 export default {
-  credits: creditsRouter,
   whoami: whoamiRouter,
   webhook: webhookRouter,
   checkout: checkoutRouter,

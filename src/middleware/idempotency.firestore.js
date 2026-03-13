@@ -192,7 +192,6 @@ export function idempotencyFinalize({ ttlMinutes = 60, getSession } = {}) {
           {
             plan: accountState.plan,
             membership: accountState.membership,
-            ...(accountState.plan === 'free' ? { isMember: false, subscriptionStatus: 'canceled' } : {}),
             usage: {
               ...usage,
               cycleReservedSec: usage.cycleReservedSec + estimatedSec,
@@ -299,7 +298,6 @@ export function idempotencyFinalize({ ttlMinutes = 60, getSession } = {}) {
           {
             plan: accountState.plan,
             membership: accountState.membership,
-            ...(accountState.plan === 'free' ? { isMember: false, subscriptionStatus: 'canceled' } : {}),
             usage: {
               ...usage,
               cycleUsedSec: usage.cycleUsedSec + billedSec,
@@ -356,14 +354,13 @@ export function idempotencyFinalize({ ttlMinutes = 60, getSession } = {}) {
           const userSnap = await tx.get(userRef);
           if (!userSnap.exists) return;
           const userData = userSnap.data() || {};
-        const accountState = buildCanonicalUsageState(userData);
-        const usage = accountState.usage;
+          const accountState = buildCanonicalUsageState(userData);
+          const usage = accountState.usage;
           tx.set(
             userRef,
             {
               plan: accountState.plan,
               membership: accountState.membership,
-              ...(accountState.plan === 'free' ? { isMember: false, subscriptionStatus: 'canceled' } : {}),
               usage: {
                 ...usage,
                 cycleReservedSec: Math.max(

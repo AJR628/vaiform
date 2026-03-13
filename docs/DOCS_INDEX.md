@@ -4,7 +4,7 @@
 - Owner repo: backend
 - Source of truth for: backend docs ownership, precedence, and the mobile/backend documentation split
 - Canonical counterpart/source: mobile repo `docs/DOCS_INDEX.md` and mobile repo `docs/MOBILE_USED_SURFACES.md`
-- Last verified against: both repos on 2026-03-12
+- Last verified against: both repos on 2026-03-13
 
 ## Ownership Split
 
@@ -49,6 +49,7 @@ Kept for history only. Do not treat them as current contract truth:
 - `docs/security-notes.md`
 - `docs/MOBILE_SPEC_PACK.md`
 - `docs/vaiform-v1-scope.md`
+- `docs/REPO_ARCHITECTURE_DIAGRAM.md`
 
 ## Update Rule
 

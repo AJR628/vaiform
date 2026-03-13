@@ -1,11 +1,11 @@
 # Route Truth Table (Visual SSOT + API Prune)
 
-> Evidence Notice (2026-03-07)
+> Evidence Notice (2026-03-13)
 > This file is retained as route inventory and historical evidence.
 > It is not the primary docs front door for mobile/backend contract work.
 > Start at docs/DOCS_INDEX.md.
 
-Audit date: 2026-03-05
+Audit date: 2026-03-13
 
 ## Status definitions
 
@@ -23,12 +23,10 @@ Audit date: 2026-03-05
 | HEAD     | `/api/health`                | Netlify-proxy liveness                                                                                                                                                                                             |
 | GET      | `/stripe/webhook`            | Webhook alive check                                                                                                                                                                                                |
 | POST     | `/stripe/webhook`            | Stripe webhook handler for checkout completion, renewals, and plan subscription deletion                                                                                                                           |
-| GET      | `/api/credits`               | My Shorts caller-backed                                                                                                                                                                                            |
+| GET      | `/api/usage`                 | Canonical billing/account-state surface                                                                                                                                                                            |
 | GET      | `/api/whoami`                | Mounted; console/helper caller only                                                                                                                                                                                |
 | POST     | `/api/checkout/start`        | Pricing page checkout start                                                                                                                                                                                        |
-| POST     | `/api/checkout/session`      | Buy credits page checkout session                                                                                                                                                                                  |
-| POST     | `/api/checkout/subscription` | Buy credits page subscription checkout                                                                                                                                                                             |
-| POST     | `/api/checkout/portal`       | Buy credits page billing portal                                                                                                                                                                                    |
+| POST     | `/api/checkout/portal`       | Pricing page billing portal                                                                                                                                                                                        |
 | GET      | `/api/shorts/mine`           | My shorts list                                                                                                                                                                                                     |
 | GET      | `/api/shorts/:jobId`         | Short detail                                                                                                                                                                                                       |
 | POST     | `/api/assets/options`        | Article draft clip search                                                                                                                                                                                          |
@@ -55,6 +53,9 @@ Audit date: 2026-03-05
 | GET    | `/`                     | Visual SSOT + API prune      |
 | GET    | `/api/`                 | Visual SSOT + API prune      |
 | GET    | `/credits`              | Visual SSOT + API prune      |
+| GET    | `/api/credits`          | Phase 5 credit cleanup       |
+| POST   | `/api/checkout/session` | Phase 5 credit cleanup       |
+| POST   | `/api/checkout/subscription` | Phase 5 credit cleanup  |
 | GET    | `/whoami`               | Visual SSOT + API prune      |
 | POST   | `/generate`             | Visual SSOT + API prune      |
 | POST   | `/enhance`              | Visual SSOT + API prune      |

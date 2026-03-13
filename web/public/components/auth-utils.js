@@ -1,5 +1,5 @@
 // Shared authentication utilities for consistent auth handling across pages
-import { updateUsageDisplay, fetchAndUpdateUsage } from '/js/credits-ui.js?v=20250920b';
+import { updateUsageDisplay, fetchAndUpdateUsage } from '/js/usage-ui.js?v=20260313a';
 
 export function initializeAuth() {
   // Wait for Firebase to be available
@@ -70,7 +70,7 @@ function updateAuthUI(user) {
   }
 }
 
-// Removed - now handled by credits-ui.js module
+// Removed - now handled by usage-ui.js module
 
 // Function to check if user is authenticated and show login modal if not
 export function requireAuth(callback) {

@@ -77,11 +77,20 @@ function idem() {
     expectSuccessData(r.json, ['uid', 'email']);
   });
 
-  await test('GET /api/credits shape', async () => {
-    const r = await api('/api/credits');
+  await test('GET /api/usage shape', async () => {
+    const r = await api('/api/usage');
     if (!r.ok) throw new Error(`status ${r.status}: ${r.raw}`);
-    expectSuccessData(r.json, ['credits']);
-    if (!Number.isFinite(r.json.data.credits)) throw new Error('credits not a number');
+    expectSuccessData(r.json, ['plan', 'membership', 'usage']);
+    if (typeof r.json.data.plan !== 'string') throw new Error('plan missing');
+    if (typeof r.json.data.membership !== 'object' || r.json.data.membership == null) {
+      throw new Error('membership missing');
+    }
+    if (typeof r.json.data.usage !== 'object' || r.json.data.usage == null) {
+      throw new Error('usage missing');
+    }
+    if (!Number.isFinite(r.json.data.usage.availableSec)) {
+      throw new Error('usage.availableSec not a number');
+    }
   });
 
   await test('POST /api/checkout/start validation contract', async () => {

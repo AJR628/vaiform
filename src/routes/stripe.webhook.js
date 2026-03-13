@@ -189,8 +189,6 @@ function buildCheckoutUserPatch(currentUser, context) {
     uid: context.uid,
     email: context.email || currentUser?.email || null,
     plan: context.plan,
-    isMember: true,
-    subscriptionStatus: 'active',
     lastPaymentAt: serverNow,
     membership: {
       status: 'active',
@@ -226,8 +224,6 @@ function buildRenewalUserPatch(currentUser, context) {
     uid: context.uid,
     email: context.email || currentUser?.email || null,
     plan: context.plan,
-    isMember: true,
-    subscriptionStatus: 'active',
     lastPaymentAt: serverNow,
     membership: {
       status: 'active',
@@ -262,8 +258,6 @@ function buildCancellationUserPatch(currentUser, context) {
     uid: context.uid,
     email: context.email || currentUser?.email || null,
     plan: current.plan === 'free' ? context.plan : current.plan,
-    isMember: true,
-    subscriptionStatus: 'canceled',
     membership: {
       ...membership,
       status: 'canceled',

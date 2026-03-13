@@ -1,6 +1,6 @@
 # MOBILE_HARDENING_PLAN
 
-Cross-repo verification date: 2026-03-12.
+Cross-repo verification date: 2026-03-13.
 
 Goal: harden only the backend surface that the current mobile app actually depends on, in the same phase order used for implementation and docs. This is a continuation plan for the current repos, not a rebuild proposal.
 
@@ -9,8 +9,8 @@ Goal: harden only the backend surface that the current mobile app actually depen
 - The canonical billing-model replacement plan is `docs/TIME_BASED_RENDER_USAGE_MIGRATION_PLAN.md`.
 - Phase 1 of that plan adds backend-only `GET /api/usage` and additive session `billingEstimate`.
 - Phase 2 of that plan cuts backend finalize reservation/settlement over to usage seconds and adds additive finalize `data.billing`, but the estimate-proof gate still requires representative manual verification before the backend cutover can be marked verified.
-- Phase 3 moves active mobile billing callers to `GET /api/usage`, render-time copy, and backend-owned estimate/availability checks; `GET /api/credits` is now a dead endpoint.
-- The overall cutover is still not release-ready until the Phase 2 estimate-proof gate is manually closed and the remaining Phase 5 cleanup/removal work lands.
+- Phase 3 moves active mobile billing callers to `GET /api/usage`, render-time copy, and backend-owned estimate/availability checks; Phase 5 removes `GET /api/credits` from runtime.
+- The Phase 5 cleanup/removal work is now landed. The overall cutover is still not release-ready until the Phase 2 estimate-proof gate and live Stripe/manual end-to-end verification are empirically closed.
 
 ## Working Rules
 
@@ -36,9 +36,9 @@ Goal: harden only the backend surface that the current mobile app actually depen
 - `DONE`: Mobile now fails fast on missing production-critical backend/Firebase env instead of silently using placeholder values.
   - Mobile evidence: `client/api/client.ts:4-12`, `client/lib/firebase.ts:11-27`
 
-- `DONE`: `/api/users/ensure` and the original `GET /api/credits` path were unified onto one canonical backend provisioning helper before the hard cutover deprecated `/api/credits`.
-  - Backend evidence: `src/services/credit.service.js:81-87`, `src/services/credit.service.js:225-268`, `src/routes/users.routes.js:15-31`, `src/controllers/credits.controller.js:4-15`
-  - Why it mattered: the prior credits path could create a partial user doc with missing mobile profile fields.
+- `DONE`: `/api/users/ensure` now provisions through a canonical neutral helper and canonical usage state; legacy `/api/credits` compatibility plumbing is removed in Phase 5.
+  - Backend evidence: `src/services/user-doc.service.js:5-36`, `src/services/usage.service.js:133-168`, `src/routes/users.routes.js:16-37`
+  - Why it mattered: bootstrap no longer depends on removed credit compatibility paths.
 
 - `DONE`: `/api/users/ensure` now returns a symmetric mobile profile shape for both new and existing users.
   - Backend evidence: `src/routes/users.routes.js:24-26`

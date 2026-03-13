@@ -1,6 +1,6 @@
 # MOBILE_BACKEND_CONTRACT
 
-Cross-repo verification date: 2026-03-12.
+Cross-repo verification date: 2026-03-13.
 
 Purpose: canonical backend-owned contract, guarantees, and open mismatch record for mobile production. Current mobile caller-truth lives in the mobile repo. If a route is not `MOBILE_CORE_NOW` or `MOBILE_CORE_SOON` here, it is not first-class for mobile launch.
 
@@ -18,7 +18,7 @@ Purpose: canonical backend-owned contract, guarantees, and open mismatch record 
 - JSON requests use `Content-Type: application/json`.
 - Mobile callers send `x-client: mobile` (`client/api/client.ts:155-159`, `client/api/client.ts:215-219`). Caption preview uses that header as part of the mobile/server-measured path selection when `measure` is omitted (`src/routes/caption.preview.routes.js:131-145`).
 - Backend finalize requires `X-Idempotency-Key`, and the current mobile finalize caller sends it (`src/middleware/idempotency.firestore.js:33-37`, `client/api/client.ts:697-720`).
-- `GET /api/usage` is now the active mobile billing surface, and `GET /api/credits` is mounted only as an explicit deprecated/dead endpoint (`client/api/client.ts:519-527`, `client/contexts/AuthContext.tsx:142-178`, `src/app.js:217-218`, `src/routes/credits.routes.js:1-11`).
+- `GET /api/usage` is the active mobile billing surface (`client/api/client.ts:520-527`, `client/contexts/AuthContext.tsx:142-178`, `src/routes/usage.routes.js:1-8`).
 
 ## Billing Cutover Note
 
@@ -26,7 +26,7 @@ Purpose: canonical backend-owned contract, guarantees, and open mismatch record 
 - Phase 2 of the hard-cutover billing migration moves backend render reservation/settlement to canonical usage seconds and adds additive finalize `data.billing`.
 - Phase 3 moves active mobile callers to `GET /api/usage`, updates mobile billing copy/gating to render-time semantics, and removes `/api/credits` from active caller usage.
 - Current backend `billingEstimate.estimatedSec` is reservation-safe, not raw; Phase 2 now applies a server-side per-beat safety buffer before reserve and still requires representative manual verification before the estimate-proof gate is considered complete.
-- Phases 1 through 4 of the billing migration are now landed in code, but the overall integration is still not production-ready until the Phase 2 estimate-proof gate is manually closed and the remaining Phase 5 cleanup/removal work is done.
+- Phases 1 through 5 of the billing migration are now landed in code, but the overall integration is still not production-ready until the Phase 2 estimate-proof gate is manually closed and live Stripe/manual end-to-end verification is completed.
 
 ## Response Rules
 
@@ -47,10 +47,10 @@ Purpose: canonical backend-owned contract, guarantees, and open mismatch record 
 
 - `POST /api/users/ensure`
   - Mobile caller(s): `client/contexts/AuthContext.tsx:78-170`
-  - Backend handler(s): `src/routes/users.routes.js:15-31`, `src/services/credit.service.js:225-268`
+  - Backend handler(s): `src/routes/users.routes.js:16-37`, `src/services/user-doc.service.js:5-36`, `src/services/usage.service.js:133-168`
   - Mobile sends: no body.
-  - Backend returns: full success envelope with a symmetric mobile profile shape.
-  - Mobile reads: stores the returned profile for auth/account bootstrap only; active billing screens no longer read `userProfile.credits`.
+  - Backend returns: full success envelope with `{ uid, email, plan, freeShortsUsed }`.
+  - Mobile reads: stores the returned profile for auth/account bootstrap only; active billing screens rely on `/api/usage`.
   - Contract note: the app now waits for both provisioning and canonical usage fetch to succeed before treating the signed-in user as app-ready.
 
 - `GET /api/usage`
@@ -59,12 +59,6 @@ Purpose: canonical backend-owned contract, guarantees, and open mismatch record 
   - Backend returns: `{ success: true, data: { plan, membership, usage }, requestId }`.
   - Mobile reads: `data.usage.availableSec` for render-time balance, plus the rest of the usage snapshot for canonical billing state.
   - Contract note: this is now the active mobile billing surface.
-
-- `GET /api/credits`
-  - Mobile caller(s): none in the current mobile repo.
-  - Backend handler(s): `src/routes/credits.routes.js:1-11`, `src/controllers/credits.controller.js:1-10`
-  - Backend returns: `410 CREDITS_REMOVED`.
-  - Contract note: this endpoint is intentionally dead and must not be revived for compatibility.
 
 ### Story Creation And Session Truth
 
@@ -206,7 +200,6 @@ Purpose: canonical backend-owned contract, guarantees, and open mismatch record 
 | Route | Classification | Verified caller evidence | Handling policy |
 | --- | --- | --- | --- |
 | `POST /api/users/ensure` | `MOBILE_CORE_NOW` | Mobile auth bootstrap (`client/contexts/AuthContext.tsx:63-76`) | Harden and document now. |
-| `GET /api/credits` | `REMOVE_LATER` | No current mobile caller; endpoint now returns `410 CREDITS_REMOVED` | Keep dead until final removal. |
 | `GET /api/usage` | `MOBILE_CORE_NOW` | Mobile auth bootstrap and billing refresh (`client/api/client.ts:519-527`, `client/contexts/AuthContext.tsx:142-178`) | Harden and document now. |
 | `POST /api/story/start` | `MOBILE_CORE_NOW` | Mobile home create flow (`client/screens/HomeScreen.tsx:79-107`) | Harden now. |
 | `POST /api/story/generate` | `MOBILE_CORE_NOW` | Mobile create flow (`client/screens/HomeScreen.tsx:109-127`) | Harden now. |
@@ -229,8 +222,6 @@ Purpose: canonical backend-owned contract, guarantees, and open mismatch record 
 | `POST /api/story/update-video-cuts` | `LEGACY_WEB` | Web editor only (`web/public/js/pages/creative/creative.article.mjs:1922`, `web/public/js/pages/creative/creative.article.mjs:1950`) | Ignore for mobile launch. |
 | `POST /api/story/update-caption-meta` | `LEGACY_WEB` | Web caption preview persistence only (`web/public/js/caption-preview.js:108`) | Ignore unless it breaks shared render stability. |
 | `POST /api/checkout/start` | `LEGACY_WEB` | Web pricing page only (`web/public/js/pricing.js`) | Touch only for direct billing risk to mobile launch. |
-| `POST /api/checkout/session` | `LEGACY_WEB` | No current source caller; route now returns `410 CHECKOUT_ROUTE_REMOVED` | Keep explicit until Phase 5 removal. |
-| `POST /api/checkout/subscription` | `LEGACY_WEB` | No current source caller; route now returns `410 CHECKOUT_ROUTE_REMOVED` | Keep explicit until Phase 5 removal. |
 | `POST /api/checkout/portal` | `LEGACY_WEB` | Web pricing/account state only (`web/public/js/pricing.js`) | Touch only for direct billing risk to mobile launch. |
 | `POST /stripe/webhook` | `LEGACY_WEB` | External Stripe caller; no mobile API caller (`src/app.js:111-116`) | Keep correct, but do not broaden launch scope around it. |
 | `POST /api/story/update-script` | `REMOVE_LATER` | No current mobile caller; no current `web/public` caller found in repo search | Retire after freeze. |
@@ -241,3 +232,8 @@ Purpose: canonical backend-owned contract, guarantees, and open mismatch record 
 | `GET /api/user/me` | `REMOVE_LATER` | No current mobile caller; no current `web/public` caller found in repo search | Retire after freeze unless mobile adopts it explicitly. |
 | `GET /api/whoami` | `REMOVE_LATER` | No current mobile caller; no current `web/public` caller found in repo search | Retire after freeze. |
 | `GET /api/limits/usage` | `REMOVE_LATER` | No current mobile caller; no current `web/public` caller found in repo search | Retire after freeze. |
+
+Removed in Phase 5 (not mounted):
+- `GET /api/credits`
+- `POST /api/checkout/session`
+- `POST /api/checkout/subscription`

@@ -124,7 +124,6 @@ export async function getShortById(req, res) {
       durationSec: meta?.durationSec ?? null,
       usedTemplate: meta?.usedTemplate ?? null,
       usedQuote: meta?.usedQuote ?? null,
-      credits: meta?.credits ?? null,
       createdAt: meta?.createdAt ?? null,
     });
 

@@ -1,6 +1,6 @@
 # LEGACY_WEB_SURFACES
 
-Cross-repo verification date: 2026-03-07.
+Cross-repo verification date: 2026-03-13.
 
 Purpose: document the backend surfaces that still exist for the old web/manual/editor flows so they do not silently regain first-class scope while mobile production is the product priority.
 
@@ -27,8 +27,6 @@ These are not mobile API routes, but they still matter if users start or manage 
 | Route | Verified current caller evidence | Why it is not mobile-core | Touch only if... |
 | --- | --- | --- | --- |
 | `POST /api/checkout/start` | `web/public/js/pricing.js` | Pricing-page monthly plan checkout start for web. Mobile does not call it directly. | Billing correctness blocks subscription purchase from working at all. |
-| `POST /api/checkout/session` | no current source caller; backend route remains mounted as an explicit `410 CHECKOUT_ROUTE_REMOVED` dead endpoint | Legacy one-time credit checkout route kept only to expose missed callers during Phase 4. | A hidden caller still attempts the removed route. |
-| `POST /api/checkout/subscription` | no current source caller; backend route remains mounted as an explicit `410 CHECKOUT_ROUTE_REMOVED` dead endpoint | Legacy credit-native subscription checkout route kept only to expose missed callers during Phase 4. | A hidden caller still attempts the removed route. |
 | `POST /api/checkout/portal` | `web/public/js/pricing.js` | Web billing portal launcher from pricing/account state. | Billing management breaks for existing subscribers. |
 | `POST /stripe/webhook` | External Stripe delivery to `src/routes/stripe.webhook.js`; mounted in `src/app.js:111-116` | External billing callback, not a mobile API route. | Billing correctness or entitlement updates fail for mobile users. |
 
@@ -70,4 +68,7 @@ The following routes also have web callers, but they remain `MOBILE_CORE_NOW` be
 
 Those shared routes stay in the mobile-first hardening queue even though the old web studio or legacy web surfaces still touch some of them.
 
-`GET /api/credits` no longer belongs in this shared list. Phase 3 moved active callers to `GET /api/usage`, and `/api/credits` is now a dead/deprecated endpoint on the backend.
+Removed in Phase 5:
+- `GET /api/credits` is no longer mounted.
+- `POST /api/checkout/session` is no longer mounted.
+- `POST /api/checkout/subscription` is no longer mounted.

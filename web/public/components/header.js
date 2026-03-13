@@ -21,7 +21,7 @@ export function createUnifiedHeader() {
               </span>
             </div>
             <!-- Theme toggle -->
-            <button id="theme-toggle" class="text-yellow-500 dark:text-yellow-400 hover:text-yellow-600 dark:hover:text-yellow-300 text-base" title="Toggle theme">🌙</button>
+            <button id="theme-toggle" class="text-yellow-500 dark:text-yellow-400 hover:text-yellow-600 dark:hover:text-yellow-300 text-base" title="Toggle theme">&#x1F319;</button>
             <!-- Auth buttons -->
             <button id="signup-button" class="text-sm bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700 logged-out hidden">Sign Up</button>
             <button id="login-button" class="text-sm border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 px-3 py-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700 logged-out hidden">Login</button>
@@ -75,18 +75,18 @@ export function initializeHeader() {
           // Switch to light theme
           html.classList.remove('dark');
           localStorage.setItem('theme', 'light');
-          newThemeToggle.textContent = '☀️';
+          newThemeToggle.textContent = '\u2600\uFE0F';
         } else {
           // Switch to dark theme
           html.classList.add('dark');
           localStorage.setItem('theme', 'dark');
-          newThemeToggle.textContent = '🌙';
+          newThemeToggle.textContent = '\u{1F319}';
         }
       });
 
       // Set toggle button icon based on current theme state (early script already set the class)
       const isCurrentlyDark = document.documentElement.classList.contains('dark');
-      newThemeToggle.textContent = isCurrentlyDark ? '🌙' : '☀️';
+      newThemeToggle.textContent = isCurrentlyDark ? '\u{1F319}' : '\u2600\uFE0F';
     }
   }, 100);
 }

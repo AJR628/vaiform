@@ -1,6 +1,6 @@
 import admin from '../config/firebase.js'
 import { PLAN_CYCLE_INCLUDED_SEC } from '../config/commerce.js'
-import { ensureUserDocByUid } from './credit.service.js'
+import { ensureUserDocByUid } from './user-doc.service.js'
 
 const db = admin.firestore()
 
@@ -35,15 +35,10 @@ function toInt(value, fallback = 0) {
 
 export function normalizeMembership(doc = {}, plan = 'free') {
   const stored = doc.membership && typeof doc.membership === 'object' ? doc.membership : {}
-  const legacyStatus =
-    typeof doc.subscriptionStatus === 'string' && doc.subscriptionStatus.trim().length > 0
-      ? doc.subscriptionStatus
-      : null
-  const isLegacyActive = legacyStatus === 'active' || doc.isMember === true
   const status =
     typeof stored.status === 'string' && stored.status.trim().length > 0
       ? stored.status
-      : isLegacyActive
+      : plan !== 'free'
         ? 'active'
         : 'inactive'
 
@@ -143,7 +138,6 @@ export async function ensureCanonicalUsageState(uid, email) {
   const { ref } = await ensureUserDocByUid(uid, email)
   const snap = await ref.get()
   const current = snap.data() || {}
-  const expiredCanceled = hasExpiredCanceledSubscription(current)
   const { plan, membership, usage } = buildCanonicalUsageState(current)
 
   const patch = {
@@ -156,11 +150,6 @@ export async function ensureCanonicalUsageState(uid, email) {
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     },
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-  }
-
-  if (expiredCanceled) {
-    patch.isMember = false
-    patch.subscriptionStatus = 'canceled'
   }
 
   await ref.set(patch, { merge: true })

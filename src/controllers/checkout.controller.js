@@ -67,16 +67,6 @@ export async function startPlanCheckout(req, res) {
   }
 }
 
-export async function removedLegacyCheckoutRoute(req, res) {
-  return fail(
-    req,
-    res,
-    410,
-    'CHECKOUT_ROUTE_REMOVED',
-    'This legacy checkout route has been removed. Use POST /api/checkout/start with a monthly plan.'
-  )
-}
-
 export async function createBillingPortalSession(req, res) {
   try {
     const frontend = getFrontendBase(req)

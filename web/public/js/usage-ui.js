@@ -17,12 +17,8 @@ export function formatRenderTimeLeft(totalSec) {
 }
 
 export async function updateUsageDisplay(renderTimeLabel) {
-  const usageCountElements = document.querySelectorAll(
-    '#usage-count, .usage-count, #credit-count, .credit-count'
-  );
-  const usageBadgeElements = document.querySelectorAll(
-    '#usage-badge, .usage-badge, #credits-badge, .credits-badge'
-  );
+  const usageCountElements = document.querySelectorAll('#usage-count, .usage-count');
+  const usageBadgeElements = document.querySelectorAll('#usage-badge, .usage-badge');
 
   usageCountElements.forEach((el) => {
     if (el) el.textContent = renderTimeLabel || '--';
@@ -79,7 +75,3 @@ export function initUsageDisplay() {
 
   checkFirebaseReady();
 }
-
-export const updateCreditsDisplay = updateUsageDisplay;
-export const fetchAndUpdateCredits = fetchAndUpdateUsage;
-export const initCreditsDisplay = initUsageDisplay;
