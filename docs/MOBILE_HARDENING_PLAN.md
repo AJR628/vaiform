@@ -9,7 +9,7 @@ Goal: harden only the backend surface that the current mobile app actually depen
 - The canonical billing-model replacement plan is `docs/TIME_BASED_RENDER_USAGE_MIGRATION_PLAN.md`.
 - Phase 1 of that plan adds backend-only `GET /api/usage` and additive session `billingEstimate`.
 - Phase 2 of that plan cuts backend finalize reservation/settlement over to usage seconds and adds additive finalize `data.billing`, but the estimate-proof gate still requires representative manual verification before the backend cutover can be marked verified.
-- Phase 3 moves active mobile billing callers to `GET /api/usage`, render-time copy, and backend-owned estimate/availability checks; Phase 5 removes `GET /api/credits` from runtime.
+- Phase 3 moved active mobile billing callers to `GET /api/usage`, render-time copy, and backend-owned estimate/availability checks; Phase 5 removed `GET /api/credits` from runtime.
 - The Phase 5 cleanup/removal work is now landed. The overall cutover is still not release-ready until the Phase 2 estimate-proof gate and live Stripe/manual end-to-end verification are empirically closed.
 
 ## Working Rules
@@ -46,9 +46,6 @@ Goal: harden only the backend surface that the current mobile app actually depen
 
 - `DONE`: Mobile auth readiness now waits for successful backend provisioning instead of treating Firebase auth alone as app-ready.
   - Mobile evidence: `client/contexts/AuthContext.tsx:82-149`, `client/navigation/RootStackNavigator.tsx:20-60`
-
-- `DONE`: `refreshCredits()` can now seed a null `userProfile` instead of preserving `null` forever after a prior ensure failure.
-  - Mobile evidence: `client/contexts/AuthContext.tsx:157-179`
 
 - `DONE`: persisted active story session state is now scoped by UID so sign-out/account switch does not leak the previous account's active session.
   - Mobile evidence: `client/contexts/ActiveStorySessionContext.tsx:28-89`, `client/navigation/HomeStackNavigator.tsx:30-57`
