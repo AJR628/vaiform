@@ -37,6 +37,10 @@ const BILLING_ESTIMATE_PER_BEAT_BUFFER_SEC = Math.max(
   0,
   Number(process.env.BILLING_ESTIMATE_PER_BEAT_BUFFER_SEC || 1)
 );
+const BILLING_ESTIMATE_MAX_BUFFER_SEC = Math.max(
+  0,
+  Number(process.env.BILLING_ESTIMATE_MAX_BUFFER_SEC || 6)
+);
 
 // Manual script mode constants
 const MAX_BEATS = 8;
@@ -110,17 +114,32 @@ function billingEstimateBeatCount(session) {
   return 0;
 }
 
-function withBillingEstimateSafetyBuffer(session, baseEstimatedSec) {
+function billingEstimateSafetyBufferSec(session) {
   const beatCount = billingEstimateBeatCount(session);
-  const bufferedSec = baseEstimatedSec + beatCount * BILLING_ESTIMATE_PER_BEAT_BUFFER_SEC;
+  const rawBufferSec = beatCount * BILLING_ESTIMATE_PER_BEAT_BUFFER_SEC;
+  return Math.max(0, Math.min(BILLING_ESTIMATE_MAX_BUFFER_SEC, rawBufferSec));
+}
+
+function withBillingEstimateSafetyBuffer(session, baseEstimatedSec) {
+  const bufferedSec = baseEstimatedSec + billingEstimateSafetyBufferSec(session);
   return Math.max(1, Math.ceil(bufferedSec));
 }
 
 function deriveBillingEstimate(session) {
+  const readingDurationSec = totalReadingDurationSec(session);
   const captionTimelineSec = totalCaptionTimelineSec(session);
   if (Number.isFinite(captionTimelineSec) && captionTimelineSec > 0) {
+    const bufferedCaptionTimelineSec = withBillingEstimateSafetyBuffer(session, captionTimelineSec);
+    const bufferedReadingDurationSec =
+      Number.isFinite(readingDurationSec) && readingDurationSec > 0
+        ? withBillingEstimateSafetyBuffer(session, readingDurationSec)
+        : null;
+
     return {
-      estimatedSec: withBillingEstimateSafetyBuffer(session, captionTimelineSec),
+      estimatedSec:
+        bufferedReadingDurationSec == null
+          ? bufferedCaptionTimelineSec
+          : Math.min(bufferedCaptionTimelineSec, bufferedReadingDurationSec),
       source: 'caption_timeline',
       computedAt: new Date().toISOString(),
     };
@@ -135,7 +154,6 @@ function deriveBillingEstimate(session) {
     };
   }
 
-  const readingDurationSec = totalReadingDurationSec(session);
   return {
     estimatedSec: withBillingEstimateSafetyBuffer(session, readingDurationSec),
     source: 'reading_duration',

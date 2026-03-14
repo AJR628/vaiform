@@ -25,7 +25,7 @@ Purpose: canonical backend-owned contract, guarantees, and open mismatch record 
 - Phase 1 of the hard-cutover billing migration adds canonical backend `GET /api/usage` and additive session `billingEstimate`.
 - Phase 2 of the hard-cutover billing migration moves backend render reservation/settlement to canonical usage seconds and adds additive finalize `data.billing`.
 - Phase 3 moves active mobile callers to `GET /api/usage`, updates mobile billing copy/gating to render-time semantics, and removes `/api/credits` from active caller usage.
-- Current backend `billingEstimate.estimatedSec` is reservation-safe, not raw; Phase 2 now applies a server-side per-beat safety buffer before reserve and still requires representative manual verification before the estimate-proof gate is considered complete.
+- Current backend `billingEstimate.estimatedSec` is reservation-safe, not raw; Phase 2 now applies a capped server-side per-beat safety buffer before reserve, and `caption_timeline` estimates may be bounded by a buffered `reading_duration` ceiling. Representative manual verification is still required before the estimate-proof gate is considered complete.
 - Phases 1 through 5 of the billing migration are now landed in code, but the overall integration is still not production-ready until the Phase 2 estimate-proof gate is manually closed and live Stripe/manual end-to-end verification is completed.
 
 ## Response Rules

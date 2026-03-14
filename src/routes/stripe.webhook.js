@@ -205,6 +205,7 @@ function buildCheckoutUserPatch(currentUser, context) {
       periodStartAt: context.periodStartAt,
       periodEndAt: context.periodEndAt,
       cycleIncludedSec: context.cycleIncludedSec,
+      cycleUsedSec: 0,
       cycleReservedSec: current.usage.cycleReservedSec,
       updatedAt: serverNow,
     },

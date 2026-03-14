@@ -136,6 +136,8 @@ availableSec = max(0, cycleIncludedSec - cycleUsedSec - cycleReservedSec)
 
 Rules:
 - `availableSec` is computed, returned, and never stored as canonical source-of-truth.
+- Starting a new paid billing period resets `cycleUsedSec` to `0`.
+- `cycleReservedSec` may carry across a period transition only to preserve a legitimate in-flight finalize reservation until settle or failure release completes.
 - No top-up fields exist in the launch cutover schema.
 
 ### Session estimate model
@@ -158,7 +160,8 @@ Locked source order:
 Rules:
 - Estimate is backend-owned only.
 - Estimate is a conservative reservation target, not client-derived math.
-- Phase 2 runtime now applies a server-side safety buffer of `1` second per beat via `BILLING_ESTIMATE_PER_BEAT_BUFFER_SEC` before reserving usage.
+- Phase 2 runtime now applies a server-side safety buffer of `1` second per beat via `BILLING_ESTIMATE_PER_BEAT_BUFFER_SEC`, capped at `6` seconds total via `BILLING_ESTIMATE_MAX_BUFFER_SEC`, before reserving usage.
+- When `caption_timeline` is present, it remains the first estimate source but its buffered reservation estimate is bounded by the buffered `reading_duration` ceiling.
 - Phase 2 cannot be marked verified until representative supported stories prove the buffered estimate is not below billed duration for supported flows.
 
 ### Finalize reserve/settle model
