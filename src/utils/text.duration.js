@@ -60,7 +60,7 @@ export function calculateBillingSpeechDuration(text, options = {}) {
     return options.minDuration ?? 2;
   }
 
-  const wordsPerMinute = options.wordsPerMinute ?? 105;
+  const wordsPerMinute = options.wordsPerMinute ?? 180;
   const wordsPerSecond = wordsPerMinute / 60;
   const baseTime = options.baseTime ?? 2;
   const minDuration = options.minDuration ?? 2;
