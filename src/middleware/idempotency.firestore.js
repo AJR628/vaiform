@@ -263,11 +263,7 @@ export function idempotencyFinalize({ ttlMinutes = 60, getSession } = {}) {
       sessionId,
       estimatedSec,
       estimateSource: reservationSession?.billingEstimate?.source || null,
-      probeCacheHit: reservationSession?.billingEstimateProbe?.cacheHit ?? null,
-      scriptHash: reservationSession?.billingEstimateProbe?.scriptHash || null,
       voicePreset: reservationSession?.voicePreset || 'male_calm',
-      provider: reservationSession?.billingEstimateProbe?.provider || null,
-      model: reservationSession?.billingEstimateProbe?.model || null,
     });
     res.finishIdempotentFinalize = async ({ session, shortId, status = 200 }) => {
       const billedSec = getBilledSecFromSession(session);
@@ -361,11 +357,7 @@ export function idempotencyFinalize({ ttlMinutes = 60, getSession } = {}) {
         billedSec,
         deltaSec: estimatedSec - billedSec,
         estimateSource: session?.billingEstimate?.source || null,
-        probeCacheHit: session?.billingEstimateProbe?.cacheHit ?? null,
-        scriptHash: session?.billingEstimateProbe?.scriptHash || null,
         voicePreset: session?.voicePreset || 'male_calm',
-        provider: session?.billingEstimateProbe?.provider || null,
-        model: session?.billingEstimateProbe?.model || null,
       });
       return res.status(status).json(finalizeSuccess(req, sessionWithBilling, shortId ?? null));
     };

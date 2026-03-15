@@ -25,22 +25,33 @@ import { uploadPublic } from '../utils/storage.js';
 import { calculateReadingDuration, calculateBillingSpeechDuration } from '../utils/text.duration.js';
 import admin from '../config/firebase.js';
 import { extractCoverJpeg } from '../utils/ffmpeg.cover.js';
-import { getLastTtsState, synthVoice, synthVoiceWithTimestamps } from './tts.service.js';
-import { getVoicePreset, getDefaultVoicePreset } from '../constants/voice.presets.js';
+import { synthVoiceWithTimestamps } from './tts.service.js';
+import { getVoicePreset } from '../constants/voice.presets.js';
 import { buildKaraokeASSFromTimestamps } from '../utils/karaoke.ass.js';
 import { wrapTextWithFont } from '../utils/caption.wrap.js';
 import { deriveCaptionWrapWidthPx } from '../utils/caption.wrapWidth.js';
 import { compileCaptionSSOT } from '../captions/compile.js';
-import { normalizeVoiceSettings } from '../utils/voice.normalize.js';
 
 const TTL_HOURS = Number(process.env.STORY_TTL_HOURS || 48);
 const BILLING_ESTIMATE_HEURISTIC_PAD_SEC = Math.max(
   0,
   Number(process.env.BILLING_ESTIMATE_HEURISTIC_PAD_SEC || 2)
 );
-const BILLING_ESTIMATE_TTS_PROBE_PAD_SEC = Math.max(
+const BILLING_ESTIMATE_PER_BEAT_BASE_SEC = Math.max(
   0,
-  Number(process.env.BILLING_ESTIMATE_TTS_PROBE_PAD_SEC || 2)
+  Number(process.env.BILLING_ESTIMATE_PER_BEAT_BASE_SEC || 0.5)
+);
+const BILLING_ESTIMATE_PER_BEAT_MIN_SEC = Math.max(
+  0,
+  Number(process.env.BILLING_ESTIMATE_PER_BEAT_MIN_SEC || 1)
+);
+const BILLING_ESTIMATE_BEAT_BOUNDARY_PAD_SEC = Math.max(
+  0,
+  Number(process.env.BILLING_ESTIMATE_BEAT_BOUNDARY_PAD_SEC || 0.2)
+);
+const BILLING_ESTIMATE_BEAT_BOUNDARY_PAD_MAX_SEC = Math.max(
+  0,
+  Number(process.env.BILLING_ESTIMATE_BEAT_BOUNDARY_PAD_MAX_SEC || 1.4)
 );
 
 // Manual script mode constants
@@ -98,61 +109,16 @@ function normalizeNarrationText(text) {
     .trim();
 }
 
-function getNormalizedNarrationScript(session) {
+function getNormalizedNarrationSentences(session) {
   const sentences = session?.story?.sentences;
-  if (!Array.isArray(sentences) || sentences.length === 0) return '';
-  return normalizeNarrationText(
-    sentences
-      .map((sentence) => String(sentence || '').trim())
-      .filter((sentence) => sentence.length > 0)
-      .join(' ')
-  );
+  if (!Array.isArray(sentences) || sentences.length === 0) return [];
+  return sentences
+    .map((sentence) => normalizeNarrationText(sentence))
+    .filter((sentence) => sentence.length > 0);
 }
 
-function shortHash(value) {
-  return crypto.createHash('sha256').update(String(value || '')).digest('hex').slice(0, 16);
-}
-
-function resolveBillingEstimateVoiceConfig(session) {
-  const voicePresetKey = session?.voicePreset || 'male_calm';
-  const voicePreset = getVoicePreset(voicePresetKey) || getDefaultVoicePreset();
-  const provider = (process.env.TTS_PROVIDER || 'openai').toLowerCase();
-  const model = process.env.ELEVEN_TTS_MODEL || 'eleven_flash_v2_5';
-  const normalizedVoiceSettings = normalizeVoiceSettings(voicePreset.voiceSettings || {});
-  const voiceSettingsJson = JSON.stringify(normalizedVoiceSettings);
-  const voiceSettingsHash = shortHash(voiceSettingsJson);
-
-  return {
-    voicePresetKey,
-    voicePreset,
-    provider,
-    model,
-    voiceId: voicePreset.voiceId,
-    normalizedVoiceSettings,
-    voiceSettingsHash,
-  };
-}
-
-export function computeBillingEstimateFingerprint(session) {
-  const normalizedScript = getNormalizedNarrationScript(session);
-  const scriptHash = shortHash(normalizedScript);
-  const voiceConfig = resolveBillingEstimateVoiceConfig(session);
-  const fingerprint = shortHash(
-    JSON.stringify({
-      scriptHash,
-      provider: voiceConfig.provider,
-      model: voiceConfig.model,
-      voiceId: voiceConfig.voiceId,
-      voiceSettingsHash: voiceConfig.voiceSettingsHash,
-    })
-  );
-
-  return {
-    normalizedScript,
-    scriptHash,
-    fingerprint,
-    ...voiceConfig,
-  };
+function getNormalizedNarrationScript(session) {
+  return normalizeNarrationText(getNormalizedNarrationSentences(session).join(' '));
 }
 
 function withBillingEstimatePad(baseEstimatedSec, padSec) {
@@ -160,13 +126,45 @@ function withBillingEstimatePad(baseEstimatedSec, padSec) {
   return Math.max(1, Math.ceil(bufferedSec));
 }
 
+function totalBeatSpeechDurationSec(session) {
+  const sentences = getNormalizedNarrationSentences(session);
+  if (sentences.length === 0) return null;
+
+  let total = 0;
+  for (const sentence of sentences) {
+    const durationSec = calculateBillingSpeechDuration(sentence, {
+      baseTime: BILLING_ESTIMATE_PER_BEAT_BASE_SEC,
+      minDuration: BILLING_ESTIMATE_PER_BEAT_MIN_SEC,
+      roundTo: 0,
+    });
+    if (!Number.isFinite(durationSec) || durationSec <= 0) continue;
+    total += durationSec;
+  }
+  if (!(total > 0)) return null;
+
+  const boundaryPadSec = Math.min(
+    BILLING_ESTIMATE_BEAT_BOUNDARY_PAD_MAX_SEC,
+    Math.max(0, sentences.length - 1) * BILLING_ESTIMATE_BEAT_BOUNDARY_PAD_SEC
+  );
+  return total + boundaryPadSec;
+}
+
 export function deriveHeuristicBillingEstimate(session) {
   const computedAt = new Date().toISOString();
-  const { normalizedScript } = computeBillingEstimateFingerprint(session);
-  const speechDurationSec = calculateBillingSpeechDuration(normalizedScript);
-  if (Number.isFinite(speechDurationSec) && speechDurationSec > 0) {
+  const normalizedScript = getNormalizedNarrationScript(session);
+  const wholeScriptDurationSec = normalizedScript
+    ? calculateBillingSpeechDuration(normalizedScript)
+    : null;
+  const beatSpeechDurationSec = totalBeatSpeechDurationSec(session);
+  const speechCandidates = [wholeScriptDurationSec, beatSpeechDurationSec].filter(
+    (value) => Number.isFinite(value) && value > 0
+  );
+  if (speechCandidates.length > 0) {
     return {
-      estimatedSec: withBillingEstimatePad(speechDurationSec, BILLING_ESTIMATE_HEURISTIC_PAD_SEC),
+      estimatedSec: withBillingEstimatePad(
+        Math.max(...speechCandidates),
+        BILLING_ESTIMATE_HEURISTIC_PAD_SEC
+      ),
       source: 'speech_duration',
       computedAt,
     };
@@ -197,41 +195,8 @@ export function deriveHeuristicBillingEstimate(session) {
   };
 }
 
-function getStoredProbe(session) {
-  const probe = session?.billingEstimateProbe;
-  if (!probe || typeof probe !== 'object') return null;
-  if (typeof probe.fingerprint !== 'string' || probe.fingerprint.trim().length === 0) return null;
-  const durationMs = Number(probe.durationMs);
-  if (!Number.isFinite(durationMs) || durationMs <= 0) return null;
-  return {
-    fingerprint: probe.fingerprint,
-    durationMs,
-    computedAt:
-      typeof probe.computedAt === 'string' && probe.computedAt.trim().length > 0
-        ? probe.computedAt
-        : null,
-    cacheHit: probe.cacheHit === true,
-    provider: typeof probe.provider === 'string' ? probe.provider : null,
-    model: typeof probe.model === 'string' ? probe.model : null,
-    voiceId: typeof probe.voiceId === 'string' ? probe.voiceId : null,
-    voiceSettingsHash:
-      typeof probe.voiceSettingsHash === 'string' ? probe.voiceSettingsHash : null,
-    scriptHash: typeof probe.scriptHash === 'string' ? probe.scriptHash : null,
-  };
-}
-
-function hasValidProbeBackedEstimate(session) {
-  const estimate = session?.billingEstimate;
-  const storedProbe = getStoredProbe(session);
-  if (!storedProbe) return false;
-  if (estimate?.source !== 'tts_probe') return false;
-  const estimatedSec = Number(estimate?.estimatedSec);
-  return Number.isFinite(estimatedSec) && estimatedSec > 0;
-}
-
 function setHeuristicBillingEstimate(session) {
   session.billingEstimate = deriveHeuristicBillingEstimate(session);
-  delete session.billingEstimateProbe;
   return session;
 }
 
@@ -239,20 +204,8 @@ export function refreshStorySessionHeuristicEstimate(session) {
   return setHeuristicBillingEstimate(session);
 }
 
-export function invalidateProbeBackedEstimateIfStale(session) {
-  if (!hasValidProbeBackedEstimate(session)) return false;
-  const fingerprint = computeBillingEstimateFingerprint(session);
-  if (session.billingEstimateProbe?.fingerprint === fingerprint.fingerprint) {
-    return false;
-  }
-  delete session.billingEstimateProbe;
-  return true;
-}
-
 export function sanitizeStorySessionForClient(session) {
-  if (!session || typeof session !== 'object') return session;
-  const { billingEstimateProbe, ...rest } = session;
-  return rest;
+  return session;
 }
 
 function normalizeRenderRecoveryAttemptId(attemptId, previous = null) {
@@ -400,108 +353,6 @@ export async function createStorySession({
  */
 export async function getStorySession({ uid, sessionId }) {
   return await loadStorySession({ uid, sessionId });
-}
-
-export async function estimateStorySession({ uid, sessionId }) {
-  const session = await loadStorySession({ uid, sessionId });
-  if (!session) throw new Error('SESSION_NOT_FOUND');
-
-  const fingerprint = computeBillingEstimateFingerprint(session);
-  if (
-    hasValidProbeBackedEstimate(session) &&
-    session.billingEstimateProbe?.fingerprint === fingerprint.fingerprint
-  ) {
-    return session;
-  }
-
-  const now = new Date().toISOString();
-  if (!fingerprint.normalizedScript) {
-    setHeuristicBillingEstimate(session);
-    session.updatedAt = now;
-    await saveStorySession({ uid, sessionId, data: session });
-    return session;
-  }
-
-  let probeAudioPath = null;
-  try {
-    const probeResult = await synthVoice({
-      text: fingerprint.normalizedScript,
-      voiceId: fingerprint.voiceId,
-      modelId: fingerprint.model,
-      outputFormat: 'mp3_44100_128',
-      voiceSettings: fingerprint.normalizedVoiceSettings,
-    });
-    probeAudioPath = probeResult?.audioPath || null;
-
-    const durationMs = Number(probeResult?.durationMs);
-    if (Number.isFinite(durationMs) && durationMs > 0) {
-      const computedAt = new Date().toISOString();
-      const estimateSource = 'tts_probe';
-      const estimatedSec = withBillingEstimatePad(
-        durationMs / 1000,
-        BILLING_ESTIMATE_TTS_PROBE_PAD_SEC
-      );
-      const probeCacheHit = getLastTtsState()?.cache?.hit === true;
-
-      session.billingEstimate = {
-        estimatedSec,
-        source: estimateSource,
-        computedAt,
-      };
-      session.billingEstimateProbe = {
-        fingerprint: fingerprint.fingerprint,
-        durationMs,
-        computedAt,
-        cacheHit: probeCacheHit,
-        provider: fingerprint.provider,
-        model: fingerprint.model,
-        voiceId: fingerprint.voiceId,
-        voiceSettingsHash: fingerprint.voiceSettingsHash,
-        scriptHash: fingerprint.scriptHash,
-      };
-      session.updatedAt = computedAt;
-      await saveStorySession({ uid, sessionId, data: session });
-
-      console.log('[billing-estimate][probe]', {
-        sessionId,
-        estimateSource,
-        estimatedSec,
-        probeCacheHit,
-        scriptHash: fingerprint.scriptHash,
-        provider: fingerprint.provider,
-        model: fingerprint.model,
-        voicePreset: fingerprint.voicePresetKey,
-      });
-      return session;
-    }
-  } catch (error) {
-    console.warn('[billing-estimate][probe] failed:', error?.message || error);
-  } finally {
-    if (probeAudioPath) {
-      try {
-        const probeDir = path.dirname(probeAudioPath);
-        if (fs.existsSync(probeDir)) {
-          fs.rmSync(probeDir, { recursive: true, force: true });
-        }
-      } catch (cleanupErr) {
-        console.warn('[billing-estimate][probe] cleanup failed:', cleanupErr?.message || cleanupErr);
-      }
-    }
-  }
-
-  setHeuristicBillingEstimate(session);
-  session.updatedAt = new Date().toISOString();
-  await saveStorySession({ uid, sessionId, data: session });
-  console.log('[billing-estimate][heuristic-fallback]', {
-    sessionId,
-    estimateSource: session.billingEstimate?.source || null,
-    estimatedSec: session.billingEstimate?.estimatedSec || null,
-    scriptHash: fingerprint.scriptHash,
-    provider: fingerprint.provider,
-    model: fingerprint.model,
-    voicePreset: fingerprint.voicePresetKey,
-  });
-  return session;
 }
 
 /**

@@ -1,6 +1,5 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import requireAuth from '../middleware/requireAuth.js';
 import { enforceRenderTimeForRender, enforceScriptDailyCap } from '../middleware/planGuards.js';
 import { idempotencyFinalize } from '../middleware/idempotency.firestore.js';
@@ -10,7 +9,6 @@ import {
   getStorySession,
   generateStory,
   createManualStorySession,
-  estimateStorySession,
   updateStorySentences,
   planShots,
   searchShots,
@@ -34,23 +32,6 @@ import { isOutboundPolicyError } from '../utils/outbound.fetch.js';
 
 const r = Router();
 r.use(requireAuth);
-
-const estimateRateLimit = rateLimit({
-  windowMs: 60 * 1000,
-  max: 10,
-  keyGenerator: (req) => req.user?.uid || ipKeyGenerator(req.ip),
-  skip: (req) => req.method === 'OPTIONS',
-  standardHeaders: true,
-  legacyHeaders: false,
-  handler: (req, res) =>
-    fail(
-      req,
-      res,
-      429,
-      'RATE_LIMIT_EXCEEDED',
-      'Too many estimate refresh requests. Please wait a moment and try again.'
-    ),
-});
 
 const requestIdOf = (req) => req?.id ?? null;
 const presentStorySession = (session) => sanitizeStorySessionForClient(session);
@@ -790,36 +771,6 @@ r.post('/captions', async (req, res) => {
       500,
       'STORY_CAPTIONS_FAILED',
       e?.message || 'Failed to generate caption timings'
-    );
-  }
-});
-
-// POST /api/story/estimate - Refresh canonical billing estimate at render intent
-r.post('/estimate', estimateRateLimit, async (req, res) => {
-  try {
-    const parsed = SessionSchema.safeParse(req.body || {});
-    if (!parsed.success) {
-      return fail(req, res, 400, 'INVALID_INPUT', 'Invalid request', zodFields(parsed.error));
-    }
-
-    const { sessionId } = parsed.data;
-    const session = await estimateStorySession({
-      uid: req.user.uid,
-      sessionId,
-    });
-
-    return okStorySession(req, res, session);
-  } catch (e) {
-    if (e?.message === 'SESSION_NOT_FOUND') {
-      return fail(req, res, 404, 'SESSION_NOT_FOUND', 'Session not found');
-    }
-    console.error('[story][estimate] error:', e);
-    return fail(
-      req,
-      res,
-      500,
-      'STORY_ESTIMATE_FAILED',
-      e?.message || 'Failed to refresh story estimate'
     );
   }
 });

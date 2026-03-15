@@ -25,7 +25,7 @@ Purpose: canonical backend-owned contract, guarantees, and open mismatch record 
 - Phase 1 of the hard-cutover billing migration adds canonical backend `GET /api/usage` and additive session `billingEstimate`.
 - Phase 2 of the hard-cutover billing migration moves backend render reservation/settlement to canonical usage seconds and adds additive finalize `data.billing`.
 - Phase 3 moves active mobile callers to `GET /api/usage`, updates mobile billing copy/gating to render-time semantics, and removes `/api/credits` from active caller usage.
-- Current backend `billingEstimate.estimatedSec` is reservation-safe, not raw. The active source order is `tts_probe -> speech_duration -> shot_durations -> caption_timeline`, where `tts_probe` is refreshed only by render-intent `POST /api/story/estimate`, `speech_duration` is the whole-script heuristic fallback, and `caption_timeline` is retained only as an emergency fallback. Representative manual verification is still required before the estimate-proof gate is considered complete.
+- Current backend `billingEstimate.estimatedSec` is reservation-safe, not raw. The active source order is `speech_duration -> shot_durations -> caption_timeline`, where `speech_duration` is the backend-owned composite text heuristic and `caption_timeline` is retained only as an emergency fallback. Representative manual verification is still required before the estimate-proof gate is considered complete.
 - Phases 1 through 5 of the billing migration are now landed in code, but the overall integration is still not production-ready until the Phase 2 estimate-proof gate is manually closed and live Stripe/manual end-to-end verification is completed.
 
 ## Response Rules
@@ -85,13 +85,6 @@ Purpose: canonical backend-owned contract, guarantees, and open mismatch record 
   - Backend returns: full session in `data`.
   - Mobile reads: `story.sentences` with helper fallbacks, `shots`, `overlayCaption.placement`, additive `billingEstimate.estimatedSec`, `shot.selectedClip.thumbUrl`, `shot.searchQuery`, and `renderRecovery` during finalize recovery polling.
   - Recovery role: this route is now the backend-backed finalize recovery contract. Additive `renderRecovery` fields expose `{ state, attemptId, startedAt, updatedAt, shortId, finishedAt, failedAt, code, message }`, and mobile trusts them only when `renderRecovery.attemptId` matches the active finalize attempt.
-
-- `POST /api/story/estimate`
-  - Mobile caller(s): `client/screens/StoryEditorScreen.tsx`
-  - Backend handler(s): `src/routes/story.routes.js`, `src/services/story.service.js`
-  - Mobile sends: `{ sessionId }` immediately before showing the final render confirmation copy.
-  - Backend returns: full public session in `data`; `billingEstimateProbe` remains backend-internal and is not returned to callers.
-  - Mobile reads: refreshed `billingEstimate.estimatedSec` only.
 
 - `POST /api/story/plan`
   - Mobile caller(s): `client/screens/ScriptScreen.tsx:126-159`

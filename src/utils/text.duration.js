@@ -57,14 +57,15 @@ export function calculateReadingDuration(text, options = {}) {
  */
 export function calculateBillingSpeechDuration(text, options = {}) {
   if (!text || typeof text !== 'string') {
-    return options.minDuration || 2;
+    return options.minDuration ?? 2;
   }
 
-  const wordsPerMinute = options.wordsPerMinute || 105;
+  const wordsPerMinute = options.wordsPerMinute ?? 105;
   const wordsPerSecond = wordsPerMinute / 60;
-  const baseTime = options.baseTime || 2;
-  const minDuration = options.minDuration || 2;
-  const maxDuration = options.maxDuration || 180;
+  const baseTime = options.baseTime ?? 2;
+  const minDuration = options.minDuration ?? 2;
+  const maxDuration = options.maxDuration ?? 180;
+  const roundTo = options.roundTo ?? 0.5;
 
   const normalized = text
     .replace(/\s+/g, ' ')
@@ -76,7 +77,8 @@ export function calculateBillingSpeechDuration(text, options = {}) {
   const words = normalized.split(/\s+/).filter((w) => w.length > 0);
   const readingTime = words.length / wordsPerSecond;
   const duration = baseTime + readingTime;
-  const rounded = Math.round(duration * 2) / 2;
+  const rounded =
+    roundTo > 0 ? Math.round(duration / roundTo) * roundTo : duration;
 
   return Math.max(minDuration, Math.min(maxDuration, rounded));
 }
