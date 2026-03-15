@@ -147,21 +147,26 @@ Additive server-owned session field:
 ```json
 "billingEstimate": {
   "estimatedSec": 0,
-  "source": "caption_timeline | shot_durations | reading_duration",
+  "source": "tts_probe | speech_duration | shot_durations | caption_timeline",
   "computedAt": "Timestamp"
 }
 ```
 
 Locked source order:
-1. Caption timeline total, if caption timings exist.
-2. Sum of shot `durationSec`, if shots exist.
-3. Reading-duration fallback.
+1. Reuse a stored render-intent `tts_probe` when its probe fingerprint still matches the current script + voice inputs.
+2. Whole-script `speech_duration` heuristic fallback.
+3. Sum of shot `durationSec`, if shots exist and script text is unavailable.
+4. Caption timeline total only as emergency last fallback.
 
 Rules:
 - Estimate is backend-owned only.
 - Estimate is a conservative reservation target, not client-derived math.
-- Phase 2 runtime now applies a server-side safety buffer of `1` second per beat via `BILLING_ESTIMATE_PER_BEAT_BUFFER_SEC`, capped at `6` seconds total via `BILLING_ESTIMATE_MAX_BUFFER_SEC`, before reserving usage.
-- When `caption_timeline` is present, it remains the first estimate source but its buffered reservation estimate is bounded by the buffered `reading_duration` ceiling.
+- Finalize settlement truth remains `Math.ceil(session.finalVideo.durationSec)`.
+- Passive `GET /api/story/:sessionId` and generic session saves must not silently overwrite a valid probe-backed estimate.
+- Render-intent `POST /api/story/estimate` is now the only route allowed to refresh a probe-backed estimate with TTS.
+- Stored `billingEstimateProbe` metadata is backend-internal only; it is keyed by normalized script + provider/model + resolved voice ID + normalized voice settings hash and is not part of the client contract.
+- `speech_duration` fallback uses a whole-script billing-specific speech-duration helper plus a small story-level reserve pad via `BILLING_ESTIMATE_HEURISTIC_PAD_SEC`.
+- `tts_probe` reserve estimates use one whole-script `synthVoice()` probe plus a story-level reserve pad via `BILLING_ESTIMATE_TTS_PROBE_PAD_SEC`.
 - Phase 2 cannot be marked verified until representative supported stories prove the buffered estimate is not below billed duration for supported flows.
 
 ### Finalize reserve/settle model
@@ -278,7 +283,7 @@ Finalize success contract:
     "finalVideo": {},
     "billingEstimate": {
       "estimatedSec": 0,
-      "source": "caption_timeline | shot_durations | reading_duration",
+      "source": "tts_probe | speech_duration | shot_durations | caption_timeline",
       "computedAt": "ISO-8601"
     },
     "billing": {
@@ -363,12 +368,13 @@ Verification gates:
 - Successful finalize persists short `billing`.
 - Backend no longer debits credits or throws `INSUFFICIENT_CREDITS`.
 - Render/finalize billing paths no longer infer paid/pro from credit balance.
-- Phase 2 runtime currently uses the documented per-beat server-side safety buffer above.
+- Phase 2 runtime currently uses the documented story-level reserve pads above on both `speech_duration` and `tts_probe` estimates.
 - Phase 2 is still blocked from being marked verified or release-ready until representative supported stories prove the buffered `estimatedSec >= billedSec`.
 - The representative estimate-proof set must include:
-  - a session whose reservation source is `caption_timeline` at finalize start
+  - a session whose reservation source is `tts_probe` at finalize start
+  - a session whose reservation source is `speech_duration` at finalize start
   - a session whose reservation source is `shot_durations` at finalize start
-  - a session whose reservation source is `reading_duration` at finalize start
+  - a fallback session whose reservation source is `caption_timeline` at finalize start
   - at least one manual-script session that still finalizes through the normal TTS render path
 
 Docs:

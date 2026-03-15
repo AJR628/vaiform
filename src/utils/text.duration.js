@@ -42,4 +42,43 @@ export function calculateReadingDuration(text, options = {}) {
   return Math.max(minDuration, Math.min(maxDuration, rounded));
 }
 
-export default { calculateReadingDuration };
+/**
+ * Calculate a whole-script speech duration estimate for billing fallback.
+ * This is intentionally separate from calculateReadingDuration(), which is
+ * tuned for caption/display pacing and applies its floor/base per sentence.
+ *
+ * @param {string} text
+ * @param {object} options
+ * @param {number} options.wordsPerMinute
+ * @param {number} options.baseTime
+ * @param {number} options.minDuration
+ * @param {number} options.maxDuration
+ * @returns {number}
+ */
+export function calculateBillingSpeechDuration(text, options = {}) {
+  if (!text || typeof text !== 'string') {
+    return options.minDuration || 2;
+  }
+
+  const wordsPerMinute = options.wordsPerMinute || 105;
+  const wordsPerSecond = wordsPerMinute / 60;
+  const baseTime = options.baseTime || 2;
+  const minDuration = options.minDuration || 2;
+  const maxDuration = options.maxDuration || 180;
+
+  const normalized = text
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!normalized) {
+    return minDuration;
+  }
+
+  const words = normalized.split(/\s+/).filter((w) => w.length > 0);
+  const readingTime = words.length / wordsPerSecond;
+  const duration = baseTime + readingTime;
+  const rounded = Math.round(duration * 2) / 2;
+
+  return Math.max(minDuration, Math.min(maxDuration, rounded));
+}
+
+export default { calculateReadingDuration, calculateBillingSpeechDuration };

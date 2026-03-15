@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import requireAuth from '../middleware/requireAuth.js';
 import { enforceRenderTimeForRender, enforceScriptDailyCap } from '../middleware/planGuards.js';
 import { idempotencyFinalize } from '../middleware/idempotency.firestore.js';
@@ -9,6 +10,7 @@ import {
   getStorySession,
   generateStory,
   createManualStorySession,
+  estimateStorySession,
   updateStorySentences,
   planShots,
   searchShots,
@@ -23,6 +25,8 @@ import {
   renderStory,
   finalizeStory,
   saveStorySession,
+  refreshStorySessionHeuristicEstimate,
+  sanitizeStorySessionForClient,
 } from '../services/story.service.js';
 import { extractStyleOnly } from '../utils/caption-style-helper.js';
 import { ok, fail } from '../http/respond.js';
@@ -31,10 +35,29 @@ import { isOutboundPolicyError } from '../utils/outbound.fetch.js';
 const r = Router();
 r.use(requireAuth);
 
+const estimateRateLimit = rateLimit({
+  windowMs: 60 * 1000,
+  max: 10,
+  keyGenerator: (req) => req.user?.uid || ipKeyGenerator(req.ip),
+  skip: (req) => req.method === 'OPTIONS',
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (req, res) =>
+    fail(
+      req,
+      res,
+      429,
+      'RATE_LIMIT_EXCEEDED',
+      'Too many estimate refresh requests. Please wait a moment and try again.'
+    ),
+});
+
 const requestIdOf = (req) => req?.id ?? null;
+const presentStorySession = (session) => sanitizeStorySessionForClient(session);
+const okStorySession = (req, res, session) => ok(req, res, presentStorySession(session));
 const finalizeSuccess = (req, session, shortId) => ({
   success: true,
-  data: session,
+  data: presentStorySession(session),
   shortId,
   requestId: requestIdOf(req),
 });
@@ -130,7 +153,7 @@ r.post('/start', async (req, res) => {
       styleKey,
     });
 
-    return ok(req, res, session);
+    return okStorySession(req, res, session);
   } catch (e) {
     console.error('[story][start] error:', e);
     return fail(
@@ -159,7 +182,7 @@ r.post('/generate', enforceScriptDailyCap(300), async (req, res) => {
       inputType,
     });
 
-    return ok(req, res, session);
+    return okStorySession(req, res, session);
   } catch (e) {
     const mapped = storyFailureFromError(e);
     if (mapped) {
@@ -190,7 +213,7 @@ r.post('/update-script', async (req, res) => {
       sentences,
     });
 
-    return ok(req, res, session);
+    return okStorySession(req, res, session);
   } catch (e) {
     console.error('[story][update-script] error:', e);
     return fail(
@@ -486,7 +509,7 @@ r.post('/plan', enforceScriptDailyCap(300), async (req, res) => {
       sessionId,
     });
 
-    return ok(req, res, session);
+    return okStorySession(req, res, session);
   } catch (e) {
     console.error('[story][plan] error:', e);
     return fail(req, res, 500, 'STORY_PLAN_FAILED', e?.message || 'Failed to plan shots');
@@ -507,7 +530,7 @@ r.post('/search', async (req, res) => {
       sessionId,
     });
 
-    return ok(req, res, session);
+    return okStorySession(req, res, session);
   } catch (e) {
     console.error('[story][search] error:', e);
     return fail(req, res, 500, 'STORY_SEARCH_FAILED', e?.message || 'Failed to search clips');
@@ -572,7 +595,7 @@ r.post('/update-video-cuts', async (req, res) => {
       sessionId,
       videoCutsV1,
     });
-    return ok(req, res, session);
+    return okStorySession(req, res, session);
   } catch (e) {
     console.error('[story][update-video-cuts] error:', e);
     const status = e?.message === 'SESSION_NOT_FOUND' ? 404 : 400;
@@ -737,7 +760,7 @@ r.post('/timeline', async (req, res) => {
       sessionId,
     });
 
-    return ok(req, res, session);
+    return okStorySession(req, res, session);
   } catch (e) {
     console.error('[story][timeline] error:', e);
     return fail(req, res, 500, 'STORY_TIMELINE_FAILED', e?.message || 'Failed to build timeline');
@@ -758,7 +781,7 @@ r.post('/captions', async (req, res) => {
       sessionId,
     });
 
-    return ok(req, res, session);
+    return okStorySession(req, res, session);
   } catch (e) {
     console.error('[story][captions] error:', e);
     return fail(
@@ -767,6 +790,36 @@ r.post('/captions', async (req, res) => {
       500,
       'STORY_CAPTIONS_FAILED',
       e?.message || 'Failed to generate caption timings'
+    );
+  }
+});
+
+// POST /api/story/estimate - Refresh canonical billing estimate at render intent
+r.post('/estimate', estimateRateLimit, async (req, res) => {
+  try {
+    const parsed = SessionSchema.safeParse(req.body || {});
+    if (!parsed.success) {
+      return fail(req, res, 400, 'INVALID_INPUT', 'Invalid request', zodFields(parsed.error));
+    }
+
+    const { sessionId } = parsed.data;
+    const session = await estimateStorySession({
+      uid: req.user.uid,
+      sessionId,
+    });
+
+    return okStorySession(req, res, session);
+  } catch (e) {
+    if (e?.message === 'SESSION_NOT_FOUND') {
+      return fail(req, res, 404, 'SESSION_NOT_FOUND', 'Session not found');
+    }
+    console.error('[story][estimate] error:', e);
+    return fail(
+      req,
+      res,
+      500,
+      'STORY_ESTIMATE_FAILED',
+      e?.message || 'Failed to refresh story estimate'
     );
   }
 });
@@ -797,7 +850,7 @@ r.post(
         })
       );
 
-      return ok(req, res, session);
+      return okStorySession(req, res, session);
     } catch (e) {
       if (res.headersSent) return;
       if (e?.code === 'SERVER_BUSY' || e?.message === 'SERVER_BUSY') {
@@ -982,6 +1035,7 @@ r.post('/create-manual-session', async (req, res) => {
     // Set status to clips_searched (skip plan/search steps since clips already selected)
     session.status = 'clips_searched';
     session.updatedAt = new Date().toISOString();
+    refreshStorySessionHeuristicEstimate(session);
 
     // Save session
     console.log('[story][create-manual-session] Saving session:', session.id);
@@ -989,7 +1043,7 @@ r.post('/create-manual-session', async (req, res) => {
 
     return ok(req, res, {
       sessionId: session.id,
-      session,
+      session: presentStorySession(session),
     });
   } catch (e) {
     console.error('[story][create-manual-session] error:', e);
@@ -1020,7 +1074,7 @@ r.get('/:sessionId', async (req, res) => {
       return fail(req, res, 404, 'NOT_FOUND', 'Story session not found');
     }
 
-    return ok(req, res, session);
+    return okStorySession(req, res, session);
   } catch (e) {
     console.error('[story][get] error:', e);
     return fail(req, res, 500, 'STORY_GET_FAILED', e?.message || 'Failed to get story session');

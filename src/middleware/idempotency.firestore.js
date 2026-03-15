@@ -1,6 +1,7 @@
 import admin, { db } from '../config/firebase.js';
 import { ok, fail } from '../http/respond.js';
 import { buildCanonicalUsageState, getAvailableSec } from '../services/usage.service.js';
+import { sanitizeStorySessionForClient } from '../services/story.service.js';
 
 const requestIdOf = (req) => req?.id ?? null;
 const requestBillingOf = (settlement) => {
@@ -22,12 +23,13 @@ const requestBillingOf = (settlement) => {
 };
 const attachBillingToSession = (session, settlement) => {
   if (!session || typeof session !== 'object') return session;
+  const safeSession = sanitizeStorySessionForClient(session);
   const billing = requestBillingOf(settlement);
   if (!billing || !Number.isFinite(Number(billing.billedSec)) || Number(billing.billedSec) <= 0) {
-    return session;
+    return safeSession;
   }
   return {
-    ...session,
+    ...safeSession,
     billing,
   };
 };
@@ -257,6 +259,16 @@ export function idempotencyFinalize({ ttlMinutes = 60, getSession } = {}) {
     res._idempotencySessionId = sessionId;
     res._idempotencyReservedSec = estimatedSec;
     res._idempotencyEstimatedSec = estimatedSec;
+    console.log('[idempotency][finalize] reserved render time', {
+      sessionId,
+      estimatedSec,
+      estimateSource: reservationSession?.billingEstimate?.source || null,
+      probeCacheHit: reservationSession?.billingEstimateProbe?.cacheHit ?? null,
+      scriptHash: reservationSession?.billingEstimateProbe?.scriptHash || null,
+      voicePreset: reservationSession?.voicePreset || 'male_calm',
+      provider: reservationSession?.billingEstimateProbe?.provider || null,
+      model: reservationSession?.billingEstimateProbe?.model || null,
+    });
     res.finishIdempotentFinalize = async ({ session, shortId, status = 200 }) => {
       const billedSec = getBilledSecFromSession(session);
       if (!billedSec) {
@@ -342,6 +354,18 @@ export function idempotencyFinalize({ ttlMinutes = 60, getSession } = {}) {
       const sessionWithBilling = attachBillingToSession(session, {
         billedSec,
         settledAt: settledAt.toISOString(),
+      });
+      console.log('[idempotency][finalize] settled render time', {
+        sessionId,
+        estimatedSec,
+        billedSec,
+        deltaSec: estimatedSec - billedSec,
+        estimateSource: session?.billingEstimate?.source || null,
+        probeCacheHit: session?.billingEstimateProbe?.cacheHit ?? null,
+        scriptHash: session?.billingEstimateProbe?.scriptHash || null,
+        voicePreset: session?.voicePreset || 'male_calm',
+        provider: session?.billingEstimateProbe?.provider || null,
+        model: session?.billingEstimateProbe?.model || null,
       });
       return res.status(status).json(finalizeSuccess(req, sessionWithBilling, shortId ?? null));
     };

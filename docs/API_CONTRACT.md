@@ -59,9 +59,11 @@ Existing endpoints may still emit these until migrated; new code and framework-l
 - `GET /api/credits` has been removed from mounted runtime; callers must use `GET /api/usage`.
 - `POST /api/checkout/start` now accepts `{ "plan": "creator" | "pro" }` only and returns the standard success envelope with `data.url`.
 - `POST /api/checkout/session` and `POST /api/checkout/subscription` have been removed from mounted runtime and must not be used by callers.
+- `POST /api/story/estimate` is the render-intent-only estimate refresh route. It accepts `{ "sessionId": "..." }`, requires auth, applies a small route rate limit, does not reserve usage, and returns the updated public session in the standard success envelope.
 - Additive session `billingEstimate` and additive billing payloads must stay nested under `data`; do not introduce top-level billing fields outside established exceptions like finalize `shortId`.
 - Current Phase 2 finalize success includes additive `data.billing = { billedSec, settledAt }` while keeping top-level `shortId`.
-- Current backend `billingEstimate.estimatedSec` is reservation-safe and may include a documented capped server-side safety buffer; when the source is `caption_timeline`, the reservation estimate may also be bounded by a buffered `reading_duration` ceiling. Callers must treat it as backend truth, not recompute it locally.
+- Current backend `billingEstimate.estimatedSec` is reservation-safe and backend-owned. Public sources are now `tts_probe | speech_duration | shot_durations | caption_timeline`, with `caption_timeline` retained only as an emergency fallback. Callers must treat it as backend truth, not recompute it locally.
+- `billingEstimateProbe` is backend-internal session metadata used to preserve and invalidate probe-backed estimates by fingerprint. It must not appear in caller contracts or docs as a client-readable field.
 
 ## requestId
 
