@@ -1,5 +1,10 @@
 # Deep Beta Hardening Audit
 
+> Historical Archive Notice (2026-03-16)
+> This audit is retained for history and evidence only.
+> It is not the active docs front door or canonical production-hardening plan.
+> Start at `README.md` and `docs/DOCS_INDEX.md`.
+
 **Audit date:** 2026-03-02  
 **Mode:** Plan-first, no edits. Evidence-based, file:line citations.
 

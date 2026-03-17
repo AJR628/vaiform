@@ -172,7 +172,7 @@ Make it easy for any engineer or agent to identify the live mobile path, the liv
 1. Keep this document backend-owned and explicitly mark its relationship to the existing contract and caller-truth docs.
 2. Add this document to the backend and mobile docs front doors.
 3. Publish one short active-docs map naming the small set of docs agents are allowed to treat as live.
-4. Add a canonical/historical banner rule for overlapping plan and audit docs so stale documents point back to the active front door instead of competing with it.
+4. Move overlapping stale plan and audit docs to archive first, and add a canonical/historical banner rule so archived or retained stale documents point back to the active front door instead of competing with it.
 5. Do not let transport ownership remain implicit; Phase 1.5 must resolve it before test and refactor work broadens.
 
 ### 8. Files likely to change
@@ -210,7 +210,8 @@ Phase 1 is not complete until all of the following are true:
 - backend `README.md` points to one docs entry path
 - backend `docs/DOCS_INDEX.md` points to one active canonical set
 - mobile `docs/DOCS_INDEX.md` clearly stays consumer-note only
-- overlapping non-canonical plans and audits have an explicit historical or canonical-pointer banner
+- overlapping non-canonical plans and audits have been moved to archive first or carry an explicit historical/canonical-pointer banner
+- archived docs are only deleted later after canonical docs are confirmed complete and no unique operational truth remains
 - one short active-docs map exists naming the small allowed live-doc set
 
 ## Phase 1.5 - Mobile Transport Ownership Freeze

@@ -1,8 +1,8 @@
 # Docs Archive Index
 
-Historical audits, plans, and implementation reports live here so the repo stays navigable and CI (e.g. `prettier --check`) can focus on active code and SSOT docs.
+Historical audits, plans, and implementation reports live here so the repo stays navigable and CI (e.g. `prettier --check`) can focus on active code and canonical docs.
 
-**Source of truth:** See root [README.md](../../README.md) for the five SSOT docs (ROUTE_TRUTH_TABLE, VAIFORM_REPO_COHESION_AUDIT, docs/ACTIVE_SURFACES, docs/COHESION_GUARDRAILS, docs/API_CONTRACT).
+**Source of truth:** Start at [README.md](../../README.md) and [docs/DOCS_INDEX.md](../DOCS_INDEX.md) for the current canonical docs and front-door guidance.
 
 ## 2026-02-16
 
@@ -15,4 +15,4 @@ Historical audits, plans, and implementation reports live here so the repo stays
 
 Older caption material: [caption/2025-12-23/](caption/2025-12-23/) (see [caption/README.md](caption/README.md)).
 
-**Note:** `docs/archive/` (root-md) is a separate archive and is also excluded from Prettier.
+**Note:** `docs/archive/` (root-md) is a separate historical archive for root-level markdown and is also excluded from Prettier.

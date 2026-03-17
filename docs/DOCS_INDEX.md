@@ -4,7 +4,7 @@
 - Owner repo: backend
 - Source of truth for: backend docs ownership, precedence, and the mobile/backend documentation split
 - Canonical counterpart/source: mobile repo `docs/DOCS_INDEX.md` and mobile repo `docs/MOBILE_USED_SURFACES.md`
-- Last verified against: both repos on 2026-03-13
+- Last verified against: both repos on 2026-03-16
 
 ## Ownership Split
 
@@ -32,6 +32,10 @@ Do not duplicate these in the backend repo:
 - mobile repo `docs/MOBILE_USED_SURFACES.md`
 - mobile repo `docs/MOBILE_BACKEND_CONTRACT.md` (consumer-note only)
 
+Backend bridge/pointer only:
+
+- `docs/MOBILE_USED_SURFACES.md` - backend-side pointer to the mobile repo's caller-truth doc; not a second caller matrix
+
 ## Evidence Docs
 
 Useful for audits and paper trail, but not the first place to update when contract truth changes:
@@ -51,6 +55,14 @@ Kept for history only. Do not treat them as current contract truth:
 - `docs/MOBILE_SPEC_PACK.md`
 - `docs/vaiform-v1-scope.md`
 - `docs/REPO_ARCHITECTURE_DIAGRAM.md`
+
+## Archive-First Rule
+
+If overlapping stale docs still look live:
+
+1. Move them to archive first or add a strong historical banner with a canonical pointer.
+2. Keep them searchable until the canonical docs are confirmed complete and accurate.
+3. Delete archived copies later only when they no longer contain unique operational truth.
 
 ## Update Rule
 

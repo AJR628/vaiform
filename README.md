@@ -1,14 +1,10 @@
 # Start Here (Repo Bible)
 
-This repository's mobile-first docs front door is:
+This repository's docs front door is:
 
-- `docs/DOCS_INDEX.md` - backend docs ownership, precedence, and canonical set.
-- `docs/CROSS_REPO_PRODUCTION_HARDENING_PLAN.md` - backend-owned phased execution plan for cross-repo production hardening and anti-drift work.
-- `docs/MOBILE_BACKEND_CONTRACT.md` - backend-owned contract truth for mobile-used routes.
-- `docs/MOBILE_HARDENING_PLAN.md` - backend-owned hardening status and next work.
-- `docs/LEGACY_WEB_SURFACES.md` - non-mobile route classification and containment.
-- `docs/API_CONTRACT.md` - API response contract.
-- `docs/COHESION_GUARDRAILS.md` - guardrails for consistency and safe change boundaries.
+- `docs/DOCS_INDEX.md` - backend docs ownership, precedence, canonical docs, and the cross-repo split.
+
+Use `docs/DOCS_INDEX.md` first. It points to the current backend canonical docs, the mobile repo's caller-truth docs, and the non-canonical historical material that should not drive edits.
 
 Defaults and precedence:
 

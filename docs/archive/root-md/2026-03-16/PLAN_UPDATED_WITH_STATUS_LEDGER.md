@@ -1,5 +1,10 @@
 # Vaiform Cohesion Hardening Plan (Living SSOT)
 
+> Historical Archive Notice (2026-03-16)
+> This root-level plan has been archived to keep the current docs front door unambiguous.
+> It is not the active cross-repo hardening plan or current contract front door.
+> Start at `README.md` and `docs/DOCS_INDEX.md`.
+
 > This file is the **single living plan** for repo cohesion.  
 > It is intentionally "broad but detailed" so we don't drift while hardening + adding features.
 

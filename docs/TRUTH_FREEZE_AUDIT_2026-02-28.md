@@ -1,5 +1,10 @@
 # Truth Freeze Audit
 
+> Evidence Notice (2026-03-16)
+> This is a dated truth-freeze audit retained for evidence and cleanup planning.
+> It is not the current docs front door or canonical contract truth.
+> Start at `docs/DOCS_INDEX.md`.
+
 Audit date: 2026-02-28
 
 Purpose: freeze current runtime truth before cleanup so Phase 1+ can delete and align surfaces without guessing.

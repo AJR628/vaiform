@@ -1,5 +1,11 @@
 # Vaiform Repo Architecture — Visual Diagram
 
+> Historical Notice (2026-03-16)
+> This visual map is retained for architecture context only.
+> It is not the current docs front door or canonical route/contract truth.
+> Some route/status examples in this file are historical and should not drive edits without code verification.
+> Start at `docs/DOCS_INDEX.md`.
+
 This document is a **visual map** of how the repo is structured and what talks to what. It does not change any code; it reflects the current state of the repo for reasoning and scoping.
 
 ---
