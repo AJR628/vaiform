@@ -118,11 +118,13 @@ The prior audit was directionally right on the biggest production risks, but thi
 ## Phase Map
 
 1. Truth Freeze And Front Door Cleanup
+1.5. Mobile Transport Ownership Freeze
 2. Contract And Error Semantics Hardening
 3. Request-Scoped Observability And Diagnostics
-4. Active-Path Tests And CI
+4A. Backend Active-Path Contract Tests
 5. Admission Control And Expensive-Route Determinism
 6. Render Isolation And Async Completion
+4B. Mobile Test Expansion And CI
 7. Mobile Surface Consolidation
 8. Release Operations And Runbooks
 
@@ -169,14 +171,16 @@ Make it easy for any engineer or agent to identify the live mobile path, the liv
 
 1. Keep this document backend-owned and explicitly mark its relationship to the existing contract and caller-truth docs.
 2. Add this document to the backend and mobile docs front doors.
-3. Add a small "transport ownership" note to mobile docs if later work retires or promotes React Query.
-4. Create a short archive/active policy for future audits so new plans do not become accidental SSOT.
+3. Publish one short active-docs map naming the small set of docs agents are allowed to treat as live.
+4. Add a canonical/historical banner rule for overlapping plan and audit docs so stale documents point back to the active front door instead of competing with it.
+5. Do not let transport ownership remain implicit; Phase 1.5 must resolve it before test and refactor work broadens.
 
 ### 8. Files likely to change
 
 - backend `README.md`
 - backend `docs/DOCS_INDEX.md`
 - backend `docs/CROSS_REPO_PRODUCTION_HARDENING_PLAN.md`
+- backend overlapping plan/audit docs that still look active
 - mobile `docs/DOCS_INDEX.md`
 
 ### 9. Docs that must be checked/updated
@@ -189,10 +193,91 @@ Make it easy for any engineer or agent to identify the live mobile path, the liv
 
 - Open backend `README.md` and both repos' `docs/DOCS_INDEX.md` and confirm they all point to the same front door.
 - Confirm no route contract details were duplicated outside the existing contract docs.
+- Confirm backend `README.md` points to one docs entry path.
+- Confirm backend `docs/DOCS_INDEX.md` points to one active set.
+- Confirm mobile `docs/DOCS_INDEX.md` clearly remains consumer-note only.
+- Confirm overlapping non-canonical plan/audit docs either carry a historical banner or point directly at the active canonical doc set.
+- Confirm one short active-docs map names the only docs to treat as live.
 
 ### 11. Open questions / uncertainties, if any
 
 - None for this phase. The evidence is local and verified.
+
+### Phase 1 Exit Criteria
+
+Phase 1 is not complete until all of the following are true:
+
+- backend `README.md` points to one docs entry path
+- backend `docs/DOCS_INDEX.md` points to one active canonical set
+- mobile `docs/DOCS_INDEX.md` clearly stays consumer-note only
+- overlapping non-canonical plans and audits have an explicit historical or canonical-pointer banner
+- one short active-docs map exists naming the small allowed live-doc set
+
+## Phase 1.5 - Mobile Transport Ownership Freeze
+
+### 1. Goal
+
+Stop mobile transport ambiguity before tests, diagnostics, or screen refactors build on the wrong ownership model.
+
+### 2. In-scope flow(s)
+
+- Mobile API transport ownership
+- React Query versus hand-written API client status
+- Mobile docs language about live transport truth
+
+### 3. Mobile entrypoints involved
+
+- `client/App.tsx:9-56`
+- `client/api/client.ts:1-823`
+- `client/lib/query-client.ts:1-79`
+- mobile `docs/DOCS_INDEX.md`
+- mobile `docs/MOBILE_USED_SURFACES.md`
+
+### 4. Backend routes involved
+
+- No backend runtime behavior change in this phase.
+- This phase exists to prevent drift in how mobile consumes the already-traced backend routes.
+
+### 5. Current wiring summary
+
+- The active runtime caller path for the traced mobile-used flows is `client/api/client.ts`.
+- React Query is mounted through `QueryClientProvider`, but the traced screens and contexts do not use `useQuery`, `useMutation`, or the query transport for those flows.
+- Leaving both patterns half-live would contaminate test setup, diagnostics, and future refactors.
+
+### 6. Proven issues / risks
+
+- Docs can still imply two possible transport owners.
+- Future tests could be written against the wrong layer.
+- Future agent work could accidentally widen drift by "completing" an ownership decision implicitly instead of explicitly.
+
+### 7. Proposed plan in order
+
+1. Declare the current runtime owner explicitly in mobile docs.
+2. Treat `client/api/client.ts` as the active transport owner until an intentional migration plan says otherwise.
+3. Mark React Query as present but non-owning for the current mobile-used backend flows.
+4. Revisit full React Query adoption only as a later intentional migration, not as incidental cleanup.
+
+### 8. Files likely to change
+
+- mobile `docs/DOCS_INDEX.md`
+- mobile `docs/MOBILE_USED_SURFACES.md`
+- optionally a short mobile transport note doc if the existing docs become too crowded
+
+### 9. Docs that must be checked/updated
+
+- mobile `docs/DOCS_INDEX.md`
+- mobile `docs/MOBILE_USED_SURFACES.md`
+- backend docs only if cross-repo front-door language needs a pointer update
+
+### 10. Verification steps
+
+- Confirm mobile docs explicitly state that `client/api/client.ts` is the current transport owner.
+- Confirm React Query is described as present but non-canonical for the active runtime path.
+- Confirm future phases refer to the declared owner consistently.
+
+### 11. Open questions / uncertainties, if any
+
+- None for the current repo state. The present code path clearly favors the hand-written client.
 
 ## Phase 2 - Contract And Error Semantics Hardening
 
@@ -340,11 +425,11 @@ Make incident tracing deterministic across async boundaries and across the mobil
 
 - Structured log sink and deployment destination are not represented in repo code yet. That will need an environment-specific decision later.
 
-## Phase 4 - Active-Path Tests And CI
+## Phase 4A - Backend Active-Path Contract Tests
 
 ### 1. Goal
 
-Add a regression net around the actual mobile-used routes and the actual mobile normalization/state paths.
+Add a regression net around the actual mobile-used backend contract before mobile test infrastructure becomes a dependency.
 
 ### 2. In-scope flow(s)
 
@@ -358,12 +443,14 @@ Add a regression net around the actual mobile-used routes and the actual mobile 
 
 ### 3. Mobile entrypoints involved
 
-- `client/api/client.ts`
-- `client/contexts/AuthContext.tsx`
-- `client/screens/HomeScreen.tsx`
-- `client/screens/ScriptScreen.tsx`
-- `client/screens/StoryEditorScreen.tsx`
-- `client/screens/ShortDetailScreen.tsx`
+- Mobile evidence remains in scope only as caller truth for route coverage.
+- Current caller truth still comes from:
+  - `client/api/client.ts`
+  - `client/contexts/AuthContext.tsx`
+  - `client/screens/HomeScreen.tsx`
+  - `client/screens/ScriptScreen.tsx`
+  - `client/screens/StoryEditorScreen.tsx`
+  - `client/screens/ShortDetailScreen.tsx`
 
 ### 4. Backend routes involved
 
@@ -372,7 +459,6 @@ Add a regression net around the actual mobile-used routes and the actual mobile 
 ### 5. Current wiring summary
 
 - Backend `package.json:31-35` has checks and lint, but `package.json:27` still sets `test` to `(no tests yet)`.
-- Mobile repo has no first-party test files and no CI workflow.
 - Backend CI exists in `.github/workflows/ci.yml`, but it does not run a route test suite.
 
 ### 6. Proven issues / risks
@@ -385,18 +471,14 @@ Add a regression net around the actual mobile-used routes and the actual mobile 
 
 1. Stand up backend tests for the active mobile-used route contract only.
 2. Add failure-path tests for auth failures, invalid input, insufficient render time, idempotent replay, and session-not-found scenarios.
-3. Add mobile unit tests for normalization, render-time helpers, and finalize recovery helpers.
-4. Add at least one thin screen-flow test for bootstrap and one for finalize timeout/recovery.
-5. Add a mobile CI workflow that runs typecheck, lint, and the new tests.
+3. Add backend load-oriented checks around caption preview bursts and finalize reservation collisions if they can be kept deterministic.
+4. Extend backend CI to run the new contract suite without waiting for mobile test infrastructure.
 
 ### 8. Files likely to change
 
 - backend `package.json`
 - backend new test directory and fixtures
 - backend CI workflow
-- mobile `package.json`
-- mobile new test setup and test files
-- mobile new CI workflow
 
 ### 9. Docs that must be checked/updated
 
@@ -406,9 +488,9 @@ Add a regression net around the actual mobile-used routes and the actual mobile 
 
 ### 10. Verification steps
 
-- Every active mobile-used route gets at least one success-path and one failure-path test.
-- Mobile CI fails if normalization or recovery contract drifts.
-- Pull-request automation runs in both repos.
+- Every active mobile-used route gets at least one success-path and one failure-path backend test.
+- Backend CI fails if the contract drifts on those routes.
+- Mobile test work is not a blocker for completing this phase.
 
 ### 11. Open questions / uncertainties, if any
 
@@ -565,6 +647,72 @@ Remove the largest production risk by taking render completion off the long-live
 
 - Worker/runtime placement is not yet chosen in repo code. The plan should preserve current contract semantics regardless of implementation choice.
 
+## Phase 4B - Mobile Test Expansion And CI
+
+### 1. Goal
+
+Add mobile-side regression coverage after backend contract truth is protected and after the highest-risk backend work is no longer waiting on mobile test infrastructure.
+
+### 2. In-scope flow(s)
+
+- Response normalization
+- Auth bootstrap
+- Render-time messaging and helpers
+- Finalize timeout and recovery
+- Mobile CI
+
+### 3. Mobile entrypoints involved
+
+- `client/api/client.ts`
+- `client/contexts/AuthContext.tsx`
+- `client/screens/HomeScreen.tsx`
+- `client/screens/StoryEditorScreen.tsx`
+- `client/screens/ShortDetailScreen.tsx`
+- mobile CI config files to be added
+
+### 4. Backend routes involved
+
+- Backend route behavior remains the dependency input, not the target of this phase.
+
+### 5. Current wiring summary
+
+- The mobile repo has no first-party tests and no CI workflow.
+- Mobile state and recovery logic are already complex enough to justify tests, but backend contract protection should land first.
+
+### 6. Proven issues / risks
+
+- Mobile test harness setup could create execution drag if treated as a prerequisite for backend hardening.
+- Recovery and normalization logic can still regress quietly without a mobile test layer.
+
+### 7. Proposed plan in order
+
+1. Add unit tests for normalization helpers and render-time helpers.
+2. Add focused tests for bootstrap failure handling and finalize recovery handling.
+3. Add a mobile CI workflow for typecheck, lint, and tests.
+4. Keep screen-flow tests narrow so they verify real behavior without turning into unstable UI test scaffolding too early.
+
+### 8. Files likely to change
+
+- mobile `package.json`
+- mobile test setup and fixtures
+- mobile new test files
+- mobile new CI workflow
+
+### 9. Docs that must be checked/updated
+
+- mobile `docs/DOCS_INDEX.md` if testing guidance becomes front-door material
+- backend docs only if shared CI/release guidance needs a pointer
+
+### 10. Verification steps
+
+- Mobile CI runs typecheck, lint, and the new tests.
+- Finalize recovery and normalization behavior have direct test coverage.
+- Mobile test setup does not redefine backend contract truth locally.
+
+### 11. Open questions / uncertainties, if any
+
+- Test runner choice is still open in repo code and should be decided only after backend contract tests are underway.
+
 ## Phase 7 - Mobile Surface Consolidation
 
 ### 1. Goal
@@ -710,19 +858,23 @@ Make store releases, hotfixes, and incident response repeatable instead of impro
 Work phases in this order unless a production incident forces a hot fix:
 
 1. Phase 1
-2. Phase 2
-3. Phase 3
-4. Phase 4
-5. Phase 5
-6. Phase 6
-7. Phase 7
-8. Phase 8
+2. Phase 1.5
+3. Phase 2
+4. Phase 3
+5. Phase 4A
+6. Phase 5
+7. Phase 6
+8. Phase 4B
+9. Phase 7
+10. Phase 8
 
 Reason:
 
 - Phase 1 reduces navigation and ownership confusion before deeper edits.
+- Phase 1.5 freezes the mobile transport owner before diagnostics, tests, and refactors build on the wrong layer.
 - Phase 2 removes the biggest contract ambiguity on already-live mobile paths.
-- Phase 3 and Phase 4 create the traceability and regression net needed before aggressive architecture work.
+- Phase 3 and Phase 4A create the traceability and backend regression net needed before aggressive architecture work.
 - Phase 5 protects the system while finalize remains synchronous.
-- Phase 6 is the largest architectural change and should happen after contracts, logs, and tests are trustworthy.
-- Phase 7 and Phase 8 then simplify maintenance and shipping discipline around the stabilized core.
+- Phase 6 is the largest architectural change and should happen after contracts, logs, and backend tests are trustworthy.
+- Phase 4B then expands mobile-side protection once backend contract drift is less likely.
+- Phase 7 and Phase 8 simplify maintenance and shipping discipline around the stabilized core.
