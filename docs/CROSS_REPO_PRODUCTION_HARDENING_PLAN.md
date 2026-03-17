@@ -130,6 +130,9 @@ The prior audit was directionally right on the biggest production risks, but thi
 
 ## Phase 1 - Truth Freeze And Front Door Cleanup
 
+- Status: COMPLETE in current repo state as of 2026-03-16.
+- Completion note: both repos now have one clear docs front door, overlapping stale root docs were archived or bannered, and active docs are explicit. Phase 1.5 remains the next step for transport ownership freeze.
+
 ### 1. Goal
 
 Make it easy for any engineer or agent to identify the live mobile path, the live backend contract path, and the non-canonical or historical paths that should not drive edits.
@@ -180,7 +183,10 @@ Make it easy for any engineer or agent to identify the live mobile path, the liv
 - backend `README.md`
 - backend `docs/DOCS_INDEX.md`
 - backend `docs/CROSS_REPO_PRODUCTION_HARDENING_PLAN.md`
+- backend `docs/_archive/INDEX.md`
+- backend `docs/archive/root-md/INDEX.md`
 - backend overlapping plan/audit docs that still look active
+- mobile `README.md`
 - mobile `docs/DOCS_INDEX.md`
 
 ### 9. Docs that must be checked/updated
@@ -191,7 +197,7 @@ Make it easy for any engineer or agent to identify the live mobile path, the liv
 
 ### 10. Verification steps
 
-- Open backend `README.md` and both repos' `docs/DOCS_INDEX.md` and confirm they all point to the same front door.
+- Open backend `README.md`, mobile `README.md`, and both repos' `docs/DOCS_INDEX.md` and confirm each repo points to one clear docs front door.
 - Confirm no route contract details were duplicated outside the existing contract docs.
 - Confirm backend `README.md` points to one docs entry path.
 - Confirm backend `docs/DOCS_INDEX.md` points to one active set.

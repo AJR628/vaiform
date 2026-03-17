@@ -12,6 +12,21 @@
 - The backend repo owns server contract truth, backend guarantees, hardening status, and legacy surface classification.
 - When mobile/backend contract work changes, verify actual code in both repos first, then update the owning doc set.
 
+## Active Docs Map
+
+Trust these first for current work:
+
+- backend repo `README.md`
+- backend repo `docs/DOCS_INDEX.md`
+- backend repo `docs/CROSS_REPO_PRODUCTION_HARDENING_PLAN.md`
+- backend repo `docs/MOBILE_BACKEND_CONTRACT.md`
+- backend repo `docs/MOBILE_HARDENING_PLAN.md`
+- backend repo `docs/LEGACY_WEB_SURFACES.md`
+- backend repo `docs/API_CONTRACT.md`
+- mobile repo `docs/MOBILE_USED_SURFACES.md`
+
+Do not start from evidence or historical docs unless one of the docs above sends you there.
+
 ## Backend Canonical Docs
 
 Update these first when backend/mobile contract or hardening truth changes:
