@@ -16,6 +16,7 @@
 
 Update these first when backend/mobile contract or hardening truth changes:
 
+- `docs/CROSS_REPO_PRODUCTION_HARDENING_PLAN.md`
 - `docs/MOBILE_BACKEND_CONTRACT.md`
 - `docs/MOBILE_HARDENING_PLAN.md`
 - `docs/TIME_BASED_RENDER_USAGE_MIGRATION_PLAN.md`

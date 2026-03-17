@@ -35,7 +35,7 @@ import { compileCaptionSSOT } from '../captions/compile.js';
 const TTL_HOURS = Number(process.env.STORY_TTL_HOURS || 48);
 const BILLING_ESTIMATE_HEURISTIC_PAD_SEC = Math.max(
   0,
-  Number(process.env.BILLING_ESTIMATE_HEURISTIC_PAD_SEC || 2)
+  Number(process.env.BILLING_ESTIMATE_HEURISTIC_PAD_SEC || 1)
 );
 const BILLING_ESTIMATE_PER_BEAT_BASE_SEC = Math.max(
   0,
