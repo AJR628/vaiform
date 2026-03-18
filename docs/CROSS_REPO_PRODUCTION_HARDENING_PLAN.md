@@ -111,7 +111,7 @@ The prior audit was directionally right on the biggest production risks, but thi
   - mobile `client/screens/ShortDetailScreen.tsx`: 908 lines
   - mobile `client/api/client.ts`: 770 lines
 - Console usage remains high in hot paths:
-  - backend `src/**`: 538 console calls
+  - backend `src/**`: 500+ console calls
   - mobile `client/**`: 66 console calls
 - The mobile `server/` subtree is not random dead code; it is still part of the repo's Replit build/deploy path via `.replit:7-10` and `package.json:6-11`, but it is not part of the client runtime path that calls the backend.
 
