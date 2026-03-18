@@ -14,11 +14,11 @@ Purpose: canonical backend-owned contract, guarantees, and open mismatch record 
 
 ## Request Rules
 
-- Authenticated mobile requests use `Authorization: Bearer <Firebase ID token>` when a token is available (`client/api/client.ts:161-167`, `client/api/client.ts:221-227`, `src/middleware/requireAuth.js:5-19`).
+- Authenticated mobile requests use `Authorization: Bearer <Firebase ID token>` when a token is available (`client/api/client.ts:167-183`, `client/api/client.ts:227-241`, `src/middleware/requireAuth.js:7-27`).
 - JSON requests use `Content-Type: application/json`.
-- Mobile callers send `x-client: mobile` (`client/api/client.ts:155-159`, `client/api/client.ts:215-219`). Caption preview uses that header as part of the mobile/server-measured path selection when `measure` is omitted (`src/routes/caption.preview.routes.js:131-145`).
-- Backend finalize requires `X-Idempotency-Key`, and the current mobile finalize caller sends it (`src/middleware/idempotency.firestore.js:33-37`, `client/api/client.ts:697-720`).
-- `GET /api/usage` is the active mobile billing surface (`client/api/client.ts:520-527`, `client/contexts/AuthContext.tsx:142-178`, `src/routes/usage.routes.js:1-8`).
+- Mobile callers send `x-client: mobile` (`client/api/client.ts:171-175`, `client/api/client.ts:231-235`). Caption preview uses that header as part of the mobile/server-measured path selection when `measure` is omitted (`src/routes/caption.preview.routes.js:131-145`).
+- Backend finalize requires `X-Idempotency-Key`, and the current mobile finalize caller sends it (`src/middleware/idempotency.firestore.js:69-94`, `client/api/client.ts:743-780`).
+- `GET /api/usage` is the active mobile billing surface (`client/api/client.ts:547-551`, `client/contexts/AuthContext.tsx:159-180`, `src/routes/usage.routes.js:1-8`).
 
 ## Billing Cutover Note
 
@@ -32,9 +32,10 @@ Purpose: canonical backend-owned contract, guarantees, and open mismatch record 
 
 - Standard backend success envelope: `{ success: true, data, requestId }` (`src/http/respond.js:14-17`).
 - Standard backend failure envelope: `{ success: false, error, detail, requestId, fields? }` (`src/http/respond.js:28-34`).
-- Mobile normalization layer now preserves `requestId` while converting success envelopes to `{ ok: true, data, requestId }` and failure envelopes to `{ ok: false, status, code, message, requestId }` (`client/api/client.ts:77-145`, `client/api/client.ts:207-260`).
-- Finalize is the current launch exception: the backend returns top-level `shortId`, and the mobile client explicitly extracts it from the raw response (`src/routes/story.routes.js:35-41`, `src/routes/story.routes.js:840-841`, `client/api/client.ts:740-760`).
-- Cross-Repo Phase 3 observability is now live on the named hot paths: backend request context is seeded immediately after request ID assignment, backend hot-path logs flow through one structured stdout logger with built-in redaction, and mobile keeps a bounded in-memory diagnostics buffer for normalized failures with additive context from auth bootstrap, finalize/recovery, and short-detail retry surfaces.
+- Mobile normalization layer now preserves `requestId` while converting success envelopes to `{ ok: true, data, requestId }` and failure envelopes to `{ ok: false, status, code, message, requestId }` (`client/api/client.ts:94-160`, `client/api/client.ts:223-289`).
+- Finalize is the current launch exception: the backend returns top-level `shortId`, and the mobile client explicitly extracts it from the raw response (`src/routes/story.routes.js:35-41`, `src/routes/story.routes.js:967-975`, `client/api/client.ts:818-845`).
+- Cross-Repo Phase 3 observability is now live on the named hot paths only: backend request context is seeded immediately after request ID assignment, backend hot-path boundary events flow through one structured stdout logger with built-in redaction, and mobile keeps a bounded in-memory diagnostics buffer for normalized failures with additive context from auth bootstrap, finalize/recovery, and short-detail retry surfaces.
+- Phase 3 caveat: deeper finalize/render internals inside the active finalize path still contain legacy `console.*` logging and were not fully migrated in this phase.
 
 ## Current Open Contract Notes
 
@@ -46,8 +47,8 @@ Purpose: canonical backend-owned contract, guarantees, and open mismatch record 
 ### Auth Bootstrap And Usage
 
 - `POST /api/users/ensure`
-  - Mobile caller(s): `client/contexts/AuthContext.tsx:78-170`
-  - Backend handler(s): `src/routes/users.routes.js:16-37`, `src/services/user-doc.service.js:5-36`, `src/services/usage.service.js:133-168`
+  - Mobile caller(s): `client/contexts/AuthContext.tsx:133-188`
+  - Backend handler(s): `src/routes/users.routes.js:18-48`, `src/services/user-doc.service.js:5-36`, `src/services/usage.service.js:133-168`
   - Mobile sends: no body.
   - Backend returns: full success envelope with `{ uid, email, plan, freeShortsUsed }`.
   - Mobile reads: stores the returned profile for auth/account bootstrap only; active billing screens rely on `/api/usage`.
@@ -55,7 +56,7 @@ Purpose: canonical backend-owned contract, guarantees, and open mismatch record 
   - Diagnostics note: failed bootstrap calls now keep `requestId` in normalized mobile failures and enrich the in-memory diagnostics buffer with the active Firebase `uid` when available.
 
 - `GET /api/usage`
-  - Mobile caller(s): `client/contexts/AuthContext.tsx:142-178`, `client/screens/SettingsScreen.tsx:43-59`, `client/screens/StoryEditorScreen.tsx:926-951`
+  - Mobile caller(s): `client/contexts/AuthContext.tsx:159-180`, `client/screens/SettingsScreen.tsx:43-59`, `client/screens/StoryEditorScreen.tsx:930-951`
   - Backend handler(s): `src/routes/usage.routes.js`, `src/controllers/usage.controller.js`, `src/services/usage.service.js`
   - Backend returns: `{ success: true, data: { plan, membership, usage }, requestId }`.
   - Mobile reads: `data.usage.availableSec` for render-time balance, plus the rest of the usage snapshot for canonical billing state.
@@ -65,23 +66,23 @@ Purpose: canonical backend-owned contract, guarantees, and open mismatch record 
 
 - `POST /api/story/start`
   - Mobile caller(s): `client/screens/HomeScreen.tsx:79-107`
-  - Backend handler(s): `src/routes/story.routes.js:118-145`, `src/services/story.service.js:88-113`
+  - Backend handler(s): `src/routes/story.routes.js:189-216`, `src/services/story.service.js:324-348`
   - Mobile sends: `{ input, inputType }`.
   - Backend returns: full session in `data`.
   - Mobile reads: `data.id` only.
 
 - `POST /api/story/generate`
   - Mobile caller(s): `client/screens/HomeScreen.tsx:109-127`
-  - Backend handler(s): `src/routes/story.routes.js:147-172`, `src/services/story.service.js:125-156`
+  - Backend handler(s): `src/routes/story.routes.js:218-255`, `src/services/story.service.js:362-397`
   - Mobile sends: `{ sessionId }`.
   - Backend returns: full session in `data`.
   - Mobile reads: success/failure only.
-  - Guardrail: `enforceScriptDailyCap(300)` (`src/routes/story.routes.js:148`).
+  - Guardrail: `enforceScriptDailyCap(300)` (`src/routes/story.routes.js:218-233`).
 
 - `GET /api/story/:sessionId`
-  - Mobile caller(s): `client/screens/ScriptScreen.tsx:64-84`, `client/screens/StoryEditorScreen.tsx:459-541`, `client/screens/StoryEditorScreen.tsx:954-1009`
-  - Backend handler(s): `src/routes/story.routes.js:1097-1117`, `src/services/story.service.js:354-356`
-  - Recovery-state writer(s): `src/services/story.service.js:149-167`, `src/services/story.service.js:2144-2218`
+  - Mobile caller(s): `client/screens/ScriptScreen.tsx:64-84`, `client/screens/StoryEditorScreen.tsx:459-541`, `client/screens/StoryEditorScreen.tsx:974-1024`
+  - Backend handler(s): `src/routes/story.routes.js:1147-1178`, `src/services/story.service.js:355-357`
+  - Recovery-state writer(s): `src/services/story.service.js:2325-2417`
   - Mobile sends: no body.
   - Backend returns: full session in `data`.
   - Mobile reads: `story.sentences` with helper fallbacks, `shots`, `overlayCaption.placement`, additive `billingEstimate.estimatedSec`, `shot.selectedClip.thumbUrl`, `shot.searchQuery`, and `renderRecovery` during finalize recovery polling.
@@ -91,7 +92,7 @@ Purpose: canonical backend-owned contract, guarantees, and open mismatch record 
 
 - `POST /api/story/plan`
   - Mobile caller(s): `client/screens/ScriptScreen.tsx:126-159`
-  - Backend handler(s): `src/routes/story.routes.js:476-495`, `src/services/story.service.js:189-201`
+  - Backend handler(s): `src/routes/story.routes.js:557-576`, `src/services/story.service.js:437-448`
   - Mobile sends: `{ sessionId }`.
   - Backend returns: full session in `data`.
   - Mobile reads: success/failure only.
@@ -99,7 +100,7 @@ Purpose: canonical backend-owned contract, guarantees, and open mismatch record 
 
 - `POST /api/story/search`
   - Mobile caller(s): `client/screens/ScriptScreen.tsx:141-159`
-  - Backend handler(s): `src/routes/story.routes.js:566-587`, `src/services/story.service.js:665-700`
+  - Backend handler(s): `src/routes/story.routes.js:578-610`, `src/services/story.service.js:677-715`
   - Mobile sends: `{ sessionId }`.
   - Backend returns: full session in `data`.
   - Mobile reads: success/failure only.
@@ -110,8 +111,8 @@ Purpose: canonical backend-owned contract, guarantees, and open mismatch record 
 ### Story Editing And Caption Preview
 
 - `POST /api/story/update-beat-text`
-  - Mobile caller(s): `client/screens/ScriptScreen.tsx:162-209`, `client/screens/StoryEditorScreen.tsx:679-701`
-  - Backend handler(s): `src/routes/story.routes.js:782-813`, `src/services/story.service.js:910-943`
+  - Mobile caller(s): `client/screens/ScriptScreen.tsx:162-209`, `client/screens/StoryEditorScreen.tsx:776-803`
+  - Backend handler(s): `src/routes/story.routes.js:815-857`, `src/services/story.service.js:926-949`
   - Mobile sends: `{ sessionId, sentenceIndex, text }`.
   - Backend returns: partial `{ sentences, shots }` in `data`, not a full session.
   - Mobile reads:
@@ -124,8 +125,8 @@ Purpose: canonical backend-owned contract, guarantees, and open mismatch record 
   - Guardrail: service now checks `SESSION_NOT_FOUND` / `STORY_REQUIRED` before dereferencing `session.story`.
 
 - `POST /api/story/delete-beat`
-  - Mobile caller(s): `client/screens/ScriptScreen.tsx:222-235`, `client/screens/StoryEditorScreen.tsx:715-749`
-  - Backend handler(s): `src/routes/story.routes.js:745-772`, `src/services/story.service.js:867-905`
+  - Mobile caller(s): `client/screens/ScriptScreen.tsx:222-235`, `client/screens/StoryEditorScreen.tsx:826-854`
+  - Backend handler(s): `src/routes/story.routes.js:778-813`, `src/services/story.service.js:883-911`
   - Mobile sends: `{ sessionId, sentenceIndex }`.
   - Backend returns: partial `{ sentences, shots }` in `data`.
   - Mobile reads: success/failure only, then refetches `GET /api/story/:sessionId`.
@@ -137,7 +138,7 @@ Purpose: canonical backend-owned contract, guarantees, and open mismatch record 
 
 - `POST /api/story/search-shot`
   - Mobile caller(s): `client/screens/ClipSearchModal.tsx:49-80`
-  - Backend handler(s): `src/routes/story.routes.js:671-713`, `src/services/story.service.js:706-761`, `src/services/story.service.js:586-660`
+  - Backend handler(s): `src/routes/story.routes.js:692-776`, `src/services/story.service.js:722-773`, `src/services/story.service.js:531-660`
   - Mobile sends: `{ sessionId, sentenceIndex, query, page }`.
   - Backend returns: `{ shot, page, hasMore }` in `data`.
   - Mobile reads: `shot.candidates`, `page`, `hasMore`, and candidate `id`, `thumbUrl`, `provider`, `duration`.
@@ -149,7 +150,7 @@ Purpose: canonical backend-owned contract, guarantees, and open mismatch record 
 
 - `POST /api/story/update-shot`
   - Mobile caller(s): `client/screens/ClipSearchModal.tsx:83-104`
-  - Backend handler(s): `src/routes/story.routes.js:591-620`, `src/services/story.service.js:766-788`
+  - Backend handler(s): `src/routes/story.routes.js:612-655`, `src/services/story.service.js:782-801`
   - Mobile sends: `{ sessionId, sentenceIndex, clipId }`.
   - Backend returns: `{ shots }` in `data`.
   - Mobile reads: success/failure only.
@@ -169,8 +170,8 @@ Purpose: canonical backend-owned contract, guarantees, and open mismatch record 
   - Guardrails: auth-required, `20/min`, `200kb` body cap.
 
 - `POST /api/story/update-caption-style`
-  - Mobile caller(s): `client/screens/StoryEditorScreen.tsx:765-820`
-  - Backend handler(s): `src/routes/story.routes.js:207-283`
+  - Mobile caller(s): `client/screens/StoryEditorScreen.tsx:876-899`
+  - Backend handler(s): `src/routes/story.routes.js:287-354`
   - Mobile sends: `{ sessionId, overlayCaption: { placement, yPct } }`.
   - Backend returns: `{ overlayCaption }` in `data`.
   - Mobile reads: success/failure only.
@@ -178,8 +179,8 @@ Purpose: canonical backend-owned contract, guarantees, and open mismatch record 
 ### Render, Recovery, And Shorts
 
 - `POST /api/story/finalize`
-  - Mobile caller(s): `client/screens/StoryEditorScreen.tsx:1012-1139`, `client/api/client.ts:716-804`
-  - Backend handler(s): `src/routes/story.routes.js:818-856`, `src/middleware/idempotency.firestore.js:12-208`, `src/services/story.service.js:2144-2218`
+  - Mobile caller(s): `client/screens/StoryEditorScreen.tsx:1060-1177`, `client/api/client.ts:743-859`
+  - Backend handler(s): `src/routes/story.routes.js:940-989`, `src/middleware/idempotency.firestore.js:69-467`, `src/services/story.service.js:2325-2417`
   - Mobile sends now: `{ sessionId }` plus `X-Idempotency-Key`.
   - Backend requires now: `{ sessionId }` plus `X-Idempotency-Key`.
   - Backend returns on success: full session in `data`, additive `data.billing`, plus top-level `shortId`.
@@ -188,7 +189,8 @@ Purpose: canonical backend-owned contract, guarantees, and open mismatch record 
   - Current 402 semantics: backend uses time-based billing failures such as `INSUFFICIENT_RENDER_TIME`, and mobile now mirrors that render-time wording.
   - Recovery contract: backend persists additive `renderRecovery.pending` before the blocking render starts, then persists `renderRecovery.done` or `renderRecovery.failed` with the same `attemptId` used for `X-Idempotency-Key`. On `TIMEOUT`, `NETWORK_ERROR`, or `IDEMPOTENT_IN_PROGRESS`, mobile keeps the active attempt key and polls `GET /api/story/:sessionId` until that same-attempt recovery state reaches a terminal result.
   - Contract caveat: recovery is currently same-screen and bounded. If polling exhausts its attempts while state remains `pending`, mobile leaves the attempt key in memory and asks the user to resume the same attempt or check Library shortly.
-  - Diagnostics note: finalize, idempotent replay, and recovery logs now correlate by `requestId` plus additive `sessionId` / `attemptId`, and mobile failure diagnostics enrich the same request/attempt context in memory.
+  - Diagnostics note: finalize, idempotent replay, and recovery boundary events now correlate by `requestId` plus additive `sessionId` / `attemptId`, and mobile failure diagnostics enrich the same request/attempt context in memory.
+  - Observability caveat: deeper render internals invoked by finalize still contain legacy `console.*` logging; Phase 3 did not complete a full render-path logger migration.
 
 - `GET /api/shorts/mine`
   - Mobile caller(s): `client/screens/LibraryScreen.tsx:80-118`, `client/screens/ShortDetailScreen.tsx:227-248`
@@ -200,8 +202,8 @@ Purpose: canonical backend-owned contract, guarantees, and open mismatch record 
   - Stability note: controller has an index-missing fallback path that disables pagination semantics when the composite index is absent.
 
 - `GET /api/shorts/:jobId`
-  - Mobile caller(s): `client/screens/ShortDetailScreen.tsx:143-333`, `client/screens/ShortDetailScreen.tsx:513-529`
-  - Backend handler(s): `src/routes/shorts.routes.js:7-9`, `src/controllers/shorts.controller.js:93-208`
+  - Mobile caller(s): `client/screens/ShortDetailScreen.tsx:183-345`, `client/screens/ShortDetailScreen.tsx:594-602`
+  - Backend handler(s): `src/routes/shorts.routes.js:7-9`, `src/controllers/shorts.controller.js:95-235`
   - Mobile sends: no body.
   - Backend returns now: bridge payload containing both `id` and `jobId`.
   - Mobile reads: `id`, `videoUrl`, `coverImageUrl`, `durationSec`, `usedQuote.text`, `usedTemplate`, `createdAt`.

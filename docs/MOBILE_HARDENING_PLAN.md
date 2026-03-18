@@ -59,46 +59,46 @@ Goal: harden only the backend surface that the current mobile app actually depen
 ## Phase 1 Completed: Finalize Recovery + Shorts Detail Bridge
 
 - `DONE`: Finalize recovery is now backend-backed through additive session `renderRecovery` state.
-  - Backend evidence: `src/routes/story.routes.js:829-843`, `src/services/story.service.js:61-167`, `src/services/story.service.js:2144-2218`
-  - Mobile evidence: `client/screens/StoryEditorScreen.tsx:122-155`, `client/screens/StoryEditorScreen.tsx:943-1099`
+  - Backend evidence: `src/routes/story.routes.js:940-989`, `src/routes/story.routes.js:1147-1175`, `src/services/story.service.js:2325-2417`
+  - Mobile evidence: `client/screens/StoryEditorScreen.tsx:974-1094`
   - Contract: `renderRecovery` now persists `pending`, `done`, and `failed` states with the active finalize `attemptId`, and mobile only trusts those states when the attempt identity matches the active `X-Idempotency-Key`.
 
 - `DONE`: `renderRecovery.pending` is persisted before the blocking finalize work begins, and existing session readers remain untouched.
-  - Backend evidence: `src/services/story.service.js:2148-2156`
+  - Backend evidence: `src/services/story.service.js:2330-2346`
   - Guardrail: Phase 1 adds only additive session fields; it does not repurpose top-level pipeline `status`.
 
 - `DONE`: Mobile timeout/network-loss recovery now keeps the same finalize attempt identity and polls `GET /api/story/:sessionId` until that same-attempt recovery state becomes terminal.
-  - Mobile evidence: `client/api/client.ts:696-804`, `client/screens/StoryEditorScreen.tsx:1001-1099`
+  - Mobile evidence: `client/api/client.ts:743-859`, `client/screens/StoryEditorScreen.tsx:993-1094`
   - Current limit: recovery remains same-screen and bounded; if polling stays `pending`, the active attempt key remains in memory and the user is prompted to resume the same attempt or check Library shortly.
 
 - `DONE`: Shorts detail now uses a compatibility bridge.
-  - Backend evidence: `src/controllers/shorts.controller.js:107-129`, `src/controllers/shorts.controller.js:150-208`
-  - Mobile evidence: `client/api/client.ts:318-334`, `client/screens/ShortDetailScreen.tsx:356-379`
-  - Contract: detail now returns `id` while keeping `jobId`, probes `story.mp4` / `thumb.jpg` first, and retains legacy filename fallback during the bridge period.
+  - Backend evidence: `src/controllers/shorts.controller.js:101-131`, `src/controllers/shorts.controller.js:157-227`
+  - Mobile evidence: `client/api/client.ts:578-584`, `client/screens/ShortDetailScreen.tsx:183-345`
+  - Contract: detail now returns `id` while keeping `jobId`, probes `story.mp4` / `thumb.jpg` first, retains legacy filename fallback during the bridge period, and mobile still keeps `/api/shorts/mine?limit=50` fallback while eventual consistency settles.
 
 ## Phase 2 In Progress: Mutation Reliability + Admission-Control Review
 
 - `DONE`: Active mobile editor/search routes now return stable domain-level 4xx/404 responses instead of collapsing known failures into generic 500s.
-  - Backend routes: `src/routes/story.routes.js:566-813`, `src/routes/story.routes.js:1097-1117`
-  - Backend services: `src/services/story.service.js:665-943`
+  - Backend routes: `src/routes/story.routes.js:578-827`, `src/routes/story.routes.js:1147-1175`
+  - Backend services: `src/services/story.service.js:677-949`
   - Scope landed: `POST /api/story/search`, `POST /api/story/update-beat-text`, `POST /api/story/delete-beat`, `POST /api/story/search-shot`, `POST /api/story/update-shot`, and `GET /api/story/:sessionId`.
   - Guardrail: `GET /api/shorts/:jobId` stays runtime-unchanged; its current `404 NOT_FOUND` remains the intentional mobile pending-availability bridge.
 
 - `NEXT`: Review explicit admission control for expensive mobile-used routes.
   - Review set: `POST /api/story/generate`, `POST /api/story/search`, `POST /api/story/search-shot`, `POST /api/story/finalize`
-  - Current evidence: `src/routes/story.routes.js:151`, `src/routes/story.routes.js:566-587`, `src/routes/story.routes.js:671-713`, `src/routes/story.routes.js:902-946`, `src/routes/caption.preview.routes.js:91-108`
+  - Current evidence: `src/routes/story.routes.js:218-233`, `src/routes/story.routes.js:578-610`, `src/routes/story.routes.js:692-776`, `src/routes/story.routes.js:940-989`, `src/routes/caption.preview.routes.js:109-145`
   - Important nuance: `generate` already has a daily cap; review it before adding new per-request rate limits.
   - Phase status: overall Phase 2 remains in progress until this admission-control review is complete.
 
 ## MOBILE_HARDENING_PLAN Phase 3 Explicit Scale Track
 
 - `TRACK`: keep render-architecture scale visible without letting it jump ahead of launch-critical fixes.
-  - Current backend evidence: `src/utils/render.semaphore.js:4-22`, `src/routes/story.routes.js:830-841`, `server.js:32-37`
+  - Current backend evidence: `src/utils/render.semaphore.js:4-22`, `src/routes/story.routes.js:956-958`, `server.js:32-37`
   - Direction: queue-backed or async job/status finalize path with multi-instance-safe concurrency.
 
 ## Exit Criteria
 
 - `Phase 0`: no mobile user can appear app-ready before backend provisioning succeeds, and request correlation is preserved in the mobile normalization layer.
-- `Phase 1`: timeout/network-loss recovery is backend-backed, and newly rendered shorts load directly from detail without relying on list fallback.
+- `Phase 1`: timeout/network-loss recovery is backend-backed, and newly rendered shorts use the current shorts-detail compatibility bridge while `/api/shorts/mine` fallback remains available during eventual consistency.
 - `Phase 2`: editor/search routes stop collapsing known domain failures into generic 500s, and expensive mobile-used routes have explicit admission-control coverage.
 - `Phase 3`: render work no longer depends on a long-lived blocking HTTP request or per-process-only concurrency control.

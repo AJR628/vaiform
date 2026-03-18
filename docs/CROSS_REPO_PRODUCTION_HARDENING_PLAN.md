@@ -4,7 +4,7 @@
 - Owner repo: backend
 - Source of truth for: phased cross-repo execution order for production hardening and anti-drift work
 - Canonical counterpart/source: mobile repo `docs/MOBILE_USED_SURFACES.md` for caller truth, backend repo `docs/MOBILE_BACKEND_CONTRACT.md` for contract truth, backend repo `docs/MOBILE_HARDENING_PLAN.md` for route-hardening status
-- Last verified against: both repos on 2026-03-17
+- Last verified against: both repos on 2026-03-18
 
 ## Purpose
 
@@ -25,9 +25,9 @@ This document does not replace the backend contract docs or the mobile caller-tr
 
 ### Auth bootstrap
 
-- Mobile entrypoint: `client/contexts/AuthContext.tsx:78-190`
-- Mobile transport: `client/api/client.ts:147-260`, `client/api/client.ts:509-523`
-- Backend routes: `src/routes/users.routes.js:16-40`, `src/routes/usage.routes.js:1-9`
+- Mobile entrypoint: `client/contexts/AuthContext.tsx:133-230`
+- Mobile transport: `client/api/client.ts:223-289`, `client/api/client.ts:537-551`
+- Backend routes: `src/routes/users.routes.js:18-52`, `src/routes/usage.routes.js:1-9`
 - Backend services: `src/services/user-doc.service.js:5-34`, `src/services/usage.service.js:137-167`
 - Proven behavior:
   - app readiness waits for Firebase auth, then `POST /api/users/ensure`, then `GET /api/usage`
@@ -38,9 +38,9 @@ This document does not replace the backend contract docs or the mobile caller-tr
 - Mobile entrypoints:
   - `client/screens/HomeScreen.tsx:79-137`
   - `client/screens/ScriptScreen.tsx:64-235`
-- Mobile transport: `client/api/client.ts:566-676`
-- Backend routes: `src/routes/story.routes.js:121-175`, `src/routes/story.routes.js:479-518`
-- Backend services: `src/services/story.service.js:323-392`, `src/services/story.service.js:427-440`, `src/services/story.service.js:665-760`
+- Mobile transport: `client/api/client.ts:594-708`
+- Backend routes: `src/routes/story.routes.js:189-255`, `src/routes/story.routes.js:557-610`
+- Backend services: `src/services/story.service.js:324-397`, `src/services/story.service.js:437-448`, `src/services/story.service.js:677-773`
 - Proven behavior:
   - create flow is `start` then `generate`
   - storyboard flow is `plan` then `search`
@@ -50,14 +50,14 @@ This document does not replace the backend contract docs or the mobile caller-tr
 
 - Mobile entrypoints:
   - `client/screens/ScriptScreen.tsx:162-235`
-  - `client/screens/StoryEditorScreen.tsx:459-917`
+  - `client/screens/StoryEditorScreen.tsx:459-951`
   - `client/screens/ClipSearchModal.tsx:49-105`
   - `client/hooks/useCaptionPreview.ts:45-220`
 - Backend routes:
-  - `src/routes/story.routes.js:500-728`
+  - `src/routes/story.routes.js:287-857`
   - `src/routes/caption.preview.routes.js:109-313`
 - Backend services:
-  - `src/services/story.service.js:706-942`
+  - `src/services/story.service.js:531-949`
 - Proven behavior:
   - `update-beat-text`, `delete-beat`, `search-shot`, and `update-shot` are mobile-used mutations
   - caption preview is server-measured for mobile and keyed by `x-client: mobile`
@@ -65,11 +65,11 @@ This document does not replace the backend contract docs or the mobile caller-tr
 
 ### Finalize and recovery
 
-- Mobile entrypoint: `client/screens/StoryEditorScreen.tsx:930-1149`
-- Mobile transport: `client/api/client.ts:715-823`
-- Backend route: `src/routes/story.routes.js:821-864`
-- Backend middleware: `src/middleware/idempotency.firestore.js:67-400`
-- Backend services: `src/services/story.service.js:211-318`, `src/services/story.service.js:2303-2377`
+- Mobile entrypoint: `client/screens/StoryEditorScreen.tsx:974-1177`
+- Mobile transport: `client/api/client.ts:743-859`
+- Backend route: `src/routes/story.routes.js:940-989`
+- Backend middleware: `src/middleware/idempotency.firestore.js:69-467`
+- Backend services: `src/services/story.service.js:2325-2417`
 - Backend process limits: `server.js:27-43`, `src/utils/render.semaphore.js:1-22`
 - Proven behavior:
   - finalize still blocks the HTTP request until render completion
@@ -81,9 +81,9 @@ This document does not replace the backend contract docs or the mobile caller-tr
 
 - Mobile entrypoints:
   - `client/screens/LibraryScreen.tsx:80-142`
-  - `client/screens/ShortDetailScreen.tsx:143-530`
+  - `client/screens/ShortDetailScreen.tsx:183-602`
 - Backend routes: `src/routes/shorts.routes.js:1-10`
-- Backend controller: `src/controllers/shorts.controller.js:5-211`
+- Backend controller: `src/controllers/shorts.controller.js:7-235`
 - Proven behavior:
   - library reads `GET /api/shorts/mine`
   - detail reads `GET /api/shorts/:jobId`
@@ -98,18 +98,18 @@ The prior audit was directionally right on the biggest production risks, but thi
 - Finalize is still synchronous in the request path.
 - Backend and mobile have no first-party test files in their source trees.
 - Mobile has no `eas.json`, no `runtimeVersion` or `updates` block in `app.json`, and no mobile CI workflow.
-- Request IDs exist, but request context is not propagated through an async context layer.
+- Request IDs now propagate through a backend `AsyncLocalStorage` request context, and Phase 3 added structured/redacted boundary logging plus mobile in-memory diagnostics on the named hot paths only.
 - The mobile runtime path is the hand-written API client, while the React Query client remains mostly unused in active flows.
 
 ### Corrected or tightened from code truth
 
 - File-size risk is worse than the pasted audit suggested in line count terms:
   - backend `src/utils/ffmpeg.video.js`: 2547 lines
-  - backend `src/services/story.service.js`: 2149 lines
+  - backend `src/services/story.service.js`: 2196 lines
   - backend `src/routes/caption.preview.routes.js`: 1792 lines
-  - mobile `client/screens/StoryEditorScreen.tsx`: 1680 lines
-  - mobile `client/screens/ShortDetailScreen.tsx`: 819 lines
-  - mobile `client/api/client.ts`: 735 lines
+  - mobile `client/screens/StoryEditorScreen.tsx`: 1758 lines
+  - mobile `client/screens/ShortDetailScreen.tsx`: 908 lines
+  - mobile `client/api/client.ts`: 770 lines
 - Console usage remains high in hot paths:
   - backend `src/**`: 538 console calls
   - mobile `client/**`: 66 console calls
@@ -371,88 +371,42 @@ Make mobile-used backend mutations return deterministic, debuggable error semant
 
 Status: COMPLETE (implemented 2026-03-18).
 
-Implemented scope:
-
-- Backend `AsyncLocalStorage` request context seeded immediately after request ID assignment
-- One canonical backend structured stdout logger with built-in redaction
-- Hot-path migration only for auth bootstrap, provider-backed story generation/search, finalize/idempotent replay/recovery, and short-detail recovery
-- One bounded in-memory mobile diagnostics buffer with transport-owned normalized-failure capture and named screen/context enrichment
-- One backend incident trace runbook for failed finalize/recovery and missing short detail
-
-Required spillover:
-
-- Backend request context and canonical logger are shared primitives mounted globally in `src/app.js`
-- Mobile normalized-failure capture now applies to callers that already use `apiRequestNormalized(...)` or `storyFinalize(...)`
-
 ### 1. Goal
 
-Make incident tracing deterministic across async boundaries and across the mobile-to-backend handoff.
+Make incident tracing deterministic across async boundaries and across the mobile-to-backend handoff without widening into repo-wide logging cleanup.
 
-### 2. In-scope flow(s)
+### 2. Implemented scope
 
-- All mobile-used routes
-- Finalize/recovery
-- Provider-backed story generation and clip search
-- Mobile network failure reporting
+- Backend `AsyncLocalStorage` request context is seeded immediately after request ID assignment.
+- One canonical backend structured stdout logger now emits redacted JSON.
+- Phase 3 migrated boundary/request logging only for:
+  - auth bootstrap
+  - provider-backed story generation/search
+  - finalize / idempotent replay / recovery
+  - short-detail recovery
+- Mobile now keeps one bounded in-memory diagnostics buffer. Transport-owned normalized failures are recorded automatically, and `AuthContext`, `StoryEditorScreen`, and `ShortDetailScreen` add local context where available.
+- Backend now has one incident trace runbook for failed finalize/recovery and missing short detail.
 
-### 3. Mobile entrypoints involved
+### 3. Required spillover
 
-- `client/api/client.ts:77-145`
-- `client/contexts/AuthContext.tsx:105-188`
-- `client/screens/StoryEditorScreen.tsx:930-1116`
-- `client/screens/ShortDetailScreen.tsx:143-530`
+- Backend request context and the canonical logger are shared primitives mounted globally in `src/app.js`.
+- Mobile normalized-failure capture now applies to callers that already use `apiRequestNormalized(...)` or `storyFinalize(...)`.
 
-### 4. Backend routes involved
+### 4. Current caveats
 
-- Mounted API routes in `src/app.js:213-288`
-- Error handler in `src/middleware/error.middleware.js:15-50`
-- Request ID middleware in `src/middleware/reqId.js:4-8`
+- Phase 3 did not perform a repo-wide backend console migration.
+- Deeper finalize/render internals inside the active finalize path still contain legacy `console.*` logging and were not fully migrated in Phase 3.
+- Phase 3 did not add persistent mobile diagnostics storage or a mobile diagnostics UI.
 
-### 5. Current wiring summary
-
-- Backend sets `req.id` and `X-Request-Id`.
-- Success and failure envelopes carry `requestId`.
-- Mobile normalization preserves `requestId`.
-- Logging remains mostly unstructured console output without request-scoped async context.
-
-### 6. Proven issues / risks
-
-- No `AsyncLocalStorage` usage exists in backend source.
-- Hot paths log many freeform strings, which makes cross-request correlation difficult during render failures and provider incidents.
-- Mobile has no unified diagnostic surface for recent normalized failures and request IDs.
-
-### 7. Proposed plan in order
-
-1. Add a request context layer that binds `requestId`, `uid`, `sessionId`, `attemptId`, and route metadata.
-2. Introduce a structured logger wrapper and a redaction policy.
-3. Migrate finalize, auth bootstrap, provider search/generate, and short-detail recovery logs first.
-4. Add a mobile-only diagnostics abstraction that stores normalized failures with route, status, code, and requestId.
-5. Add one manual incident workflow document: "how to trace a failed finalize or missing short."
-
-### 8. Files likely to change
-
-- `src/middleware/reqId.js`
-- new backend logging/context utilities
-- hot backend routes and services on mobile-used paths
-- `client/api/client.ts`
-- new mobile diagnostics module or screen
-- backend runbook docs
-
-### 9. Docs that must be checked/updated
-
-- backend `docs/MOBILE_HARDENING_PLAN.md`
-- backend `docs/DOCS_INDEX.md` if a new runbook becomes front-door relevant
-- mobile `docs/DOCS_INDEX.md` if a local diagnostics note is added
-
-### 10. Verification steps
+### 5. Verification standard
 
 - Trigger an auth bootstrap failure, a finalize in-progress replay, and a short-detail 404 retry.
-- Confirm the same request/attempt context is visible from mobile logs through backend logs.
-- Confirm no sensitive tokens, private URLs, or raw provider payloads are logged.
+- Confirm the same request/attempt context is visible from the mobile diagnostics buffer through the migrated backend boundary logs.
+- Confirm the canonical logger path redacts auth headers, cookies, API keys/secrets, full public/storage URLs, and unsafe raw payload blobs.
 
-### 11. Open questions / uncertainties, if any
+### 6. Open questions / uncertainties, if any
 
-- Structured log sink and deployment destination are not represented in repo code yet. That will need an environment-specific decision later.
+- Structured log sink and deployment destination are not represented in repo code yet. That remains an environment-specific decision outside this phase.
 
 ## Phase 4A - Backend Active-Path Contract Tests
 

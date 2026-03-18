@@ -1,6 +1,6 @@
 # LEGACY_WEB_SURFACES
 
-Cross-repo verification date: 2026-03-13.
+Cross-repo verification date: 2026-03-18.
 
 Purpose: document the backend surfaces that still exist for the old web/manual/editor flows so they do not silently regain first-class scope while mobile production is the product priority.
 
