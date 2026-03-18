@@ -31,6 +31,7 @@ import { buildKaraokeASSFromTimestamps } from '../utils/karaoke.ass.js';
 import { wrapTextWithFont } from '../utils/caption.wrap.js';
 import { deriveCaptionWrapWidthPx } from '../utils/caption.wrapWidth.js';
 import { compileCaptionSSOT } from '../captions/compile.js';
+import logger from '../observability/logger.js';
 
 const TTL_HOURS = Number(process.env.STORY_TTL_HOURS || 48);
 const BILLING_ESTIMATE_HEURISTIC_PAD_SEC = Math.max(
@@ -375,6 +376,11 @@ export async function generateStory({ uid, sessionId, input, inputType }) {
     };
   }
 
+  logger.info('story.generate.service.start', {
+    sessionId: session.id,
+    inputType: session.input.type,
+  });
+
   // Generate story using LLM
   const styleKey = session.styleKey || 'default';
   const story = await generateStoryFromInput({
@@ -389,6 +395,10 @@ export async function generateStory({ uid, sessionId, input, inputType }) {
 
   setHeuristicBillingEstimate(session);
   await saveStorySession({ uid, sessionId: session.id, data: session });
+  logger.info('story.generate.service.completed', {
+    sessionId: session.id,
+    sentenceCount: session.story?.sentences?.length ?? 0,
+  });
   return session;
 }
 
@@ -549,10 +559,13 @@ async function searchSingleShot(query, options = {}) {
         })),
   ]);
 
-  // Log NASA result details
-  console.log(
-    `[story] nasaResult: ok=${nasaResult.ok}, reason="${nasaResult.reason || 'N/A'}", items.length=${nasaResult.items?.length || 0}`
-  );
+  logger.info('story.search.providers.nasa_result', {
+    queryLength: String(query || '').trim().length,
+    page,
+    ok: nasaResult.ok,
+    reason: nasaResult.reason || 'N/A',
+    itemCount: nasaResult.items?.length || 0,
+  });
 
   // Cap NASA items based on affinity
   let nasaItems = nasaResult.items || [];
@@ -580,9 +593,8 @@ async function searchSingleShot(query, options = {}) {
     typeof pixabayResult.nextPage === 'number' ||
     typeof nasaResult.nextPage === 'number';
 
-  // Log provider usage and pagination for debugging
-  console.log('[story.searchShots] providers used:', {
-    query,
+  logger.info('story.search.providers.summary', {
+    queryLength: String(query || '').trim().length,
     page,
     nasaAffinity,
     nasa: nasaItems.length,
@@ -683,7 +695,11 @@ export async function searchShots({ uid, sessionId }) {
         candidates: candidates,
       });
     } catch (error) {
-      console.warn(`[story.service] Search failed for shot ${shot.sentenceIndex}:`, error?.message);
+      logger.warn('story.search.shot_failed', {
+        sentenceIndex: shot.sentenceIndex,
+        queryLength: String(shot.searchQuery || '').trim().length,
+        error,
+      });
       shots.push({
         ...shot,
         selectedClip: null,
@@ -1054,6 +1070,10 @@ export async function generateCaptionTimings({ uid, sessionId }) {
   session.updatedAt = new Date().toISOString();
 
   await saveStorySession({ uid, sessionId, data: session });
+  logger.info('story.search.completed', {
+    sessionId,
+    shotCount: shots.length,
+  });
   return session;
 }
 
@@ -2307,6 +2327,13 @@ export async function finalizeStory({ uid, sessionId, options = {}, attemptId = 
   if (!session) throw new Error('SESSION_NOT_FOUND');
 
   try {
+    logger.info('story.finalize.service.start', {
+      sessionId,
+      attemptId,
+      hasStory: Boolean(session.story),
+      hasShots: Array.isArray(session.shots) && session.shots.length > 0,
+      hasFinalVideo: Boolean(session.finalVideo),
+    });
     session = await persistRenderRecovery({
       uid,
       sessionId,
@@ -2314,6 +2341,11 @@ export async function finalizeStory({ uid, sessionId, options = {}, attemptId = 
       state: 'pending',
     });
     if (!session) throw new Error('SESSION_NOT_FOUND_AFTER_PENDING');
+    logger.info('story.finalize.recovery_pending_persisted', {
+      sessionId,
+      attemptId,
+      recoveryState: session.renderRecovery?.state || null,
+    });
 
     // Step 1: Generate story if not done
     if (!session.story) {
@@ -2359,10 +2391,20 @@ export async function finalizeStory({ uid, sessionId, options = {}, attemptId = 
       shortId: session?.finalVideo?.jobId || null,
     });
     if (!session) throw new Error('SESSION_NOT_FOUND_AFTER_RENDER');
+    logger.info('story.finalize.service.completed', {
+      sessionId,
+      attemptId,
+      shortId: session?.finalVideo?.jobId || null,
+      recoveryState: session.renderRecovery?.state || null,
+    });
 
     return session;
   } catch (error) {
-    console.error('[story.service] Finalize failed:', error);
+    logger.error('story.finalize.service.failed', {
+      sessionId,
+      attemptId,
+      error,
+    });
     try {
       await persistRenderRecovery({
         uid,
@@ -2372,7 +2414,11 @@ export async function finalizeStory({ uid, sessionId, options = {}, attemptId = 
         error,
       });
     } catch (persistError) {
-      console.error('[story.service] Failed to persist renderRecovery failure:', persistError);
+      logger.error('story.finalize.recovery_failure_persist_failed', {
+        sessionId,
+        attemptId,
+        error: persistError,
+      });
     }
     throw error;
   }

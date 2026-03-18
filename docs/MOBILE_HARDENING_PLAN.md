@@ -1,8 +1,14 @@
 # MOBILE_HARDENING_PLAN
 
-Cross-repo verification date: 2026-03-17.
+Cross-repo verification date: 2026-03-18.
 
-Goal: harden only the backend surface that the current mobile app actually depends on, in the same phase order used for implementation and docs. This is a continuation plan for the current repos, not a rebuild proposal.
+Goal: harden only the backend surface that the current mobile app actually depends on. This is a continuation ledger for the current repos, not a rebuild proposal.
+
+## Phase Naming Note
+
+- Execution-order authority lives only in `docs/CROSS_REPO_PRODUCTION_HARDENING_PLAN.md`.
+- This document remains a separate backend route-hardening ledger. References to `Phase 0` through `Phase 3` below are `MOBILE_HARDENING_PLAN` phases only.
+- Cross-Repo Phase 3 (`Request-Scoped Observability And Diagnostics`) landed on 2026-03-18 and is tracked in the cross-repo execution-order doc, not as this ledger's `Phase 3`.
 
 ## Parallel Billing Cutover Note
 
@@ -20,7 +26,7 @@ Goal: harden only the backend surface that the current mobile app actually depen
 - `LEGACY_WEB` work is allowed only when it directly affects mobile auth, billing, security, credits, or shared render stability.
 - Keep the original phase numbering unchanged across code, docs, and commit history.
 
-## Locked Phase Order
+## This Ledger's Phase Order
 
 - `Phase 0`: bootstrap + traceability
 - `Phase 1`: finalize recovery + shorts detail bridge
@@ -84,7 +90,7 @@ Goal: harden only the backend surface that the current mobile app actually depen
   - Important nuance: `generate` already has a daily cap; review it before adding new per-request rate limits.
   - Phase status: overall Phase 2 remains in progress until this admission-control review is complete.
 
-## Phase 3 Explicit Scale Track
+## MOBILE_HARDENING_PLAN Phase 3 Explicit Scale Track
 
 - `TRACK`: keep render-architecture scale visible without letting it jump ahead of launch-critical fixes.
   - Current backend evidence: `src/utils/render.semaphore.js:4-22`, `src/routes/story.routes.js:830-841`, `server.js:32-37`

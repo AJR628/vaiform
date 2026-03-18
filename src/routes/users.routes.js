@@ -4,6 +4,8 @@ import requireAuth from '../middleware/requireAuth.js';
 import { ok, fail } from '../http/respond.js';
 import { ensureUserDocByUid } from '../services/user-doc.service.js';
 import { ensureCanonicalUsageState } from '../services/usage.service.js';
+import logger from '../observability/logger.js';
+import { setRequestContextFromReq } from '../observability/request-context.js';
 
 const r = Router();
 
@@ -15,6 +17,7 @@ const r = Router();
  */
 r.post('/ensure', requireAuth, async (req, res) => {
   try {
+    setRequestContextFromReq(req);
     const uid = req.user.uid;
     const email = req.user.email ?? null;
 
@@ -26,7 +29,11 @@ r.post('/ensure', requireAuth, async (req, res) => {
     const usageState = await ensureCanonicalUsageState(uid, email);
     const snap = await ref.get();
     const doc = snap.data() || {};
-    console.log('[users/ensure] Mobile user provisioned:', uid, email);
+    logger.info('auth.bootstrap.user_ensured', {
+      routeStatus: `${req.method} ${req.originalUrl}`,
+      plan: usageState?.data?.plan || 'free',
+      hasEmail: Boolean(doc.email ?? email),
+    });
     return ok(req, res, {
       uid,
       email: doc.email ?? email ?? null,
@@ -34,7 +41,10 @@ r.post('/ensure', requireAuth, async (req, res) => {
       freeShortsUsed: Number.isInteger(doc.freeShortsUsed) ? doc.freeShortsUsed : 0,
     });
   } catch (e) {
-    console.error('[users/ensure] error:', e);
+    logger.error('auth.bootstrap.ensure.failed', {
+      routeStatus: `${req.method} ${req.originalUrl}`,
+      error: e,
+    });
     return fail(req, res, 500, 'ENSURE_FAILED', e?.message || 'Failed to ensure user document');
   }
 });

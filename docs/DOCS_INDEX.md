@@ -19,6 +19,7 @@ Trust these first for current work:
 - backend repo `README.md`
 - backend repo `docs/DOCS_INDEX.md`
 - backend repo `docs/CROSS_REPO_PRODUCTION_HARDENING_PLAN.md`
+- backend repo `docs/INCIDENT_TRACE_RUNBOOK.md`
 - backend repo `docs/MOBILE_BACKEND_CONTRACT.md`
 - backend repo `docs/MOBILE_HARDENING_PLAN.md`
 - backend repo `docs/LEGACY_WEB_SURFACES.md`
@@ -32,6 +33,7 @@ Do not start from evidence or historical docs unless one of the docs above sends
 Update these first when backend/mobile contract or hardening truth changes:
 
 - `docs/CROSS_REPO_PRODUCTION_HARDENING_PLAN.md`
+- `docs/INCIDENT_TRACE_RUNBOOK.md`
 - `docs/MOBILE_BACKEND_CONTRACT.md`
 - `docs/MOBILE_HARDENING_PLAN.md`
 - `docs/TIME_BASED_RENDER_USAGE_MIGRATION_PLAN.md`

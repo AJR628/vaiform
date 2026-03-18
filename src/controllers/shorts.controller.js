@@ -1,6 +1,8 @@
 import admin from '../config/firebase.js';
 import { buildPublicUrl, getDownloadToken } from '../utils/storage.js';
 import { ok, fail } from '../http/respond.js';
+import logger from '../observability/logger.js';
+import { setRequestContextFromReq } from '../observability/request-context.js';
 
 export async function getMyShorts(req, res) {
   try {
@@ -98,6 +100,7 @@ export async function getShortById(req, res) {
     }
     const jobId = String(req.params?.jobId || '').trim();
     if (!jobId) return fail(req, res, 400, 'INVALID_INPUT', 'jobId required');
+    setRequestContextFromReq(req, { shortId: jobId });
 
     const debug = req.query?.debug === '1';
 
@@ -137,6 +140,11 @@ export async function getShortById(req, res) {
     }
 
     if (meta?.urls?.video) {
+      logger.info('shorts.detail.meta_hit', {
+        routeStatus: `${req.method} ${req.originalUrl}`,
+        shortId: jobId,
+        hasCover: Boolean(meta.urls.cover),
+      });
       const payload = buildPayload({
         videoUrl: meta.urls.video,
         coverImageUrl: meta.urls.cover || null,
@@ -163,6 +171,11 @@ export async function getShortById(req, res) {
     }
 
     if (!videoFile || !videoPath) {
+      logger.warn('shorts.detail.not_found', {
+        routeStatus: `${req.method} ${req.originalUrl}`,
+        shortId: jobId,
+        debug,
+      });
       if (debug) return fail(req, res, 200, 'NO_VIDEO_OBJECT', 'NO_VIDEO_OBJECT');
       return fail(req, res, 404, 'NOT_FOUND', 'NOT_FOUND');
     }
@@ -203,10 +216,21 @@ export async function getShortById(req, res) {
       coverImageUrl,
       meta,
     });
+    logger.info('shorts.detail.storage_hit', {
+      routeStatus: `${req.method} ${req.originalUrl}`,
+      shortId: jobId,
+      videoSource: videoPath === storyVideoPath ? 'story' : 'legacy',
+      coverSource: coverPath === storyCoverPath ? 'story' : coverPath === legacyCoverPath ? 'legacy' : null,
+      hasMeta: Boolean(meta),
+    });
     if (debug) return ok(req, res, { source: 'storage.tokens', diag, payload });
     return ok(req, res, payload);
   } catch (e) {
-    console.error('/shorts/:jobId error', e?.message || e);
+    logger.error('shorts.detail.failed', {
+      routeStatus: `${req.method} ${req.originalUrl}`,
+      shortId: String(req.params?.jobId || '').trim() || null,
+      error: e,
+    });
     return fail(req, res, 500, 'GET_SHORT_FAILED', 'GET_SHORT_FAILED');
   }
 }

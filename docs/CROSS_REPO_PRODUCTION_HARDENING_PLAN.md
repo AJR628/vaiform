@@ -369,6 +369,21 @@ Make mobile-used backend mutations return deterministic, debuggable error semant
 
 ## Phase 3 - Request-Scoped Observability And Diagnostics
 
+Status: COMPLETE (implemented 2026-03-18).
+
+Implemented scope:
+
+- Backend `AsyncLocalStorage` request context seeded immediately after request ID assignment
+- One canonical backend structured stdout logger with built-in redaction
+- Hot-path migration only for auth bootstrap, provider-backed story generation/search, finalize/idempotent replay/recovery, and short-detail recovery
+- One bounded in-memory mobile diagnostics buffer with transport-owned normalized-failure capture and named screen/context enrichment
+- One backend incident trace runbook for failed finalize/recovery and missing short detail
+
+Required spillover:
+
+- Backend request context and canonical logger are shared primitives mounted globally in `src/app.js`
+- Mobile normalized-failure capture now applies to callers that already use `apiRequestNormalized(...)` or `storyFinalize(...)`
+
 ### 1. Goal
 
 Make incident tracing deterministic across async boundaries and across the mobile-to-backend handoff.

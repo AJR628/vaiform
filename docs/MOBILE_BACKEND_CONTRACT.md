@@ -1,6 +1,6 @@
 # MOBILE_BACKEND_CONTRACT
 
-Cross-repo verification date: 2026-03-17.
+Cross-repo verification date: 2026-03-18.
 
 Purpose: canonical backend-owned contract, guarantees, and open mismatch record for mobile production. Current mobile caller-truth lives in the mobile repo. If a route is not `MOBILE_CORE_NOW` or `MOBILE_CORE_SOON` here, it is not first-class for mobile launch.
 
@@ -34,10 +34,12 @@ Purpose: canonical backend-owned contract, guarantees, and open mismatch record 
 - Standard backend failure envelope: `{ success: false, error, detail, requestId, fields? }` (`src/http/respond.js:28-34`).
 - Mobile normalization layer now preserves `requestId` while converting success envelopes to `{ ok: true, data, requestId }` and failure envelopes to `{ ok: false, status, code, message, requestId }` (`client/api/client.ts:77-145`, `client/api/client.ts:207-260`).
 - Finalize is the current launch exception: the backend returns top-level `shortId`, and the mobile client explicitly extracts it from the raw response (`src/routes/story.routes.js:35-41`, `src/routes/story.routes.js:840-841`, `client/api/client.ts:740-760`).
+- Cross-Repo Phase 3 observability is now live on the named hot paths: backend request context is seeded immediately after request ID assignment, backend hot-path logs flow through one structured stdout logger with built-in redaction, and mobile keeps a bounded in-memory diagnostics buffer for normalized failures with additive context from auth bootstrap, finalize/recovery, and short-detail retry surfaces.
 
 ## Current Open Contract Notes
 
 - `STATUS`: Active mobile editor/search routes now map known domain failures to stable 4xx/404 responses instead of collapsing them into generic 500s.
+- `STATUS`: Cross-Repo Phase 3 request-scoped observability is landed for auth bootstrap, provider-backed story generation/search, finalize/idempotent replay/recovery, and short-detail recovery.
 - `OPEN`: Phase 2 admission-control review remains tracked separately in `docs/MOBILE_HARDENING_PLAN.md`.
 
 ## MOBILE_CORE_NOW Contract
@@ -50,6 +52,7 @@ Purpose: canonical backend-owned contract, guarantees, and open mismatch record 
   - Backend returns: full success envelope with `{ uid, email, plan, freeShortsUsed }`.
   - Mobile reads: stores the returned profile for auth/account bootstrap only; active billing screens rely on `/api/usage`.
   - Contract note: the app now waits for both provisioning and canonical usage fetch to succeed before treating the signed-in user as app-ready.
+  - Diagnostics note: failed bootstrap calls now keep `requestId` in normalized mobile failures and enrich the in-memory diagnostics buffer with the active Firebase `uid` when available.
 
 - `GET /api/usage`
   - Mobile caller(s): `client/contexts/AuthContext.tsx:142-178`, `client/screens/SettingsScreen.tsx:43-59`, `client/screens/StoryEditorScreen.tsx:926-951`
@@ -84,6 +87,7 @@ Purpose: canonical backend-owned contract, guarantees, and open mismatch record 
   - Mobile reads: `story.sentences` with helper fallbacks, `shots`, `overlayCaption.placement`, additive `billingEstimate.estimatedSec`, `shot.selectedClip.thumbUrl`, `shot.searchQuery`, and `renderRecovery` during finalize recovery polling.
   - Recovery role: this route is now the backend-backed finalize recovery contract. Additive `renderRecovery` fields expose `{ state, attemptId, startedAt, updatedAt, shortId, finishedAt, failedAt, code, message }`, and mobile trusts them only when `renderRecovery.attemptId` matches the active finalize attempt.
   - Stable failure now: `404 SESSION_NOT_FOUND`.
+  - Diagnostics note: failed recovery polls now keep `requestId` in normalized mobile failures and enrich diagnostics with `sessionId` plus the active finalize `attemptId`.
 
 - `POST /api/story/plan`
   - Mobile caller(s): `client/screens/ScriptScreen.tsx:126-159`
@@ -184,6 +188,7 @@ Purpose: canonical backend-owned contract, guarantees, and open mismatch record 
   - Current 402 semantics: backend uses time-based billing failures such as `INSUFFICIENT_RENDER_TIME`, and mobile now mirrors that render-time wording.
   - Recovery contract: backend persists additive `renderRecovery.pending` before the blocking render starts, then persists `renderRecovery.done` or `renderRecovery.failed` with the same `attemptId` used for `X-Idempotency-Key`. On `TIMEOUT`, `NETWORK_ERROR`, or `IDEMPOTENT_IN_PROGRESS`, mobile keeps the active attempt key and polls `GET /api/story/:sessionId` until that same-attempt recovery state reaches a terminal result.
   - Contract caveat: recovery is currently same-screen and bounded. If polling exhausts its attempts while state remains `pending`, mobile leaves the attempt key in memory and asks the user to resume the same attempt or check Library shortly.
+  - Diagnostics note: finalize, idempotent replay, and recovery logs now correlate by `requestId` plus additive `sessionId` / `attemptId`, and mobile failure diagnostics enrich the same request/attempt context in memory.
 
 - `GET /api/shorts/mine`
   - Mobile caller(s): `client/screens/LibraryScreen.tsx:80-118`, `client/screens/ShortDetailScreen.tsx:227-248`
@@ -205,6 +210,7 @@ Purpose: canonical backend-owned contract, guarantees, and open mismatch record 
     - mobile still ignores `jobId`
     - mobile still keeps `GET /api/shorts/mine` fallback during the bridge period
   - Intentional pending semantics: `404 NOT_FOUND` still means the detail asset is not available yet; mobile treats that as pending availability and retries / falls back to `GET /api/shorts/mine`.
+  - Diagnostics note: mobile short-detail retries now retain `requestId` when present and enrich diagnostics with `shortId` plus retry/fallback stage context.
 
 ## MOBILE_CORE_SOON Contract
 

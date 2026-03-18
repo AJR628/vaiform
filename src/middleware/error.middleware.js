@@ -1,5 +1,6 @@
 // src/middleware/error.middleware.js
 import { fail } from '../http/respond.js';
+import logger from '../observability/logger.js';
 
 function fieldsFromZodIssues(issues) {
   if (!issues || !Array.isArray(issues)) return undefined;
@@ -29,23 +30,28 @@ export default function errorHandler(err, req, res, _next) {
               ? 400
               : 500);
 
+  const fields = isZod && err?.issues ? fieldsFromZodIssues(err.issues) : undefined;
   const log = {
-    level: status >= 500 ? 'error' : 'warn',
     status,
     name: err?.name,
+    code: err?.code,
     message: err?.message,
-    requestId:
-      req?.id || req?.reqId || req?.headers?.['x-request-id'] || req?.headers?.['X-Request-Id'],
-    route: `${req?.method} ${req?.originalUrl}`,
+    routeStatus: `${req?.method} ${req?.originalUrl}`,
+    fields,
+    error: err,
   };
-  console.error('❌', JSON.stringify(log));
 
-  if (isZod && err?.issues) {
-    const fields = fieldsFromZodIssues(err.issues);
+  if (status >= 500) {
+    logger.error('request.error', log);
+  } else {
+    logger.warn('request.error', log);
+  }
+
+  if (fields) {
     return fail(req, res, status, 'VALIDATION_FAILED', 'Invalid request', fields);
   }
 
   const error = String(err?.code ?? err?.name ?? 'INTERNAL_ERROR');
   const detail = String(err?.message ?? 'Unexpected error');
-  fail(req, res, status, error, detail);
+  return fail(req, res, status, error, detail);
 }

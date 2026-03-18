@@ -6,6 +6,7 @@ import { randomUUID } from 'crypto';
 import { extractContentFromUrl } from '../utils/link.extract.js';
 import { isOutboundPolicyError } from '../utils/outbound.fetch.js';
 import { calculateReadingDuration } from '../utils/text.duration.js';
+import logger from '../observability/logger.js';
 
 const OPENAI_BASE = process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1';
 const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
@@ -164,7 +165,10 @@ export async function generateStoryFromInput({ input, inputType, styleKey = 'def
       if (isOutboundPolicyError(error) || error?.code === 'LINK_EXTRACT_TOO_LARGE') {
         throw error;
       }
-      console.warn('[story.llm] Link extraction failed, using URL as-is:', error?.message);
+      logger.warn('story.generate.link_extract_failed', {
+        inputType,
+        error,
+      });
       extracted = null;
     }
   }
@@ -324,7 +328,10 @@ export async function generateStoryFromInput({ input, inputType, styleKey = 'def
     const jsonMatch = content.match(/\{[\s\S]*\}/);
     parsed = JSON.parse(jsonMatch ? jsonMatch[0] : content);
   } catch (parseError) {
-    console.warn('[story.llm] JSON parse failed, using fallback');
+    logger.warn('story.generate.parse_failed', {
+      inputType,
+      error: parseError,
+    });
     parsed = null;
   }
 
@@ -384,7 +391,9 @@ export async function generateStoryFromInput({ input, inputType, styleKey = 'def
 
     // Hard violations: retry once with clean fix instruction
     if (validation.hardViolations.length > 0) {
-      console.warn('[story.llm] Hard violations detected, retrying:', validation.hardViolations);
+      logger.warn('story.generate.hard_retry', {
+        hardViolationCount: validation.hardViolations.length,
+      });
 
       const fixMessage = `Your previous JSON violated these constraints: ${validation.hardViolations.join('; ')}. Rewrite JSON only, fully compliant.`;
 
@@ -397,7 +406,9 @@ export async function generateStoryFromInput({ input, inputType, styleKey = 'def
           const retryJsonMatch = retryContent.match(/\{[\s\S]*\}/);
           retryParsed = JSON.parse(retryJsonMatch ? retryJsonMatch[0] : retryContent);
         } catch (retryParseError) {
-          console.warn('[story.llm] Retry JSON parse failed');
+          logger.warn('story.generate.retry_parse_failed', {
+            error: retryParseError,
+          });
         }
 
         if (retryParsed && (retryParsed.hook || retryParsed.beats || retryParsed.outro)) {
@@ -412,16 +423,19 @@ export async function generateStoryFromInput({ input, inputType, styleKey = 'def
             // Retry passed hard checks, use it (tweak C)
             parsed = retryParsed;
             usedRetry = true;
-            console.log('[story.llm] Retry passed validation, using retry response');
+            logger.info('story.generate.retry_accepted', {
+              hardViolationCount: retryValidation.hardViolations.length,
+            });
           } else {
-            console.error(
-              '[story.llm] Retry still has hard violations, falling back to normalization:',
-              retryValidation.hardViolations
-            );
+            logger.error('story.generate.retry_rejected', {
+              hardViolationCount: retryValidation.hardViolations.length,
+            });
           }
         }
       } catch (retryError) {
-        console.error('[story.llm] Retry request failed:', retryError?.message);
+        logger.error('story.generate.retry_failed', {
+          error: retryError,
+        });
       }
     }
 
@@ -432,10 +446,9 @@ export async function generateStoryFromInput({ input, inputType, styleKey = 'def
 
       // Soft violations: retry once, but allow fallback if persists
       if (finalValidation.softViolations.length > 0 && finalValidation.valid) {
-        console.warn(
-          '[story.llm] Soft violations detected, retrying:',
-          finalValidation.softViolations
-        );
+        logger.warn('story.generate.soft_retry', {
+          softViolationCount: finalValidation.softViolations.length,
+        });
 
         // Prioritize soft violations (tweak B: must not include undefined)
         const prioritizedSoftViolations = [];
@@ -477,7 +490,9 @@ export async function generateStoryFromInput({ input, inputType, styleKey = 'def
             const retryJsonMatch = retryContent.match(/\{[\s\S]*\}/);
             retryParsed = JSON.parse(retryJsonMatch ? retryJsonMatch[0] : retryContent);
           } catch (retryParseError) {
-            console.warn('[story.llm] Soft retry JSON parse failed');
+            logger.warn('story.generate.soft_retry_parse_failed', {
+              error: retryParseError,
+            });
           }
 
           if (retryParsed && (retryParsed.hook || retryParsed.beats || retryParsed.outro)) {
@@ -491,18 +506,19 @@ export async function generateStoryFromInput({ input, inputType, styleKey = 'def
               // Retry passed hard checks, use it
               parsed = retryParsed;
               usedRetry = true;
-              console.log('[story.llm] Soft retry passed validation, using retry response');
+              logger.info('story.generate.soft_retry_accepted', {
+                softViolationCount: retryValidation.softViolations.length,
+              });
             } else {
-              console.warn(
-                '[story.llm] Soft retry still has violations, proceeding with original (soft constraints not met)'
-              );
+              logger.warn('story.generate.soft_retry_rejected', {
+                softViolationCount: retryValidation.softViolations.length,
+              });
             }
           }
         } catch (retryError) {
-          console.warn(
-            '[story.llm] Soft retry request failed, proceeding with original:',
-            retryError?.message
-          );
+          logger.warn('story.generate.soft_retry_failed', {
+            error: retryError,
+          });
         }
       }
     }
@@ -513,21 +529,23 @@ export async function generateStoryFromInput({ input, inputType, styleKey = 'def
     const finalOutro = parsed.outro || [];
     sentences = [...finalHook, ...finalBeats, ...finalOutro].filter(Boolean);
     totalDurationSec = Number(parsed.totalDurationSec) || 0;
-    console.log(
-      usedRetry
-        ? '[story.llm] using retry hook/beats/outro structure'
-        : '[story.llm] using new hook/beats/outro structure'
-    );
+    logger.info('story.generate.output_shape', {
+      outputShape: usedRetry ? 'retry_hook_beats_outro' : 'hook_beats_outro',
+    });
   }
   // Fallback 1: Legacy sentences structure
   else if (parsed && parsed.sentences && Array.isArray(parsed.sentences)) {
     sentences = parsed.sentences;
     totalDurationSec = Number(parsed.totalDurationSec) || 0;
-    console.log('[story.llm] using legacy sentences structure');
+    logger.info('story.generate.output_shape', {
+      outputShape: 'legacy_sentences',
+    });
   }
   // Fallback 2: Sentence splitting
   else {
-    console.log('[story.llm] falling back to sentence-splitting');
+    logger.warn('story.generate.output_shape_fallback', {
+      outputShape: 'sentence_split',
+    });
     const text =
       inputType === 'link' && extracted
         ? `${extracted.title}\n\n${extracted.summary}\n\n${extracted.keyPoints.join('. ')}`

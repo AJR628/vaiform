@@ -29,6 +29,8 @@ import {
 import { extractStyleOnly } from '../utils/caption-style-helper.js';
 import { ok, fail } from '../http/respond.js';
 import { isOutboundPolicyError } from '../utils/outbound.fetch.js';
+import logger from '../observability/logger.js';
+import { setRequestContextFromReq } from '../observability/request-context.js';
 
 const r = Router();
 r.use(requireAuth);
@@ -221,6 +223,11 @@ r.post('/generate', enforceScriptDailyCap(300), async (req, res) => {
     }
 
     const { sessionId, input, inputType } = parsed.data;
+    setRequestContextFromReq(req, { sessionId });
+    logger.info('story.generate.request', {
+      routeStatus: `${req.method} ${req.originalUrl}`,
+      inputType,
+    });
     const session = await generateStory({
       uid: req.user.uid,
       sessionId,
@@ -231,10 +238,15 @@ r.post('/generate', enforceScriptDailyCap(300), async (req, res) => {
     return okStorySession(req, res, session);
   } catch (e) {
     const mapped = storyFailureFromError(e);
+    logger.error('story.generate.failed', {
+      routeStatus: `${req.method} ${req.originalUrl}`,
+      mappedStatus: mapped?.status,
+      mappedError: mapped?.error,
+      error: e,
+    });
     if (mapped) {
       return fail(req, res, mapped.status, mapped.error, mapped.detail);
     }
-    console.error('[story][generate] error:', e);
     return fail(req, res, 500, 'STORY_GENERATE_FAILED', e?.message || 'Failed to generate story');
   }
 });
@@ -571,6 +583,10 @@ r.post('/search', async (req, res) => {
     }
 
     const { sessionId } = parsed.data;
+    setRequestContextFromReq(req, { sessionId });
+    logger.info('story.search.request', {
+      routeStatus: `${req.method} ${req.originalUrl}`,
+    });
     const session = await searchShots({
       uid: req.user.uid,
       sessionId,
@@ -579,10 +595,15 @@ r.post('/search', async (req, res) => {
     return okStorySession(req, res, session);
   } catch (e) {
     const mapped = storyFailureFromError(e);
+    logger.error('story.search.failed', {
+      routeStatus: `${req.method} ${req.originalUrl}`,
+      mappedStatus: mapped?.status,
+      mappedError: mapped?.error,
+      error: e,
+    });
     if (mapped) {
       return fail(req, res, mapped.status, mapped.error, mapped.detail);
     }
-    console.error('[story][search] error:', e);
     return fail(req, res, 500, 'STORY_SEARCH_FAILED', e?.message || 'Failed to search clips');
   }
 });
@@ -683,6 +704,13 @@ r.post('/search-shot', async (req, res) => {
     }
 
     const { sessionId, sentenceIndex, query, page = 1 } = parsed.data;
+    setRequestContextFromReq(req, { sessionId });
+    logger.info('story.search_shot.request', {
+      routeStatus: `${req.method} ${req.originalUrl}`,
+      sentenceIndex,
+      hasQuery: Boolean(query?.trim()),
+      page,
+    });
     const result = await searchClipsForShot({
       uid: req.user.uid,
       sessionId,
@@ -698,10 +726,15 @@ r.post('/search-shot', async (req, res) => {
     });
   } catch (e) {
     const mapped = storyFailureFromError(e);
+    logger.error('story.search_shot.failed', {
+      routeStatus: `${req.method} ${req.originalUrl}`,
+      mappedStatus: mapped?.status,
+      mappedError: mapped?.error,
+      error: e,
+    });
     if (mapped) {
       return fail(req, res, mapped.status, mapped.error, mapped.detail);
     }
-    console.error('[story][search-shot] error:', e);
     return fail(
       req,
       res,
@@ -916,6 +949,10 @@ r.post(
 
       const { sessionId } = parsed.data;
       const attemptId = String(req.get('X-Idempotency-Key') || '').trim();
+      setRequestContextFromReq(req, { sessionId, attemptId });
+      logger.info('story.finalize.request', {
+        routeStatus: `${req.method} ${req.originalUrl}`,
+      });
       // NOTE: finalizeStory() blocks the HTTP request until render completes (synchronous operation).
       // Render time was already reserved by idempotency middleware; on 5xx middleware releases it.
       const session = await withRenderSlot(() =>
@@ -928,6 +965,10 @@ r.post(
       );
 
       const shortId = session?.finalVideo?.jobId || null;
+      logger.info('story.finalize.completed', {
+        routeStatus: `${req.method} ${req.originalUrl}`,
+        shortId,
+      });
       if (typeof res.finishIdempotentFinalize === 'function') {
         return await res.finishIdempotentFinalize({ session, shortId, status: 200 });
       }
@@ -935,14 +976,23 @@ r.post(
     } catch (e) {
       if (res.headersSent) return;
       if (e?.code === 'SERVER_BUSY' || e?.message === 'SERVER_BUSY') {
+        logger.warn('story.finalize.server_busy', {
+          routeStatus: `${req.method} ${req.originalUrl}`,
+          error: e,
+        });
         res.set('Retry-After', '30');
         return res.status(503).json(serverBusyFailure(req, 30));
       }
       const mapped = storyFailureFromError(e);
+      logger.error('story.finalize.failed', {
+        routeStatus: `${req.method} ${req.originalUrl}`,
+        mappedStatus: mapped?.status,
+        mappedError: mapped?.error,
+        error: e,
+      });
       if (mapped) {
         return fail(req, res, mapped.status, mapped.error, mapped.detail);
       }
-      console.error('[story][finalize] error:', e);
       return fail(req, res, 500, 'STORY_FINALIZE_FAILED', e?.message || 'Failed to finalize story');
     }
   }
@@ -1100,6 +1150,7 @@ r.get('/:sessionId', async (req, res) => {
     if (!sessionId) {
       return fail(req, res, 400, 'INVALID_INPUT', 'sessionId required');
     }
+    setRequestContextFromReq(req, { sessionId });
 
     const session = await getStorySession({
       uid: req.user.uid,
@@ -1110,9 +1161,24 @@ r.get('/:sessionId', async (req, res) => {
       return fail(req, res, 404, 'SESSION_NOT_FOUND', 'Session not found');
     }
 
+    if (session.renderRecovery?.state) {
+      setRequestContextFromReq(req, {
+        sessionId,
+        attemptId: session.renderRecovery.attemptId || null,
+        shortId: session.renderRecovery.shortId || null,
+      });
+      logger.info('story.recovery.poll', {
+        routeStatus: `${req.method} ${req.originalUrl}`,
+        recoveryState: session.renderRecovery.state,
+      });
+    }
+
     return okStorySession(req, res, session);
   } catch (e) {
-    console.error('[story][get] error:', e);
+    logger.error('story.get.failed', {
+      routeStatus: `${req.method} ${req.originalUrl}`,
+      error: e,
+    });
     return fail(req, res, 500, 'STORY_GET_FAILED', e?.message || 'Failed to get story session');
   }
 });

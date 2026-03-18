@@ -23,7 +23,7 @@ Definitions used here:
 | Validation (`validate.middleware`, schema location) | `src/middleware/validate.middleware.js` + `src/schemas/*.schema.js`   | _Removed in C12_ duplicate file; inline route `safeParse` remains | `src/routes/checkout.routes.js:4-5,20,23`, `src/routes/assets.routes.js:3-4,10`                                                                                                                                                                                                   | Default + Gated   | Middleware contract mapping is centralized (`src/middleware/validate.middleware.js:13-27`). Duplicate `src/validation/schema.js` was removed in C12 after import-proof confirmed no runtime route imports. Inline `safeParse` still exists in active routers (`src/routes/story.routes.js:69`, `src/routes/caption.preview.routes.js:118,312`) and remains a separate consolidation item. |
 | Idempotency                                         | `src/middleware/idempotency.firestore.js`                             | _Removed in C12_ in-memory duplicate                              | `src/routes/story.routes.js:5,678`                                                                                                                                                                                                                                                | Default-Reachable | Firestore middleware handles replay/pending semantics (`src/middleware/idempotency.firestore.js:185-248`) and finalize reservation/refund flow (`src/middleware/idempotency.firestore.js:28-183`). Duplicate `src/middleware/idempotency.js` was removed in C12 after import-proof confirmed no runtime route imports.                                                                    |
 | Response helpers + error middleware                 | `src/http/respond.js` + `src/middleware/error.middleware.js`          | Manual `res.json` envelopes in legacy/mixed files                 | `src/middleware/requireAuth.js:3`, `src/middleware/validate.middleware.js:2`, `src/middleware/planGuards.js:4`, `src/middleware/idempotency.firestore.js:2`, `src/routes/story.routes.js:29`, `src/routes/caption.preview.routes.js:15`, `src/controllers/assets.controller.js:6` | Default + Gated   | Envelope contract defined in helper (`src/http/respond.js:3-4,14-35`) and used by global error handler (`src/middleware/error.middleware.js:15-49`). Contract doc: `docs/API_CONTRACT.md:41-43`. Drift examples still exist (`src/handlers/credits.get.js:11-27`, `src/routes/user.routes.js:18-33`).                                                                                     |
-| RequestId / logging / CORS                          | Request ID: `src/middleware/reqId.js`; CORS: `src/app.js` corsOptions | _No duplicate logger wrapper_                                     | `app.use(reqId)` at `src/app.js:49`; CORS mounted at `src/app.js:111` and `src/app.js:114`                                                                                                                                                                                        | Global            | Request ID is assigned early and emitted as response header (`src/middleware/reqId.js:4-8`). Error fallback checks multiple request-id fields (`src/middleware/error.middleware.js:37`). CORS SSOT is app-level `corsOptions` (`src/app.js:94-114`). Unused duplicate logger wrapper `src/utils/logger.js` was removed in C12 after import-proof confirmed no runtime consumers.          |
+| RequestId / logging / CORS                          | Request ID: `src/middleware/reqId.js`; request context: `src/observability/request-context.js`; logging: `src/observability/logger.js`; CORS: `src/app.js` corsOptions | _No parallel request-context store or logger wrapper_             | `app.use(reqId)` and `app.use(requestContextMiddleware)` at `src/app.js`; CORS mounted at `src/app.js:112` and `src/app.js:115`                                                                                                                                                  | Global            | Request ID is assigned early and emitted as response header (`src/middleware/reqId.js:4-8`). Async request context is seeded immediately after request ID assignment in `src/app.js`. Structured logs must flow through `src/observability/logger.js`, which writes redacted JSON to stdout only. Do not introduce competing logger/context wrappers.                                      |
 
 ## 3) Guardrail Rules
 
@@ -38,16 +38,17 @@ Definitions used here:
 9. Validation policy: inline `safeParse` is allowed only for quarantined legacy routers; active/default routes must use `validate.middleware.js` + `src/schemas/*.schema.js` (`src/middleware/validate.middleware.js:13-27`, `src/routes/checkout.routes.js:4-5,20,23`, `src/routes/assets.routes.js:3-4,10`).
 10. Plan-guard policy: use `planGuards.*` only. Do not introduce parallel plan-guard middleware modules; route imports should remain on `planGuards.js` (`src/routes/story.routes.js:4`, `src/middleware/planGuards.js:1-301`).
 11. Auth policy: all new/active routes use `src/middleware/requireAuth.js`; duplicate `auth.middleware.js` was removed in C10 and must not be reintroduced (`src/middleware/requireAuth.js:5-19`, grep proof in Section 2).
+12. Observability policy: request-scoped backend logs must use `src/observability/logger.js` and inherit context from `src/observability/request-context.js`; do not log raw auth headers, cookies, API keys/secrets, raw provider payloads, full public/storage URLs, or similarly sensitive raw text blobs.
 
 ## 4) Standard Middleware Order
 
 For secured, mutating JSON endpoints, use this order:
 
-`reqId -> cors -> requireAuth -> plan guards (planGuards.* if applicable) -> idempotency (if applicable) -> validate -> controller`
+`reqId -> requestContext -> cors -> requireAuth -> plan guards (planGuards.* if applicable) -> idempotency (if applicable) -> validate -> controller`
 
 Evidence:
 
-- Global `reqId` and CORS before route mounts (`src/app.js:49`, `src/app.js:111`, `src/app.js:210`).
+- Global `reqId`, request context, and CORS before route mounts (`src/app.js`, `src/observability/request-context.js`).
 - Example with idempotency + validate: story finalize (`src/routes/story.routes.js:678`).
 - Example with plan guards: story script cap + credits checks (`src/routes/story.routes.js:105`, `src/routes/story.routes.js:738`).
 - Example without plan guard/idempotency: checkout session (`src/routes/checkout.routes.js:20-28`).
@@ -73,7 +74,7 @@ Rules:
 
 2. Middleware chain:
 
-- Apply chain in standard order: `reqId -> cors -> requireAuth -> plan guards (planGuards.* if applicable) -> idempotency (if applicable) -> validate -> controller` (Section 4 evidence).
+- Apply chain in standard order: `reqId -> requestContext -> cors -> requireAuth -> plan guards (planGuards.* if applicable) -> idempotency (if applicable) -> validate -> controller` (Section 4 evidence).
 
 3. Validation:
 
@@ -83,13 +84,19 @@ Rules:
 
 - Use envelope helpers (`ok/fail`) for JSON responses (`src/http/respond.js:14-35`), include requestId via middleware (`src/middleware/reqId.js:4-8`).
 
-5. Route truth docs:
+5. Observability:
+
+- Use `src/observability/logger.js` for request-scoped backend logs on active paths.
+- Let request context come from `src/observability/request-context.js`; do not create route-local parallel stores unless a future phase explicitly requires it.
+- Keep redaction centralized in the canonical logger path.
+
+6. Route truth docs:
 
 - Verify actual code in both repos before changing docs.
 - Update mobile caller-truth in the mobile repo's `docs/MOBILE_USED_SURFACES.md` when live mobile usage changes.
 - Update backend-owned truth in `docs/MOBILE_BACKEND_CONTRACT.md`, `docs/MOBILE_HARDENING_PLAN.md`, `docs/LEGACY_WEB_SURFACES.md`, and `docs/API_CONTRACT.md` when server contract, hardening status, or legacy classification changes.
 - Keep `docs/DOCS_INDEX.md` aligned with the current ownership split and canonical set.
-6. CI hygiene:
+7. CI hygiene:
 
 - Keep changed-file contract gate clean (`.github/workflows/ci.yml:41-45`, `scripts/check-responses-changed.mjs:275-283`).
 - Use full scan (`node scripts/check-responses.js`) when broad response refactors are in scope (`scripts/check-responses.js:77-88`).

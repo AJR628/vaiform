@@ -1,20 +1,29 @@
 // src/middleware/requireAuth.js
 import admin from '../config/firebase.js';
 import { fail } from '../http/respond.js';
+import logger from '../observability/logger.js';
+import { setRequestContextFromReq } from '../observability/request-context.js';
 
 export default async function requireAuth(req, res, next) {
   try {
     const authHeader = req.headers.authorization || '';
     const m = authHeader.match(/^Bearer\s+(.+)$/i);
     if (!m) {
+      logger.warn('auth.missing_credentials', {
+        routeStatus: `${req.method} ${req.originalUrl}`,
+      });
       return fail(req, res, 401, 'AUTH_REQUIRED', 'You need to sign in to create shorts.');
     }
     const idToken = m[1];
     const decoded = await admin.auth().verifyIdToken(idToken);
     req.user = { uid: decoded.uid, email: decoded.email || null };
+    setRequestContextFromReq(req);
     next();
   } catch (err) {
-    console.error('requireAuth verifyIdToken error:', err?.message || err);
+    logger.warn('auth.verify.failed', {
+      routeStatus: `${req.method} ${req.originalUrl}`,
+      error: err,
+    });
     return fail(req, res, 401, 'AUTH_REQUIRED', 'You need to sign in to create shorts.');
   }
 }

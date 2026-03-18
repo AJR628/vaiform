@@ -2,6 +2,8 @@ import admin, { db } from '../config/firebase.js';
 import { ok, fail } from '../http/respond.js';
 import { buildCanonicalUsageState, getAvailableSec } from '../services/usage.service.js';
 import { sanitizeStorySessionForClient } from '../services/story.service.js';
+import logger from '../observability/logger.js';
+import { setRequestContextFromReq } from '../observability/request-context.js';
 
 const requestIdOf = (req) => req?.id ?? null;
 const requestBillingOf = (settlement) => {
@@ -89,6 +91,7 @@ export function idempotencyFinalize({ ttlMinutes = 60, getSession } = {}) {
         'sessionId required and must be at least 3 characters.'
       );
     }
+    setRequestContextFromReq(req, { sessionId, attemptId: key });
 
     const docRef = db.collection('idempotency').doc(`${uid}:${key}`);
 
@@ -97,6 +100,9 @@ export function idempotencyFinalize({ ttlMinutes = 60, getSession } = {}) {
     if (snap.exists) {
       const d = snap.data();
       if (d.state === 'pending') {
+        logger.info('story.finalize.idempotency.in_progress', {
+          routeStatus: `${req.method} ${req.originalUrl}`,
+        });
         return fail(req, res, 409, 'IDEMPOTENT_IN_PROGRESS', 'Request in progress.');
       }
       if (d.state === 'done') {
@@ -109,7 +115,10 @@ export function idempotencyFinalize({ ttlMinutes = 60, getSession } = {}) {
           try {
             session = await getSession({ uid, sessionId: sid });
           } catch (err) {
-            console.error('[idempotency][finalize] getSession on replay:', err);
+            logger.warn('story.finalize.idempotency.replay_lookup_failed', {
+              routeStatus: `${req.method} ${req.originalUrl}`,
+              error: err,
+            });
           }
         }
         if (session == null) {
@@ -121,6 +130,10 @@ export function idempotencyFinalize({ ttlMinutes = 60, getSession } = {}) {
             'Session no longer available for replay.'
           );
         }
+        logger.info('story.finalize.idempotency.replay', {
+          routeStatus: `${req.method} ${req.originalUrl}`,
+          shortId,
+        });
         return res
           .status(status)
           .json(finalizeSuccess(req, attachBillingToSession(session, settlement), shortId));
@@ -131,7 +144,10 @@ export function idempotencyFinalize({ ttlMinutes = 60, getSession } = {}) {
     try {
       reservationSession = await getSession({ uid, sessionId });
     } catch (err) {
-      console.error('[idempotency][finalize] getSession before reserve:', err);
+      logger.error('story.finalize.idempotency.reserve_lookup_failed', {
+        routeStatus: `${req.method} ${req.originalUrl}`,
+        error: err,
+      });
       return next(err);
     }
     if (reservationSession == null) {
@@ -206,6 +222,9 @@ export function idempotencyFinalize({ ttlMinutes = 60, getSession } = {}) {
       });
     } catch (e) {
       if (e._idemp === 'PENDING') {
+        logger.info('story.finalize.idempotency.in_progress', {
+          routeStatus: `${req.method} ${req.originalUrl}`,
+        });
         return fail(req, res, 409, 'IDEMPOTENT_IN_PROGRESS', 'Request in progress.');
       }
       if (e._idemp) {
@@ -220,7 +239,10 @@ export function idempotencyFinalize({ ttlMinutes = 60, getSession } = {}) {
         try {
           session = await getSession({ uid, sessionId: sid });
         } catch (err) {
-          console.error('[idempotency][finalize] getSession on replay (race):', err);
+          logger.warn('story.finalize.idempotency.replay_race_lookup_failed', {
+            routeStatus: `${req.method} ${req.originalUrl}`,
+            error: err,
+          });
         }
         if (session == null) {
           return fail(
@@ -231,6 +253,10 @@ export function idempotencyFinalize({ ttlMinutes = 60, getSession } = {}) {
             'Session no longer available for replay.'
           );
         }
+        logger.info('story.finalize.idempotency.replay_race', {
+          routeStatus: `${req.method} ${req.originalUrl}`,
+          shortId,
+        });
         return res
           .status(status)
           .json(finalizeSuccess(req, attachBillingToSession(session, settlement), shortId));
@@ -259,7 +285,8 @@ export function idempotencyFinalize({ ttlMinutes = 60, getSession } = {}) {
     res._idempotencySessionId = sessionId;
     res._idempotencyReservedSec = estimatedSec;
     res._idempotencyEstimatedSec = estimatedSec;
-    console.log('[idempotency][finalize] reserved render time', {
+    logger.info('story.finalize.idempotency.reserved', {
+      routeStatus: `${req.method} ${req.originalUrl}`,
       sessionId,
       estimatedSec,
       estimateSource: reservationSession?.billingEstimate?.source || null,
@@ -351,7 +378,8 @@ export function idempotencyFinalize({ ttlMinutes = 60, getSession } = {}) {
         billedSec,
         settledAt: settledAt.toISOString(),
       });
-      console.log('[idempotency][finalize] settled render time', {
+      logger.info('story.finalize.idempotency.settled', {
+        routeStatus: `${req.method} ${req.originalUrl}`,
         sessionId,
         estimatedSec,
         billedSec,
@@ -391,9 +419,15 @@ export function idempotencyFinalize({ ttlMinutes = 60, getSession } = {}) {
           );
         });
         await docRef.delete();
-        console.log('[idempotency][finalize] Released reserved render time after failure, key=', key);
+        logger.warn('story.finalize.idempotency.release_after_failure', {
+          routeStatus: `${req.method} ${req.originalUrl}`,
+          estimatedSec: res._idempotencyReservedSec || 0,
+        });
       } catch (err) {
-        console.error('[idempotency][finalize] Release/delete on failure:', err);
+        logger.error('story.finalize.idempotency.release_failed', {
+          routeStatus: `${req.method} ${req.originalUrl}`,
+          error: err,
+        });
       }
     });
 
