@@ -60,6 +60,71 @@ const serverBusyFailure = (req, retryAfter = 30) => ({
   retryAfter,
 });
 
+function phase2StoryFailureFromError(error) {
+  const rawCode = typeof error?.code === 'string' ? error.code : null;
+  const rawMessage = typeof error?.message === 'string' ? error.message : null;
+
+  if (rawCode === 'SESSION_NOT_FOUND' || rawMessage === 'SESSION_NOT_FOUND') {
+    return { status: 404, error: 'SESSION_NOT_FOUND', detail: 'Session not found' };
+  }
+  if (rawCode === 'PLAN_REQUIRED' || rawMessage === 'PLAN_REQUIRED') {
+    return {
+      status: 400,
+      error: 'PLAN_REQUIRED',
+      detail: 'Story plan required before clip search',
+    };
+  }
+  if (rawCode === 'STORY_REQUIRED' || rawMessage === 'STORY_REQUIRED') {
+    return { status: 400, error: 'STORY_REQUIRED', detail: 'Story required' };
+  }
+  if (rawCode === 'SHOTS_REQUIRED' || rawMessage === 'SHOTS_REQUIRED') {
+    return { status: 400, error: 'SHOTS_REQUIRED', detail: 'Shots required' };
+  }
+  if (rawCode === 'INVALID_SENTENCE_INDEX' || rawMessage === 'INVALID_SENTENCE_INDEX') {
+    return {
+      status: 400,
+      error: 'INVALID_SENTENCE_INDEX',
+      detail: 'Sentence index out of range',
+    };
+  }
+  if (rawCode === 'SHOT_NOT_FOUND' || rawMessage === 'SHOT_NOT_FOUND') {
+    return { status: 404, error: 'SHOT_NOT_FOUND', detail: 'Shot not found' };
+  }
+  if (typeof rawMessage === 'string' && rawMessage.startsWith('SHOT_NOT_FOUND:')) {
+    return {
+      status: 404,
+      error: 'SHOT_NOT_FOUND',
+      detail: `Shot not found (${rawMessage.slice('SHOT_NOT_FOUND:'.length).trim()})`,
+    };
+  }
+  if (rawCode === 'NO_SEARCH_QUERY_AVAILABLE' || rawMessage === 'NO_SEARCH_QUERY_AVAILABLE') {
+    return {
+      status: 400,
+      error: 'NO_SEARCH_QUERY_AVAILABLE',
+      detail: 'Search query required',
+    };
+  }
+  if (rawCode === 'NO_CANDIDATES_AVAILABLE' || rawMessage === 'NO_CANDIDATES_AVAILABLE') {
+    return {
+      status: 400,
+      error: 'NO_CANDIDATES_AVAILABLE',
+      detail: 'No candidates available for shot',
+    };
+  }
+  if (
+    rawCode === 'CLIP_NOT_FOUND_IN_CANDIDATES' ||
+    rawMessage === 'CLIP_NOT_FOUND_IN_CANDIDATES'
+  ) {
+    return {
+      status: 400,
+      error: 'CLIP_NOT_FOUND_IN_CANDIDATES',
+      detail: 'Clip not found in current candidates',
+    };
+  }
+
+  return null;
+}
+
 function storyFailureFromError(error) {
   if (isOutboundPolicyError(error)) {
     return {
@@ -99,7 +164,7 @@ function storyFailureFromError(error) {
           detail: error?.message || 'Remote video fetch failed',
         };
       }
-      return null;
+      return phase2StoryFailureFromError(error);
   }
 }
 const StartSchema = z.object({
@@ -513,6 +578,10 @@ r.post('/search', async (req, res) => {
 
     return okStorySession(req, res, session);
   } catch (e) {
+    const mapped = storyFailureFromError(e);
+    if (mapped) {
+      return fail(req, res, mapped.status, mapped.error, mapped.detail);
+    }
     console.error('[story][search] error:', e);
     return fail(req, res, 500, 'STORY_SEARCH_FAILED', e?.message || 'Failed to search clips');
   }
@@ -542,6 +611,10 @@ r.post('/update-shot', async (req, res) => {
 
     return ok(req, res, result);
   } catch (e) {
+    const mapped = storyFailureFromError(e);
+    if (mapped) {
+      return fail(req, res, mapped.status, mapped.error, mapped.detail);
+    }
     console.error('[story][update-shot] error:', e);
     return fail(req, res, 500, 'STORY_UPDATE_SHOT_FAILED', e?.message || 'Failed to update shot');
   }
@@ -624,6 +697,10 @@ r.post('/search-shot', async (req, res) => {
       hasMore: result.hasMore,
     });
   } catch (e) {
+    const mapped = storyFailureFromError(e);
+    if (mapped) {
+      return fail(req, res, mapped.status, mapped.error, mapped.detail);
+    }
     console.error('[story][search-shot] error:', e);
     return fail(
       req,
@@ -686,6 +763,10 @@ r.post('/delete-beat', async (req, res) => {
 
     return ok(req, res, result);
   } catch (e) {
+    const mapped = storyFailureFromError(e);
+    if (mapped) {
+      return fail(req, res, mapped.status, mapped.error, mapped.detail);
+    }
     console.error('[story][delete-beat] error:', e);
     return fail(req, res, 500, 'STORY_DELETE_BEAT_FAILED', e?.message || 'Failed to delete beat');
   }
@@ -716,6 +797,10 @@ r.post('/update-beat-text', async (req, res) => {
 
     return ok(req, res, { sentences, shots });
   } catch (e) {
+    const mapped = storyFailureFromError(e);
+    if (mapped) {
+      return fail(req, res, mapped.status, mapped.error, mapped.detail);
+    }
     console.error('[story][update-beat-text] error:', e);
     return fail(
       req,
@@ -1022,7 +1107,7 @@ r.get('/:sessionId', async (req, res) => {
     });
 
     if (!session) {
-      return fail(req, res, 404, 'NOT_FOUND', 'Story session not found');
+      return fail(req, res, 404, 'SESSION_NOT_FOUND', 'Session not found');
     }
 
     return okStorySession(req, res, session);

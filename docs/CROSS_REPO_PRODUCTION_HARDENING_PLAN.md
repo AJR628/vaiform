@@ -4,7 +4,7 @@
 - Owner repo: backend
 - Source of truth for: phased cross-repo execution order for production hardening and anti-drift work
 - Canonical counterpart/source: mobile repo `docs/MOBILE_USED_SURFACES.md` for caller truth, backend repo `docs/MOBILE_BACKEND_CONTRACT.md` for contract truth, backend repo `docs/MOBILE_HARDENING_PLAN.md` for route-hardening status
-- Last verified against: both repos on 2026-03-16
+- Last verified against: both repos on 2026-03-17
 
 ## Purpose
 
@@ -222,6 +222,9 @@ Phase 1 is not complete until all of the following are true:
 
 ## Phase 1.5 - Mobile Transport Ownership Freeze
 
+- Status: COMPLETE in current repo state as of 2026-03-17.
+- Completion note: the mobile docs front door now explicitly freezes transport ownership on `client/api/client.ts`, while keeping React Query documented as present but non-owning for the current mobile-used backend flows. No runtime transport migration occurred in this phase.
+
 ### 1. Goal
 
 Stop mobile transport ambiguity before tests, diagnostics, or screen refactors build on the wrong ownership model.
@@ -288,6 +291,9 @@ Stop mobile transport ambiguity before tests, diagnostics, or screen refactors b
 
 ## Phase 2 - Contract And Error Semantics Hardening
 
+- Status: COMPLETE in current repo state as of 2026-03-17.
+- Completion note: active mobile-used story editor/search routes now return stable explicit domain-level 4xx/404 codes, `updateBeatText()` no longer dereferences a missing session before guarding it, `GET /api/story/:sessionId` now uses `SESSION_NOT_FOUND`, and `GET /api/shorts/:jobId` remains runtime-unchanged with docs clarifying its intentional `404 NOT_FOUND` bridge semantics.
+
 ### 1. Goal
 
 Make mobile-used backend mutations return deterministic, debuggable error semantics instead of generic 500 collapse.
@@ -319,22 +325,23 @@ Make mobile-used backend mutations return deterministic, debuggable error semant
 ### 5. Current wiring summary
 
 - Routes listed above are live mobile callers in current code.
-- Several route handlers still catch all service failures and return generic 500 wrappers.
-- `updateBeatText()` reads `session.story?.sentences` before checking whether the loaded session exists.
+- The in-scope story editor/search routes now map known domain failures to stable 4xx/404 responses while leaving unknown errors on route-specific 500 wrappers.
+- `updateBeatText()` now checks `SESSION_NOT_FOUND` / `STORY_REQUIRED` before dereferencing `session.story`.
+- `GET /api/shorts/:jobId` remains a docs-only clarification in this phase; its pending-availability bridge behavior is unchanged.
 
 ### 6. Proven issues / risks
 
-- `src/routes/story.routes.js:500-728` collapses domain failures for `search`, `update-shot`, `search-shot`, `delete-beat`, and `update-beat-text`.
-- `src/services/story.service.js:910-942` can throw a null-dereference-style failure path instead of a stable `SESSION_NOT_FOUND` or `STORY_REQUIRED` code.
-- Mobile recovery and support flows depend on stable `status`, `code`, `message`, and `requestId`, but not all backend routes preserve domain intent today.
+- The repo previously collapsed known editor/search domain failures into generic 500s; this phase closed that contract gap on the active mobile-used routes.
+- Unknown or truly unexpected failures still need to fall through to route-specific 500 wrappers to avoid over-classifying server faults.
+- Mobile recovery and support flows still depend on stable `status`, `code`, `message`, and `requestId`, so docs must stay aligned with the exact emitted codes.
 
 ### 7. Proposed plan in order
 
 1. Enumerate every service-thrown domain error for the mobile-used story editor/search routes.
-2. Add route-level mapping so mobile gets stable 4xx and 404 responses where the failure is not a server fault.
+2. Add explicit route-level mapping in `src/routes/story.routes.js` so mobile gets stable 4xx and 404 responses where the failure is not a server fault.
 3. Fix `updateBeatText()` null/session guards before changing any mobile messaging.
-4. Write one error-code matrix for the mobile-used routes, including retryability and UI handling expectations.
-5. Update backend contract docs only after route behavior is verified in code.
+4. Record the exact stable route failures in `docs/MOBILE_BACKEND_CONTRACT.md`; no separate error-matrix doc was needed.
+5. Update backend contract and hardening docs only after route behavior is verified in code.
 
 ### 8. Files likely to change
 
@@ -342,7 +349,7 @@ Make mobile-used backend mutations return deterministic, debuggable error semant
 - `src/services/story.service.js`
 - `docs/MOBILE_BACKEND_CONTRACT.md`
 - `docs/MOBILE_HARDENING_PLAN.md`
-- new backend error matrix doc if split out later
+- `docs/CROSS_REPO_PRODUCTION_HARDENING_PLAN.md`
 
 ### 9. Docs that must be checked/updated
 
@@ -358,7 +365,7 @@ Make mobile-used backend mutations return deterministic, debuggable error semant
 
 ### 11. Open questions / uncertainties, if any
 
-- Domain error taxonomy is partly implicit in thrown `Error` messages today. That needs explicit enumeration before edits.
+- None for this phase after implementation. The in-scope token-to-status mapping is now explicit in route code and backend contract docs.
 
 ## Phase 3 - Request-Scoped Observability And Diagnostics
 

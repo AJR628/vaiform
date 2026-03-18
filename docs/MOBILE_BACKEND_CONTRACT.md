@@ -1,6 +1,6 @@
 # MOBILE_BACKEND_CONTRACT
 
-Cross-repo verification date: 2026-03-13.
+Cross-repo verification date: 2026-03-17.
 
 Purpose: canonical backend-owned contract, guarantees, and open mismatch record for mobile production. Current mobile caller-truth lives in the mobile repo. If a route is not `MOBILE_CORE_NOW` or `MOBILE_CORE_SOON` here, it is not first-class for mobile launch.
 
@@ -35,12 +35,10 @@ Purpose: canonical backend-owned contract, guarantees, and open mismatch record 
 - Mobile normalization layer now preserves `requestId` while converting success envelopes to `{ ok: true, data, requestId }` and failure envelopes to `{ ok: false, status, code, message, requestId }` (`client/api/client.ts:77-145`, `client/api/client.ts:207-260`).
 - Finalize is the current launch exception: the backend returns top-level `shortId`, and the mobile client explicitly extracts it from the raw response (`src/routes/story.routes.js:35-41`, `src/routes/story.routes.js:840-841`, `client/api/client.ts:740-760`).
 
-## Current Open Contract Mismatches
+## Current Open Contract Notes
 
-- `OPEN`: Several live mobile editor/search routes still collapse service-level domain failures into generic 500s.
-  - Backend routes: `src/routes/story.routes.js:497-725`
-  - Backend services: `src/services/story.service.js:468-550`, `src/services/story.service.js:628-700`
-  - Why it matters: mobile cannot reliably distinguish session-state errors from real server faults.
+- `STATUS`: Active mobile editor/search routes now map known domain failures to stable 4xx/404 responses instead of collapsing them into generic 500s.
+- `OPEN`: Phase 2 admission-control review remains tracked separately in `docs/MOBILE_HARDENING_PLAN.md`.
 
 ## MOBILE_CORE_NOW Contract
 ### Auth Bootstrap And Usage
@@ -79,12 +77,13 @@ Purpose: canonical backend-owned contract, guarantees, and open mismatch record 
 
 - `GET /api/story/:sessionId`
   - Mobile caller(s): `client/screens/ScriptScreen.tsx:64-84`, `client/screens/StoryEditorScreen.tsx:459-541`, `client/screens/StoryEditorScreen.tsx:954-1009`
-  - Backend handler(s): `src/routes/story.routes.js:1002-1024`, `src/services/story.service.js:202-203`
+  - Backend handler(s): `src/routes/story.routes.js:1097-1117`, `src/services/story.service.js:354-356`
   - Recovery-state writer(s): `src/services/story.service.js:149-167`, `src/services/story.service.js:2144-2218`
   - Mobile sends: no body.
   - Backend returns: full session in `data`.
   - Mobile reads: `story.sentences` with helper fallbacks, `shots`, `overlayCaption.placement`, additive `billingEstimate.estimatedSec`, `shot.selectedClip.thumbUrl`, `shot.searchQuery`, and `renderRecovery` during finalize recovery polling.
   - Recovery role: this route is now the backend-backed finalize recovery contract. Additive `renderRecovery` fields expose `{ state, attemptId, startedAt, updatedAt, shortId, finishedAt, failedAt, code, message }`, and mobile trusts them only when `renderRecovery.attemptId` matches the active finalize attempt.
+  - Stable failure now: `404 SESSION_NOT_FOUND`.
 
 - `POST /api/story/plan`
   - Mobile caller(s): `client/screens/ScriptScreen.tsx:126-159`
@@ -96,47 +95,66 @@ Purpose: canonical backend-owned contract, guarantees, and open mismatch record 
 
 - `POST /api/story/search`
   - Mobile caller(s): `client/screens/ScriptScreen.tsx:141-159`
-  - Backend handler(s): `src/routes/story.routes.js:497-516`, `src/services/story.service.js:427-462`
+  - Backend handler(s): `src/routes/story.routes.js:566-587`, `src/services/story.service.js:665-700`
   - Mobile sends: `{ sessionId }`.
   - Backend returns: full session in `data`.
   - Mobile reads: success/failure only.
-  - Contract caveat: service-level `SESSION_NOT_FOUND` and `PLAN_REQUIRED` still collapse into generic 500s today.
+  - Stable failures now:
+    - `404 SESSION_NOT_FOUND`
+    - `400 PLAN_REQUIRED`
 
 ### Story Editing And Caption Preview
 
 - `POST /api/story/update-beat-text`
   - Mobile caller(s): `client/screens/ScriptScreen.tsx:162-209`, `client/screens/StoryEditorScreen.tsx:679-701`
-  - Backend handler(s): `src/routes/story.routes.js:691-725`, `src/services/story.service.js:670-700`
+  - Backend handler(s): `src/routes/story.routes.js:782-813`, `src/services/story.service.js:910-943`
   - Mobile sends: `{ sessionId, sentenceIndex, text }`.
   - Backend returns: partial `{ sentences, shots }` in `data`, not a full session.
   - Mobile reads:
     - `ScriptScreen`: re-runs `extractBeats()` against the partial payload.
     - `StoryEditorScreen`: ignores returned data and updates local state.
-  - Contract caveat: service dereferences `session.story` before a session-null check, so some domain errors turn into 500s.
+  - Stable failures now:
+    - `404 SESSION_NOT_FOUND`
+    - `400 STORY_REQUIRED`
+    - `400 INVALID_SENTENCE_INDEX`
+  - Guardrail: service now checks `SESSION_NOT_FOUND` / `STORY_REQUIRED` before dereferencing `session.story`.
 
 - `POST /api/story/delete-beat`
   - Mobile caller(s): `client/screens/ScriptScreen.tsx:222-235`, `client/screens/StoryEditorScreen.tsx:715-749`
-  - Backend handler(s): `src/routes/story.routes.js:664-689`, `src/services/story.service.js:628-665`
+  - Backend handler(s): `src/routes/story.routes.js:745-772`, `src/services/story.service.js:867-905`
   - Mobile sends: `{ sessionId, sentenceIndex }`.
   - Backend returns: partial `{ sentences, shots }` in `data`.
   - Mobile reads: success/failure only, then refetches `GET /api/story/:sessionId`.
-  - Contract caveat: service-level `SESSION_NOT_FOUND`, `STORY_REQUIRED`, `SHOTS_REQUIRED`, and `INVALID_SENTENCE_INDEX` collapse into generic 500s today.
+  - Stable failures now:
+    - `404 SESSION_NOT_FOUND`
+    - `400 STORY_REQUIRED`
+    - `400 SHOTS_REQUIRED`
+    - `400 INVALID_SENTENCE_INDEX`
 
 - `POST /api/story/search-shot`
   - Mobile caller(s): `client/screens/ClipSearchModal.tsx:49-80`
-  - Backend handler(s): `src/routes/story.routes.js:594-633`, `src/services/story.service.js:468-523`, `src/services/story.service.js:286-421`
+  - Backend handler(s): `src/routes/story.routes.js:671-713`, `src/services/story.service.js:706-761`, `src/services/story.service.js:586-660`
   - Mobile sends: `{ sessionId, sentenceIndex, query, page }`.
   - Backend returns: `{ shot, page, hasMore }` in `data`.
   - Mobile reads: `shot.candidates`, `page`, `hasMore`, and candidate `id`, `thumbUrl`, `provider`, `duration`.
-  - Contract caveat: several domain errors still collapse into generic 500s today.
+  - Stable failures now:
+    - `404 SESSION_NOT_FOUND`
+    - `400 SHOTS_REQUIRED`
+    - `404 SHOT_NOT_FOUND` (detail may include `sentenceIndex` context)
+    - `400 NO_SEARCH_QUERY_AVAILABLE`
 
 - `POST /api/story/update-shot`
   - Mobile caller(s): `client/screens/ClipSearchModal.tsx:83-104`
-  - Backend handler(s): `src/routes/story.routes.js:518-545`, `src/services/story.service.js:528-550`
+  - Backend handler(s): `src/routes/story.routes.js:591-620`, `src/services/story.service.js:766-788`
   - Mobile sends: `{ sessionId, sentenceIndex, clipId }`.
   - Backend returns: `{ shots }` in `data`.
   - Mobile reads: success/failure only.
-  - Contract caveat: `SESSION_NOT_FOUND`, `SHOTS_REQUIRED`, `SHOT_NOT_FOUND`, `NO_CANDIDATES_AVAILABLE`, and `CLIP_NOT_FOUND_IN_CANDIDATES` still collapse into generic 500s today.
+  - Stable failures now:
+    - `404 SESSION_NOT_FOUND`
+    - `400 SHOTS_REQUIRED`
+    - `404 SHOT_NOT_FOUND`
+    - `400 NO_CANDIDATES_AVAILABLE`
+    - `400 CLIP_NOT_FOUND_IN_CANDIDATES`
 
 - `POST /api/caption/preview`
   - Mobile caller(s): `client/hooks/useCaptionPreview.ts:59-120`, `client/screens/StoryEditorScreen.tsx:507-516`
@@ -186,6 +204,7 @@ Purpose: canonical backend-owned contract, guarantees, and open mismatch record 
     - detail now probes `story.mp4` / `thumb.jpg` first and falls back to `short.mp4` / `cover.jpg`
     - mobile still ignores `jobId`
     - mobile still keeps `GET /api/shorts/mine` fallback during the bridge period
+  - Intentional pending semantics: `404 NOT_FOUND` still means the detail asset is not available yet; mobile treats that as pending availability and retries / falls back to `GET /api/shorts/mine`.
 
 ## MOBILE_CORE_SOON Contract
 

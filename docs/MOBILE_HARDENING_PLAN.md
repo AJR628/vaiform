@@ -1,6 +1,6 @@
 # MOBILE_HARDENING_PLAN
 
-Cross-repo verification date: 2026-03-13.
+Cross-repo verification date: 2026-03-17.
 
 Goal: harden only the backend surface that the current mobile app actually depends on, in the same phase order used for implementation and docs. This is a continuation plan for the current repos, not a rebuild proposal.
 
@@ -70,17 +70,19 @@ Goal: harden only the backend surface that the current mobile app actually depen
   - Mobile evidence: `client/api/client.ts:318-334`, `client/screens/ShortDetailScreen.tsx:356-379`
   - Contract: detail now returns `id` while keeping `jobId`, probes `story.mp4` / `thumb.jpg` first, and retains legacy filename fallback during the bridge period.
 
-## Phase 2 Next: Mutation Reliability + Admission-Control Review
+## Phase 2 In Progress: Mutation Reliability + Admission-Control Review
 
-- `NEXT`: Map editor/search domain failures to stable 4xx/404 responses.
-  - Backend routes: `src/routes/story.routes.js:497-725`
-  - Backend services: `src/services/story.service.js:468-550`, `src/services/story.service.js:628-700`
-  - Minimal boundary: keep envelopes stable; fix the error mapping and `updateBeatText()` null-session guard.
+- `DONE`: Active mobile editor/search routes now return stable domain-level 4xx/404 responses instead of collapsing known failures into generic 500s.
+  - Backend routes: `src/routes/story.routes.js:566-813`, `src/routes/story.routes.js:1097-1117`
+  - Backend services: `src/services/story.service.js:665-943`
+  - Scope landed: `POST /api/story/search`, `POST /api/story/update-beat-text`, `POST /api/story/delete-beat`, `POST /api/story/search-shot`, `POST /api/story/update-shot`, and `GET /api/story/:sessionId`.
+  - Guardrail: `GET /api/shorts/:jobId` stays runtime-unchanged; its current `404 NOT_FOUND` remains the intentional mobile pending-availability bridge.
 
 - `NEXT`: Review explicit admission control for expensive mobile-used routes.
   - Review set: `POST /api/story/generate`, `POST /api/story/search`, `POST /api/story/search-shot`, `POST /api/story/finalize`
-  - Current evidence: `src/routes/story.routes.js:148`, `src/routes/story.routes.js:497-516`, `src/routes/story.routes.js:594-633`, `src/routes/story.routes.js:818-856`, `src/routes/caption.preview.routes.js:91-108`
+  - Current evidence: `src/routes/story.routes.js:151`, `src/routes/story.routes.js:566-587`, `src/routes/story.routes.js:671-713`, `src/routes/story.routes.js:902-946`, `src/routes/caption.preview.routes.js:91-108`
   - Important nuance: `generate` already has a daily cap; review it before adding new per-request rate limits.
+  - Phase status: overall Phase 2 remains in progress until this admission-control review is complete.
 
 ## Phase 3 Explicit Scale Track
 

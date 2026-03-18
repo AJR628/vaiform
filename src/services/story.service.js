@@ -909,12 +909,14 @@ export async function deleteBeat({ uid, sessionId, sentenceIndex }) {
  */
 export async function updateBeatText({ uid, sessionId, sentenceIndex, text }) {
   const session = await loadStorySession({ uid, sessionId });
+  if (!session) throw new Error('SESSION_NOT_FOUND');
+  if (!session.story?.sentences) throw new Error('STORY_REQUIRED');
 
   const sentences = session.story?.sentences || [];
   const shots = session.shots || [];
 
   if (typeof sentenceIndex !== 'number' || sentenceIndex < 0 || sentenceIndex >= sentences.length) {
-    throw new Error(`Invalid sentenceIndex ${sentenceIndex}`);
+    throw new Error('INVALID_SENTENCE_INDEX');
   }
 
   // Update sentence text
