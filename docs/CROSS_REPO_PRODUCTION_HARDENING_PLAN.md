@@ -104,12 +104,12 @@ The prior audit was directionally right on the biggest production risks, but thi
 ### Corrected or tightened from code truth
 
 - File-size risk is worse than the pasted audit suggested in line count terms:
-  - backend `src/utils/ffmpeg.video.js`: 2547 lines
-  - backend `src/services/story.service.js`: 2196 lines
-  - backend `src/routes/caption.preview.routes.js`: 1792 lines
-  - mobile `client/screens/StoryEditorScreen.tsx`: 1758 lines
-  - mobile `client/screens/ShortDetailScreen.tsx`: 908 lines
-  - mobile `client/api/client.ts`: 770 lines
+  - backend `src/utils/ffmpeg.video.js`: 2787 lines
+  - backend `src/services/story.service.js`: 2441 lines
+  - backend `src/routes/caption.preview.routes.js`: 1995 lines
+  - mobile `client/screens/StoryEditorScreen.tsx`: 1872 lines
+  - mobile `client/screens/ShortDetailScreen.tsx`: 980 lines
+  - mobile `client/api/client.ts`: 860 lines
 - Console usage remains high in hot paths:
   - backend `src/**`: 500+ console calls
   - mobile `client/**`: 66 console calls
