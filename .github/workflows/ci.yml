@@ -63,6 +63,9 @@ jobs:
       - name: Security tests
         run: npm run test:security
 
+      - name: Backend contract tests
+        run: npm run test:contracts
+
       - name: Debug CI context
         run: |
           echo "event=${{ github.event_name }}"

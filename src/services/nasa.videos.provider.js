@@ -1,3 +1,5 @@
+import { getRuntimeOverride } from '../testing/runtime-overrides.js';
+
 const NASA_SEARCH = 'https://images-api.nasa.gov/search';
 const NASA_ASSET = 'https://images-api.nasa.gov/asset';
 
@@ -13,6 +15,11 @@ const mem = new Map();
  * @returns {Promise<{ok: boolean, reason: string, items: Array, nextPage: number|null}>}
  */
 export async function nasaSearchVideos({ query, perPage = 12, page = 1 }) {
+  const override = getRuntimeOverride('story.providers.nasaSearchVideos');
+  if (override) {
+    return await override({ query, perPage, page });
+  }
+
   console.log(`[nasa] nasaSearchVideos called: query="${query}", perPage=${perPage}, page=${page}`);
   const key = process.env.NASA_API_KEY;
   console.log(`[nasa] API key present: ${!!key}`);

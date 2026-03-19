@@ -1,3 +1,5 @@
+import { getRuntimeOverride } from '../testing/runtime-overrides.js';
+
 const PIXABAY_VIDEOS = 'https://pixabay.com/api/videos/';
 
 const mem = new Map();
@@ -12,6 +14,11 @@ const mem = new Map();
  * @returns {Promise<{ok: boolean, reason: string, items: Array, nextPage: number|null}>}
  */
 export async function pixabaySearchVideos({ query, perPage = 12, page = 1 }) {
+  const override = getRuntimeOverride('story.providers.pixabaySearchVideos');
+  if (override) {
+    return await override({ query, perPage, page });
+  }
+
   const key = process.env.PIXABAY_API_KEY;
   if (!key) {
     // Silent failure - return empty array, no error

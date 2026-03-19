@@ -32,6 +32,7 @@ import { wrapTextWithFont } from '../utils/caption.wrap.js';
 import { deriveCaptionWrapWidthPx } from '../utils/caption.wrapWidth.js';
 import { compileCaptionSSOT } from '../captions/compile.js';
 import logger from '../observability/logger.js';
+import { getRuntimeOverride } from '../testing/runtime-overrides.js';
 
 const TTL_HOURS = Number(process.env.STORY_TTL_HOURS || 48);
 const BILLING_ESTIMATE_HEURISTIC_PAD_SEC = Math.max(
@@ -2323,6 +2324,11 @@ export async function createManualStorySession({ uid, scriptText }) {
  * Finalize story - run full pipeline (Phase 7)
  */
 export async function finalizeStory({ uid, sessionId, options = {}, attemptId = null }) {
+  const override = getRuntimeOverride('story.service.finalizeStory');
+  if (override) {
+    return await override({ uid, sessionId, options, attemptId });
+  }
+
   let session = await loadStorySession({ uid, sessionId });
   if (!session) throw new Error('SESSION_NOT_FOUND');
 

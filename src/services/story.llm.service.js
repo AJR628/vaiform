@@ -7,6 +7,7 @@ import { extractContentFromUrl } from '../utils/link.extract.js';
 import { isOutboundPolicyError } from '../utils/outbound.fetch.js';
 import { calculateReadingDuration } from '../utils/text.duration.js';
 import logger from '../observability/logger.js';
+import { getRuntimeOverride } from '../testing/runtime-overrides.js';
 
 const OPENAI_BASE = process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1';
 const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
@@ -151,6 +152,11 @@ function validateStoryOutput(hook, beats, outro) {
  * @returns {Promise<{sentences: string[], totalDurationSec: number}>}
  */
 export async function generateStoryFromInput({ input, inputType, styleKey = 'default' }) {
+  const override = getRuntimeOverride('story.llm.generateStoryFromInput');
+  if (override) {
+    return await override({ input, inputType, styleKey });
+  }
+
   let sourceContent = input;
 
   // Get style instructions
@@ -601,6 +607,11 @@ export async function generateStoryFromInput({ input, inputType, styleKey = 'def
  * @returns {Promise<Array<{sentenceIndex: number, visualDescription: string, searchQuery: string, durationSec: number, startTimeSec: number}>>}
  */
 export async function planVisualShots({ sentences }) {
+  const override = getRuntimeOverride('story.llm.planVisualShots');
+  if (override) {
+    return await override({ sentences });
+  }
+
   if (!Array.isArray(sentences) || sentences.length === 0) {
     throw new Error('SENTENCES_REQUIRED');
   }

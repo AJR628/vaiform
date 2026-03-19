@@ -410,74 +410,70 @@ Make incident tracing deterministic across async boundaries and across the mobil
 
 ## Phase 4A - Backend Active-Path Contract Tests
 
+Status: COMPLETE (implemented 2026-03-19).
+
 ### 1. Goal
 
 Add a regression net around the actual mobile-used backend contract before mobile test infrastructure becomes a dependency.
 
-### 2. In-scope flow(s)
+### 2. Implemented scope
 
-- Auth bootstrap
-- Usage fetch
-- Story create/generate/plan/search
-- Editor/search mutations
-- Caption preview
-- Finalize and recovery
-- Library/detail
+- Backend now has a first-party Node 22 `node:test` contract suite at `test/contracts/phase4a.contract.test.js`.
+- The suite covers the current active mobile-used backend route inventory only:
+  - `POST /api/users/ensure`
+  - `GET /api/usage`
+  - `POST /api/story/start`
+  - `POST /api/story/generate`
+  - `GET /api/story/:sessionId`
+  - `POST /api/story/plan`
+  - `POST /api/story/search`
+  - `POST /api/story/update-beat-text`
+  - `POST /api/story/delete-beat`
+  - `POST /api/story/search-shot`
+  - `POST /api/story/update-shot`
+  - `POST /api/story/update-caption-style`
+  - `POST /api/caption/preview`
+  - `POST /api/story/finalize`
+  - `GET /api/shorts/mine`
+  - `GET /api/shorts/:jobId`
+- The suite locks:
+  - route-by-route `401 AUTH_REQUIRED` behavior
+  - current success envelopes and the specific fields mobile reads
+  - current `GET /api/shorts/:jobId` pending `404 NOT_FOUND` bridge behavior
+  - current caption preview mobile/server-measured path
+  - current finalize top-level `shortId` replay/idempotency behavior
+  - current finalize `402 INSUFFICIENT_RENDER_TIME` and `404 SESSION_NOT_FOUND` behavior
+- Backend `package.json` now exposes the suite through `npm run test:contracts`, and backend CI runs that command.
 
-### 3. Mobile entrypoints involved
+### 3. Required spillover
 
-- Mobile evidence remains in scope only as caller truth for route coverage.
-- Current caller truth still comes from:
-  - `client/api/client.ts`
-  - `client/contexts/AuthContext.tsx`
-  - `client/screens/HomeScreen.tsx`
-  - `client/screens/ScriptScreen.tsx`
-  - `client/screens/StoryEditorScreen.tsx`
-  - `client/screens/ShortDetailScreen.tsx`
+- Backend test-mode startup now has one explicit Firebase seam via `src/config/firebase.js` and `src/testing/firebase-admin.mock.js`.
+- Backend test-only provider/render seams are explicit and narrow:
+  - `src/testing/runtime-overrides.js`
+  - `src/services/story.llm.service.js`
+  - `src/services/pexels.videos.provider.js`
+  - `src/services/pixabay.videos.provider.js`
+  - `src/services/nasa.videos.provider.js`
+  - `src/services/story.service.js`
+- This spillover is limited to deterministic backend contract execution under `NODE_ENV=test` and does not change production behavior.
 
-### 4. Backend routes involved
+### 4. Current caveats
 
-- Mobile-used routes listed in backend `docs/MOBILE_BACKEND_CONTRACT.md`
+- Phase 4A remains backend-only. It does not add mobile tests or mobile CI.
+- Phase 4A does not widen into admission-control redesign or async render architecture work.
+- Conditional burst/collision/load-oriented checks were not added because this phase only commits deterministic backend contract coverage.
+- Finalize success-path coverage is deterministic via the backend test seam, not a full live render/provider stack.
 
-### 5. Current wiring summary
+### 5. Verification standard
 
-- Backend `package.json:31-35` has checks and lint, but `package.json:27` still sets `test` to `(no tests yet)`.
-- Backend CI exists in `.github/workflows/ci.yml`, but it does not run a route test suite.
+- `npm run test:contracts` passes locally against the backend app export.
+- Backend CI now runs `npm run test:contracts`.
+- Every in-scope active mobile-used route above has at least one success-path assertion and one failure-path assertion.
+- Out-of-scope routes were not added to the suite.
 
-### 6. Proven issues / risks
+### 6. Open questions / uncertainties, if any
 
-- Route behavior can drift without a failing test.
-- Mobile normalization and recovery logic are complex enough to regress silently.
-- The mobile repo has no CI lane to catch type, lint, and future tests together in pull requests.
-
-### 7. Proposed plan in order
-
-1. Stand up backend tests for the active mobile-used route contract only.
-2. Add failure-path tests for auth failures, invalid input, insufficient render time, idempotent replay, and session-not-found scenarios.
-3. Add backend load-oriented checks around caption preview bursts and finalize reservation collisions if they can be kept deterministic.
-4. Extend backend CI to run the new contract suite without waiting for mobile test infrastructure.
-
-### 8. Files likely to change
-
-- backend `package.json`
-- backend new test directory and fixtures
-- backend CI workflow
-
-### 9. Docs that must be checked/updated
-
-- backend `docs/MOBILE_HARDENING_PLAN.md`
-- backend `docs/DOCS_INDEX.md` if test docs become a front door
-- mobile `docs/DOCS_INDEX.md` if test guidance is added
-
-### 10. Verification steps
-
-- Every active mobile-used route gets at least one success-path and one failure-path backend test.
-- Backend CI fails if the contract drifts on those routes.
-- Mobile test work is not a blocker for completing this phase.
-
-### 11. Open questions / uncertainties, if any
-
-- Test framework choices are still open. The repo evidence only proves the absence of tests, not the preferred runner.
+- None for Phase 4A completion. Optional load-oriented checks remain deferred unless they can be kept deterministic without widening scope.
 
 ## Phase 5 - Admission Control And Expensive-Route Determinism
 
