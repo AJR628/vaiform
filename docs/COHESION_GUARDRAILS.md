@@ -27,8 +27,8 @@ Definitions used here:
 
 ## 3) Guardrail Rules
 
-1. Use dist-first caller evidence when `web/dist` exists. Treat dist entrypoints/assets as canonical for runtime caller proof before `public/` (for example, `web/dist/api.mjs`).
-2. Apply API path mapping truth: `apiFetch("/x")` targets `/api/x`; root fallback is only GET `/health` (`web/dist/api.mjs:12-15`, `web/dist/api.mjs:175-185`).
+1. Use tracked caller evidence from `web/public` for repo-backed runtime caller proof (for example, `web/public/api.mjs`).
+2. Apply API path mapping truth: `apiFetch("/x")` targets `/api/x`; root fallback is only GET `/health` (`web/public/api.mjs:11-13`, `web/public/api.mjs:174-185`).
 3. Avoid introducing NEW dual mounts on both `/` and `/api`; existing compatibility aliases remain until a dedicated consolidation pass (`src/app.js:211-223`, `src/app.js:241-243`, `src/app.js:247-248`, `src/app.js:279-280`).
 4. Do not add new competing `GET "/"` handlers without precedence review; ordered mounts can shadow intended handlers (`src/app.js:211`, `src/app.js:212`, `src/app.js:214`, `src/app.js:237`).
 5. Classify route status with explicit code-backed evidence: mounted backend path, real caller, and current ownership (`Default-Reachable`, `Debug-Gated`, `Caller-Backed`, and `Active=Default-Reachable && Caller-Backed`).
