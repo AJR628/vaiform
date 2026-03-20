@@ -106,6 +106,7 @@ Rules:
 
 Enforced in CI:
 
+- `npm run check:format:changed` on `pull_request`, `push`, and `workflow_dispatch` (`.github/workflows/ci.yml:84-90`, `.github/workflows/ci.yml:109-129`).
 - `npm run check:responses` (`.github/workflows/ci.yml:49-50`).
 - `npm run lint` (`.github/workflows/ci.yml:60-61`).
 - `npm run test:security` (`.github/workflows/ci.yml:63-64`).

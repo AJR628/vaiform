@@ -96,7 +96,7 @@ The prior audit was directionally right on the biggest production risks, but thi
 ### Confirmed by code
 
 - Finalize is still synchronous in the request path.
-- Backend and mobile have no first-party test files in their source trees.
+- Backend now has first-party contract tests, while the mobile repo still has no first-party test files in its source tree.
 - Mobile has no `eas.json`, no `runtimeVersion` or `updates` block in `app.json`, and no mobile CI workflow.
 - Request IDs now propagate through a backend `AsyncLocalStorage` request context, and Phase 3 added structured/redacted boundary logging plus mobile in-memory diagnostics on the named hot paths only.
 - The mobile runtime path is the hand-written API client, while the React Query client remains mostly unused in active flows.
@@ -117,16 +117,16 @@ The prior audit was directionally right on the biggest production risks, but thi
 
 ## Phase Map
 
-1. Truth Freeze And Front Door Cleanup
-   1.5. Mobile Transport Ownership Freeze
-2. Contract And Error Semantics Hardening
-3. Request-Scoped Observability And Diagnostics
-   4A. Backend Active-Path Contract Tests
-4. Admission Control And Expensive-Route Determinism
-5. Render Isolation And Async Completion
-   4B. Mobile Test Expansion And CI
-6. Mobile Surface Consolidation
-7. Release Operations And Runbooks
+- Phase 1: Truth Freeze And Front Door Cleanup
+- Phase 1.5: Mobile Transport Ownership Freeze
+- Phase 2: Contract And Error Semantics Hardening
+- Phase 3: Request-Scoped Observability And Diagnostics
+- Phase 4A: Backend Active-Path Contract Tests
+- Phase 5: Admission Control And Expensive-Route Determinism
+- Phase 6: Render Isolation And Async Completion
+- Phase 4B: Mobile Test Expansion And CI
+- Phase 7: Mobile Surface Consolidation
+- Phase 8: Release Operations And Runbooks
 
 ## Phase 1 - Truth Freeze And Front Door Cleanup
 
