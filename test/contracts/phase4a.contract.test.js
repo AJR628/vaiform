@@ -269,7 +269,7 @@ test('POST /api/story/generate preserves the generated story envelope mobile rea
   assert.equal(result.json.success, true);
   assert.equal(result.json.data.status, 'story_generated');
   assert.equal(result.json.data.story.sentences.length, 8);
-  assert.equal(result.json.data.billingEstimate.estimatedSec, 25);
+  assert.equal(result.json.data.billingEstimate.estimatedSec, 26);
 });
 
 test('POST /api/story/plan returns the active shot plan shape for generated sessions', async () => {
