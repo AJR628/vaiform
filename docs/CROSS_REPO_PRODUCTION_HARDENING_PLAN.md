@@ -4,7 +4,7 @@
 - Owner repo: backend
 - Source of truth for: phased cross-repo execution order for production hardening and anti-drift work
 - Canonical counterpart/source: mobile repo `docs/MOBILE_USED_SURFACES.md` for caller truth, backend repo `docs/MOBILE_BACKEND_CONTRACT.md` for contract truth, backend repo `docs/MOBILE_HARDENING_PLAN.md` for route-hardening status
-- Last verified against: both repos on 2026-03-18
+- Last verified against: both repos on 2026-03-19
 
 ## Purpose
 

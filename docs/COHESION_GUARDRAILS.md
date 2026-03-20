@@ -105,13 +105,15 @@ Rules:
 
 Enforced in CI:
 
-- `npm run format:check` (`.github/workflows/ci.yml:35-36`).
-- `npm run test:security` (`.github/workflows/ci.yml:38-39`).
-- `npm run check:responses:changed` (`.github/workflows/ci.yml:41-45`).
+- `npm run check:responses` (`.github/workflows/ci.yml:49-50`).
+- `npm run lint` (`.github/workflows/ci.yml:60-61`).
+- `npm run test:security` (`.github/workflows/ci.yml:63-64`).
+- `npm run test:contracts` (`.github/workflows/ci.yml:66-67`).
+- `npm run check:responses:changed` on `pull_request`, `push`, and `workflow_dispatch` (`.github/workflows/ci.yml:92-135`).
 
-Observed/manual baseline (not CI-blocking by default):
+Also available manually:
 
-- `node scripts/check-responses.js` scans repo-wide response-shape drift (`scripts/check-responses.js:77-88`).
+- `node scripts/check-responses.js` is the underlying repo-wide response-shape scan used by `npm run check:responses` (`scripts/check-responses.js:77-88`).
 
 Notes:
 
