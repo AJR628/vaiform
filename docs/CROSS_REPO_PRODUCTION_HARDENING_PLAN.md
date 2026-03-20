@@ -118,15 +118,15 @@ The prior audit was directionally right on the biggest production risks, but thi
 ## Phase Map
 
 1. Truth Freeze And Front Door Cleanup
-1.5. Mobile Transport Ownership Freeze
+   1.5. Mobile Transport Ownership Freeze
 2. Contract And Error Semantics Hardening
 3. Request-Scoped Observability And Diagnostics
-4A. Backend Active-Path Contract Tests
-5. Admission Control And Expensive-Route Determinism
-6. Render Isolation And Async Completion
-4B. Mobile Test Expansion And CI
-7. Mobile Surface Consolidation
-8. Release Operations And Runbooks
+   4A. Backend Active-Path Contract Tests
+4. Admission Control And Expensive-Route Determinism
+5. Render Isolation And Async Completion
+   4B. Mobile Test Expansion And CI
+6. Mobile Surface Consolidation
+7. Release Operations And Runbooks
 
 ## Phase 1 - Truth Freeze And Front Door Cleanup
 
