@@ -22,7 +22,10 @@ import {
 import { renderVideoQuoteOverlay } from '../utils/ffmpeg.video.js';
 import { fetchVideoToTmp } from '../utils/video.fetch.js';
 import { uploadPublic } from '../utils/storage.js';
-import { calculateReadingDuration, calculateBillingSpeechDuration } from '../utils/text.duration.js';
+import {
+  calculateReadingDuration,
+  calculateBillingSpeechDuration,
+} from '../utils/text.duration.js';
 import admin from '../config/firebase.js';
 import { extractCoverJpeg } from '../utils/ffmpeg.cover.js';
 import { synthVoiceWithTimestamps } from './tts.service.js';
@@ -92,7 +95,8 @@ function totalCaptionTimelineSec(session) {
 }
 
 function totalShotDurationSec(session) {
-  const shots = Array.isArray(session?.shots) && session.shots.length > 0 ? session.shots : session?.plan;
+  const shots =
+    Array.isArray(session?.shots) && session.shots.length > 0 ? session.shots : session?.plan;
   if (!Array.isArray(shots) || shots.length === 0) return null;
   let total = 0;
   let count = 0;
@@ -220,11 +224,19 @@ function normalizeRenderRecoveryAttemptId(attemptId, previous = null) {
   return null;
 }
 
-function renderRecoveryFromState({ state, attemptId, previous = {}, shortId = null, error = null }) {
+function renderRecoveryFromState({
+  state,
+  attemptId,
+  previous = {},
+  shortId = null,
+  error = null,
+}) {
   const now = new Date().toISOString();
   const normalizedAttemptId = normalizeRenderRecoveryAttemptId(attemptId, previous.attemptId);
   const priorShortId =
-    typeof previous?.shortId === 'string' && previous.shortId.trim().length > 0 ? previous.shortId : null;
+    typeof previous?.shortId === 'string' && previous.shortId.trim().length > 0
+      ? previous.shortId
+      : null;
 
   if (state === 'pending') {
     return {
@@ -299,12 +311,21 @@ async function loadStorySession({ uid, sessionId }) {
   return session;
 }
 
-async function persistRenderRecovery({ uid, sessionId, attemptId, state, shortId = null, error = null }) {
+async function persistRenderRecovery({
+  uid,
+  sessionId,
+  attemptId,
+  state,
+  shortId = null,
+  error = null,
+}) {
   const session = await loadStorySession({ uid, sessionId });
   if (!session) return null;
 
   const previous =
-    session.renderRecovery && typeof session.renderRecovery === 'object' ? session.renderRecovery : {};
+    session.renderRecovery && typeof session.renderRecovery === 'object'
+      ? session.renderRecovery
+      : {};
   const next = renderRecoveryFromState({
     state,
     attemptId,

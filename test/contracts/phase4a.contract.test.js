@@ -85,10 +85,18 @@ const unauthorizedRoutes = [
   ['GET', '/api/story/story-unauth', undefined],
   ['POST', '/api/story/plan', { sessionId: 'story-unauth' }],
   ['POST', '/api/story/search', { sessionId: 'story-unauth' }],
-  ['POST', '/api/story/update-beat-text', { sessionId: 'story-unauth', sentenceIndex: 0, text: 'x' }],
+  [
+    'POST',
+    '/api/story/update-beat-text',
+    { sessionId: 'story-unauth', sentenceIndex: 0, text: 'x' },
+  ],
   ['POST', '/api/story/delete-beat', { sessionId: 'story-unauth', sentenceIndex: 0 }],
   ['POST', '/api/story/search-shot', { sessionId: 'story-unauth', sentenceIndex: 0 }],
-  ['POST', '/api/story/update-shot', { sessionId: 'story-unauth', sentenceIndex: 0, clipId: 'clip-1' }],
+  [
+    'POST',
+    '/api/story/update-shot',
+    { sessionId: 'story-unauth', sentenceIndex: 0, clipId: 'clip-1' },
+  ],
   [
     'POST',
     '/api/story/update-caption-style',
