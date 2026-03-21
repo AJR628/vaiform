@@ -926,6 +926,113 @@ test('POST /api/story/finalize returns 202 pending first, then same-key replay r
   assert.equal(usageDoc.usage.cycleReservedSec, 0);
 });
 
+test('POST /api/story/finalize completes a fresh session with no captions via the real finalize caption-generation branch', async () => {
+  seedUserDoc('user-1', {
+    plan: 'creator',
+    membership: {
+      status: 'active',
+      kind: 'subscription',
+      billingCadence: 'monthly',
+    },
+    usage: {
+      cycleIncludedSec: 600,
+      cycleUsedSec: 40,
+      cycleReservedSec: 0,
+    },
+  });
+  seedStorySession(
+    'user-1',
+    buildBaseSession({
+      id: 'story-finalize-fresh-captions',
+      status: 'clips_searched',
+      story: {
+        sentences: ['Beat one', 'Beat two'],
+      },
+      plan: [
+        {
+          sentenceIndex: 0,
+          visualDescription: 'Beat one visual',
+          searchQuery: 'Beat one',
+          durationSec: 4,
+        },
+        {
+          sentenceIndex: 1,
+          visualDescription: 'Beat two visual',
+          searchQuery: 'Beat two',
+          durationSec: 5,
+        },
+      ],
+      shots: [buildShot('clip-1', 0, 'Beat one', 4), buildShot('clip-2', 1, 'Beat two', 5)],
+      finalVideo: {
+        jobId: 'short-fresh-captions',
+        durationSec: 9,
+        videoUrl: 'https://cdn.example.com/fresh-captions.mp4',
+      },
+      billingEstimate: {
+        estimatedSec: 12,
+        source: 'heuristic',
+        updatedAt: '2026-03-19T00:00:00.000Z',
+      },
+    })
+  );
+
+  const first = await requestJson('/api/story/finalize', {
+    method: 'POST',
+    headers: {
+      'x-client': 'mobile',
+      'X-Idempotency-Key': 'idem-finalize-fresh-captions',
+    },
+    body: {
+      sessionId: 'story-finalize-fresh-captions',
+    },
+  });
+
+  assert.equal(first.status, 202);
+  assert.equal(first.json.success, true);
+  assert.equal(first.json.shortId, null);
+  assert.equal(first.json.finalize.state, 'pending');
+  assert.equal(first.json.data.renderRecovery.state, 'pending');
+
+  await waitFor(
+    () => {
+      const attempt = readDoc('idempotency', 'user-1:idem-finalize-fresh-captions');
+      return attempt?.state === 'done' || attempt?.state === 'failed';
+    },
+    { timeoutMs: 1000, intervalMs: 20 }
+  );
+
+  const attempt = readDoc('idempotency', 'user-1:idem-finalize-fresh-captions');
+  assert.equal(attempt.state, 'done');
+  assert.equal(attempt.shortId, 'short-fresh-captions');
+
+  const replay = await requestJson('/api/story/finalize', {
+    method: 'POST',
+    headers: {
+      'x-client': 'mobile',
+      'X-Idempotency-Key': 'idem-finalize-fresh-captions',
+    },
+    body: {
+      sessionId: 'story-finalize-fresh-captions',
+    },
+  });
+
+  assert.equal(replay.status, 200);
+  assert.equal(replay.json.success, true);
+  assert.equal(replay.json.shortId, 'short-fresh-captions');
+  assert.equal(replay.json.data.finalVideo.jobId, 'short-fresh-captions');
+
+  const storedSession = readStorySession('user-1', 'story-finalize-fresh-captions');
+  assert.ok(Array.isArray(storedSession.captions));
+  assert.equal(storedSession.captions.length, 2);
+  assert.equal(storedSession.captions[0].startTimeSec, 0);
+  assert.equal(storedSession.renderRecovery.state, 'done');
+  assert.equal(storedSession.renderRecovery.shortId, 'short-fresh-captions');
+
+  const usageDoc = readDoc('users', 'user-1');
+  assert.equal(usageDoc.usage.cycleUsedSec, 49);
+  assert.equal(usageDoc.usage.cycleReservedSec, 0);
+});
+
 test('POST /api/story/finalize replays 202 pending for the same key while the background attempt is still active', async () => {
   seedUserDoc('user-1', {
     plan: 'creator',

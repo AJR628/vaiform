@@ -1272,7 +1272,7 @@ export async function generateCaptionTimings({ uid, sessionId }) {
   await saveStorySession({ uid, sessionId, data: session });
   logger.info('story.search.completed', {
     sessionId,
-    shotCount: shots.length,
+    shotCount: Array.isArray(session.plan) ? session.plan.length : 0,
   });
   return session;
 }
