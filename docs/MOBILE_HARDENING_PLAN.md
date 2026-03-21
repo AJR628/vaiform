@@ -1,6 +1,6 @@
 # MOBILE_HARDENING_PLAN
 
-Cross-repo verification date: 2026-03-18.
+Cross-repo verification date: 2026-03-20.
 
 Goal: harden only the backend surface that the current mobile app actually depends on. This is a continuation ledger for the current repos, not a rebuild proposal.
 
@@ -76,7 +76,7 @@ Goal: harden only the backend surface that the current mobile app actually depen
   - Mobile evidence: `client/api/client.ts:578-584`, `client/screens/ShortDetailScreen.tsx:183-345`
   - Contract: detail now returns `id` while keeping `jobId`, probes `story.mp4` / `thumb.jpg` first, retains legacy filename fallback during the bridge period, and mobile still keeps `/api/shorts/mine?limit=50` fallback while eventual consistency settles.
 
-## Phase 2 In Progress: Mutation Reliability + Admission-Control Review
+## Phase 2 Completed: Mutation Reliability + Admission-Control Review
 
 - `DONE`: Active mobile editor/search routes now return stable domain-level 4xx/404 responses instead of collapsing known failures into generic 500s.
   - Backend routes: `src/routes/story.routes.js:578-827`, `src/routes/story.routes.js:1147-1175`
@@ -84,11 +84,17 @@ Goal: harden only the backend surface that the current mobile app actually depen
   - Scope landed: `POST /api/story/search`, `POST /api/story/update-beat-text`, `POST /api/story/delete-beat`, `POST /api/story/search-shot`, `POST /api/story/update-shot`, and `GET /api/story/:sessionId`.
   - Guardrail: `GET /api/shorts/:jobId` stays runtime-unchanged; its current `404 NOT_FOUND` remains the intentional mobile pending-availability bridge.
 
-- `NEXT`: Review explicit admission control for expensive mobile-used routes.
-  - Review set: `POST /api/story/generate`, `POST /api/story/search`, `POST /api/story/search-shot`, `POST /api/story/finalize`
-  - Current evidence: `src/routes/story.routes.js:218-233`, `src/routes/story.routes.js:578-610`, `src/routes/story.routes.js:692-776`, `src/routes/story.routes.js:940-989`, `src/routes/caption.preview.routes.js:109-145`
-  - Important nuance: `generate` already has a daily cap; review it before adding new per-request rate limits.
-  - Phase status: overall Phase 2 remains in progress until this admission-control review is complete.
+- `DONE`: Expensive mobile-used routes now have explicit admission-control coverage and deterministic transient busy/timeout behavior.
+  - Review set landed on: `POST /api/story/generate`, `POST /api/story/plan`, `POST /api/story/search`, `POST /api/story/search-shot`, `POST /api/story/finalize`
+  - Backend evidence:
+    - route mapping: `src/routes/story.routes.js:57-72`, `src/routes/story.routes.js:139-181`, `src/routes/story.routes.js:238-272`, `src/routes/story.routes.js:577-639`, `src/routes/story.routes.js:721-775`, `src/routes/story.routes.js:969-1028`
+    - LLM timeout/admission: `src/services/story.llm.service.js:153-208`, `src/services/story.llm.service.js:360-662`, `src/services/story.llm.service.js:675-727`
+    - search/provider timeout and cooldown: `src/services/story.service.js:92-156`, `src/services/story.service.js:682-903`, `src/services/pixabay.videos.provider.js:49-130`, `src/services/nasa.videos.provider.js:59-237`
+  - Current semantics:
+    - `generate` / `plan` keep their daily-cap `429` and now add retryable `503 SERVER_BUSY` with `Retry-After: 15` for transient LLM busy/timeout paths
+    - `search` / `search-shot` now preserve success when at least one consulted provider returns usable clips, and only return retryable `503 SERVER_BUSY` with `Retry-After: 15` when no usable results exist because all consulted providers failed transiently
+    - `finalize` preserves its existing `409`, `402`, `404`, top-level `shortId`, and render-slot `503 SERVER_BUSY` with `Retry-After: 30`, while missing prerequisite generate/plan/search stages now inherit the new deterministic transient busy mapping instead of generic expensive-route collapse
+  - Validation-only note: `POST /api/caption/preview` already had backend auth, explicit `20/min` rate limiting, and a `200kb` body cap, so this phase verified that guardrail surface without widening its runtime behavior.
 
 ## MOBILE_HARDENING_PLAN Phase 3 Explicit Scale Track
 

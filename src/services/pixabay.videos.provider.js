@@ -1,4 +1,5 @@
 import { getRuntimeOverride } from '../testing/runtime-overrides.js';
+import { withAbortTimeout } from '../utils/fetch.timeout.js';
 
 const PIXABAY_VIDEOS = 'https://pixabay.com/api/videos/';
 
@@ -46,9 +47,14 @@ export async function pixabaySearchVideos({ query, perPage = 12, page = 1 }) {
   url.searchParams.set('page', String(Math.max(1, page)));
 
   try {
-    const res = await fetch(url, {
-      headers: { Accept: 'application/json' },
-    });
+    const res = await withAbortTimeout(
+      async (signal) =>
+        await fetch(url, {
+          headers: { Accept: 'application/json' },
+          ...(signal ? { signal } : {}),
+        }),
+      { timeoutMs: 15000, errorMessage: 'PIXABAY_SEARCH_TIMEOUT' }
+    );
 
     // Log rate limit headers if present
     const rateLimitLimit = res.headers.get('X-RateLimit-Limit');
@@ -69,7 +75,13 @@ export async function pixabaySearchVideos({ query, perPage = 12, page = 1 }) {
 
       // Short negative cache on error
       mem.set(cacheKey, { at: now, ttl: 60_000, items: [] });
-      return { ok: false, reason: `HTTP_${res.status}`, items: [] };
+      return {
+        ok: false,
+        reason: `HTTP_${res.status}`,
+        items: [],
+        nextPage: null,
+        transient: res.status === 429 || res.status >= 500,
+      };
     }
 
     const data = await res.json();
@@ -107,12 +119,15 @@ export async function pixabaySearchVideos({ query, perPage = 12, page = 1 }) {
     const hitsPerPage = data?.per_page || perPage;
     const nextPage = currentPage * hitsPerPage < totalHits ? currentPage + 1 : null;
 
-    return { ok: true, reason: 'OK', items, nextPage };
+    return { ok: true, reason: 'OK', items, nextPage, transient: false };
   } catch (error) {
     // Log error but don't throw - return empty array
     console.warn('[pixabay] Search error:', error?.message || String(error));
     mem.set(cacheKey, { at: now, ttl: 60_000, items: [] });
-    return { ok: false, reason: 'ERROR', items: [] };
+    if (error?.code === 'PIXABAY_SEARCH_TIMEOUT') {
+      return { ok: false, reason: 'TIMEOUT', items: [], nextPage: null, transient: true };
+    }
+    return { ok: false, reason: 'ERROR', items: [], nextPage: null, transient: true };
   }
 }
 

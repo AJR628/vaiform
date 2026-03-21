@@ -282,6 +282,35 @@ test('POST /api/story/generate preserves the generated story envelope mobile rea
   assert.equal(result.json.data.billingEstimate.estimatedSec, 26);
 });
 
+test('POST /api/story/generate returns retryable 503 when generation hits a transient busy state', async () => {
+  seedUserDoc('user-1');
+  setRuntimeOverride('story.llm.generateStoryFromInput', async () => {
+    const error = new Error('Story generation is busy. Please retry shortly.');
+    error.code = 'STORY_GENERATE_BUSY';
+    error.status = 503;
+    error.retryAfter = 15;
+    throw error;
+  });
+
+  const started = await requestJson('/api/story/start', {
+    method: 'POST',
+    body: {
+      input: 'Busy story input',
+      inputType: 'idea',
+    },
+  });
+
+  const result = await requestJson('/api/story/generate', {
+    method: 'POST',
+    body: { sessionId: started.json.data.id },
+  });
+
+  assert.equal(result.status, 503);
+  assert.equal(result.response.headers.get('retry-after'), '15');
+  assert.equal(result.json.success, false);
+  assert.equal(result.json.error, 'SERVER_BUSY');
+});
+
 test('POST /api/story/plan returns the active shot plan shape for generated sessions', async () => {
   seedUserDoc('user-1');
   setRuntimeOverride('story.llm.planVisualShots', async ({ sentences }) =>
@@ -317,6 +346,38 @@ test('POST /api/story/plan returns the active shot plan shape for generated sess
   assert.equal(result.json.data.plan[0].searchQuery, 'query-0');
 });
 
+test('POST /api/story/plan returns retryable 503 when planning hits a transient timeout', async () => {
+  seedUserDoc('user-1');
+  setRuntimeOverride('story.llm.planVisualShots', async () => {
+    const error = new Error('Story planning timed out. Please retry shortly.');
+    error.code = 'STORY_PLAN_TIMEOUT';
+    error.status = 503;
+    error.retryAfter = 15;
+    throw error;
+  });
+
+  seedStorySession(
+    'user-1',
+    buildBaseSession({
+      id: 'story-plan-timeout',
+      status: 'story_generated',
+      story: {
+        sentences: ['Line one', 'Line two'],
+      },
+    })
+  );
+
+  const result = await requestJson('/api/story/plan', {
+    method: 'POST',
+    body: { sessionId: 'story-plan-timeout' },
+  });
+
+  assert.equal(result.status, 503);
+  assert.equal(result.response.headers.get('retry-after'), '15');
+  assert.equal(result.json.success, false);
+  assert.equal(result.json.error, 'SERVER_BUSY');
+});
+
 test('POST /api/story/search returns planned shots with selectedClip and candidates for all beats', async () => {
   setRuntimeOverride('story.providers.pexelsSearchVideos', async ({ query, page }) => ({
     ok: true,
@@ -348,16 +409,18 @@ test('POST /api/story/search returns planned shots with selectedClip and candida
     ],
   }));
   setRuntimeOverride('story.providers.pixabaySearchVideos', async () => ({
-    ok: true,
-    reason: 'OK',
+    ok: false,
+    reason: 'HTTP_503',
     items: [],
     nextPage: null,
+    transient: true,
   }));
   setRuntimeOverride('story.providers.nasaSearchVideos', async () => ({
-    ok: true,
-    reason: 'OK',
+    ok: false,
+    reason: 'HTTP_503',
     items: [],
     nextPage: null,
+    transient: true,
   }));
 
   seedStorySession(
@@ -371,8 +434,8 @@ test('POST /api/story/search returns planned shots with selectedClip and candida
       plan: [
         {
           sentenceIndex: 0,
-          visualDescription: 'ocean visual',
-          searchQuery: 'ocean habit',
+          visualDescription: 'space visual',
+          searchQuery: 'space habit',
           durationSec: 5,
           startTimeSec: 0,
         },
@@ -397,7 +460,60 @@ test('POST /api/story/search returns planned shots with selectedClip and candida
   assert.equal(result.json.data.status, 'clips_searched');
   assert.equal(result.json.data.shots.length, 2);
   assert.equal(result.json.data.shots[0].candidates.length, 2);
-  assert.equal(result.json.data.shots[0].selectedClip.id, 'ocean habit-clip-1');
+  assert.equal(result.json.data.shots[0].selectedClip.id, 'space habit-clip-1');
+});
+
+test('POST /api/story/search returns retryable 503 only when all consulted providers fail transiently and no usable clips exist', async () => {
+  setRuntimeOverride('story.providers.pexelsSearchVideos', async () => ({
+    ok: false,
+    reason: 'HTTP_503',
+    items: [],
+    nextPage: null,
+  }));
+  setRuntimeOverride('story.providers.pixabaySearchVideos', async () => ({
+    ok: false,
+    reason: 'TIMEOUT',
+    items: [],
+    nextPage: null,
+    transient: true,
+  }));
+  setRuntimeOverride('story.providers.nasaSearchVideos', async () => ({
+    ok: false,
+    reason: 'HTTP_503',
+    items: [],
+    nextPage: null,
+    transient: true,
+  }));
+
+  seedStorySession(
+    'user-1',
+    buildBaseSession({
+      id: 'story-search-transient-fail',
+      status: 'shots_planned',
+      story: {
+        sentences: ['Space routine'],
+      },
+      plan: [
+        {
+          sentenceIndex: 0,
+          visualDescription: 'space visual',
+          searchQuery: 'space routine',
+          durationSec: 5,
+          startTimeSec: 0,
+        },
+      ],
+    })
+  );
+
+  const result = await requestJson('/api/story/search', {
+    method: 'POST',
+    body: { sessionId: 'story-search-transient-fail' },
+  });
+
+  assert.equal(result.status, 503);
+  assert.equal(result.response.headers.get('retry-after'), '15');
+  assert.equal(result.json.success, false);
+  assert.equal(result.json.error, 'SERVER_BUSY');
 });
 
 test('GET /api/story/:sessionId preserves recovery polling fields mobile reads after finalize', async () => {
@@ -515,16 +631,18 @@ test('POST /api/story/search-shot returns the single-shot pagination payload mob
     ],
   }));
   setRuntimeOverride('story.providers.pixabaySearchVideos', async () => ({
-    ok: true,
-    reason: 'OK',
+    ok: false,
+    reason: 'HTTP_503',
     items: [],
     nextPage: null,
+    transient: true,
   }));
   setRuntimeOverride('story.providers.nasaSearchVideos', async () => ({
-    ok: true,
-    reason: 'OK',
+    ok: false,
+    reason: 'HTTP_503',
     items: [],
     nextPage: null,
+    transient: true,
   }));
 
   seedStorySession(
@@ -543,7 +661,7 @@ test('POST /api/story/search-shot returns the single-shot pagination payload mob
     body: {
       sessionId: 'story-search-shot',
       sentenceIndex: 0,
-      query: 'ocean',
+      query: 'space ocean',
       page: 1,
     },
   });
@@ -553,7 +671,56 @@ test('POST /api/story/search-shot returns the single-shot pagination payload mob
   assert.equal(result.json.data.page, 1);
   assert.equal(result.json.data.hasMore, true);
   assert.equal(result.json.data.shot.candidates.length, 2);
-  assert.equal(result.json.data.shot.selectedClip.id, 'ocean-shot-a');
+  assert.equal(result.json.data.shot.selectedClip.id, 'space ocean-shot-a');
+});
+
+test('POST /api/story/search-shot returns retryable 503 only when all consulted providers fail transiently and no usable clips exist', async () => {
+  setRuntimeOverride('story.providers.pexelsSearchVideos', async () => ({
+    ok: false,
+    reason: 'HTTP_503',
+    items: [],
+    nextPage: null,
+  }));
+  setRuntimeOverride('story.providers.pixabaySearchVideos', async () => ({
+    ok: false,
+    reason: 'TIMEOUT',
+    items: [],
+    nextPage: null,
+    transient: true,
+  }));
+  setRuntimeOverride('story.providers.nasaSearchVideos', async () => ({
+    ok: false,
+    reason: 'HTTP_503',
+    items: [],
+    nextPage: null,
+    transient: true,
+  }));
+
+  seedStorySession(
+    'user-1',
+    buildBaseSession({
+      id: 'story-search-shot-transient-fail',
+      story: {
+        sentences: ['Space beat'],
+      },
+      shots: [buildShot('clip-1', 0, 'space beat')],
+    })
+  );
+
+  const result = await requestJson('/api/story/search-shot', {
+    method: 'POST',
+    body: {
+      sessionId: 'story-search-shot-transient-fail',
+      sentenceIndex: 0,
+      query: 'space beat',
+      page: 1,
+    },
+  });
+
+  assert.equal(result.status, 503);
+  assert.equal(result.response.headers.get('retry-after'), '15');
+  assert.equal(result.json.success, false);
+  assert.equal(result.json.error, 'SERVER_BUSY');
 });
 
 test('POST /api/story/update-shot returns shots with the newly selected clip', async () => {
@@ -916,4 +1083,112 @@ test('POST /api/story/finalize returns 404 SESSION_NOT_FOUND when the requested 
   assert.equal(result.status, 404);
   assert.equal(result.json.success, false);
   assert.equal(result.json.error, 'SESSION_NOT_FOUND');
+});
+
+test('POST /api/story/finalize preserves retryable 503 SERVER_BUSY when render slots are saturated', async () => {
+  seedUserDoc('user-1', {
+    plan: 'creator',
+    membership: {
+      status: 'active',
+      kind: 'subscription',
+      billingCadence: 'monthly',
+    },
+    usage: {
+      cycleIncludedSec: 600,
+      cycleUsedSec: 0,
+      cycleReservedSec: 0,
+    },
+  });
+
+  for (const sessionId of [
+    'story-finalize-slot-1',
+    'story-finalize-slot-2',
+    'story-finalize-slot-3',
+    'story-finalize-slot-4',
+  ]) {
+    seedStorySession(
+      'user-1',
+      buildBaseSession({
+        id: sessionId,
+        status: 'clips_searched',
+        story: {
+          sentences: ['Beat one'],
+        },
+        shots: [buildShot(`clip-${sessionId}`, 0, 'Beat one')],
+        billingEstimate: {
+          estimatedSec: 8,
+          source: 'heuristic',
+          updatedAt: '2026-03-19T00:00:00.000Z',
+        },
+      })
+    );
+  }
+
+  let entered = 0;
+  let release;
+  const blocker = new Promise((resolve) => {
+    release = resolve;
+  });
+
+  setRuntimeOverride('story.service.finalizeStory', async ({ uid, sessionId, attemptId }) => {
+    entered += 1;
+    await blocker;
+    const session = readStorySession(uid, sessionId);
+    session.finalVideo = {
+      jobId: `short-${sessionId}`,
+      durationSec: 8,
+    };
+    session.renderRecovery = {
+      state: 'done',
+      attemptId,
+      shortId: `short-${sessionId}`,
+      startedAt: '2026-03-19T05:00:00.000Z',
+      updatedAt: '2026-03-19T05:00:05.000Z',
+      finishedAt: '2026-03-19T05:00:05.000Z',
+    };
+    seedStorySession(uid, session);
+    return session;
+  });
+
+  const firstThree = [
+    'story-finalize-slot-1',
+    'story-finalize-slot-2',
+    'story-finalize-slot-3',
+  ].map((sessionId) =>
+    requestJson('/api/story/finalize', {
+      method: 'POST',
+      headers: {
+        'X-Idempotency-Key': `idem-${sessionId}`,
+        'x-client': 'mobile',
+      },
+      body: {
+        sessionId,
+      },
+    })
+  );
+
+  await waitFor(() => entered === 3);
+
+  const fourth = await requestJson('/api/story/finalize', {
+    method: 'POST',
+    headers: {
+      'X-Idempotency-Key': 'idem-story-finalize-slot-4',
+      'x-client': 'mobile',
+    },
+    body: {
+      sessionId: 'story-finalize-slot-4',
+    },
+  });
+
+  assert.equal(fourth.status, 503);
+  assert.equal(fourth.response.headers.get('retry-after'), '30');
+  assert.equal(fourth.json.success, false);
+  assert.equal(fourth.json.error, 'SERVER_BUSY');
+
+  release();
+  const settled = await Promise.all(firstThree);
+  for (const result of settled) {
+    assert.equal(result.status, 200);
+    assert.equal(result.json.success, true);
+  }
 });

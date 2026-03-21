@@ -54,13 +54,26 @@ const zodFields = (error) => {
   return fields;
 };
 
-const serverBusyFailure = (req, retryAfter = 30) => ({
+const serverBusyFailure = (
+  req,
+  retryAfter = 30,
+  detail = 'Server is busy. Please retry shortly.'
+) => ({
   success: false,
   error: 'SERVER_BUSY',
-  detail: 'Server is busy. Please retry shortly.',
+  detail,
   requestId: requestIdOf(req),
   retryAfter,
 });
+
+const sendMappedStoryFailure = (req, res, mapped) => {
+  if (mapped?.status === 503) {
+    const retryAfter = mapped.retryAfter || 15;
+    res.set('Retry-After', String(retryAfter));
+    return res.status(503).json(serverBusyFailure(req, retryAfter, mapped.detail));
+  }
+  return fail(req, res, mapped.status, mapped.error, mapped.detail);
+};
 
 function phase2StoryFailureFromError(error) {
   const rawCode = typeof error?.code === 'string' ? error.code : null;
@@ -113,10 +126,7 @@ function phase2StoryFailureFromError(error) {
       detail: 'No candidates available for shot',
     };
   }
-  if (
-    rawCode === 'CLIP_NOT_FOUND_IN_CANDIDATES' ||
-    rawMessage === 'CLIP_NOT_FOUND_IN_CANDIDATES'
-  ) {
+  if (rawCode === 'CLIP_NOT_FOUND_IN_CANDIDATES' || rawMessage === 'CLIP_NOT_FOUND_IN_CANDIDATES') {
     return {
       status: 400,
       error: 'CLIP_NOT_FOUND_IN_CANDIDATES',
@@ -157,6 +167,18 @@ function storyFailureFromError(error) {
         status: error?.status || 502,
         error: error.code,
         detail: error?.message || 'Remote video fetch failed',
+      };
+    case 'STORY_GENERATE_BUSY':
+    case 'STORY_GENERATE_TIMEOUT':
+    case 'STORY_PLAN_BUSY':
+    case 'STORY_PLAN_TIMEOUT':
+    case 'STORY_SEARCH_BUSY':
+    case 'STORY_SEARCH_TEMPORARILY_UNAVAILABLE':
+      return {
+        status: 503,
+        error: 'SERVER_BUSY',
+        detail: error?.message || 'Server is busy. Please retry shortly.',
+        retryAfter: error?.retryAfter || 15,
       };
     default:
       if (typeof error?.code === 'string' && error.code.startsWith('VIDEO_FETCH_')) {
@@ -245,7 +267,7 @@ r.post('/generate', enforceScriptDailyCap(300), async (req, res) => {
       error: e,
     });
     if (mapped) {
-      return fail(req, res, mapped.status, mapped.error, mapped.detail);
+      return sendMappedStoryFailure(req, res, mapped);
     }
     return fail(req, res, 500, 'STORY_GENERATE_FAILED', e?.message || 'Failed to generate story');
   }
@@ -569,7 +591,16 @@ r.post('/plan', enforceScriptDailyCap(300), async (req, res) => {
 
     return okStorySession(req, res, session);
   } catch (e) {
-    console.error('[story][plan] error:', e);
+    const mapped = storyFailureFromError(e);
+    logger.error('story.plan.failed', {
+      routeStatus: `${req.method} ${req.originalUrl}`,
+      mappedStatus: mapped?.status,
+      mappedError: mapped?.error,
+      error: e,
+    });
+    if (mapped) {
+      return sendMappedStoryFailure(req, res, mapped);
+    }
     return fail(req, res, 500, 'STORY_PLAN_FAILED', e?.message || 'Failed to plan shots');
   }
 });
@@ -602,7 +633,7 @@ r.post('/search', async (req, res) => {
       error: e,
     });
     if (mapped) {
-      return fail(req, res, mapped.status, mapped.error, mapped.detail);
+      return sendMappedStoryFailure(req, res, mapped);
     }
     return fail(req, res, 500, 'STORY_SEARCH_FAILED', e?.message || 'Failed to search clips');
   }
@@ -733,7 +764,7 @@ r.post('/search-shot', async (req, res) => {
       error: e,
     });
     if (mapped) {
-      return fail(req, res, mapped.status, mapped.error, mapped.detail);
+      return sendMappedStoryFailure(req, res, mapped);
     }
     return fail(
       req,
@@ -937,66 +968,62 @@ r.post(
 );
 
 // POST /api/story/finalize - Run full pipeline (Phase 7). Render time reserved in idempotency middleware; no double charge on retry.
-r.post(
-  '/finalize',
-  idempotencyFinalize({ getSession: getStorySession }),
-  async (req, res) => {
-    try {
-      const parsed = SessionSchema.safeParse(req.body || {});
-      if (!parsed.success) {
-        return fail(req, res, 400, 'INVALID_INPUT', 'Invalid request', zodFields(parsed.error));
-      }
+r.post('/finalize', idempotencyFinalize({ getSession: getStorySession }), async (req, res) => {
+  try {
+    const parsed = SessionSchema.safeParse(req.body || {});
+    if (!parsed.success) {
+      return fail(req, res, 400, 'INVALID_INPUT', 'Invalid request', zodFields(parsed.error));
+    }
 
-      const { sessionId } = parsed.data;
-      const attemptId = String(req.get('X-Idempotency-Key') || '').trim();
-      setRequestContextFromReq(req, { sessionId, attemptId });
-      logger.info('story.finalize.request', {
-        routeStatus: `${req.method} ${req.originalUrl}`,
-      });
-      // NOTE: finalizeStory() blocks the HTTP request until render completes (synchronous operation).
-      // Render time was already reserved by idempotency middleware; on 5xx middleware releases it.
-      const session = await withRenderSlot(() =>
-        finalizeStory({
-          uid: req.user.uid,
-          sessionId,
-          options: req.body.options || {},
-          attemptId,
-        })
-      );
+    const { sessionId } = parsed.data;
+    const attemptId = String(req.get('X-Idempotency-Key') || '').trim();
+    setRequestContextFromReq(req, { sessionId, attemptId });
+    logger.info('story.finalize.request', {
+      routeStatus: `${req.method} ${req.originalUrl}`,
+    });
+    // NOTE: finalizeStory() blocks the HTTP request until render completes (synchronous operation).
+    // Render time was already reserved by idempotency middleware; on 5xx middleware releases it.
+    const session = await withRenderSlot(() =>
+      finalizeStory({
+        uid: req.user.uid,
+        sessionId,
+        options: req.body.options || {},
+        attemptId,
+      })
+    );
 
-      const shortId = session?.finalVideo?.jobId || null;
-      logger.info('story.finalize.completed', {
+    const shortId = session?.finalVideo?.jobId || null;
+    logger.info('story.finalize.completed', {
+      routeStatus: `${req.method} ${req.originalUrl}`,
+      shortId,
+    });
+    if (typeof res.finishIdempotentFinalize === 'function') {
+      return await res.finishIdempotentFinalize({ session, shortId, status: 200 });
+    }
+    return res.status(200).json(finalizeSuccess(req, session, shortId));
+  } catch (e) {
+    if (res.headersSent) return;
+    if (e?.code === 'SERVER_BUSY' || e?.message === 'SERVER_BUSY') {
+      logger.warn('story.finalize.server_busy', {
         routeStatus: `${req.method} ${req.originalUrl}`,
-        shortId,
-      });
-      if (typeof res.finishIdempotentFinalize === 'function') {
-        return await res.finishIdempotentFinalize({ session, shortId, status: 200 });
-      }
-      return res.status(200).json(finalizeSuccess(req, session, shortId));
-    } catch (e) {
-      if (res.headersSent) return;
-      if (e?.code === 'SERVER_BUSY' || e?.message === 'SERVER_BUSY') {
-        logger.warn('story.finalize.server_busy', {
-          routeStatus: `${req.method} ${req.originalUrl}`,
-          error: e,
-        });
-        res.set('Retry-After', '30');
-        return res.status(503).json(serverBusyFailure(req, 30));
-      }
-      const mapped = storyFailureFromError(e);
-      logger.error('story.finalize.failed', {
-        routeStatus: `${req.method} ${req.originalUrl}`,
-        mappedStatus: mapped?.status,
-        mappedError: mapped?.error,
         error: e,
       });
-      if (mapped) {
-        return fail(req, res, mapped.status, mapped.error, mapped.detail);
-      }
-      return fail(req, res, 500, 'STORY_FINALIZE_FAILED', e?.message || 'Failed to finalize story');
+      res.set('Retry-After', '30');
+      return res.status(503).json(serverBusyFailure(req, 30));
     }
+    const mapped = storyFailureFromError(e);
+    logger.error('story.finalize.failed', {
+      routeStatus: `${req.method} ${req.originalUrl}`,
+      mappedStatus: mapped?.status,
+      mappedError: mapped?.error,
+      error: e,
+    });
+    if (mapped) {
+      return sendMappedStoryFailure(req, res, mapped);
+    }
+    return fail(req, res, 500, 'STORY_FINALIZE_FAILED', e?.message || 'Failed to finalize story');
   }
-);
+});
 
 // POST /api/story/manual - Create story session from manual script
 r.post('/manual', async (req, res) => {

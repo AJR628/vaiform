@@ -63,6 +63,12 @@ const BILLING_ESTIMATE_BEAT_BOUNDARY_PAD_MAX_SEC = Math.max(
 const MAX_BEATS = 8;
 const MAX_BEAT_CHARS = 160;
 const MAX_TOTAL_CHARS = 850;
+const STORY_SEARCH_RETRY_AFTER_SEC = 15;
+const MAX_CONCURRENT_STORY_SEARCH_REQUESTS = 2;
+const SEARCH_PROVIDER_FAILURE_THRESHOLD = 2;
+const SEARCH_PROVIDER_COOLDOWN_MS = 60_000;
+let activeStorySearchRequests = 0;
+const providerSearchHealth = new Map();
 
 /**
  * Ensure session has default structure
@@ -81,6 +87,122 @@ function ensureSessionDefaults(session) {
   }
 
   return session;
+}
+
+function createRetryableStoryError(code, detail, retryAfter = STORY_SEARCH_RETRY_AFTER_SEC) {
+  const error = new Error(detail);
+  error.code = code;
+  error.status = 503;
+  error.retryAfter = retryAfter;
+  return error;
+}
+
+async function withStorySearchAdmission(fn) {
+  if (activeStorySearchRequests >= MAX_CONCURRENT_STORY_SEARCH_REQUESTS) {
+    throw createRetryableStoryError(
+      'STORY_SEARCH_BUSY',
+      'Story search is busy. Please retry shortly.'
+    );
+  }
+
+  activeStorySearchRequests += 1;
+  try {
+    return await fn();
+  } finally {
+    activeStorySearchRequests -= 1;
+  }
+}
+
+function resetProviderSearchHealth(provider) {
+  providerSearchHealth.delete(provider);
+}
+
+function markProviderTransientFailure(provider) {
+  const current = providerSearchHealth.get(provider) || { failures: 0, cooldownUntil: 0 };
+  const failures = current.failures + 1;
+  const cooldownUntil =
+    failures >= SEARCH_PROVIDER_FAILURE_THRESHOLD ? Date.now() + SEARCH_PROVIDER_COOLDOWN_MS : 0;
+  providerSearchHealth.set(provider, { failures, cooldownUntil });
+}
+
+function isProviderCooldownActive(provider) {
+  const state = providerSearchHealth.get(provider);
+  return Boolean(state?.cooldownUntil && state.cooldownUntil > Date.now());
+}
+
+function isTransientProviderResult(result) {
+  if (!result) return false;
+  if (result.transient === true) return true;
+  const reason = String(result.reason || '').toUpperCase();
+  if (reason === 'TIMEOUT' || reason === 'ERROR' || reason === 'COOLDOWN_ACTIVE') {
+    return true;
+  }
+  if (reason === 'ASSET_UNAVAILABLE') {
+    return true;
+  }
+  const httpMatch = reason.match(/^HTTP_(\d{3})$/);
+  if (!httpMatch) return false;
+  const status = Number(httpMatch[1]);
+  return status === 429 || status >= 500;
+}
+
+async function callProviderSearch(provider, run, { consulted = true } = {}) {
+  if (!consulted) {
+    return {
+      provider,
+      ok: false,
+      reason: 'SKIPPED',
+      items: [],
+      nextPage: null,
+      consulted: false,
+      transient: false,
+    };
+  }
+
+  if (isProviderCooldownActive(provider)) {
+    return {
+      provider,
+      ok: false,
+      reason: 'COOLDOWN_ACTIVE',
+      items: [],
+      nextPage: null,
+      consulted: true,
+      transient: true,
+    };
+  }
+
+  try {
+    const result = await run();
+    const normalized = {
+      provider,
+      ok: Boolean(result?.ok),
+      reason: result?.reason || 'UNKNOWN',
+      items: Array.isArray(result?.items) ? result.items : [],
+      nextPage: result?.nextPage ?? null,
+      consulted: result?.reason !== 'NOT_CONFIGURED',
+      transient: Boolean(result?.transient),
+    };
+    normalized.transient = isTransientProviderResult(normalized);
+
+    if (normalized.ok || !normalized.transient) {
+      resetProviderSearchHealth(provider);
+    } else {
+      markProviderTransientFailure(provider);
+    }
+
+    return normalized;
+  } catch (error) {
+    markProviderTransientFailure(provider);
+    return {
+      provider,
+      ok: false,
+      reason: error?.code || 'ERROR',
+      items: [],
+      nextPage: null,
+      consulted: true,
+      transient: true,
+    };
+  }
 }
 
 function totalCaptionTimelineSec(session) {
@@ -561,25 +683,37 @@ async function searchSingleShot(query, options = {}) {
 
   // Search all providers in parallel (NASA only if affinity !== 'none')
   const [pexelsResult, pixabayResult, nasaResult] = await Promise.all([
-    pexelsSearchVideos({
-      query: query,
-      perPage: perPage,
-      targetDur: targetDur,
-      page: page,
-    }),
-    pixabaySearchVideos({
-      query: query,
-      perPage: perPage,
-      page: page,
-    }).catch(() => ({ ok: false, items: [], nextPage: null })), // Silent failure for Pixabay
-    nasaAffinity === 'none'
-      ? Promise.resolve({ ok: false, items: [], nextPage: null })
-      : nasaSearchVideos({ query, perPage, page: page }).catch(() => ({
-          ok: false,
-          items: [],
-          nextPage: null,
-        })),
+    callProviderSearch(
+      'pexels',
+      async () =>
+        await pexelsSearchVideos({
+          query: query,
+          perPage: perPage,
+          targetDur: targetDur,
+          page: page,
+        })
+    ),
+    callProviderSearch(
+      'pixabay',
+      async () =>
+        await pixabaySearchVideos({
+          query: query,
+          perPage: perPage,
+          page: page,
+        })
+    ),
+    callProviderSearch(
+      'nasa',
+      async () =>
+        await nasaSearchVideos({
+          query,
+          perPage,
+          page,
+        }),
+      { consulted: nasaAffinity !== 'none' }
+    ),
   ]);
+  const providerResults = [pexelsResult, pixabayResult, nasaResult];
 
   logger.info('story.search.providers.nasa_result', {
     queryLength: String(query || '').trim().length,
@@ -622,6 +756,15 @@ async function searchSingleShot(query, options = {}) {
     nasa: nasaItems.length,
     pexels: pexelsItems.length,
     pixabay: pixabayItems.length,
+    consultedProviders: providerResults
+      .filter((result) => result.consulted)
+      .map((result) => ({
+        provider: result.provider,
+        ok: result.ok,
+        reason: result.reason,
+        transient: result.transient,
+        itemCount: result.items.length,
+      })),
     pagination: {
       pexelsNextPage: pexelsResult.nextPage,
       pixabayNextPage: pixabayResult.nextPage,
@@ -631,6 +774,16 @@ async function searchSingleShot(query, options = {}) {
   });
 
   if (allItems.length === 0) {
+    const consultedProviders = providerResults.filter((result) => result.consulted);
+    const transientFailures = consultedProviders.filter(
+      (result) => !result.ok && isTransientProviderResult(result)
+    );
+    if (consultedProviders.length > 0 && transientFailures.length === consultedProviders.length) {
+      throw createRetryableStoryError(
+        'STORY_SEARCH_TEMPORARILY_UNAVAILABLE',
+        'Story search is temporarily unavailable. Please retry shortly.'
+      );
+    }
     return { candidates: [], best: null, page, hasMore: false };
   }
 
@@ -697,105 +850,112 @@ async function searchSingleShot(query, options = {}) {
  * Search stock videos for each shot (Phase 3)
  */
 export async function searchShots({ uid, sessionId }) {
-  const session = await loadStorySession({ uid, sessionId });
-  if (!session) throw new Error('SESSION_NOT_FOUND');
-  if (!session.plan) throw new Error('PLAN_REQUIRED');
+  return await withStorySearchAdmission(async () => {
+    const session = await loadStorySession({ uid, sessionId });
+    if (!session) throw new Error('SESSION_NOT_FOUND');
+    if (!session.plan) throw new Error('PLAN_REQUIRED');
 
-  const shots = [];
+    const shots = [];
 
-  for (const shot of session.plan) {
-    try {
-      // Use helper function to search and normalize
-      const { candidates, best } = await searchSingleShot(shot.searchQuery, {
-        perPage: 6,
-        targetDur: shot.durationSec,
-      });
+    for (const shot of session.plan) {
+      try {
+        // Use helper function to search and normalize
+        const { candidates, best } = await searchSingleShot(shot.searchQuery, {
+          perPage: 6,
+          targetDur: shot.durationSec,
+        });
 
-      shots.push({
-        ...shot,
-        selectedClip: best,
-        candidates: candidates,
-      });
-    } catch (error) {
-      logger.warn('story.search.shot_failed', {
-        sentenceIndex: shot.sentenceIndex,
-        queryLength: String(shot.searchQuery || '').trim().length,
-        error,
-      });
-      shots.push({
-        ...shot,
-        selectedClip: null,
-        candidates: [],
-      });
+        shots.push({
+          ...shot,
+          selectedClip: best,
+          candidates: candidates,
+        });
+      } catch (error) {
+        if (error?.status === 503 || error?.retryAfter) {
+          throw error;
+        }
+        logger.warn('story.search.shot_failed', {
+          sentenceIndex: shot.sentenceIndex,
+          queryLength: String(shot.searchQuery || '').trim().length,
+          error,
+        });
+        shots.push({
+          ...shot,
+          selectedClip: null,
+          candidates: [],
+        });
+      }
     }
-  }
 
-  session.shots = shots;
-  session.status = 'clips_searched';
-  session.updatedAt = new Date().toISOString();
+    session.shots = shots;
+    session.status = 'clips_searched';
+    session.updatedAt = new Date().toISOString();
 
-  await saveStorySession({ uid, sessionId, data: session });
-  return session;
+    await saveStorySession({ uid, sessionId, data: session });
+    return session;
+  });
 }
 
 /**
  * Search clips for a single shot (Phase 3 - Clip Search)
  */
 export async function searchClipsForShot({ uid, sessionId, sentenceIndex, query, page = 1 }) {
-  const session = await loadStorySession({ uid, sessionId });
-  if (!session) throw new Error('SESSION_NOT_FOUND');
-  if (!session.shots) throw new Error('SHOTS_REQUIRED');
+  return await withStorySearchAdmission(async () => {
+    const session = await loadStorySession({ uid, sessionId });
+    if (!session) throw new Error('SESSION_NOT_FOUND');
+    if (!session.shots) throw new Error('SHOTS_REQUIRED');
 
-  const shot = session.shots.find((s) => s.sentenceIndex === sentenceIndex);
-  if (!shot) {
-    throw new Error(`SHOT_NOT_FOUND: sentenceIndex=${sentenceIndex}`);
-  }
+    const shot = session.shots.find((s) => s.sentenceIndex === sentenceIndex);
+    if (!shot) {
+      throw new Error(`SHOT_NOT_FOUND: sentenceIndex=${sentenceIndex}`);
+    }
 
-  // Determine search query: use provided query, or fall back to shot.searchQuery, or sentence text
-  const searchQuery =
-    query?.trim() || shot.searchQuery || session.story?.sentences?.[sentenceIndex] || '';
+    // Determine search query: use provided query, or fall back to shot.searchQuery, or sentence text
+    const searchQuery =
+      query?.trim() || shot.searchQuery || session.story?.sentences?.[sentenceIndex] || '';
 
-  if (!searchQuery) {
-    throw new Error('NO_SEARCH_QUERY_AVAILABLE');
-  }
+    if (!searchQuery) {
+      throw new Error('NO_SEARCH_QUERY_AVAILABLE');
+    }
 
-  // Search with perPage 12 for frontend to show 8 nicely
-  const {
-    candidates,
-    best,
-    page: resultPage,
-    hasMore,
-  } = await searchSingleShot(searchQuery, {
-    perPage: 12,
-    targetDur: shot.durationSec || 8,
-    page: page,
+    // Search with perPage 12 for frontend to show 8 nicely
+    const {
+      candidates,
+      best,
+      page: resultPage,
+      hasMore,
+    } = await searchSingleShot(searchQuery, {
+      perPage: 12,
+      targetDur: shot.durationSec || 8,
+      page: page,
+    });
+
+    // Update candidates: append new candidates with deduplication by id
+    // For page 1, replace existing candidates (new search). For page > 1, append.
+    if (page === 1) {
+      // First page: replace candidates (new search)
+      shot.candidates = candidates;
+    } else {
+      // Subsequent pages: append new candidates, deduplicating by id
+      const existingCandidates = shot.candidates || [];
+      const existingIds = new Set(existingCandidates.map((c) => c.id).filter((id) => id != null));
+      const newCandidates = candidates.filter((c) => c.id == null || !existingIds.has(c.id));
+      shot.candidates = [...existingCandidates, ...newCandidates];
+    }
+
+    // Keep current selectedClip if it's still in the merged candidates; otherwise use best
+    const mergedCandidates = shot.candidates || [];
+    const maybeKeep =
+      shot.selectedClip && mergedCandidates.find((c) => c.id === shot.selectedClip.id);
+    shot.selectedClip = maybeKeep || best || null;
+
+    session.updatedAt = new Date().toISOString();
+
+    await saveStorySession({ uid, sessionId, data: session });
+
+    // Return shot with pagination info
+    return { shot, page: resultPage, hasMore };
   });
-
-  // Update candidates: append new candidates with deduplication by id
-  // For page 1, replace existing candidates (new search). For page > 1, append.
-  if (page === 1) {
-    // First page: replace candidates (new search)
-    shot.candidates = candidates;
-  } else {
-    // Subsequent pages: append new candidates, deduplicating by id
-    const existingCandidates = shot.candidates || [];
-    const existingIds = new Set(existingCandidates.map((c) => c.id).filter((id) => id != null));
-    const newCandidates = candidates.filter((c) => c.id == null || !existingIds.has(c.id));
-    shot.candidates = [...existingCandidates, ...newCandidates];
-  }
-
-  // Keep current selectedClip if it's still in the merged candidates; otherwise use best
-  const mergedCandidates = shot.candidates || [];
-  const maybeKeep =
-    shot.selectedClip && mergedCandidates.find((c) => c.id === shot.selectedClip.id);
-  shot.selectedClip = maybeKeep || best || null;
-
-  session.updatedAt = new Date().toISOString();
-
-  await saveStorySession({ uid, sessionId, data: session });
-
-  // Return shot with pagination info
-  return { shot, page: resultPage, hasMore };
 }
 
 /**

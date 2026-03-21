@@ -1,6 +1,6 @@
 # MOBILE_BACKEND_CONTRACT
 
-Cross-repo verification date: 2026-03-18.
+Cross-repo verification date: 2026-03-20.
 
 Purpose: canonical backend-owned contract, guarantees, and open mismatch record for mobile production. Current mobile caller-truth lives in the mobile repo. If a route is not `MOBILE_CORE_NOW` or `MOBILE_CORE_SOON` here, it is not first-class for mobile launch.
 
@@ -41,9 +41,10 @@ Purpose: canonical backend-owned contract, guarantees, and open mismatch record 
 
 - `STATUS`: Active mobile editor/search routes now map known domain failures to stable 4xx/404 responses instead of collapsing them into generic 500s.
 - `STATUS`: Cross-Repo Phase 3 request-scoped observability is landed for auth bootstrap, provider-backed story generation/search, finalize/idempotent replay/recovery, and short-detail recovery.
-- `OPEN`: Phase 2 admission-control review remains tracked separately in `docs/MOBILE_HARDENING_PLAN.md`.
+- `STATUS`: Phase 5 expensive-route admission control and deterministic busy/timeout mapping are now landed on the active generation/planning/search/finalize paths.
 
 ## MOBILE_CORE_NOW Contract
+
 ### Auth Bootstrap And Usage
 
 - `POST /api/users/ensure`
@@ -73,11 +74,13 @@ Purpose: canonical backend-owned contract, guarantees, and open mismatch record 
 
 - `POST /api/story/generate`
   - Mobile caller(s): `client/screens/HomeScreen.tsx:109-127`
-  - Backend handler(s): `src/routes/story.routes.js:218-255`, `src/services/story.service.js:362-397`
+  - Backend handler(s): `src/routes/story.routes.js:238-272`, `src/services/story.service.js:507-550`, `src/services/story.llm.service.js:217-662`
   - Mobile sends: `{ sessionId }`.
   - Backend returns: full session in `data`.
   - Mobile reads: success/failure only.
-  - Guardrail: `enforceScriptDailyCap(300)` (`src/routes/story.routes.js:218-233`).
+  - Guardrails:
+    - `enforceScriptDailyCap(300)` remains the explicit daily quota gate.
+    - transient LLM busy/timeout paths now return retryable `503 SERVER_BUSY` with `Retry-After: 15`.
 
 - `GET /api/story/:sessionId`
   - Mobile caller(s): `client/screens/ScriptScreen.tsx:64-84`, `client/screens/StoryEditorScreen.tsx:459-541`, `client/screens/StoryEditorScreen.tsx:974-1024`
@@ -92,21 +95,26 @@ Purpose: canonical backend-owned contract, guarantees, and open mismatch record 
 
 - `POST /api/story/plan`
   - Mobile caller(s): `client/screens/ScriptScreen.tsx:126-159`
-  - Backend handler(s): `src/routes/story.routes.js:557-576`, `src/services/story.service.js:437-448`
+  - Backend handler(s): `src/routes/story.routes.js:577-605`, `src/services/story.service.js:583-597`, `src/services/story.llm.service.js:670-727`
   - Mobile sends: `{ sessionId }`.
   - Backend returns: full session in `data`.
   - Mobile reads: success/failure only.
-  - Guardrail: `enforceScriptDailyCap(300)`.
+  - Guardrails:
+    - `enforceScriptDailyCap(300)` remains the explicit daily quota gate.
+    - transient LLM busy/timeout paths now return retryable `503 SERVER_BUSY` with `Retry-After: 15`.
 
 - `POST /api/story/search`
   - Mobile caller(s): `client/screens/ScriptScreen.tsx:141-159`
-  - Backend handler(s): `src/routes/story.routes.js:578-610`, `src/services/story.service.js:677-715`
+  - Backend handler(s): `src/routes/story.routes.js:607-639`, `src/services/story.service.js:682-903`
   - Mobile sends: `{ sessionId }`.
   - Backend returns: full session in `data`.
   - Mobile reads: success/failure only.
+  - Success rule: preserve success whenever at least one consulted provider returns usable clips.
   - Stable failures now:
     - `404 SESSION_NOT_FOUND`
     - `400 PLAN_REQUIRED`
+    - retryable `503 SERVER_BUSY` with `Retry-After: 15` only when no usable results exist and all consulted providers failed for transient reasons
+  - Guardrails: route-local admission gate plus provider timeout/cooldown handling now sit behind the current session-based search flow.
 
 ### Story Editing And Caption Preview
 
@@ -138,15 +146,17 @@ Purpose: canonical backend-owned contract, guarantees, and open mismatch record 
 
 - `POST /api/story/search-shot`
   - Mobile caller(s): `client/screens/ClipSearchModal.tsx:49-80`
-  - Backend handler(s): `src/routes/story.routes.js:692-776`, `src/services/story.service.js:722-773`, `src/services/story.service.js:531-660`
+  - Backend handler(s): `src/routes/story.routes.js:721-775`, `src/services/story.service.js:682-903`
   - Mobile sends: `{ sessionId, sentenceIndex, query, page }`.
   - Backend returns: `{ shot, page, hasMore }` in `data`.
   - Mobile reads: `shot.candidates`, `page`, `hasMore`, and candidate `id`, `thumbUrl`, `provider`, `duration`.
+  - Success rule: preserve success whenever at least one consulted provider returns usable clips.
   - Stable failures now:
     - `404 SESSION_NOT_FOUND`
     - `400 SHOTS_REQUIRED`
     - `404 SHOT_NOT_FOUND` (detail may include `sentenceIndex` context)
     - `400 NO_SEARCH_QUERY_AVAILABLE`
+    - retryable `503 SERVER_BUSY` with `Retry-After: 15` only when no usable results exist and all consulted providers failed for transient reasons
 
 - `POST /api/story/update-shot`
   - Mobile caller(s): `client/screens/ClipSearchModal.tsx:83-104`
@@ -180,12 +190,15 @@ Purpose: canonical backend-owned contract, guarantees, and open mismatch record 
 
 - `POST /api/story/finalize`
   - Mobile caller(s): `client/screens/StoryEditorScreen.tsx:1060-1177`, `client/api/client.ts:743-859`
-  - Backend handler(s): `src/routes/story.routes.js:940-989`, `src/middleware/idempotency.firestore.js:69-467`, `src/services/story.service.js:2325-2417`
+  - Backend handler(s): `src/routes/story.routes.js:969-1028`, `src/middleware/idempotency.firestore.js:69-467`, `src/services/story.service.js:2347-2425`
   - Mobile sends now: `{ sessionId }` plus `X-Idempotency-Key`.
   - Backend requires now: `{ sessionId }` plus `X-Idempotency-Key`.
   - Backend returns on success: full session in `data`, additive `data.billing`, plus top-level `shortId`.
   - Mobile reads: `shortId`, additive `data.billing.billedSec` when available, and on failures `retryAfter`, `code/error`, `message/detail`, `status`.
   - Guardrails: Firestore-backed idempotency and usage-second reservation/settlement, `withRenderSlot()` semaphore, synchronous HTTP render path.
+  - Retryable busy behavior:
+    - render-slot exhaustion still returns `503 SERVER_BUSY` with `Retry-After: 30`
+    - if finalize has to invoke missing upstream generation/planning/search stages and those stages hit the new transient busy/timeout paths, finalize now surfaces the same retryable `503 SERVER_BUSY` mapping instead of a generic expensive-route failure
   - Current 402 semantics: backend uses time-based billing failures such as `INSUFFICIENT_RENDER_TIME`, and mobile now mirrors that render-time wording.
   - Recovery contract: backend persists additive `renderRecovery.pending` before the blocking render starts, then persists `renderRecovery.done` or `renderRecovery.failed` with the same `attemptId` used for `X-Idempotency-Key`. On `TIMEOUT`, `NETWORK_ERROR`, or `IDEMPOTENT_IN_PROGRESS`, mobile keeps the active attempt key and polls `GET /api/story/:sessionId` until that same-attempt recovery state reaches a terminal result.
   - Contract caveat: recovery is currently same-screen and bounded. If polling exhausts its attempts while state remains `pending`, mobile leaves the attempt key in memory and asks the user to resume the same attempt or check Library shortly.
@@ -224,43 +237,44 @@ Purpose: canonical backend-owned contract, guarantees, and open mismatch record 
 
 ## Route Classification Table
 
-| Route | Classification | Verified caller evidence | Handling policy |
-| --- | --- | --- | --- |
-| `POST /api/users/ensure` | `MOBILE_CORE_NOW` | Mobile auth bootstrap (`client/contexts/AuthContext.tsx:63-76`) | Harden and document now. |
-| `GET /api/usage` | `MOBILE_CORE_NOW` | Mobile auth bootstrap and billing refresh (`client/api/client.ts:519-527`, `client/contexts/AuthContext.tsx:142-178`) | Harden and document now. |
-| `POST /api/story/start` | `MOBILE_CORE_NOW` | Mobile home create flow (`client/screens/HomeScreen.tsx:79-107`) | Harden now. |
-| `POST /api/story/generate` | `MOBILE_CORE_NOW` | Mobile create flow (`client/screens/HomeScreen.tsx:109-127`) | Harden now. |
-| `GET /api/story/:sessionId` | `MOBILE_CORE_NOW` | Mobile script/editor and finalize-recovery truth (`client/screens/ScriptScreen.tsx:64-84`, `client/screens/StoryEditorScreen.tsx:367-449`, `client/screens/StoryEditorScreen.tsx:943-999`) | Harden now. |
-| `POST /api/story/plan` | `MOBILE_CORE_NOW` | Mobile storyboard step (`client/screens/ScriptScreen.tsx:126-159`) | Harden now. |
-| `POST /api/story/search` | `MOBILE_CORE_NOW` | Mobile storyboard step (`client/screens/ScriptScreen.tsx:141-159`) | Harden now. |
-| `POST /api/story/update-beat-text` | `MOBILE_CORE_NOW` | Mobile script/editor beat editing (`client/screens/ScriptScreen.tsx:162-209`, `client/screens/StoryEditorScreen.tsx:679-701`) | Harden now. |
-| `POST /api/story/delete-beat` | `MOBILE_CORE_NOW` | Mobile script/editor deletion (`client/screens/ScriptScreen.tsx:222-235`, `client/screens/StoryEditorScreen.tsx:715-749`) | Harden now. |
-| `POST /api/story/search-shot` | `MOBILE_CORE_NOW` | Mobile clip picker (`client/screens/ClipSearchModal.tsx:49-80`) | Harden now. |
-| `POST /api/story/update-shot` | `MOBILE_CORE_NOW` | Mobile clip replacement (`client/screens/ClipSearchModal.tsx:83-104`) | Harden now. |
-| `POST /api/caption/preview` | `MOBILE_CORE_NOW` | Mobile beat-card preview (`client/hooks/useCaptionPreview.ts:59-120`) | Harden now. |
-| `POST /api/story/update-caption-style` | `MOBILE_CORE_NOW` | Mobile caption placement persistence (`client/screens/StoryEditorScreen.tsx:765-820`) | Harden now. |
-| `POST /api/story/finalize` | `MOBILE_CORE_NOW` | Mobile render action (`client/screens/StoryEditorScreen.tsx:915-1099`) | Harden now; highest-risk contract surface. |
-| `GET /api/shorts/mine` | `MOBILE_CORE_NOW` | Mobile library list and detail fallback (`client/screens/LibraryScreen.tsx:80-118`, `client/screens/ShortDetailScreen.tsx:227-248`) | Harden now. |
-| `GET /api/shorts/:jobId` | `MOBILE_CORE_NOW` | Mobile post-render detail path (`client/screens/ShortDetailScreen.tsx:143-333`) | Harden now; compatibility bridge is active. |
-| `POST /api/story/insert-beat` | `MOBILE_CORE_SOON` | No current mobile caller | Do not harden until mobile adopts it. |
-| `POST /api/assets/options` | `LEGACY_WEB` | Web creative editor only (`web/public/js/pages/creative/creative.article.mjs:3483`) | Ignore unless shared security risk crosses into mobile. |
-| `POST /api/story/manual` | `LEGACY_WEB` | Web manual flow only (`web/public/js/pages/creative/creative.article.mjs:1487`) | Ignore for mobile launch. |
-| `POST /api/story/create-manual-session` | `LEGACY_WEB` | Web manual-first render only (`web/public/js/pages/creative/creative.article.mjs:3930`) | Ignore for mobile launch. |
-| `POST /api/story/update-video-cuts` | `LEGACY_WEB` | Web editor only (`web/public/js/pages/creative/creative.article.mjs:1922`, `web/public/js/pages/creative/creative.article.mjs:1950`) | Ignore for mobile launch. |
-| `POST /api/story/update-caption-meta` | `LEGACY_WEB` | Web caption preview persistence only (`web/public/js/caption-preview.js:108`) | Ignore unless it breaks shared render stability. |
-| `POST /api/checkout/start` | `LEGACY_WEB` | Web pricing page only (`web/public/js/pricing.js`) | Touch only for direct billing risk to mobile launch. |
-| `POST /api/checkout/portal` | `LEGACY_WEB` | Web pricing/account state only (`web/public/js/pricing.js`) | Touch only for direct billing risk to mobile launch. |
-| `POST /stripe/webhook` | `LEGACY_WEB` | External Stripe caller; no mobile API caller (`src/app.js:111-116`) | Keep correct, but do not broaden launch scope around it. |
-| `POST /api/story/update-script` | `REMOVE_LATER` | No current mobile caller; no current `web/public` caller found in repo search | Retire after freeze. |
-| `POST /api/story/timeline` | `REMOVE_LATER` | No current mobile caller; no current `web/public` caller found in repo search | Retire after freeze. |
-| `POST /api/story/captions` | `REMOVE_LATER` | No current mobile caller; no current `web/public` caller found in repo search | Retire after freeze. |
-| `POST /api/story/render` | `REMOVE_LATER` | No current mobile caller; no current `web/public` caller found in repo search | Default-disable now; remove later. |
-| `POST /api/user/setup` | `REMOVE_LATER` | No current mobile caller; no current `web/public` caller found in repo search | Retire after freeze. |
-| `GET /api/user/me` | `REMOVE_LATER` | No current mobile caller; no current `web/public` caller found in repo search | Retire after freeze unless mobile adopts it explicitly. |
-| `GET /api/whoami` | `REMOVE_LATER` | No current mobile caller; no current `web/public` caller found in repo search | Retire after freeze. |
-| `GET /api/limits/usage` | `REMOVE_LATER` | No current mobile caller; no current `web/public` caller found in repo search | Retire after freeze. |
+| Route                                   | Classification     | Verified caller evidence                                                                                                                                                                   | Handling policy                                          |
+| --------------------------------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------- |
+| `POST /api/users/ensure`                | `MOBILE_CORE_NOW`  | Mobile auth bootstrap (`client/contexts/AuthContext.tsx:63-76`)                                                                                                                            | Harden and document now.                                 |
+| `GET /api/usage`                        | `MOBILE_CORE_NOW`  | Mobile auth bootstrap and billing refresh (`client/api/client.ts:519-527`, `client/contexts/AuthContext.tsx:142-178`)                                                                      | Harden and document now.                                 |
+| `POST /api/story/start`                 | `MOBILE_CORE_NOW`  | Mobile home create flow (`client/screens/HomeScreen.tsx:79-107`)                                                                                                                           | Harden now.                                              |
+| `POST /api/story/generate`              | `MOBILE_CORE_NOW`  | Mobile create flow (`client/screens/HomeScreen.tsx:109-127`)                                                                                                                               | Harden now.                                              |
+| `GET /api/story/:sessionId`             | `MOBILE_CORE_NOW`  | Mobile script/editor and finalize-recovery truth (`client/screens/ScriptScreen.tsx:64-84`, `client/screens/StoryEditorScreen.tsx:367-449`, `client/screens/StoryEditorScreen.tsx:943-999`) | Harden now.                                              |
+| `POST /api/story/plan`                  | `MOBILE_CORE_NOW`  | Mobile storyboard step (`client/screens/ScriptScreen.tsx:126-159`)                                                                                                                         | Harden now.                                              |
+| `POST /api/story/search`                | `MOBILE_CORE_NOW`  | Mobile storyboard step (`client/screens/ScriptScreen.tsx:141-159`)                                                                                                                         | Harden now.                                              |
+| `POST /api/story/update-beat-text`      | `MOBILE_CORE_NOW`  | Mobile script/editor beat editing (`client/screens/ScriptScreen.tsx:162-209`, `client/screens/StoryEditorScreen.tsx:679-701`)                                                              | Harden now.                                              |
+| `POST /api/story/delete-beat`           | `MOBILE_CORE_NOW`  | Mobile script/editor deletion (`client/screens/ScriptScreen.tsx:222-235`, `client/screens/StoryEditorScreen.tsx:715-749`)                                                                  | Harden now.                                              |
+| `POST /api/story/search-shot`           | `MOBILE_CORE_NOW`  | Mobile clip picker (`client/screens/ClipSearchModal.tsx:49-80`)                                                                                                                            | Harden now.                                              |
+| `POST /api/story/update-shot`           | `MOBILE_CORE_NOW`  | Mobile clip replacement (`client/screens/ClipSearchModal.tsx:83-104`)                                                                                                                      | Harden now.                                              |
+| `POST /api/caption/preview`             | `MOBILE_CORE_NOW`  | Mobile beat-card preview (`client/hooks/useCaptionPreview.ts:59-120`)                                                                                                                      | Harden now.                                              |
+| `POST /api/story/update-caption-style`  | `MOBILE_CORE_NOW`  | Mobile caption placement persistence (`client/screens/StoryEditorScreen.tsx:765-820`)                                                                                                      | Harden now.                                              |
+| `POST /api/story/finalize`              | `MOBILE_CORE_NOW`  | Mobile render action (`client/screens/StoryEditorScreen.tsx:915-1099`)                                                                                                                     | Harden now; highest-risk contract surface.               |
+| `GET /api/shorts/mine`                  | `MOBILE_CORE_NOW`  | Mobile library list and detail fallback (`client/screens/LibraryScreen.tsx:80-118`, `client/screens/ShortDetailScreen.tsx:227-248`)                                                        | Harden now.                                              |
+| `GET /api/shorts/:jobId`                | `MOBILE_CORE_NOW`  | Mobile post-render detail path (`client/screens/ShortDetailScreen.tsx:143-333`)                                                                                                            | Harden now; compatibility bridge is active.              |
+| `POST /api/story/insert-beat`           | `MOBILE_CORE_SOON` | No current mobile caller                                                                                                                                                                   | Do not harden until mobile adopts it.                    |
+| `POST /api/assets/options`              | `LEGACY_WEB`       | Web creative editor only (`web/public/js/pages/creative/creative.article.mjs:3483`)                                                                                                        | Ignore unless shared security risk crosses into mobile.  |
+| `POST /api/story/manual`                | `LEGACY_WEB`       | Web manual flow only (`web/public/js/pages/creative/creative.article.mjs:1487`)                                                                                                            | Ignore for mobile launch.                                |
+| `POST /api/story/create-manual-session` | `LEGACY_WEB`       | Web manual-first render only (`web/public/js/pages/creative/creative.article.mjs:3930`)                                                                                                    | Ignore for mobile launch.                                |
+| `POST /api/story/update-video-cuts`     | `LEGACY_WEB`       | Web editor only (`web/public/js/pages/creative/creative.article.mjs:1922`, `web/public/js/pages/creative/creative.article.mjs:1950`)                                                       | Ignore for mobile launch.                                |
+| `POST /api/story/update-caption-meta`   | `LEGACY_WEB`       | Web caption preview persistence only (`web/public/js/caption-preview.js:108`)                                                                                                              | Ignore unless it breaks shared render stability.         |
+| `POST /api/checkout/start`              | `LEGACY_WEB`       | Web pricing page only (`web/public/js/pricing.js`)                                                                                                                                         | Touch only for direct billing risk to mobile launch.     |
+| `POST /api/checkout/portal`             | `LEGACY_WEB`       | Web pricing/account state only (`web/public/js/pricing.js`)                                                                                                                                | Touch only for direct billing risk to mobile launch.     |
+| `POST /stripe/webhook`                  | `LEGACY_WEB`       | External Stripe caller; no mobile API caller (`src/app.js:111-116`)                                                                                                                        | Keep correct, but do not broaden launch scope around it. |
+| `POST /api/story/update-script`         | `REMOVE_LATER`     | No current mobile caller; no current `web/public` caller found in repo search                                                                                                              | Retire after freeze.                                     |
+| `POST /api/story/timeline`              | `REMOVE_LATER`     | No current mobile caller; no current `web/public` caller found in repo search                                                                                                              | Retire after freeze.                                     |
+| `POST /api/story/captions`              | `REMOVE_LATER`     | No current mobile caller; no current `web/public` caller found in repo search                                                                                                              | Retire after freeze.                                     |
+| `POST /api/story/render`                | `REMOVE_LATER`     | No current mobile caller; no current `web/public` caller found in repo search                                                                                                              | Default-disable now; remove later.                       |
+| `POST /api/user/setup`                  | `REMOVE_LATER`     | No current mobile caller; no current `web/public` caller found in repo search                                                                                                              | Retire after freeze.                                     |
+| `GET /api/user/me`                      | `REMOVE_LATER`     | No current mobile caller; no current `web/public` caller found in repo search                                                                                                              | Retire after freeze unless mobile adopts it explicitly.  |
+| `GET /api/whoami`                       | `REMOVE_LATER`     | No current mobile caller; no current `web/public` caller found in repo search                                                                                                              | Retire after freeze.                                     |
+| `GET /api/limits/usage`                 | `REMOVE_LATER`     | No current mobile caller; no current `web/public` caller found in repo search                                                                                                              | Retire after freeze.                                     |
 
 Removed in Phase 5 (not mounted):
+
 - `GET /api/credits`
 - `POST /api/checkout/session`
 - `POST /api/checkout/subscription`

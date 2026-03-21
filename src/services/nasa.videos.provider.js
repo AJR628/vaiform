@@ -1,4 +1,5 @@
 import { getRuntimeOverride } from '../testing/runtime-overrides.js';
+import { withAbortTimeout } from '../utils/fetch.timeout.js';
 
 const NASA_SEARCH = 'https://images-api.nasa.gov/search';
 const NASA_ASSET = 'https://images-api.nasa.gov/asset';
@@ -56,9 +57,14 @@ export async function nasaSearchVideos({ query, perPage = 12, page = 1 }) {
   url.searchParams.set('page_size', '30');
 
   try {
-    const res = await fetch(url, {
-      headers: { Accept: 'application/json' },
-    });
+    const res = await withAbortTimeout(
+      async (signal) =>
+        await fetch(url, {
+          headers: { Accept: 'application/json' },
+          ...(signal ? { signal } : {}),
+        }),
+      { timeoutMs: 15000, errorMessage: 'NASA_SEARCH_TIMEOUT' }
+    );
 
     if (!res.ok) {
       // Log warning but don't throw
@@ -67,7 +73,13 @@ export async function nasaSearchVideos({ query, perPage = 12, page = 1 }) {
 
       // Short negative cache on error
       mem.set(cacheKey, { at: now, ttl: 60_000, items: [] });
-      const result = { ok: false, reason: `HTTP_${res.status}`, items: [] };
+      const result = {
+        ok: false,
+        reason: `HTTP_${res.status}`,
+        items: [],
+        nextPage: null,
+        transient: res.status === 429 || res.status >= 500,
+      };
       console.log(
         `[nasa] Returning: ok=${result.ok}, reason="${result.reason}", items.length=${result.items.length}`
       );
@@ -82,6 +94,7 @@ export async function nasaSearchVideos({ query, perPage = 12, page = 1 }) {
     );
     const items = [];
     let processedCount = 0;
+    let hadTransientAssetFailure = false;
 
     // Process each item in the collection
     for (const item of data?.collection?.items || []) {
@@ -96,11 +109,19 @@ export async function nasaSearchVideos({ query, perPage = 12, page = 1 }) {
 
         // Make secondary API call to get asset details
         const assetUrl = `${NASA_ASSET}/${nasaId}`;
-        const assetRes = await fetch(assetUrl, {
-          headers: { Accept: 'application/json' },
-        });
+        const assetRes = await withAbortTimeout(
+          async (signal) =>
+            await fetch(assetUrl, {
+              headers: { Accept: 'application/json' },
+              ...(signal ? { signal } : {}),
+            }),
+          { timeoutMs: 15000, errorMessage: 'NASA_ASSET_TIMEOUT' }
+        );
 
         if (!assetRes.ok) {
+          if (assetRes.status === 429 || assetRes.status >= 500) {
+            hadTransientAssetFailure = true;
+          }
           console.warn(`[nasa] drop: asset fetch failed for ${nasaId} (HTTP ${assetRes.status})`);
           continue;
         }
@@ -158,6 +179,9 @@ export async function nasaSearchVideos({ query, perPage = 12, page = 1 }) {
           break;
         }
       } catch (itemError) {
+        if (itemError?.code === 'NASA_ASSET_TIMEOUT') {
+          hadTransientAssetFailure = true;
+        }
         console.warn(`[nasa] Error processing item:`, itemError?.message || String(itemError));
         // Continue with next item
         continue;
@@ -179,7 +203,21 @@ export async function nasaSearchVideos({ query, perPage = 12, page = 1 }) {
     console.log(
       `[nasa] final normalized items.length=${items.length} (from ${rawItemsCount} raw items)`
     );
-    const result = { ok: true, reason: 'OK', items, nextPage };
+    if (items.length === 0 && hadTransientAssetFailure) {
+      const result = {
+        ok: false,
+        reason: 'ASSET_UNAVAILABLE',
+        items: [],
+        nextPage: null,
+        transient: true,
+      };
+      console.log(
+        `[nasa] Returning: ok=${result.ok}, reason="${result.reason}", items.length=${result.items.length}`
+      );
+      return result;
+    }
+
+    const result = { ok: true, reason: 'OK', items, nextPage, transient: false };
     console.log(
       `[nasa] Returning: ok=${result.ok}, reason="${result.reason}", items.length=${result.items.length}`
     );
@@ -188,7 +226,10 @@ export async function nasaSearchVideos({ query, perPage = 12, page = 1 }) {
     // Log error but don't throw - return empty array
     console.warn('[nasa] Search error:', error?.message || String(error));
     mem.set(cacheKey, { at: now, ttl: 60_000, items: [] });
-    const result = { ok: false, reason: 'ERROR', items: [] };
+    const result =
+      error?.code === 'NASA_SEARCH_TIMEOUT'
+        ? { ok: false, reason: 'TIMEOUT', items: [], nextPage: null, transient: true }
+        : { ok: false, reason: 'ERROR', items: [], nextPage: null, transient: true };
     console.log(
       `[nasa] Returning: ok=${result.ok}, reason="${result.reason}", items.length=${result.items.length}`
     );

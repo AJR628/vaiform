@@ -4,7 +4,7 @@
 - Owner repo: backend
 - Source of truth for: phased cross-repo execution order for production hardening and anti-drift work
 - Canonical counterpart/source: mobile repo `docs/MOBILE_USED_SURFACES.md` for caller truth, backend repo `docs/MOBILE_BACKEND_CONTRACT.md` for contract truth, backend repo `docs/MOBILE_HARDENING_PLAN.md` for route-hardening status
-- Last verified against: both repos on 2026-03-19
+- Last verified against: both repos on 2026-03-20
 
 ## Purpose
 
@@ -477,77 +477,68 @@ Add a regression net around the actual mobile-used backend contract before mobil
 
 ## Phase 5 - Admission Control And Expensive-Route Determinism
 
+Status: COMPLETE (implemented 2026-03-20).
+
 ### 1. Goal
 
 Reject overload predictably instead of degrading ambiguously when generation, search, caption preview, or finalize traffic spikes.
 
-### 2. In-scope flow(s)
+### 2. Implemented scope
 
-- `POST /api/story/generate`
-- `POST /api/story/search`
-- `POST /api/story/search-shot`
-- `POST /api/story/finalize`
-- provider-backed upstream fetches these routes depend on
+- Primary backend hardening landed on the active expensive mobile-used routes:
+  - `POST /api/story/generate`
+  - `POST /api/story/plan`
+  - `POST /api/story/search`
+  - `POST /api/story/search-shot`
+  - `POST /api/story/finalize`
+- Shared upstream scope landed on the dependencies those routes actually use:
+  - OpenAI story generation and planning calls
+  - Pexels, Pixabay, and NASA stock-video search providers
+- `POST /api/caption/preview` remained validation-only in this phase because the backend already had auth, explicit `20/min` rate limiting, and a `200kb` body cap.
 
-### 3. Mobile entrypoints involved
+### 3. Implemented behavior
 
-- `client/screens/HomeScreen.tsx:79-137`
-- `client/screens/ScriptScreen.tsx:126-159`
-- `client/screens/ClipSearchModal.tsx:49-80`
-- `client/screens/StoryEditorScreen.tsx:1016-1149`
+- `generate` and `plan` keep their existing explicit `429 SCRIPT_LIMIT_REACHED` daily-cap guardrail.
+- `generate` and `plan` now also have explicit transient busy/timeout behavior:
+  - route-local retryable `503 SERVER_BUSY`
+  - `Retry-After: 15`
+  - deterministic LLM timeout handling around the OpenAI call path
+- `search` and `search-shot` now have explicit route-local transient admission behavior plus provider timeout/cooldown handling.
+- Search success now preserves usable results whenever at least one consulted provider returns usable clips.
+- `search` / `search-shot` now surface retryable `503 SERVER_BUSY` only when:
+  - no usable results exist, and
+  - all consulted providers failed for transient reasons.
+- Pixabay and NASA now use explicit timeout handling; Pexels keeps its existing timeout path.
+- Provider transient failures now feed a small per-process cooldown state instead of collapsing repeatedly into ambiguous empty results.
+- Finalize preserves the existing mobile-facing contract:
+  - `409 IDEMPOTENT_IN_PROGRESS`
+  - `402 INSUFFICIENT_RENDER_TIME`
+  - `404 SESSION_NOT_FOUND`
+  - top-level `shortId`
+  - existing render-slot `503 SERVER_BUSY` + `Retry-After: 30`
+- When finalize has to invoke missing upstream generation/planning/search stages, those internal stages now inherit the new deterministic retryable `503` behavior instead of falling through generic expensive-route failures.
 
-### 4. Backend routes involved
+### 4. Verification standard
 
-- `src/routes/story.routes.js:150-175`
-- `src/routes/story.routes.js:500-635`
-- `src/routes/story.routes.js:821-864`
-- `src/routes/caption.preview.routes.js:91-113`
+- Backend contract coverage stayed on the existing first-party suite at `test/contracts/phase4a.contract.test.js`.
+- The suite now proves:
+  - retryable `503` mapping for `generate`
+  - retryable `503` mapping for `plan`
+  - search/search-shot success preservation when at least one provider returns usable results
+  - search/search-shot retryable `503` only when all consulted providers fail transiently and no usable results exist
+  - finalize preservation of existing `503` render-slot behavior
+- `npm run test:contracts` passes locally.
+- Backend CI continues to run `npm run test:contracts`.
 
-### 5. Current wiring summary
+### 5. Current caveats
 
-- Caption preview already has explicit per-user rate limiting.
-- `generate` and `plan` have script-cap gating.
-- Finalize has idempotency reservation and a per-process semaphore.
-- Search routes have no explicit per-route admission control or provider cooldown behavior.
+- Route-local admission controls and provider cooldowns are intentionally per-process. Phase 5 did not introduce a generalized shared framework or distributed coordination layer.
+- `withRenderSlot()` remains single-process only. That scale concern stays in Phase 6.
+- Capacity thresholds still live in code constants, not config. Phase 5 made behavior deterministic; it did not claim final capacity tuning.
 
-### 6. Proven issues / risks
+### 6. Open questions / uncertainties, if any
 
-- `withRenderSlot()` is single-process only.
-- Search/generate upstream failure behavior is partly hidden inside service catch blocks or generic route 500s.
-- Provider outages can turn into latency and retry storms instead of fast, clear failures.
-
-### 7. Proposed plan in order
-
-1. Define explicit admission-control policy per expensive route.
-2. Add deterministic upstream timeout and error-mapping rules across story generation and provider search.
-3. Add provider-level cooldown or circuit-breaker behavior for repeated upstream failures.
-4. Extend docs to specify retryable versus non-retryable overload responses.
-5. Verify mobile copy and recovery behavior matches those semantics.
-
-### 8. Files likely to change
-
-- `src/routes/story.routes.js`
-- `src/services/story.service.js`
-- provider services under `src/services/`
-- timeout/retry utilities under `src/utils/`
-- backend contract docs
-- possibly mobile error copy if codes change
-
-### 9. Docs that must be checked/updated
-
-- backend `docs/MOBILE_BACKEND_CONTRACT.md`
-- backend `docs/MOBILE_HARDENING_PLAN.md`
-- mobile `docs/MOBILE_USED_SURFACES.md` if client handling changes
-
-### 10. Verification steps
-
-- Simulate provider slowdowns and repeated failures.
-- Verify route responses stay stable under overload.
-- Confirm mobile does not spin indefinitely on failures that should fail fast.
-
-### 11. Open questions / uncertainties, if any
-
-- Final capacity targets are not encoded in repo config yet. That will need stress-test data.
+- None that block Phase 5 completion. Future threshold tuning still needs real load data, but the expensive-route behavior is now deterministic enough to move on.
 
 ## Phase 6 - Render Isolation And Async Completion
 
