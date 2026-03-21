@@ -570,6 +570,7 @@ DONE: take finalize completion off the long-lived request path without changing 
 
 - `POST /api/story/finalize` now reserves render usage, enqueues a Firestore-backed finalize attempt, persists `renderRecovery.pending`, and returns `202 Accepted` with additive finalize metadata.
 - A backend-owned finalize runner now claims queued attempts, heartbeats running attempts, executes the existing finalize pipeline in the background, and settles or releases billing exactly once.
+- The queued-attempt claimant in `src/services/story-finalize.attempts.js` depends on a Firestore composite index for `idempotency(flow ASC, state ASC, createdAt ASC)`. That index is now tracked in root `firestore.indexes.json`, and root `firebase.json` wires Firestore rules plus indexes for deploy via `firebase deploy --project <firebase-project-id> --only firestore`.
 - `GET /api/story/:sessionId` remains the canonical poll/recovery surface through additive `renderRecovery`.
 - `GET /api/shorts/:jobId` remains a secondary detail/availability bridge after completion.
 - Mobile now treats `202 pending` and `409 FINALIZE_ALREADY_ACTIVE` as recovery-entry conditions and persists the active finalize attempt for same-session restart-safe continuation.

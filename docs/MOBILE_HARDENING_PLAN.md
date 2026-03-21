@@ -106,6 +106,8 @@ Goal: harden only the backend surface that the current mobile app actually depen
   - Mobile evidence: `client/api/client.ts`, `client/screens/StoryEditorScreen.tsx`
 - `DONE`: stale queued/running finalize attempts are now reaped into terminal failure, release reserved usage exactly once, and persist `renderRecovery.failed` for the canonical session-recovery path.
   - Backend evidence: `src/services/story-finalize.attempts.js`, `src/services/story-finalize.runner.js`, `src/services/story.service.js`
+- `DONE`: the Firestore composite index required for async finalize claim ordering is now source-controlled in root `firestore.indexes.json`, and root `firebase.json` now wires Firestore rules plus indexes for repo-managed deploys via `firebase deploy --project <firebase-project-id> --only firestore`.
+  - Backend evidence: `src/services/story-finalize.attempts.js`, `firestore.indexes.json`, `firebase.json`
 - `LIMITATION`: render concurrency remains per-process.
   - Current backend evidence: `src/utils/render.semaphore.js`, `src/services/story-finalize.runner.js`, `server.js`
   - Scope note: Phase 3 hardens async finalize and crash cleanup, but it does not introduce a multi-instance global render-slot ceiling.

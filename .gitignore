@@ -138,6 +138,8 @@ out
 
 # Firebase & service accounts
 *.json
+!firebase.json
+!firestore.indexes.json
 
 # OS files
 .DS_Store

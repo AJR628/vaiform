@@ -193,6 +193,7 @@ Purpose: canonical backend-owned contract, guarantees, and open mismatch record 
   - Backend handler(s): `src/routes/story.routes.js`, `src/middleware/idempotency.firestore.js`, `src/services/story-finalize.attempts.js`, `src/services/story-finalize.runner.js`, `src/services/story.service.js`
   - Mobile sends now: `{ sessionId }` plus `X-Idempotency-Key`.
   - Backend requires now: `{ sessionId }` plus `X-Idempotency-Key`.
+  - Firestore deploy prerequisite: the queued-attempt claim query in `src/services/story-finalize.attempts.js` depends on the composite index tracked in root `firestore.indexes.json` for `idempotency(flow ASC, state ASC, createdAt ASC)`. Root `firebase.json` now wires `firestore.rules` plus `firestore.indexes.json`, and the repo-managed deploy path is `firebase deploy --project <firebase-project-id> --only firestore`.
   - Backend returns now:
     - initial accepted response: `202` with full session in `data`, top-level `shortId: null`, and additive `finalize: { state: "pending", attemptId, pollSessionId }`
     - same-key active replay: `202` with the same pending finalize metadata
