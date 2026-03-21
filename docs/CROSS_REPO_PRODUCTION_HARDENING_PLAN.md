@@ -544,7 +544,7 @@ Reject overload predictably instead of degrading ambiguously when generation, se
 
 ### 1. Goal
 
-Remove the largest production risk by taking render completion off the long-lived request path.
+DONE: take finalize completion off the long-lived request path without changing the canonical session-recovery surface.
 
 ### 2. In-scope flow(s)
 
@@ -556,9 +556,9 @@ Remove the largest production risk by taking render completion off the long-live
 
 ### 3. Mobile entrypoints involved
 
-- `client/screens/StoryEditorScreen.tsx:958-1149`
-- `client/screens/ShortDetailScreen.tsx:143-333`
-- `client/api/client.ts:715-823`
+- `client/screens/StoryEditorScreen.tsx`
+- `client/screens/ShortDetailScreen.tsx`
+- `client/api/client.ts`
 
 ### 4. Backend routes involved
 
@@ -568,34 +568,35 @@ Remove the largest production risk by taking render completion off the long-live
 
 ### 5. Current wiring summary
 
-- Backend already has the core semantics needed for async finalize:
-  - idempotency key
-  - usage reservation and settlement
-  - render recovery state
-  - same-attempt polling in mobile
-- The remaining problem is that `finalizeStory()` still performs the whole pipeline before the response completes.
+- `POST /api/story/finalize` now reserves render usage, enqueues a Firestore-backed finalize attempt, persists `renderRecovery.pending`, and returns `202 Accepted` with additive finalize metadata.
+- A backend-owned finalize runner now claims queued attempts, heartbeats running attempts, executes the existing finalize pipeline in the background, and settles or releases billing exactly once.
+- `GET /api/story/:sessionId` remains the canonical poll/recovery surface through additive `renderRecovery`.
+- `GET /api/shorts/:jobId` remains a secondary detail/availability bridge after completion.
+- Mobile now treats `202 pending` and `409 FINALIZE_ALREADY_ACTIVE` as recovery-entry conditions and persists the active finalize attempt for same-session restart-safe continuation.
 
 ### 6. Proven issues / risks
 
-- `server.js:32-39` raises timeouts as a mitigation, not a scale fix.
-- `src/routes/story.routes.js:821-864` still awaits `finalizeStory()` inline.
-- `src/utils/render.semaphore.js:1-22` only protects a single process.
-- Long finalize requests increase fairness, throughput, and recovery ambiguity risks under real load.
+- `src/utils/render.semaphore.js` is still per-process only.
+- The Firestore finalize runner coordinates attempt ownership and stale-attempt cleanup, but it does not create a global multi-instance render-slot ceiling.
+- `server.js` still keeps a 15-minute timeout for legacy blocking render flows such as `POST /api/story/render`; that timeout is no longer the finalize scalability strategy.
 
 ### 7. Proposed plan in order
 
-1. Preserve current finalize semantics while changing completion to async under the hood.
-2. Split finalize into reserve/enqueue/respond, then process in a background worker.
-3. Keep `renderRecovery` and idempotency as the continuity layer so mobile changes stay minimal.
-4. Add explicit job status or keep `GET /api/story/:sessionId` as the primary polling source, but choose one canonical poll surface.
-5. Update short creation/detail bridge only after async finalize truth is stable.
+1. Preserve `GET /api/story/:sessionId` as the canonical finalize recovery surface.
+2. Keep Firestore idempotency as the finalize-attempt SSOT and reject same-session concurrent finalize attempts under different keys.
+3. Use the in-repo finalize runner plus lease/heartbeat reaper to complete, fail, or expire attempts deterministically.
+4. Keep top-level `shortId` on terminal success replay and keep shorts detail as a secondary post-completion bridge.
+5. Document the remaining per-process concurrency limitation explicitly instead of implying Phase 6 solved it.
 
 ### 8. Files likely to change
 
 - `src/routes/story.routes.js`
 - `src/middleware/idempotency.firestore.js`
 - `src/services/story.service.js`
-- render/worker utilities and job storage
+- `src/services/story-finalize.attempts.js`
+- `src/services/story-finalize.runner.js`
+- `src/app.js`
+- `server.js`
 - mobile finalize and recovery helpers
 - backend contract and hardening docs
 
@@ -608,14 +609,16 @@ Remove the largest production risk by taking render completion off the long-live
 
 ### 10. Verification steps
 
-- Finalize returns quickly with stable attempt identity.
-- A completed async job settles billing once and only once.
-- Mobile can recover after timeout, backgrounding, or process restart without inventing a new attempt.
-- Shorts detail availability is still understandable and traceable.
+- `POST /api/story/finalize` returns quickly with stable attempt identity and `202 pending`.
+- Same-key replay returns `202 pending` while queued/running, `200` with top-level `shortId` when done, and terminal failure replay when failed/expired.
+- Different-key same-session finalize returns `409 FINALIZE_ALREADY_ACTIVE` without a second reservation.
+- Stale queued/running attempts are reaped into terminal failure and release reserved usage once.
+- Mobile can continue the same attempt through `GET /api/story/:sessionId` after timeout, backgrounding, or process restart on the same session.
 
 ### 11. Open questions / uncertainties, if any
 
-- Worker/runtime placement is not yet chosen in repo code. The plan should preserve current contract semantics regardless of implementation choice.
+- Worker/runtime placement for Phase 6 is now chosen in repo code.
+- Remaining limitation: multi-instance global render concurrency is still unchosen and intentionally out of scope for this phase.
 
 ## Phase 4B - Mobile Test Expansion And CI
 

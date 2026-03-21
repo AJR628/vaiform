@@ -364,7 +364,7 @@ function renderRecoveryFromState({
     return {
       state: 'pending',
       attemptId: normalizedAttemptId,
-      startedAt: now,
+      startedAt: previous?.startedAt || now,
       updatedAt: now,
       shortId: null,
       finishedAt: null,
@@ -460,6 +460,24 @@ async function persistRenderRecovery({
   session.updatedAt = next.updatedAt;
   await saveStorySession({ uid, sessionId, data: session });
   return session;
+}
+
+export async function persistStoryRenderRecovery({
+  uid,
+  sessionId,
+  attemptId,
+  state,
+  shortId = null,
+  error = null,
+}) {
+  return await persistRenderRecovery({
+    uid,
+    sessionId,
+    attemptId,
+    state,
+    shortId,
+    error,
+  });
 }
 
 /**

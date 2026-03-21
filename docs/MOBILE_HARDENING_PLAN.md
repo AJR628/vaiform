@@ -69,7 +69,7 @@ Goal: harden only the backend surface that the current mobile app actually depen
 
 - `DONE`: Mobile timeout/network-loss recovery now keeps the same finalize attempt identity and polls `GET /api/story/:sessionId` until that same-attempt recovery state becomes terminal.
   - Mobile evidence: `client/api/client.ts:743-859`, `client/screens/StoryEditorScreen.tsx:993-1094`
-  - Current limit: recovery remains same-screen and bounded; if polling stays `pending`, the active attempt key remains in memory and the user is prompted to resume the same attempt or check Library shortly.
+  - Updated limit: recovery now persists the active finalize attempt per user/session for same-session restart-safe continuation, but the UX still remains bounded to the same story session and does not add a global recovery surface.
 
 - `DONE`: Shorts detail now uses a compatibility bridge.
   - Backend evidence: `src/controllers/shorts.controller.js:101-131`, `src/controllers/shorts.controller.js:157-227`
@@ -93,18 +93,26 @@ Goal: harden only the backend surface that the current mobile app actually depen
   - Current semantics:
     - `generate` / `plan` keep their daily-cap `429` and now add retryable `503 SERVER_BUSY` with `Retry-After: 15` for transient LLM busy/timeout paths
     - `search` / `search-shot` now preserve success when at least one consulted provider returns usable clips, and only return retryable `503 SERVER_BUSY` with `Retry-After: 15` when no usable results exist because all consulted providers failed transiently
-    - `finalize` preserves its existing `409`, `402`, `404`, top-level `shortId`, and render-slot `503 SERVER_BUSY` with `Retry-After: 30`, while missing prerequisite generate/plan/search stages now inherit the new deterministic transient busy mapping instead of generic expensive-route collapse
+    - `finalize` now preserves `402`, `404`, top-level `shortId` on terminal success replay, and deterministic same-attempt recovery, while render-slot saturation no longer returns route-level `503` because accepted work queues behind the async finalize runner
   - Validation-only note: `POST /api/caption/preview` already had backend auth, explicit `20/min` rate limiting, and a `200kb` body cap, so this phase verified that guardrail surface without widening its runtime behavior.
 
-## MOBILE_HARDENING_PLAN Phase 3 Explicit Scale Track
+## Phase 3 Completed: Async Finalize And Durable Attempt Recovery
 
-- `TRACK`: keep render-architecture scale visible without letting it jump ahead of launch-critical fixes.
-  - Current backend evidence: `src/utils/render.semaphore.js:4-22`, `src/routes/story.routes.js:956-958`, `server.js:32-37`
-  - Direction: queue-backed or async job/status finalize path with multi-instance-safe concurrency.
+- `DONE`: `POST /api/story/finalize` now reserves, enqueues, and responds with `202 pending` instead of blocking on full render completion.
+  - Backend evidence: `src/routes/story.routes.js`, `src/middleware/idempotency.firestore.js`, `src/services/story-finalize.attempts.js`, `src/services/story-finalize.runner.js`
+  - Mobile evidence: `client/api/client.ts`, `client/screens/StoryEditorScreen.tsx`
+- `DONE`: same-session concurrent finalize attempts under different keys are now rejected explicitly with `409 FINALIZE_ALREADY_ACTIVE` and do not double-reserve usage or enqueue duplicate work.
+  - Backend evidence: `src/services/story-finalize.attempts.js`, `src/middleware/idempotency.firestore.js`
+  - Mobile evidence: `client/api/client.ts`, `client/screens/StoryEditorScreen.tsx`
+- `DONE`: stale queued/running finalize attempts are now reaped into terminal failure, release reserved usage exactly once, and persist `renderRecovery.failed` for the canonical session-recovery path.
+  - Backend evidence: `src/services/story-finalize.attempts.js`, `src/services/story-finalize.runner.js`, `src/services/story.service.js`
+- `LIMITATION`: render concurrency remains per-process.
+  - Current backend evidence: `src/utils/render.semaphore.js`, `src/services/story-finalize.runner.js`, `server.js`
+  - Scope note: Phase 3 hardens async finalize and crash cleanup, but it does not introduce a multi-instance global render-slot ceiling.
 
 ## Exit Criteria
 
 - `Phase 0`: no mobile user can appear app-ready before backend provisioning succeeds, and request correlation is preserved in the mobile normalization layer.
 - `Phase 1`: timeout/network-loss recovery is backend-backed, and newly rendered shorts use the current shorts-detail compatibility bridge while `/api/shorts/mine` fallback remains available during eventual consistency.
 - `Phase 2`: editor/search routes stop collapsing known domain failures into generic 500s, and expensive mobile-used routes have explicit admission-control coverage.
-- `Phase 3`: render work no longer depends on a long-lived blocking HTTP request or per-process-only concurrency control.
+- `Phase 3`: render work no longer depends on a long-lived blocking finalize HTTP request, but per-process-only render concurrency remains an explicit documented limitation.

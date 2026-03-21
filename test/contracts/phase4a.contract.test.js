@@ -5,6 +5,7 @@ import {
   readStorySession,
   requestJson,
   resetHarnessState,
+  seedFirestoreDoc,
   seedShortDoc,
   seedShortMeta,
   seedStorySession,
@@ -828,7 +829,7 @@ test('POST /api/caption/preview locks the current mobile server-measured request
   assert.ok(Array.isArray(result.json.data.meta.lines));
 });
 
-test('POST /api/story/finalize preserves top-level shortId and idempotent replay billing semantics', async () => {
+test('POST /api/story/finalize returns 202 pending first, then same-key replay returns completed success with shortId and settled billing', async () => {
   seedUserDoc('user-1', {
     plan: 'creator',
     membership: {
@@ -890,11 +891,18 @@ test('POST /api/story/finalize preserves top-level shortId and idempotent replay
     },
   });
 
-  assert.equal(first.status, 200);
+  assert.equal(first.status, 202);
   assert.equal(first.json.success, true);
-  assert.equal(first.json.shortId, 'short-finalized-1');
-  assert.equal(first.json.data.finalVideo.jobId, 'short-finalized-1');
-  assert.equal(first.json.data.billing.billedSec, 9);
+  assert.equal(first.json.shortId, null);
+  assert.equal(first.json.finalize.state, 'pending');
+  assert.equal(first.json.finalize.attemptId, 'idem-finalize-1');
+  assert.equal(first.json.finalize.pollSessionId, 'story-finalize-success');
+  assert.equal(first.json.data.renderRecovery.state, 'pending');
+
+  await waitFor(
+    () => readDoc('idempotency', 'user-1:idem-finalize-1')?.state === 'done',
+    { timeoutMs: 1000, intervalMs: 20 }
+  );
 
   const replay = await requestJson('/api/story/finalize', {
     method: 'POST',
@@ -910,6 +918,7 @@ test('POST /api/story/finalize preserves top-level shortId and idempotent replay
   assert.equal(replay.status, 200);
   assert.equal(replay.json.success, true);
   assert.equal(replay.json.shortId, 'short-finalized-1');
+  assert.equal(replay.json.data.finalVideo.jobId, 'short-finalized-1');
   assert.equal(replay.json.data.billing.billedSec, 9);
 
   const usageDoc = readDoc('users', 'user-1');
@@ -917,7 +926,7 @@ test('POST /api/story/finalize preserves top-level shortId and idempotent replay
   assert.equal(usageDoc.usage.cycleReservedSec, 0);
 });
 
-test('POST /api/story/finalize returns 409 IDEMPOTENT_IN_PROGRESS while the same attempt is still pending', async () => {
+test('POST /api/story/finalize replays 202 pending for the same key while the background attempt is still active', async () => {
   seedUserDoc('user-1', {
     plan: 'creator',
     membership: {
@@ -995,14 +1004,139 @@ test('POST /api/story/finalize returns 409 IDEMPOTENT_IN_PROGRESS while the same
     },
   });
 
-  assert.equal(second.status, 409);
-  assert.equal(second.json.success, false);
-  assert.equal(second.json.error, 'IDEMPOTENT_IN_PROGRESS');
+  assert.equal(second.status, 202);
+  assert.equal(second.json.success, true);
+  assert.equal(second.json.shortId, null);
+  assert.equal(second.json.finalize.state, 'pending');
+  assert.equal(second.json.finalize.attemptId, 'idem-finalize-pending');
+
+  const usageDoc = readDoc('users', 'user-1');
+  assert.equal(usageDoc.usage.cycleReservedSec, 8);
 
   release();
   const first = await firstPromise;
-  assert.equal(first.status, 200);
-  assert.equal(first.json.shortId, 'short-finalized-pending');
+  assert.equal(first.status, 202);
+  assert.equal(first.json.finalize.attemptId, 'idem-finalize-pending');
+
+  await waitFor(
+    () => readDoc('idempotency', 'user-1:idem-finalize-pending')?.state === 'done',
+    { timeoutMs: 1000, intervalMs: 20 }
+  );
+
+  const replay = await requestJson('/api/story/finalize', {
+    method: 'POST',
+    headers: {
+      'X-Idempotency-Key': 'idem-finalize-pending',
+      'x-client': 'mobile',
+    },
+    body: {
+      sessionId: 'story-finalize-pending',
+    },
+  });
+  assert.equal(replay.status, 200);
+  assert.equal(replay.json.shortId, 'short-finalized-pending');
+});
+
+test('POST /api/story/finalize returns 409 FINALIZE_ALREADY_ACTIVE for a different key on the same active session without double-reserving', async () => {
+  seedUserDoc('user-1', {
+    plan: 'creator',
+    membership: {
+      status: 'active',
+      kind: 'subscription',
+      billingCadence: 'monthly',
+    },
+    usage: {
+      cycleIncludedSec: 600,
+      cycleUsedSec: 20,
+      cycleReservedSec: 0,
+    },
+  });
+  seedStorySession(
+    'user-1',
+    buildBaseSession({
+      id: 'story-finalize-conflict',
+      story: {
+        sentences: ['Beat one'],
+      },
+      shots: [buildShot('clip-1', 0, 'Beat one')],
+      billingEstimate: {
+        estimatedSec: 8,
+        source: 'heuristic',
+        updatedAt: '2026-03-19T00:00:00.000Z',
+      },
+    })
+  );
+
+  let release;
+  const blocker = new Promise((resolve) => {
+    release = resolve;
+  });
+
+  setRuntimeOverride('story.service.finalizeStory', async ({ uid, sessionId, attemptId }) => {
+    await blocker;
+    const session = readStorySession(uid, sessionId);
+    session.finalVideo = {
+      jobId: 'short-finalized-conflict',
+      durationSec: 8,
+    };
+    session.renderRecovery = {
+      state: 'done',
+      attemptId,
+      shortId: 'short-finalized-conflict',
+      startedAt: '2026-03-19T04:00:00.000Z',
+      updatedAt: '2026-03-19T04:00:05.000Z',
+      finishedAt: '2026-03-19T04:00:05.000Z',
+    };
+    seedStorySession(uid, session);
+    return session;
+  });
+
+  const first = await requestJson('/api/story/finalize', {
+    method: 'POST',
+    headers: {
+      'X-Idempotency-Key': 'idem-finalize-conflict-a',
+      'x-client': 'mobile',
+    },
+    body: {
+      sessionId: 'story-finalize-conflict',
+    },
+  });
+  assert.equal(first.status, 202);
+
+  await waitFor(
+    () => {
+      const attempt = readDoc('idempotency', 'user-1:idem-finalize-conflict-a');
+      return attempt?.state === 'queued' || attempt?.state === 'running';
+    },
+    { timeoutMs: 1000, intervalMs: 20 }
+  );
+
+  const second = await requestJson('/api/story/finalize', {
+    method: 'POST',
+    headers: {
+      'X-Idempotency-Key': 'idem-finalize-conflict-b',
+      'x-client': 'mobile',
+    },
+    body: {
+      sessionId: 'story-finalize-conflict',
+    },
+  });
+
+  assert.equal(second.status, 409);
+  assert.equal(second.json.success, false);
+  assert.equal(second.json.error, 'FINALIZE_ALREADY_ACTIVE');
+  assert.equal(second.json.finalize.attemptId, 'idem-finalize-conflict-a');
+  assert.equal(second.json.finalize.pollSessionId, 'story-finalize-conflict');
+
+  const usageDoc = readDoc('users', 'user-1');
+  assert.equal(usageDoc.usage.cycleReservedSec, 8);
+  assert.equal(readDoc('idempotency', 'user-1:idem-finalize-conflict-b'), null);
+
+  release();
+  await waitFor(
+    () => readDoc('idempotency', 'user-1:idem-finalize-conflict-a')?.state === 'done',
+    { timeoutMs: 1000, intervalMs: 20 }
+  );
 });
 
 test('POST /api/story/finalize returns 402 INSUFFICIENT_RENDER_TIME before calling the finalize service', async () => {
@@ -1085,7 +1219,7 @@ test('POST /api/story/finalize returns 404 SESSION_NOT_FOUND when the requested 
   assert.equal(result.json.error, 'SESSION_NOT_FOUND');
 });
 
-test('POST /api/story/finalize preserves retryable 503 SERVER_BUSY when render slots are saturated', async () => {
+test('POST /api/story/finalize queues accepted work instead of returning 503 when render slots are saturated', async () => {
   seedUserDoc('user-1', {
     plan: 'creator',
     membership: {
@@ -1167,7 +1301,7 @@ test('POST /api/story/finalize preserves retryable 503 SERVER_BUSY when render s
     })
   );
 
-  await waitFor(() => entered === 3);
+  await waitFor(() => entered >= 1, { timeoutMs: 1000, intervalMs: 20 });
 
   const fourth = await requestJson('/api/story/finalize', {
     method: 'POST',
@@ -1180,15 +1314,131 @@ test('POST /api/story/finalize preserves retryable 503 SERVER_BUSY when render s
     },
   });
 
-  assert.equal(fourth.status, 503);
-  assert.equal(fourth.response.headers.get('retry-after'), '30');
-  assert.equal(fourth.json.success, false);
-  assert.equal(fourth.json.error, 'SERVER_BUSY');
+  assert.equal(fourth.status, 202);
+  assert.equal(fourth.json.success, true);
+  assert.equal(fourth.json.shortId, null);
+  assert.equal(fourth.json.finalize.state, 'pending');
 
   release();
   const settled = await Promise.all(firstThree);
   for (const result of settled) {
-    assert.equal(result.status, 200);
+    assert.equal(result.status, 202);
     assert.equal(result.json.success, true);
   }
+
+  await waitFor(
+    () => readDoc('idempotency', 'user-1:idem-story-finalize-slot-4')?.state === 'done',
+    { timeoutMs: 1500, intervalMs: 20 }
+  );
+});
+
+test('stale running finalize attempts are reaped into terminal failure, release reservations, and persist renderRecovery.failed', async () => {
+  seedUserDoc('user-1', {
+    plan: 'creator',
+    membership: {
+      status: 'active',
+      kind: 'subscription',
+      billingCadence: 'monthly',
+    },
+    usage: {
+      cycleIncludedSec: 600,
+      cycleUsedSec: 10,
+      cycleReservedSec: 8,
+    },
+  });
+  seedStorySession(
+    'user-1',
+    buildBaseSession({
+      id: 'story-finalize-stale',
+      story: {
+        sentences: ['Beat one'],
+      },
+      shots: [buildShot('clip-1', 0, 'Beat one')],
+      renderRecovery: {
+        state: 'pending',
+        attemptId: 'idem-finalize-stale',
+        shortId: null,
+        startedAt: '2026-03-19T06:00:00.000Z',
+        updatedAt: '2026-03-19T06:00:01.000Z',
+        finishedAt: null,
+        failedAt: null,
+        code: null,
+        message: null,
+      },
+    })
+  );
+  seedFirestoreDoc('idempotency', 'user-1:idem-finalize-stale', {
+    flow: 'story.finalize',
+    uid: 'user-1',
+    attemptId: 'idem-finalize-stale',
+    sessionId: 'story-finalize-stale',
+    state: 'running',
+    isActive: true,
+    status: 202,
+    createdAt: timestamp('2026-03-19T06:00:00.000Z'),
+    updatedAt: timestamp('2026-03-19T06:00:01.000Z'),
+    enqueuedAt: timestamp('2026-03-19T06:00:00.000Z'),
+    startedAt: timestamp('2026-03-19T06:00:01.000Z'),
+    expiresAt: timestamp('2026-03-19T07:00:00.000Z'),
+    availableAfter: null,
+    usageReservation: {
+      estimatedSec: 8,
+      reservedSec: 8,
+    },
+    runnerId: 'lost-runner',
+    leaseHeartbeatAt: timestamp('2026-03-19T06:00:02.000Z'),
+    leaseExpiresAt: timestamp(Date.now() - 1000),
+  });
+  seedFirestoreDoc('storyFinalizeSessions', 'user-1:story-finalize-stale', {
+    flow: 'story.finalize',
+    uid: 'user-1',
+    sessionId: 'story-finalize-stale',
+    attemptId: 'idem-finalize-stale',
+    state: 'running',
+    createdAt: timestamp('2026-03-19T06:00:00.000Z'),
+    updatedAt: timestamp('2026-03-19T06:00:02.000Z'),
+    expiresAt: timestamp('2026-03-19T07:00:00.000Z'),
+  });
+
+  const first = await requestJson('/api/story/finalize', {
+    method: 'POST',
+    headers: {
+      'X-Idempotency-Key': 'idem-finalize-stale',
+      'x-client': 'mobile',
+    },
+    body: {
+      sessionId: 'story-finalize-stale',
+    },
+  });
+  assert.equal(first.status, 202);
+
+  await waitFor(
+    () => readDoc('idempotency', 'user-1:idem-finalize-stale')?.state === 'failed',
+    { timeoutMs: 1000, intervalMs: 20 }
+  );
+
+  const attemptDoc = readDoc('idempotency', 'user-1:idem-finalize-stale');
+  assert.equal(attemptDoc.failure.error, 'FINALIZE_WORKER_LOST');
+  assert.equal(readDoc('storyFinalizeSessions', 'user-1:story-finalize-stale'), null);
+
+  const usageDoc = readDoc('users', 'user-1');
+  assert.equal(usageDoc.usage.cycleReservedSec, 0);
+
+  const session = readStorySession('user-1', 'story-finalize-stale');
+  assert.equal(session.renderRecovery.state, 'failed');
+  assert.equal(session.renderRecovery.code, 'FINALIZE_WORKER_LOST');
+
+  const replay = await requestJson('/api/story/finalize', {
+    method: 'POST',
+    headers: {
+      'X-Idempotency-Key': 'idem-finalize-stale',
+      'x-client': 'mobile',
+    },
+    body: {
+      sessionId: 'story-finalize-stale',
+    },
+  });
+  assert.equal(replay.status, 500);
+  assert.equal(replay.json.success, false);
+  assert.equal(replay.json.error, 'FINALIZE_WORKER_LOST');
 });

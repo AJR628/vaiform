@@ -88,8 +88,8 @@ Purpose: canonical backend-owned contract, guarantees, and open mismatch record 
   - Recovery-state writer(s): `src/services/story.service.js:2325-2417`
   - Mobile sends: no body.
   - Backend returns: full session in `data`.
-  - Mobile reads: `story.sentences` with helper fallbacks, `shots`, `overlayCaption.placement`, additive `billingEstimate.estimatedSec`, `shot.selectedClip.thumbUrl`, `shot.searchQuery`, and `renderRecovery` during finalize recovery polling.
-  - Recovery role: this route is now the backend-backed finalize recovery contract. Additive `renderRecovery` fields expose `{ state, attemptId, startedAt, updatedAt, shortId, finishedAt, failedAt, code, message }`, and mobile trusts them only when `renderRecovery.attemptId` matches the active finalize attempt.
+  - Mobile reads: `story.sentences` with helper fallbacks, `shots`, `overlayCaption.placement`, additive `billingEstimate.estimatedSec`, `shot.selectedClip.thumbUrl`, `shot.searchQuery`, and `renderRecovery` during finalize recovery polling and same-session restart-safe finalize resume.
+  - Recovery role: this route remains the canonical finalize recovery contract. Additive `renderRecovery` fields expose `{ state, attemptId, startedAt, updatedAt, shortId, finishedAt, failedAt, code, message }`, and mobile trusts them only when `renderRecovery.attemptId` matches the active finalize attempt.
   - Stable failure now: `404 SESSION_NOT_FOUND`.
   - Diagnostics note: failed recovery polls now keep `requestId` in normalized mobile failures and enrich diagnostics with `sessionId` plus the active finalize `attemptId`.
 
@@ -190,20 +190,25 @@ Purpose: canonical backend-owned contract, guarantees, and open mismatch record 
 
 - `POST /api/story/finalize`
   - Mobile caller(s): `client/screens/StoryEditorScreen.tsx:1060-1177`, `client/api/client.ts:743-859`
-  - Backend handler(s): `src/routes/story.routes.js:969-1028`, `src/middleware/idempotency.firestore.js:69-467`, `src/services/story.service.js:2347-2425`
+  - Backend handler(s): `src/routes/story.routes.js`, `src/middleware/idempotency.firestore.js`, `src/services/story-finalize.attempts.js`, `src/services/story-finalize.runner.js`, `src/services/story.service.js`
   - Mobile sends now: `{ sessionId }` plus `X-Idempotency-Key`.
   - Backend requires now: `{ sessionId }` plus `X-Idempotency-Key`.
-  - Backend returns on success: full session in `data`, additive `data.billing`, plus top-level `shortId`.
-  - Mobile reads: `shortId`, additive `data.billing.billedSec` when available, and on failures `retryAfter`, `code/error`, `message/detail`, `status`.
-  - Guardrails: Firestore-backed idempotency and usage-second reservation/settlement, `withRenderSlot()` semaphore, synchronous HTTP render path.
+  - Backend returns now:
+    - initial accepted response: `202` with full session in `data`, top-level `shortId: null`, and additive `finalize: { state: "pending", attemptId, pollSessionId }`
+    - same-key active replay: `202` with the same pending finalize metadata
+    - same-key terminal success replay: `200` with full session in `data`, additive `data.billing`, and top-level `shortId`
+    - same-key terminal failure replay: stored terminal failure payload
+    - same-session different-key conflict while another attempt is active: `409 FINALIZE_ALREADY_ACTIVE` with additive `finalize: { state: "pending", attemptId, pollSessionId }`
+  - Mobile reads: `status`, `shortId`, additive `finalize.state`, `finalize.attemptId`, `finalize.pollSessionId`, additive `data.billing.billedSec` when available, and on failures `retryAfter`, `code/error`, `message/detail`.
+  - Guardrails: Firestore-backed async finalize attempt SSOT, exact-once usage reservation/settlement/release helpers, session-scoped active-attempt lockout, backend lease/heartbeat reaping, and per-process `withRenderSlot()` execution inside the finalize runner.
   - Retryable busy behavior:
-    - render-slot exhaustion still returns `503 SERVER_BUSY` with `Retry-After: 30`
-    - if finalize has to invoke missing upstream generation/planning/search stages and those stages hit the new transient busy/timeout paths, finalize now surfaces the same retryable `503 SERVER_BUSY` mapping instead of a generic expensive-route failure
+    - finalize no longer returns route-level `503` for render-slot saturation; accepted attempts queue instead
+    - the legacy blocking `POST /api/story/render` route still owns direct render-slot `503 SERVER_BUSY` behavior
   - Current 402 semantics: backend uses time-based billing failures such as `INSUFFICIENT_RENDER_TIME`, and mobile now mirrors that render-time wording.
-  - Recovery contract: backend persists additive `renderRecovery.pending` before the blocking render starts, then persists `renderRecovery.done` or `renderRecovery.failed` with the same `attemptId` used for `X-Idempotency-Key`. On `TIMEOUT`, `NETWORK_ERROR`, or `IDEMPOTENT_IN_PROGRESS`, mobile keeps the active attempt key and polls `GET /api/story/:sessionId` until that same-attempt recovery state reaches a terminal result.
-  - Contract caveat: recovery is currently same-screen and bounded. If polling exhausts its attempts while state remains `pending`, mobile leaves the attempt key in memory and asks the user to resume the same attempt or check Library shortly.
+  - Recovery contract: backend persists additive `renderRecovery.pending` before returning `202`, then persists `renderRecovery.done` or `renderRecovery.failed` with the same attempt identity. On `202 pending`, `409 FINALIZE_ALREADY_ACTIVE`, `TIMEOUT`, `NETWORK_ERROR`, or legacy same-key in-progress replay, mobile keeps or adopts the active attempt key and polls `GET /api/story/:sessionId` until that same-attempt recovery state reaches a terminal result.
+  - Contract caveat: recovery is now same-session and restart-safe through stored finalize attempt identity, but it does not widen into a global recovery inbox or background mobile job system.
   - Diagnostics note: finalize, idempotent replay, and recovery boundary events now correlate by `requestId` plus additive `sessionId` / `attemptId`, and mobile failure diagnostics enrich the same request/attempt context in memory.
-  - Observability caveat: deeper render internals invoked by finalize still contain legacy `console.*` logging; Phase 3 did not complete a full render-path logger migration.
+  - Observability caveat: render-slot concurrency remains per-process even though finalize attempt claiming and stale-attempt cleanup are now Firestore-backed.
 
 - `GET /api/shorts/mine`
   - Mobile caller(s): `client/screens/LibraryScreen.tsx:80-118`, `client/screens/ShortDetailScreen.tsx:227-248`

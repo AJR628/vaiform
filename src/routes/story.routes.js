@@ -21,11 +21,11 @@ import {
   buildTimeline,
   generateCaptionTimings,
   renderStory,
-  finalizeStory,
   saveStorySession,
   refreshStorySessionHeuristicEstimate,
   sanitizeStorySessionForClient,
 } from '../services/story.service.js';
+import { notifyStoryFinalizeRunner } from '../services/story-finalize.runner.js';
 import { extractStyleOnly } from '../utils/caption-style-helper.js';
 import { ok, fail } from '../http/respond.js';
 import { isOutboundPolicyError } from '../utils/outbound.fetch.js';
@@ -38,12 +38,6 @@ r.use(requireAuth);
 const requestIdOf = (req) => req?.id ?? null;
 const presentStorySession = (session) => sanitizeStorySessionForClient(session);
 const okStorySession = (req, res, session) => ok(req, res, presentStorySession(session));
-const finalizeSuccess = (req, session, shortId) => ({
-  success: true,
-  data: presentStorySession(session),
-  shortId,
-  requestId: requestIdOf(req),
-});
 const zodFields = (error) => {
   const fields = {};
   for (const issue of error?.issues || []) {
@@ -967,7 +961,7 @@ r.post(
   }
 );
 
-// POST /api/story/finalize - Run full pipeline (Phase 7). Render time reserved in idempotency middleware; no double charge on retry.
+// POST /api/story/finalize - Reserve, enqueue, and return accepted finalize state.
 r.post('/finalize', idempotencyFinalize({ getSession: getStorySession }), async (req, res) => {
   try {
     const parsed = SessionSchema.safeParse(req.body || {});
@@ -981,36 +975,52 @@ r.post('/finalize', idempotencyFinalize({ getSession: getStorySession }), async 
     logger.info('story.finalize.request', {
       routeStatus: `${req.method} ${req.originalUrl}`,
     });
-    // NOTE: finalizeStory() blocks the HTTP request until render completes (synchronous operation).
-    // Render time was already reserved by idempotency middleware; on 5xx middleware releases it.
-    const session = await withRenderSlot(() =>
-      finalizeStory({
-        uid: req.user.uid,
-        sessionId,
-        options: req.body.options || {},
-        attemptId,
-      })
-    );
 
-    const shortId = session?.finalVideo?.jobId || null;
-    logger.info('story.finalize.completed', {
-      routeStatus: `${req.method} ${req.originalUrl}`,
-      shortId,
-    });
-    if (typeof res.finishIdempotentFinalize === 'function') {
-      return await res.finishIdempotentFinalize({ session, shortId, status: 200 });
+    const reply = req.finalizeReply;
+    if (!reply) {
+      throw new Error('Finalize reply was not prepared by idempotency middleware');
     }
-    return res.status(200).json(finalizeSuccess(req, session, shortId));
+
+    if (req.finalizePrepared?.kind === 'enqueued') {
+      notifyStoryFinalizeRunner();
+      logger.info('story.finalize.accepted', {
+        routeStatus: `${req.method} ${req.originalUrl}`,
+        attemptId,
+        sessionId,
+      });
+    } else if (req.finalizePrepared?.kind === 'active_same_key') {
+      notifyStoryFinalizeRunner();
+      logger.info('story.finalize.replay_pending', {
+        routeStatus: `${req.method} ${req.originalUrl}`,
+        attemptId: req.finalizePrepared?.attempt?.attemptId || attemptId,
+        sessionId: req.finalizePrepared?.attempt?.sessionId || sessionId,
+      });
+    } else if (req.finalizePrepared?.kind === 'active_other_key') {
+      notifyStoryFinalizeRunner();
+      logger.warn('story.finalize.conflict_active_attempt', {
+        routeStatus: `${req.method} ${req.originalUrl}`,
+        attemptId,
+        sessionId,
+        activeAttemptId: req.finalizePrepared?.attempt?.attemptId || null,
+      });
+    } else if (req.finalizePrepared?.kind === 'done_same_key') {
+      logger.info('story.finalize.replay_completed', {
+        routeStatus: `${req.method} ${req.originalUrl}`,
+        attemptId: req.finalizePrepared?.attempt?.attemptId || attemptId,
+        shortId: req.finalizePrepared?.attempt?.shortId || null,
+      });
+    } else if (req.finalizePrepared?.kind === 'failed_same_key') {
+      logger.warn('story.finalize.replay_failed', {
+        routeStatus: `${req.method} ${req.originalUrl}`,
+        attemptId: req.finalizePrepared?.attempt?.attemptId || attemptId,
+        sessionId: req.finalizePrepared?.attempt?.sessionId || sessionId,
+        errorCode: req.finalizePrepared?.attempt?.failure?.error || null,
+      });
+    }
+
+    return res.status(reply.status).json(reply.body);
   } catch (e) {
     if (res.headersSent) return;
-    if (e?.code === 'SERVER_BUSY' || e?.message === 'SERVER_BUSY') {
-      logger.warn('story.finalize.server_busy', {
-        routeStatus: `${req.method} ${req.originalUrl}`,
-        error: e,
-      });
-      res.set('Retry-After', '30');
-      return res.status(503).json(serverBusyFailure(req, 30));
-    }
     const mapped = storyFailureFromError(e);
     logger.error('story.finalize.failed', {
       routeStatus: `${req.method} ${req.originalUrl}`,

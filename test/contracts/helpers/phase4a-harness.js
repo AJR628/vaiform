@@ -5,6 +5,7 @@ let server;
 let baseUrl;
 let firebaseMock;
 let runtimeOverrides;
+let finalizeRunner;
 
 function setTestEnv() {
   process.env.NODE_ENV = 'test';
@@ -20,14 +21,17 @@ async function loadModules() {
     return;
   }
   setTestEnv();
-  const [{ registerDejaVuFonts }, mockModule, overridesModule] = await Promise.all([
-    import('../../../src/caption/canvas-fonts.js'),
-    import('../../../src/testing/firebase-admin.mock.js'),
-    import('../../../src/testing/runtime-overrides.js'),
-  ]);
+  const [{ registerDejaVuFonts }, mockModule, overridesModule, finalizeRunnerModule] =
+    await Promise.all([
+      import('../../../src/caption/canvas-fonts.js'),
+      import('../../../src/testing/firebase-admin.mock.js'),
+      import('../../../src/testing/runtime-overrides.js'),
+      import('../../../src/services/story-finalize.runner.js'),
+    ]);
   registerDejaVuFonts();
   firebaseMock = mockModule;
   runtimeOverrides = overridesModule;
+  finalizeRunner = finalizeRunnerModule;
 }
 
 export async function startHarness() {
@@ -59,6 +63,7 @@ export async function stopHarness() {
 export function resetHarnessState() {
   firebaseMock.resetMockFirebase();
   runtimeOverrides.clearRuntimeOverrides();
+  finalizeRunner?.resetStoryFinalizeRunnerForTests?.();
   firebaseMock.seedAuthToken('token-user-1', {
     uid: 'user-1',
     email: 'user1@example.com',
@@ -121,6 +126,10 @@ export function seedUserDoc(uid = 'user-1', doc = {}) {
       ...(doc.usage || {}),
     },
   });
+}
+
+export function seedFirestoreDoc(collectionName, id, data) {
+  firebaseMock.seedDoc(collectionName, id, data);
 }
 
 export function seedShortDoc(id, doc) {

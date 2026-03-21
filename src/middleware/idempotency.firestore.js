@@ -1,68 +1,28 @@
-import admin, { db } from '../config/firebase.js';
+import { db } from '../config/firebase.js';
 import { ok, fail } from '../http/respond.js';
-import { buildCanonicalUsageState, getAvailableSec } from '../services/usage.service.js';
-import { sanitizeStorySessionForClient } from '../services/story.service.js';
+import { persistStoryRenderRecovery } from '../services/story.service.js';
+import {
+  buildFinalizeHttpReply,
+  finalizeAttemptFailure,
+  prepareFinalizeAttempt,
+} from '../services/story-finalize.attempts.js';
 import logger from '../observability/logger.js';
 import { setRequestContextFromReq } from '../observability/request-context.js';
 
 const requestIdOf = (req) => req?.id ?? null;
-const requestBillingOf = (settlement) => {
-  if (!settlement) return null;
-  const settledAt = settlement?.settledAt;
-  const settledAtIso =
-    typeof settledAt?.toDate === 'function'
-      ? settledAt.toDate().toISOString()
-      : settledAt instanceof Date
-        ? settledAt.toISOString()
-        : typeof settledAt === 'string'
-          ? settledAt
-          : null;
-
-  return {
-    billedSec: settlement?.billedSec ?? null,
-    settledAt: settledAtIso,
-  };
-};
-const attachBillingToSession = (session, settlement) => {
-  if (!session || typeof session !== 'object') return session;
-  const safeSession = sanitizeStorySessionForClient(session);
-  const billing = requestBillingOf(settlement);
-  if (!billing || !Number.isFinite(Number(billing.billedSec)) || Number(billing.billedSec) <= 0) {
-    return safeSession;
-  }
-  return {
-    ...safeSession,
-    billing,
-  };
-};
-const finalizeSuccess = (req, session, shortId) => ({
-  success: true,
-  data: session,
-  shortId,
-  requestId: requestIdOf(req),
-});
-const getEstimatedSecFromSession = (session) => {
-  const estimatedSec = Number(session?.billingEstimate?.estimatedSec);
-  return Number.isFinite(estimatedSec) && estimatedSec > 0 ? Math.ceil(estimatedSec) : null;
-};
-const getBilledSecFromSession = (session) => {
-  const durationSec = Number(session?.finalVideo?.durationSec);
-  return Number.isFinite(durationSec) && durationSec > 0 ? Math.ceil(durationSec) : null;
-};
 
 /**
  * Idempotency middleware for POST /api/story/finalize.
  * - Requires X-Idempotency-Key (400 if missing).
  * - Validates req.body.sessionId (non-empty string, min 3 chars) before any Firestore read/reserve; 400 INVALID_INPUT without reserving.
- * - Replay: if doc exists with state=done, fetches session via getSession and returns same response shape.
- * - Reserve: in one transaction creates idempotency doc (state=pending, usageReservation, sessionId) and reserves render seconds; 402 if insufficient.
- * - On success: stores minimal payload (shortId, sessionId) only; no full session (Firestore 1 MiB limit).
- * - On 5xx: releases reserved seconds and deletes doc.
+ * - Reserve/enqueue: creates a queued finalize attempt and reserves render seconds once.
+ * - Same-key replay: queued/running -> 202 pending, done -> 200 success replay, failed/expired -> terminal failure replay.
+ * - Same-session different key while active: 409 FINALIZE_ALREADY_ACTIVE without a second reservation.
  *
  * Verification (curl, no test framework):
  * 1) Missing header: POST without X-Idempotency-Key -> 400 MISSING_IDEMPOTENCY_KEY.
  * 2) Missing/invalid sessionId: POST with key but body {} or { "sessionId": "x" } -> 400 INVALID_INPUT; usage unchanged.
- * 3) Same key twice with valid sessionId: first request renders and settles once; second request replays (same shortId), no second settlement.
+ * 3) Same key twice with valid sessionId: first request enqueues once; replay returns pending or final result without a second reservation.
  *
  * @param {{ ttlMinutes?: number, getSession: (opts: { uid: string, sessionId: string }) => Promise<object|null> }} opts
  */
@@ -93,345 +53,66 @@ export function idempotencyFinalize({ ttlMinutes = 60, getSession } = {}) {
     }
     setRequestContextFromReq(req, { sessionId, attemptId: key });
 
-    const docRef = db.collection('idempotency').doc(`${uid}:${key}`);
-
-    // Single read to decide replay vs reserve
-    const snap = await docRef.get();
-    if (snap.exists) {
-      const d = snap.data();
-      if (d.state === 'pending') {
-        logger.info('story.finalize.idempotency.in_progress', {
-          routeStatus: `${req.method} ${req.originalUrl}`,
-        });
-        return fail(req, res, 409, 'IDEMPOTENT_IN_PROGRESS', 'Request in progress.');
-      }
-      if (d.state === 'done') {
-        const status = d.status || 200;
-        const shortId = d.shortId ?? null;
-        const sid = d.sessionId || sessionId;
-        const settlement = d.billingSettlement || null;
-        let session = null;
-        if (sid) {
-          try {
-            session = await getSession({ uid, sessionId: sid });
-          } catch (err) {
-            logger.warn('story.finalize.idempotency.replay_lookup_failed', {
-              routeStatus: `${req.method} ${req.originalUrl}`,
-              error: err,
-            });
-          }
-        }
-        if (session == null) {
-          return fail(
-            req,
-            res,
-            404,
-            'SESSION_NOT_FOUND',
-            'Session no longer available for replay.'
-          );
-        }
-        logger.info('story.finalize.idempotency.replay', {
-          routeStatus: `${req.method} ${req.originalUrl}`,
-          shortId,
-        });
-        return res
-          .status(status)
-          .json(finalizeSuccess(req, attachBillingToSession(session, settlement), shortId));
-      }
-    }
-
-    let reservationSession = null;
     try {
-      reservationSession = await getSession({ uid, sessionId });
+      const prepared = await prepareFinalizeAttempt({
+        uid,
+        attemptId: key,
+        sessionId,
+        ttlMinutes,
+        getSession,
+      });
+
+      if (prepared.kind === 'error') {
+        return fail(req, res, prepared.status, prepared.error, prepared.detail);
+      }
+
+      if (prepared.kind === 'enqueued') {
+        const pendingSession = await persistStoryRenderRecovery({
+          uid,
+          sessionId,
+          attemptId: key,
+          state: 'pending',
+        });
+        if (!pendingSession) {
+          await finalizeAttemptFailure({
+            uid,
+            attemptId: key,
+            status: 500,
+            error: 'SESSION_NOT_FOUND',
+            detail: 'Session not found',
+          });
+          return fail(req, res, 404, 'SESSION_NOT_FOUND', 'Session not found');
+        }
+        prepared.session = pendingSession;
+        logger.info('story.finalize.idempotency.enqueued', {
+          routeStatus: `${req.method} ${req.originalUrl}`,
+          sessionId,
+          attemptId: key,
+          estimatedSec: prepared.attempt?.usageReservation?.estimatedSec || null,
+        });
+      }
+
+      const reply = await buildFinalizeHttpReply({
+        req,
+        uid,
+        sessionId,
+        getSession,
+        prepared,
+      });
+      if (!reply) {
+        return next(new Error('Finalize attempt reply was not generated.'));
+      }
+
+      req.finalizePrepared = prepared;
+      req.finalizeReply = reply;
+      next();
     } catch (err) {
-      logger.error('story.finalize.idempotency.reserve_lookup_failed', {
+      logger.error('story.finalize.idempotency.prepare_failed', {
         routeStatus: `${req.method} ${req.originalUrl}`,
         error: err,
       });
       return next(err);
     }
-    if (reservationSession == null) {
-      return fail(req, res, 404, 'SESSION_NOT_FOUND', 'Session not found');
-    }
-
-    const estimatedSec = getEstimatedSecFromSession(reservationSession);
-    if (!estimatedSec) {
-      return fail(
-        req,
-        res,
-        409,
-        'BILLING_ESTIMATE_UNAVAILABLE',
-        'Render-time estimate is unavailable for this session.'
-      );
-    }
-
-    // Create pending + reserve render time in one transaction
-    try {
-      await db.runTransaction(async (tx) => {
-        const docSnap = await tx.get(docRef);
-        if (docSnap.exists) {
-          const d = docSnap.data();
-          if (d.state === 'pending')
-            throw Object.assign(new Error('IN_PROGRESS'), { _idemp: 'PENDING' });
-          if (d.state === 'done') throw Object.assign(new Error('DONE'), { _idemp: d });
-        }
-        const userRef = db.collection('users').doc(uid);
-        const userSnap = await tx.get(userRef);
-        if (!userSnap.exists) {
-          const err = new Error('User not found');
-          err.code = 'USER_NOT_FOUND';
-          err.status = 404;
-          throw err;
-        }
-
-        const userData = userSnap.data() || {};
-        const accountState = buildCanonicalUsageState(userData);
-        const usage = accountState.usage;
-        if (getAvailableSec(usage) < estimatedSec) {
-          const err = new Error(`Insufficient render time. You need ${estimatedSec} seconds to render.`);
-          err.code = 'INSUFFICIENT_RENDER_TIME';
-          err.status = 402;
-          throw err;
-        }
-
-        tx.set(docRef, {
-          state: 'pending',
-          usageReservation: {
-            estimatedSec,
-            reservedSec: estimatedSec,
-          },
-          sessionId,
-          createdAt: new Date(),
-          expiresAt: new Date(Date.now() + ttlMinutes * 60 * 1000),
-        });
-
-        tx.set(
-          userRef,
-          {
-            plan: accountState.plan,
-            membership: accountState.membership,
-            usage: {
-              ...usage,
-              cycleReservedSec: usage.cycleReservedSec + estimatedSec,
-              updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-            },
-            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-          },
-          { merge: true }
-        );
-      });
-    } catch (e) {
-      if (e._idemp === 'PENDING') {
-        logger.info('story.finalize.idempotency.in_progress', {
-          routeStatus: `${req.method} ${req.originalUrl}`,
-        });
-        return fail(req, res, 409, 'IDEMPOTENT_IN_PROGRESS', 'Request in progress.');
-      }
-      if (e._idemp) {
-        const status = e._idemp.status || 200;
-        const shortId = e._idemp.shortId ?? null;
-        const sid = e._idemp.sessionId || sessionId;
-        const settlement = e._idemp.billingSettlement || null;
-        if (!sid) {
-          return fail(req, res, 404, 'SESSION_NOT_FOUND', 'Session id missing for replay.');
-        }
-        let session = null;
-        try {
-          session = await getSession({ uid, sessionId: sid });
-        } catch (err) {
-          logger.warn('story.finalize.idempotency.replay_race_lookup_failed', {
-            routeStatus: `${req.method} ${req.originalUrl}`,
-            error: err,
-          });
-        }
-        if (session == null) {
-          return fail(
-            req,
-            res,
-            404,
-            'SESSION_NOT_FOUND',
-            'Session no longer available for replay.'
-          );
-        }
-        logger.info('story.finalize.idempotency.replay_race', {
-          routeStatus: `${req.method} ${req.originalUrl}`,
-          shortId,
-        });
-        return res
-          .status(status)
-          .json(finalizeSuccess(req, attachBillingToSession(session, settlement), shortId));
-      }
-      if (
-        e?.status === 402 ||
-        e?.code === 'INSUFFICIENT_RENDER_TIME' ||
-        e?.code === 'BILLING_ESTIMATE_UNAVAILABLE'
-      ) {
-        return fail(
-          req,
-          res,
-          402,
-          e?.code || 'INSUFFICIENT_RENDER_TIME',
-          e?.message || 'Insufficient render time for render.'
-        );
-      }
-      if (e?.status === 404 || e?.code === 'USER_NOT_FOUND') {
-        return fail(req, res, 404, 'USER_NOT_FOUND', e?.message || 'User account not found.');
-      }
-      return next(e);
-    }
-
-    res._idempotencyReserved = true;
-    res._idempotencyDocRef = docRef;
-    res._idempotencySessionId = sessionId;
-    res._idempotencyReservedSec = estimatedSec;
-    res._idempotencyEstimatedSec = estimatedSec;
-    logger.info('story.finalize.idempotency.reserved', {
-      routeStatus: `${req.method} ${req.originalUrl}`,
-      sessionId,
-      estimatedSec,
-      estimateSource: reservationSession?.billingEstimate?.source || null,
-      voicePreset: reservationSession?.voicePreset || 'male_calm',
-    });
-    res.finishIdempotentFinalize = async ({ session, shortId, status = 200 }) => {
-      const billedSec = getBilledSecFromSession(session);
-      if (!billedSec) {
-        throw Object.assign(new Error('BILLING_DURATION_UNAVAILABLE'), {
-          code: 'BILLING_DURATION_UNAVAILABLE',
-          status: 500,
-        });
-      }
-      if (billedSec > estimatedSec) {
-        throw Object.assign(
-          new Error(
-            `Billed render time ${billedSec}s exceeded reserved estimate ${estimatedSec}s.`
-          ),
-          {
-            code: 'BILLING_ESTIMATE_TOO_LOW',
-            status: 500,
-          }
-        );
-      }
-
-      const settledAt = new Date();
-      const shortRef = shortId ? db.collection('shorts').doc(shortId) : null;
-      await db.runTransaction(async (tx) => {
-        const userRef = db.collection('users').doc(uid);
-        const userSnap = await tx.get(userRef);
-        if (!userSnap.exists) {
-          const err = new Error('User not found');
-          err.code = 'USER_NOT_FOUND';
-          err.status = 404;
-          throw err;
-        }
-        const userData = userSnap.data() || {};
-        const accountState = buildCanonicalUsageState(userData);
-        const usage = accountState.usage;
-        const nextReservedSec = Math.max(0, usage.cycleReservedSec - estimatedSec);
-
-        tx.set(
-          userRef,
-          {
-            plan: accountState.plan,
-            membership: accountState.membership,
-            usage: {
-              ...usage,
-              cycleUsedSec: usage.cycleUsedSec + billedSec,
-              cycleReservedSec: nextReservedSec,
-              updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-            },
-            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-          },
-          { merge: true }
-        );
-        tx.set(
-          docRef,
-          {
-            state: 'done',
-            status,
-            shortId: shortId ?? null,
-            sessionId,
-            billingSettlement: {
-              billedSec,
-              settledAt,
-            },
-            finishedAt: settledAt,
-          },
-          { merge: true }
-        );
-        if (shortRef) {
-          tx.set(
-            shortRef,
-            {
-              billing: {
-                estimatedSec,
-                billedSec,
-                settledAt: admin.firestore.FieldValue.serverTimestamp(),
-                source: 'finalVideo.durationSec',
-              },
-            },
-            { merge: true }
-          );
-        }
-      });
-
-      const sessionWithBilling = attachBillingToSession(session, {
-        billedSec,
-        settledAt: settledAt.toISOString(),
-      });
-      logger.info('story.finalize.idempotency.settled', {
-        routeStatus: `${req.method} ${req.originalUrl}`,
-        sessionId,
-        estimatedSec,
-        billedSec,
-        deltaSec: estimatedSec - billedSec,
-        estimateSource: session?.billingEstimate?.source || null,
-        voicePreset: session?.voicePreset || 'male_calm',
-      });
-      return res.status(status).json(finalizeSuccess(req, sessionWithBilling, shortId ?? null));
-    };
-
-    res.on('finish', async () => {
-      if (!res._idempotencyReserved || res.statusCode < 500) return;
-      try {
-        const userRef = db.collection('users').doc(uid);
-        await db.runTransaction(async (tx) => {
-          const userSnap = await tx.get(userRef);
-          if (!userSnap.exists) return;
-          const userData = userSnap.data() || {};
-          const accountState = buildCanonicalUsageState(userData);
-          const usage = accountState.usage;
-          tx.set(
-            userRef,
-            {
-              plan: accountState.plan,
-              membership: accountState.membership,
-              usage: {
-                ...usage,
-                cycleReservedSec: Math.max(
-                  0,
-                  usage.cycleReservedSec - (res._idempotencyReservedSec || 0)
-                ),
-                updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-              },
-              updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-            },
-            { merge: true }
-          );
-        });
-        await docRef.delete();
-        logger.warn('story.finalize.idempotency.release_after_failure', {
-          routeStatus: `${req.method} ${req.originalUrl}`,
-          estimatedSec: res._idempotencyReservedSec || 0,
-        });
-      } catch (err) {
-        logger.error('story.finalize.idempotency.release_failed', {
-          routeStatus: `${req.method} ${req.originalUrl}`,
-          error: err,
-        });
-      }
-    });
-
-    next();
   };
 }
 

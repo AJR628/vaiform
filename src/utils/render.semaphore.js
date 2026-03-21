@@ -1,5 +1,6 @@
 let activeRenders = 0;
 const MAX_CONCURRENT_RENDERS = 3;
+export const RENDER_SLOT_LIMIT = MAX_CONCURRENT_RENDERS;
 
 /**
  * Acquire a render slot. Throws if limit exceeded.
