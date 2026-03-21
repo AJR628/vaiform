@@ -17,7 +17,9 @@ import {
 } from './helpers/phase4a-harness.js';
 
 function buildBaseSession(overrides = {}) {
-  const now = '2026-03-19T00:00:00.000Z';
+  const baseNowMs = Date.now();
+  const now = new Date(baseNowMs).toISOString();
+  const expiresAt = new Date(baseNowMs + 48 * 60 * 60 * 1000).toISOString();
   return {
     id: 'story-test-session',
     uid: 'user-1',
@@ -29,7 +31,7 @@ function buildBaseSession(overrides = {}) {
     status: 'draft',
     createdAt: now,
     updatedAt: now,
-    expiresAt: '2026-03-21T00:00:00.000Z',
+    expiresAt,
     billingEstimate: {
       estimatedSec: 12,
       source: 'heuristic',
