@@ -1,6 +1,6 @@
 # MOBILE_HARDENING_PLAN
 
-Cross-repo verification date: 2026-03-20.
+Cross-repo verification date: 2026-03-21.
 
 Goal: harden only the backend surface that the current mobile app actually depends on. This is a continuation ledger for the current repos, not a rebuild proposal.
 
@@ -63,7 +63,7 @@ Goal: harden only the backend surface that the current mobile app actually depen
   - Mobile evidence: `client/screens/StoryEditorScreen.tsx:974-1094`
   - Contract: `renderRecovery` now persists `pending`, `done`, and `failed` states with the active finalize `attemptId`, and mobile only trusts those states when the attempt identity matches the active `X-Idempotency-Key`.
 
-- `DONE`: `renderRecovery.pending` is persisted before the blocking finalize work begins, and existing session readers remain untouched.
+- `DONE`: `renderRecovery.pending` is persisted before the async finalize attempt is handed off, and existing session readers remain untouched.
   - Backend evidence: `src/services/story.service.js:2330-2346`
   - Guardrail: Phase 1 adds only additive session fields; it does not repurpose top-level pipeline `status`.
 

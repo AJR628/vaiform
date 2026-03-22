@@ -1,6 +1,6 @@
 # INCIDENT_TRACE_RUNBOOK
 
-Last verified against repo code: 2026-03-18.
+Last verified against repo code: 2026-03-21.
 
 Purpose: manual trace workflow for the Cross-Repo Phase 3 observability scope only.
 
@@ -39,23 +39,23 @@ Capture as many of these as the incident provides:
 - Search stdout logs for the same `requestId`.
 - Expected events:
   - `story.finalize.request`
-  - `story.finalize.completed`
-  - `story.finalize.server_busy`
+  - `story.finalize.accepted`
+  - `story.finalize.replay_pending`
+  - `story.finalize.conflict_active_attempt`
+  - `story.finalize.replay_completed`
+  - `story.finalize.replay_failed`
   - `story.finalize.failed`
   - `request.error`
 
-3. Correlate idempotency and settlement:
+3. Correlate async attempt lifecycle:
 - Filter on the same `attemptId` and `sessionId`.
 - Expected events:
-  - `story.finalize.idempotency.in_progress`
-  - `story.finalize.idempotency.replay`
-  - `story.finalize.idempotency.replay_race`
-  - `story.finalize.idempotency.reserved`
+  - `story.finalize.idempotency.enqueued`
   - `story.finalize.idempotency.settled`
-  - `story.finalize.idempotency.release_after_failure`
-  - `story.finalize.idempotency.release_failed`
+  - `story.finalize.attempt.released`
+  - `story.finalize.idempotency.prepare_failed`
 
-4. Correlate backend recovery state:
+4. Correlate backend recovery and runner state:
 - Filter on the same `sessionId` and `attemptId`.
 - Expected events:
   - `story.finalize.service.start`
@@ -63,12 +63,18 @@ Capture as many of these as the incident provides:
   - `story.finalize.service.completed`
   - `story.finalize.service.failed`
   - `story.finalize.recovery_failure_persist_failed`
+  - `story.finalize.runner.recovery_failure_persist_failed`
+  - `story.finalize.runner.task_failed`
+  - `story.finalize.runner.reaper_failed`
   - `story.recovery.poll`
 
 5. Interpret common outcomes:
-- `IDEMPOTENT_IN_PROGRESS` with matching `attemptId` means the same finalize attempt is still active or is being recovered.
-- `story.finalize.idempotency.replay` with a `shortId` means the prior attempt already settled and replay returned the existing result.
+- `202` with additive `finalize.state: "pending"` means the attempt was accepted or same-key replay is still pending.
+- `FINALIZE_ALREADY_ACTIVE` with additive `finalize.attemptId` means a different key collided with the already-active same-session attempt.
+- `story.finalize.replay_completed` with a `shortId` means the prior attempt already settled and same-key replay returned the existing result.
+- `story.finalize.attempt.released` or session `renderRecovery.failed` means the attempt reached terminal failure and reserved usage was released.
 - `story.finalize.recovery_failure_persist_failed` means the render failure happened, but the session-level failure marker could not be persisted. Treat this as a partial observability failure and inspect surrounding `story.finalize.service.failed` / `request.error` logs.
+- `IDEMPOTENT_IN_PROGRESS` is now legacy compatibility guidance for older blocking finalize callers; it is not the primary live mobile async finalize path.
 
 ## Missing Short Detail / Retry / Fallback Trace
 

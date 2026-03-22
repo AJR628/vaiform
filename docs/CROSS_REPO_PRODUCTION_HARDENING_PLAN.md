@@ -4,7 +4,7 @@
 - Owner repo: backend
 - Source of truth for: phased cross-repo execution order for production hardening and anti-drift work
 - Canonical counterpart/source: mobile repo `docs/MOBILE_USED_SURFACES.md` for caller truth, backend repo `docs/MOBILE_BACKEND_CONTRACT.md` for contract truth, backend repo `docs/MOBILE_HARDENING_PLAN.md` for route-hardening status
-- Last verified against: both repos on 2026-03-20
+- Last verified against: both repos on 2026-03-21
 
 ## Purpose
 
@@ -68,14 +68,18 @@ This document does not replace the backend contract docs or the mobile caller-tr
 - Mobile entrypoint: `client/screens/StoryEditorScreen.tsx:974-1177`
 - Mobile transport: `client/api/client.ts:743-859`
 - Backend route: `src/routes/story.routes.js:940-989`
-- Backend middleware: `src/middleware/idempotency.firestore.js:69-467`
-- Backend services: `src/services/story.service.js:2325-2417`
+- Backend middleware: `src/middleware/idempotency.firestore.js:29-117`
+- Backend async path:
+  - `src/services/story-finalize.attempts.js:91-132`
+  - `src/services/story-finalize.runner.js:59-125`
+  - `src/services/story.service.js:2525-2629`
 - Backend process limits: `server.js:27-43`, `src/utils/render.semaphore.js:1-22`
 - Proven behavior:
-  - finalize still blocks the HTTP request until render completion
-  - backend reserves usage seconds before render, settles after success, and releases on 5xx
-  - mobile reuses the same `X-Idempotency-Key` for retry and recovery polling
-  - recovery truth is additive session state on `GET /api/story/:sessionId`
+  - `POST /api/story/finalize` now returns prepared async finalize replies, including `202 pending` when work is accepted
+  - backend reserves usage seconds before background render work, settles after success, and releases on terminal failure
+  - `GET /api/story/:sessionId` is the canonical poll/recovery surface through additive session `renderRecovery`
+  - `GET /api/shorts/:jobId` remains secondary detail/availability only
+  - mobile reuses or adopts the active `X-Idempotency-Key` for same-attempt replay and recovery
 
 ### Library and short detail
 
@@ -95,9 +99,8 @@ The prior audit was directionally right on the biggest production risks, but thi
 
 ### Confirmed by code
 
-- Finalize is still synchronous in the request path.
-- Backend now has first-party contract tests, while the mobile repo still has no first-party test files in its source tree.
-- Mobile has no `eas.json`, no `runtimeVersion` or `updates` block in `app.json`, and no mobile CI workflow.
+- Async finalize is live: `POST /api/story/finalize` now returns prepared async replies, `GET /api/story/:sessionId` is the canonical recovery surface, and `GET /api/shorts/:jobId` is secondary detail only.
+- Backend now has first-party contract tests and CI for the active mobile-used routes, including async finalize acceptance/replay/conflict/reaping coverage.
 - Request IDs now propagate through a backend `AsyncLocalStorage` request context, and Phase 3 added structured/redacted boundary logging plus mobile in-memory diagnostics on the named hot paths only.
 - The mobile runtime path is the hand-written API client, while the React Query client remains mostly unused in active flows.
 
@@ -131,7 +134,7 @@ The prior audit was directionally right on the biggest production risks, but thi
 ## Phase 1 - Truth Freeze And Front Door Cleanup
 
 - Status: COMPLETE in current repo state as of 2026-03-16.
-- Completion note: both repos now have one clear docs front door, overlapping stale root docs were archived or bannered, and active docs are explicit. Phase 1.5 remains the next step for transport ownership freeze.
+- Completion note: both repos now have one clear docs front door, overlapping stale root docs were archived or bannered, and active docs are explicit. Phase 1.5 has since landed, so transport ownership remains explicitly frozen on `client/api/client.ts`.
 
 ### 1. Goal
 
@@ -176,7 +179,7 @@ Make it easy for any engineer or agent to identify the live mobile path, the liv
 2. Add this document to the backend and mobile docs front doors.
 3. Publish one short active-docs map naming the small set of docs agents are allowed to treat as live.
 4. Move overlapping stale plan and audit docs to archive first, and add a canonical/historical banner rule so archived or retained stale documents point back to the active front door instead of competing with it.
-5. Do not let transport ownership remain implicit; Phase 1.5 must resolve it before test and refactor work broadens.
+5. Keep transport ownership explicit in the canonical docs so later tests and refactors do not broaden drift from the wrong layer.
 
 ### 8. Files likely to change
 
@@ -441,8 +444,10 @@ Add a regression net around the actual mobile-used backend contract before mobil
   - current success envelopes and the specific fields mobile reads
   - current `GET /api/shorts/:jobId` pending `404 NOT_FOUND` bridge behavior
   - current caption preview mobile/server-measured path
-  - current finalize top-level `shortId` replay/idempotency behavior
-  - current finalize `402 INSUFFICIENT_RENDER_TIME` and `404 SESSION_NOT_FOUND` behavior
+  - current async finalize `202 pending` acceptance and same-key replay behavior
+  - current finalize `402 INSUFFICIENT_RENDER_TIME`, `404 SESSION_NOT_FOUND`, and different-key `409 FINALIZE_ALREADY_ACTIVE` behavior
+  - stale-attempt reaping into terminal failure plus persisted `renderRecovery.failed`
+  - the fresh-session finalize branch that generates captions before render
 - Backend `package.json` now exposes the suite through `npm run test:contracts`, and backend CI runs that command.
 
 ### 3. Required spillover
@@ -510,13 +515,8 @@ Reject overload predictably instead of degrading ambiguously when generation, se
   - all consulted providers failed for transient reasons.
 - Pixabay and NASA now use explicit timeout handling; Pexels keeps its existing timeout path.
 - Provider transient failures now feed a small per-process cooldown state instead of collapsing repeatedly into ambiguous empty results.
-- Finalize preserves the existing mobile-facing contract:
-  - `409 IDEMPOTENT_IN_PROGRESS`
-  - `402 INSUFFICIENT_RENDER_TIME`
-  - `404 SESSION_NOT_FOUND`
-  - top-level `shortId`
-  - existing render-slot `503 SERVER_BUSY` + `Retry-After: 30`
-- When finalize has to invoke missing upstream generation/planning/search stages, those internal stages now inherit the new deterministic retryable `503` behavior instead of falling through generic expensive-route failures.
+- Finalize-specific caller semantics from Phase 5 were superseded by Phase 6's async attempt flow.
+- The still-relevant Phase 5 carry-forward is that when finalize has to invoke missing upstream generation/planning/search stages, those internal stages inherit the new deterministic retryable `503` behavior instead of falling through generic expensive-route failures before the attempt completes.
 
 ### 4. Verification standard
 
@@ -526,14 +526,14 @@ Reject overload predictably instead of degrading ambiguously when generation, se
   - retryable `503` mapping for `plan`
   - search/search-shot success preservation when at least one provider returns usable results
   - search/search-shot retryable `503` only when all consulted providers fail transiently and no usable results exist
-  - finalize preservation of existing `503` render-slot behavior
+  - current finalize assertions in the same suite now follow Phase 6 async acceptance/replay/conflict/reaping semantics rather than the pre-Phase-6 blocking render-slot path
 - `npm run test:contracts` passes locally.
 - Backend CI continues to run `npm run test:contracts`.
 
 ### 5. Current caveats
 
 - Route-local admission controls and provider cooldowns are intentionally per-process. Phase 5 did not introduce a generalized shared framework or distributed coordination layer.
-- `withRenderSlot()` remains single-process only. That scale concern stays in Phase 6.
+- `withRenderSlot()` remains single-process only. Phase 6 preserved that local semaphore, so distributed render coordination remains outside the current repo-backed hardening scope.
 - Capacity thresholds still live in code constants, not config. Phase 5 made behavior deterministic; it did not claim final capacity tuning.
 
 ### 6. Open questions / uncertainties, if any
@@ -848,7 +848,7 @@ Reason:
 - Phase 1.5 freezes the mobile transport owner before diagnostics, tests, and refactors build on the wrong layer.
 - Phase 2 removes the biggest contract ambiguity on already-live mobile paths.
 - Phase 3 and Phase 4A create the traceability and backend regression net needed before aggressive architecture work.
-- Phase 5 protects the system while finalize remains synchronous.
+- Phase 5 hardens the expensive upstream paths before the larger Phase 6 finalize architecture change.
 - Phase 6 is the largest architectural change and should happen after contracts, logs, and backend tests are trustworthy.
 - Phase 4B then expands mobile-side protection once backend contract drift is less likely.
 - Phase 7 and Phase 8 simplify maintenance and shipping discipline around the stabilized core.
