@@ -37,7 +37,7 @@ Goal: harden only the backend surface that the current mobile app actually depen
 
 - `DONE`: Mobile normalization now preserves backend `requestId` on both success and failure envelopes.
   - Backend evidence: `src/http/respond.js:14-34`, `src/middleware/reqId.js:4-8`
-  - Mobile evidence: `client/api/client.ts:77-145`, `client/api/client.ts:207-260`, `client/api/client.ts:697-805`
+  - Mobile evidence: `client/api/client.ts:77-145`, `client/api/client.ts:223-289`
 
 - `DONE`: Mobile now fails fast on missing production-critical backend/Firebase env instead of silently using placeholder values.
   - Mobile evidence: `client/api/client.ts:4-12`, `client/lib/firebase.ts:11-27`
@@ -59,27 +59,27 @@ Goal: harden only the backend surface that the current mobile app actually depen
 ## Phase 1 Completed: Finalize Recovery + Shorts Detail Bridge
 
 - `DONE`: Finalize recovery is now backend-backed through additive session `renderRecovery` state.
-  - Backend evidence: `src/routes/story.routes.js:940-989`, `src/routes/story.routes.js:1147-1175`, `src/services/story.service.js:2325-2417`
-  - Mobile evidence: `client/screens/StoryEditorScreen.tsx:974-1094`
+  - Backend evidence: `src/routes/story.routes.js:964-1021`, `src/routes/story.routes.js:1183-1213`, `src/services/story.service.js:349-409`, `src/services/story.service.js:436-480`, `src/services/story.service.js:2535-2599`
+  - Mobile evidence: `client/screens/StoryEditorScreen.tsx:1013-1100`, `client/screens/StoryEditorScreen.tsx:1105-1173`, `client/screens/StoryEditorScreen.tsx:1241-1310`
   - Contract: `renderRecovery` now persists `pending`, `done`, and `failed` states with the active finalize `attemptId`, and mobile only trusts those states when the attempt identity matches the active `X-Idempotency-Key`.
 
 - `DONE`: `renderRecovery.pending` is persisted before the async finalize attempt is handed off, and existing session readers remain untouched.
-  - Backend evidence: `src/services/story.service.js:2330-2346`
+  - Backend evidence: `src/services/story.service.js:2542-2553`
   - Guardrail: Phase 1 adds only additive session fields; it does not repurpose top-level pipeline `status`.
 
 - `DONE`: Mobile timeout/network-loss recovery now keeps the same finalize attempt identity and polls `GET /api/story/:sessionId` until that same-attempt recovery state becomes terminal.
-  - Mobile evidence: `client/api/client.ts:743-859`, `client/screens/StoryEditorScreen.tsx:993-1094`
+  - Mobile evidence: `client/api/client.ts:756-900`, `client/screens/StoryEditorScreen.tsx:1013-1100`, `client/screens/StoryEditorScreen.tsx:1241-1310`
   - Updated limit: recovery now persists the active finalize attempt per user/session for same-session restart-safe continuation, but the UX still remains bounded to the same story session and does not add a global recovery surface.
 
 - `DONE`: Shorts detail now uses a compatibility bridge.
   - Backend evidence: `src/controllers/shorts.controller.js:101-131`, `src/controllers/shorts.controller.js:157-227`
-  - Mobile evidence: `client/api/client.ts:578-584`, `client/screens/ShortDetailScreen.tsx:183-345`
+  - Mobile evidence: `client/api/client.ts:591-597`, `client/screens/ShortDetailScreen.tsx:183-345`
   - Contract: detail now returns `id` while keeping `jobId`, probes `story.mp4` / `thumb.jpg` first, retains legacy filename fallback during the bridge period, and mobile still keeps `/api/shorts/mine?limit=50` fallback while eventual consistency settles.
 
 ## Phase 2 Completed: Mutation Reliability + Admission-Control Review
 
 - `DONE`: Active mobile editor/search routes now return stable domain-level 4xx/404 responses instead of collapsing known failures into generic 500s.
-  - Backend routes: `src/routes/story.routes.js:578-827`, `src/routes/story.routes.js:1147-1175`
+  - Backend routes: `src/routes/story.routes.js:578-827`, `src/routes/story.routes.js:1183-1213`
   - Backend services: `src/services/story.service.js:677-949`
   - Scope landed: `POST /api/story/search`, `POST /api/story/update-beat-text`, `POST /api/story/delete-beat`, `POST /api/story/search-shot`, `POST /api/story/update-shot`, and `GET /api/story/:sessionId`.
   - Guardrail: `GET /api/shorts/:jobId` stays runtime-unchanged; its current `404 NOT_FOUND` remains the intentional mobile pending-availability bridge.
