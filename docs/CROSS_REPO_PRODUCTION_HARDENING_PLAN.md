@@ -623,69 +623,59 @@ DONE: take finalize completion off the long-lived request path without changing 
 
 ## Phase 4B - Mobile Test Expansion And CI
 
+Status: COMPLETE (implemented 2026-03-21).
+
 ### 1. Goal
 
-Add mobile-side regression coverage after backend contract truth is protected and after the highest-risk backend work is no longer waiting on mobile test infrastructure.
+DONE: add first-party mobile regression coverage around the highest-risk live client behavior after backend contract truth stabilized, and land truthful mobile CI for the verification surface that the repo can actually support today.
 
-### 2. In-scope flow(s)
+### 2. Implemented scope
 
-- Response normalization
-- Auth bootstrap
-- Render-time messaging and helpers
-- Finalize timeout and recovery
-- Mobile CI
+- Mobile test harness in the mobile repo using `jest`, `jest-expo`, and `@testing-library/react-native`
+- Direct regression coverage for:
+  - `client/api/client.ts`
+  - `client/lib/renderUsage.ts`
+  - `client/lib/storyFinalizeAttemptStorage.ts`
+  - `client/lib/diagnostics.ts`
+  - `client/contexts/AuthContext.tsx`
+  - `client/screens/StoryEditorScreen.tsx`
+  - `client/screens/ShortDetailScreen.tsx`
+- Mobile-only CI workflow in the mobile repo
 
-### 3. Mobile entrypoints involved
+### 3. Implemented behavior
 
-- `client/api/client.ts`
-- `client/contexts/AuthContext.tsx`
-- `client/screens/HomeScreen.tsx`
-- `client/screens/StoryEditorScreen.tsx`
-- `client/screens/ShortDetailScreen.tsx`
-- mobile CI config files to be added
+- Response normalization, requestId handling, caption-preview payload shaping, network/timeout normalization, and finalize metadata extraction in `client/api/client.ts` now have first-party regression coverage.
+- Render-time formatting, finalize-attempt storage cleanup, and the in-memory diagnostics buffer now have direct unit coverage.
+- `AuthContext` bootstrap remains `ensureUser()` then `getUsage()`, with bootstrap sign-out on failure; those success and failure paths now have direct coverage.
+- `StoryEditorScreen` finalize and recovery remain screen-owned in current code. Phase 4B did not widen into a screen refactor; tests use the existing seams and cover:
+  - insufficient render-time gating
+  - accepted `202 pending` recovery
+  - `409 FINALIZE_ALREADY_ACTIVE` adoption of the active attempt
+- `ShortDetailScreen` retains the current `404` retry window, library fallback, and terminal non-404 handling; those paths now have direct coverage.
 
-### 4. Backend routes involved
+### 4. Implemented CI scope
 
-- Backend route behavior remains the dependency input, not the target of this phase.
+- The mobile repo now has `.github/workflows/mobile-ci.yml`.
+- The workflow runs:
+  - `npm ci`
+  - `npm run test:ci`
+- Verified locally on 2026-03-21 in the implementation environment, `npm run check:types` and `npm run lint` were not clean in the current mobile repo baseline. Phase 4B therefore landed truthful tests-only CI instead of claiming blocking lint/type gates that the repo does not currently support.
 
-### 5. Current wiring summary
+### 5. Verification standard
 
-- The mobile repo has no first-party tests and no CI workflow.
-- Mobile state and recovery logic are already complex enough to justify tests, but backend contract protection should land first.
+- `npm run test:ci` passes locally in the mobile repo.
+- The mobile CI workflow runs the same test command that passed locally.
+- No backend runtime behavior changed in this phase.
+- Mobile test setup does not create a second source of backend contract truth; backend contract behavior remains dependency input, not the target of Phase 4B.
 
-### 6. Proven issues / risks
+### 6. Current caveats
 
-- Mobile test harness setup could create execution drag if treated as a prerequisite for backend hardening.
-- Recovery and normalization logic can still regress quietly without a mobile test layer.
+- Mobile lint and typecheck remain outside blocking Phase 4B CI because the verified local baseline was not clean.
+- `HomeScreen` was not added to first-wave coverage in the landed work. Current repo risk remained materially higher in API normalization, auth bootstrap, finalize recovery, and short-detail availability handling.
 
-### 7. Proposed plan in order
+### 7. Open questions / uncertainties, if any
 
-1. Add unit tests for normalization helpers and render-time helpers.
-2. Add focused tests for bootstrap failure handling and finalize recovery handling.
-3. Add a mobile CI workflow for typecheck, lint, and tests.
-4. Keep screen-flow tests narrow so they verify real behavior without turning into unstable UI test scaffolding too early.
-
-### 8. Files likely to change
-
-- mobile `package.json`
-- mobile test setup and fixtures
-- mobile new test files
-- mobile new CI workflow
-
-### 9. Docs that must be checked/updated
-
-- mobile `docs/DOCS_INDEX.md` if testing guidance becomes front-door material
-- backend docs only if shared CI/release guidance needs a pointer
-
-### 10. Verification steps
-
-- Mobile CI runs typecheck, lint, and the new tests.
-- Finalize recovery and normalization behavior have direct test coverage.
-- Mobile test setup does not redefine backend contract truth locally.
-
-### 11. Open questions / uncertainties, if any
-
-- Test runner choice is still open in repo code and should be decided only after backend contract tests are underway.
+- None that block Phase 4B completion in current repo state.
 
 ## Phase 7 - Mobile Surface Consolidation
 
