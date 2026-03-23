@@ -102,7 +102,7 @@ The prior audit was directionally right on the biggest production risks, but thi
 - Async finalize is live: `POST /api/story/finalize` now returns prepared async replies, `GET /api/story/:sessionId` is the canonical recovery surface, and `GET /api/shorts/:jobId` is secondary detail only.
 - Backend now has first-party contract tests and CI for the active mobile-used routes, including async finalize acceptance/replay/conflict/reaping coverage.
 - Request IDs now propagate through a backend `AsyncLocalStorage` request context, and Phase 3 added structured/redacted boundary logging plus mobile in-memory diagnostics on the named hot paths only.
-- The mobile runtime path is the hand-written API client, while the React Query client remains mostly unused in active flows.
+- The mobile runtime path is now only the hand-written API client. Phase 7 removed the dormant React Query runtime path from the mobile repo.
 
 ### Corrected or tightened from code truth
 
@@ -149,9 +149,8 @@ Make it easy for any engineer or agent to identify the live mobile path, the liv
 
 ### 3. Mobile entrypoints involved
 
-- `client/App.tsx:9-56`
+- `client/App.tsx:33-53`
 - `client/api/client.ts:1-823`
-- `client/lib/query-client.ts:1-79`
 - `docs/DOCS_INDEX.md`
 - `docs/MOBILE_USED_SURFACES.md`
 
@@ -163,7 +162,7 @@ Make it easy for any engineer or agent to identify the live mobile path, the liv
 ### 5. Current wiring summary
 
 - Mobile requests flow through `client/api/client.ts`.
-- `QueryClientProvider` is mounted globally, but active screens do not use React Query for the traced mobile-used backend routes.
+- Phase 7 later removed the dormant React Query runtime path, leaving the hand-written API client as the only active transport owner.
 - Backend canonical docs already exist, but there is no single execution-order document for cross-repo production hardening.
 - Historical docs volume in backend `docs/archive` and `docs/_archive` increases the chance of future drift unless the front door stays explicit.
 
@@ -226,7 +225,7 @@ Phase 1 is not complete until all of the following are true:
 ## Phase 1.5 - Mobile Transport Ownership Freeze
 
 - Status: COMPLETE in current repo state as of 2026-03-17.
-- Completion note: the mobile docs front door now explicitly freezes transport ownership on `client/api/client.ts`, while keeping React Query documented as present but non-owning for the current mobile-used backend flows. No runtime transport migration occurred in this phase.
+- Completion note: the mobile docs front door now explicitly freezes transport ownership on `client/api/client.ts`. Phase 7 later completed the runtime cleanup by removing the dormant React Query path from the mobile repo.
 
 ### 1. Goal
 
@@ -240,9 +239,8 @@ Stop mobile transport ambiguity before tests, diagnostics, or screen refactors b
 
 ### 3. Mobile entrypoints involved
 
-- `client/App.tsx:9-56`
+- `client/App.tsx:33-53`
 - `client/api/client.ts:1-823`
-- `client/lib/query-client.ts:1-79`
 - mobile `docs/DOCS_INDEX.md`
 - mobile `docs/MOBILE_USED_SURFACES.md`
 
@@ -254,7 +252,7 @@ Stop mobile transport ambiguity before tests, diagnostics, or screen refactors b
 ### 5. Current wiring summary
 
 - The active runtime caller path for the traced mobile-used flows is `client/api/client.ts`.
-- React Query is mounted through `QueryClientProvider`, but the traced screens and contexts do not use `useQuery`, `useMutation`, or the query transport for those flows.
+- Phase 7 later removed the dormant React Query runtime path, preserving `client/api/client.ts` as the sole active caller path for those flows.
 - Leaving both patterns half-live would contaminate test setup, diagnostics, and future refactors.
 
 ### 6. Proven issues / risks
@@ -267,8 +265,8 @@ Stop mobile transport ambiguity before tests, diagnostics, or screen refactors b
 
 1. Declare the current runtime owner explicitly in mobile docs.
 2. Treat `client/api/client.ts` as the active transport owner until an intentional migration plan says otherwise.
-3. Mark React Query as present but non-owning for the current mobile-used backend flows.
-4. Revisit full React Query adoption only as a later intentional migration, not as incidental cleanup.
+3. Keep React Query out of current-runtime truth for the active mobile-used backend flows.
+4. Revisit any future React Query adoption only as a later intentional migration, not as incidental cleanup.
 
 ### 8. Files likely to change
 
@@ -285,7 +283,7 @@ Stop mobile transport ambiguity before tests, diagnostics, or screen refactors b
 ### 10. Verification steps
 
 - Confirm mobile docs explicitly state that `client/api/client.ts` is the current transport owner.
-- Confirm React Query is described as present but non-canonical for the active runtime path.
+- Confirm the declared transport owner stays `client/api/client.ts` and React Query is not described as active runtime truth for these flows.
 - Confirm future phases refer to the declared owner consistently.
 
 ### 11. Open questions / uncertainties, if any
@@ -690,16 +688,21 @@ Reduce agent confusion inside the mobile repo by separating transport, state orc
 
 - Story editor orchestration
 - Short detail eventual consistency and asset probing
-- API client layering
-- React Query versus hand-written client ownership
+- API client layering and transport-owner clarity
 - Replit server/build surface classification
 
 ### 3. Mobile entrypoints involved
 
-- `client/screens/StoryEditorScreen.tsx:459-1680`
-- `client/screens/ShortDetailScreen.tsx:143-819`
+- `client/App.tsx:33-53`
+- `client/screens/StoryEditorScreen.tsx:36-120`
+- `client/screens/story-editor/useStoryEditorSession.ts:20-245`
+- `client/screens/story-editor/useStoryEditorFinalize.ts:76-562`
+- `client/screens/story-editor/useStoryEditorCaptionPlacement.ts:23-194`
+- `client/screens/ShortDetailScreen.tsx:17-127`
+- `client/screens/short-detail/useShortDetailAvailability.ts:18-369`
+- `client/screens/short-detail/useMediaReachability.ts:15-80`
+- `client/components/shorts/ShortMediaViewer.tsx:37-178`
 - `client/api/client.ts:1-823`
-- `client/lib/query-client.ts:1-79`
 - `server/index.ts:1-220`
 - `.replit:7-79`
 
@@ -710,47 +713,55 @@ Reduce agent confusion inside the mobile repo by separating transport, state orc
 
 ### 5. Current wiring summary
 
-- The screen layer currently owns large chunks of transport, recovery, rendering, and local state coordination.
-- QueryClient exists, but active data fetching does not use it for the mobile-used backend routes.
-- The repo also still contains a separate server/build surface for Expo/Replit deployment workflows.
+- `client/api/client.ts` is the sole active transport owner for the current mobile-used backend flows.
+- `StoryEditorScreen` now acts as a container that composes extracted session, finalize/recovery, caption-placement, and presentation modules.
+- `ShortDetailScreen` now acts as a container that composes extracted availability/retry, media reachability, and playback/presentation modules.
+- The repo still contains a separate `server/` build/deployment surface for Expo/Replit workflows, but that surface is explicitly non-canonical for backend contract truth.
 
 ### 6. Proven issues / risks
 
-- Very large mobile files slow safe refactors and increase agent drift.
-- Two client-side data-layer patterns coexist without a single declared winner.
-- The `server/` subtree can be mistaken for part of the live backend integration path unless its role is clearly classified.
+- Before this phase, very large mobile screens and a dormant second transport path made ownership easy to misread.
+- The highest confusion points were StoryEditor finalize/recovery, StoryEditor caption placement, ShortDetail availability/fallback, and the local `server/` subtree.
+- The landed phase removes those ambiguity points without changing backend/mobile contract behavior.
 
-### 7. Proposed plan in order
+### 7. Implemented work in order
 
-1. Pick one ownership model for mobile backend data access: keep the hand-written client or actively migrate to React Query. Do not leave both half-live.
-2. Split `StoryEditorScreen` by responsibility: finalize orchestration, caption placement persistence, preview coordination, and deck UI.
-3. Split `ShortDetailScreen` by responsibility: fetch/retry state, media reachability diagnostics, and playback UI.
-4. Classify the mobile `server/` subtree explicitly as dev/build/deployment support, not backend contract truth.
-5. Update mobile docs only after the live ownership decision is made.
+1. Retired the dormant React Query runtime path and made the hand-written mobile API client the only active transport owner.
+2. Split `StoryEditorScreen` into a container plus extracted session, finalize/recovery, caption-placement, and presentation modules.
+3. Split `ShortDetailScreen` into a container plus extracted availability/retry, media reachability, and playback/presentation modules.
+4. Classified the mobile `server/` subtree and `replit.md` as local build/deployment support only, not backend contract truth.
+5. Refreshed the mobile docs front door and caller-truth docs to match the landed ownership model.
 
-### 8. Files likely to change
+### 8. Landed file groups
 
 - `client/screens/StoryEditorScreen.tsx`
 - `client/screens/ShortDetailScreen.tsx`
+- `client/screens/story-editor/*`
+- `client/screens/short-detail/*`
+- `client/components/story-editor/*`
+- `client/components/shorts/ShortMediaViewer.tsx`
 - `client/api/client.ts`
-- `client/lib/query-client.ts`
 - mobile docs around active surfaces and repo front door
+- mobile `server/README.md`
+- mobile `replit.md`
 
-### 9. Docs that must be checked/updated
+### 9. Docs updated
 
 - mobile `docs/MOBILE_USED_SURFACES.md`
 - mobile `docs/DOCS_INDEX.md`
-- backend docs only if caller behavior changes
+- mobile `server/README.md`
+- mobile `replit.md`
+- backend docs where Phase 7 status wording needed to match the landed repo truth
 
-### 10. Verification steps
+### 10. Verification standard
 
-- No single mobile screen owns transport, recovery, and full UI orchestration after the split.
-- The chosen data-access model is obvious from `client/App.tsx` and docs.
-- Engineers can distinguish client runtime code from build/deployment helper code quickly.
+- `client/App.tsx` no longer mounts `QueryClientProvider`, and repo source search shows no active `@tanstack/react-query`, `QueryClientProvider`, or `query-client` usage in the mobile source/docs surfaces.
+- StoryEditor and ShortDetail ownership is now obvious from the container imports and the extracted hook/component modules.
+- The active mobile docs now distinguish client runtime code from build/deployment helper code quickly.
 
 ### 11. Open questions / uncertainties, if any
 
-- The repo does not yet prove whether the team wants React Query adoption or deliberate removal. That decision should happen before deep refactors.
+- None that block truthful Phase 7 closure in the current repo state.
 
 ## Phase 8 - Release Operations And Runbooks
 
