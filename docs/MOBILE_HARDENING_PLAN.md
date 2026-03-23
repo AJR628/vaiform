@@ -60,7 +60,7 @@ Goal: harden only the backend surface that the current mobile app actually depen
 
 - `DONE`: Finalize recovery is now backend-backed through additive session `renderRecovery` state.
   - Backend evidence: `src/routes/story.routes.js:964-1021`, `src/routes/story.routes.js:1183-1213`, `src/services/story.service.js:349-409`, `src/services/story.service.js:436-480`, `src/services/story.service.js:2535-2599`
-  - Mobile evidence: `client/screens/StoryEditorScreen.tsx:1013-1100`, `client/screens/StoryEditorScreen.tsx:1105-1173`, `client/screens/StoryEditorScreen.tsx:1241-1310`
+  - Mobile evidence: `client/screens/StoryEditorScreen.tsx:112-132`, `client/screens/story-editor/useStoryEditorFinalize.ts:164-342`, `client/screens/story-editor/useStoryEditorFinalize.ts:344-562`
   - Contract: `renderRecovery` now persists `pending`, `done`, and `failed` states with the active finalize `attemptId`, and mobile only trusts those states when the attempt identity matches the active `X-Idempotency-Key`.
 
 - `DONE`: `renderRecovery.pending` is persisted before the async finalize attempt is handed off, and existing session readers remain untouched.
@@ -68,12 +68,12 @@ Goal: harden only the backend surface that the current mobile app actually depen
   - Guardrail: Phase 1 adds only additive session fields; it does not repurpose top-level pipeline `status`.
 
 - `DONE`: Mobile timeout/network-loss recovery now keeps the same finalize attempt identity and polls `GET /api/story/:sessionId` until that same-attempt recovery state becomes terminal.
-  - Mobile evidence: `client/api/client.ts:756-900`, `client/screens/StoryEditorScreen.tsx:1013-1100`, `client/screens/StoryEditorScreen.tsx:1241-1310`
+  - Mobile evidence: `client/api/client.ts:756-902`, `client/screens/story-editor/useStoryEditorFinalize.ts:344-462`
   - Updated limit: recovery now persists the active finalize attempt per user/session for same-session restart-safe continuation, but the UX still remains bounded to the same story session and does not add a global recovery surface.
 
 - `DONE`: Shorts detail now uses a compatibility bridge.
   - Backend evidence: `src/controllers/shorts.controller.js:101-131`, `src/controllers/shorts.controller.js:157-227`
-  - Mobile evidence: `client/api/client.ts:591-597`, `client/screens/ShortDetailScreen.tsx:183-345`
+  - Mobile evidence: `client/api/client.ts:591-597`, `client/screens/ShortDetailScreen.tsx:50-62`, `client/screens/short-detail/useShortDetailAvailability.ts:83-269`
   - Contract: detail now returns `id` while keeping `jobId`, probes `story.mp4` / `thumb.jpg` first, retains legacy filename fallback during the bridge period, and mobile still keeps `/api/shorts/mine?limit=50` fallback while eventual consistency settles.
 
 ## Phase 2 Completed: Mutation Reliability + Admission-Control Review
@@ -100,10 +100,10 @@ Goal: harden only the backend surface that the current mobile app actually depen
 
 - `DONE`: `POST /api/story/finalize` now reserves, enqueues, and responds with `202 pending` instead of blocking on full render completion.
   - Backend evidence: `src/routes/story.routes.js`, `src/middleware/idempotency.firestore.js`, `src/services/story-finalize.attempts.js`, `src/services/story-finalize.runner.js`
-  - Mobile evidence: `client/api/client.ts`, `client/screens/StoryEditorScreen.tsx`
+  - Mobile evidence: `client/api/client.ts:756-902`, `client/screens/story-editor/useStoryEditorFinalize.ts:344-562`
 - `DONE`: same-session concurrent finalize attempts under different keys are now rejected explicitly with `409 FINALIZE_ALREADY_ACTIVE` and do not double-reserve usage or enqueue duplicate work.
   - Backend evidence: `src/services/story-finalize.attempts.js`, `src/middleware/idempotency.firestore.js`
-  - Mobile evidence: `client/api/client.ts`, `client/screens/StoryEditorScreen.tsx`
+  - Mobile evidence: `client/api/client.ts:756-902`, `client/screens/story-editor/useStoryEditorFinalize.ts:390-425`
 - `DONE`: stale queued/running finalize attempts are now reaped into terminal failure, release reserved usage exactly once, and persist `renderRecovery.failed` for the canonical session-recovery path.
   - Backend evidence: `src/services/story-finalize.attempts.js`, `src/services/story-finalize.runner.js`, `src/services/story.service.js`
 - `DONE`: the Firestore composite index required for async finalize claim ordering is now source-controlled in root `firestore.indexes.json`, and root `firebase.json` now wires Firestore rules plus indexes for repo-managed deploys via `firebase deploy --project <firebase-project-id> --only firestore`.

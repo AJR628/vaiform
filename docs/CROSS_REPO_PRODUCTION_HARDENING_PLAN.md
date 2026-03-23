@@ -50,7 +50,9 @@ This document does not replace the backend contract docs or the mobile caller-tr
 
 - Mobile entrypoints:
   - `client/screens/ScriptScreen.tsx:162-235`
-  - `client/screens/StoryEditorScreen.tsx:459-951`
+  - `client/screens/StoryEditorScreen.tsx:36-120`
+  - `client/screens/story-editor/useStoryEditorSession.ts:20-231`
+  - `client/screens/story-editor/useStoryEditorCaptionPlacement.ts:23-194`
   - `client/screens/ClipSearchModal.tsx:49-105`
   - `client/hooks/useCaptionPreview.ts:45-220`
 - Backend routes:
@@ -65,8 +67,8 @@ This document does not replace the backend contract docs or the mobile caller-tr
 
 ### Finalize and recovery
 
-- Mobile entrypoint: `client/screens/StoryEditorScreen.tsx:974-1177`
-- Mobile transport: `client/api/client.ts:743-859`
+- Mobile entrypoint: `client/screens/StoryEditorScreen.tsx:112-132`, `client/screens/story-editor/useStoryEditorFinalize.ts:76-562`
+- Mobile transport: `client/api/client.ts:756-902`
 - Backend route: `src/routes/story.routes.js:940-989`
 - Backend middleware: `src/middleware/idempotency.firestore.js:29-117`
 - Backend async path:
@@ -85,7 +87,8 @@ This document does not replace the backend contract docs or the mobile caller-tr
 
 - Mobile entrypoints:
   - `client/screens/LibraryScreen.tsx:80-142`
-  - `client/screens/ShortDetailScreen.tsx:183-602`
+  - `client/screens/ShortDetailScreen.tsx:24-134`
+  - `client/screens/short-detail/useShortDetailAvailability.ts:18-369`
 - Backend routes: `src/routes/shorts.routes.js:1-10`
 - Backend controller: `src/controllers/shorts.controller.js:7-235`
 - Proven behavior:
@@ -110,9 +113,9 @@ The prior audit was directionally right on the biggest production risks, but thi
   - backend `src/utils/ffmpeg.video.js`: 2787 lines
   - backend `src/services/story.service.js`: 2441 lines
   - backend `src/routes/caption.preview.routes.js`: 1995 lines
-  - mobile `client/screens/StoryEditorScreen.tsx`: 1872 lines
-  - mobile `client/screens/ShortDetailScreen.tsx`: 980 lines
-  - mobile `client/api/client.ts`: 860 lines
+  - mobile `client/screens/StoryEditorScreen.tsx`: 478 lines
+  - mobile `client/screens/ShortDetailScreen.tsx`: 293 lines
+  - mobile `client/api/client.ts`: 902 lines
 - Console usage remains high in hot paths:
   - backend `src/**`: 500+ console calls
   - mobile `client/**`: 66 console calls
@@ -309,9 +312,9 @@ Make mobile-used backend mutations return deterministic, debuggable error semant
 ### 3. Mobile entrypoints involved
 
 - `client/screens/ScriptScreen.tsx:162-235`
-- `client/screens/StoryEditorScreen.tsx:741-849`
+- `client/screens/StoryEditorScreen.tsx:36-120`
 - `client/screens/ClipSearchModal.tsx:49-105`
-- `client/screens/ShortDetailScreen.tsx:203-333`
+- `client/screens/ShortDetailScreen.tsx:24-134`
 
 ### 4. Backend routes involved
 
@@ -645,11 +648,11 @@ DONE: add first-party mobile regression coverage around the highest-risk live cl
 - Response normalization, requestId handling, caption-preview payload shaping, network/timeout normalization, and finalize metadata extraction in `client/api/client.ts` now have first-party regression coverage.
 - Render-time formatting, finalize-attempt storage cleanup, and the in-memory diagnostics buffer now have direct unit coverage.
 - `AuthContext` bootstrap remains `ensureUser()` then `getUsage()`, with bootstrap sign-out on failure; those success and failure paths now have direct coverage.
-- `StoryEditorScreen` finalize and recovery remain screen-owned in current code. Phase 4B did not widen into a screen refactor; tests use the existing seams and cover:
+- `StoryEditorScreen` now composes `useStoryEditorFinalize()` for finalize and recovery, and the extracted hook-backed flow remains covered by Phase 4B tests. Those tests cover:
   - insufficient render-time gating
   - accepted `202 pending` recovery
   - `409 FINALIZE_ALREADY_ACTIVE` adoption of the active attempt
-- `ShortDetailScreen` retains the current `404` retry window, library fallback, and terminal non-404 handling; those paths now have direct coverage.
+- `ShortDetailScreen` now composes `useShortDetailAvailability()` for the current `404` retry window, library fallback, and terminal non-404 handling; those paths remain directly covered.
 
 ### 4. Implemented CI scope
 
