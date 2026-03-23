@@ -679,6 +679,9 @@ DONE: add first-party mobile regression coverage around the highest-risk live cl
 
 ## Phase 7 - Mobile Surface Consolidation
 
+- Status: COMPLETE in current repo state as of 2026-03-22.
+- Completion note: the mobile runtime now uses only the hand-written API client, StoryEditor and ShortDetail non-UI orchestration has been extracted into dedicated hooks/modules, and the mobile `server/` subtree plus `replit.md` are now explicitly classified as local build/deployment support rather than backend contract truth. No backend runtime behavior changed in this phase.
+
 ### 1. Goal
 
 Reduce agent confusion inside the mobile repo by separating transport, state orchestration, and large-screen UI responsibilities.
