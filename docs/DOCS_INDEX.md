@@ -4,7 +4,7 @@
 - Owner repo: backend
 - Source of truth for: backend docs ownership, precedence, and the mobile/backend documentation split
 - Canonical counterpart/source: mobile repo `docs/DOCS_INDEX.md` and mobile repo `docs/MOBILE_USED_SURFACES.md`
-- Last verified against: both repos on 2026-03-21
+- Last verified against: both repos on 2026-03-23
 
 ## Ownership Split
 
@@ -19,6 +19,7 @@ Trust these first for current work:
 - backend repo `README.md`
 - backend repo `docs/DOCS_INDEX.md`
 - backend repo `docs/CROSS_REPO_PRODUCTION_HARDENING_PLAN.md`
+- backend repo `docs/DEPLOY_ROLLBACK_HOTFIX_RUNBOOK.md`
 - backend repo `docs/INCIDENT_TRACE_RUNBOOK.md`
 - backend repo `docs/MOBILE_BACKEND_CONTRACT.md`
 - backend repo `docs/MOBILE_HARDENING_PLAN.md`
@@ -33,6 +34,7 @@ Do not start from evidence or historical docs unless one of the docs above sends
 Update these first when backend/mobile contract or hardening truth changes:
 
 - `docs/CROSS_REPO_PRODUCTION_HARDENING_PLAN.md`
+- `docs/DEPLOY_ROLLBACK_HOTFIX_RUNBOOK.md`
 - `docs/INCIDENT_TRACE_RUNBOOK.md`
 - `docs/MOBILE_BACKEND_CONTRACT.md`
 - `docs/MOBILE_HARDENING_PLAN.md`

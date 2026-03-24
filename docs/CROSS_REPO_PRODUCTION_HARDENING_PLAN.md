@@ -768,6 +768,9 @@ Reduce agent confusion inside the mobile repo by separating transport, state orc
 
 ## Phase 8 - Release Operations And Runbooks
 
+- Status: REPO-SCOPED IMPLEMENTATION COMPLETE in current repo state as of 2026-03-23.
+- Completion note: the mobile repo now declares explicit preview/production EAS build profiles plus explicit runtime-version/update policy, the backend repo now has a deploy/rollback/hotfix runbook, and the existing incident runbook now covers usage/billing-state triage in addition to finalize and short-detail tracing. Live Expo/EAS linkage, signing, deployed environment rollout, and real release/rollback rehearsal remain external operational gates.
+
 ### 1. Goal
 
 Make store releases, hotfixes, and incident response repeatable instead of improvised.
@@ -781,58 +784,68 @@ Make store releases, hotfixes, and incident response repeatable instead of impro
 
 ### 3. Mobile entrypoints involved
 
-- `app.json:1-49`
-- `package.json:1-74`
+- `app.json:1-56`
+- `eas.json:1-10`
+- `package.json:1-88`
 - `.replit:7-79`
+- `.github/workflows/mobile-ci.yml:1-30`
 
 ### 4. Backend routes involved
 
-- No route logic change is required to start this phase, but finalize and short-detail runbooks must cover the live mobile-used paths.
+- No route logic change was required for the repo-scoped implementation of this phase.
+- The runbook surface now covers the live mobile-used finalize, short-detail, and `/api/usage` support paths.
 
 ### 5. Current wiring summary
 
-- Mobile repo has no `eas.json`.
-- `app.json` has no `runtimeVersion` or `updates` policy.
-- Mobile repo has no CI workflow and no explicit store-build lane.
-- Backend repo has CI, but no production runbook or rollback/run-response doc for the mobile-used backend surface.
+- Mobile repo now has `eas.json` with explicit `preview` and `production` build profiles.
+- `app.json` now has explicit `runtimeVersion` and `updates` policy.
+- Mobile repo has a CI workflow, but it is still a test lane rather than a store submission lane.
+- Backend repo now has CI, health checks, a deploy/rollback/hotfix runbook, and an incident trace runbook for the mobile-used backend support surface.
+- Backend Firestore rules/index deployment remains source-controlled via root `firebase.json`.
 
 ### 6. Proven issues / risks
 
-- OTA/update behavior is not explicitly controlled in repo config.
-- Production release and rollback steps are not encoded in docs.
-- Incident response for failed finalize, missing short detail, or usage mismatch would still depend too heavily on tribal knowledge.
+- Live Expo/EAS linkage, signing credentials, store accounts, and deployed backend rollout mechanics are not represented in repo state.
+- The repo now documents release, rollback, and incident steps, but cannot prove a real preview build, production build, deploy, or rollback rehearsal.
+- Mobile release channels are now named in repo config, but remote channel/project wiring still requires operational confirmation outside the repo.
 
-### 7. Proposed plan in order
+### 7. Implemented work in order
 
-1. Add mobile build/update profiles and runtime-version policy.
-2. Define preview versus production channels and release checklist.
-3. Add backend deploy checklist, rollback checklist, and failed-render tracing runbook.
-4. Add one shared "known failure modes" document tied to requestId and attemptId tracing.
-5. Rehearse one release and one rollback path before calling the app production-ready.
+1. Added mobile preview/production build profiles in `eas.json`.
+2. Added explicit `runtimeVersion` and `updates` policy in mobile `app.json`.
+3. Added a mobile release runbook that separates store-build policy from the local Replit/cloud deployment surface.
+4. Added a backend deploy/rollback/hotfix runbook and extended the existing incident runbook with usage/billing-state triage.
+5. Refreshed both docs front doors and this canonical Phase 8 section to match the landed repo truth.
 
-### 8. Files likely to change
+### 8. Landed file groups
 
 - mobile `eas.json`
 - mobile `app.json`
-- mobile CI/release docs
-- backend runbook docs
-- backend README or docs front door if runbooks become required starting points
+- mobile release/docs front door surfaces
+- backend runbook/docs front door surfaces
+- backend canonical hardening plan wording
 
 ### 9. Docs that must be checked/updated
 
 - backend `docs/DOCS_INDEX.md`
-- backend `README.md` if a runbook becomes top-level
+- backend `docs/DEPLOY_ROLLBACK_HOTFIX_RUNBOOK.md`
+- backend `docs/INCIDENT_TRACE_RUNBOOK.md`
 - mobile `docs/DOCS_INDEX.md`
+- mobile `docs/MOBILE_RELEASE_RUNBOOK.md`
 
 ### 10. Verification steps
 
-- Produce one preview build and one production build from documented config.
-- Verify runtime-version and update-channel behavior explicitly.
-- Walk through a failed-render trace using only the written runbooks.
+- Verify `app.json` now declares explicit `runtimeVersion` and `updates` policy.
+- Verify `eas.json` now declares explicit `preview` and `production` build profiles.
+- Verify backend docs front door now exposes both deploy/rollback guidance and incident tracing guidance.
+- Keep live preview-build, production-build, deploy, and rollback rehearsal as explicit external follow-up work rather than claiming it from repo state alone.
 
 ### 11. Open questions / uncertainties, if any
 
-- Release infrastructure accounts and signing setup are not represented in repo code and will need separate operational confirmation.
+- Expo/EAS project linkage and remote update-channel wiring are not represented in repo code.
+- Signing credentials and app-store account state are not represented in repo code.
+- Live backend hosting rollout/rollback mechanics and environment configuration are not represented in repo code.
+- Rehearsal ownership for real preview-build, production-build, deploy, and rollback exercises remains an operational question outside repo proof.
 
 ## Recommended Start Order
 

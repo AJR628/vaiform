@@ -1,6 +1,6 @@
 # INCIDENT_TRACE_RUNBOOK
 
-Last verified against repo code: 2026-03-21.
+Last verified against repo code: 2026-03-23.
 
 Purpose: manual trace workflow for the Cross-Repo Phase 3 observability scope only.
 
@@ -99,6 +99,33 @@ Capture as many of these as the incident provides:
 - `shorts.detail.not_found` with mobile `404 NOT_FOUND` means the bridge asset was still unavailable when detail was requested.
 - `LIBRARY_FALLBACK_HIT` means detail was still unavailable but list fallback found the ready short first.
 - `DETAIL_RETRY_TIMEOUT` means the mobile retry window exhausted without a terminal backend failure; treat it as pending availability unless backend logs show a real `shorts.detail.failed`.
+
+## Usage / Billing State Triage
+
+1. Start on mobile:
+- Capture the `/api/usage` `requestId`, `status`, and `code`.
+- Note whether the request happened during auth bootstrap or an explicit refresh.
+- Expected mobile context sources:
+  - `client/contexts/AuthContext.tsx`
+  - `client/api/client.ts`
+  - `client/screens/SettingsScreen.tsx`
+
+2. Correlate the backend usage request:
+- Search stdout logs for the same `requestId`.
+- Expected error events:
+  - `auth.bootstrap.usage.failed`
+  - `request.error`
+
+3. Inspect the canonical backend usage owner:
+- `src/routes/usage.routes.js` owns the authenticated `/api/usage` route.
+- `src/controllers/usage.controller.js` returns the canonical success/failure envelope for the route.
+- `src/services/usage.service.js` builds the response from canonical `plan`, `membership`, and `usage` state, including `availableSec = cycleIncludedSec - cycleUsedSec - cycleReservedSec`.
+
+4. Interpret common outcomes:
+- A failed `/api/usage` call during auth bootstrap signs the user out instead of letting the app enter a half-ready state.
+- Lower-than-expected `availableSec` may be explained by an active finalize reservation. Before treating it as a billing drift, trace the same user's recent finalize attempt and confirm whether usage is still reserved or has already settled/released.
+- After a terminal finalize success, mobile may also surface additive `data.billing.billedSec`. After a terminal finalize failure or reaped failure, reserved usage should release once. If `/api/usage` still looks wrong after a terminal finalize state, inspect the related finalize attempt trace and the canonical backend usage state together.
+- This runbook proves the current read path and its correlation points. It does not prove webhook delivery, store billing state, or other external commerce-provider events.
 
 ## Redaction Checklist
 
