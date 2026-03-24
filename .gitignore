@@ -138,6 +138,8 @@ out
 
 # Firebase & service accounts
 *.json
+!firebase.json
+!firestore.indexes.json
 
 # OS files
 .DS_Store
@@ -145,3 +147,4 @@ Thumbs.db
 
 # Generated/manual backup clutter in built web output
 web/dist/*.backup
+web/dist/

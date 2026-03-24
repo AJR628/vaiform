@@ -2,8 +2,16 @@
  * Extract content from URLs using LLM or fallback text extraction
  */
 
+import { withAbortTimeout } from './fetch.timeout.js';
+import {
+  fetchWithOutboundPolicy,
+  isOutboundPolicyError,
+  readTextResponseWithLimit,
+} from './outbound.fetch.js';
+
 const OPENAI_BASE = process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1';
 const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
+const LINK_EXTRACT_MAX_BYTES = Number(process.env.LINK_EXTRACT_MAX_BYTES || 2 * 1024 * 1024);
 
 /**
  * Extract main content from a URL
@@ -40,58 +48,62 @@ export async function extractContentFromUrl(url) {
         console.log(`[link.extract] Retry attempt ${attempt} for ${url}`);
       }
 
-      // Fetch HTML with timeout (each retry attempt gets its own timeout)
-      const { withAbortTimeout } = await import('./fetch.timeout.js');
-      const response = await withAbortTimeout(
+      const html = await withAbortTimeout(
         async (signal) => {
-          return await fetch(url, {
-            headers,
-            redirect: 'follow',
-            ...(signal ? { signal } : {}),
+          const { response } = await fetchWithOutboundPolicy(url, { headers, signal });
+
+          if (!response.ok) {
+            throw new Error(`HTTP_${response.status}`);
+          }
+
+          return await readTextResponseWithLimit(response, {
+            maxBytes: LINK_EXTRACT_MAX_BYTES,
+            errorCode: 'LINK_EXTRACT_TOO_LARGE',
+            errorMessage: 'Link content exceeded size limit',
           });
         },
         { timeoutMs: 20000, errorMessage: 'LINK_EXTRACT_TIMEOUT' }
       );
-
-      if (!response.ok) {
-        // Retry on 403/429, but fail immediately on other errors
-        if ((response.status === 403 || response.status === 429) && attempt < maxRetries) {
-          lastError = new Error(`HTTP_${response.status}`);
-          continue;
-        }
-        throw new Error(`HTTP_${response.status}`);
-      }
-
-      const html = await response.text();
 
       // Try LLM extraction first
       try {
         return await extractWithLLM(html, url);
       } catch (llmError) {
         console.warn('[link.extract] LLM extraction failed, using fallback:', llmError?.message);
-        return extractFallback(html, url);
+        return extractFallback(html);
       }
     } catch (error) {
       lastError = error;
-      // CRITICAL: Timeout errors must NOT trigger retries (fail immediately)
-      if (error.name === 'AbortError' || error.message === 'LINK_EXTRACT_TIMEOUT') {
+
+      // Hard failures should surface immediately and not retry.
+      if (
+        error?.code === 'LINK_EXTRACT_TIMEOUT' ||
+        error?.code === 'LINK_EXTRACT_TOO_LARGE' ||
+        isOutboundPolicyError(error)
+      ) {
         throw error;
       }
-      // Only retry on network/403/429 errors
+
+      // Only retry on network/403/429 errors.
       if (
         attempt < maxRetries &&
-        (error.message.includes('HTTP_403') ||
-          error.message.includes('HTTP_429') ||
-          error.message.includes('fetch'))
+        (error?.message?.includes('HTTP_403') ||
+          error?.message?.includes('HTTP_429') ||
+          error?.message?.includes('fetch'))
       ) {
         continue;
       }
-      throw new Error(`LINK_EXTRACT_FAILED: ${error?.message || error}`);
+
+      const wrapped = new Error(`LINK_EXTRACT_FAILED: ${error?.message || error}`);
+      wrapped.code = 'LINK_EXTRACT_FAILED';
+      throw wrapped;
     }
   }
 
-  // If we exhausted retries, throw the last error
-  throw new Error(`LINK_EXTRACT_FAILED: ${lastError?.message || 'Max retries exceeded'}`);
+  // If we exhausted retries, throw the last error.
+  const wrapped = new Error(`LINK_EXTRACT_FAILED: ${lastError?.message || 'Max retries exceeded'}`);
+  wrapped.code = 'LINK_EXTRACT_FAILED';
+  throw wrapped;
 }
 
 /**
@@ -150,11 +162,11 @@ async function extractWithLLM(html, url) {
 /**
  * Fallback: simple text extraction from HTML
  */
-function extractFallback(html, url) {
+function extractFallback(html) {
   // Remove script and style tags
   const cleaned = html
-    .replace(/<script[\s\S]*?<\/script>/gi, '')
-    .replace(/<style[\s\S]*?<\/style>/gi, '')
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
     .replace(/<[^>]+>/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();

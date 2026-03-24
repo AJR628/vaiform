@@ -16,7 +16,7 @@ const OPENAI_VOICE = process.env.OPENAI_TTS_VOICE || 'alloy';
 const OPENAI_ORG = process.env.OPENAI_ORG_ID || null;
 
 // New in-memory cache + limiter and diag state
-const ttsMem = new Map(); // key -> { buf, ts }
+const ttsMem = new Map(); // key -> { buf, ts, durationMs }
 const TTL_MS = 15 * 60 * 1000; // 15 min
 let quotaBlockedUntil = 0;
 let ttsLock = Promise.resolve();
@@ -25,8 +25,21 @@ export function getLastTtsState() {
   return lastTtsState;
 }
 
-function cacheKey({ provider, model, voice, text }) {
-  return `${provider}|${model}|${voice}|${String(text || '').trim()}`;
+function stableStringify(value) {
+  if (Array.isArray(value)) {
+    return `[${value.map((entry) => stableStringify(entry)).join(',')}]`;
+  }
+  if (value && typeof value === 'object') {
+    return `{${Object.keys(value)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${stableStringify(value[key])}`)
+      .join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function cacheKey({ provider, model, voice, text, normalizedSettings }) {
+  return `${provider}|${model}|${voice}|${stableStringify(normalizedSettings || {})}|${String(text || '').trim()}`;
 }
 async function withTtsSlot(fn) {
   const prev = ttsLock;
@@ -151,10 +164,11 @@ export async function synthVoice({ text, voiceId, modelId, outputFormat, voiceSe
 
     const provider = (process.env.TTS_PROVIDER || 'openai').toLowerCase();
     const isOpenAI = provider === 'openai' && !!process.env.OPENAI_API_KEY;
+    const resolvedVoiceId = voiceId || process.env.ELEVEN_VOICE_ID;
     const isEleven =
       provider === 'elevenlabs' &&
       !!process.env.ELEVENLABS_API_KEY &&
-      !!process.env.ELEVEN_VOICE_ID;
+      !!resolvedVoiceId;
     if (!isOpenAI && !isEleven) {
       console.warn('[tts] provider not configured; silent fallback');
       return { audioPath: null, durationMs: null };
@@ -168,7 +182,7 @@ export async function synthVoice({ text, voiceId, modelId, outputFormat, voiceSe
     // SSOT: Use the same builder for both preview and render
     const payload = buildTtsPayload({
       text: t,
-      voiceId: voiceId || process.env.ELEVEN_VOICE_ID,
+      voiceId: resolvedVoiceId,
       modelId,
       outputFormat,
       voiceSettings,
@@ -180,7 +194,13 @@ export async function synthVoice({ text, voiceId, modelId, outputFormat, voiceSe
 
     logNormalizedSettings('[tts.render]', voiceSettings, normalizedSettings);
 
-    const key = cacheKey({ provider, model: payload.modelId, voice: payload.voiceId, text: t });
+    const key = cacheKey({
+      provider,
+      model: payload.modelId,
+      voice: payload.voiceId,
+      text: t,
+      normalizedSettings,
+    });
 
     // In-memory cache
     const hit = ttsMem.get(key);
@@ -194,7 +214,7 @@ export async function synthVoice({ text, voiceId, modelId, outputFormat, voiceSe
       const dir = await mkdtemp(join(tmpdir(), 'vaiform-tts-'));
       const audioPath = join(dir, 'cached.mp3');
       await writeFile(audioPath, hit.buf);
-      return { audioPath, durationMs: null };
+      return { audioPath, durationMs: Number.isFinite(hit.durationMs) ? hit.durationMs : null };
     }
 
     // Single-slot limiter and one polite retry
@@ -214,17 +234,16 @@ export async function synthVoice({ text, voiceId, modelId, outputFormat, voiceSe
           };
         }, key);
 
-        ttsMem.set(key, { buf, ts: Date.now() });
-
         const dir = await mkdtemp(join(tmpdir(), 'vaiform-tts-'));
         const audioPath = join(dir, 'quote.mp3');
         await writeFile(audioPath, buf);
-        // probe size + duration
+        let durationMs = null;
         try {
           const { stat } = await import('node:fs/promises');
           const st = await stat(audioPath);
           const { getDurationMsFromMedia } = await import('../utils/media.duration.js');
           const ms = await getDurationMsFromMedia(audioPath);
+          durationMs = Number.isFinite(ms) ? ms : null;
           console.log(
             '[elevenlabs] Render synthesis OK:',
             st?.size || 0,
@@ -232,7 +251,8 @@ export async function synthVoice({ text, voiceId, modelId, outputFormat, voiceSe
             ms ? (ms / 1000).toFixed(2) + 's' : 'unknown'
           );
         } catch {}
-        return { audioPath, durationMs: null };
+        ttsMem.set(key, { buf, ts: Date.now(), durationMs });
+        return { audioPath, durationMs };
       } catch (err) {
         console.warn('[tts] soft-fail:', err?.message || err);
         return { audioPath: null, durationMs: null };

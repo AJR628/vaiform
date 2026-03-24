@@ -1,118 +1,93 @@
-# Active Surfaces (C1 Dist-Aware Truth Snapshot)
+# Active Surfaces (Visual SSOT + API Prune)
 
-**Audit date**: 2026-02-18  
-**Branch**: `feat/voice-ssot-tts`
+> Evidence Notice (2026-03-13)
+> This file is retained as caller-backed web/runtime evidence.
+> It is not the primary docs front door for mobile/backend contract work.
+> Start at docs/DOCS_INDEX.md.
 
-Definitions used here:
+Audit date: 2026-03-13
 
-- `Default-Reachable`: reachable with `ENABLE_LEGACY_ROUTES=0` and `VAIFORM_DEBUG=0`.
-- `Caller-Backed`: called by default-runtime entrypoints and the JS they load.
-- `Active`: `Default-Reachable && Caller-Backed`.
+## Runtime model
 
-Callsite path mapping rule:
+- Detailed file:line audit is in `docs/TRUTH_FREEZE_AUDIT_2026-02-28.md`.
+- Frontend is served by Netlify from `web/dist`.
+- Frontend source files live in `web/public`.
+- Netlify redirect/proxy SSOT is `netlify.toml` (no `_redirects` files under `web/`).
+- Frontend browser API ingress is same-origin relative `/api/*` via the Netlify proxy.
+- Direct backend origins are not allowed in `web/public/**` and are guarded by `npm run check:hardcoded-backend-origins`.
+- Backend serves API + required static assets only.
 
-- `apiFetch("/x") => /api/x` because `API_ROOT` already ends with `/api` (`web/dist/api.mjs:7`, `web/dist/api.mjs:9`, `web/dist/api.mjs:152`).
-- Fallback to root path applies only for GET `/credits|/whoami|/health` (`web/dist/api.mjs:156-163`).
+## Frontend entry surfaces
 
-## 1) Dist-First Runtime Rules
+- Core beta entry pages:
+  - `/creative` -> `/creative.html`
+  - `/my-shorts.html`
+  - `/pricing.html`
+  - `/login.html`
+- Static/support pages:
+  - `/` and `/index.html`
+  - `/legal.html`
+  - `/success.html`
 
-- Dist static is registered first, then `public` static, with SPA fallback last (`src/app.js:356`, `src/app.js:376-380`).
-- `web/dist` exists in this repo, so dist-first behavior is active.
-- Rule: **When `web/dist` exists, overlapping static paths are served from `web/dist` first; missing files fall through to `public/` before SPA fallback.**
-- Explicit `/creative` route still serves `public/creative.html` (`src/app.js:298`, `src/routes/creative.routes.js:11-13`).
+## Netlify bridge surfaces
 
-Default flags:
+- `/api/*` -> backend `/api/:splat` (proxy in `netlify.toml`).
+- `/stripe/webhook` -> backend `/stripe/webhook`.
 
-- `ENABLE_LEGACY_ROUTES=0`: `env.example:3`
-- `VAIFORM_DEBUG=0`: `env.example:7`
+## Backend default reachable surfaces (`VAIFORM_DEBUG=0`)
 
-## 2) Default Entrypoints (Caller Scope)
+- Health:
+  - `GET /health`
+  - `HEAD /health`
+  - `GET /api/health`
+  - `HEAD /api/health`
+- Webhook:
+  - `GET /stripe/webhook`
+  - `POST /stripe/webhook` (Stripe checkout completion, renewal entitlement/usage sync, and plan-subscription deletion handling)
+- Core API mounts:
+  - `/api/usage`
+  - `/api/whoami`
+  - `/api/checkout/start`, `/api/checkout/portal`
+  - `/api/shorts/mine`, `/api/shorts/:jobId`
+  - `/api/assets/options`
+  - `/api/limits/usage`
+  - `/api/story/*`
+  - `/api/caption/preview`
+  - `/api/user/*`, `/api/users/ensure`
+- Backend static (required only):
+  - `/assets/*` (including `/assets/fonts/*`)
 
-Entrypoints proven by nav/redirect behavior:
+## Removed/non-active surfaces
 
-- `/` redirects/links to `/creative` (`web/dist/index.html:40`, `web/dist/index.html:142`, `public/index.html:43`, `public/index.html:146`).
-- Header links include canonical `/creative` (`web/dist/components/header.js:13`, `public/components/header.js:34`).
+- Removed from backend:
+  - `GET /` (root API JSON)
+  - `GET /api/` (accidental root collisions from router `/` mounts)
+  - root aliases: `/credits`, `/whoami`, `/generate`, `/enhance`, `/limits/*`
+  - `/api/enhance` (feature retired)
+  - `/api/generate`, `/api/job/:jobId`
+  - `/api/assets/ai-images`
+  - `/api/credits` (removed in Phase 5)
+  - `/api/checkout/session`, `/api/checkout/subscription` (removed in Phase 5)
+  - old checkout aliases: `/checkout/*`, `/api/start`, `/api/session`, `/api/subscription`, `/api/portal`
+  - `/creative` HTML route
+  - `/image-creator.html`, `/my-images.html`, `/retry.html`
+  - frontend static serving from backend `web/dist` or root `public`
+  - `/cdn` proxy route
+- Debug-only (`VAIFORM_DEBUG=1`):
+  - `/diag/*`
+  - `/api/diag/headers`
+  - `/api/diag/caption-smoke`
 
-Loaded script examples from entrypoint HTML:
+## Caller-backed notes
 
-- `/creative` serves `public/creative.html`, which loads `/js/pages/creative/creative.article.mjs` and shared creative dependencies (`public/creative.html:39-52`, `public/creative.html:904`).
-- `buy-credits.html` loads `/js/buy-credits.js`, `/auth-bridge.js`, `/js/config.js`, `/js/credits-ui.js` (`web/dist/buy-credits.html:195-201`).
-- `pricing.html` loads `js/pricing.js` and `./api.mjs` bridge setup (`web/dist/pricing.html:171-197`).
-- `my-images.html` loads `./js/my-images.js` (`web/dist/my-images.html:152-155`).
-- `my-shorts.html` loads `./js/my-shorts.js` (`web/dist/my-shorts.html:198`).
-
-Important exclusion rule:
-
-- Do not treat `web/dist/assets/*.js` as caller evidence unless referenced by a served entrypoint HTML.
-- Example: `web/dist/assets/index-DmIxHPfx.js` contains API strings but is not referenced by the entrypoint HTML set above, so it is excluded from Caller-Backed classification.
-
-## 3) Active (Default-Reachable + Caller-Backed)
-
-Confirmed caller-backed default surfaces include:
-
-- `/api/credits` via dist pages (`web/dist/js/my-images.js:132`, `web/dist/js/my-shorts.js:131`, `web/dist/creative.html:1183`) with `apiFetch("/credits") -> /api/credits` (`web/dist/api.mjs:152`).
-- `/api/generate` via creative/frontend (`web/dist/frontend.js:490`, `web/dist/creative.html:2120`) with `apiFetch("/generate") -> /api/generate` (`web/dist/api.mjs:152`).
-- `/api/job/:jobId` via my-images (`web/dist/js/my-images.js:357`) with `apiFetch("/job/:jobId") -> /api/job/:jobId` (`web/dist/api.mjs:152`).
-- `/checkout/start` via pricing (`web/dist/js/pricing.js:138`; mounted at `src/routes/checkout.routes.js:16`).
-- `/api/session`, `/api/subscription`, `/api/portal` via buy credits (`web/dist/js/buy-credits.js:40`, `web/dist/js/buy-credits.js:52`, `web/dist/js/buy-credits.js:123`; mounted via `src/app.js:248`, `src/routes/checkout.routes.js:20-26`).
-- `/api/shorts/mine`, `/api/shorts/:jobId` via my-shorts (`web/dist/js/my-shorts.js:35`, `web/dist/js/my-shorts.js:172`).
-- `/api/story/start`, `/api/story/generate`, `/api/story/update-script`, `/api/story/plan`, `/api/story/search`, `/api/story/create-manual-session`, `/api/story/finalize` via `/creative` article flow (`public/js/pages/creative/creative.article.mjs:1091`, `public/js/pages/creative/creative.article.mjs:1108`, `public/js/pages/creative/creative.article.mjs:1377`, `public/js/pages/creative/creative.article.mjs:1394`, `public/js/pages/creative/creative.article.mjs:1404`, `public/js/pages/creative/creative.article.mjs:3782`, `public/js/pages/creative/creative.article.mjs:3853`).
-- `/api/assets/options` via creative (`public/js/pages/creative/creative.article.mjs:3484`).
-- `/api/caption/preview` via `/creative` caption preview module (`public/js/caption-preview.js:636`, `public/js/caption-preview.js:1165`).
-- `/api/enhance` via frontend (`web/dist/frontend.js:272`) with `apiFetch("/enhance") -> /api/enhance` (`web/dist/api.mjs:152`).
-- `/cdn` via my-shorts proxying (`web/dist/js/my-shorts.js:157`; mounted `src/app.js:266`).
-
-## 4) Default-Reachable but Not Caller-Backed (Attack Surface)
-
-Reachable under defaults, but no proven dist-entrypoint caller:
-
-- `/api/limits/usage`, `/limits/usage` (`src/app.js:279-280`, `src/routes/limits.routes.js:7`).
-- `/credits`, `/enhance`, `/generate`, `/job/:jobId` are root aliases not default caller-backed from dist `apiFetch` flows; `/credits` root use is conditional fallback only (`web/dist/api.mjs:156-163`).
-- `/api/assets/ai-images` is reachable, but no longer caller-backed from canonical `/creative`; only legacy `creative.html` callers reference it (`web/dist/creative.html:2229`). Route behavior is canonical disabled `410 FEATURE_DISABLED` via `fail(...)` (`src/routes/assets.routes.js:12-20`).
-- `/api/user/me` and `/api/user/setup` router route (`src/routes/user.routes.js:12-67`) (inline alias remains shadowed by router order: `src/app.js:321`, `src/app.js:330-333`).
-- `/api/users/ensure` (`src/routes/users.routes.js:14-100`) (dist `firebaseClient` writes Firestore directly: `web/dist/js/firebaseClient.js:23-53`).
-
-## 5) Caller-Backed but Not Default-Reachable (Broken Under Defaults)
-
-None currently proven from default dist entrypoint callers.
-
-C3 changes that removed prior broken caller attempts:
-
-- Checkout callers now resolve to mounted aliases:
-  - `apiFetch("/session")` -> `/api/session`
-  - `apiFetch("/subscription")` -> `/api/subscription`
-  - `apiFetch("/portal")` -> `/api/portal`
-  - evidence: `web/dist/js/buy-credits.js:40`, `web/dist/js/buy-credits.js:52`, `web/dist/js/buy-credits.js:123`, `src/app.js:248`.
-- Upscale callsites were removed/gated from default dist callers (`web/dist/js/my-images.js:205-213`, `web/dist/frontend.js:525-528`).
-- Creative legacy/unmounted call paths (quotes/voice/uploads/register/shorts/create) are now UI-gated and hard-guarded in default dist runtime (`web/dist/creative.html:906-935`, `web/dist/creative.html:1201-1203`, `web/dist/creative.html:2025-2026`, `web/dist/creative.html:2077-2083`, `web/dist/creative.html:2269-2276`).
-
-## 6) Legacy-Gated and Debug-Gated
-
-Legacy-gated (only with `ENABLE_LEGACY_ROUTES=1`):
-
-- `/api/uploads/*` (`src/app.js:259-262`)
-- `/api/voice/*` and `/voice/*` (`src/app.js:283-287`)
-- `/api/tts/preview` (`src/app.js:298-301`)
-- `/api/caption/render` (`src/app.js:314-317`)
-
-Debug-gated (only with `VAIFORM_DEBUG=1`):
-
-- `/diag/*` (`src/app.js:216`)
-- `/api/diag/headers` (`src/app.js:225-227`)
-- optional route-table logging gate (`src/app.js:369`)
-
-## 7) Shadowing and Alias Truth (Kept from Prior C1)
-
-- Ordered root mounts shadow practical `GET /` winners (`src/app.js:211`, `src/app.js:212`, `src/app.js:214`, `src/app.js:237`).
-- Whoami route truth: `/whoami` and `/api/whoami` are not mounted standalone API paths; root mounts are shadowed in practice.
-- Checkout alias truth: `/api/checkout/*` is absent; mounted alias via `/api` is `/api/start|session|subscription|portal` (`src/routes/checkout.routes.js:16-26`, `src/app.js:247-248`).
-- Inline `POST /api/user/setup` no-op is shadowed by earlier `/api/user` router mount (`src/app.js:321`, `src/app.js:330-333`).
-
-## 8) CI Truth (Surface Governance)
-
-Enforced in CI:
-
-- `npm run format:check`
-- `npm run test:security`
-- `npm run check:responses:changed`
-- evidence: `.github/workflows/ci.yml:35-45`
+- Creative story pipeline remains caller-backed via `web/public/creative.html` -> `web/public/js/pages/creative/creative.article.mjs`.
+- The current creative web caller uses `/api/story/start`, `/api/story/generate`, `/api/story/plan`, `/api/story/search`, `/api/assets/options`, `/api/story/update-shot`, `/api/story/search-shot`, `/api/story/update-video-cuts`, `/api/story/create-manual-session`, `/api/story/finalize`, and `GET /api/story/:sessionId`.
+- No current web caller in `web/public/**` hits `/api/story/render`; finalize is the caller-backed render path.
+- Caption preview remains caller-backed via `web/public/js/caption-preview.js` and `web/public/js/caption-live.js`.
+- Shorts library remains caller-backed via `web/public/my-shorts.html` -> `web/public/js/my-shorts.js`.
+- Checkout start remains caller-backed via `web/public/pricing.html` -> `web/public/js/pricing.js`.
+- Checkout portal remains caller-backed via `web/public/js/pricing.js`.
+- `/buy-credits.html` is redirect-only to `/pricing.html`; it is no longer a live commerce page.
+- Stripe webhook remains externally caller-backed via Netlify proxy and is required for checkout and monthly entitlement/usage updates.
+- User bootstrap remains caller-backed via `web/public/js/firebaseClient.js` -> `/api/users/ensure`.
+- `/api/whoami`, `/api/limits/usage`, and `/api/user/*` are mounted but have no current user-facing web caller in `web/public`.

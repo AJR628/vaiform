@@ -29,11 +29,11 @@ function start() {
     console.log(`🚀 Vaiform backend running on http://${HOST}:${PORT}`);
   });
 
-  // Set server timeout to 15 minutes to accommodate blocking render operations.
-  // Note: Render operations (finalizeStudio/finalizeStory) currently run synchronously
-  // inside HTTP request handlers, blocking the connection until completion. This timeout
-  // increase is a P0 mitigation to reduce false client timeouts; it is NOT a scalability fix.
-  // Full solution requires background job queue (P2).
+  // Keep a 15-minute server timeout for remaining long-lived render work.
+  // Phase 6 moved POST /api/story/finalize to reserve/enqueue/respond, but
+  // POST /api/story/render and other legacy blocking flows can still hold an
+  // HTTP connection open during render execution. This timeout is not a
+  // scalability fix and does not solve multi-instance worker concurrency.
   server.timeout = 900000; // 15 minutes
   server.keepAliveTimeout = 65000; // 65 seconds
   server.headersTimeout = 66000; // 66 seconds

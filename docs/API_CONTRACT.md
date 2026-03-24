@@ -53,6 +53,16 @@ Do not use these in JSON API responses (they are legacy; target is this contract
 
 Existing endpoints may still emit these until migrated; new code and framework-level middleware (e.g. validate, error handler) must use the contract.
 
+## Additive Billing Migration Fields
+
+- `GET /api/usage` uses the standard success envelope defined above and is now the backend-owned billing/account confirmation surface for active web pricing and success flows.
+- `GET /api/credits` has been removed from mounted runtime; callers must use `GET /api/usage`.
+- `POST /api/checkout/start` now accepts `{ "plan": "creator" | "pro" }` only and returns the standard success envelope with `data.url`.
+- `POST /api/checkout/session` and `POST /api/checkout/subscription` have been removed from mounted runtime and must not be used by callers.
+- Additive session `billingEstimate` and additive billing payloads must stay nested under `data`; do not introduce top-level billing fields outside established exceptions like finalize `shortId`.
+- Current Phase 2 finalize success includes additive `data.billing = { billedSec, settledAt }` while keeping top-level `shortId`.
+- Current backend `billingEstimate.estimatedSec` is reservation-safe and backend-owned. Public sources are now `speech_duration | shot_durations | caption_timeline`, with `speech_duration` produced by the backend billing-specific composite text heuristic and `caption_timeline` retained only as an emergency fallback. Callers must treat it as backend truth, not recompute it locally.
+
 ## requestId
 
 Set by `reqId` middleware from the `X-Request-Id` request header or a generated UUID. Must be included in every JSON response so clients can correlate logs and support requests.
@@ -63,3 +73,11 @@ Use `src/http/respond.js`:
 
 - `respond.ok(req, res, data)` — success response.
 - `respond.fail(req, res, status, error, detail, fields?)` — failure response.
+
+## Webhook Retry Note
+
+`POST /stripe/webhook` is machine-to-machine, but when it emits JSON it still uses this envelope.
+
+- Return `200` only after the webhook event was safely committed, was already committed (duplicate no-op), or was intentionally ignored. Current Stripe billing events now update entitlement plus usage-period state and never grant credits.
+- Return `400` only for signature/body verification failures that cannot succeed on retry.
+- Return `500` for retryable processing failures after signature verification so Stripe retries.

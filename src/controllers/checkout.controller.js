@@ -1,265 +1,109 @@
-// src/controllers/checkout.controller.js
-import { stripe } from '../config/stripe.js';
-import { CREDIT_PRICE_MAP } from '../services/credit.service.js';
-import { ok, fail } from '../http/respond.js';
+import { stripe } from '../config/stripe.js'
+import { getMonthlyPlanConfig, getMonthlyPlanPriceId } from '../config/commerce.js'
+import { ok, fail } from '../http/respond.js'
 
-/** Normalize FRONTEND_URL with no trailing slash, prefer env, fall back to request origin */
 function getFrontendBase(req) {
-  const envBase = (process.env.FRONTEND_URL || 'https://vaiform.com').replace(/\/+$/, '');
-  const origin = (req.headers.origin || '').replace(/\/+$/, '');
-  const base = envBase || origin || 'https://vaiform.com';
-  console.info(`[checkout] front-end base = ${base} (origin=${origin || 'n/a'} env=${envBase})`);
-  return base;
+  const envBase = (process.env.FRONTEND_URL || 'https://vaiform.com').replace(/\/+$/, '')
+  const origin = (req.headers.origin || '').replace(/\/+$/, '')
+  const base = envBase || origin || 'https://vaiform.com'
+  console.info(`[checkout] front-end base = ${base} (origin=${origin || 'n/a'} env=${envBase})`)
+  return base
 }
 
-function clampInt(n, { min = 0, max = 1e9 } = {}) {
-  const v = Number.parseInt(n, 10);
-  if (!Number.isFinite(v)) return min;
-  return Math.max(min, Math.min(max, v));
+function normalizedEmail(email) {
+  return typeof email === 'string' && email.trim().length > 0 ? email.trim() : null
 }
 
-/**
- * One-time Checkout (line_items price is a one-time price).
- * Secured by requireAuth: req.user.{uid,email}
- * Body: { priceId: string, quantity?: number, credits?: number }
- */
-export async function createCheckoutSession(req, res) {
+export async function startPlanCheckout(req, res) {
   try {
-    const { priceId, quantity = 1, credits = 0 } = req.body || {};
-    if (!priceId || !CREDIT_PRICE_MAP[priceId]) {
-      return fail(req, res, 400, 'INVALID_PRICE_ID', 'Unknown or disallowed priceId');
+    const plan = typeof req.body?.plan === 'string' ? req.body.plan.trim() : ''
+    const config = getMonthlyPlanConfig(plan)
+    if (!config) {
+      return fail(req, res, 400, 'INVALID_PLAN', "Plan must be 'creator' or 'pro'")
     }
 
-    const qty = clampInt(quantity, { min: 1, max: 10 });
-    const creditHint = clampInt(credits, { min: 0, max: 1e9 });
-    const FRONTEND = getFrontendBase(req);
-
-    const session = await stripe.checkout.sessions.create({
-      mode: 'payment',
-      line_items: [{ price: priceId, quantity: qty }],
-
-      // include session id for a tiny “receipt reference” on /success
-      success_url: `${FRONTEND}/success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${FRONTEND}/buy-credits.html?canceled=1`,
-
-      // Identity for the webhook → instant crediting
-      customer_email: req.user.email,
-      client_reference_id: req.user.uid,
-      metadata: {
-        uid: req.user.uid,
-        email: req.user.email,
-        priceId,
-        quantity: String(qty),
-        credits: String(creditHint), // analytics hint only
-        kind: 'onetime',
-      },
-
-      // DO NOT set payment_method_collection here (only for recurring)
-    });
-
-    console.info(
-      `[checkout] one-time price=${priceId} qty=${qty} uid=${req.user.uid} email=${req.user.email} → success=${FRONTEND}/success`
-    );
-    return ok(req, res, { url: session.url });
-  } catch (err) {
-    console.error('createCheckoutSession error:', err);
-    return fail(req, res, 500, 'CHECKOUT_FAILED', 'Checkout failed');
-  }
-}
-
-/**
- * Subscription Checkout (recurring price).
- * Secured by requireAuth: req.user.{uid,email}
- * Body: { priceId: string, credits?: number }
- */
-export async function createSubscriptionSession(req, res) {
-  try {
-    const { priceId, credits = 0 } = req.body || {};
-    if (!priceId || !CREDIT_PRICE_MAP[priceId]) {
-      return fail(req, res, 400, 'INVALID_PRICE_ID', 'Unknown or disallowed priceId');
+    const priceId = getMonthlyPlanPriceId(plan)
+    if (!priceId) {
+      return fail(
+        req,
+        res,
+        500,
+        'CHECKOUT_NOT_CONFIGURED',
+        `Stripe price is not configured for the ${plan} monthly plan.`
+      )
     }
 
-    const creditHint = clampInt(credits, { min: 0, max: 1e9 });
-    const FRONTEND = getFrontendBase(req);
+    const uid = req.user.uid
+    const email = normalizedEmail(req.user.email)
+    const frontend = getFrontendBase(req)
+
+    const metadata = {
+      uid,
+      email: email || '',
+      purchaseType: 'plan',
+      plan,
+      billingCadence: 'monthly',
+    }
 
     const session = await stripe.checkout.sessions.create({
       mode: 'subscription',
       line_items: [{ price: priceId, quantity: 1 }],
-
-      success_url: `${FRONTEND}/success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${FRONTEND}/buy-credits.html?canceled=1`,
-
-      customer_email: req.user.email,
-      client_reference_id: req.user.uid,
-      metadata: {
-        uid: req.user.uid,
-        email: req.user.email,
-        priceId,
-        credits: String(creditHint), // analytics hint only
-        kind: 'subscription',
-      },
-
-      // For subscriptions: ensure a PM is collected/saved
-      payment_method_collection: 'always',
-
-      // Stamp the subscription too; handy for later webhooks
-      subscription_data: {
-        metadata: {
-          uid: req.user.uid,
-          email: req.user.email,
-          priceId,
-          credits: String(creditHint),
-          kind: 'subscription',
-        },
-      },
-    });
-
-    console.info(
-      `[checkout] subscription price=${priceId} uid=${req.user.uid} email=${req.user.email} → success=${FRONTEND}/success`
-    );
-    return ok(req, res, { url: session.url });
-  } catch (err) {
-    console.error('createSubscriptionSession error:', err);
-    return fail(req, res, 500, 'SUBSCRIPTION_CHECKOUT_FAILED', 'Subscription checkout failed');
-  }
-}
-
-/**
- * Plans & Pricing Checkout (Creator/Pro plans).
- * Secured by requireAuth: req.user.{uid,email}
- * Body: { plan: 'creator'|'pro', billing: 'monthly'|'onetime' }
- * Note: uid and email are derived from req.user (server-trusted), not req.body
- */
-export async function startPlanCheckout(req, res) {
-  try {
-    const { plan, billing } = req.body;
-
-    // Validate inputs
-    if (!['creator', 'pro'].includes(plan)) {
-      return fail(req, res, 400, 'INVALID_PLAN', "Plan must be 'creator' or 'pro'");
-    }
-    if (!['monthly', 'onetime'].includes(billing)) {
-      return fail(req, res, 400, 'INVALID_BILLING', "Billing must be 'monthly' or 'onetime'");
-    }
-
-    // Trust boundary: derive uid/email from authenticated req.user, ignore any client-supplied values
-    const uid = req.user.uid;
-    const email = req.user.email || null;
-
-    // Debug: log if client sent conflicting uid/email (security verification)
-    if (process.env.VAIFORM_DEBUG === '1' && (req.body.uid || req.body.email)) {
-      const clientUid = req.body.uid;
-      const clientEmail = req.body.email;
-      if (clientUid && clientUid !== uid) {
-        console.warn(
-          `[checkout/start:security] Client sent uid="${clientUid}" but server using req.user.uid="${uid}" (ignored)`
-        );
-      }
-      if (clientEmail && clientEmail !== email) {
-        console.warn(
-          `[checkout/start:security] Client sent email="${clientEmail}" but server using req.user.email="${email}" (ignored)`
-        );
-      }
-    }
-
-    // Map plan + billing to Stripe price ID
-    const PRICE_MAP = {
-      'creator:monthly': process.env.STRIPE_PRICE_CREATOR_SUB,
-      'creator:onetime': process.env.STRIPE_PRICE_CREATOR_PASS,
-      'pro:monthly': process.env.STRIPE_PRICE_PRO_SUB,
-      'pro:onetime': process.env.STRIPE_PRICE_PRO_PASS,
-    };
-
-    const priceId = PRICE_MAP[`${plan}:${billing}`];
-    if (!priceId) {
-      return fail(req, res, 400, 'UNKNOWN_PRICE', `No price configured for ${plan}:${billing}`);
-    }
-
-    const mode = billing === 'monthly' ? 'subscription' : 'payment';
-    const FRONTEND = getFrontendBase(req);
-
-    if (process.env.VAIFORM_DEBUG === '1') {
-      console.log(`[checkout/start] Creating session with metadata:`, {
-        uid,
-        email,
-        plan,
-        billing,
-        priceId,
-        mode,
-      });
-    }
-
-    const session = await stripe.checkout.sessions.create({
-      mode,
-      line_items: [{ price: priceId, quantity: 1 }],
       customer_email: email,
       client_reference_id: uid,
-      success_url: `${FRONTEND}/success?plan=${plan}`,
-      cancel_url: `${FRONTEND}/pricing`,
-      metadata: { uid, email, plan, billing },
-      ...(mode === 'subscription' && {
-        payment_method_collection: 'always',
-        subscription_data: {
-          metadata: { uid, email, plan, billing },
-        },
-      }),
-    });
+      success_url: `${frontend}/success.html?plan=${encodeURIComponent(plan)}`,
+      cancel_url: `${frontend}/pricing.html?canceled=1`,
+      metadata,
+      payment_method_collection: 'always',
+      subscription_data: {
+        metadata,
+      },
+    })
 
-    if (process.env.VAIFORM_DEBUG === '1') {
-      console.info(
-        `[checkout/start] ${plan} ${billing} uid=${uid} email=${email || 'null'} → ${session.url}`
-      );
-    } else {
-      console.info(`[checkout/start] ${plan} ${billing} → ${session.url}`);
-    }
-    return ok(req, res, { url: session.url });
-  } catch (e) {
-    console.error('[checkout/start] error', e);
-    return fail(req, res, 500, 'CHECKOUT_FAILED', e?.message || 'Checkout failed');
+    console.info(`[checkout/start] ${plan} monthly uid=${uid} -> ${session.url}`)
+    return ok(req, res, { url: session.url })
+  } catch (error) {
+    console.error('[checkout/start] error', error)
+    return fail(req, res, 500, 'CHECKOUT_FAILED', error?.message || 'Checkout failed')
   }
 }
 
-/**
- * Billing Portal (Manage subscription / payment methods / invoices).
- * No body needed.
- */
 export async function createBillingPortalSession(req, res) {
   try {
-    const FRONTEND = getFrontendBase(req);
+    const frontend = getFrontendBase(req)
+    const email = normalizedEmail(req.user.email)
 
-    // Find/create Stripe Customer for this email
-    let customerId = null;
+    if (!email) {
+      return fail(req, res, 400, 'BILLING_PORTAL_UNAVAILABLE', 'A verified account email is required.')
+    }
+
+    let customerId = null
     try {
-      // Search is fast & accurate when enabled
-      const found = await stripe.customers.search({ query: `email:'${req.user.email}'`, limit: 1 });
-      customerId = found?.data?.[0]?.id || null;
+      const found = await stripe.customers.search({ query: `email:'${email}'`, limit: 1 })
+      customerId = found?.data?.[0]?.id || null
     } catch {
-      // Fallback to list for setups without search access
       if (!customerId) {
-        const list = await stripe.customers.list({ email: req.user.email, limit: 1 });
-        customerId = list?.data?.[0]?.id || null;
+        const list = await stripe.customers.list({ email, limit: 1 })
+        customerId = list?.data?.[0]?.id || null
       }
     }
 
     if (!customerId) {
-      const c = await stripe.customers.create({
-        email: req.user.email,
+      const customer = await stripe.customers.create({
+        email,
         metadata: { uid: req.user.uid },
-      });
-      customerId = c.id;
+      })
+      customerId = customer.id
     }
 
     const portal = await stripe.billingPortal.sessions.create({
       customer: customerId,
-      return_url: `${FRONTEND}/buy-credits.html`,
-    });
+      return_url: `${frontend}/pricing.html`,
+    })
 
-    console.info(
-      `[billing] portal for uid=${req.user.uid} email=${req.user.email} → ${portal.url}`
-    );
-    return ok(req, res, { url: portal.url });
-  } catch (err) {
-    console.error('createBillingPortalSession error:', err);
-    return fail(req, res, 500, 'BILLING_PORTAL_FAILED', 'Billing portal failed');
+    console.info(`[billing] portal for uid=${req.user.uid} email=${email} -> ${portal.url}`)
+    return ok(req, res, { url: portal.url })
+  } catch (error) {
+    console.error('createBillingPortalSession error:', error)
+    return fail(req, res, 500, 'BILLING_PORTAL_FAILED', 'Billing portal failed')
   }
 }

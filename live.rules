@@ -1,3 +1,0 @@
-Error: firestore:rules:get is not a Firebase command
-
-Did you mean firestore:delete?

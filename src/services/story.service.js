@@ -1,6 +1,6 @@
 /**
  * Story-based video pipeline service
- * Orchestrates: input → story → visual plan → stock search → timeline → render
+ * Orchestrates: input Ã¢â€ â€™ story Ã¢â€ â€™ visual plan Ã¢â€ â€™ stock search Ã¢â€ â€™ timeline Ã¢â€ â€™ render
  */
 
 import crypto from 'node:crypto';
@@ -22,22 +22,53 @@ import {
 import { renderVideoQuoteOverlay } from '../utils/ffmpeg.video.js';
 import { fetchVideoToTmp } from '../utils/video.fetch.js';
 import { uploadPublic } from '../utils/storage.js';
-import { calculateReadingDuration } from '../utils/text.duration.js';
+import {
+  calculateReadingDuration,
+  calculateBillingSpeechDuration,
+} from '../utils/text.duration.js';
 import admin from '../config/firebase.js';
 import { extractCoverJpeg } from '../utils/ffmpeg.cover.js';
 import { synthVoiceWithTimestamps } from './tts.service.js';
-import { getVoicePreset, getDefaultVoicePreset } from '../constants/voice.presets.js';
+import { getVoicePreset } from '../constants/voice.presets.js';
 import { buildKaraokeASSFromTimestamps } from '../utils/karaoke.ass.js';
 import { wrapTextWithFont } from '../utils/caption.wrap.js';
 import { deriveCaptionWrapWidthPx } from '../utils/caption.wrapWidth.js';
 import { compileCaptionSSOT } from '../captions/compile.js';
+import logger from '../observability/logger.js';
+import { getRuntimeOverride } from '../testing/runtime-overrides.js';
 
 const TTL_HOURS = Number(process.env.STORY_TTL_HOURS || 48);
+const BILLING_ESTIMATE_HEURISTIC_PAD_SEC = Math.max(
+  0,
+  Number(process.env.BILLING_ESTIMATE_HEURISTIC_PAD_SEC || 2)
+);
+const BILLING_ESTIMATE_PER_BEAT_BASE_SEC = Math.max(
+  0,
+  Number(process.env.BILLING_ESTIMATE_PER_BEAT_BASE_SEC || 0.5)
+);
+const BILLING_ESTIMATE_PER_BEAT_MIN_SEC = Math.max(
+  0,
+  Number(process.env.BILLING_ESTIMATE_PER_BEAT_MIN_SEC || 1)
+);
+const BILLING_ESTIMATE_BEAT_BOUNDARY_PAD_SEC = Math.max(
+  0,
+  Number(process.env.BILLING_ESTIMATE_BEAT_BOUNDARY_PAD_SEC || 0.2)
+);
+const BILLING_ESTIMATE_BEAT_BOUNDARY_PAD_MAX_SEC = Math.max(
+  0,
+  Number(process.env.BILLING_ESTIMATE_BEAT_BOUNDARY_PAD_MAX_SEC || 1.4)
+);
 
 // Manual script mode constants
 const MAX_BEATS = 8;
 const MAX_BEAT_CHARS = 160;
 const MAX_TOTAL_CHARS = 850;
+const STORY_SEARCH_RETRY_AFTER_SEC = 15;
+const MAX_CONCURRENT_STORY_SEARCH_REQUESTS = 2;
+const SEARCH_PROVIDER_FAILURE_THRESHOLD = 2;
+const SEARCH_PROVIDER_COOLDOWN_MS = 60_000;
+let activeStorySearchRequests = 0;
+const providerSearchHealth = new Map();
 
 /**
  * Ensure session has default structure
@@ -58,11 +89,331 @@ function ensureSessionDefaults(session) {
   return session;
 }
 
+function createRetryableStoryError(code, detail, retryAfter = STORY_SEARCH_RETRY_AFTER_SEC) {
+  const error = new Error(detail);
+  error.code = code;
+  error.status = 503;
+  error.retryAfter = retryAfter;
+  return error;
+}
+
+async function withStorySearchAdmission(fn) {
+  if (activeStorySearchRequests >= MAX_CONCURRENT_STORY_SEARCH_REQUESTS) {
+    throw createRetryableStoryError(
+      'STORY_SEARCH_BUSY',
+      'Story search is busy. Please retry shortly.'
+    );
+  }
+
+  activeStorySearchRequests += 1;
+  try {
+    return await fn();
+  } finally {
+    activeStorySearchRequests -= 1;
+  }
+}
+
+function resetProviderSearchHealth(provider) {
+  providerSearchHealth.delete(provider);
+}
+
+function markProviderTransientFailure(provider) {
+  const current = providerSearchHealth.get(provider) || { failures: 0, cooldownUntil: 0 };
+  const failures = current.failures + 1;
+  const cooldownUntil =
+    failures >= SEARCH_PROVIDER_FAILURE_THRESHOLD ? Date.now() + SEARCH_PROVIDER_COOLDOWN_MS : 0;
+  providerSearchHealth.set(provider, { failures, cooldownUntil });
+}
+
+function isProviderCooldownActive(provider) {
+  const state = providerSearchHealth.get(provider);
+  return Boolean(state?.cooldownUntil && state.cooldownUntil > Date.now());
+}
+
+function isTransientProviderResult(result) {
+  if (!result) return false;
+  if (result.transient === true) return true;
+  const reason = String(result.reason || '').toUpperCase();
+  if (reason === 'TIMEOUT' || reason === 'ERROR' || reason === 'COOLDOWN_ACTIVE') {
+    return true;
+  }
+  if (reason === 'ASSET_UNAVAILABLE') {
+    return true;
+  }
+  const httpMatch = reason.match(/^HTTP_(\d{3})$/);
+  if (!httpMatch) return false;
+  const status = Number(httpMatch[1]);
+  return status === 429 || status >= 500;
+}
+
+async function callProviderSearch(provider, run, { consulted = true } = {}) {
+  if (!consulted) {
+    return {
+      provider,
+      ok: false,
+      reason: 'SKIPPED',
+      items: [],
+      nextPage: null,
+      consulted: false,
+      transient: false,
+    };
+  }
+
+  if (isProviderCooldownActive(provider)) {
+    return {
+      provider,
+      ok: false,
+      reason: 'COOLDOWN_ACTIVE',
+      items: [],
+      nextPage: null,
+      consulted: true,
+      transient: true,
+    };
+  }
+
+  try {
+    const result = await run();
+    const normalized = {
+      provider,
+      ok: Boolean(result?.ok),
+      reason: result?.reason || 'UNKNOWN',
+      items: Array.isArray(result?.items) ? result.items : [],
+      nextPage: result?.nextPage ?? null,
+      consulted: result?.reason !== 'NOT_CONFIGURED',
+      transient: Boolean(result?.transient),
+    };
+    normalized.transient = isTransientProviderResult(normalized);
+
+    if (normalized.ok || !normalized.transient) {
+      resetProviderSearchHealth(provider);
+    } else {
+      markProviderTransientFailure(provider);
+    }
+
+    return normalized;
+  } catch (error) {
+    markProviderTransientFailure(provider);
+    return {
+      provider,
+      ok: false,
+      reason: error?.code || 'ERROR',
+      items: [],
+      nextPage: null,
+      consulted: true,
+      transient: true,
+    };
+  }
+}
+
+function totalCaptionTimelineSec(session) {
+  if (!Array.isArray(session?.captions) || session.captions.length === 0) return null;
+  let maxEnd = null;
+  for (const caption of session.captions) {
+    const end = Number(caption?.endTimeSec);
+    if (!Number.isFinite(end) || end <= 0) continue;
+    maxEnd = maxEnd == null ? end : Math.max(maxEnd, end);
+  }
+  return maxEnd;
+}
+
+function totalShotDurationSec(session) {
+  const shots =
+    Array.isArray(session?.shots) && session.shots.length > 0 ? session.shots : session?.plan;
+  if (!Array.isArray(shots) || shots.length === 0) return null;
+  let total = 0;
+  let count = 0;
+  for (const shot of shots) {
+    const durationSec = Number(shot?.durationSec);
+    if (!Number.isFinite(durationSec) || durationSec <= 0) continue;
+    total += durationSec;
+    count += 1;
+  }
+  return count > 0 ? total : null;
+}
+
+function normalizeNarrationText(text) {
+  return String(text || '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function getNormalizedNarrationSentences(session) {
+  const sentences = session?.story?.sentences;
+  if (!Array.isArray(sentences) || sentences.length === 0) return [];
+  return sentences
+    .map((sentence) => normalizeNarrationText(sentence))
+    .filter((sentence) => sentence.length > 0);
+}
+
+function getNormalizedNarrationScript(session) {
+  return normalizeNarrationText(getNormalizedNarrationSentences(session).join(' '));
+}
+
+function withBillingEstimatePad(baseEstimatedSec, padSec) {
+  const bufferedSec = baseEstimatedSec + padSec;
+  return Math.max(1, Math.ceil(bufferedSec));
+}
+
+function totalBeatSpeechDurationSec(session) {
+  const sentences = getNormalizedNarrationSentences(session);
+  if (sentences.length === 0) return null;
+
+  let total = 0;
+  for (const sentence of sentences) {
+    const durationSec = calculateBillingSpeechDuration(sentence, {
+      baseTime: BILLING_ESTIMATE_PER_BEAT_BASE_SEC,
+      minDuration: BILLING_ESTIMATE_PER_BEAT_MIN_SEC,
+      roundTo: 0,
+    });
+    if (!Number.isFinite(durationSec) || durationSec <= 0) continue;
+    total += durationSec;
+  }
+  if (!(total > 0)) return null;
+
+  const boundaryPadSec = Math.min(
+    BILLING_ESTIMATE_BEAT_BOUNDARY_PAD_MAX_SEC,
+    Math.max(0, sentences.length - 1) * BILLING_ESTIMATE_BEAT_BOUNDARY_PAD_SEC
+  );
+  return total + boundaryPadSec;
+}
+
+export function deriveHeuristicBillingEstimate(session) {
+  const computedAt = new Date().toISOString();
+  const normalizedScript = getNormalizedNarrationScript(session);
+  const wholeScriptDurationSec = normalizedScript
+    ? calculateBillingSpeechDuration(normalizedScript)
+    : null;
+  const beatSpeechDurationSec = totalBeatSpeechDurationSec(session);
+  const speechCandidates = [wholeScriptDurationSec, beatSpeechDurationSec].filter(
+    (value) => Number.isFinite(value) && value > 0
+  );
+  if (speechCandidates.length > 0) {
+    return {
+      estimatedSec: withBillingEstimatePad(
+        Math.max(...speechCandidates),
+        BILLING_ESTIMATE_HEURISTIC_PAD_SEC
+      ),
+      source: 'speech_duration',
+      computedAt,
+    };
+  }
+
+  const shotDurationSec = totalShotDurationSec(session);
+  if (Number.isFinite(shotDurationSec) && shotDurationSec > 0) {
+    return {
+      estimatedSec: withBillingEstimatePad(shotDurationSec, BILLING_ESTIMATE_HEURISTIC_PAD_SEC),
+      source: 'shot_durations',
+      computedAt,
+    };
+  }
+
+  const captionTimelineSec = totalCaptionTimelineSec(session);
+  if (Number.isFinite(captionTimelineSec) && captionTimelineSec > 0) {
+    return {
+      estimatedSec: withBillingEstimatePad(captionTimelineSec, BILLING_ESTIMATE_HEURISTIC_PAD_SEC),
+      source: 'caption_timeline',
+      computedAt,
+    };
+  }
+
+  return {
+    estimatedSec: withBillingEstimatePad(0, BILLING_ESTIMATE_HEURISTIC_PAD_SEC),
+    source: 'speech_duration',
+    computedAt,
+  };
+}
+
+function setHeuristicBillingEstimate(session) {
+  session.billingEstimate = deriveHeuristicBillingEstimate(session);
+  return session;
+}
+
+export function refreshStorySessionHeuristicEstimate(session) {
+  return setHeuristicBillingEstimate(session);
+}
+
+export function sanitizeStorySessionForClient(session) {
+  return session;
+}
+
+function normalizeRenderRecoveryAttemptId(attemptId, previous = null) {
+  if (typeof attemptId === 'string' && attemptId.trim().length > 0) {
+    return attemptId.trim();
+  }
+  if (typeof previous === 'string' && previous.trim().length > 0) {
+    return previous.trim();
+  }
+  return null;
+}
+
+function renderRecoveryFromState({
+  state,
+  attemptId,
+  previous = {},
+  shortId = null,
+  error = null,
+}) {
+  const now = new Date().toISOString();
+  const normalizedAttemptId = normalizeRenderRecoveryAttemptId(attemptId, previous.attemptId);
+  const priorShortId =
+    typeof previous?.shortId === 'string' && previous.shortId.trim().length > 0
+      ? previous.shortId
+      : null;
+
+  if (state === 'pending') {
+    return {
+      state: 'pending',
+      attemptId: normalizedAttemptId,
+      startedAt: previous?.startedAt || now,
+      updatedAt: now,
+      shortId: null,
+      finishedAt: null,
+      failedAt: null,
+      code: null,
+      message: null,
+    };
+  }
+
+  if (state === 'done') {
+    return {
+      state: 'done',
+      attemptId: normalizedAttemptId,
+      startedAt: previous?.startedAt || now,
+      updatedAt: now,
+      shortId:
+        typeof shortId === 'string' && shortId.trim().length > 0 ? shortId.trim() : priorShortId,
+      finishedAt: now,
+      failedAt: null,
+      code: null,
+      message: null,
+    };
+  }
+
+  return {
+    state: 'failed',
+    attemptId: normalizedAttemptId,
+    startedAt: previous?.startedAt || now,
+    updatedAt: now,
+    shortId: priorShortId,
+    finishedAt: null,
+    failedAt: now,
+    code:
+      typeof error?.code === 'string' && error.code.trim().length > 0
+        ? error.code
+        : 'STORY_FINALIZE_FAILED',
+    message:
+      typeof error?.message === 'string' && error.message.trim().length > 0
+        ? error.message
+        : 'Failed to finalize story',
+  };
+}
+
 /**
  * Save story session
  */
 export async function saveStorySession({ uid, sessionId, data }) {
-  await saveJSON({ uid, studioId: sessionId, file: 'story.json', data });
+  const next = ensureSessionDefaults(data);
+  await saveJSON({ uid, studioId: sessionId, file: 'story.json', data: next });
 }
 
 /**
@@ -80,6 +431,53 @@ async function loadStorySession({ uid, sessionId }) {
   }
 
   return session;
+}
+
+async function persistRenderRecovery({
+  uid,
+  sessionId,
+  attemptId,
+  state,
+  shortId = null,
+  error = null,
+}) {
+  const session = await loadStorySession({ uid, sessionId });
+  if (!session) return null;
+
+  const previous =
+    session.renderRecovery && typeof session.renderRecovery === 'object'
+      ? session.renderRecovery
+      : {};
+  const next = renderRecoveryFromState({
+    state,
+    attemptId,
+    previous,
+    shortId,
+    error,
+  });
+
+  session.renderRecovery = next;
+  session.updatedAt = next.updatedAt;
+  await saveStorySession({ uid, sessionId, data: session });
+  return session;
+}
+
+export async function persistStoryRenderRecovery({
+  uid,
+  sessionId,
+  attemptId,
+  state,
+  shortId = null,
+  error = null,
+}) {
+  return await persistRenderRecovery({
+    uid,
+    sessionId,
+    attemptId,
+    state,
+    shortId,
+    error,
+  });
 }
 
 /**
@@ -108,6 +506,7 @@ export async function createStorySession({
     updatedAt: now,
   });
 
+  setHeuristicBillingEstimate(session);
   await saveStorySession({ uid, sessionId, data: session });
   return session;
 }
@@ -139,6 +538,11 @@ export async function generateStory({ uid, sessionId, input, inputType }) {
     };
   }
 
+  logger.info('story.generate.service.start', {
+    sessionId: session.id,
+    inputType: session.input.type,
+  });
+
   // Generate story using LLM
   const styleKey = session.styleKey || 'default';
   const story = await generateStoryFromInput({
@@ -151,7 +555,12 @@ export async function generateStory({ uid, sessionId, input, inputType }) {
   session.status = 'story_generated';
   session.updatedAt = new Date().toISOString();
 
+  setHeuristicBillingEstimate(session);
   await saveStorySession({ uid, sessionId: session.id, data: session });
+  logger.info('story.generate.service.completed', {
+    sessionId: session.id,
+    sentenceCount: session.story?.sentences?.length ?? 0,
+  });
   return session;
 }
 
@@ -179,6 +588,7 @@ export async function updateStorySentences({ uid, sessionId, sentences }) {
   session.status = 'story_generated';
   session.updatedAt = new Date().toISOString();
 
+  setHeuristicBillingEstimate(session);
   await saveStorySession({ uid, sessionId, data: session });
   return session;
 }
@@ -291,30 +701,45 @@ async function searchSingleShot(query, options = {}) {
 
   // Search all providers in parallel (NASA only if affinity !== 'none')
   const [pexelsResult, pixabayResult, nasaResult] = await Promise.all([
-    pexelsSearchVideos({
-      query: query,
-      perPage: perPage,
-      targetDur: targetDur,
-      page: page,
-    }),
-    pixabaySearchVideos({
-      query: query,
-      perPage: perPage,
-      page: page,
-    }).catch(() => ({ ok: false, items: [], nextPage: null })), // Silent failure for Pixabay
-    nasaAffinity === 'none'
-      ? Promise.resolve({ ok: false, items: [], nextPage: null })
-      : nasaSearchVideos({ query, perPage, page: page }).catch(() => ({
-          ok: false,
-          items: [],
-          nextPage: null,
-        })),
+    callProviderSearch(
+      'pexels',
+      async () =>
+        await pexelsSearchVideos({
+          query: query,
+          perPage: perPage,
+          targetDur: targetDur,
+          page: page,
+        })
+    ),
+    callProviderSearch(
+      'pixabay',
+      async () =>
+        await pixabaySearchVideos({
+          query: query,
+          perPage: perPage,
+          page: page,
+        })
+    ),
+    callProviderSearch(
+      'nasa',
+      async () =>
+        await nasaSearchVideos({
+          query,
+          perPage,
+          page,
+        }),
+      { consulted: nasaAffinity !== 'none' }
+    ),
   ]);
+  const providerResults = [pexelsResult, pixabayResult, nasaResult];
 
-  // Log NASA result details
-  console.log(
-    `[story] nasaResult: ok=${nasaResult.ok}, reason="${nasaResult.reason || 'N/A'}", items.length=${nasaResult.items?.length || 0}`
-  );
+  logger.info('story.search.providers.nasa_result', {
+    queryLength: String(query || '').trim().length,
+    page,
+    ok: nasaResult.ok,
+    reason: nasaResult.reason || 'N/A',
+    itemCount: nasaResult.items?.length || 0,
+  });
 
   // Cap NASA items based on affinity
   let nasaItems = nasaResult.items || [];
@@ -342,14 +767,22 @@ async function searchSingleShot(query, options = {}) {
     typeof pixabayResult.nextPage === 'number' ||
     typeof nasaResult.nextPage === 'number';
 
-  // Log provider usage and pagination for debugging
-  console.log('[story.searchShots] providers used:', {
-    query,
+  logger.info('story.search.providers.summary', {
+    queryLength: String(query || '').trim().length,
     page,
     nasaAffinity,
     nasa: nasaItems.length,
     pexels: pexelsItems.length,
     pixabay: pixabayItems.length,
+    consultedProviders: providerResults
+      .filter((result) => result.consulted)
+      .map((result) => ({
+        provider: result.provider,
+        ok: result.ok,
+        reason: result.reason,
+        transient: result.transient,
+        itemCount: result.items.length,
+      })),
     pagination: {
       pexelsNextPage: pexelsResult.nextPage,
       pixabayNextPage: pixabayResult.nextPage,
@@ -359,6 +792,16 @@ async function searchSingleShot(query, options = {}) {
   });
 
   if (allItems.length === 0) {
+    const consultedProviders = providerResults.filter((result) => result.consulted);
+    const transientFailures = consultedProviders.filter(
+      (result) => !result.ok && isTransientProviderResult(result)
+    );
+    if (consultedProviders.length > 0 && transientFailures.length === consultedProviders.length) {
+      throw createRetryableStoryError(
+        'STORY_SEARCH_TEMPORARILY_UNAVAILABLE',
+        'Story search is temporarily unavailable. Please retry shortly.'
+      );
+    }
     return { candidates: [], best: null, page, hasMore: false };
   }
 
@@ -425,101 +868,112 @@ async function searchSingleShot(query, options = {}) {
  * Search stock videos for each shot (Phase 3)
  */
 export async function searchShots({ uid, sessionId }) {
-  const session = await loadStorySession({ uid, sessionId });
-  if (!session) throw new Error('SESSION_NOT_FOUND');
-  if (!session.plan) throw new Error('PLAN_REQUIRED');
+  return await withStorySearchAdmission(async () => {
+    const session = await loadStorySession({ uid, sessionId });
+    if (!session) throw new Error('SESSION_NOT_FOUND');
+    if (!session.plan) throw new Error('PLAN_REQUIRED');
 
-  const shots = [];
+    const shots = [];
 
-  for (const shot of session.plan) {
-    try {
-      // Use helper function to search and normalize
-      const { candidates, best } = await searchSingleShot(shot.searchQuery, {
-        perPage: 6,
-        targetDur: shot.durationSec,
-      });
+    for (const shot of session.plan) {
+      try {
+        // Use helper function to search and normalize
+        const { candidates, best } = await searchSingleShot(shot.searchQuery, {
+          perPage: 6,
+          targetDur: shot.durationSec,
+        });
 
-      shots.push({
-        ...shot,
-        selectedClip: best,
-        candidates: candidates,
-      });
-    } catch (error) {
-      console.warn(`[story.service] Search failed for shot ${shot.sentenceIndex}:`, error?.message);
-      shots.push({
-        ...shot,
-        selectedClip: null,
-        candidates: [],
-      });
+        shots.push({
+          ...shot,
+          selectedClip: best,
+          candidates: candidates,
+        });
+      } catch (error) {
+        if (error?.status === 503 || error?.retryAfter) {
+          throw error;
+        }
+        logger.warn('story.search.shot_failed', {
+          sentenceIndex: shot.sentenceIndex,
+          queryLength: String(shot.searchQuery || '').trim().length,
+          error,
+        });
+        shots.push({
+          ...shot,
+          selectedClip: null,
+          candidates: [],
+        });
+      }
     }
-  }
 
-  session.shots = shots;
-  session.status = 'clips_searched';
-  session.updatedAt = new Date().toISOString();
+    session.shots = shots;
+    session.status = 'clips_searched';
+    session.updatedAt = new Date().toISOString();
 
-  await saveStorySession({ uid, sessionId, data: session });
-  return session;
+    await saveStorySession({ uid, sessionId, data: session });
+    return session;
+  });
 }
 
 /**
  * Search clips for a single shot (Phase 3 - Clip Search)
  */
 export async function searchClipsForShot({ uid, sessionId, sentenceIndex, query, page = 1 }) {
-  const session = await loadStorySession({ uid, sessionId });
-  if (!session) throw new Error('SESSION_NOT_FOUND');
-  if (!session.shots) throw new Error('SHOTS_REQUIRED');
+  return await withStorySearchAdmission(async () => {
+    const session = await loadStorySession({ uid, sessionId });
+    if (!session) throw new Error('SESSION_NOT_FOUND');
+    if (!session.shots) throw new Error('SHOTS_REQUIRED');
 
-  const shot = session.shots.find((s) => s.sentenceIndex === sentenceIndex);
-  if (!shot) {
-    throw new Error(`SHOT_NOT_FOUND: sentenceIndex=${sentenceIndex}`);
-  }
+    const shot = session.shots.find((s) => s.sentenceIndex === sentenceIndex);
+    if (!shot) {
+      throw new Error(`SHOT_NOT_FOUND: sentenceIndex=${sentenceIndex}`);
+    }
 
-  // Determine search query: use provided query, or fall back to shot.searchQuery, or sentence text
-  const searchQuery =
-    query?.trim() || shot.searchQuery || session.story?.sentences?.[sentenceIndex] || '';
+    // Determine search query: use provided query, or fall back to shot.searchQuery, or sentence text
+    const searchQuery =
+      query?.trim() || shot.searchQuery || session.story?.sentences?.[sentenceIndex] || '';
 
-  if (!searchQuery) {
-    throw new Error('NO_SEARCH_QUERY_AVAILABLE');
-  }
+    if (!searchQuery) {
+      throw new Error('NO_SEARCH_QUERY_AVAILABLE');
+    }
 
-  // Search with perPage 12 for frontend to show 8 nicely
-  const {
-    candidates,
-    best,
-    page: resultPage,
-    hasMore,
-  } = await searchSingleShot(searchQuery, {
-    perPage: 12,
-    targetDur: shot.durationSec || 8,
-    page: page,
+    // Search with perPage 12 for frontend to show 8 nicely
+    const {
+      candidates,
+      best,
+      page: resultPage,
+      hasMore,
+    } = await searchSingleShot(searchQuery, {
+      perPage: 12,
+      targetDur: shot.durationSec || 8,
+      page: page,
+    });
+
+    // Update candidates: append new candidates with deduplication by id
+    // For page 1, replace existing candidates (new search). For page > 1, append.
+    if (page === 1) {
+      // First page: replace candidates (new search)
+      shot.candidates = candidates;
+    } else {
+      // Subsequent pages: append new candidates, deduplicating by id
+      const existingCandidates = shot.candidates || [];
+      const existingIds = new Set(existingCandidates.map((c) => c.id).filter((id) => id != null));
+      const newCandidates = candidates.filter((c) => c.id == null || !existingIds.has(c.id));
+      shot.candidates = [...existingCandidates, ...newCandidates];
+    }
+
+    // Keep current selectedClip if it's still in the merged candidates; otherwise use best
+    const mergedCandidates = shot.candidates || [];
+    const maybeKeep =
+      shot.selectedClip && mergedCandidates.find((c) => c.id === shot.selectedClip.id);
+    shot.selectedClip = maybeKeep || best || null;
+
+    session.updatedAt = new Date().toISOString();
+
+    await saveStorySession({ uid, sessionId, data: session });
+
+    // Return shot with pagination info
+    return { shot, page: resultPage, hasMore };
   });
-
-  // Update candidates: append new candidates with deduplication by id
-  // For page 1, replace existing candidates (new search). For page > 1, append.
-  if (page === 1) {
-    // First page: replace candidates (new search)
-    shot.candidates = candidates;
-  } else {
-    // Subsequent pages: append new candidates, deduplicating by id
-    const existingCandidates = shot.candidates || [];
-    const existingIds = new Set(existingCandidates.map((c) => c.id).filter((id) => id != null));
-    const newCandidates = candidates.filter((c) => c.id == null || !existingIds.has(c.id));
-    shot.candidates = [...existingCandidates, ...newCandidates];
-  }
-
-  // Keep current selectedClip if it's still in the merged candidates; otherwise use best
-  const mergedCandidates = shot.candidates || [];
-  const maybeKeep =
-    shot.selectedClip && mergedCandidates.find((c) => c.id === shot.selectedClip.id);
-  shot.selectedClip = maybeKeep || best || null;
-
-  session.updatedAt = new Date().toISOString();
-
-  await saveStorySession({ uid, sessionId, data: session });
-
-  // Return shot with pagination info
-  return { shot, page: resultPage, hasMore };
 }
 
 /**
@@ -610,6 +1064,7 @@ export async function insertBeatWithSearch({ uid, sessionId, insertAfterIndex, t
 
   session.updatedAt = new Date().toISOString();
 
+  setHeuristicBillingEstimate(session);
   await saveStorySession({ uid, sessionId, data: session });
 
   console.log(
@@ -652,6 +1107,7 @@ export async function deleteBeat({ uid, sessionId, sentenceIndex }) {
 
   session.updatedAt = new Date().toISOString();
 
+  setHeuristicBillingEstimate(session);
   await saveStorySession({ uid, sessionId, data: session });
 
   console.log(
@@ -669,12 +1125,14 @@ export async function deleteBeat({ uid, sessionId, sentenceIndex }) {
  */
 export async function updateBeatText({ uid, sessionId, sentenceIndex, text }) {
   const session = await loadStorySession({ uid, sessionId });
+  if (!session) throw new Error('SESSION_NOT_FOUND');
+  if (!session.story?.sentences) throw new Error('STORY_REQUIRED');
 
   const sentences = session.story?.sentences || [];
   const shots = session.shots || [];
 
   if (typeof sentenceIndex !== 'number' || sentenceIndex < 0 || sentenceIndex >= sentences.length) {
-    throw new Error(`Invalid sentenceIndex ${sentenceIndex}`);
+    throw new Error('INVALID_SENTENCE_INDEX');
   }
 
   // Update sentence text
@@ -686,6 +1144,8 @@ export async function updateBeatText({ uid, sessionId, sentenceIndex, text }) {
     shot.searchQuery = text;
   }
 
+  session.updatedAt = new Date().toISOString();
+  setHeuristicBillingEstimate(session);
   await saveStorySession({ uid, sessionId, data: session });
 
   console.log(
@@ -810,6 +1270,10 @@ export async function generateCaptionTimings({ uid, sessionId }) {
   session.updatedAt = new Date().toISOString();
 
   await saveStorySession({ uid, sessionId, data: session });
+  logger.info('story.search.completed', {
+    sessionId,
+    shotCount: Array.isArray(session.plan) ? session.plan.length : 0,
+  });
   return session;
 }
 
@@ -921,7 +1385,7 @@ const CLOSING_PUNCT = new Set([
 
 /**
  * Terminal punctuation class: scan backward skipping whitespace and closing quotes/brackets.
- * Detects ellipsis (... or …), strong (.!?), semi (; : — –), soft (comma), else none.
+ * Detects ellipsis (... or Ã¢â‚¬Â¦), strong (.!?), semi (; : Ã¢â‚¬â€ Ã¢â‚¬â€œ), soft (comma), else none.
  * @param {string} sentence
  * @returns {'ellipsis'|'strong'|'semi'|'soft'|'none'}
  */
@@ -1400,7 +1864,7 @@ export async function renderStory({ uid, sessionId }) {
 
   try {
     if (useVideoCutsV1) {
-      // --- ENABLE_VIDEO_CUTS_V1: single flow — beatsDurSec → cutTimes → globalTimeline → slice per beat → overlay
+      // --- ENABLE_VIDEO_CUTS_V1: single flow Ã¢â‚¬â€ beatsDurSec Ã¢â€ â€™ cutTimes Ã¢â€ â€™ globalTimeline Ã¢â€ â€™ slice per beat Ã¢â€ â€™ overlay
       const { getDurationMsFromMedia } = await import('../utils/media.duration.js');
       const overlayCaption = session.overlayCaption || session.captionStyle;
       const beatsDurSecArr = [];
@@ -1642,14 +2106,14 @@ export async function renderStory({ uid, sessionId }) {
                   }
                 }
 
-                // ✅ CORRECT PRECEDENCE: Prefer beat-specific captionMeta (SSOT persisted), but verify staleness
+                // Ã¢Å“â€¦ CORRECT PRECEDENCE: Prefer beat-specific captionMeta (SSOT persisted), but verify staleness
                 // Each beat has different text, so meta must be per-beat
                 let wrappedText = null;
                 let meta = null;
 
                 const beatMeta = session.beats?.[i]?.captionMeta;
 
-                // ✅ STALENESS DETECTION: Verify beatMeta is still valid before using
+                // Ã¢Å“â€¦ STALENESS DETECTION: Verify beatMeta is still valid before using
                 let isStale = false;
                 if (beatMeta?.lines && beatMeta?.styleHash && beatMeta?.textHash) {
                   // Compute current text hash (canonical source: session.story.sentences[i])
@@ -1716,7 +2180,7 @@ export async function renderStory({ uid, sessionId }) {
                   durationMs: ttsDurationMs,
                   audioPath: ttsPath, // Pass audio path for duration verification and scaling
                   wrappedText: wrappedText, // Pass wrapped text for line breaks
-                  overlayCaption: meta.effectiveStyle, // ✅ Pass compiler output (SSOT) as overlayCaption
+                  overlayCaption: meta.effectiveStyle, // Ã¢Å“â€¦ Pass compiler output (SSOT) as overlayCaption
                   width: 1080,
                   height: 1920,
                 });
@@ -2049,6 +2513,7 @@ export async function createManualStorySession({ uid, scriptText }) {
   session.updatedAt = new Date().toISOString();
 
   // Save session
+  setHeuristicBillingEstimate(session);
   await saveStorySession({ uid, sessionId: session.id, data: session });
 
   return session;
@@ -2057,11 +2522,36 @@ export async function createManualStorySession({ uid, scriptText }) {
 /**
  * Finalize story - run full pipeline (Phase 7)
  */
-export async function finalizeStory({ uid, sessionId, options = {} }) {
+export async function finalizeStory({ uid, sessionId, options = {}, attemptId = null }) {
+  const override = getRuntimeOverride('story.service.finalizeStory');
+  if (override) {
+    return await override({ uid, sessionId, options, attemptId });
+  }
+
   let session = await loadStorySession({ uid, sessionId });
   if (!session) throw new Error('SESSION_NOT_FOUND');
 
   try {
+    logger.info('story.finalize.service.start', {
+      sessionId,
+      attemptId,
+      hasStory: Boolean(session.story),
+      hasShots: Array.isArray(session.shots) && session.shots.length > 0,
+      hasFinalVideo: Boolean(session.finalVideo),
+    });
+    session = await persistRenderRecovery({
+      uid,
+      sessionId,
+      attemptId,
+      state: 'pending',
+    });
+    if (!session) throw new Error('SESSION_NOT_FOUND_AFTER_PENDING');
+    logger.info('story.finalize.recovery_pending_persisted', {
+      sessionId,
+      attemptId,
+      recoveryState: session.renderRecovery?.state || null,
+    });
+
     // Step 1: Generate story if not done
     if (!session.story) {
       await generateStory({
@@ -2098,9 +2588,43 @@ export async function finalizeStory({ uid, sessionId, options = {} }) {
       if (!session) throw new Error('SESSION_NOT_FOUND_AFTER_RENDER');
     }
 
+    session = await persistRenderRecovery({
+      uid,
+      sessionId,
+      attemptId,
+      state: 'done',
+      shortId: session?.finalVideo?.jobId || null,
+    });
+    if (!session) throw new Error('SESSION_NOT_FOUND_AFTER_RENDER');
+    logger.info('story.finalize.service.completed', {
+      sessionId,
+      attemptId,
+      shortId: session?.finalVideo?.jobId || null,
+      recoveryState: session.renderRecovery?.state || null,
+    });
+
     return session;
   } catch (error) {
-    console.error('[story.service] Finalize failed:', error);
+    logger.error('story.finalize.service.failed', {
+      sessionId,
+      attemptId,
+      error,
+    });
+    try {
+      await persistRenderRecovery({
+        uid,
+        sessionId,
+        attemptId,
+        state: 'failed',
+        error,
+      });
+    } catch (persistError) {
+      logger.error('story.finalize.recovery_failure_persist_failed', {
+        sessionId,
+        attemptId,
+        error: persistError,
+      });
+    }
     throw error;
   }
 }

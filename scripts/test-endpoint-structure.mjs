@@ -226,35 +226,7 @@ async function main() {
     }
   });
 
-  // Test 7: Verify /api/assets/ai-images with correct payload structure
-  await testEndpoint('/api/assets/ai-images payload validation', async () => {
-    const payload = {
-      prompt: 'A serene mountain landscape at sunset',
-      style: 'realistic',
-      count: 2,
-    };
-
-    const { status, data } = await makeRequest(`${baseUrl}/api/assets/ai-images`, {
-      method: 'POST',
-      body: JSON.stringify(payload),
-    });
-
-    if (status === 401) {
-      return {
-        success: true,
-        data: { message: 'Endpoint accepts correct payload structure', status, payload },
-      };
-    } else if (status === 400) {
-      return {
-        success: true,
-        data: { message: 'Endpoint validates payload (400 expected)', status, validation: data },
-      };
-    } else {
-      return { success: false, error: `Unexpected response: ${status} - ${JSON.stringify(data)}` };
-    }
-  });
-
-  // Test 8: Test invalid payload to verify validation
+  // Test 7: Test invalid payload to verify validation
   await testEndpoint('Payload validation (invalid data)', async () => {
     const invalidPayload = {
       invalidField: 'test',

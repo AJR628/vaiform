@@ -26,14 +26,6 @@ export const AssetsOptionsSchema = z
   })
   .strict();
 
-export const AiImagesSchema = z
-  .object({
-    prompt: z.string().trim().min(4).max(160),
-    style: z.enum(['realistic', 'creative']).default('realistic'),
-    count: z.number().int().min(1).max(2).default(2),
-  })
-  .strict();
-
 // Be tolerant of null/undefined author coming from older clients
 export const SaveQuoteSchema = z
   .object({
@@ -47,6 +39,5 @@ export default {
   GenerateQuoteSchema,
   RemixQuoteSchema,
   AssetsOptionsSchema,
-  AiImagesSchema,
   SaveQuoteSchema,
 };

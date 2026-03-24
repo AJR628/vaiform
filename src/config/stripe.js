@@ -2,7 +2,7 @@
 import Stripe from 'stripe';
 
 const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY;
-const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET;
+export const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET;
 
 if (!STRIPE_SECRET_KEY) {
   console.warn('⚠️ Missing STRIPE_SECRET_KEY in environment. Stripe API will not work.');

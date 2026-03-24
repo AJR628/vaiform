@@ -108,7 +108,7 @@ export const register = async (req, res) => {
       return res.json({ success: true, message: 'User already exists.' });
     }
 
-    // ✅ Create user doc without credits field (pricing system handles these)
+    // Create a minimal user doc for diagnostics-only registration.
     await userRef.set({
       email,
       createdAt: admin.firestore.FieldValue.serverTimestamp(),

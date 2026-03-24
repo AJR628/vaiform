@@ -1,163 +1,467 @@
-import express from 'express';
-import Stripe from 'stripe';
-import admin from '../config/firebase.js';
-import { PLAN_CREDITS_MAP, getCreditsForPlan } from '../services/credit.service.js';
-import { ok, fail } from '../http/respond.js';
+import express from 'express'
+import admin from '../config/firebase.js'
+import { stripe, STRIPE_WEBHOOK_SECRET } from '../config/stripe.js'
+import { getMonthlyPlanConfig, getPlanForMonthlyPriceId } from '../config/commerce.js'
+import { buildCanonicalUsageState } from '../services/usage.service.js'
+import { ok, fail } from '../http/respond.js'
 
-const router = express.Router();
-const stripe = process.env.STRIPE_SECRET_KEY
-  ? new Stripe(process.env.STRIPE_SECRET_KEY, {
-      apiVersion: '2025-06-30.basil',
-    })
-  : null;
+const router = express.Router()
+const RENEWAL_BILLING_REASONS = new Set(['subscription_cycle'])
 
-// POST /stripe/webhook must use raw body
-router.post('/', express.raw({ type: 'application/json', limit: '1mb' }), async (req, res) => {
-  console.log('[webhook] hit', new Date().toISOString());
+function webhookError(code, detail, status = 500) {
+  const err = new Error(detail)
+  err.code = code
+  err.status = status
+  return err
+}
 
-  if (!stripe) {
-    console.warn('[webhook] Stripe not configured, ignoring webhook');
-    return res.status(200).send('OK');
+function metaValue(metadata, key) {
+  const value = metadata?.[key]
+  if (typeof value !== 'string') return null
+  const trimmed = value.trim()
+  return trimmed ? trimmed : null
+}
+
+function normalizeEmail(email) {
+  return typeof email === 'string' ? email.trim().toLowerCase() : null
+}
+
+function toTimestampFromUnixSec(value) {
+  const numeric = Number(value)
+  if (!Number.isFinite(numeric) || numeric <= 0) {
+    throw webhookError('WEBHOOK_PERIOD_MISSING', 'Missing Stripe billing period timestamps')
+  }
+  return admin.firestore.Timestamp.fromMillis(Math.floor(numeric * 1000))
+}
+
+function timestampMillis(value) {
+  if (!value) return null
+  if (typeof value?.toMillis === 'function') return value.toMillis()
+  if (typeof value?.toDate === 'function') return value.toDate().getTime()
+  if (value instanceof Date) return value.getTime()
+  if (typeof value === 'string') {
+    const parsed = Date.parse(value)
+    return Number.isFinite(parsed) ? parsed : null
+  }
+  return null
+}
+
+function timestampsEqual(a, b) {
+  const aMs = timestampMillis(a)
+  const bMs = timestampMillis(b)
+  return Number.isFinite(aMs) && Number.isFinite(bMs) && aMs === bMs
+}
+
+function firstSubscriptionPriceId(subscription, invoice = null) {
+  return (
+    subscription?.items?.data?.[0]?.price?.id ||
+    invoice?.lines?.data?.[0]?.price?.id ||
+    null
+  )
+}
+
+function resolvePlanForSubscription(subscription, invoice = null) {
+  const metadata = subscription?.metadata || {}
+  const metadataPlan = metaValue(metadata, 'plan')
+  const priceId = firstSubscriptionPriceId(subscription, invoice)
+  const pricePlan = getPlanForMonthlyPriceId(priceId)
+
+  if (metadataPlan && !getMonthlyPlanConfig(metadataPlan)) {
+    throw webhookError('UNKNOWN_PLAN', `Unknown plan "${metadataPlan}" for Stripe subscription`)
   }
 
-  let event;
-  try {
-    const sig = req.headers['stripe-signature'];
-    event = stripe.webhooks.constructEvent(req.body, sig, process.env.STRIPE_WEBHOOK_SECRET);
-    console.log('[webhook] type:', event.type);
-  } catch (err) {
-    console.error('[webhook] signature verification failed:', err.message);
-    return res.status(400).send(`Webhook Error: ${err.message}`);
+  if (metadataPlan && pricePlan && metadataPlan !== pricePlan) {
+    throw webhookError(
+      'WEBHOOK_PLAN_PRICE_MISMATCH',
+      `Stripe metadata plan "${metadataPlan}" did not match price-backed plan "${pricePlan}".`
+    )
   }
 
-  try {
-    switch (event.type) {
-      case 'checkout.session.completed': {
-        const session = event.data.object;
-        console.log('[webhook] session metadata:', session.metadata);
-
-        if (session.metadata?.uid && session.metadata?.plan) {
-          try {
-            await grantCreditsAndUpdatePlan(session.metadata, event.id, event.type);
-            console.log(`[webhook] Successfully processed payment for uid=${session.metadata.uid}`);
-          } catch (error) {
-            console.error(
-              `[webhook] Failed to process payment for uid=${session.metadata.uid}:`,
-              error
-            );
-            // Don't throw here - we still want to return success to Stripe to avoid retries
-          }
-        } else {
-          console.error('[webhook] Missing uid or plan in session metadata:', session.metadata);
-        }
-        break;
-      }
-      case 'invoice.payment_succeeded': {
-        // TODO: subscription renewal → top up credits, update nextPaymentAt
-        console.log('[webhook] invoice payment succeeded:', event.data.object.id);
-        break;
-      }
-      case 'customer.subscription.deleted': {
-        // TODO: mark isMember=false, clear plan/kind
-        console.log('[webhook] subscription deleted:', event.data.object.id);
-        break;
-      }
-      default:
-        console.log('[webhook] unhandled event type:', event.type);
-        break;
-    }
-    return ok(req, res, { received: true });
-  } catch (e) {
-    console.error('[webhook] handler error', e);
-    return fail(req, res, 500, 'WEBHOOK_ERROR', e?.message || 'WEBHOOK_ERROR');
-  }
-});
-
-async function grantCreditsAndUpdatePlan(metadata, eventId, eventType) {
-  const { uid, plan, billing, email } = metadata;
-
-  if (!uid || !plan) {
-    console.error('[webhook] Missing uid or plan in metadata:', metadata);
-    return;
+  const plan = metadataPlan || pricePlan
+  if (!plan) {
+    throw webhookError('WEBHOOK_PLAN_MISSING', 'Missing plan metadata for Stripe subscription')
   }
 
-  if (!eventId || !eventType) {
-    console.error('[webhook] Missing eventId or eventType for idempotency check');
-    return;
+  const config = getMonthlyPlanConfig(plan)
+  if (!config) {
+    throw webhookError('UNKNOWN_PLAN', `Unknown plan "${plan}" for Stripe subscription`)
   }
 
-  const db = admin.firestore();
-  const userRef = db.collection('users').doc(uid);
-  const eventRef = userRef.collection('stripe_webhook_events').doc(eventId);
-
-  // Check idempotency: if this event was already processed, skip
-  const eventSnap = await eventRef.get();
-  if (eventSnap.exists) {
-    const eventData = eventSnap.data();
-    console.log(
-      `[webhook] Event ${eventId} already processed at ${eventData.processedAt?.toDate()}, skipping`
-    );
-    return;
-  }
-
-  // Calculate credits using PLAN_CREDITS_MAP
-  const creditsToAdd = getCreditsForPlan(plan);
-
-  if (creditsToAdd === 0) {
-    console.warn(`[webhook] Unknown plan "${plan}", no credits granted`);
-  }
-
-  try {
-    await db.runTransaction(async (t) => {
-      const snap = await t.get(userRef);
-      const now = admin.firestore.Timestamp.now();
-      const expiresAt =
-        billing === 'onetime'
-          ? admin.firestore.Timestamp.fromDate(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000))
-          : null;
-
-      t.set(
-        userRef,
-        {
-          email: email || admin.firestore.FieldValue.delete(),
-          plan,
-          isMember: true,
-          credits: admin.firestore.FieldValue.increment(creditsToAdd),
-          membership: {
-            kind: billing === 'onetime' ? 'onetime' : 'subscription',
-            billing,
-            startedAt: now,
-            expiresAt,
-          },
-          lastPaymentAt: now,
-          updatedAt: now,
-        },
-        { merge: true }
-      );
-    });
-
-    // Record successful event processing (outside transaction for simplicity)
-    await eventRef.set({
-      eventId,
-      eventType,
-      processedAt: admin.firestore.FieldValue.serverTimestamp(),
-      uid,
-      plan,
-      creditsGranted: creditsToAdd,
-      billing,
-    });
-
-    console.log(
-      `[plan] Upgraded uid=${uid} -> ${plan}, credits +${creditsToAdd} (event: ${eventId})`
-    );
-  } catch (error) {
-    console.error(`[webhook] Failed to update user ${uid}:`, error);
-    throw error;
+  return {
+    plan,
+    config,
+    priceId,
   }
 }
 
-router.get('/', (req, res) => {
-  return ok(req, res, { alive: true });
-});
+function buildSubscriptionPeriod(subscription) {
+  return {
+    periodStartAt: toTimestampFromUnixSec(subscription?.current_period_start),
+    periodEndAt: toTimestampFromUnixSec(subscription?.current_period_end),
+  }
+}
 
-export default router;
+function buildActivePlanContext(subscription, invoice = null, source = 'stripe') {
+  const { plan, config, priceId } = resolvePlanForSubscription(subscription, invoice)
+  const { periodStartAt, periodEndAt } = buildSubscriptionPeriod(subscription)
+
+  return {
+    plan,
+    cycleIncludedSec: config.cycleIncludedSec,
+    stripePriceId: priceId,
+    periodStartAt,
+    periodEndAt,
+    email: normalizeEmail(
+      metaValue(subscription?.metadata, 'email') ||
+        invoice?.customer_email ||
+        invoice?.customer_details?.email
+    ),
+    marker: {
+      purchaseType: 'plan',
+      plan,
+      billingCadence: 'monthly',
+      cycleIncludedSec: config.cycleIncludedSec,
+      stripePriceId: priceId,
+      stripeObjectId: subscription.id,
+      source,
+    },
+  }
+}
+
+function buildCancellationContext(subscription) {
+  const activeContext = buildActivePlanContext(subscription, null, 'customer.subscription.deleted')
+  return {
+    ...activeContext,
+    email: normalizeEmail(metaValue(subscription?.metadata, 'email')),
+    marker: {
+      ...activeContext.marker,
+      action: 'subscription_deleted',
+    },
+  }
+}
+
+async function resolveUidByEmail(email) {
+  const normalized = normalizeEmail(email)
+  if (!normalized) return null
+  try {
+    const record = await admin.auth().getUserByEmail(normalized)
+    return record?.uid || null
+  } catch {
+    return null
+  }
+}
+
+async function resolveCustomerEmail(customerId) {
+  if (!stripe || typeof customerId !== 'string' || !customerId) return null
+  try {
+    const customer = await stripe.customers.retrieve(customerId)
+    if (customer && !customer.deleted) return customer.email || null
+  } catch (error) {
+    console.warn('[webhook] customer email lookup failed:', error?.message || error)
+  }
+  return null
+}
+
+async function resolveUid({ uidHints = [], emailHints = [], customerId = null }) {
+  for (const uidHint of uidHints) {
+    if (typeof uidHint === 'string' && uidHint.trim()) return uidHint.trim()
+  }
+
+  for (const emailHint of emailHints) {
+    const resolvedUid = await resolveUidByEmail(emailHint)
+    if (resolvedUid) return resolvedUid
+  }
+
+  const customerEmail = await resolveCustomerEmail(customerId)
+  if (customerEmail) {
+    const resolvedUid = await resolveUidByEmail(customerEmail)
+    if (resolvedUid) return resolvedUid
+  }
+
+  throw webhookError('WEBHOOK_IDENTITY_MISSING', 'Unable to resolve user identity for webhook')
+}
+
+function buildCheckoutUserPatch(currentUser, context) {
+  const serverNow = admin.firestore.FieldValue.serverTimestamp()
+  const current = buildCanonicalUsageState(currentUser)
+
+  return {
+    uid: context.uid,
+    email: context.email || currentUser?.email || null,
+    plan: context.plan,
+    lastPaymentAt: serverNow,
+    membership: {
+      status: 'active',
+      kind: 'subscription',
+      billingCadence: 'monthly',
+      startedAt: currentUser?.membership?.startedAt || context.periodStartAt,
+      expiresAt: context.periodEndAt,
+      canceledAt: null,
+    },
+    usage: {
+      ...current.usage,
+      version: 1,
+      billingUnit: 'sec',
+      periodStartAt: context.periodStartAt,
+      periodEndAt: context.periodEndAt,
+      cycleIncludedSec: context.cycleIncludedSec,
+      cycleUsedSec: 0,
+      cycleReservedSec: current.usage.cycleReservedSec,
+      updatedAt: serverNow,
+    },
+    updatedAt: serverNow,
+    ...(currentUser?.createdAt ? {} : { createdAt: serverNow }),
+  }
+}
+
+function buildRenewalUserPatch(currentUser, context) {
+  const serverNow = admin.firestore.FieldValue.serverTimestamp()
+  const current = buildCanonicalUsageState(currentUser)
+  const samePeriod =
+    timestampsEqual(current.usage.periodStartAt, context.periodStartAt) &&
+    timestampsEqual(current.usage.periodEndAt, context.periodEndAt)
+
+  return {
+    uid: context.uid,
+    email: context.email || currentUser?.email || null,
+    plan: context.plan,
+    lastPaymentAt: serverNow,
+    membership: {
+      status: 'active',
+      kind: 'subscription',
+      billingCadence: 'monthly',
+      startedAt: currentUser?.membership?.startedAt || context.periodStartAt,
+      expiresAt: context.periodEndAt,
+      canceledAt: null,
+    },
+    usage: {
+      ...current.usage,
+      version: 1,
+      billingUnit: 'sec',
+      periodStartAt: context.periodStartAt,
+      periodEndAt: context.periodEndAt,
+      cycleIncludedSec: context.cycleIncludedSec,
+      cycleUsedSec: samePeriod ? current.usage.cycleUsedSec : 0,
+      cycleReservedSec: current.usage.cycleReservedSec,
+      updatedAt: serverNow,
+    },
+    updatedAt: serverNow,
+    ...(currentUser?.createdAt ? {} : { createdAt: serverNow }),
+  }
+}
+
+function buildCancellationUserPatch(currentUser, context) {
+  const serverNow = admin.firestore.FieldValue.serverTimestamp()
+  const current = buildCanonicalUsageState(currentUser)
+  const membership = currentUser?.membership || {}
+
+  return {
+    uid: context.uid,
+    email: context.email || currentUser?.email || null,
+    plan: current.plan === 'free' ? context.plan : current.plan,
+    membership: {
+      ...membership,
+      status: 'canceled',
+      kind: 'subscription',
+      billingCadence: 'monthly',
+      startedAt: membership.startedAt || context.periodStartAt,
+      expiresAt: context.periodEndAt,
+      canceledAt: admin.firestore.Timestamp.now(),
+    },
+    updatedAt: serverNow,
+    ...(currentUser?.createdAt ? {} : { createdAt: serverNow }),
+  }
+}
+
+async function applyWebhookTransaction({
+  uid,
+  eventId,
+  eventType,
+  markerData,
+  buildUserPatch = null,
+}) {
+  const db = admin.firestore()
+  const userRef = db.collection('users').doc(uid)
+  const eventRef = userRef.collection('stripe_webhook_events').doc(eventId)
+  let duplicate = false
+
+  await db.runTransaction(async (tx) => {
+    const eventSnap = await tx.get(eventRef)
+    if (eventSnap.exists) {
+      duplicate = true
+      return
+    }
+
+    const userSnap = await tx.get(userRef)
+    const currentUser = userSnap.exists ? userSnap.data() || {} : {}
+
+    if (buildUserPatch) {
+      tx.set(userRef, buildUserPatch(currentUser), { merge: true })
+    }
+
+    tx.set(eventRef, {
+      eventId,
+      eventType,
+      uid,
+      processedAt: admin.firestore.FieldValue.serverTimestamp(),
+      ...markerData,
+    })
+  })
+
+  return { duplicate }
+}
+
+async function handleCheckoutCompleted(event) {
+  const session = event.data.object
+  if (session?.mode !== 'subscription') {
+    throw webhookError('WEBHOOK_UNSUPPORTED_MODE', 'Only monthly subscription checkout is supported')
+  }
+
+  const subscriptionId =
+    typeof session.subscription === 'string' ? session.subscription : session.subscription?.id || null
+  if (!subscriptionId) {
+    throw webhookError('WEBHOOK_SUBSCRIPTION_MISSING', 'Missing subscription ID for checkout session')
+  }
+
+  const subscription = await stripe.subscriptions.retrieve(subscriptionId)
+  const context = buildActivePlanContext(subscription, null, 'checkout.session.completed')
+  context.uid = await resolveUid({
+    uidHints: [metaValue(session.metadata, 'uid'), metaValue(subscription.metadata, 'uid'), session.client_reference_id],
+    emailHints: [
+      metaValue(session.metadata, 'email'),
+      metaValue(subscription.metadata, 'email'),
+      session.customer_email,
+      session.customer_details?.email,
+    ],
+    customerId: session.customer,
+  })
+
+  const result = await applyWebhookTransaction({
+    uid: context.uid,
+    eventId: event.id,
+    eventType: event.type,
+    markerData: context.marker,
+    buildUserPatch: (currentUser) => buildCheckoutUserPatch(currentUser, context),
+  })
+
+  return result.duplicate ? { duplicate: true } : { processed: true }
+}
+
+async function handleInvoicePaymentSucceeded(event) {
+  const invoice = event.data.object
+  const billingReason = invoice?.billing_reason || null
+
+  if (!RENEWAL_BILLING_REASONS.has(billingReason)) {
+    return { ignored: true, reason: `billing_reason:${billingReason || 'unknown'}` }
+  }
+
+  const subscriptionId =
+    typeof invoice.subscription === 'string' ? invoice.subscription : invoice.subscription?.id || null
+  if (!subscriptionId) {
+    throw webhookError('WEBHOOK_SUBSCRIPTION_MISSING', 'Missing subscription ID for renewal invoice')
+  }
+
+  const subscription = await stripe.subscriptions.retrieve(subscriptionId)
+  const context = buildActivePlanContext(subscription, invoice, 'invoice.payment_succeeded')
+  context.uid = await resolveUid({
+    uidHints: [metaValue(subscription.metadata, 'uid')],
+    emailHints: [
+      metaValue(subscription.metadata, 'email'),
+      invoice.customer_email,
+      invoice.customer_details?.email,
+    ],
+    customerId: invoice.customer,
+  })
+
+  const result = await applyWebhookTransaction({
+    uid: context.uid,
+    eventId: event.id,
+    eventType: event.type,
+    markerData: context.marker,
+    buildUserPatch: (currentUser) => buildRenewalUserPatch(currentUser, context),
+  })
+
+  return result.duplicate ? { duplicate: true } : { processed: true }
+}
+
+async function handleSubscriptionDeleted(event) {
+  const subscription = event.data.object
+  const context = buildCancellationContext(subscription)
+  context.uid = await resolveUid({
+    uidHints: [metaValue(subscription.metadata, 'uid')],
+    emailHints: [metaValue(subscription.metadata, 'email')],
+    customerId: subscription.customer,
+  })
+
+  const result = await applyWebhookTransaction({
+    uid: context.uid,
+    eventId: event.id,
+    eventType: event.type,
+    markerData: context.marker,
+    buildUserPatch: (currentUser) => buildCancellationUserPatch(currentUser, context),
+  })
+
+  return result.duplicate ? { duplicate: true } : { processed: true }
+}
+
+router.post('/', express.raw({ type: 'application/json', limit: '1mb' }), async (req, res) => {
+  console.log('[webhook] hit', new Date().toISOString())
+
+  if (!stripe || !STRIPE_WEBHOOK_SECRET) {
+    console.warn('[webhook] Stripe not configured')
+    return fail(req, res, 500, 'WEBHOOK_NOT_CONFIGURED', 'Stripe webhook is not configured')
+  }
+
+  let event
+  try {
+    const sig = req.headers['stripe-signature']
+    event = stripe.webhooks.constructEvent(req.body, sig, STRIPE_WEBHOOK_SECRET)
+    console.log('[webhook] type:', event.type)
+  } catch (error) {
+    console.error('[webhook] signature verification failed:', error?.message || error)
+    return fail(
+      req,
+      res,
+      400,
+      'WEBHOOK_SIGNATURE_INVALID',
+      error?.message || 'Webhook signature verification failed'
+    )
+  }
+
+  try {
+    let result = { ignored: false, duplicate: false }
+
+    switch (event.type) {
+      case 'checkout.session.completed':
+        result = await handleCheckoutCompleted(event)
+        break
+      case 'invoice.payment_succeeded':
+        result = await handleInvoicePaymentSucceeded(event)
+        break
+      case 'customer.subscription.deleted':
+        result = await handleSubscriptionDeleted(event)
+        break
+      default:
+        console.log('[webhook] intentionally ignoring event type:', event.type)
+        result = { ignored: true, reason: 'unhandled_event_type' }
+        break
+    }
+
+    return ok(req, res, { received: true, ...result })
+  } catch (error) {
+    console.error('[webhook] handler error', error)
+    return fail(
+      req,
+      res,
+      error?.status || 500,
+      error?.code || 'WEBHOOK_ERROR',
+      error?.message || 'Webhook processing failed'
+    )
+  }
+})
+
+router.get('/', (req, res) => {
+  return ok(req, res, { alive: true })
+})
+
+export default router

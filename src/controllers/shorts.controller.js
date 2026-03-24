@@ -1,487 +1,8 @@
-import { z } from 'zod';
-import { createShortService } from '../services/shorts.service.js';
 import admin from '../config/firebase.js';
 import { buildPublicUrl, getDownloadToken } from '../utils/storage.js';
-import { quickValidateAssetUrl } from '../utils/assetValidation.js';
 import { ok, fail } from '../http/respond.js';
-
-const BackgroundSchema = z
-  .object({
-    kind: z
-      .enum(['solid', 'imageUrl', 'stock', 'upload', 'ai', 'stockVideo', 'imageMontage'])
-      .default('solid'),
-    // imageUrl lane
-    imageUrl: z.string().url().optional(),
-    // stock lane - require URL when using stock
-    query: z.string().min(1).max(120).optional(),
-    url: z.string().url().optional(), // Required for stock/upload/ai backgrounds
-    type: z.enum(['image', 'video']).optional(), // Required for stock/upload/ai backgrounds
-    // upload lane
-    uploadUrl: z.string().url().optional(),
-    // ai lane
-    prompt: z.string().min(4).max(160).optional(),
-    style: z.enum(['photo', 'illustration', 'abstract']).optional(),
-    // common
-    kenBurns: z.enum(['in', 'out', 'pan_up', 'pan_down', 'pan_left', 'pan_right']).optional(),
-    // video audio mix options
-    keepVideoAudio: z.boolean().optional(),
-    bgAudioVolume: z.number().min(0).max(1).optional(),
-    duckDuringTTS: z.boolean().optional(),
-    duck: z
-      .object({
-        threshold: z.number().max(0).min(-60).optional(),
-        ratio: z.number().min(1).max(20).optional(),
-        attack: z.number().min(1).max(200).optional(),
-        release: z.number().min(10).max(2000).optional(),
-      })
-      .optional(),
-  })
-  .refine(
-    (data) => {
-      // Require url and type for non-solid backgrounds
-      if (data.kind !== 'solid' && data.kind !== 'imageUrl') {
-        return data.url && data.type;
-      }
-      return true;
-    },
-    {
-      message: 'Background URL and type are required for stock/upload/ai backgrounds',
-      path: ['background'],
-    }
-  )
-  .refine(
-    (data) => {
-      // Validate that type matches URL extension
-      if (data.url && data.type) {
-        const url = data.url.toLowerCase();
-        const isVideoUrl = ['mp4', 'mov', 'avi', 'mkv', 'webm', 'm4v'].some((ext) =>
-          url.includes(`.${ext}`)
-        );
-        const isImageUrl = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'].some((ext) =>
-          url.includes(`.${ext}`)
-        );
-
-        if (data.type === 'video' && !isVideoUrl) {
-          return false;
-        }
-        if (data.type === 'image' && !isImageUrl) {
-          return false;
-        }
-      }
-      return true;
-    },
-    {
-      message:
-        "Background type must match URL extension (video URLs must have type 'video', image URLs must have type 'image')",
-      path: ['background'],
-    }
-  );
-
-// Flexible caption style: accept any input shape and normalize
-const CaptionStyleSchema = z.any().transform((s = {}) => {
-  const sizeRaw = Number.isFinite(s.sizePx) ? s.sizePx : Number.isFinite(s.size) ? s.size : 48;
-  const sizePx = Math.max(30, Math.min(96, Math.round(Number(sizeRaw || 48))));
-
-  const opRaw = s.opacity;
-  const opacity =
-    typeof opRaw === 'number'
-      ? opRaw > 1
-        ? Math.min(1, Math.max(0, opRaw / 100))
-        : Math.max(0, Math.min(1, opRaw))
-      : 0.8;
-
-  const boxOpRaw =
-    typeof s.boxOpacity === 'number'
-      ? s.boxOpacity
-      : typeof s.bgOpacity === 'number'
-        ? s.bgOpacity > 1
-          ? s.bgOpacity / 100
-          : s.bgOpacity
-        : 0.5;
-  const boxOpacity = Math.max(0, Math.min(1, Number(boxOpRaw)));
-
-  const showBox = typeof s.showBox === 'boolean' ? s.showBox : !!s.background;
-  const font =
-    s.font === 'minimal' || s.font === 'cinematic' || s.font === 'system' ? s.font : 'system';
-  const weight = s.weight === 'bold' ? 'bold' : 'normal';
-  const placement =
-    s.placement === 'top' || s.placement === 'middle' || s.placement === 'bottom'
-      ? s.placement
-      : 'middle';
-  return { font, weight, sizePx, opacity, placement, showBox, boxOpacity };
-});
-
-const CreateShortSchema = z
-  .object({
-    mode: z.enum(['quote', 'feeling']).default('quote').optional(),
-    // Allow empty text; we refine later to require text or captionText
-    text: z.string().default('').optional(),
-    template: z.enum(['calm', 'bold', 'cosmic', 'minimal']).default('calm').optional(),
-    durationSec: z.number().int().min(6).max(10).default(8).optional(),
-    voiceover: z.boolean().default(false).optional(),
-    wantAttribution: z.boolean().default(true).optional(),
-    background: BackgroundSchema.default({ kind: 'solid' }).optional(),
-    debugAudioPath: z.string().optional(),
-    // Accept legacy 'none' but normalize to 'static'. Include 'overlay' for v2 overlay mode
-    captionMode: z
-      .union([z.enum(['static', 'progress', 'karaoke', 'overlay']), z.literal('none')])
-      .transform((v) => (v === 'none' ? 'static' : v))
-      .default('static')
-      .optional(),
-    includeBottomCaption: z.boolean().optional(),
-    watermark: z.boolean().optional(),
-    captionStyle: CaptionStyleSchema.optional(),
-    // v1 schema: caption is a number (font size), captionImage is dataUrl string
-    caption: z.number().int().min(8).max(160).optional(),
-    captionResolved: z
-      .object({
-        fontFamily: z.string().optional(),
-        weightCss: z.string().optional(),
-        fontFile: z.string().optional(),
-        fontPx: z.number().int().finite().min(10).max(400).optional(),
-        lineSpacing: z.number().int().min(0).max(100).optional(),
-        textAlpha: z.number().min(0).max(1).optional(),
-        strokeW: z.number().int().min(0).max(10).optional(),
-        strokeAlpha: z.number().min(0).max(1).optional(),
-        shadowAlpha: z.number().min(0).max(1).optional(),
-        shadowX: z.number().int().min(-10).max(10).optional(),
-        shadowY: z.number().int().min(-10).max(10).optional(),
-      })
-      .optional(),
-    // v1 schema: captionImage is a dataUrl string
-    captionImage: z.string().startsWith('data:image/').optional(),
-    captionText: z.string().default('').optional(),
-    voiceId: z.string().optional(),
-    // v2 schema: overlay mode caption data (coerce numbers to prevent "Expected number, received string")
-    overlayCaption: z
-      .object({
-        text: z.string().optional(),
-        xPct: z.coerce.number().min(0).max(1).optional(),
-        yPct: z.coerce.number().min(0).max(1).optional(),
-        wPct: z.coerce.number().min(0).max(1).optional(),
-        fontFamily: z.string().optional(),
-        weightCss: z.string().optional(),
-        fontPx: z.coerce.number().finite().min(10).max(400).optional(),
-        sizePx: z.coerce.number().finite().min(10).max(400).optional(),
-        color: z.string().optional(),
-        opacity: z.coerce.number().min(0).max(1).optional(),
-        align: z.enum(['left', 'center', 'right']).optional(),
-        lineHeight: z.coerce.number().optional(),
-        showBox: z.boolean().optional(),
-        responsiveText: z.boolean().optional(),
-        placement: z.enum(['custom', 'center', 'top', 'bottom']).optional(),
-        internalPadding: z.coerce.number().optional(),
-        lineSpacingPx: z.coerce.number().optional(),
-        lines: z.array(z.string()).min(1).optional(),
-        baselines: z.array(z.number()).optional(),
-        // 🔑 SSOT from preview (critical positioning data)
-        totalTextH: z.coerce.number().optional(),
-        totalTextHPx: z.coerce.number().optional(),
-        yPxFirstLine: z.coerce.number().optional(),
-        // V3 RASTER MODE FIELDS - critical for PNG overlay parity
-        mode: z.enum(['raster', 'drawtext', 'ssot']).optional(),
-        ssotVersion: z.number().optional(),
-        rasterUrl: z.string().optional(), // PNG data URL or HTTP URL
-        rasterDataUrl: z.string().optional(), // Alias for rasterUrl
-        rasterPng: z.string().optional(), // Another alias
-        rasterW: z.coerce.number().optional(), // PNG width in pixels
-        rasterH: z.coerce.number().optional(), // PNG height in pixels
-        yPx_png: z.coerce.number().optional(), // PNG top-left Y position
-        xExpr_png: z.string().optional(), // PNG horizontal expression
-        rasterPadding: z.coerce.number().optional(),
-        frameW: z.coerce.number().optional(), // Target frame width (1080)
-        frameH: z.coerce.number().optional(), // Target frame height (1920)
-        bgScaleExpr: z.string().optional(), // Background scaling expression
-        bgCropExpr: z.string().optional(), // Background crop expression
-        rasterHash: z.string().optional(), // PNG integrity hash
-        previewFontString: z.string().optional(),
-        previewFontHash: z.string().optional(),
-      })
-      .passthrough()
-      .refine(
-        (data) => {
-          if (data?.mode !== 'raster') return true;
-          return (
-            !!(data.rasterDataUrl || data.rasterUrl || data.rasterPng) &&
-            Number.isFinite(+data.rasterW) &&
-            Number.isFinite(+data.rasterH) &&
-            Number.isFinite(+data.yPx_png) &&
-            Array.isArray(data.lines) &&
-            data.lines.length > 0
-          );
-        },
-        { message: 'Raster mode requires rasterDataUrl, rasterW/H, yPx_png, and lines array' }
-      )
-      .optional(),
-    // TTS settings for SSOT
-    modelId: z.string().optional(),
-    outputFormat: z.string().optional(),
-    voiceSettings: z
-      .object({
-        stability: z.number().min(0).max(1).optional(),
-        similarity_boost: z.number().min(0).max(1).optional(),
-        style: z.number().min(0).max(100).optional(),
-        use_speaker_boost: z.boolean().optional(),
-      })
-      .optional(),
-  })
-  .transform((v) => {
-    // permit empty text if captionText is provided
-    const text = typeof v.text === 'string' ? v.text : '';
-    const ctext = typeof v.captionText === 'string' ? v.captionText : '';
-    if ((text?.trim()?.length ?? 0) >= 2 || (ctext?.trim()?.length ?? 0) >= 2)
-      return { ...v, text, captionText: ctext };
-    return { ...v, text, captionText: ctext, __INVALID__: true };
-  })
-  .superRefine((val, ctx) => {
-    if (val.__INVALID__ === true) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'Provide text or captionText (min 2 chars).',
-        path: ['text'],
-      });
-    }
-    const bg = val?.background;
-    if (bg?.kind === 'imageUrl') {
-      if (!bg.imageUrl) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: 'Required when kind=imageUrl',
-          path: ['background', 'imageUrl'],
-        });
-      } else {
-        try {
-          const u = new URL(bg.imageUrl);
-          if (u.protocol !== 'https:') {
-            ctx.addIssue({
-              code: z.ZodIssueCode.custom,
-              message: 'Only https URLs are allowed',
-              path: ['background', 'imageUrl'],
-            });
-          }
-        } catch {
-          ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            message: 'Invalid URL',
-            path: ['background', 'imageUrl'],
-          });
-        }
-      }
-    }
-    if (bg?.kind === 'stock') {
-      if (!bg.query || typeof bg.query !== 'string' || bg.query.trim().length < 1) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: 'Required when kind=stock',
-          path: ['background', 'query'],
-        });
-      } else if (bg.query.length > 80) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: 'Must be at most 80 characters',
-          path: ['background', 'query'],
-        });
-      }
-    }
-    if (bg?.kind === 'upload') {
-      if (!bg.uploadUrl) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: 'Required when kind=upload',
-          path: ['background', 'uploadUrl'],
-        });
-      } else {
-        try {
-          const u = new URL(bg.uploadUrl);
-          if (u.protocol !== 'https:') {
-            ctx.addIssue({
-              code: z.ZodIssueCode.custom,
-              message: 'Only https URLs are allowed',
-              path: ['background', 'uploadUrl'],
-            });
-          }
-        } catch {
-          ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            message: 'Invalid URL',
-            path: ['background', 'uploadUrl'],
-          });
-        }
-      }
-    }
-    if (bg?.kind === 'ai') {
-      if (!bg.prompt || typeof bg.prompt !== 'string' || bg.prompt.trim().length < 4) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: 'Required when kind=ai',
-          path: ['background', 'prompt'],
-        });
-      }
-    }
-  });
-
-function toValidationFields(zodError) {
-  const flat = zodError?.flatten?.();
-  const fields = {};
-  const fieldErrors = flat?.fieldErrors || {};
-  for (const [path, messages] of Object.entries(fieldErrors)) {
-    if (Array.isArray(messages) && messages.length > 0) {
-      fields[path] = String(messages[0]);
-    }
-  }
-  if (Array.isArray(flat?.formErrors) && flat.formErrors.length > 0) {
-    fields._form = String(flat.formErrors[0]);
-  }
-  return Object.keys(fields).length > 0 ? fields : undefined;
-}
-
-export async function createShort(req, res) {
-  try {
-    const parsed = CreateShortSchema.safeParse(req.body || {});
-    if (!parsed.success) {
-      return fail(
-        req,
-        res,
-        400,
-        'INVALID_INPUT',
-        'Invalid input',
-        toValidationFields(parsed.error)
-      );
-    }
-    const {
-      mode = 'quote',
-      text = '',
-      captionText = '',
-      template = 'calm',
-      durationSec = 8,
-      voiceover = false,
-      wantAttribution = true,
-      background = { kind: 'solid' },
-      debugAudioPath,
-      captionMode = 'static',
-      includeBottomCaption = false,
-      watermark,
-      captionStyle,
-      caption,
-      captionResolved,
-      captionImage,
-      voiceId,
-      modelId,
-      outputFormat,
-      voiceSettings,
-      overlayCaption,
-    } = parsed.data;
-
-    const ownerUid = req.user?.uid;
-    if (!ownerUid) {
-      return fail(req, res, 401, 'UNAUTHENTICATED', 'Login required');
-    }
-
-    // Validate asset URL accessibility for non-solid backgrounds
-    if (background.kind !== 'solid' && background.url) {
-      console.log(`[shorts] Validating asset URL: ${background.url} (type: ${background.type})`);
-      const validation = await quickValidateAssetUrl(background.url, 10000); // 10 second timeout
-
-      if (!validation.valid) {
-        console.error(`[shorts] Asset validation failed: ${validation.error}`);
-        return fail(
-          req,
-          res,
-          400,
-          'INVALID_ASSET',
-          `Asset URL is not accessible: ${validation.error}`
-        );
-      }
-
-      console.log(`[shorts] Asset validation passed: ${background.url}`);
-    }
-
-    const effectiveText =
-      captionText && captionText.trim().length >= 2 ? captionText.trim() : (text || '').trim();
-    const overrideQuote = effectiveText ? { text: effectiveText } : undefined;
-
-    // Note: caption is now a number (font size) in v1 schema, not an object
-
-    try {
-      console.log('[shorts] incoming caption:', {
-        fontPx: caption,
-        captionText: !!captionText,
-        hasOverlay: !!(captionImage && typeof captionImage === 'string'),
-        overlayMode: captionMode === 'overlay',
-        hasOverlayCaption: !!overlayCaption,
-      });
-    } catch {}
-
-    // CRITICAL: Log overlayCaption keys and detection
-    if (overlayCaption) {
-      console.log('[shorts] incoming overlayCaption keys:', Object.keys(overlayCaption));
-      console.log('[shorts] overlayCaption sample:', {
-        yPxFirstLine: overlayCaption?.yPxFirstLine,
-        totalTextHPx: overlayCaption?.totalTextHPx,
-        totalTextH: overlayCaption?.totalTextH,
-        lineSpacingPx: overlayCaption?.lineSpacingPx,
-        lines: overlayCaption?.lines?.length,
-        fontPx: overlayCaption?.fontPx,
-      });
-    }
-
-    // 🔒 CONTROLLER BOUNDARY GUARD - detect field loss before service call
-    const oc = overlayCaption || {};
-    console.log('[render:controller:overlay]', {
-      hasRasterUrl: !!oc.rasterUrl,
-      hasRasterDataUrl: !!oc.rasterDataUrl,
-      len: (oc.rasterUrl || oc.rasterDataUrl || '').length,
-      yPx_png: oc.yPx_png,
-      xExpr_png: oc.xExpr_png,
-      mode: oc.mode,
-      ssotVersion: oc.ssotVersion,
-    });
-
-    if (oc.mode === 'raster' && !(oc.rasterUrl || oc.rasterDataUrl)) {
-      throw new Error('RASTER: missing rasterDataUrl/rasterUrl at controller');
-    }
-    const result = await createShortService({
-      ownerUid,
-      mode,
-      text,
-      template,
-      durationSec,
-      voiceover,
-      wantAttribution,
-      background,
-      debugAudioPath,
-      captionMode,
-      includeBottomCaption,
-      watermark,
-      captionStyle,
-      caption,
-      captionResolved,
-      captionImage,
-      voiceId,
-      modelId,
-      outputFormat,
-      voiceSettings,
-      overrideQuote,
-      overlayCaption,
-    });
-
-    // Increment daily short count for free users after successful creation
-    if (req.incrementShortCount) {
-      await req.incrementShortCount();
-    }
-
-    return ok(req, res, result);
-  } catch (e) {
-    const msg = e?.message || 'Short creation failed';
-    // Provide a helpful hint when ffmpeg is missing
-    const hint =
-      e?.code === 'FFMPEG_NOT_FOUND'
-        ? 'ffmpeg is not installed or not in PATH. Install ffmpeg and retry.'
-        : undefined;
-    console.error('/shorts/create error', msg, e?.stderr || '');
-    return fail(req, res, 500, 'SHORTS_CREATE_FAILED', hint || msg);
-  }
-}
+import logger from '../observability/logger.js';
+import { setRequestContextFromReq } from '../observability/request-context.js';
 
 export async function getMyShorts(req, res) {
   try {
@@ -494,7 +15,6 @@ export async function getMyShorts(req, res) {
     const cursor = req.query.cursor;
     const db = admin.firestore();
 
-    // Try the optimal query first (with proper index)
     try {
       let query = db
         .collection('shorts')
@@ -527,20 +47,17 @@ export async function getMyShorts(req, res) {
         hasMore: items.length === limit,
       });
     } catch (err) {
-      // Firestore code=9 FAILED_PRECONDITION → requires an index
       const needsIndex = err?.code === 9 || /requires an index/i.test(String(err?.message || ''));
       if (!needsIndex) {
-        // bubble real errors
         throw err;
       }
 
       console.warn('[shorts] Using index fallback for getMyShorts:', err.message);
 
-      // Fallback path: no orderBy (no index required). We sort in memory.
       const snapshot = await db
         .collection('shorts')
         .where('ownerId', '==', ownerUid)
-        .limit(1000) // Hard cap for fallback path
+        .limit(1000)
         .get();
 
       const all = snapshot.docs.map((doc) => ({
@@ -551,14 +68,12 @@ export async function getMyShorts(req, res) {
         failedAt: doc.data().failedAt?.toDate?.() || null,
       }));
 
-      // Sort by createdAt in memory
       all.sort((a, b) => {
         if (!a.createdAt || !b.createdAt) return 0;
         return b.createdAt.getTime() - a.createdAt.getTime();
       });
 
       const items = all.slice(0, limit);
-      const nextCursor = null; // disable pagination until index exists
 
       console.log(
         `[shorts] FALLBACK path used for uid=${ownerUid}, loaded ${snapshot.docs.length} docs, returning ${items.length}, limit=${limit}`
@@ -585,19 +100,36 @@ export async function getShortById(req, res) {
     }
     const jobId = String(req.params?.jobId || '').trim();
     if (!jobId) return fail(req, res, 400, 'INVALID_INPUT', 'jobId required');
+    setRequestContextFromReq(req, { shortId: jobId });
 
     const debug = req.query?.debug === '1';
 
     const destBase = `artifacts/${ownerUid}/${jobId}/`;
     const bucket = admin.storage().bucket();
     const bucketName = bucket.name;
-    const fVideo = bucket.file(`${destBase}short.mp4`);
-    const fCover = bucket.file(`${destBase}cover.jpg`);
+    const storyVideoPath = `${destBase}story.mp4`;
+    const legacyVideoPath = `${destBase}short.mp4`;
+    const storyCoverPath = `${destBase}thumb.jpg`;
+    const legacyCoverPath = `${destBase}cover.jpg`;
+    const fStoryVideo = bucket.file(storyVideoPath);
+    const fLegacyVideo = bucket.file(legacyVideoPath);
+    const fStoryCover = bucket.file(storyCoverPath);
+    const fLegacyCover = bucket.file(legacyCoverPath);
     const fMeta = bucket.file(`${destBase}meta.json`);
 
     const diag = { bucket: bucketName, uid: ownerUid, jobId, base: destBase, steps: [] };
 
-    // Try meta.json first (internal download)
+    const buildPayload = ({ videoUrl, coverImageUrl, meta = null }) => ({
+      id: jobId,
+      jobId,
+      videoUrl,
+      coverImageUrl,
+      durationSec: meta?.durationSec ?? null,
+      usedTemplate: meta?.usedTemplate ?? null,
+      usedQuote: meta?.usedQuote ?? null,
+      createdAt: meta?.createdAt ?? null,
+    });
+
     let meta = null;
     try {
       const [buf] = await fMeta.download();
@@ -608,119 +140,97 @@ export async function getShortById(req, res) {
     }
 
     if (meta?.urls?.video) {
-      const payload = {
-        jobId,
+      logger.info('shorts.detail.meta_hit', {
+        routeStatus: `${req.method} ${req.originalUrl}`,
+        shortId: jobId,
+        hasCover: Boolean(meta.urls.cover),
+      });
+      const payload = buildPayload({
         videoUrl: meta.urls.video,
         coverImageUrl: meta.urls.cover || null,
-        durationSec: meta.durationSec ?? null,
-        usedTemplate: meta.usedTemplate ?? null,
-        usedQuote: meta.usedQuote ?? null,
-        credits: meta.credits ?? null,
-        createdAt: meta.createdAt ?? null,
-      };
+        meta,
+      });
       if (debug) return ok(req, res, { source: 'meta.urls', diag, payload });
       return ok(req, res, payload);
     }
 
-    // Fallback: use admin metadata tokens
-    const [existsVideo] = await fVideo.exists();
-    if (!existsVideo) {
+    let videoFile = null;
+    let videoPath = null;
+    const [storyVideoExists] = await fStoryVideo.exists();
+    if (storyVideoExists) {
+      videoFile = fStoryVideo;
+      videoPath = storyVideoPath;
+      diag.steps.push('video_story_exists');
+    } else {
+      const [legacyVideoExists] = await fLegacyVideo.exists();
+      if (legacyVideoExists) {
+        videoFile = fLegacyVideo;
+        videoPath = legacyVideoPath;
+        diag.steps.push('video_legacy_exists');
+      }
+    }
+
+    if (!videoFile || !videoPath) {
+      logger.warn('shorts.detail.not_found', {
+        routeStatus: `${req.method} ${req.originalUrl}`,
+        shortId: jobId,
+        debug,
+      });
       if (debug) return fail(req, res, 200, 'NO_VIDEO_OBJECT', 'NO_VIDEO_OBJECT');
       return fail(req, res, 404, 'NOT_FOUND', 'NOT_FOUND');
     }
-    const tokenVideo = await getDownloadToken(fVideo);
+
+    const tokenVideo = await getDownloadToken(videoFile);
     const videoUrl = buildPublicUrl({
       bucket: bucketName,
-      path: `${destBase}short.mp4`,
+      path: videoPath,
       token: tokenVideo,
     });
 
-    const [existsCover] = await fCover.exists();
     let coverImageUrl = null;
-    if (existsCover) {
-      const tokenCover = await getDownloadToken(fCover);
+    let coverPath = null;
+    const [storyCoverExists] = await fStoryCover.exists();
+    if (storyCoverExists) {
+      coverPath = storyCoverPath;
+      diag.steps.push('cover_story_exists');
+    } else {
+      const [legacyCoverExists] = await fLegacyCover.exists();
+      if (legacyCoverExists) {
+        coverPath = legacyCoverPath;
+        diag.steps.push('cover_legacy_exists');
+      }
+    }
+
+    if (coverPath) {
+      const coverFile = coverPath === storyCoverPath ? fStoryCover : fLegacyCover;
+      const tokenCover = await getDownloadToken(coverFile);
       coverImageUrl = buildPublicUrl({
         bucket: bucketName,
-        path: `${destBase}cover.jpg`,
+        path: coverPath,
         token: tokenCover,
       });
     }
 
-    const payload = {
-      jobId,
+    const payload = buildPayload({
       videoUrl,
       coverImageUrl,
-      durationSec: meta?.durationSec ?? null,
-      usedTemplate: meta?.usedTemplate ?? null,
-      usedQuote: meta?.usedQuote ?? null,
-      credits: meta?.credits ?? null,
-      createdAt: meta?.createdAt ?? null,
-    };
-    if (debug) return ok(req, res, { source: 'metadata.tokens', diag, payload });
+      meta,
+    });
+    logger.info('shorts.detail.storage_hit', {
+      routeStatus: `${req.method} ${req.originalUrl}`,
+      shortId: jobId,
+      videoSource: videoPath === storyVideoPath ? 'story' : 'legacy',
+      coverSource: coverPath === storyCoverPath ? 'story' : coverPath === legacyCoverPath ? 'legacy' : null,
+      hasMeta: Boolean(meta),
+    });
+    if (debug) return ok(req, res, { source: 'storage.tokens', diag, payload });
     return ok(req, res, payload);
   } catch (e) {
-    console.error('/shorts/:jobId error', e?.message || e);
+    logger.error('shorts.detail.failed', {
+      routeStatus: `${req.method} ${req.originalUrl}`,
+      shortId: String(req.params?.jobId || '').trim() || null,
+      error: e,
+    });
     return fail(req, res, 500, 'GET_SHORT_FAILED', 'GET_SHORT_FAILED');
-  }
-}
-
-export async function deleteShort(req, res) {
-  try {
-    const ownerUid = req.user?.uid;
-    if (!ownerUid) {
-      return fail(req, res, 401, 'UNAUTHENTICATED', 'Login required');
-    }
-
-    const jobId = String(req.params?.jobId || '').trim();
-    if (!jobId) {
-      return fail(req, res, 400, 'INVALID_INPUT', 'jobId required');
-    }
-    // Prevent path traversal in jobId
-    if (jobId.includes('/') || jobId.includes('\\') || jobId.includes('..')) {
-      return fail(req, res, 400, 'INVALID_INPUT', 'Invalid jobId format');
-    }
-
-    const db = admin.firestore();
-    const shortsRef = db.collection('shorts').doc(jobId);
-
-    // Check if the short exists and belongs to the user
-    const doc = await shortsRef.get();
-    if (!doc.exists) {
-      return fail(req, res, 404, 'NOT_FOUND', 'Short not found');
-    }
-
-    const shortData = doc.data();
-    if (shortData.ownerId !== ownerUid) {
-      return fail(req, res, 403, 'FORBIDDEN', 'You can only delete your own shorts');
-    }
-
-    // Delete Firestore document
-    await shortsRef.delete();
-
-    // Delete files from Firebase Storage
-    const bucket = admin.storage().bucket();
-    const destBase = `artifacts/${ownerUid}/${jobId}/`;
-
-    try {
-      const [files, nextQuery] = await bucket.getFiles({
-        prefix: destBase,
-        autoPaginate: false,
-        maxResults: 100,
-      });
-      await Promise.all(files.map((file) => file.delete()));
-      console.log(`[shorts] Deleted ${files.length} files for short: ${jobId}`);
-      if (nextQuery && nextQuery.pageToken) {
-        console.warn(
-          `[shorts] Storage deletion truncated for jobId=${jobId} ownerUid=${ownerUid} prefix=${destBase} deleted=${files.length} (maxResults=100 reached)`
-        );
-      }
-    } catch (storageError) {
-      console.warn(`[shorts] Failed to delete storage files for ${jobId}:`, storageError.message);
-    }
-
-    return ok(req, res, { detail: 'Short deleted successfully' });
-  } catch (error) {
-    console.error('/shorts/:jobId/delete error:', error);
-    return fail(req, res, 500, 'DELETE_FAILED', error?.message || 'DELETE_FAILED');
   }
 }

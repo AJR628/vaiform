@@ -1,24 +1,67 @@
 // src/middleware/planGuards.js
 import admin from '../config/firebase.js';
-import { RENDER_CREDIT_COST } from '../services/credit.service.js';
+import { getUsageSummary } from '../services/usage.service.js';
 import { fail } from '../http/respond.js';
+
+function parseIsoMillis(value) {
+  if (typeof value !== 'string' || value.trim().length === 0) return null;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function hasPaidEntitlement(usageSummary, nowMs = Date.now()) {
+  if (!usageSummary || usageSummary.plan === 'free') return false;
+  const membership = usageSummary.membership || {};
+  const status = typeof membership.status === 'string' ? membership.status : '';
+  if (!status || status === 'inactive') return false;
+
+  if (status === 'canceled') {
+    const expiresAtMs = parseIsoMillis(membership.expiresAt);
+    if (Number.isFinite(expiresAtMs) && expiresAtMs <= nowMs) {
+      return false;
+    }
+  }
+
+  return true;
+}
 
 /**
  * Require membership (blocks free users from premium features)
  */
 export function requireMember(plan = null) {
-  return (req, res, next) => {
-    const u = req.user;
-    if (!u?.isMember) {
+  return async (req, res, next) => {
+    const uid = req.user?.uid;
+    if (!uid) {
+      return fail(req, res, 401, 'AUTH_REQUIRED', 'You need to sign in to use this feature.');
+    }
+
+    let usageSummary = null;
+    try {
+      usageSummary = await getUsageSummary(uid, req.user?.email || null);
+    } catch (error) {
+      console.error('[planGuards] requireMember usage lookup failed:', error);
+      return fail(
+        req,
+        res,
+        500,
+        'MEMBERSHIP_LOOKUP_FAILED',
+        'Something went wrong while checking membership status.'
+      );
+    }
+
+    if (!hasPaidEntitlement(usageSummary)) {
+      const canceledExpiryMs = parseIsoMillis(usageSummary?.membership?.expiresAt);
+      if (
+        usageSummary?.membership?.status === 'canceled' &&
+        Number.isFinite(canceledExpiryMs) &&
+        canceledExpiryMs <= Date.now()
+      ) {
+        return fail(req, res, 402, 'MEMBERSHIP_EXPIRED', 'Your paid access period has expired');
+      }
       return fail(req, res, 402, 'MEMBERSHIP_REQUIRED', 'This feature requires a paid plan');
     }
 
-    const kind = u.membership?.kind;
-    if (kind === 'onetime' && u.membership?.expiresAt && Date.now() > u.membership.expiresAt) {
-      return fail(req, res, 402, 'MEMBERSHIP_EXPIRED', 'Your one-month pass has expired');
-    }
-
-    if (plan && u.plan !== plan) {
+    if (plan && usageSummary.plan !== plan) {
       return fail(
         req,
         res,
@@ -38,7 +81,23 @@ export function requireMember(plan = null) {
 export function enforceFreeDailyShortLimit(limit = 4) {
   return async (req, res, next) => {
     const u = req.user;
-    if (u?.isMember) return next(); // Skip limit for paid users
+    if (!u?.uid) {
+      return fail(req, res, 401, 'AUTH_REQUIRED', 'You need to sign in to create shorts.');
+    }
+
+    try {
+      const usageSummary = await getUsageSummary(u.uid, u.email || null);
+      if (hasPaidEntitlement(usageSummary)) return next();
+    } catch (error) {
+      console.error('[planGuards] free daily limit usage lookup failed:', error);
+      return fail(
+        req,
+        res,
+        500,
+        'MEMBERSHIP_LOOKUP_FAILED',
+        'Something went wrong while checking plan limits.'
+      );
+    }
 
     const userRef = admin.firestore().collection('users').doc(u.uid);
     const snap = await userRef.get();
@@ -90,7 +149,24 @@ export function enforceFreeLifetimeShortLimit(maxFree = 4) {
       return fail(req, res, 401, 'AUTH_REQUIRED', 'You need to sign in to create shorts.');
     }
 
-    // Fetch user document from Firestore
+    let usageSummary = null;
+    try {
+      usageSummary = await getUsageSummary(uid, req.user?.email || null);
+    } catch (error) {
+      console.error('[planGuards] free lifetime limit usage lookup failed:', error);
+      return fail(
+        req,
+        res,
+        500,
+        'MEMBERSHIP_LOOKUP_FAILED',
+        'Something went wrong while checking plan limits.'
+      );
+    }
+
+    if (hasPaidEntitlement(usageSummary)) {
+      return next();
+    }
+
     const userRef = admin.firestore().collection('users').doc(uid);
     const snap = await userRef.get();
     if (!snap.exists) {
@@ -98,17 +174,6 @@ export function enforceFreeLifetimeShortLimit(maxFree = 4) {
     }
 
     const doc = snap.data() || {};
-
-    // Determine if user is "Free"
-    const isMember = doc.isMember === true;
-    const credits = doc.credits || 0;
-    const subscriptionStatus = doc.subscriptionStatus;
-    const isPaid = isMember || credits > 0 || subscriptionStatus === 'active';
-
-    // If user is NOT free (paid/has credits), skip limit
-    if (isPaid) {
-      return next();
-    }
 
     // User IS free - check lifetime limit
     const freeShortsUsed = doc.freeShortsUsed || 0;
@@ -132,8 +197,27 @@ export function enforceFreeLifetimeShortLimit(maxFree = 4) {
  * Block AI quotes for free users (requires membership)
  */
 export function blockAIQuotesForFree() {
-  return (req, res, next) => {
-    if (!req.user?.isMember) {
+  return async (req, res, next) => {
+    const uid = req.user?.uid;
+    if (!uid) {
+      return fail(req, res, 401, 'AUTH_REQUIRED', 'You need to sign in to use this feature.');
+    }
+
+    let usageSummary = null;
+    try {
+      usageSummary = await getUsageSummary(uid, req.user?.email || null);
+    } catch (error) {
+      console.error('[planGuards] AI quotes membership lookup failed:', error);
+      return fail(
+        req,
+        res,
+        500,
+        'MEMBERSHIP_LOOKUP_FAILED',
+        'Something went wrong while checking membership status.'
+      );
+    }
+
+    if (!hasPaidEntitlement(usageSummary)) {
       return fail(
         req,
         res,
@@ -150,8 +234,20 @@ export function blockAIQuotesForFree() {
  * Force watermark for free users
  */
 export function enforceWatermarkFlag() {
-  return (req, res, next) => {
-    if (!req.user?.isMember) {
+  return async (req, res, next) => {
+    const uid = req.user?.uid;
+    if (!uid) {
+      req.body.forceWatermark = true;
+      return next();
+    }
+
+    try {
+      const usageSummary = await getUsageSummary(uid, req.user?.email || null);
+      if (!hasPaidEntitlement(usageSummary)) {
+        req.body.forceWatermark = true;
+      }
+    } catch (error) {
+      console.error('[planGuards] watermark membership lookup failed:', error);
       req.body.forceWatermark = true;
     }
     next();
@@ -159,40 +255,84 @@ export function enforceWatermarkFlag() {
 }
 
 /**
- * Enforce sufficient credits before render
- * Pre-check only - does not spend credits
+ * Enforce sufficient render time before render.
+ * Pre-check only - does not reserve or settle usage.
  * Must be used after requireAuth middleware
  */
-export function enforceCreditsForRender(required = RENDER_CREDIT_COST) {
+export function enforceRenderTimeForRender(getSession) {
+  if (typeof getSession !== 'function') {
+    throw new Error('enforceRenderTimeForRender requires getSession');
+  }
   return async (req, res, next) => {
-    // Require authentication
     const uid = req.user?.uid;
     if (!uid) {
       return fail(req, res, 401, 'AUTH_REQUIRED', 'You need to sign in to create shorts.');
     }
 
-    // Fetch user document from Firestore
-    const userRef = admin.firestore().collection('users').doc(uid);
-    const snap = await userRef.get();
-
-    if (!snap.exists) {
-      return fail(req, res, 401, 'AUTH_REQUIRED', 'You need to sign in to create shorts.');
+    const sessionId = typeof req.body?.sessionId === 'string' ? req.body.sessionId.trim() : '';
+    if (sessionId.length < 3) {
+      return fail(
+        req,
+        res,
+        400,
+        'INVALID_INPUT',
+        'sessionId required and must be at least 3 characters.'
+      );
     }
 
-    const doc = snap.data() || {};
-    const credits = doc.credits || 0;
+    let session = null;
+    try {
+      session = await getSession({ uid, sessionId });
+    } catch (error) {
+      console.error('[planGuards] Failed to load session for render-time gate:', error);
+      return fail(
+        req,
+        res,
+        500,
+        'RENDER_TIME_GATE_FAILED',
+        'Something went wrong while checking render-time availability.'
+      );
+    }
 
-    if (credits < required) {
+    if (!session) {
+      return fail(req, res, 404, 'SESSION_NOT_FOUND', 'Session not found');
+    }
+
+    const estimatedSec = Number(session?.billingEstimate?.estimatedSec);
+    if (!Number.isFinite(estimatedSec) || estimatedSec <= 0) {
+      return fail(
+        req,
+        res,
+        409,
+        'BILLING_ESTIMATE_UNAVAILABLE',
+        'Render-time estimate is unavailable for this session.'
+      );
+    }
+
+    let usageSummary = null;
+    try {
+      usageSummary = await getUsageSummary(uid, req.user?.email || null);
+    } catch (error) {
+      console.error('[planGuards] Failed to load usage summary for render-time gate:', error);
+      return fail(
+        req,
+        res,
+        500,
+        'RENDER_TIME_GATE_FAILED',
+        'Something went wrong while checking render-time availability.'
+      );
+    }
+
+    if ((usageSummary?.usage?.availableSec ?? 0) < estimatedSec) {
       return fail(
         req,
         res,
         402,
-        'INSUFFICIENT_CREDITS',
-        `Insufficient credits. You need ${required} credits to render.`
+        'INSUFFICIENT_RENDER_TIME',
+        `Insufficient render time. You need ${estimatedSec} seconds to render.`
       );
     }
 
-    // User has sufficient credits - allow request
     next();
   };
 }

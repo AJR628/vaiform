@@ -1,33 +1,34 @@
-import admin, { db } from '../config/firebase.js';
+import { db } from '../config/firebase.js';
 import { ok, fail } from '../http/respond.js';
+import { persistStoryRenderRecovery } from '../services/story.service.js';
+import {
+  buildFinalizeHttpReply,
+  finalizeAttemptFailure,
+  prepareFinalizeAttempt,
+} from '../services/story-finalize.attempts.js';
+import logger from '../observability/logger.js';
+import { setRequestContextFromReq } from '../observability/request-context.js';
 
 const requestIdOf = (req) => req?.id ?? null;
-const finalizeSuccess = (req, session, shortId) => ({
-  success: true,
-  data: session,
-  shortId,
-  requestId: requestIdOf(req),
-});
 
 /**
  * Idempotency middleware for POST /api/story/finalize.
  * - Requires X-Idempotency-Key (400 if missing).
- * - Validates req.body.sessionId (non-empty string, min 3 chars) before any Firestore read/reserve; 400 INVALID_INPUT without debiting.
- * - Replay: if doc exists with state=done, fetches session via getSession and returns same response shape.
- * - Reserve: in one transaction creates idempotency doc (state=pending, reservedCredits, sessionId) and debits user; 402 if insufficient.
- * - On success: stores minimal payload (shortId, sessionId) only; no full session (Firestore 1 MiB limit).
- * - On 5xx: refunds credits and deletes doc.
+ * - Validates req.body.sessionId (non-empty string, min 3 chars) before any Firestore read/reserve; 400 INVALID_INPUT without reserving.
+ * - Reserve/enqueue: creates a queued finalize attempt and reserves render seconds once.
+ * - Same-key replay: queued/running -> 202 pending, done -> 200 success replay, failed/expired -> terminal failure replay.
+ * - Same-session different key while active: 409 FINALIZE_ALREADY_ACTIVE without a second reservation.
  *
  * Verification (curl, no test framework):
  * 1) Missing header: POST without X-Idempotency-Key -> 400 MISSING_IDEMPOTENCY_KEY.
- * 2) Missing/invalid sessionId: POST with key but body {} or { "sessionId": "x" } -> 400 INVALID_INPUT; credits unchanged.
- * 3) Same key twice with valid sessionId: first request renders and debits; second request replays (same shortId), no second debit.
+ * 2) Missing/invalid sessionId: POST with key but body {} or { "sessionId": "x" } -> 400 INVALID_INPUT; usage unchanged.
+ * 3) Same key twice with valid sessionId: first request enqueues once; replay returns pending or final result without a second reservation.
  *
- * @param {{ ttlMinutes?: number, getSession: (opts: { uid: string, sessionId: string }) => Promise<object|null>, creditCost: number }} opts
+ * @param {{ ttlMinutes?: number, getSession: (opts: { uid: string, sessionId: string }) => Promise<object|null> }} opts
  */
-export function idempotencyFinalize({ ttlMinutes = 60, getSession, creditCost } = {}) {
-  if (typeof getSession !== 'function' || typeof creditCost !== 'number') {
-    throw new Error('idempotencyFinalize requires getSession and creditCost');
+export function idempotencyFinalize({ ttlMinutes = 60, getSession } = {}) {
+  if (typeof getSession !== 'function') {
+    throw new Error('idempotencyFinalize requires getSession');
   }
   return async function middleware(req, res, next) {
     const key = req.get('X-Idempotency-Key');
@@ -39,7 +40,7 @@ export function idempotencyFinalize({ ttlMinutes = 60, getSession, creditCost } 
       return fail(req, res, 401, 'UNAUTHORIZED', 'Authentication required.');
     }
 
-    // Validate sessionId before any Firestore read or reserve so invalid input never debits credits
+    // Validate sessionId before any Firestore read or reserve so invalid input never reserves usage
     const sessionId = typeof req.body?.sessionId === 'string' ? req.body.sessionId.trim() : '';
     if (sessionId.length < 3) {
       return fail(
@@ -50,160 +51,68 @@ export function idempotencyFinalize({ ttlMinutes = 60, getSession, creditCost } 
         'sessionId required and must be at least 3 characters.'
       );
     }
+    setRequestContextFromReq(req, { sessionId, attemptId: key });
 
-    const docRef = db.collection('idempotency').doc(`${uid}:${key}`);
-
-    // Single read to decide replay vs reserve
-    const snap = await docRef.get();
-    if (snap.exists) {
-      const d = snap.data();
-      if (d.state === 'pending') {
-        return fail(req, res, 409, 'IDEMPOTENT_IN_PROGRESS', 'Request in progress.');
-      }
-      if (d.state === 'done') {
-        const status = d.status || 200;
-        const shortId = d.shortId ?? null;
-        const sid = d.sessionId || sessionId;
-        let session = null;
-        if (sid) {
-          try {
-            session = await getSession({ uid, sessionId: sid });
-          } catch (err) {
-            console.error('[idempotency][finalize] getSession on replay:', err);
-          }
-        }
-        if (session == null) {
-          return fail(
-            req,
-            res,
-            404,
-            'SESSION_NOT_FOUND',
-            'Session no longer available for replay.'
-          );
-        }
-        return res.status(status).json(finalizeSuccess(req, session, shortId));
-      }
-    }
-
-    // Create pending + reserve credits in one transaction
     try {
-      await db.runTransaction(async (tx) => {
-        const docSnap = await tx.get(docRef);
-        if (docSnap.exists) {
-          const d = docSnap.data();
-          if (d.state === 'pending')
-            throw Object.assign(new Error('IN_PROGRESS'), { _idemp: 'PENDING' });
-          if (d.state === 'done') throw Object.assign(new Error('DONE'), { _idemp: d });
-        }
-        const userRef = db.collection('users').doc(uid);
-        const userSnap = await tx.get(userRef);
-        if (!userSnap.exists) {
-          const err = new Error('User not found');
-          err.code = 'USER_NOT_FOUND';
-          err.status = 402;
-          throw err;
-        }
-        const credits = userSnap.data()?.credits ?? 0;
-        if (credits < creditCost) {
-          const err = new Error('Insufficient credits');
-          err.code = 'INSUFFICIENT_CREDITS';
-          err.status = 402;
-          throw err;
-        }
-        tx.set(docRef, {
-          state: 'pending',
-          reservedCredits: creditCost,
-          sessionId,
-          createdAt: new Date(),
-          expiresAt: new Date(Date.now() + ttlMinutes * 60 * 1000),
-        });
-        tx.update(userRef, {
-          credits: admin.firestore.FieldValue.increment(-creditCost),
-          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        });
+      const prepared = await prepareFinalizeAttempt({
+        uid,
+        attemptId: key,
+        sessionId,
+        ttlMinutes,
+        getSession,
       });
-    } catch (e) {
-      if (e._idemp === 'PENDING') {
-        return fail(req, res, 409, 'IDEMPOTENT_IN_PROGRESS', 'Request in progress.');
+
+      if (prepared.kind === 'error') {
+        return fail(req, res, prepared.status, prepared.error, prepared.detail);
       }
-      if (e._idemp) {
-        const status = e._idemp.status || 200;
-        const shortId = e._idemp.shortId ?? null;
-        const sid = e._idemp.sessionId || sessionId;
-        if (!sid) {
-          return fail(req, res, 404, 'SESSION_NOT_FOUND', 'Session id missing for replay.');
+
+      if (prepared.kind === 'enqueued') {
+        const pendingSession = await persistStoryRenderRecovery({
+          uid,
+          sessionId,
+          attemptId: key,
+          state: 'pending',
+        });
+        if (!pendingSession) {
+          await finalizeAttemptFailure({
+            uid,
+            attemptId: key,
+            status: 500,
+            error: 'SESSION_NOT_FOUND',
+            detail: 'Session not found',
+          });
+          return fail(req, res, 404, 'SESSION_NOT_FOUND', 'Session not found');
         }
-        let session = null;
-        try {
-          session = await getSession({ uid, sessionId: sid });
-        } catch (err) {
-          console.error('[idempotency][finalize] getSession on replay (race):', err);
-        }
-        if (session == null) {
-          return fail(
-            req,
-            res,
-            404,
-            'SESSION_NOT_FOUND',
-            'Session no longer available for replay.'
-          );
-        }
-        return res.status(status).json(finalizeSuccess(req, session, shortId));
+        prepared.session = pendingSession;
+        logger.info('story.finalize.idempotency.enqueued', {
+          routeStatus: `${req.method} ${req.originalUrl}`,
+          sessionId,
+          attemptId: key,
+          estimatedSec: prepared.attempt?.usageReservation?.estimatedSec || null,
+        });
       }
-      if (e?.status === 402 || e?.code === 'INSUFFICIENT_CREDITS' || e?.code === 'USER_NOT_FOUND') {
-        return fail(
-          req,
-          res,
-          402,
-          e?.code || 'INSUFFICIENT_CREDITS',
-          e?.message || 'Insufficient credits for render.'
-        );
+
+      const reply = await buildFinalizeHttpReply({
+        req,
+        uid,
+        sessionId,
+        getSession,
+        prepared,
+      });
+      if (!reply) {
+        return next(new Error('Finalize attempt reply was not generated.'));
       }
-      return next(e);
+
+      req.finalizePrepared = prepared;
+      req.finalizeReply = reply;
+      next();
+    } catch (err) {
+      logger.error('story.finalize.idempotency.prepare_failed', {
+        routeStatus: `${req.method} ${req.originalUrl}`,
+        error: err,
+      });
+      return next(err);
     }
-
-    res._idempotencyReserved = true;
-    res._idempotencyDocRef = docRef;
-    res._idempotencySessionId = sessionId;
-    res._idempotencyCreditCost = creditCost;
-
-    const origJson = res.json.bind(res);
-    res.json = async function (body) {
-      const status = res.statusCode || 200;
-      if (status < 500 && res._idempotencyDocRef) {
-        const shortId = body?.shortId ?? null;
-        const sid = res._idempotencySessionId || body?.data?.id;
-        try {
-          await res._idempotencyDocRef.set(
-            {
-              state: 'done',
-              status,
-              shortId,
-              sessionId: sid,
-              finishedAt: new Date(),
-            },
-            { merge: true }
-          );
-        } catch (err) {
-          console.error('[idempotency][finalize] Failed to write done state:', err);
-        }
-      }
-      return origJson(body);
-    };
-
-    res.on('finish', async () => {
-      if (!res._idempotencyReserved || res.statusCode < 500) return;
-      try {
-        const { refundCredits } = await import('../services/credit.service.js');
-        await refundCredits(uid, res._idempotencyCreditCost);
-        await docRef.delete();
-        console.log('[idempotency][finalize] Refunded credits after failure, key=', key);
-      } catch (err) {
-        console.error('[idempotency][finalize] Refund/delete on failure:', err);
-      }
-    });
-
-    next();
   };
 }
 

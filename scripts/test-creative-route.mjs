@@ -58,11 +58,6 @@ async function main() {
       body: { originalText: 'test', mode: 'regenerate' },
     },
     { path: '/api/assets/options', method: 'POST', body: { type: 'images', query: 'nature' } },
-    {
-      path: '/api/assets/ai-images',
-      method: 'POST',
-      body: { prompt: 'test image', style: 'realistic' },
-    },
   ];
 
   for (const endpoint of endpoints) {
@@ -99,7 +94,7 @@ async function main() {
   );
   log(colors.yellow, '2. Test with real auth tokens for full functionality');
   log(colors.yellow, '3. Verify Free vs Pro plan restrictions work');
-  log(colors.yellow, '4. Test quote generation, asset selection, and AI images');
+  log(colors.yellow, '4. Test quote generation, asset selection, and shorts retrieval');
 
   log(colors.green, '\n🎉 Creative Page is ready for testing!');
 }

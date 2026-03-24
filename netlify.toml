@@ -1,7 +1,7 @@
 [build]
 base = "web"
 publish = "dist"
-command = "rm -rf node_modules package-lock.json && npm install && npm run build"
+command = "npm ci --no-audit --no-fund && npm run build"
 
 # CRITICAL: Override SPA redirect - must be first
 [[redirects]]
@@ -17,17 +17,34 @@ command = "rm -rf node_modules package-lock.json && npm install && npm run build
   status = 200
   force = true
 
+[[redirects]]
+  from = "/buy-credits.html"
+  to = "/pricing.html"
+  status = 301
+  force = true
+
+[[redirects]]
+  from = "/buy-credits"
+  to = "/pricing.html"
+  status = 301
+  force = true
+
+[[redirects]]
+  from = "/pricing"
+  to = "/pricing.html"
+  status = 301
+  force = true
+
+[[redirects]]
+  from = "/success"
+  to = "/success.html"
+  status = 301
+  force = true
+
 # proxy to Replit backend
 [[redirects]]
   from = "/api/*"
-  to = "https://17e0d1d1-e327-483d-b1ea-c41bea08fb59-00-1ef93t84nlhq6.janeway.replit.dev/:splat"
-  status = 200
-  force = true
-
-# proxy font files to backend (fixes browser font loading)
-[[redirects]]
-  from = "/assets/fonts/*"
-  to = "https://17e0d1d1-e327-483d-b1ea-c41bea08fb59-00-1ef93t84nlhq6.janeway.replit.dev/assets/fonts/:splat"
+  to = "https://17e0d1d1-e327-483d-b1ea-c41bea08fb59-00-1ef93t84nlhq6.janeway.replit.dev/api/:splat"
   status = 200
   force = true
 
@@ -55,13 +72,6 @@ command = "rm -rf node_modules package-lock.json && npm install && npm run build
 [[redirects]]
   from = "/my-shorts.html"
   to = "/my-shorts.html"
-  status = 200
-  force = true
-  conditions = {Country = ["*"]}
-
-[[redirects]]
-  from = "/my-images.html"
-  to = "/my-images.html"
   status = 200
   force = true
   conditions = {Country = ["*"]}

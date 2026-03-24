@@ -64,14 +64,29 @@ function resolveChangedFiles(explicitFiles) {
     return { files: explicitFiles, source: 'explicit' };
   }
 
+  const allowBroad = process.env.ALLOW_BROAD_SCAN === '1';
   const base = process.env.BASE_SHA;
   const head = process.env.HEAD_SHA;
   if (base && head) {
     const bySha = tryGitDiff(`${base}..${head}`);
-    return { files: bySha, source: 'ci_sha' };
+    if (bySha.length) return { files: bySha, source: 'ci_sha' };
+
+    if (allowBroad) {
+      if (refExists('origin/main')) {
+        const byMain = tryGitDiff('origin/main...HEAD');
+        if (byMain.length) return { files: byMain, source: 'ci_sha_fallback_origin_main' };
+      }
+
+      if (refExists('HEAD~1')) {
+        const byPrev = tryGitDiff('HEAD~1..HEAD');
+        if (byPrev.length) return { files: byPrev, source: 'ci_sha_fallback_head_prev' };
+      }
+    }
+
+    return { files: [], source: 'ci_sha' };
   }
 
-  if (process.env.ALLOW_BROAD_SCAN === '1') {
+  if (allowBroad) {
     if (refExists('origin/main')) {
       const byMain = tryGitDiff('origin/main...HEAD');
       if (byMain.length) return { files: byMain, source: 'broad' };
@@ -280,6 +295,18 @@ function main() {
   const { files: explicitFiles } = parseArgs(process.argv.slice(2));
   const resolution = resolveChangedFiles(explicitFiles);
   const changed = resolution.files.map(normalizeFile);
+
+  if (resolution.source.startsWith('ci_sha_fallback_')) {
+    console.log(
+      `[check-responses-changed] ci_sha empty; using fallback source=${resolution.source}`
+    );
+  } else if (
+    resolution.source === 'ci_sha' &&
+    !changed.length &&
+    process.env.ALLOW_BROAD_SCAN === '1'
+  ) {
+    console.log('[check-responses-changed] ci_sha empty and no fallback diff candidates resolved');
+  }
 
   if (!changed.length && resolution.source === 'none') {
     console.error('No file scope provided.');

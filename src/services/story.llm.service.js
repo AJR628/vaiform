@@ -2,12 +2,20 @@
  * LLM service for story generation and visual planning
  */
 
-import { randomUUID } from 'crypto';
 import { extractContentFromUrl } from '../utils/link.extract.js';
+import { withAbortTimeout } from '../utils/fetch.timeout.js';
+import { isOutboundPolicyError } from '../utils/outbound.fetch.js';
 import { calculateReadingDuration } from '../utils/text.duration.js';
+import logger from '../observability/logger.js';
+import { getRuntimeOverride } from '../testing/runtime-overrides.js';
 
 const OPENAI_BASE = process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1';
 const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
+const OPENAI_RETRY_AFTER_SEC = 15;
+const OPENAI_STORY_TIMEOUT_MS = 20_000;
+const OPENAI_PLAN_TIMEOUT_MS = 20_000;
+const MAX_CONCURRENT_OPENAI_REQUESTS = 2;
+let activeOpenAiRequests = 0;
 
 const SCRIPT_STYLES = {
   default: 'Write in a clear, conversational tone. Be informative but engaging.',
@@ -141,6 +149,70 @@ function validateStoryOutput(hook, beats, outro) {
   };
 }
 
+function createRetryableOpenAiError(code, detail, retryAfter = OPENAI_RETRY_AFTER_SEC) {
+  const error = new Error(detail);
+  error.code = code;
+  error.status = 503;
+  error.retryAfter = retryAfter;
+  return error;
+}
+
+async function withOpenAiAdmission({ code, detail, retryAfter = OPENAI_RETRY_AFTER_SEC }, fn) {
+  if (activeOpenAiRequests >= MAX_CONCURRENT_OPENAI_REQUESTS) {
+    throw createRetryableOpenAiError(code, detail, retryAfter);
+  }
+
+  activeOpenAiRequests += 1;
+  try {
+    return await fn();
+  } finally {
+    activeOpenAiRequests -= 1;
+  }
+}
+
+async function postOpenAiJson(
+  url,
+  body,
+  {
+    timeoutMs,
+    timeoutCode,
+    timeoutDetail,
+    busyCode,
+    busyDetail,
+    retryAfter = OPENAI_RETRY_AFTER_SEC,
+  }
+) {
+  try {
+    const response = await withAbortTimeout(
+      async (signal) =>
+        await fetch(url, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          ...(signal ? { signal } : {}),
+          body: JSON.stringify(body),
+        }),
+      { timeoutMs, errorMessage: timeoutCode }
+    );
+
+    if (!response.ok) {
+      if (response.status === 429 || response.status >= 500) {
+        throw createRetryableOpenAiError(busyCode, busyDetail, retryAfter);
+      }
+      throw new Error(`LLM_HTTP_${response.status}`);
+    }
+
+    return await response.json();
+  } catch (error) {
+    if (error?.code === timeoutCode) {
+      throw createRetryableOpenAiError(timeoutCode, timeoutDetail, retryAfter);
+    }
+    throw error;
+  }
+}
+
 /**
  * Generate a 4-8 sentence video script from input
  * @param {string} input - User input (link content, idea, or paragraph)
@@ -160,7 +232,13 @@ export async function generateStoryFromInput({ input, inputType, styleKey = 'def
     try {
       extracted = await extractContentFromUrl(input);
     } catch (error) {
-      console.warn('[story.llm] Link extraction failed, using URL as-is:', error?.message);
+      if (isOutboundPolicyError(error) || error?.code === 'LINK_EXTRACT_TOO_LARGE') {
+        throw error;
+      }
+      logger.warn('story.generate.link_extract_failed', {
+        inputType,
+        error,
+      });
       extracted = null;
     }
   }
@@ -285,292 +363,312 @@ export async function generateStoryFromInput({ input, inputType, styleKey = 'def
     userMessage = `Now, using this content, write the script in that format:\n\n${sourceContent}`;
   }
 
-  const body = {
-    model: OPENAI_MODEL,
-    temperature: 0.8,
-    messages: [
-      {
-        role: 'system',
-        content: systemMessage,
-      },
-      {
-        role: 'user',
-        content: userMessage,
-      },
-    ],
-  };
-
-  const r = await fetch(url, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-      'Content-Type': 'application/json',
+  return await withOpenAiAdmission(
+    {
+      code: 'STORY_GENERATE_BUSY',
+      detail: 'Story generation is busy. Please retry shortly.',
     },
-    body: JSON.stringify(body),
-  });
-
-  if (!r.ok) throw new Error(`LLM_HTTP_${r.status}`);
-
-  const data = await r.json();
-  let content = data?.choices?.[0]?.message?.content || '';
-
-  // Parse JSON with three-tier fallback
-  let parsed = null;
-  try {
-    const jsonMatch = content.match(/\{[\s\S]*\}/);
-    parsed = JSON.parse(jsonMatch ? jsonMatch[0] : content);
-  } catch (parseError) {
-    console.warn('[story.llm] JSON parse failed, using fallback');
-    parsed = null;
-  }
-
-  // Helper function to make retry request
-  async function makeRetryRequest(fixMessage, includeAssistantJson = false) {
-    const messages = [
-      { role: 'system', content: systemMessage },
-      { role: 'user', content: userMessage },
-    ];
-
-    // Include prior assistant JSON only if parsed is valid and has required arrays (tweak A)
-    if (
-      includeAssistantJson &&
-      parsed &&
-      Array.isArray(parsed.hook) &&
-      Array.isArray(parsed.beats) &&
-      Array.isArray(parsed.outro)
-    ) {
-      messages.push({ role: 'assistant', content: JSON.stringify(parsed) });
-    }
-
-    messages.push({ role: 'user', content: fixMessage });
-
-    const retryBody = {
-      model: OPENAI_MODEL,
-      temperature: 0.8,
-      messages: messages,
-    };
-
-    const retryR = await fetch(url, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(retryBody),
-    });
-
-    if (!retryR.ok) throw new Error(`LLM_HTTP_${retryR.status}`);
-
-    const retryData = await retryR.json();
-    return retryData?.choices?.[0]?.message?.content || '';
-  }
-
-  let sentences = [];
-  let totalDurationSec = 0;
-  let usedRetry = false;
-
-  // Primary: Try new hook/beats/outro structure
-  if (parsed && (parsed.hook || parsed.beats || parsed.outro)) {
-    const hook = parsed.hook || [];
-    const beats = parsed.beats || [];
-    const outro = parsed.outro || [];
-
-    // Always validate (tweak A: shape validation runs even when arrays are missing)
-    const validation = validateStoryOutput(hook, beats, outro);
-
-    // Hard violations: retry once with clean fix instruction
-    if (validation.hardViolations.length > 0) {
-      console.warn('[story.llm] Hard violations detected, retrying:', validation.hardViolations);
-
-      const fixMessage = `Your previous JSON violated these constraints: ${validation.hardViolations.join('; ')}. Rewrite JSON only, fully compliant.`;
-
-      try {
-        const retryContent = await makeRetryRequest(fixMessage, true);
-
-        // Re-parse retry response (tweak C: retry response must be used)
-        let retryParsed = null;
-        try {
-          const retryJsonMatch = retryContent.match(/\{[\s\S]*\}/);
-          retryParsed = JSON.parse(retryJsonMatch ? retryJsonMatch[0] : retryContent);
-        } catch (retryParseError) {
-          console.warn('[story.llm] Retry JSON parse failed');
-        }
-
-        if (retryParsed && (retryParsed.hook || retryParsed.beats || retryParsed.outro)) {
-          const retryHook = retryParsed.hook || [];
-          const retryBeats = retryParsed.beats || [];
-          const retryOutro = retryParsed.outro || [];
-
-          // Re-validate retry response
-          const retryValidation = validateStoryOutput(retryHook, retryBeats, retryOutro);
-
-          if (retryValidation.valid) {
-            // Retry passed hard checks, use it (tweak C)
-            parsed = retryParsed;
-            usedRetry = true;
-            console.log('[story.llm] Retry passed validation, using retry response');
-          } else {
-            console.error(
-              '[story.llm] Retry still has hard violations, falling back to normalization:',
-              retryValidation.hardViolations
-            );
-          }
-        }
-      } catch (retryError) {
-        console.error('[story.llm] Retry request failed:', retryError?.message);
+    async () => {
+      const override = getRuntimeOverride('story.llm.generateStoryFromInput');
+      if (override) {
+        return await override({ input, inputType, styleKey });
       }
-    }
 
-    // If no hard violations (or retry fixed them), check for soft violations
-    if (!usedRetry) {
-      // Re-validate after potential retry (or if no retry was needed)
-      const finalValidation = validateStoryOutput(hook, beats, outro);
+      const body = {
+        model: OPENAI_MODEL,
+        temperature: 0.8,
+        messages: [
+          {
+            role: 'system',
+            content: systemMessage,
+          },
+          {
+            role: 'user',
+            content: userMessage,
+          },
+        ],
+      };
 
-      // Soft violations: retry once, but allow fallback if persists
-      if (finalValidation.softViolations.length > 0 && finalValidation.valid) {
-        console.warn(
-          '[story.llm] Soft violations detected, retrying:',
-          finalValidation.softViolations
-        );
+      const data = await postOpenAiJson(url, body, {
+        timeoutMs: OPENAI_STORY_TIMEOUT_MS,
+        timeoutCode: 'STORY_GENERATE_TIMEOUT',
+        timeoutDetail: 'Story generation timed out. Please retry shortly.',
+        busyCode: 'STORY_GENERATE_BUSY',
+        busyDetail: 'Story generation is busy. Please retry shortly.',
+      });
+      let content = data?.choices?.[0]?.message?.content || '';
 
-        // Prioritize soft violations (tweak B: must not include undefined)
-        const prioritizedSoftViolations = [];
-        if (finalValidation.stats.linesOver120 > 0) {
-          const found = finalValidation.softViolations.find((v) => v.includes('exceed 120'));
-          if (found) prioritizedSoftViolations.push(found);
-        }
-        if (finalValidation.stats.beatsUnder90 < 3) {
-          const found = finalValidation.softViolations.find((v) => v.includes('<= 90'));
-          if (found) prioritizedSoftViolations.push(found);
-        }
+      // Parse JSON with three-tier fallback
+      let parsed = null;
+      try {
+        const jsonMatch = content.match(/\{[\s\S]*\}/);
+        parsed = JSON.parse(jsonMatch ? jsonMatch[0] : content);
+      } catch (parseError) {
+        logger.warn('story.generate.parse_failed', {
+          inputType,
+          error: parseError,
+        });
+        parsed = null;
+      }
+
+      // Helper function to make retry request
+      async function makeRetryRequest(fixMessage, includeAssistantJson = false) {
+        const messages = [
+          { role: 'system', content: systemMessage },
+          { role: 'user', content: userMessage },
+        ];
+
+        // Include prior assistant JSON only if parsed is valid and has required arrays (tweak A)
         if (
-          finalValidation.stats.frameworkCount === 0 ||
-          finalValidation.stats.frameworkCount > 1
+          includeAssistantJson &&
+          parsed &&
+          Array.isArray(parsed.hook) &&
+          Array.isArray(parsed.beats) &&
+          Array.isArray(parsed.outro)
         ) {
-          const found = finalValidation.softViolations.find((v) => v.includes('framework'));
-          if (found) prioritizedSoftViolations.push(found);
+          messages.push({ role: 'assistant', content: JSON.stringify(parsed) });
         }
-        if (finalValidation.stats.analogyCount === 0 || finalValidation.stats.analogyCount > 1) {
-          const found = finalValidation.softViolations.find((v) => v.includes('analogy'));
-          if (found) prioritizedSoftViolations.push(found);
-        }
-        // Add remaining banned term violations
-        prioritizedSoftViolations.push(
-          ...finalValidation.softViolations.filter(
-            (v) =>
-              (v.includes('hedging') || v.includes('meta') || v.includes('clickbait')) &&
-              !prioritizedSoftViolations.includes(v)
-          )
-        );
 
-        const fixMessage = `Your previous JSON had these quality issues: ${prioritizedSoftViolations.join('; ')}. Rewrite JSON only, fully compliant.`;
+        messages.push({ role: 'user', content: fixMessage });
 
-        try {
-          const retryContent = await makeRetryRequest(fixMessage, true);
+        const retryBody = {
+          model: OPENAI_MODEL,
+          temperature: 0.8,
+          messages: messages,
+        };
 
-          let retryParsed = null;
+        const retryData = await postOpenAiJson(url, retryBody, {
+          timeoutMs: OPENAI_STORY_TIMEOUT_MS,
+          timeoutCode: 'STORY_GENERATE_TIMEOUT',
+          timeoutDetail: 'Story generation timed out. Please retry shortly.',
+          busyCode: 'STORY_GENERATE_BUSY',
+          busyDetail: 'Story generation is busy. Please retry shortly.',
+        });
+        return retryData?.choices?.[0]?.message?.content || '';
+      }
+
+      let sentences = [];
+      let totalDurationSec = 0;
+      let usedRetry = false;
+
+      // Primary: Try new hook/beats/outro structure
+      if (parsed && (parsed.hook || parsed.beats || parsed.outro)) {
+        const hook = parsed.hook || [];
+        const beats = parsed.beats || [];
+        const outro = parsed.outro || [];
+
+        // Always validate (tweak A: shape validation runs even when arrays are missing)
+        const validation = validateStoryOutput(hook, beats, outro);
+
+        // Hard violations: retry once with clean fix instruction
+        if (validation.hardViolations.length > 0) {
+          logger.warn('story.generate.hard_retry', {
+            hardViolationCount: validation.hardViolations.length,
+          });
+
+          const fixMessage = `Your previous JSON violated these constraints: ${validation.hardViolations.join('; ')}. Rewrite JSON only, fully compliant.`;
+
           try {
-            const retryJsonMatch = retryContent.match(/\{[\s\S]*\}/);
-            retryParsed = JSON.parse(retryJsonMatch ? retryJsonMatch[0] : retryContent);
-          } catch (retryParseError) {
-            console.warn('[story.llm] Soft retry JSON parse failed');
+            const retryContent = await makeRetryRequest(fixMessage, true);
+
+            // Re-parse retry response (tweak C: retry response must be used)
+            let retryParsed = null;
+            try {
+              const retryJsonMatch = retryContent.match(/\{[\s\S]*\}/);
+              retryParsed = JSON.parse(retryJsonMatch ? retryJsonMatch[0] : retryContent);
+            } catch (retryParseError) {
+              logger.warn('story.generate.retry_parse_failed', {
+                error: retryParseError,
+              });
+            }
+
+            if (retryParsed && (retryParsed.hook || retryParsed.beats || retryParsed.outro)) {
+              const retryHook = retryParsed.hook || [];
+              const retryBeats = retryParsed.beats || [];
+              const retryOutro = retryParsed.outro || [];
+
+              // Re-validate retry response
+              const retryValidation = validateStoryOutput(retryHook, retryBeats, retryOutro);
+
+              if (retryValidation.valid) {
+                // Retry passed hard checks, use it (tweak C)
+                parsed = retryParsed;
+                usedRetry = true;
+                logger.info('story.generate.retry_accepted', {
+                  hardViolationCount: retryValidation.hardViolations.length,
+                });
+              } else {
+                logger.error('story.generate.retry_rejected', {
+                  hardViolationCount: retryValidation.hardViolations.length,
+                });
+              }
+            }
+          } catch (retryError) {
+            logger.error('story.generate.retry_failed', {
+              error: retryError,
+            });
           }
+        }
 
-          if (retryParsed && (retryParsed.hook || retryParsed.beats || retryParsed.outro)) {
-            const retryHook = retryParsed.hook || [];
-            const retryBeats = retryParsed.beats || [];
-            const retryOutro = retryParsed.outro || [];
+        // If no hard violations (or retry fixed them), check for soft violations
+        if (!usedRetry) {
+          // Re-validate after potential retry (or if no retry was needed)
+          const finalValidation = validateStoryOutput(hook, beats, outro);
 
-            const retryValidation = validateStoryOutput(retryHook, retryBeats, retryOutro);
+          // Soft violations: retry once, but allow fallback if persists
+          if (finalValidation.softViolations.length > 0 && finalValidation.valid) {
+            logger.warn('story.generate.soft_retry', {
+              softViolationCount: finalValidation.softViolations.length,
+            });
 
-            if (retryValidation.valid) {
-              // Retry passed hard checks, use it
-              parsed = retryParsed;
-              usedRetry = true;
-              console.log('[story.llm] Soft retry passed validation, using retry response');
-            } else {
-              console.warn(
-                '[story.llm] Soft retry still has violations, proceeding with original (soft constraints not met)'
-              );
+            // Prioritize soft violations (tweak B: must not include undefined)
+            const prioritizedSoftViolations = [];
+            if (finalValidation.stats.linesOver120 > 0) {
+              const found = finalValidation.softViolations.find((v) => v.includes('exceed 120'));
+              if (found) prioritizedSoftViolations.push(found);
+            }
+            if (finalValidation.stats.beatsUnder90 < 3) {
+              const found = finalValidation.softViolations.find((v) => v.includes('<= 90'));
+              if (found) prioritizedSoftViolations.push(found);
+            }
+            if (
+              finalValidation.stats.frameworkCount === 0 ||
+              finalValidation.stats.frameworkCount > 1
+            ) {
+              const found = finalValidation.softViolations.find((v) => v.includes('framework'));
+              if (found) prioritizedSoftViolations.push(found);
+            }
+            if (
+              finalValidation.stats.analogyCount === 0 ||
+              finalValidation.stats.analogyCount > 1
+            ) {
+              const found = finalValidation.softViolations.find((v) => v.includes('analogy'));
+              if (found) prioritizedSoftViolations.push(found);
+            }
+            // Add remaining banned term violations
+            prioritizedSoftViolations.push(
+              ...finalValidation.softViolations.filter(
+                (v) =>
+                  (v.includes('hedging') || v.includes('meta') || v.includes('clickbait')) &&
+                  !prioritizedSoftViolations.includes(v)
+              )
+            );
+
+            const fixMessage = `Your previous JSON had these quality issues: ${prioritizedSoftViolations.join('; ')}. Rewrite JSON only, fully compliant.`;
+
+            try {
+              const retryContent = await makeRetryRequest(fixMessage, true);
+
+              let retryParsed = null;
+              try {
+                const retryJsonMatch = retryContent.match(/\{[\s\S]*\}/);
+                retryParsed = JSON.parse(retryJsonMatch ? retryJsonMatch[0] : retryContent);
+              } catch (retryParseError) {
+                logger.warn('story.generate.soft_retry_parse_failed', {
+                  error: retryParseError,
+                });
+              }
+
+              if (retryParsed && (retryParsed.hook || retryParsed.beats || retryParsed.outro)) {
+                const retryHook = retryParsed.hook || [];
+                const retryBeats = retryParsed.beats || [];
+                const retryOutro = retryParsed.outro || [];
+
+                const retryValidation = validateStoryOutput(retryHook, retryBeats, retryOutro);
+
+                if (retryValidation.valid) {
+                  // Retry passed hard checks, use it
+                  parsed = retryParsed;
+                  usedRetry = true;
+                  logger.info('story.generate.soft_retry_accepted', {
+                    softViolationCount: retryValidation.softViolations.length,
+                  });
+                } else {
+                  logger.warn('story.generate.soft_retry_rejected', {
+                    softViolationCount: retryValidation.softViolations.length,
+                  });
+                }
+              }
+            } catch (retryError) {
+              logger.warn('story.generate.soft_retry_failed', {
+                error: retryError,
+              });
             }
           }
-        } catch (retryError) {
-          console.warn(
-            '[story.llm] Soft retry request failed, proceeding with original:',
-            retryError?.message
-          );
+        }
+
+        // Extract sentences from parsed (either original or retry)
+        const finalHook = parsed.hook || [];
+        const finalBeats = parsed.beats || [];
+        const finalOutro = parsed.outro || [];
+        sentences = [...finalHook, ...finalBeats, ...finalOutro].filter(Boolean);
+        totalDurationSec = Number(parsed.totalDurationSec) || 0;
+        logger.info('story.generate.output_shape', {
+          outputShape: usedRetry ? 'retry_hook_beats_outro' : 'hook_beats_outro',
+        });
+      }
+      // Fallback 1: Legacy sentences structure
+      else if (parsed && parsed.sentences && Array.isArray(parsed.sentences)) {
+        sentences = parsed.sentences;
+        totalDurationSec = Number(parsed.totalDurationSec) || 0;
+        logger.info('story.generate.output_shape', {
+          outputShape: 'legacy_sentences',
+        });
+      }
+      // Fallback 2: Sentence splitting
+      else {
+        logger.warn('story.generate.output_shape_fallback', {
+          outputShape: 'sentence_split',
+        });
+        const text =
+          inputType === 'link' && extracted
+            ? `${extracted.title}\n\n${extracted.summary}\n\n${extracted.keyPoints.join('. ')}`
+            : input;
+        sentences = text
+          .split(/[.!?]+/)
+          .map((s) => s.trim())
+          .filter((s) => s.length > 10 && s.length < 150)
+          .slice(0, 8);
+
+        if (sentences.length < 4) {
+          // Split long sentences
+          const words = text.split(/\s+/).filter((w) => w.length > 0);
+          const wordsPerSentence = Math.ceil(words.length / 5);
+          sentences = [];
+          for (let i = 0; i < words.length; i += wordsPerSentence) {
+            const chunk = words.slice(i, i + wordsPerSentence).join(' ');
+            if (chunk.length > 10) sentences.push(chunk);
+          }
+          sentences = sentences.slice(0, 8);
         }
       }
-    }
 
-    // Extract sentences from parsed (either original or retry)
-    const finalHook = parsed.hook || [];
-    const finalBeats = parsed.beats || [];
-    const finalOutro = parsed.outro || [];
-    sentences = [...finalHook, ...finalBeats, ...finalOutro].filter(Boolean);
-    totalDurationSec = Number(parsed.totalDurationSec) || 0;
-    console.log(
-      usedRetry
-        ? '[story.llm] using retry hook/beats/outro structure'
-        : '[story.llm] using new hook/beats/outro structure'
-    );
-  }
-  // Fallback 1: Legacy sentences structure
-  else if (parsed && parsed.sentences && Array.isArray(parsed.sentences)) {
-    sentences = parsed.sentences;
-    totalDurationSec = Number(parsed.totalDurationSec) || 0;
-    console.log('[story.llm] using legacy sentences structure');
-  }
-  // Fallback 2: Sentence splitting
-  else {
-    console.log('[story.llm] falling back to sentence-splitting');
-    const text =
-      inputType === 'link' && extracted
-        ? `${extracted.title}\n\n${extracted.summary}\n\n${extracted.keyPoints.join('. ')}`
-        : input;
-    sentences = text
-      .split(/[.!?]+/)
-      .map((s) => s.trim())
-      .filter((s) => s.length > 10 && s.length < 150)
-      .slice(0, 8);
+      // Normalize sentences
+      sentences = sentences
+        .map((s) => String(s).replace(/\s+/g, ' ').trim())
+        .filter((s) => s.length >= 8 && s.length <= 150)
+        .slice(0, 8);
 
-    if (sentences.length < 4) {
-      // Split long sentences
-      const words = text.split(/\s+/).filter((w) => w.length > 0);
-      const wordsPerSentence = Math.ceil(words.length / 5);
-      sentences = [];
-      for (let i = 0; i < words.length; i += wordsPerSentence) {
-        const chunk = words.slice(i, i + wordsPerSentence).join(' ');
-        if (chunk.length > 10) sentences.push(chunk);
+      // Ensure we have 4-8 sentences
+      if (sentences.length < 4) {
+        // Pad with variations
+        while (sentences.length < 4 && sentences.length > 0) {
+          sentences.push(sentences[sentences.length - 1]);
+        }
       }
-      sentences = sentences.slice(0, 8);
+
+      // Calculate duration if not provided (estimate 2.5 words per second)
+      if (!totalDurationSec || totalDurationSec <= 0) {
+        const totalWords = sentences.join(' ').split(/\s+/).length;
+        totalDurationSec = Math.max(30, Math.min(45, Math.ceil(totalWords / 2.5)));
+      }
+
+      return {
+        sentences: sentences.slice(0, 8),
+        totalDurationSec: Math.max(30, Math.min(45, totalDurationSec)),
+      };
     }
-  }
-
-  // Normalize sentences
-  sentences = sentences
-    .map((s) => String(s).replace(/\s+/g, ' ').trim())
-    .filter((s) => s.length >= 8 && s.length <= 150)
-    .slice(0, 8);
-
-  // Ensure we have 4-8 sentences
-  if (sentences.length < 4) {
-    // Pad with variations
-    while (sentences.length < 4 && sentences.length > 0) {
-      sentences.push(sentences[sentences.length - 1]);
-    }
-  }
-
-  // Calculate duration if not provided (estimate 2.5 words per second)
-  if (!totalDurationSec || totalDurationSec <= 0) {
-    const totalWords = sentences.join(' ').split(/\s+/).length;
-    totalDurationSec = Math.max(30, Math.min(45, Math.ceil(totalWords / 2.5)));
-  }
-
-  return {
-    sentences: sentences.slice(0, 8),
-    totalDurationSec: Math.max(30, Math.min(45, totalDurationSec)),
-  };
+  );
 }
 
 /**
@@ -583,113 +681,124 @@ export async function planVisualShots({ sentences }) {
     throw new Error('SENTENCES_REQUIRED');
   }
 
-  const url = `${OPENAI_BASE}/chat/completions`;
-  const body = {
-    model: OPENAI_MODEL,
-    temperature: 0.7,
-    messages: [
-      {
-        role: 'system',
-        content: [
-          'You plan visual shots for short-form video. For each sentence, provide:',
-          '- visualDescription: What should be shown (2-3 words)',
-          '- searchQuery: 2-4 word search term for stock video (portrait-oriented)',
-          '- durationSec: Duration in seconds based on text length (3-10 seconds, longer sentences need more time)',
-          'Return ONLY valid JSON: {"shots":[{"sentenceIndex":0,"visualDescription":"...","searchQuery":"...","durationSec":number},...]}',
-          'Total duration should match the story length. Longer sentences should have longer durations.',
-        ].join(' '),
-      },
-      {
-        role: 'user',
-        content: `Plan visual shots for these sentences:\n${sentences.map((s, i) => `${i}: ${s}`).join('\n')}`,
-      },
-    ],
-  };
-
-  const r = await fetch(url, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-      'Content-Type': 'application/json',
+  return await withOpenAiAdmission(
+    {
+      code: 'STORY_PLAN_BUSY',
+      detail: 'Story planning is busy. Please retry shortly.',
     },
-    body: JSON.stringify(body),
-  });
+    async () => {
+      const override = getRuntimeOverride('story.llm.planVisualShots');
+      if (override) {
+        return await override({ sentences });
+      }
 
-  if (!r.ok) throw new Error(`LLM_HTTP_${r.status}`);
-
-  const data = await r.json();
-  const content = data?.choices?.[0]?.message?.content || '';
-
-  // Parse JSON
-  let parsed = null;
-  try {
-    const jsonMatch = content.match(/\{[\s\S]*\}/);
-    parsed = JSON.parse(jsonMatch ? jsonMatch[0] : content);
-  } catch (parseError) {
-    console.warn('[story.llm] Visual plan JSON parse failed, using fallback');
-    parsed = null;
-  }
-
-  // Validate and normalize
-  let shots = Array.isArray(parsed?.shots) ? parsed.shots : [];
-
-  // Fallback: generate basic plan
-  if (shots.length === 0 || shots.length !== sentences.length) {
-    shots = sentences.map((sentence, index) => {
-      // Extract key words for search
-      const words = sentence
-        .toLowerCase()
-        .replace(/[^\w\s]/g, '')
-        .split(/\s+/)
-        .filter((w) => w.length > 3)
-        .slice(0, 3);
-
-      // Calculate duration based on sentence text length
-      const durationSec = calculateReadingDuration(sentence);
-
-      return {
-        sentenceIndex: index,
-        visualDescription: words.join(' ') || 'abstract',
-        searchQuery: words.slice(0, 2).join(' ') || 'nature',
-        durationSec,
-        startTimeSec: 0,
+      const url = `${OPENAI_BASE}/chat/completions`;
+      const body = {
+        model: OPENAI_MODEL,
+        temperature: 0.7,
+        messages: [
+          {
+            role: 'system',
+            content: [
+              'You plan visual shots for short-form video. For each sentence, provide:',
+              '- visualDescription: What should be shown (2-3 words)',
+              '- searchQuery: 2-4 word search term for stock video (portrait-oriented)',
+              '- durationSec: Duration in seconds based on text length (3-10 seconds, longer sentences need more time)',
+              'Return ONLY valid JSON: {"shots":[{"sentenceIndex":0,"visualDescription":"...","searchQuery":"...","durationSec":number},...]}',
+              'Total duration should match the story length. Longer sentences should have longer durations.',
+            ].join(' '),
+          },
+          {
+            role: 'user',
+            content: `Plan visual shots for these sentences:\n${sentences.map((s, i) => `${i}: ${s}`).join('\n')}`,
+          },
+        ],
       };
-    });
-  }
 
-  // Calculate start times and normalize durations
-  let cumulativeTime = 0;
-  shots = shots.map((shot, index) => {
-    const sentenceIndex = Number(shot.sentenceIndex) ?? index;
-    const sentence = sentences[sentenceIndex] || sentences[index] || '';
+      const data = await postOpenAiJson(url, body, {
+        timeoutMs: OPENAI_PLAN_TIMEOUT_MS,
+        timeoutCode: 'STORY_PLAN_TIMEOUT',
+        timeoutDetail: 'Story planning timed out. Please retry shortly.',
+        busyCode: 'STORY_PLAN_BUSY',
+        busyDetail: 'Story planning is busy. Please retry shortly.',
+      });
+      const content = data?.choices?.[0]?.message?.content || '';
 
-    // Calculate duration from text, but respect LLM-provided duration if reasonable
-    const llmDuration = Number(shot.durationSec) || 0;
-    const calculatedDuration = calculateReadingDuration(sentence);
+      // Parse JSON
+      let parsed = null;
+      try {
+        const jsonMatch = content.match(/\{[\s\S]*\}/);
+        parsed = JSON.parse(jsonMatch ? jsonMatch[0] : content);
+      } catch (parseError) {
+        logger.warn('story.plan.parse_failed', {
+          error: parseError,
+        });
+        parsed = null;
+      }
 
-    // Use calculated duration, but if LLM provided a value in reasonable range, prefer it
-    let durationSec = calculatedDuration;
-    if (llmDuration >= 3 && llmDuration <= 10) {
-      // LLM provided reasonable duration, use average of both
-      durationSec = Math.round(((calculatedDuration + llmDuration) / 2) * 2) / 2;
+      // Validate and normalize
+      let shots = Array.isArray(parsed?.shots) ? parsed.shots : [];
+
+      // Fallback: generate basic plan
+      if (shots.length === 0 || shots.length !== sentences.length) {
+        shots = sentences.map((sentence, index) => {
+          // Extract key words for search
+          const words = sentence
+            .toLowerCase()
+            .replace(/[^\w\s]/g, '')
+            .split(/\s+/)
+            .filter((w) => w.length > 3)
+            .slice(0, 3);
+
+          // Calculate duration based on sentence text length
+          const durationSec = calculateReadingDuration(sentence);
+
+          return {
+            sentenceIndex: index,
+            visualDescription: words.join(' ') || 'abstract',
+            searchQuery: words.slice(0, 2).join(' ') || 'nature',
+            durationSec,
+            startTimeSec: 0,
+          };
+        });
+      }
+
+      // Calculate start times and normalize durations
+      let cumulativeTime = 0;
+      shots = shots.map((shot, index) => {
+        const parsedSentenceIndex = Number(shot.sentenceIndex);
+        const sentenceIndex = Number.isFinite(parsedSentenceIndex) ? parsedSentenceIndex : index;
+        const sentence = sentences[sentenceIndex] || sentences[index] || '';
+
+        // Calculate duration from text, but respect LLM-provided duration if reasonable
+        const llmDuration = Number(shot.durationSec) || 0;
+        const calculatedDuration = calculateReadingDuration(sentence);
+
+        // Use calculated duration, but if LLM provided a value in reasonable range, prefer it
+        let durationSec = calculatedDuration;
+        if (llmDuration >= 3 && llmDuration <= 10) {
+          // LLM provided reasonable duration, use average of both
+          durationSec = Math.round(((calculatedDuration + llmDuration) / 2) * 2) / 2;
+        }
+
+        // Clamp to 3-10 seconds (expanded from 2-4)
+        durationSec = Math.max(3, Math.min(10, durationSec));
+
+        const startTimeSec = cumulativeTime;
+        cumulativeTime += durationSec;
+
+        return {
+          sentenceIndex,
+          visualDescription: String(shot.visualDescription || '').trim() || 'visual',
+          searchQuery: String(shot.searchQuery || '').trim() || 'nature',
+          durationSec,
+          startTimeSec,
+        };
+      });
+
+      return shots;
     }
-
-    // Clamp to 3-10 seconds (expanded from 2-4)
-    durationSec = Math.max(3, Math.min(10, durationSec));
-
-    const startTimeSec = cumulativeTime;
-    cumulativeTime += durationSec;
-
-    return {
-      sentenceIndex,
-      visualDescription: String(shot.visualDescription || '').trim() || 'visual',
-      searchQuery: String(shot.searchQuery || '').trim() || 'nature',
-      durationSec,
-      startTimeSec,
-    };
-  });
-
-  return shots;
+  );
 }
 
 export default { generateStoryFromInput, planVisualShots };

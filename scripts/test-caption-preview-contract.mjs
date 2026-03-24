@@ -101,7 +101,7 @@ async function main() {
       },
     });
     assert.strictEqual(r.status, 200, `status 200, got ${r.status}: ${r.text}`);
-    assert(r.json?.ok === true, 'ok === true');
+    assert(r.json?.success === true, 'success === true');
     assert(r.json?.data?.meta != null, 'data.meta present');
     assertMeta(r.json.data.meta, 'client-measured');
   });
@@ -120,7 +120,7 @@ async function main() {
       },
     });
     assert.strictEqual(r.status, 200, `status 200, got ${r.status}: ${r.text}`);
-    assert(r.json?.ok === true, 'ok === true');
+    assert(r.json?.success === true, 'success === true');
     assert(r.json?.data?.meta != null, 'data.meta present');
     assertMeta(r.json.data.meta, 'server-measured');
   });
@@ -139,7 +139,7 @@ async function main() {
       },
     });
     assert.strictEqual(r.status, 200, `status 200, got ${r.status}: ${r.text}`);
-    assert(r.json?.ok === true, 'ok === true');
+    assert(r.json?.success === true, 'success === true');
     assert(r.json?.data?.meta != null, 'data.meta present');
     assertMeta(r.json.data.meta, 'x-client fallback');
   });
@@ -157,7 +157,7 @@ async function main() {
       },
     });
     assert.strictEqual(r.status, 400, `status 400, got ${r.status}`);
-    assert(r.json?.ok === false, 'ok === false');
+    assert(r.json?.success === false, 'success === false');
   });
 
   if (failures.length) {

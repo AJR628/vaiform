@@ -94,13 +94,3 @@ export async function getAssetsOptions(req, res) {
     return fail(req, res, 500, 'SERVER_ERROR', e?.message || 'assets fetch failed');
   }
 }
-
-export async function generateAiImages(req, res) {
-  return fail(
-    req,
-    res,
-    410,
-    'FEATURE_DISABLED',
-    'AI image generation is disabled in this version of Vaiform.'
-  );
-}

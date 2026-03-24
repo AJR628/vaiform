@@ -8,7 +8,6 @@
   },
   "dependencies": {
     "@napi-rs/canvas": "^0.1.80",
-    "body-parser": "^1.20.3",
     "cors": "^2.8.5",
     "dotenv": "^17.2.1",
     "express": "^4.19.2",
@@ -16,10 +15,8 @@
     "ffmpeg-static": "^5.2.0",
     "firebase-admin": "^12.6.0",
     "helmet": "^8.1.0",
-    "multer": "^1.4.5-lts.1",
     "node-fetch": "^3.3.2",
     "openai": "^4.104.0",
-    "replicate": "^1.0.1",
     "sharp": "^0.33.5",
     "stripe": "^18.4.0",
     "uuid": "^11.1.0",
@@ -29,10 +26,15 @@
     "start": "node server.js",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "lint": "eslint src/app.js src/routes/creative.routes.js src/routes/story.routes.js src/routes/caption.preview.routes.js src/routes/assets.routes.js src/http/respond.js src/middleware/requireAuth.js src/middleware/validate.middleware.js src/middleware/planGuards.js server.js scripts/check-responses.js scripts/check-responses-changed.mjs",
+    "check:netlify-redirects": "node scripts/check-no-netlify-redirects.mjs",
+    "check:root-api-callers": "node scripts/check-no-root-api-callers.mjs",
+    "check:hardcoded-backend-origins": "node scripts/check-no-hardcoded-backend-origins.mjs",
+    "check:format:changed": "node scripts/check-format-changed.mjs",
+    "lint": "eslint src/app.js src/routes/story.routes.js src/routes/caption.preview.routes.js src/routes/assets.routes.js src/routes/stripe.webhook.js src/controllers/checkout.controller.js src/http/respond.js src/middleware/requireAuth.js src/middleware/validate.middleware.js src/middleware/planGuards.js server.js scripts/check-responses.js scripts/check-responses-changed.mjs",
     "lint:full": "eslint .",
     "lint:fix": "eslint . --fix",
-    "test": "echo \"(no tests yet)\" && exit 0",
+    "test": "npm run test:contracts",
+    "test:contracts": "node --test --test-concurrency=1 test/contracts/phase4a.contract.test.js",
     "test:security": "node scripts/check-privilege-escalation.mjs",
     "prepare": "husky install",
     "check:responses": "node scripts/check-responses.js",
@@ -49,3 +51,4 @@
     "prettier": "^3.3.3"
   }
 }
+

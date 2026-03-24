@@ -1,4 +1,5 @@
 import { withAbortTimeout } from '../utils/fetch.timeout.js';
+import { getRuntimeOverride } from '../testing/runtime-overrides.js';
 
 const PEXELS_VIDEOS = 'https://api.pexels.com/videos/search';
 
@@ -35,6 +36,11 @@ function pickBestFile(video, { targetDur = 8 }) {
 const mem = new Map();
 
 export async function pexelsSearchVideos({ query, perPage = 12, targetDur = 8, page = 1 }) {
+  const override = getRuntimeOverride('story.providers.pexelsSearchVideos');
+  if (override) {
+    return await override({ query, perPage, targetDur, page });
+  }
+
   const key = process.env.PEXELS_API_KEY;
   if (!key) return { ok: false, reason: 'NOT_CONFIGURED', items: [] };
 

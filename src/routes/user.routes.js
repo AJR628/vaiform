@@ -20,7 +20,6 @@ r.post('/setup', requireAuth, async (req, res) => {
       uid,
       email,
       plan: 'free',
-      isMember: false,
     });
   } catch (e) {
     console.error('[user/setup] error', e);
@@ -45,9 +44,9 @@ r.get('/me', requireAuth, async (req, res) => {
       uid,
       email: userData.email,
       plan: userData.plan || 'free',
-      isMember: userData.isMember || false,
-      credits: userData.credits || 0,
       membership: userData.membership || null,
+      usage: userData.usage || null,
+      freeShortsUsed: Number.isInteger(userData.freeShortsUsed) ? userData.freeShortsUsed : 0,
     });
   } catch (e) {
     console.error('[user/me] error', e);

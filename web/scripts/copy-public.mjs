@@ -5,6 +5,12 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+function cleanDir(target) {
+  if (fs.existsSync(target)) {
+    fs.rmSync(target, { recursive: true, force: true });
+  }
+}
+
 function copyDir(src, dest) {
   try {
     fs.mkdirSync(dest, { recursive: true });
@@ -30,13 +36,14 @@ function copyDir(src, dest) {
   }
 }
 
-// Copy from ../public to ./dist
-const publicDir = path.join(__dirname, '..', '..', 'public');
+// Copy from ./public to ./dist
+const publicDir = path.join(__dirname, '..', 'public');
 const distDir = path.join(__dirname, '..', 'dist');
 
 console.log(`Copying from ${publicDir} to ${distDir}`);
 console.log(`Public dir exists: ${fs.existsSync(publicDir)}`);
 console.log(`Dist dir exists: ${fs.existsSync(distDir)}`);
 
+cleanDir(distDir);
 copyDir(publicDir, distDir);
 console.log('Copy completed successfully!');

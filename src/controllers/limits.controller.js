@@ -1,5 +1,6 @@
 import admin from '../config/firebase.js';
 import { ok, fail } from '../http/respond.js';
+import { buildCanonicalUsageState } from '../services/usage.service.js';
 
 export async function getUsageLimits(req, res) {
   try {
@@ -12,8 +13,9 @@ export async function getUsageLimits(req, res) {
     const userSnap = await userRef.get();
     const userData = userSnap.data() || {};
 
-    const isPro = (userData.credits || 0) > 100 || userData.subscriptionStatus === 'active';
-    const plan = isPro ? 'pro' : 'free';
+    const accountState = buildCanonicalUsageState(userData);
+    const plan = accountState.plan;
+    const isPro = plan === 'pro';
 
     // Get current month's usage from generations collection
     const now = new Date();

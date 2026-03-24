@@ -31,7 +31,16 @@ async function api(path, { method = 'GET', headers = {}, body } = {}) {
 function expectSuccessData(obj, keys = []) {
   assert.equal(obj?.success, true, 'success !== true');
   assert.equal(typeof obj?.data, 'object', 'missing data object');
+  assert.ok('requestId' in obj, 'missing requestId');
   for (const k of keys) assert.ok(k in obj.data, `missing data.${k}`);
+}
+
+function expectFailureEnvelope(obj, keys = []) {
+  assert.equal(obj?.success, false, 'success !== false');
+  assert.equal(typeof obj?.error, 'string', 'missing error');
+  assert.equal(typeof obj?.detail, 'string', 'missing detail');
+  assert.ok('requestId' in obj, 'missing requestId');
+  for (const k of keys) assert.ok(k in obj, `missing ${k}`);
 }
 
 function idem() {
@@ -53,45 +62,47 @@ function idem() {
   await test('GET /health returns 200', async () => {
     const r = await api('/health');
     if (!r.ok) throw new Error(`status ${r.status}: ${r.raw}`);
+    expectSuccessData(r.json, ['service', 'time']);
   });
 
-  await test('GET /credits shape', async () => {
-    const r = await api('/credits');
+  await test('GET /api/health returns 200', async () => {
+    const r = await api('/api/health');
     if (!r.ok) throw new Error(`status ${r.status}: ${r.raw}`);
-    expectSuccessData(r.json, ['credits']);
-    if (!Number.isFinite(r.json.data.credits)) throw new Error('credits not a number');
+    expectSuccessData(r.json, ['service', 'time']);
   });
 
-  await test('POST /enhance success shape', async () => {
-    const r = await api('/enhance', {
-      method: 'POST',
-      headers: { 'X-Idempotency-Key': idem() },
-      body: { prompt: 'make colors pop', strength: 0.6 },
-    });
+  await test('GET /api/whoami shape', async () => {
+    const r = await api('/api/whoami');
     if (!r.ok) throw new Error(`status ${r.status}: ${r.raw}`);
-    expectSuccessData(r.json, ['enhancedPrompt', 'cost']);
+    expectSuccessData(r.json, ['uid', 'email']);
   });
 
-  await test('POST /generate (txt2img) success shape', async () => {
-    const r = await api('/generate', {
-      method: 'POST',
-      headers: { 'X-Idempotency-Key': idem() },
-      body: { prompt: 'a single sunflower', count: 1, style: 'realistic' },
-    });
+  await test('GET /api/usage shape', async () => {
+    const r = await api('/api/usage');
     if (!r.ok) throw new Error(`status ${r.status}: ${r.raw}`);
-    expectSuccessData(r.json, ['images', 'cost', 'jobId']);
-    if (!Array.isArray(r.json.data.images) || r.json.data.images.length === 0)
-      throw new Error('images empty');
+    expectSuccessData(r.json, ['plan', 'membership', 'usage']);
+    if (typeof r.json.data.plan !== 'string') throw new Error('plan missing');
+    if (typeof r.json.data.membership !== 'object' || r.json.data.membership == null) {
+      throw new Error('membership missing');
+    }
+    if (typeof r.json.data.usage !== 'object' || r.json.data.usage == null) {
+      throw new Error('usage missing');
+    }
+    if (!Number.isFinite(r.json.data.usage.availableSec)) {
+      throw new Error('usage.availableSec not a number');
+    }
   });
 
-  await test('POST /generate validation error', async () => {
-    const r = await api('/generate', {
+  await test('POST /api/checkout/start validation contract', async () => {
+    const r = await api('/api/checkout/start', {
       method: 'POST',
-      headers: { 'X-Idempotency-Key': idem() },
-      body: { prompt: '', count: 0, style: 'invalid-style' },
+      body: { plan: 'invalid', billing: 'onetime' },
     });
-    if (r.ok) throw new Error('expected validation error');
-    if (r.json?.success !== false) throw new Error('expected success:false');
+    if (r.status !== 400) throw new Error(`expected 400, got ${r.status}: ${r.raw}`);
+    expectFailureEnvelope(r.json);
+    if (r.json.error !== 'INVALID_PLAN') {
+      throw new Error(`expected INVALID_PLAN, got ${r.json.error}`);
+    }
   });
 
   if (failures.length) {
