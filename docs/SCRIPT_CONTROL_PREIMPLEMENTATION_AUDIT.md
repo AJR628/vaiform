@@ -4,7 +4,7 @@
 - Owner repo: backend
 - Source of truth for: pre-code freeze on script-quality control ownership, current contracts, and the first safe implementation slice
 - Canonical counterpart/source: mobile repo `docs/DOCS_INDEX.md`, mobile repo `docs/MOBILE_USED_SURFACES.md`, backend repo `docs/MOBILE_BACKEND_CONTRACT.md`, backend repo `docs/MOBILE_HARDENING_PLAN.md`, backend repo `docs/LEGACY_WEB_SURFACES.md`
-- Last verified against: both repos on 2026-03-24
+- Last verified against: both repos on 2026-03-25
 
 ## Purpose
 
@@ -135,108 +135,79 @@ It is intentionally conservative:
 - Mobile docs ownership front door: mobile `docs/DOCS_INDEX.md:17-29`, mobile `docs/DOCS_INDEX.md:52-67`
 - Mobile caller truth: mobile `docs/MOBILE_USED_SURFACES.md:13-18`, mobile `docs/MOBILE_USED_SURFACES.md:32-59`
 
-## Unresolved Truths
+## Frozen V1 Policy
 
-- `styleKey` is proven end-to-end in transport typing, backend validation, session storage, and prompt wiring, but current mobile UI does not send it.
-  - proven at mobile `client/api/client.ts:607-617`, mobile `client/screens/HomeScreen.tsx:84-88`, `src/routes/story.routes.js:188-218`, `src/services/story.service.js:486-565`, `src/services/story.llm.service.js:223-227`, `src/services/story.llm.service.js:320-323`
-- Only three `styleKey` values are currently accepted by backend schema: `default`, `hype`, `cozy`.
-  - `src/routes/story.routes.js:188-192`
-- A whole-script edit route still exists alongside per-beat editing, but current mobile usage is only per-beat.
-  - mounted route: `src/routes/story.routes.js:270-301`
-  - mobile caller truth: mobile `docs/MOBILE_USED_SURFACES.md:105-106`
-- The mobile transport type for `update-beat-text` is currently wider than the backend's live partial payload.
-  - mobile `client/api/client.ts:675-684`
-  - backend `src/routes/story.routes.js:840-856`, `src/services/story.service.js:1157-1160`
-- This pass did not prove any current need to widen script control beyond the existing `styleKey` hook and beat-save contract normalization.
+### A. `styleKey` is the sanctioned v1 script-lens hook
 
-## Decision Freeze
-
-### A. Is `styleKey` the sanctioned v1 script-lens hook?
-
-- Decision:
-  - Freeze `styleKey` as the sanctioned v1 pre-generation lens hook.
-- Current proven state:
-  - Exists in mobile transport typing, backend request schema, session storage, generation service, and prompt construction, but current Home UI does not send it.
+- Frozen policy:
+  - Reuse the existing `styleKey` field for v1 pre-generation script-lens control.
+- Repo proof:
+  - `styleKey` already exists in mobile transport typing, backend request validation, session storage, generation service wiring, and prompt construction, while current Home UI does not yet send it.
   - Evidence: mobile `client/api/client.ts:607-617`, mobile `client/screens/HomeScreen.tsx:84-88`, `src/routes/story.routes.js:188-218`, `src/services/story.service.js:486-565`, `src/services/story.llm.service.js:223-227`, `src/services/story.llm.service.js:320-323`
-- Options:
-  - Reuse `styleKey`
-  - Add a new script-lens field
-  - Remove `styleKey` and defer lens control entirely
-- Recommended v1 choice:
-  - Reuse `styleKey` with the current backend-accepted enum.
-- Why this is the minimal-diff, non-overlapping path:
-  - It already exists across transport, backend validation, persistence, and prompt wiring. Reusing it avoids adding a second overlapping control field before we have even normalized current contracts.
+- Phase 1 implication:
+  - Do not add a second lens field or parallel script-style control path.
+  - Keep the current backend enum `default | hype | cozy` for v1.
 
-### B. Is `update-beat-text` a partial-response contract that clients should normalize around?
+### B. `update-beat-text` remains a partial-response contract
 
-- Decision:
-  - Freeze `update-beat-text` as a partial-response contract in v1.
-- Current proven state:
-  - Backend returns `{ sentences, shots }` in `data`, not a full session.
+- Frozen policy:
+  - Keep `POST /api/story/update-beat-text` as a partial-response route that returns `{ sentences, shots }` inside the standard success envelope.
+- Repo proof:
+  - Live route and service already return only `{ sentences, shots }`, not a full session.
   - Evidence: `src/routes/story.routes.js:840-856`, `src/services/story.service.js:1157-1160`, `src/http/respond.js:14-17`
-- Options:
-  - Normalize clients around the existing partial contract
-  - Widen the backend response to a full session
-  - Keep split client behavior
-- Recommended v1 choice:
-  - Normalize clients around the existing partial contract and document it as frozen.
-- Why this is the minimal-diff, non-overlapping path:
-  - The backend already has a stable route shape. Changing both backend contract and client behavior at once would widen scope and create avoidable drift with current docs.
+- Phase 1 implication:
+  - Normalize clients around the existing contract.
+  - Do not widen this route into a full-session response in Phase 1.
 
-### C. Should `ScriptScreen` and `StoryEditor` both refetch session SSOT after beat-save?
+### C. Both screens refetch session SSOT after beat-save
 
-- Decision:
-  - Yes. Freeze beat-save client behavior around refetch-after-save SSOT for both screens.
-- Current proven state:
-  - `ScriptScreen` locally adopts the partial response as screen state, while `StoryEditor` refetches session SSOT after save.
+- Frozen policy:
+  - `ScriptScreen` and `StoryEditor` must both converge on refetch-after-save session SSOT.
+- Repo proof:
+  - `ScriptScreen` currently locally adopts the partial response, while `StoryEditor` already refetches `GET /api/story/:sessionId` after save.
   - Evidence: mobile `client/screens/ScriptScreen.tsx:182-209`, mobile `client/lib/storySession.ts:25-52`, mobile `client/screens/story-editor/useStoryEditorSession.ts:160-176`
-- Options:
-  - Keep the current split behavior
-  - Standardize on partial-response local patching
-  - Standardize on refetch-after-save SSOT
-- Recommended v1 choice:
-  - Standardize on refetch-after-save SSOT.
-- Why this is the minimal-diff, non-overlapping path:
-  - One screen already does this today. It avoids duplicating session-reconstruction logic around a partial response and keeps additive session-owned fields authoritative from `GET /api/story/:sessionId`.
+- Phase 1 implication:
+  - Remove split client normalization logic instead of broadening backend response shape.
+  - Treat the current mobile transport typing drift as a bug to narrow, not as proof that the backend should expand.
 
-### D. Should beat text edits stop mutating `shot.searchQuery` in v1?
+### D. Beat-save must stop mutating `shot.searchQuery`
 
-- Decision:
-  - Yes. Freeze v1 policy so narration edits do not overwrite stored visual search intent.
-- Current proven state:
-  - Beat saves currently overwrite `shot.searchQuery`, and clip replacement reuses `shot.searchQuery` as the next search seed.
-  - Evidence: `src/services/story.service.js:1141-1145`, `src/services/story.service.js:931-949`, mobile `client/screens/StoryEditorScreen.tsx:243-250`
-- Options:
-  - Keep overwriting `shot.searchQuery`
-  - Stop mutating `shot.searchQuery` in beat-save v1
-  - Introduce a new visual-intent field immediately
-- Recommended v1 choice:
-  - Stop mutating `shot.searchQuery` in v1 beat-save behavior.
-- Why this is the minimal-diff, non-overlapping path:
-  - The repo already distinguishes narration text from visual planning fields. Preserving the existing visual intent is smaller and safer than introducing a second visual-intent model in the same pass.
+- Frozen policy:
+  - Beat narration edits must not overwrite stored visual search intent in v1.
+- Repo proof:
+  - Visual planning is already modeled with separate `visualDescription` and `searchQuery` fields; clip replacement seeds from `shot.searchQuery`; beat-save currently overwrites `shot.searchQuery`.
+  - Evidence: `src/services/story.llm.service.js:674-799`, `src/services/story.service.js:931-949`, `src/services/story.service.js:1141-1145`, mobile `client/screens/StoryEditorScreen.tsx:241-250`
+- Phase 1 implication:
+  - Preserve current visual-planning fields during beat-save.
+  - Do not introduce a new visual-intent field in this pass.
 
-### E. Should beat-remix work be deferred until after contract normalization + lens hookup?
+### E. `update-script` is legacy/non-owner for Phase 1
 
-- Decision:
-  - Yes. Defer beat-remix work until after contract normalization and `styleKey` hookup are complete.
-- Current proven state:
-  - No current story-specific remix endpoint or mobile remix caller was proven in the current repos.
+- Frozen policy:
+  - `POST /api/story/update-script` remains a mounted legacy overlap and is not the owner of new script-control or rewrite work in Phase 1.
+- Repo proof:
+  - The route is mounted in backend, but current mobile caller truth shows no wrapper and no callsite for it; mobile editing uses `update-beat-text` instead.
+  - Evidence: `src/routes/story.routes.js:270-301`, mobile `docs/MOBILE_USED_SURFACES.md:105-106`, mobile `client/api/client.ts:675-684`
+- Phase 1 implication:
+  - Do not expand `update-script` or route new work through it during contract normalization, visual-intent preservation, or `styleKey` hookup.
+
+### F. Remix remains deferred until after normalization + lens hookup
+
+- Frozen policy:
+  - Beat-remix and rewrite-variant work stay out of scope until contract normalization, visual-intent preservation, and `styleKey` lens hookup are complete.
+- Repo proof:
+  - No current story-specific remix endpoint or mobile remix caller was proven in the current repos, and the current beat action UI exposes only Replace Clip and Delete Beat.
   - Evidence: `src/routes/story.routes.js:204-301`, `src/routes/story.routes.js:572-871`, mobile `client/api/client.ts:603-754`, mobile `client/components/story-editor/BeatActionsModal.tsx:42-80`
-- Options:
-  - Start remix now
-  - Defer remix until after contract normalization + lens hookup
-- Recommended v1 choice:
-  - Defer remix.
-- Why this is the minimal-diff, non-overlapping path:
-  - Starting remix now would introduce a new overlapping script-control surface before the current owner, contract, and visual-intent policy are normalized.
+- Phase 1 implication:
+  - Do not add remix routes, remix UI, or remix-specific contract work in the first runtime passes.
 
-## Decisions Required Before Coding
+## Remaining Unresolved Items
 
-- Accept or reject `styleKey` as the sanctioned v1 script-lens hook.
-- Accept or reject refetch-after-save SSOT as the common mobile beat-save policy.
-- Accept or reject the v1 rule that beat narration edits must not overwrite `shot.searchQuery`.
-- Keep `update-script` out of scope for the first slice; do not reintroduce it as an active caller path.
-- Keep beat-remix explicitly out of scope for the first slice.
+- No repo-truth ambiguity remains for Pass 1A, Pass 1B, or Pass 2.
+- Future expansion of the `styleKey` enum beyond `default | hype | cozy` is a later product choice, not a blocker for the first implementation passes.
+  - Evidence: `src/routes/story.routes.js:188-192`
+- Retirement strategy for the legacy mounted `update-script` route is still a later cleanup question, not a Phase 1 blocker.
+  - Evidence: `src/routes/story.routes.js:270-301`, mobile `docs/MOBILE_USED_SURFACES.md:105-106`
 
 ## Recommended V1 Non-Goals
 
@@ -247,26 +218,85 @@ It is intentionally conservative:
 - No prompt/model tuning in the first slice
 - No attempt to retire `update-script` in the same pass as beat-save normalization
 
-## Safest First Implementation Slice
+## Phased Implementation Plan
 
-Freeze order for the first runtime pass:
+### Pass 1A: Contract normalization only
 
-1. Normalize beat-save behavior around session SSOT.
-   - Align `ScriptScreen` with the existing `StoryEditor` refetch-after-save pattern.
-   - Do not widen `update-beat-text` into a full-session response in this slice.
-2. Preserve visual intent during beat-save.
-   - Stop beat-save from overwriting `shot.searchQuery`.
-   - Keep current visual planning fields otherwise unchanged.
-3. Reuse `styleKey` as the v1 script-lens hook.
-   - Freeze the existing enum and wire only the current path that already exists end-to-end.
-4. Only after the above is stable, add Home lens UI in a separate follow-up slice.
+- Purpose:
+  - Normalize beat-save behavior around the already-frozen partial `update-beat-text` contract and session SSOT reload.
+- Likely files / surfaces:
+  - mobile `client/screens/ScriptScreen.tsx`
+  - mobile `client/api/client.ts`
+  - mobile `client/lib/storySession.ts`
+  - mobile `docs/MOBILE_USED_SURFACES.md`
+  - backend `docs/MOBILE_BACKEND_CONTRACT.md`
+- Explicitly out of scope:
+  - backend route shape changes
+  - `styleKey` UI
+  - visual-intent mutation change
+  - remix work
+- Acceptance criteria:
+  - `ScriptScreen` no longer treats the partial beat-save payload as full session state.
+  - `ScriptScreen` and `StoryEditor` both refetch `GET /api/story/:sessionId` after successful beat-save.
+  - mobile typing for `storyUpdateBeatText(...)` matches the live backend partial payload instead of `StorySession`.
+- Regression risks / guardrails:
+  - Do not widen `update-beat-text` to a full-session response.
+  - Do not duplicate session reconstruction logic in a second screen path.
+  - Preserve existing authenticated transport headers and normalized envelope handling.
 
-Why this order is safest:
+### Pass 1B: Visual-intent preservation only
 
-- It works with the current backend owner `/api/story`.
-- It resolves the existing client contract split before adding new UI.
-- It avoids introducing overlapping script-control fields or remix surfaces.
-- It preserves current visual planning data instead of letting narration edits silently rewrite later clip-search intent.
+- Purpose:
+  - Stop beat-save from silently mutating later clip-search intent by preserving `shot.searchQuery`.
+- Likely files / surfaces:
+  - backend `src/services/story.service.js`
+  - backend `docs/MOBILE_BACKEND_CONTRACT.md`
+  - backend `docs/MOBILE_HARDENING_PLAN.md`
+  - mobile `docs/MOBILE_USED_SURFACES.md` if consumer notes need a refresh
+- Explicitly out of scope:
+  - new visual-intent fields
+  - Home lens UI
+  - remix work
+  - changes to `visualDescription`
+- Acceptance criteria:
+  - beat-save updates narration text only
+  - beat-save no longer overwrites `shot.searchQuery`
+  - clip replacement continues to seed from the preserved shot query unless a user provides a new query through the existing clip-search flow
+- Regression risks / guardrails:
+  - Do not mutate `selectedClip`, `candidates`, or `visualDescription`.
+  - Do not change clip-search route ownership or fallback order in the same pass unless required by tests or verification.
+
+### Pass 2: Home lens UI using existing `styleKey`
+
+- Purpose:
+  - Expose the already-wired `styleKey` control in Home/create flow without introducing a new backend field.
+- Likely files / surfaces:
+  - mobile `client/screens/HomeScreen.tsx`
+  - mobile `client/api/client.ts` only if type narrowing or enum reuse helpers are needed
+  - mobile `docs/MOBILE_USED_SURFACES.md`
+  - backend `docs/MOBILE_BACKEND_CONTRACT.md`
+- Explicitly out of scope:
+  - prompt/model changes beyond existing `styleKey`
+  - new route or route family
+  - remix UI or remix endpoints
+- Acceptance criteria:
+  - Home sends the existing `styleKey` field on `storyStart(...)`
+  - sent values remain within backend-accepted enum `default | hype | cozy`
+  - generation continues to use stored `session.styleKey`
+- Regression risks / guardrails:
+  - Do not create a second style-control field.
+  - Do not bypass session storage by sending a separate generate-time lens field.
+
+### Later: Remix work, not now
+
+- Purpose:
+  - Only after Pass 1A, Pass 1B, and Pass 2 are stable, re-evaluate whether remix has a proven owner and non-overlapping contract surface.
+- Explicitly out of scope now:
+  - remix endpoints
+  - remix UI
+  - new rewrite owner selection
+- Guardrail:
+  - Do not start remix until current owner, contract, and visual-intent policy remain stable after the earlier passes.
 
 ## Acceptance Gates Before Implementation
 
@@ -274,14 +304,16 @@ The following must be true before coding starts:
 
 - [x] `/api/story` ownership is proven and documented.
   - Evidence: `src/app.js:244-246`, `src/routes/index.js:8-18`, `src/routes/story.routes.js:204-871`
-- [x] `styleKey` ownership is proven and frozen for decision.
+- [x] `styleKey` ownership is proven and frozen as v1 policy.
   - Evidence: mobile `client/api/client.ts:607-617`, `src/routes/story.routes.js:188-218`, `src/services/story.service.js:486-565`, `src/services/story.llm.service.js:223-227`, `src/services/story.llm.service.js:320-323`
-- [x] `update-beat-text` response contract is proven and frozen for decision.
+- [x] `update-beat-text` response contract is proven and frozen as v1 policy.
   - Evidence: `src/routes/story.routes.js:840-856`, `src/services/story.service.js:1157-1160`
 - [x] Client save behavior split is proven and frozen for normalization.
   - Evidence: mobile `client/screens/ScriptScreen.tsx:182-209`, mobile `client/screens/story-editor/useStoryEditorSession.ts:160-176`
-- [x] Narration-versus-visual-intent mutation policy is proven and frozen for decision.
+- [x] Narration-versus-visual-intent mutation policy is proven and frozen as v1 policy.
   - Evidence: `src/services/story.service.js:931-949`, `src/services/story.service.js:1141-1145`, mobile `client/screens/StoryEditorScreen.tsx:243-250`
+- [x] `update-script` is treated as legacy/non-owner for Phase 1.
+  - Evidence: `src/routes/story.routes.js:270-301`, mobile `docs/MOBILE_USED_SURFACES.md:105-106`
 - [x] No current story-remix owner has been proven, so remix overlap is explicitly deferred.
   - Evidence: `src/routes/story.routes.js:204-301`, `src/routes/story.routes.js:572-871`, mobile `client/api/client.ts:603-754`
 
