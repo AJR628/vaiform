@@ -90,11 +90,11 @@ It is intentionally conservative:
 ### Current client handling of `update-beat-text`
 
 - `ScriptScreen` now treats beat-save as success/failure only, keeps the edited sentence text visible locally, and then refetches `GET /api/story/:sessionId` for session SSOT.
-  - save path: mobile `client/screens/ScriptScreen.tsx:162-241`
+  - save path: mobile `client/screens/ScriptScreen.tsx:174-236`
 - `StoryEditor` treats beat-save as success/failure only and then refetches `GET /api/story/:sessionId`.
   - save path: mobile `client/screens/story-editor/useStoryEditorSession.ts:160-176`
 - The mobile transport wrapper now types `storyUpdateBeatText(...)` to the live partial payload `{ sentences, shots }` instead of `StorySession`.
-  - typed wrapper: mobile `client/api/client.ts:675-689`
+  - typed wrapper: mobile `client/api/client.ts:672-689`
   - backend return: `src/routes/story.routes.js:840-856`, `src/services/story.service.js:1157-1160`
 - Result: both mobile screens now converge on refetch-after-save session SSOT without widening the backend contract.
 
