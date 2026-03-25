@@ -89,15 +89,14 @@ It is intentionally conservative:
 
 ### Current client handling of `update-beat-text`
 
-- `ScriptScreen` treats the partial beat-save response as local session state and re-runs beat extraction against that partial payload.
-  - save path: mobile `client/screens/ScriptScreen.tsx:182-209`
-  - local unwrap/extract helper fallback to top-level `sentences`: mobile `client/lib/storySession.ts:14-19`, mobile `client/lib/storySession.ts:25-52`
-- `StoryEditor` does not trust the partial response as session SSOT; it treats the call as success/failure only and then refetches `GET /api/story/:sessionId`.
+- `ScriptScreen` now treats beat-save as success/failure only, keeps the edited sentence text visible locally, and then refetches `GET /api/story/:sessionId` for session SSOT.
+  - save path: mobile `client/screens/ScriptScreen.tsx:162-241`
+- `StoryEditor` treats beat-save as success/failure only and then refetches `GET /api/story/:sessionId`.
   - save path: mobile `client/screens/story-editor/useStoryEditorSession.ts:160-176`
-- The mobile transport wrapper currently types `storyUpdateBeatText(...)` as `NormalizedResponse<StorySession>` even though the live backend route returns only `{ sentences, shots }`.
-  - typed wrapper: mobile `client/api/client.ts:675-684`
+- The mobile transport wrapper now types `storyUpdateBeatText(...)` to the live partial payload `{ sentences, shots }` instead of `StorySession`.
+  - typed wrapper: mobile `client/api/client.ts:675-689`
   - backend return: `src/routes/story.routes.js:840-856`, `src/services/story.service.js:1157-1160`
-- Result: the backend contract is currently consistent, but the two mobile screens normalize it differently.
+- Result: both mobile screens now converge on refetch-after-save session SSOT without widening the backend contract.
 
 ### Visual-intent separation and current mutation risk
 
@@ -222,6 +221,9 @@ It is intentionally conservative:
 
 ### Pass 1A: Contract normalization only
 
+- Status:
+  - Landed on 2026-03-25.
+
 - Purpose:
   - Normalize beat-save behavior around the already-frozen partial `update-beat-text` contract and session SSOT reload.
 - Likely files / surfaces:
@@ -239,6 +241,8 @@ It is intentionally conservative:
   - `ScriptScreen` no longer treats the partial beat-save payload as full session state.
   - `ScriptScreen` and `StoryEditor` both refetch `GET /api/story/:sessionId` after successful beat-save.
   - mobile typing for `storyUpdateBeatText(...)` matches the live backend partial payload instead of `StorySession`.
+  - one user save action results in at most one `POST /api/story/update-beat-text` and one follow-up `GET /api/story/:sessionId`.
+  - the edited sentence remains visible after save and does not briefly revert to stale text while the SSOT refetch is in flight.
 - Regression risks / guardrails:
   - Do not widen `update-beat-text` to a full-session response.
   - Do not duplicate session reconstruction logic in a second screen path.

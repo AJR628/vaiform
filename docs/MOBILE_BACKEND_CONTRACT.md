@@ -124,7 +124,7 @@ Purpose: canonical backend-owned contract, guarantees, and open mismatch record 
   - Mobile sends: `{ sessionId, sentenceIndex, text }`.
   - Backend returns: partial `{ sentences, shots }` in `data`, not a full session.
   - Mobile reads:
-    - `ScriptScreen`: re-runs `extractBeats()` against the partial payload.
+    - `ScriptScreen`: treats the response as success/failure only, keeps the edited sentence visible locally, then refetches session SSOT.
     - Story editor session hook: treats the response as success/failure only, updates local beat text state, then refetches session SSOT.
   - Stable failures now:
     - `404 SESSION_NOT_FOUND`
