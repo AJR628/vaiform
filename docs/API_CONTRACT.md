@@ -59,7 +59,10 @@ Existing endpoints may still emit these until migrated; new code and framework-l
 - `GET /api/credits` has been removed from mounted runtime; callers must use `GET /api/usage`.
 - `POST /api/checkout/start` now accepts `{ "plan": "creator" | "pro" }` only and returns the standard success envelope with `data.url`.
 - `POST /api/checkout/session` and `POST /api/checkout/subscription` have been removed from mounted runtime and must not be used by callers.
-- Additive session `billingEstimate` and additive billing payloads must stay nested under `data`; do not introduce top-level billing fields outside established exceptions like finalize `shortId`.
+- Additive session `billingEstimate` and additive billing payloads must stay nested under `data`; do not introduce top-level billing fields outside established finalize exceptions.
+- Established finalize top-level exceptions are:
+  - `shortId` on terminal success replay
+  - `finalize = { state, attemptId, pollSessionId }` on accepted and active-conflict responses
 - Current Phase 2 finalize success includes additive `data.billing = { billedSec, settledAt }` while keeping top-level `shortId`.
 - Current backend `billingEstimate.estimatedSec` is reservation-safe and backend-owned. Public sources are now `speech_duration | shot_durations | caption_timeline`, with `speech_duration` produced by the backend billing-specific composite text heuristic and `caption_timeline` retained only as an emergency fallback. Callers must treat it as backend truth, not recompute it locally.
 

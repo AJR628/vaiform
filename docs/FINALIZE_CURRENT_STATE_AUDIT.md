@@ -1,0 +1,212 @@
+# FINALIZE_CURRENT_STATE_AUDIT
+
+- Status: CANONICAL
+- Owner repo: backend
+- Source of truth for: current finalize/render behavior, active caller ownership, current storage/runtime topology, and frozen external finalize contracts for the factory conversion
+- Canonical counterpart/source: `docs/FINALIZE_FACTORY_CONVERSION_PLAN.md`, `docs/FINALIZE_JOB_MODEL_SPEC.md`, `docs/FINALIZE_OBSERVABILITY_SPEC.md`, `docs/FINALIZE_RUNTIME_TOPOLOGY_SPEC.md`
+- Last verified against: backend repo plus current mobile repo on 2026-03-26
+
+## Purpose
+
+This document freezes how finalize works today before later phases change internals.
+
+Every statement below is current-state repo truth unless explicitly marked otherwise.
+
+## Source Order
+
+1. Backend runtime code
+2. Current mobile caller code
+3. Current active web creative caller code
+4. Backend canonical docs
+5. Mobile caller-truth docs
+
+If docs and code disagree, code wins for this audit.
+
+## In-Scope Active Callers
+
+### Mobile finalize caller
+
+- Screen ownership: `client/screens/StoryEditorScreen.tsx:112-133`
+- Hook ownership: `client/screens/story-editor/useStoryEditorFinalize.ts:76-552`
+- Transport ownership: `client/api/client.ts:804-953`
+- Recovery storage: `client/lib/storyFinalizeAttemptStorage.ts:12-60`
+- Recovery read helpers: `client/screens/story-editor/model.ts:19-80`
+- Readback after success: `client/screens/ShortDetailScreen.tsx:90-119`, `client/screens/short-detail/useShortDetailAvailability.ts:130-269`
+
+### Active web creative finalize caller
+
+- Caller-backed ownership note: `docs/ACTIVE_SURFACES.md:83-85`
+- UI entrypoint: `web/public/creative.html:34-47`
+- Transport owner: `web/public/api.mjs:127-220`
+- Finalize caller and recovery poller: `web/public/js/pages/creative/creative.article.mjs:3694-4065`
+
+## Proven Current Lifecycle
+
+### 1. API boot and route ownership
+
+- The Express app boots the finalize runner singleton during API startup by calling `ensureStoryFinalizeRunner()` directly from `src/app.js`, before route handling begins: `src/app.js:9`, `src/app.js:32-33`.
+- The story router is mounted at `/api/story`, and all story routes require auth through router-level `requireAuth`: `src/app.js:244-246`, `src/routes/story.routes.js:35-36`.
+
+### 2. Finalize admission request
+
+- `POST /api/story/finalize` runs `idempotencyFinalize({ getSession })` before the route handler, so idempotency and reservation happen before the route emits JSON: `src/routes/story.routes.js:964-965`.
+- The middleware requires `X-Idempotency-Key`, rejects unauthenticated calls, validates `sessionId` before any Firestore reservation, and seeds request context with `sessionId` and `attemptId`: `src/middleware/idempotency.firestore.js:33-55`.
+
+### 3. Durable admission and billing reservation
+
+- `prepareFinalizeAttempt()` is the current durable admission path. It:
+  - replays same-key prior state from Firestore `idempotency`: `src/services/story-finalize.attempts.js:305-319`
+  - loads the session and requires `billingEstimate.estimatedSec`: `src/services/story-finalize.attempts.js:321-339`
+  - rejects same-session different-key conflicts via `storyFinalizeSessions`: `src/services/story-finalize.attempts.js:356-374`
+  - checks available render time from canonical usage state: `src/services/story-finalize.attempts.js:376-393`
+  - creates a queued attempt doc, creates a session lock doc, and increments `users.usage.cycleReservedSec`: `src/services/story-finalize.attempts.js:395-444`
+
+### 4. Current finalize response behavior
+
+- Accepted work returns `202` with the session in `data`, top-level `shortId: null`, and top-level `finalize: { state: "pending", attemptId, pollSessionId }`: `src/services/story-finalize.attempts.js:105-111`, `src/services/story-finalize.attempts.js:517-526`.
+- Same-key active replay returns the same `202 pending` shape: `src/services/story-finalize.attempts.js:527-551`.
+- Same-session different-key conflict returns `409 FINALIZE_ALREADY_ACTIVE` with top-level `finalize`: `src/services/story-finalize.attempts.js:113-122`, `src/services/story-finalize.attempts.js:553-560`.
+- Same-key terminal success replay returns `200` with session `data`, top-level `shortId`, and additive `data.billing`: `src/services/story-finalize.attempts.js:562-587`.
+- Same-key terminal failure replay returns the stored terminal failure payload: `src/services/story-finalize.attempts.js:124-134`, `src/services/story-finalize.attempts.js:589-593`.
+
+### 5. Session recovery state
+
+- On a newly enqueued finalize attempt, the middleware persists `renderRecovery.pending` before replying `202`: `src/middleware/idempotency.firestore.js:69-93`.
+- `renderRecovery` is currently stored inside the broader session `story.json` blob through `saveJSON/loadJSON`, not in Firestore: `src/services/story.service.js:414-417`, `src/services/story.service.js:422-433`, `src/services/story.service.js:436-462`.
+- The current `renderRecovery` shape is `{ state, attemptId, startedAt, updatedAt, shortId, finishedAt, failedAt, code, message }`: `src/services/story.service.js:349-409`.
+- `GET /api/story/:sessionId` is the canonical recovery poll surface and logs `story.recovery.poll` when `renderRecovery.state` exists: `src/routes/story.routes.js:1183-1213`.
+
+### 6. Background execution
+
+- The route handler itself does not execute the render pipeline. It returns the prepared reply and nudges the in-process runner with `notifyStoryFinalizeRunner()` when work is enqueued or a pending replay/conflict is observed: `src/routes/story.routes.js:984-1000`, `src/routes/story.routes.js:1021`.
+- The runner is a process-global singleton stored on `globalThis`: `src/services/story-finalize.runner.js:18`, `src/services/story-finalize.runner.js:182-191`.
+- The runner polls for queued attempts, claims them, heartbeats leases, runs `finalizeStory()`, settles success, requeues `SERVER_BUSY`, and marks terminal failure otherwise: `src/services/story-finalize.runner.js:30-57`, `src/services/story-finalize.runner.js:59-125`, `src/services/story-finalize.runner.js:127-156`.
+
+### 7. Current durable queue substrate
+
+- The durable queue substrate today is Firestore:
+  - attempts live in collection `idempotency`: `src/services/story-finalize.attempts.js:7`, `src/services/story-finalize.attempts.js:41-42`
+  - same-session active locks live in `storyFinalizeSessions`: `src/services/story-finalize.attempts.js:8`, `src/services/story-finalize.attempts.js:43-44`
+  - queue claim uses `where(flow == story.finalize, state == queued).orderBy(createdAt asc)`: `src/services/story-finalize.attempts.js:860-867`
+  - the required composite index is source-controlled: `firestore.indexes.json:11-19`, `firebase.json:1-5`
+
+### 8. Current finalize pipeline internals
+
+- `finalizeStory()` is not render-only. It can still backfill missing story generation, shot planning, clip search, and caption timings before rendering: `src/services/story.service.js:2522-2586`.
+- Successful render uploads the final video and thumbnail, writes `shorts/<jobId>`, persists `session.finalVideo.jobId`, sets `session.status = rendered`, and then persists `renderRecovery.done`: `src/services/story.service.js:2373-2455`, `src/services/story.service.js:2588-2603`.
+- Failure persists `renderRecovery.failed` and rethrows: `src/services/story.service.js:2604-2625`.
+
+### 9. Billing reserve / settle / release truth
+
+- Reservation happens once during admission by incrementing `usage.cycleReservedSec`: `src/services/story-finalize.attempts.js:431-444`.
+- Success settlement:
+  - requires the attempt still be active: `src/services/story-finalize.attempts.js:676-695`
+  - requires `billedSec <= estimatedSec`: `src/services/story-finalize.attempts.js:697-713`
+  - increments `usage.cycleUsedSec`, decrements `usage.cycleReservedSec`, records `billingSettlement`, deletes the session lock, and writes additive `shorts/<shortId>.billing`: `src/services/story-finalize.attempts.js:715-815`
+- Terminal failure releases the reserved seconds exactly once and deletes the session lock: `src/services/story-finalize.attempts.js:600-674`.
+
+### 10. Current stale-work and retry behavior
+
+- Busy render-slot failures are requeued by moving the same durable attempt doc back to `queued` with `availableAfter`: `src/services/story-finalize.runner.js:86-94`, `src/services/story-finalize.attempts.js:817-858`.
+- Queued attempts that expire are marked `expired`, have reservations released, and persist `renderRecovery.failed` with `FINALIZE_ATTEMPT_EXPIRED`: `src/services/story-finalize.attempts.js:956-989`.
+- Running attempts with expired leases are marked terminally failed, have reservations released, and persist `renderRecovery.failed` with `FINALIZE_WORKER_LOST`: `src/services/story-finalize.attempts.js:991-1010`.
+
+## Current Caller Behavior
+
+### Mobile caller truth
+
+- Mobile generates a UUID-shaped idempotency key per finalize attempt: `client/screens/story-editor/useStoryEditorFinalize.ts:58-74`.
+- Mobile sends `POST /api/story/finalize` with that key in `X-Idempotency-Key`: `client/api/client.ts:804-823`.
+- Mobile treats `202 pending`, `409 FINALIZE_ALREADY_ACTIVE`, timeout, network loss, `IDEMPOTENT_IN_PROGRESS`, and `status === 0` as recovery-entry conditions and polls `GET /api/story/:sessionId`: `client/screens/story-editor/useStoryEditorFinalize.ts:390-425`, `client/screens/story-editor/useStoryEditorFinalize.ts:453-462`.
+- Mobile only trusts `renderRecovery` when `renderRecovery.attemptId` matches the active attempt key: `client/screens/story-editor/model.ts:63-72`, `client/screens/story-editor/useStoryEditorFinalize.ts:204-225`.
+- On success, mobile refreshes `/api/usage` and navigates to Short Detail using `shortId`: `client/screens/story-editor/useStoryEditorFinalize.ts:135-162`, `client/contexts/AuthContext.tsx:211-241`.
+
+### Active web creative caller truth
+
+- The web creative caller uses `apiFetch('/story/finalize', { headers: { 'X-Idempotency-Key': sessionId } })`, so its idempotency key is the current story session id rather than a generated UUID: `web/public/js/pages/creative/creative.article.mjs:3998-4013`.
+- The web creative caller does not consume top-level `finalize.*`. It treats a successful finalize response as complete only when `data.finalVideo.url` is present; otherwise it polls `GET /api/story/:sessionId`: `web/public/js/pages/creative/creative.article.mjs:4051-4060`, `web/public/js/pages/creative/creative.article.mjs:3863-3910`.
+- The web creative caller currently treats only `HTTP_502`, `HTTP_504`, and legacy `IDEMPOTENT_IN_PROGRESS` as recoverable finalize errors before switching to polling: `web/public/js/pages/creative/creative.article.mjs:3707-3710`, `web/public/js/pages/creative/creative.article.mjs:3788-3821`, `web/public/js/pages/creative/creative.article.mjs:4036-4043`.
+- On completion, the web creative caller redirects to `/my-shorts.html?id=<jobId>` using `session.finalVideo.jobId` if present, then falls back to parsing it from the final video URL: `web/public/js/pages/creative/creative.article.mjs:3847-3860`.
+
+## Current State / Storage Truth Map
+
+| Concern | Current canonical owner | Current evidence |
+| --- | --- | --- |
+| Durable admission state | Firestore `idempotency` attempt doc | `src/services/story-finalize.attempts.js:395-418` |
+| Same-session active lock | Firestore `storyFinalizeSessions` doc | `src/services/story-finalize.attempts.js:420-429` |
+| Usage reserve/release/settle ledger | Firestore `users/<uid>.usage` | `src/services/usage.service.js:65-134`, `src/services/story-finalize.attempts.js:431-444`, `src/services/story-finalize.attempts.js:748-762` |
+| Client recovery projection | Session `story.json.renderRecovery` | `src/services/story.service.js:349-462` |
+| Completed short read model | Firestore `shorts/<jobId>` plus storage objects | `src/services/story.service.js:2415-2455`, `src/controllers/shorts.controller.js:122-227` |
+| Client-facing current render status | `GET /api/story/:sessionId` response | `src/routes/story.routes.js:1183-1213`, `client/screens/story-editor/useStoryEditorFinalize.ts:177-249`, `web/public/js/pages/creative/creative.article.mjs:3863-3910` |
+
+## Current Runtime Topology
+
+- There is one HTTP API process today. `server.js` starts Express and keeps a 15-minute server timeout for remaining blocking render routes: `server.js:27-43`.
+- Finalize execution is not its own deploy/runtime role yet. The API process also boots the finalize runner singleton: `src/app.js:32-33`.
+- The runner claims work only while `inflight.size < RENDER_SLOT_LIMIT`: `src/services/story-finalize.runner.js:127-156`.
+- `RENDER_SLOT_LIMIT` is a hardcoded in-memory per-process limit of `3`: `src/utils/render.semaphore.js:1-23`.
+- Current OpenAI admission, story-search admission, and TTS slotting are also in-memory/process-local: `src/services/story.llm.service.js:160-170`, `src/services/story.service.js:66-113`, `src/services/tts.service.js:44-54`.
+
+## Current Bottlenecks And Single-Room Behavior
+
+- Finalize execution is still API-process-owned because the runner boots inside `src/app.js`: `src/app.js:32-33`.
+- Render concurrency is process-local because `withRenderSlot()` only counts local memory: `src/utils/render.semaphore.js:5-8`, `src/utils/render.semaphore.js:10-23`.
+- Upstream provider pressure is also process-local because OpenAI, story search, and TTS concurrency/cooldown state are all stored in process memory: `src/services/story.llm.service.js:160-170`, `src/services/story.service.js:67-71`, `src/services/story.service.js:120-130`, `src/services/tts.service.js:69-83`.
+- Finalize is still a wide pipeline rather than a narrow render-only worker task because it can backfill story, plan, search, and captions: `src/services/story.service.js:2552-2578`.
+
+## Current Observability That Already Exists
+
+- Request IDs are assigned early and echoed in `X-Request-Id`: `src/middleware/reqId.js:4-8`, `src/app.js:46-49`.
+- Backend request context carries `requestId`, `uid`, `sessionId`, `attemptId`, and `shortId`: `src/observability/request-context.js:48-67`.
+- Backend logger emits structured JSON with those fields: `src/observability/logger.js:18-39`.
+- There is an operator runbook for finalize/replay/recovery and readback incidents: `docs/INCIDENT_TRACE_RUNBOOK.md:5-16`, `docs/INCIDENT_TRACE_RUNBOOK.md:29-128`.
+- Mobile keeps a bounded in-memory diagnostics buffer for API/client failures and enriches finalize/recovery/readback failures with context: `client/lib/diagnostics.ts:36-66`, `client/lib/diagnostics.ts:81-143`.
+
+## Frozen External Contracts
+
+These behaviors are frozen for the factory conversion unless later code evidence proves a change is required.
+
+### POST /api/story/finalize
+
+- The route must remain authenticated and idempotent on `X-Idempotency-Key`: `src/routes/story.routes.js:35-36`, `src/middleware/idempotency.firestore.js:33-40`.
+- Accepted work must continue to return quickly rather than block on full render completion: `src/routes/story.routes.js:964-1021`, `src/services/story-finalize.attempts.js:517-526`.
+- Same-key replay and same-session different-key conflict semantics must remain stable: `src/services/story-finalize.attempts.js:527-560`.
+- Success replay must continue to expose top-level `shortId` and additive `data.billing`: `src/services/story-finalize.attempts.js:562-587`.
+
+### GET /api/story/:sessionId recovery expectations
+
+- This remains the canonical caller-facing recovery read path for both mobile and the active web creative caller: `src/routes/story.routes.js:1183-1213`, `client/screens/story-editor/useStoryEditorFinalize.ts:177-249`, `web/public/js/pages/creative/creative.article.mjs:3863-3910`.
+- Additive `renderRecovery` remains caller-visible and keyed by the current external `attemptId` identity: `src/services/story.service.js:349-409`, `client/screens/story-editor/model.ts:63-72`.
+
+### Additive billing metadata
+
+- `billingEstimate.estimatedSec` remains the admission-time reservation source: `src/services/story-finalize.attempts.js:331-339`.
+- Additive `data.billing.billedSec` on terminal success replay remains caller-visible: `src/services/story-finalize.attempts.js:580-586`, `client/lib/renderUsage.ts:30-35`.
+
+### Short / library eventual readback
+
+- Mobile short-detail retry and `/api/shorts/mine?limit=50` fallback behavior are frozen: `client/screens/short-detail/useShortDetailAvailability.ts:148-269`.
+- `GET /api/shorts/:jobId` remains a readback bridge that can return `404 NOT_FOUND` while availability settles: `src/controllers/shorts.controller.js:173-180`.
+- The active web creative caller's completion redirect via `finalVideo.jobId` or URL-derived id is frozen: `web/public/js/pages/creative/creative.article.mjs:3847-3860`.
+
+## Current Doc Truth Map
+
+### Current authoritative docs
+
+- Backend front door and doc ownership: `README.md:3-17`, `docs/DOCS_INDEX.md:15-31`
+- Backend finalize/mobile contract truth: `docs/MOBILE_BACKEND_CONTRACT.md:191-212`
+- Backend hardening status: `docs/MOBILE_HARDENING_PLAN.md:59-120`
+- Cross-repo hardening audit: `docs/CROSS_REPO_PRODUCTION_HARDENING_PLAN.md:68-108`, `docs/CROSS_REPO_PRODUCTION_HARDENING_PLAN.md:570-583`
+- Incident/runbook truth: `docs/INCIDENT_TRACE_RUNBOOK.md:5-128`
+- Mobile caller-truth doc: `../vaiform-mobile-ed4c17b4253fd8138e52349f5468ac1cc794cbe1/docs/MOBILE_USED_SURFACES.md:13-18`, `../vaiform-mobile-ed4c17b4253fd8138e52349f5468ac1cc794cbe1/docs/MOBILE_USED_SURFACES.md:49-53`
+
+### Proven drift / gaps
+
+- `docs/API_CONTRACT.md` documents top-level finalize `shortId` as an established exception, but it does not currently document the live top-level `finalize` metadata used by accepted and conflict responses: `docs/API_CONTRACT.md:56-64`, `src/services/story-finalize.attempts.js:105-122`.
+- Mobile TypeScript does not strongly encode session truth because `StorySession` is still `any`; current caller truth is therefore the hooks/screens, not the type file: `client/types/story.ts:1-6`.
+- Active web creative caller behavior is not fully described by the mobile contract docs and must be frozen alongside mobile for this conversion: `docs/ACTIVE_SURFACES.md:83-85`, `web/public/js/pages/creative/creative.article.mjs:3998-4065`.
+
+## Out Of Scope For This Audit
+
+- This document does not prescribe later implementation details beyond freezing current truth.
+- Target design decisions live in the companion Phase 0 spec docs, not here.

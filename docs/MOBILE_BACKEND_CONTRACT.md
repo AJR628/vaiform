@@ -33,7 +33,7 @@ Purpose: canonical backend-owned contract, guarantees, and open mismatch record 
 - Standard backend success envelope: `{ success: true, data, requestId }` (`src/http/respond.js:14-17`).
 - Standard backend failure envelope: `{ success: false, error, detail, requestId, fields? }` (`src/http/respond.js:28-34`).
 - Mobile normalization layer now preserves `requestId` while converting success envelopes to `{ ok: true, data, requestId }` and failure envelopes to `{ ok: false, status, code, message, requestId }` (`client/api/client.ts:94-160`, `client/api/client.ts:223-289`).
-- Finalize is the current launch exception: the backend returns top-level `shortId`, and the mobile client explicitly extracts it from the raw response (`src/routes/story.routes.js:35-41`, `src/routes/story.routes.js:967-975`, `client/api/client.ts:818-845`).
+- Finalize is the current launch exception: the backend returns top-level `shortId`, and accepted/conflict responses also return top-level `finalize = { state, attemptId, pollSessionId }`; the mobile client explicitly extracts both from the raw response (`src/services/story-finalize.attempts.js:105-122`, `src/services/story-finalize.attempts.js:517-587`, `client/api/client.ts:898-937`).
 - Cross-Repo Phase 3 observability is now live on the named hot paths only: backend request context is seeded immediately after request ID assignment, backend hot-path boundary events flow through one structured stdout logger with built-in redaction, and mobile keeps a bounded in-memory diagnostics buffer for normalized failures with additive context from auth bootstrap, finalize/recovery, and short-detail retry surfaces.
 - Phase 3 caveat: deeper finalize/render internals inside the active finalize path still contain legacy `console.*` logging and were not fully migrated in this phase.
 
@@ -187,6 +187,13 @@ Purpose: canonical backend-owned contract, guarantees, and open mismatch record 
   - Mobile reads: success/failure only.
 
 ### Render, Recovery, And Shorts
+
+- Deep current-state and target-state finalize authority now lives in:
+  - `docs/FINALIZE_CURRENT_STATE_AUDIT.md`
+  - `docs/FINALIZE_FACTORY_CONVERSION_PLAN.md`
+  - `docs/FINALIZE_JOB_MODEL_SPEC.md`
+  - `docs/FINALIZE_OBSERVABILITY_SPEC.md`
+  - `docs/FINALIZE_RUNTIME_TOPOLOGY_SPEC.md`
 
 - `POST /api/story/finalize`
   - Mobile caller(s): `client/screens/story-editor/useStoryEditorFinalize.ts:344-562`, `client/api/client.ts:756-902`
