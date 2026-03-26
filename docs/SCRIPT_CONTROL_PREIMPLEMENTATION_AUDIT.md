@@ -141,8 +141,8 @@ It is intentionally conservative:
 - Frozen policy:
   - Reuse the existing `styleKey` field for v1 pre-generation script-lens control.
 - Repo proof:
-  - `styleKey` already exists in mobile transport typing, backend request validation, session storage, generation service wiring, and prompt construction, while current Home UI does not yet send it.
-  - Evidence: mobile `client/api/client.ts:607-617`, mobile `client/screens/HomeScreen.tsx:84-88`, `src/routes/story.routes.js:188-218`, `src/services/story.service.js:486-565`, `src/services/story.llm.service.js:223-227`, `src/services/story.llm.service.js:320-323`
+  - `styleKey` already exists in mobile transport typing, backend request validation, session storage, generation service wiring, and prompt construction, and Home now conditionally sends it on `storyStart(...)` when a user explicitly selects a lens.
+  - Evidence: mobile `client/api/client.ts:607-618`, mobile `client/screens/HomeScreen.tsx:89-123`, `src/routes/story.routes.js:188-218`, `src/services/story.service.js:486-552`, `src/services/story.llm.service.js:223-227`, `src/services/story.llm.service.js:320-323`
 - Phase 1 implication:
   - Do not add a second lens field or parallel script-style control path.
   - Keep the current backend enum `default | hype | cozy` for v1.
@@ -275,11 +275,14 @@ It is intentionally conservative:
 
 ### Pass 2: Home lens UI using existing `styleKey`
 
+- Status:
+  - Landed on 2026-03-25.
+
 - Purpose:
   - Expose the already-wired `styleKey` control in Home/create flow without introducing a new backend field.
 - Likely files / surfaces:
   - mobile `client/screens/HomeScreen.tsx`
-  - mobile `client/api/client.ts` only if type narrowing or enum reuse helpers are needed
+  - mobile `client/api/client.ts`
   - mobile `docs/MOBILE_USED_SURFACES.md`
   - backend `docs/MOBILE_BACKEND_CONTRACT.md`
 - Explicitly out of scope:
@@ -287,9 +290,11 @@ It is intentionally conservative:
   - new route or route family
   - remix UI or remix endpoints
 - Acceptance criteria:
-  - Home sends the existing `styleKey` field on `storyStart(...)`
+  - Home omits `styleKey` when no lens is explicitly selected, and backend generation still follows the current default path.
+  - Home sends the existing `styleKey` field on `storyStart(...)` when a user explicitly selects a lens.
   - sent values remain within backend-accepted enum `default | hype | cozy`
   - generation continues to use stored `session.styleKey`
+  - `storyGenerate(...)` continues to send only `{ sessionId }`
 - Regression risks / guardrails:
   - Do not create a second style-control field.
   - Do not bypass session storage by sending a separate generate-time lens field.

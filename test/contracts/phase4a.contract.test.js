@@ -252,24 +252,32 @@ test('POST /api/story/start creates a draft story session for the authenticated 
 
 test('POST /api/story/generate preserves the generated story envelope mobile reads', async () => {
   seedUserDoc('user-1');
-  setRuntimeOverride('story.llm.generateStoryFromInput', async () => ({
-    sentences: [
-      'You think motivation starts the work.',
-      'Tiny habits start before you feel ready.',
-      'Pick one cue you never miss.',
-      'Shrink the action until it feels automatic.',
-      'Repeat it where friction is already low.',
-      'Stack wins before you chase intensity.',
-      'Momentum grows because the start gets cheap.',
-      'What habit becomes easy enough to keep tomorrow?',
-    ],
-    totalDurationSec: 32,
-  }));
+  let capturedStyleKey = null;
+  setRuntimeOverride('story.llm.generateStoryFromInput', async ({ styleKey }) => {
+    capturedStyleKey = styleKey;
+    return {
+      sentences: [
+        'You think motivation starts the work.',
+        'Tiny habits start before you feel ready.',
+        'Pick one cue you never miss.',
+        'Shrink the action until it feels automatic.',
+        'Repeat it where friction is already low.',
+        'Stack wins before you chase intensity.',
+        'Momentum grows because the start gets cheap.',
+        'What habit becomes easy enough to keep tomorrow?',
+      ],
+      totalDurationSec: 32,
+    };
+  });
 
   const started = await requestJson('/api/story/start', {
     method: 'POST',
     body: { input: 'Build habit momentum', inputType: 'idea' },
   });
+
+  assert.equal(started.status, 200);
+  assert.equal(started.json.success, true);
+  assert.equal(started.json.data.styleKey, 'default');
 
   const result = await requestJson('/api/story/generate', {
     method: 'POST',
@@ -279,8 +287,10 @@ test('POST /api/story/generate preserves the generated story envelope mobile rea
   assert.equal(result.status, 200);
   assert.equal(result.json.success, true);
   assert.equal(result.json.data.status, 'story_generated');
+  assert.equal(result.json.data.styleKey, 'default');
   assert.equal(result.json.data.story.sentences.length, 8);
   assert.equal(result.json.data.billingEstimate.estimatedSec, 26);
+  assert.equal(capturedStyleKey, 'default');
 });
 
 test('POST /api/story/generate returns retryable 503 when generation hits a transient busy state', async () => {
@@ -977,10 +987,10 @@ test('POST /api/story/finalize returns 202 pending first, then same-key replay r
   assert.equal(first.json.finalize.pollSessionId, 'story-finalize-success');
   assert.equal(first.json.data.renderRecovery.state, 'pending');
 
-  await waitFor(
-    () => readDoc('idempotency', 'user-1:idem-finalize-1')?.state === 'done',
-    { timeoutMs: 1000, intervalMs: 20 }
-  );
+  await waitFor(() => readDoc('idempotency', 'user-1:idem-finalize-1')?.state === 'done', {
+    timeoutMs: 1000,
+    intervalMs: 20,
+  });
 
   const replay = await requestJson('/api/story/finalize', {
     method: 'POST',
@@ -1203,10 +1213,10 @@ test('POST /api/story/finalize replays 202 pending for the same key while the ba
   assert.equal(first.status, 202);
   assert.equal(first.json.finalize.attemptId, 'idem-finalize-pending');
 
-  await waitFor(
-    () => readDoc('idempotency', 'user-1:idem-finalize-pending')?.state === 'done',
-    { timeoutMs: 1000, intervalMs: 20 }
-  );
+  await waitFor(() => readDoc('idempotency', 'user-1:idem-finalize-pending')?.state === 'done', {
+    timeoutMs: 1000,
+    intervalMs: 20,
+  });
 
   const replay = await requestJson('/api/story/finalize', {
     method: 'POST',
@@ -1318,10 +1328,10 @@ test('POST /api/story/finalize returns 409 FINALIZE_ALREADY_ACTIVE for a differe
   assert.equal(readDoc('idempotency', 'user-1:idem-finalize-conflict-b'), null);
 
   release();
-  await waitFor(
-    () => readDoc('idempotency', 'user-1:idem-finalize-conflict-a')?.state === 'done',
-    { timeoutMs: 1000, intervalMs: 20 }
-  );
+  await waitFor(() => readDoc('idempotency', 'user-1:idem-finalize-conflict-a')?.state === 'done', {
+    timeoutMs: 1000,
+    intervalMs: 20,
+  });
 });
 
 test('POST /api/story/finalize returns 402 INSUFFICIENT_RENDER_TIME before calling the finalize service', async () => {
@@ -1597,10 +1607,10 @@ test('stale running finalize attempts are reaped into terminal failure, release 
   });
   assert.equal(first.status, 202);
 
-  await waitFor(
-    () => readDoc('idempotency', 'user-1:idem-finalize-stale')?.state === 'failed',
-    { timeoutMs: 1000, intervalMs: 20 }
-  );
+  await waitFor(() => readDoc('idempotency', 'user-1:idem-finalize-stale')?.state === 'failed', {
+    timeoutMs: 1000,
+    intervalMs: 20,
+  });
 
   const attemptDoc = readDoc('idempotency', 'user-1:idem-finalize-stale');
   assert.equal(attemptDoc.failure.error, 'FINALIZE_WORKER_LOST');

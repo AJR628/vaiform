@@ -66,16 +66,16 @@ Purpose: canonical backend-owned contract, guarantees, and open mismatch record 
 ### Story Creation And Session Truth
 
 - `POST /api/story/start`
-  - Mobile caller(s): `client/screens/HomeScreen.tsx:79-107`
-  - Backend handler(s): `src/routes/story.routes.js:189-216`, `src/services/story.service.js:324-348`
-  - Mobile sends: `{ input, inputType }`.
+  - Mobile caller(s): mobile `client/screens/HomeScreen.tsx:89-123`
+  - Backend handler(s): `src/routes/story.routes.js:188-220`, `src/services/story.service.js:486-511`
+  - Mobile sends: `{ input, inputType, styleKey? }`. Home omits `styleKey` unless the user explicitly selects `default`, `hype`, or `cozy`.
   - Backend returns: full session in `data`.
   - Mobile reads: `data.id` only.
 
 - `POST /api/story/generate`
-  - Mobile caller(s): `client/screens/HomeScreen.tsx:109-127`
-  - Backend handler(s): `src/routes/story.routes.js:238-272`, `src/services/story.service.js:507-550`, `src/services/story.llm.service.js:217-662`
-  - Mobile sends: `{ sessionId }`.
+  - Mobile caller(s): mobile `client/screens/HomeScreen.tsx:120-138`
+  - Backend handler(s): `src/routes/story.routes.js:233-268`, `src/services/story.service.js:524-552`, `src/services/story.llm.service.js:223-323`
+  - Mobile sends: `{ sessionId }` only. `styleKey` is stored at start-time and is not part of the generate request.
   - Backend returns: full session in `data`.
   - Mobile reads: success/failure only.
   - Guardrails:
