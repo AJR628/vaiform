@@ -5,9 +5,17 @@ import {
   buildFinalizeHttpReply,
   finalizeAttemptFailure,
   prepareFinalizeAttempt,
+  refreshFinalizeQueueMetrics,
 } from '../services/story-finalize.attempts.js';
 import logger from '../observability/logger.js';
 import { setRequestContextFromReq } from '../observability/request-context.js';
+import {
+  FINALIZE_EVENTS,
+  FINALIZE_SOURCE_ROLES,
+  FINALIZE_STAGES,
+  describeFinalizeError,
+  emitFinalizeEvent,
+} from '../observability/finalize-observability.js';
 
 const requestIdOf = (req) => req?.id ?? null;
 
@@ -31,18 +39,69 @@ export function idempotencyFinalize({ ttlMinutes = 60, getSession } = {}) {
     throw new Error('idempotencyFinalize requires getSession');
   }
   return async function middleware(req, res, next) {
+    const admissionStartedAt = Date.now();
+    req.finalizeAdmissionStartedAt = admissionStartedAt;
     const key = req.get('X-Idempotency-Key');
     const uid = req.user?.uid;
+    emitFinalizeEvent('info', FINALIZE_EVENTS.API_REQUESTED, {
+      sourceRole: FINALIZE_SOURCE_ROLES.API,
+      requestId: req.id ?? null,
+      route: req.originalUrl,
+      uid,
+      attemptId: key || null,
+      httpStatus: null,
+    });
     if (!key) {
+      emitFinalizeEvent('warn', FINALIZE_EVENTS.API_REJECTED, {
+        sourceRole: FINALIZE_SOURCE_ROLES.API,
+        requestId: req.id ?? null,
+        route: req.originalUrl,
+        uid,
+        httpStatus: 400,
+        stage: FINALIZE_STAGES.ADMISSION_VALIDATE,
+        durationMs: Date.now() - admissionStartedAt,
+        ...describeFinalizeError(
+          { code: 'MISSING_IDEMPOTENCY_KEY', status: 400 },
+          { retryable: false, failureReason: 'missing_idempotency_key' }
+        ),
+      });
       return fail(req, res, 400, 'MISSING_IDEMPOTENCY_KEY', 'Provide X-Idempotency-Key header.');
     }
     if (!uid) {
+      emitFinalizeEvent('warn', FINALIZE_EVENTS.API_REJECTED, {
+        sourceRole: FINALIZE_SOURCE_ROLES.API,
+        requestId: req.id ?? null,
+        route: req.originalUrl,
+        attemptId: key,
+        httpStatus: 401,
+        stage: FINALIZE_STAGES.ADMISSION_VALIDATE,
+        durationMs: Date.now() - admissionStartedAt,
+        ...describeFinalizeError(
+          { code: 'UNAUTHORIZED', status: 401 },
+          { retryable: false, failureReason: 'unauthorized' }
+        ),
+      });
       return fail(req, res, 401, 'UNAUTHORIZED', 'Authentication required.');
     }
 
     // Validate sessionId before any Firestore read or reserve so invalid input never reserves usage
     const sessionId = typeof req.body?.sessionId === 'string' ? req.body.sessionId.trim() : '';
     if (sessionId.length < 3) {
+      emitFinalizeEvent('warn', FINALIZE_EVENTS.API_REJECTED, {
+        sourceRole: FINALIZE_SOURCE_ROLES.API,
+        requestId: req.id ?? null,
+        route: req.originalUrl,
+        uid,
+        attemptId: key,
+        sessionId: sessionId || null,
+        httpStatus: 400,
+        stage: FINALIZE_STAGES.ADMISSION_VALIDATE,
+        durationMs: Date.now() - admissionStartedAt,
+        ...describeFinalizeError(
+          { code: 'INVALID_INPUT', status: 400 },
+          { retryable: false, failureReason: 'invalid_session_id' }
+        ),
+      });
       return fail(
         req,
         res,
@@ -58,11 +117,30 @@ export function idempotencyFinalize({ ttlMinutes = 60, getSession } = {}) {
         uid,
         attemptId: key,
         sessionId,
+        requestId: req.id ?? null,
         ttlMinutes,
         getSession,
       });
 
       if (prepared.kind === 'error') {
+        emitFinalizeEvent('warn', FINALIZE_EVENTS.API_REJECTED, {
+          sourceRole: FINALIZE_SOURCE_ROLES.API,
+          requestId: req.id ?? null,
+          route: req.originalUrl,
+          uid,
+          sessionId,
+          attemptId: key,
+          httpStatus: prepared.status,
+          stage:
+            prepared.error === 'INSUFFICIENT_RENDER_TIME'
+              ? FINALIZE_STAGES.ADMISSION_RESERVE_USAGE
+              : FINALIZE_STAGES.ADMISSION_VALIDATE,
+          durationMs: Date.now() - admissionStartedAt,
+          ...describeFinalizeError(
+            { code: prepared.error, status: prepared.status, message: prepared.detail },
+            { retryable: false, failureReason: prepared.error }
+          ),
+        });
         return fail(req, res, prepared.status, prepared.error, prepared.detail);
       }
 
@@ -84,6 +162,33 @@ export function idempotencyFinalize({ ttlMinutes = 60, getSession } = {}) {
           return fail(req, res, 404, 'SESSION_NOT_FOUND', 'Session not found');
         }
         prepared.session = pendingSession;
+        emitFinalizeEvent('info', FINALIZE_EVENTS.JOB_CREATED, {
+          sourceRole: FINALIZE_SOURCE_ROLES.API,
+          requestId: req.id ?? null,
+          route: req.originalUrl,
+          uid,
+          sessionId,
+          attemptId: key,
+          stage: FINALIZE_STAGES.QUEUE_ENQUEUE,
+          jobState: prepared.attempt?.state ?? 'queued',
+          queuedAt: prepared.attempt?.enqueuedAt ?? null,
+          estimatedSec: prepared.attempt?.usageReservation?.estimatedSec || null,
+          reservedSec: prepared.attempt?.usageReservation?.reservedSec || null,
+        });
+        emitFinalizeEvent('info', FINALIZE_EVENTS.JOB_QUEUED, {
+          sourceRole: FINALIZE_SOURCE_ROLES.API,
+          requestId: req.id ?? null,
+          route: req.originalUrl,
+          uid,
+          sessionId,
+          attemptId: key,
+          stage: FINALIZE_STAGES.QUEUE_ENQUEUE,
+          jobState: prepared.attempt?.state ?? 'queued',
+          queuedAt: prepared.attempt?.enqueuedAt ?? null,
+          estimatedSec: prepared.attempt?.usageReservation?.estimatedSec || null,
+          reservedSec: prepared.attempt?.usageReservation?.reservedSec || null,
+        });
+        void refreshFinalizeQueueMetrics().catch(() => {});
         logger.info('story.finalize.idempotency.enqueued', {
           routeStatus: `${req.method} ${req.originalUrl}`,
           sessionId,
@@ -107,6 +212,22 @@ export function idempotencyFinalize({ ttlMinutes = 60, getSession } = {}) {
       req.finalizeReply = reply;
       next();
     } catch (err) {
+      emitFinalizeEvent('error', FINALIZE_EVENTS.API_REJECTED, {
+        sourceRole: FINALIZE_SOURCE_ROLES.API,
+        requestId: req.id ?? null,
+        route: req.originalUrl,
+        uid,
+        sessionId,
+        attemptId: key,
+        httpStatus: Number.isFinite(Number(err?.status)) ? Number(err.status) : 500,
+        stage: FINALIZE_STAGES.ADMISSION_RESERVE_USAGE,
+        durationMs: Date.now() - admissionStartedAt,
+        error: err,
+        ...describeFinalizeError(err, {
+          retryable: false,
+          failureReason: 'prepare_finalize_attempt_failed',
+        }),
+      });
       logger.error('story.finalize.idempotency.prepare_failed', {
         routeStatus: `${req.method} ${req.originalUrl}`,
         error: err,

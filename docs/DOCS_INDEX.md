@@ -22,7 +22,10 @@ Trust these first for current work:
 - backend repo `docs/FINALIZE_FACTORY_CONVERSION_PLAN.md`
 - backend repo `docs/FINALIZE_JOB_MODEL_SPEC.md`
 - backend repo `docs/FINALIZE_OBSERVABILITY_SPEC.md`
+- backend repo `docs/FINALIZE_OBSERVABILITY_COVERAGE_MATRIX.md`
 - backend repo `docs/FINALIZE_RUNTIME_TOPOLOGY_SPEC.md`
+- backend repo `docs/FINALIZE_DASHBOARD_ARTIFACTS.md`
+- backend repo `docs/FINALIZE_ALERT_ARTIFACTS.md`
 - backend repo `docs/SCRIPT_CONTROL_PREIMPLEMENTATION_AUDIT.md`
 - backend repo `docs/CROSS_REPO_PRODUCTION_HARDENING_PLAN.md`
 - backend repo `docs/DEPLOY_ROLLBACK_HOTFIX_RUNBOOK.md`
@@ -47,7 +50,10 @@ Update these first when backend/mobile contract or hardening truth changes:
 - `docs/FINALIZE_FACTORY_CONVERSION_PLAN.md`
 - `docs/FINALIZE_JOB_MODEL_SPEC.md`
 - `docs/FINALIZE_OBSERVABILITY_SPEC.md`
+- `docs/FINALIZE_OBSERVABILITY_COVERAGE_MATRIX.md`
 - `docs/FINALIZE_RUNTIME_TOPOLOGY_SPEC.md`
+- `docs/FINALIZE_DASHBOARD_ARTIFACTS.md`
+- `docs/FINALIZE_ALERT_ARTIFACTS.md`
 - `docs/MOBILE_BACKEND_CONTRACT.md`
 - `docs/MOBILE_HARDENING_PLAN.md`
 - `docs/TIME_BASED_RENDER_USAGE_MIGRATION_PLAN.md`

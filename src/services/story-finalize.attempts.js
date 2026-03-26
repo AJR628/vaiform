@@ -1,5 +1,13 @@
 import admin, { db } from '../config/firebase.js';
 import logger from '../observability/logger.js';
+import {
+  FINALIZE_EVENTS,
+  FINALIZE_SOURCE_ROLES,
+  FINALIZE_STAGES,
+  describeFinalizeError,
+  emitFinalizeEvent,
+  markFinalizeQueueSnapshot,
+} from '../observability/finalize-observability.js';
 import { buildCanonicalUsageState, getAvailableSec } from './usage.service.js';
 import { persistStoryRenderRecovery, sanitizeStorySessionForClient } from './story.service.js';
 import { isOutboundPolicyError } from '../utils/outbound.fetch.js';
@@ -133,6 +141,14 @@ export const finalizeFailureReplayEnvelope = (req, attempt) => ({
   }),
 });
 
+function safeRefreshFinalizeQueueMetrics() {
+  void refreshFinalizeQueueMetrics().catch((error) => {
+    logger.warn('finalize.metrics.refresh_failed', {
+      error,
+    });
+  });
+}
+
 function normalizeAttempt(data, id = null) {
   if (!data || typeof data !== 'object') return null;
   return {
@@ -145,6 +161,7 @@ function normalizeAttempt(data, id = null) {
     status: Number.isFinite(Number(data.status)) ? Number(data.status) : null,
     isActive: data.isActive === true,
     shortId: data.shortId ?? null,
+    requestId: data.requestId ?? null,
     usageReservation: data.usageReservation || null,
     billingSettlement: data.billingSettlement || null,
     failure: data.failure || null,
@@ -158,7 +175,56 @@ function normalizeAttempt(data, id = null) {
     leaseHeartbeatAt: toIso(data.leaseHeartbeatAt),
     leaseExpiresAt: toIso(data.leaseExpiresAt),
     runnerId: data.runnerId || null,
+    };
+}
+
+export async function captureFinalizeQueueMetricsSnapshot({ now = Date.now() } = {}) {
+  const snapshot = await db
+    .collection(ATTEMPTS_COLLECTION)
+    .where('flow', '==', FLOW)
+    .get();
+
+  let queueDepth = 0;
+  let jobsRunning = 0;
+  let jobsRetryScheduled = 0;
+  let oldestQueuedAtMs = null;
+  let billingUnsettledJobs = 0;
+  for (const doc of snapshot.docs) {
+    const attempt = normalizeAttempt(doc.data(), doc.id);
+    if (!attempt) continue;
+    if (attempt.isActive !== true) continue;
+    billingUnsettledJobs += 1;
+    if (attempt.state === 'queued') {
+      queueDepth += 1;
+      const createdAtMs = toMillis(attempt.createdAt);
+      if (Number.isFinite(createdAtMs)) {
+        oldestQueuedAtMs =
+          oldestQueuedAtMs == null ? createdAtMs : Math.min(oldestQueuedAtMs, createdAtMs);
+      }
+      const availableAfterMs = toMillis(attempt.availableAfter);
+      if (Number.isFinite(availableAfterMs) && availableAfterMs > now) {
+        jobsRetryScheduled += 1;
+      }
+    }
+    if (attempt.state === 'running') {
+      jobsRunning += 1;
+    }
+  }
+
+  return {
+    queueDepth,
+    queueOldestAgeSeconds:
+      oldestQueuedAtMs == null ? 0 : Math.max(0, Math.floor((now - oldestQueuedAtMs) / 1000)),
+    jobsRunning,
+    jobsRetryScheduled,
+    billingUnsettledJobs,
   };
+}
+
+export async function refreshFinalizeQueueMetrics() {
+  const snapshot = await captureFinalizeQueueMetricsSnapshot();
+  markFinalizeQueueSnapshot(snapshot);
+  return snapshot;
 }
 
 export async function getFinalizeAttempt({ uid, attemptId }) {
@@ -299,6 +365,7 @@ export async function prepareFinalizeAttempt({
   uid,
   attemptId,
   sessionId,
+  requestId = null,
   ttlMinutes = 60,
   getSession,
 }) {
@@ -397,6 +464,7 @@ export async function prepareFinalizeAttempt({
         uid,
         attemptId,
         sessionId,
+        requestId,
         state: 'queued',
         isActive: true,
         status: FINALIZE_ACCEPTED_STATUS,
@@ -451,6 +519,7 @@ export async function prepareFinalizeAttempt({
             uid,
             attemptId,
             sessionId,
+            requestId,
             state: 'queued',
             isActive: true,
             status: FINALIZE_ACCEPTED_STATUS,
@@ -604,6 +673,9 @@ export async function finalizeAttemptFailure({
   error,
   detail,
   state = 'failed',
+  stage = FINALIZE_STAGES.PERSIST_RECOVERY,
+  failureReason = null,
+  emitObservability = true,
 }) {
   const now = new Date();
   const currentAttempt = await getFinalizeAttempt({ uid, attemptId });
@@ -670,7 +742,36 @@ export async function finalizeAttemptFailure({
     status,
     error,
   });
-  return await getFinalizeAttempt({ uid, attemptId });
+  const attempt = await getFinalizeAttempt({ uid, attemptId });
+  const failureDetails = describeFinalizeError(
+    { code: error, status, message: detail },
+    {
+      errorCode: error,
+      httpStatus: status,
+      retryable: false,
+      failureReason: state === 'expired' ? 'attempt_expired' : 'terminal_failure',
+    }
+  );
+  if (emitObservability) {
+    emitFinalizeEvent('warn', FINALIZE_EVENTS.JOB_FAILED, {
+      sourceRole: FINALIZE_SOURCE_ROLES.WORKER,
+      requestId: attempt?.requestId ?? currentAttempt.requestId ?? null,
+      uid,
+      sessionId: attempt?.sessionId ?? currentAttempt.sessionId,
+      attemptId,
+      jobState: attempt?.state ?? state,
+      stage,
+      shortId: attempt?.shortId ?? null,
+      durationMs:
+        Number.isFinite(toMillis(attempt?.finishedAt)) && Number.isFinite(toMillis(attempt?.enqueuedAt))
+          ? toMillis(attempt.finishedAt) - toMillis(attempt.enqueuedAt)
+          : null,
+      ...failureDetails,
+      failureReason: failureReason || failureDetails.failureReason,
+    });
+  }
+  safeRefreshFinalizeQueueMetrics();
+  return attempt;
 }
 
 export async function settleFinalizeAttemptSuccess({ uid, attemptId, session, shortId, status = 200 }) {
@@ -703,6 +804,28 @@ export async function settleFinalizeAttemptSuccess({ uid, attemptId, session, sh
     });
   }
   if (estimatedSec > 0 && billedSec > estimatedSec) {
+    emitFinalizeEvent('error', FINALIZE_EVENTS.JOB_FAILED, {
+      sourceRole: FINALIZE_SOURCE_ROLES.WORKER,
+      requestId: currentAttempt.requestId ?? null,
+      uid,
+      sessionId: currentAttempt.sessionId,
+      attemptId,
+      jobState: currentAttempt.state,
+      stage: FINALIZE_STAGES.BILLING_SETTLE,
+      estimatedSec,
+      reservedSec: Number(currentAttempt?.usageReservation?.reservedSec || 0),
+      billedSec,
+      settlementState: 'mismatch',
+      usageLedgerApplied: false,
+      billingMismatch: true,
+      ...describeFinalizeError(
+        { code: 'BILLING_ESTIMATE_TOO_LOW', status: 500 },
+        {
+          retryable: false,
+          failureReason: 'billing_estimate_too_low',
+        }
+      ),
+    });
     throw Object.assign(
       new Error(`Billed render time ${billedSec}s exceeded reserved estimate ${estimatedSec}s.`),
       {
@@ -788,6 +911,7 @@ export async function settleFinalizeAttemptSuccess({ uid, attemptId, session, sh
       tx.set(
         shortRef,
         {
+          finalizeAttemptId: attemptId,
           billing: {
             estimatedSec: reservedSec,
             billedSec,
@@ -808,6 +932,27 @@ export async function settleFinalizeAttemptSuccess({ uid, attemptId, session, sh
     billedSec,
     shortId: shortId ?? null,
   });
+  emitFinalizeEvent('info', FINALIZE_EVENTS.JOB_SETTLED, {
+    sourceRole: FINALIZE_SOURCE_ROLES.WORKER,
+    requestId: attempt?.requestId ?? currentAttempt.requestId ?? null,
+    uid,
+    sessionId: currentAttempt.sessionId,
+    attemptId,
+    shortId: shortId ?? null,
+    jobState: attempt?.state ?? 'done',
+    stage: FINALIZE_STAGES.BILLING_SETTLE,
+    estimatedSec,
+    reservedSec: Number(currentAttempt?.usageReservation?.reservedSec || 0),
+    billedSec,
+    settlementState: 'settled',
+    usageLedgerApplied: true,
+    billingMismatch: false,
+    durationMs:
+      Number.isFinite(toMillis(attempt?.finishedAt)) && Number.isFinite(toMillis(attempt?.enqueuedAt))
+        ? toMillis(attempt.finishedAt) - toMillis(attempt.enqueuedAt)
+        : null,
+  });
+  safeRefreshFinalizeQueueMetrics();
   return {
     attempt,
     session: attachBillingToSession(session, attempt?.billingSettlement),
@@ -855,6 +1000,26 @@ export async function markFinalizeAttemptQueuedForRetry({
       { merge: true }
     );
   });
+  const attempt = await getFinalizeAttempt({ uid, attemptId });
+  emitFinalizeEvent('warn', FINALIZE_EVENTS.JOB_RETRY_SCHEDULED, {
+    sourceRole: FINALIZE_SOURCE_ROLES.WORKER,
+    requestId: attempt?.requestId ?? null,
+    uid,
+    sessionId: attempt?.sessionId ?? null,
+    attemptId,
+    workerId: runnerId ?? null,
+    jobState: attempt?.state ?? 'queued',
+    stage: FINALIZE_STAGES.QUEUE_WAIT,
+    retryAfterMs,
+    ...describeFinalizeError(
+      { code: 'SERVER_BUSY', status: 503 },
+      {
+        retryable: true,
+        failureReason: 'server_busy',
+      }
+    ),
+  });
+  safeRefreshFinalizeQueueMetrics();
 }
 
 export async function claimNextFinalizeAttempt({ runnerId, leaseMs = FINALIZE_RUNNER_LEASE_MS }) {
@@ -924,6 +1089,23 @@ export async function claimNextFinalizeAttempt({ runnerId, leaseMs = FINALIZE_RU
     });
 
     if (claimed) {
+      emitFinalizeEvent('info', FINALIZE_EVENTS.JOB_CLAIMED, {
+        sourceRole: FINALIZE_SOURCE_ROLES.WORKER,
+        requestId: claimed.requestId ?? null,
+        uid: claimed.uid,
+        sessionId: claimed.sessionId,
+        attemptId: claimed.attemptId,
+        workerId: runnerId,
+        jobState: claimed.state,
+        stage: FINALIZE_STAGES.WORKER_CLAIM,
+        queuedAt: claimed.enqueuedAt,
+        startedAt: claimed.startedAt,
+        durationMs:
+          Number.isFinite(toMillis(claimed.startedAt)) && Number.isFinite(toMillis(claimed.enqueuedAt))
+            ? toMillis(claimed.startedAt) - toMillis(claimed.enqueuedAt)
+            : null,
+      });
+      safeRefreshFinalizeQueueMetrics();
       return claimed;
     }
   }
@@ -951,6 +1133,16 @@ export async function heartbeatFinalizeAttempt({ uid, attemptId, runnerId, lease
       { merge: true }
     );
   });
+  const attempt = await getFinalizeAttempt({ uid, attemptId });
+  emitFinalizeEvent('debug', FINALIZE_EVENTS.WORKER_HEARTBEAT, {
+    sourceRole: FINALIZE_SOURCE_ROLES.WORKER,
+    requestId: attempt?.requestId ?? null,
+    uid,
+    sessionId: attempt?.sessionId ?? null,
+    attemptId,
+    workerId: runnerId ?? null,
+    jobState: attempt?.state ?? null,
+  });
 }
 
 export async function reapStaleFinalizeAttempts() {
@@ -975,6 +1167,23 @@ export async function reapStaleFinalizeAttempts() {
         detail: 'Finalize attempt expired before completion.',
         state: 'expired',
       });
+      emitFinalizeEvent('warn', FINALIZE_EVENTS.WORKER_HEARTBEAT_MISSED, {
+        sourceRole: FINALIZE_SOURCE_ROLES.WORKER,
+        requestId: attempt.requestId ?? null,
+        uid: attempt.uid,
+        sessionId: attempt.sessionId,
+        attemptId: attempt.attemptId,
+        workerId: attempt.runnerId ?? null,
+        jobState: attempt.state,
+        stage: FINALIZE_STAGES.QUEUE_WAIT,
+        ...describeFinalizeError(
+          { code: 'FINALIZE_ATTEMPT_EXPIRED', status: 500 },
+          {
+            retryable: false,
+            failureReason: 'attempt_expired',
+          }
+        ),
+      });
       await persistStoryRenderRecovery({
         uid: attempt.uid,
         sessionId: attempt.sessionId,
@@ -990,6 +1199,23 @@ export async function reapStaleFinalizeAttempts() {
 
     const leaseExpiresAtMs = toMillis(attempt.leaseExpiresAt);
     if (attempt.state === 'running' && Number.isFinite(leaseExpiresAtMs) && leaseExpiresAtMs <= Date.now()) {
+      emitFinalizeEvent('warn', FINALIZE_EVENTS.WORKER_HEARTBEAT_MISSED, {
+        sourceRole: FINALIZE_SOURCE_ROLES.WORKER,
+        requestId: attempt.requestId ?? null,
+        uid: attempt.uid,
+        sessionId: attempt.sessionId,
+        attemptId: attempt.attemptId,
+        workerId: attempt.runnerId ?? null,
+        jobState: attempt.state,
+        stage: FINALIZE_STAGES.RENDER_VIDEO,
+        ...describeFinalizeError(
+          { code: 'FINALIZE_WORKER_LOST', status: 500 },
+          {
+            retryable: false,
+            failureReason: 'worker_lease_expired',
+          }
+        ),
+      });
       await finalizeAttemptFailure({
         uid: attempt.uid,
         attemptId: attempt.attemptId,
@@ -1009,4 +1235,5 @@ export async function reapStaleFinalizeAttempts() {
       }).catch(() => {});
     }
   }
+  safeRefreshFinalizeQueueMetrics();
 }

@@ -35,6 +35,12 @@ import { wrapTextWithFont } from '../utils/caption.wrap.js';
 import { deriveCaptionWrapWidthPx } from '../utils/caption.wrapWidth.js';
 import { compileCaptionSSOT } from '../captions/compile.js';
 import logger from '../observability/logger.js';
+import {
+  FINALIZE_EVENTS,
+  FINALIZE_STAGES,
+  emitFinalizeEvent,
+  withFinalizeStage,
+} from '../observability/finalize-observability.js';
 import { getRuntimeOverride } from '../testing/runtime-overrides.js';
 
 const TTL_HOURS = Number(process.env.STORY_TTL_HOURS || 48);
@@ -459,6 +465,15 @@ async function persistRenderRecovery({
   session.renderRecovery = next;
   session.updatedAt = next.updatedAt;
   await saveStorySession({ uid, sessionId, data: session });
+  emitFinalizeEvent('info', FINALIZE_EVENTS.RECOVERY_PROJECTED, {
+    uid,
+    sessionId,
+    attemptId,
+    shortId: next.shortId || null,
+    jobState: next.state || null,
+    stage: FINALIZE_STAGES.PERSIST_RECOVERY,
+    failureReason: next.code || null,
+  });
   return session;
 }
 
@@ -2379,15 +2394,17 @@ export async function renderStory({ uid, sessionId }) {
 
     // Upload to storage
     const jobId = `story-${Date.now().toString(36)}`;
-    const destPath = `artifacts/${uid}/${jobId}/story.mp4`;
-    const { publicUrl } = await uploadPublic(finalPath, destPath, 'video/mp4');
-
     const durationSec = renderedSegments.reduce((sum, s) => sum + s.durationSec, 0);
     const joinedText = session.story?.sentences?.join(' ') || '';
-
-    // Extract and upload thumbnail (best-effort)
+    let publicUrl = null;
     let thumbUrl = null;
-    if (fs.existsSync(finalPath)) {
+    await withFinalizeStage(FINALIZE_STAGES.UPLOAD_ARTIFACTS, {}, async () => {
+      const destPath = `artifacts/${uid}/${jobId}/story.mp4`;
+      const uploadedVideo = await uploadPublic(finalPath, destPath, 'video/mp4');
+      publicUrl = uploadedVideo.publicUrl;
+
+      // Extract and upload thumbnail (best-effort)
+      if (!fs.existsSync(finalPath)) return;
       try {
         const thumbLocal = path.join(tmpDir, 'thumb.jpg');
         const ok = await extractCoverJpeg({
@@ -2408,40 +2425,41 @@ export async function renderStory({ uid, sessionId }) {
         }
       } catch (e) {
         console.warn(`[story.service] Thumbnail extraction failed: ${e?.message || e}`);
-        // Continue without thumbnail
       }
-    }
+    });
 
     // Create Firestore document in 'shorts' collection so it appears in My Shorts
     const db = admin.firestore();
     const shortsRef = db.collection('shorts').doc(jobId);
 
-    try {
-      await shortsRef.set({
-        ownerId: uid,
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
-        status: 'ready',
-        videoUrl: publicUrl,
-        thumbUrl: thumbUrl,
-        coverImageUrl: thumbUrl, // Backward compatibility
-        durationSec: durationSec,
-        quoteText: joinedText,
-        mode: 'story',
-        template: 'story',
-        voiceover: true, // TTS is now enabled
-        wantAttribution: false,
-        captionMode: 'overlay',
-        watermark: true,
-        background: {
-          kind: 'video',
-          type: 'video',
-        },
-        completedAt: admin.firestore.FieldValue.serverTimestamp(),
-      });
-      console.log(`[story.service] Created Firestore doc in shorts collection: ${jobId}`);
-    } catch (error) {
-      console.warn(`[story.service] Failed to create Firestore doc: ${error.message}`);
-    }
+    await withFinalizeStage(FINALIZE_STAGES.WRITE_SHORT, {}, async () => {
+      try {
+        await shortsRef.set({
+          ownerId: uid,
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          status: 'ready',
+          videoUrl: publicUrl,
+          thumbUrl: thumbUrl,
+          coverImageUrl: thumbUrl, // Backward compatibility
+          durationSec: durationSec,
+          quoteText: joinedText,
+          mode: 'story',
+          template: 'story',
+          voiceover: true, // TTS is now enabled
+          wantAttribution: false,
+          captionMode: 'overlay',
+          watermark: true,
+          background: {
+            kind: 'video',
+            type: 'video',
+          },
+          completedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        console.log(`[story.service] Created Firestore doc in shorts collection: ${jobId}`);
+      } catch (error) {
+        console.warn(`[story.service] Failed to create Firestore doc: ${error.message}`);
+      }
+    });
 
     session.renderedSegments = renderedSegments.map((s) => s.path);
     session.finalVideo = {
@@ -2525,7 +2543,9 @@ export async function finalizeStory({ uid, sessionId, options = {}, attemptId = 
     return await override({ uid, sessionId, options, attemptId });
   }
 
-  let session = await loadStorySession({ uid, sessionId });
+  let session = await withFinalizeStage(FINALIZE_STAGES.HYDRATE_SESSION, { sessionId, attemptId }, () =>
+    loadStorySession({ uid, sessionId })
+  );
   if (!session) throw new Error('SESSION_NOT_FOUND');
 
   try {
@@ -2536,12 +2556,17 @@ export async function finalizeStory({ uid, sessionId, options = {}, attemptId = 
       hasShots: Array.isArray(session.shots) && session.shots.length > 0,
       hasFinalVideo: Boolean(session.finalVideo),
     });
-    session = await persistRenderRecovery({
-      uid,
-      sessionId,
-      attemptId,
-      state: 'pending',
-    });
+    session = await withFinalizeStage(
+      FINALIZE_STAGES.PERSIST_RECOVERY,
+      { sessionId, attemptId, shortId: null },
+      async () =>
+        await persistRenderRecovery({
+          uid,
+          sessionId,
+          attemptId,
+          state: 'pending',
+        })
+    );
     if (!session) throw new Error('SESSION_NOT_FOUND_AFTER_PENDING');
     logger.info('story.finalize.recovery_pending_persisted', {
       sessionId,
@@ -2551,22 +2576,28 @@ export async function finalizeStory({ uid, sessionId, options = {}, attemptId = 
 
     // Step 1: Generate story if not done
     if (!session.story) {
-      await generateStory({
-        uid,
-        sessionId,
-        input: session.input.text,
-        inputType: session.input.type,
+      await withFinalizeStage(FINALIZE_STAGES.STORY_GENERATE, { sessionId, attemptId }, async () => {
+        await generateStory({
+          uid,
+          sessionId,
+          input: session.input.text,
+          inputType: session.input.type,
+        });
       });
     }
 
     // Step 2: Plan shots if not done
     if (!session.plan) {
-      await planShots({ uid, sessionId });
+      await withFinalizeStage(FINALIZE_STAGES.PLAN_SHOTS, { sessionId, attemptId }, async () => {
+        await planShots({ uid, sessionId });
+      });
     }
 
     // Step 3: Search clips if not done
     if (!session.shots) {
-      await searchShots({ uid, sessionId });
+      await withFinalizeStage(FINALIZE_STAGES.CLIP_SEARCH, { sessionId, attemptId }, async () => {
+        await searchShots({ uid, sessionId });
+      });
     }
 
     // Step 4: Build timeline if not done (optional, we render from individual clips)
@@ -2574,24 +2605,37 @@ export async function finalizeStory({ uid, sessionId, options = {}, attemptId = 
 
     // Step 5: Generate caption timings if not done
     if (!session.captions) {
-      await generateCaptionTimings({ uid, sessionId });
+      await withFinalizeStage(FINALIZE_STAGES.CAPTION_GENERATE, { sessionId, attemptId }, async () => {
+        await generateCaptionTimings({ uid, sessionId });
+      });
     }
 
     // Step 6: Render segments
     if (!session.finalVideo) {
-      await renderStory({ uid, sessionId });
+      await withFinalizeStage(FINALIZE_STAGES.RENDER_VIDEO, { sessionId, attemptId }, async () => {
+        await renderStory({ uid, sessionId });
+      });
       // Reload session to get updated finalVideo field
-      session = await loadStorySession({ uid, sessionId });
+      session = await withFinalizeStage(
+        FINALIZE_STAGES.HYDRATE_SESSION,
+        { sessionId, attemptId },
+        () => loadStorySession({ uid, sessionId })
+      );
       if (!session) throw new Error('SESSION_NOT_FOUND_AFTER_RENDER');
     }
 
-    session = await persistRenderRecovery({
-      uid,
-      sessionId,
-      attemptId,
-      state: 'done',
-      shortId: session?.finalVideo?.jobId || null,
-    });
+    session = await withFinalizeStage(
+      FINALIZE_STAGES.PERSIST_RECOVERY,
+      { sessionId, attemptId, shortId: session?.finalVideo?.jobId || null },
+      async () =>
+        await persistRenderRecovery({
+          uid,
+          sessionId,
+          attemptId,
+          state: 'done',
+          shortId: session?.finalVideo?.jobId || null,
+        })
+    );
     if (!session) throw new Error('SESSION_NOT_FOUND_AFTER_RENDER');
     logger.info('story.finalize.service.completed', {
       sessionId,
@@ -2608,13 +2652,18 @@ export async function finalizeStory({ uid, sessionId, options = {}, attemptId = 
       error,
     });
     try {
-      await persistRenderRecovery({
-        uid,
-        sessionId,
-        attemptId,
-        state: 'failed',
-        error,
-      });
+      await withFinalizeStage(
+        FINALIZE_STAGES.PERSIST_RECOVERY,
+        { sessionId, attemptId, shortId: null },
+        async () =>
+          await persistRenderRecovery({
+            uid,
+            sessionId,
+            attemptId,
+            state: 'failed',
+            error,
+          })
+      );
     } catch (persistError) {
       logger.error('story.finalize.recovery_failure_persist_failed', {
         sessionId,

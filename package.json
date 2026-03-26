@@ -35,6 +35,7 @@
     "lint:fix": "eslint . --fix",
     "test": "npm run test:contracts",
     "test:contracts": "node --test --test-concurrency=1 test/contracts/phase4a.contract.test.js",
+    "test:observability": "node --test test/observability/*.test.js",
     "test:security": "node scripts/check-privilege-escalation.mjs",
     "prepare": "husky install",
     "check:responses": "node scripts/check-responses.js",
@@ -51,4 +52,3 @@
     "prettier": "^3.3.3"
   }
 }
-

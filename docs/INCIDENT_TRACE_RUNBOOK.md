@@ -1,141 +1,259 @@
 # INCIDENT_TRACE_RUNBOOK
 
-Last verified against repo code: 2026-03-23.
-
-Purpose: manual trace workflow for the Cross-Repo Phase 3 observability scope only.
+- Status: CANONICAL
+- Owner repo: backend
+- Source of truth for: Phase 1 finalize control-room triage on the current finalize engine
+- Last verified against repo code: 2026-03-26
 
 ## Scope
 
-- Failed finalize / idempotent replay / recovery trace
-- Missing short-detail / retry / fallback trace
+Use this runbook for:
 
-## Known boundaries
+- failed finalize admission / replay / async execution
+- queue growth / worker claim / retry / lease-loss incidents
+- billing reserve vs settle drift triage
+- completion vs readback lag triage
 
-- Backend structured logs are stdout-only.
-- Mobile diagnostics are in-memory only and are cleared on app restart.
-- Cross-repo execution order still lives in `docs/CROSS_REPO_PRODUCTION_HARDENING_PLAN.md`.
+Phase 1 scope boundary:
 
-## Correlation keys
+- this runbook instruments the current in-process finalize runner
+- this runbook does not assume a separate worker deployment yet
+- this runbook does not assume a dead-letter queue yet
 
-Capture as many of these as the incident provides:
+## Control-Room Sources
+
+Use these sources in this order:
+
+1. Canonical finalize logs emitted through `src/observability/finalize-observability.js`
+2. Canonical finalize metrics emitted through the same module and exposed by the Phase 1 diagnostic proof surface
+3. Mobile in-memory diagnostics for finalize recovery and readback
+4. Legacy stdout log events only when extra local detail is needed
+
+Diagnostic proof surface:
+
+- `GET /diag/finalize-control-room`
+- Mounted only when `VAIFORM_DEBUG=1` via [src/app.js](C:/Users/ajrhe/OneDrive/Desktop/vaiform-1-clean/src/app.js):217-223 and [src/routes/diag.routes.js](C:/Users/ajrhe/OneDrive/Desktop/vaiform-1-clean/src/routes/diag.routes.js):1-145
+- Returns:
+  - `queueSnapshot`
+  - `observability.metrics`
+  - `observability.recentEvents`
+
+Known boundaries that still apply:
+
+- backend logs are still stdout-backed even though the event schema is now canonical ([src/observability/logger.js](C:/Users/ajrhe/OneDrive/Desktop/vaiform-1-clean/src/observability/logger.js):18-39)
+- mobile diagnostics are still in-memory only and are cleared on app restart ([client/lib/diagnostics.ts](C:/Users/ajrhe/OneDrive/Desktop/vaiform-mobile-ed4c17b4253fd8138e52349f5468ac1cc794cbe1/client/lib/diagnostics.ts):36-153)
+- the current API process still boots the finalize runner in-process ([src/app.js](C:/Users/ajrhe/OneDrive/Desktop/vaiform-1-clean/src/app.js):32-33)
+
+## Correlation Keys
+
+Capture as many of these as possible:
 
 - `requestId`
 - `sessionId`
-- `attemptId` (`X-Idempotency-Key` on finalize)
+- `attemptId`
+- `finalizeJobId`
 - `shortId`
-- route
-- status / code
+- `workerId`
+- `route`
+- `stage`
+- `surface`
+- `status` / `code`
 
-## Finalize / Replay / Recovery Trace
+Phase 1 bridge rule:
 
-1. Start on mobile:
-- Check the in-memory diagnostics buffer for `/api/story/finalize` and `/api/story/:sessionId`.
-- Capture `requestId`, `status`, `code`, `sessionId`, and `attemptId`.
-- Expected mobile context sources:
-  - `client/api/client.ts`
-  - `client/screens/StoryEditorScreen.tsx`
+- `finalizeJobId` is an observability alias of the current external `attemptId`; Phase 1 has not migrated runtime job storage yet ([src/observability/finalize-observability.js](C:/Users/ajrhe/OneDrive/Desktop/vaiform-1-clean/src/observability/finalize-observability.js):276-278)
 
-2. Correlate the backend finalize request:
-- Search stdout logs for the same `requestId`.
-- Expected events:
-  - `story.finalize.request`
-  - `story.finalize.accepted`
-  - `story.finalize.replay_pending`
-  - `story.finalize.conflict_active_attempt`
-  - `story.finalize.replay_completed`
-  - `story.finalize.replay_failed`
-  - `story.finalize.failed`
-  - `request.error`
+## Canonical Stage Map
 
-3. Correlate async attempt lifecycle:
-- Filter on the same `attemptId` and `sessionId`.
-- Expected events:
-  - `story.finalize.idempotency.enqueued`
-  - `story.finalize.idempotency.settled`
-  - `story.finalize.attempt.released`
-  - `story.finalize.idempotency.prepare_failed`
+Use these stage names when triaging:
 
-4. Correlate backend recovery and runner state:
-- Filter on the same `sessionId` and `attemptId`.
-- Expected events:
-  - `story.finalize.service.start`
-  - `story.finalize.recovery_pending_persisted`
-  - `story.finalize.service.completed`
-  - `story.finalize.service.failed`
-  - `story.finalize.recovery_failure_persist_failed`
-  - `story.finalize.runner.recovery_failure_persist_failed`
-  - `story.finalize.runner.task_failed`
-  - `story.finalize.runner.reaper_failed`
-  - `story.recovery.poll`
+- `admission_validate`
+- `admission_reserve_usage`
+- `queue_enqueue`
+- `queue_wait`
+- `worker_claim`
+- `hydrate_session`
+- `story_generate`
+- `plan_shots`
+- `clip_search`
+- `caption_generate`
+- `render_video`
+- `upload_artifacts`
+- `write_short`
+- `persist_recovery`
+- `billing_settle`
+- `client_recovery_poll`
+- `short_detail_readback`
+- `library_fallback_readback`
 
-5. Interpret common outcomes:
-- `202` with additive `finalize.state: "pending"` means the attempt was accepted or same-key replay is still pending.
-- `FINALIZE_ALREADY_ACTIVE` with additive `finalize.attemptId` means a different key collided with the already-active same-session attempt.
-- `story.finalize.replay_completed` with a `shortId` means the prior attempt already settled and same-key replay returned the existing result.
-- `story.finalize.attempt.released` or session `renderRecovery.failed` means the attempt reached terminal failure and reserved usage was released.
-- `story.finalize.recovery_failure_persist_failed` means the render failure happened, but the session-level failure marker could not be persisted. Treat this as a partial observability failure and inspect surrounding `story.finalize.service.failed` / `request.error` logs.
-- `IDEMPOTENT_IN_PROGRESS` is now legacy compatibility guidance for older blocking finalize callers; it is not the primary live mobile async finalize path.
+Stage authority: [src/observability/finalize-observability.js](C:/Users/ajrhe/OneDrive/Desktop/vaiform-1-clean/src/observability/finalize-observability.js):15-34
 
-## Missing Short Detail / Retry / Fallback Trace
+## Canonical Metrics
 
-1. Start on mobile:
-- Check the in-memory diagnostics buffer for `/api/shorts/:jobId` and `/api/shorts/mine?limit=50`.
-- Capture `requestId`, `shortId`, retry counters, and fallback stage markers.
-- Expected mobile-only diagnostic codes:
-  - `DETAIL_PENDING_RETRY`
-  - `DETAIL_RETRY_TIMEOUT`
-  - `LIBRARY_FALLBACK_HIT`
-  - `LIBRARY_FALLBACK_MISS`
+Use these Phase 1 metrics first:
 
-2. Correlate the backend detail request:
-- Search stdout logs for the same `requestId` or `shortId`.
-- Expected events:
-  - `shorts.detail.meta_hit`
-  - `shorts.detail.storage_hit`
-  - `shorts.detail.not_found`
-  - `shorts.detail.failed`
+- `finalize_queue_depth`
+- `finalize_queue_oldest_age_seconds`
+- `finalize_jobs_running`
+- `finalize_jobs_retry_scheduled`
+- `finalize_workers_active`
+- `finalize_worker_saturation_ratio`
+- `finalize_billing_unsettled_jobs`
+- `finalize_api_requests_total`
+- `finalize_jobs_created_total`
+- `finalize_worker_claims_total`
+- `finalize_job_retries_total`
+- `finalize_job_failures_total`
+- `finalize_worker_lease_expirations_total`
+- `finalize_billing_mismatches_total`
+- `finalize_readback_retries_total`
+- `finalize_api_admission_duration_ms`
+- `finalize_queue_wait_duration_ms`
+- `finalize_job_total_duration_ms`
+- `finalize_stage_duration_ms`
+- `finalize_readback_completion_lag_ms`
 
-3. Interpret common outcomes:
-- `shorts.detail.not_found` with mobile `404 NOT_FOUND` means the bridge asset was still unavailable when detail was requested.
-- `LIBRARY_FALLBACK_HIT` means detail was still unavailable but list fallback found the ready short first.
-- `DETAIL_RETRY_TIMEOUT` means the mobile retry window exhausted without a terminal backend failure; treat it as pending availability unless backend logs show a real `shorts.detail.failed`.
+Metric authority: [src/observability/finalize-observability.js](C:/Users/ajrhe/OneDrive/Desktop/vaiform-1-clean/src/observability/finalize-observability.js):111-240
 
-## Usage / Billing State Triage
+## Finalize Admission / Replay / Queue Triage
 
-1. Start on mobile:
-- Capture the `/api/usage` `requestId`, `status`, and `code`.
-- Note whether the request happened during auth bootstrap or an explicit refresh.
-- Expected mobile context sources:
-  - `client/contexts/AuthContext.tsx`
-  - `client/api/client.ts`
-  - `client/screens/SettingsScreen.tsx`
+1. Start from mobile or web caller evidence.
+- Mobile finalize callers preserve `requestId`, `sessionId`, `attemptId`, `surface`, and stage context in diagnostics ([client/screens/story-editor/useStoryEditorFinalize.ts](C:/Users/ajrhe/OneDrive/Desktop/vaiform-mobile-ed4c17b4253fd8138e52349f5468ac1cc794cbe1/client/screens/story-editor/useStoryEditorFinalize.ts):164-245, [client/screens/story-editor/useStoryEditorFinalize.ts](C:/Users/ajrhe/OneDrive/Desktop/vaiform-mobile-ed4c17b4253fd8138e52349f5468ac1cc794cbe1/client/screens/story-editor/useStoryEditorFinalize.ts):365-512)
+- Active web creative still uses the same finalize and recovery surfaces; Phase 1 must preserve those semantics ([web/public/js/pages/creative/creative.article.mjs](C:/Users/ajrhe/OneDrive/Desktop/vaiform-1-clean/web/public/js/pages/creative/creative.article.mjs):3788-3909, [web/public/js/pages/creative/creative.article.mjs](C:/Users/ajrhe/OneDrive/Desktop/vaiform-1-clean/web/public/js/pages/creative/creative.article.mjs):4004-4060)
 
-2. Correlate the backend usage request:
-- Search stdout logs for the same `requestId`.
-- Expected error events:
-  - `auth.bootstrap.usage.failed`
-  - `request.error`
+2. Check canonical API events by `requestId` or `attemptId`.
+- `finalize.api.requested`
+- `finalize.api.rejected`
+- `finalize.api.accepted`
+- `finalize.api.replayed_pending`
+- `finalize.api.replayed_done`
+- `finalize.api.replayed_failed`
+- `finalize.api.conflict_active`
 
-3. Inspect the canonical backend usage owner:
-- `src/routes/usage.routes.js` owns the authenticated `/api/usage` route.
-- `src/controllers/usage.controller.js` returns the canonical success/failure envelope for the route.
-- `src/services/usage.service.js` builds the response from canonical `plan`, `membership`, and `usage` state, including `availableSec = cycleIncludedSec - cycleUsedSec - cycleReservedSec`.
+Current emitters:
+- [src/middleware/idempotency.firestore.js](C:/Users/ajrhe/OneDrive/Desktop/vaiform-1-clean/src/middleware/idempotency.firestore.js)
+- [src/routes/story.routes.js](C:/Users/ajrhe/OneDrive/Desktop/vaiform-1-clean/src/routes/story.routes.js)
 
-4. Interpret common outcomes:
-- A failed `/api/usage` call during auth bootstrap signs the user out instead of letting the app enter a half-ready state.
-- Lower-than-expected `availableSec` may be explained by an active finalize reservation. Before treating it as a billing drift, trace the same user's recent finalize attempt and confirm whether usage is still reserved or has already settled/released.
-- After a terminal finalize success, mobile may also surface additive `data.billing.billedSec`. After a terminal finalize failure or reaped failure, reserved usage should release once. If `/api/usage` still looks wrong after a terminal finalize state, inspect the related finalize attempt trace and the canonical backend usage state together.
-- This runbook proves the current read path and its correlation points. It does not prove webhook delivery, store billing state, or other external commerce-provider events.
+3. Answer the first split immediately:
+- If the latest terminal event is `finalize.api.rejected`, failure happened before enqueue.
+- If `finalize.job.created` and `finalize.job.queued` exist, admission succeeded and the failure is after enqueue.
+
+4. Check queue metrics.
+- `finalize_queue_depth > 0` means accepted work is waiting.
+- `finalize_queue_oldest_age_seconds` rising means backlog is aging.
+- `finalize_jobs_retry_scheduled > 0` means retry-delayed jobs are accumulating.
+
+## Worker / Retry / Lease Triage
+
+1. Check canonical worker events:
+- `finalize.worker.started`
+- `finalize.worker.stopped`
+- `finalize.worker.heartbeat`
+- `finalize.worker.heartbeat_missed`
+- `finalize.worker.claim_loop_error`
+- `finalize.job.claimed`
+- `finalize.job.started`
+- `finalize.job.retry.scheduled`
+- `finalize.job.failed`
+- `finalize.job.completed`
+- `finalize.job.settled`
+
+Current emitters:
+- [src/services/story-finalize.runner.js](C:/Users/ajrhe/OneDrive/Desktop/vaiform-1-clean/src/services/story-finalize.runner.js)
+- [src/services/story-finalize.attempts.js](C:/Users/ajrhe/OneDrive/Desktop/vaiform-1-clean/src/services/story-finalize.attempts.js)
+
+2. Interpret queue vs worker conditions.
+- `finalize_queue_depth` rising while `finalize_worker_claims_total` is flat means the current in-process worker is not claiming work.
+- `finalize_jobs_running` near the render slot limit with `finalize_worker_saturation_ratio` near `1` means the current process is saturated, not idle.
+- `finalize_job_retries_total` growing with `reason=server_busy` means retries are bounded but pressure is rising.
+- `finalize_worker_lease_expirations_total` or repeated `finalize.worker.heartbeat_missed` means a job was lost after claim or a queued attempt expired unrecovered.
+
+3. Use queue snapshot when local verification is needed.
+- `queueSnapshot.queueDepth`
+- `queueSnapshot.queueOldestAgeSeconds`
+- `queueSnapshot.jobsRunning`
+- `queueSnapshot.jobsRetryScheduled`
+- `queueSnapshot.billingUnsettledJobs`
+
+## Stage Failure / Slowdown Triage
+
+1. Filter `finalize.job.stage.started` and `finalize.job.stage.completed` by `attemptId` / `finalizeJobId`.
+2. Compare missing terminal stage-complete events and long `finalize_stage_duration_ms{stage=...}` values.
+3. Current stage emitters are narrow wrappers around the existing monolith, not a new pipeline split:
+- [src/services/story.service.js](C:/Users/ajrhe/OneDrive/Desktop/vaiform-1-clean/src/services/story.service.js):2373-2627
+
+Interpretation:
+
+- failure before `worker_claim` means admission/queue-side problem
+- failure after `worker_claim` but before `render_video` usually means story/session/provider-side work
+- failure during `render_video`, `upload_artifacts`, or `write_short` means render or asset persistence pain
+- repeated long `persist_recovery` or `billing_settle` times mean post-render state write pressure, not render generation itself
+
+## Billing Drift Triage
+
+1. Check:
+- `finalize.job.settled`
+- `finalize.job.failed` with `stage=billing_settle`
+- `finalize_billing_mismatches_total`
+- `finalize_billing_unsettled_jobs`
+
+2. Interpret:
+- `finalize_billing_unsettled_jobs` rising means accepted work has not yet settled or released.
+- `finalize_billing_mismatches_total > 0` means reserve/settle drift has been observed. Current mismatch emission is wired at settle time in [src/services/story-finalize.attempts.js](C:/Users/ajrhe/OneDrive/Desktop/vaiform-1-clean/src/services/story-finalize.attempts.js):676-943.
+- If `/api/usage` looks wrong after terminal finalize, correlate the same `attemptId` against `finalize.job.settled` or terminal `finalize.job.failed`.
+
+## Readback Lag Triage
+
+1. Start from mobile diagnostics.
+- Short Detail readback diagnostics now preserve:
+  - `requestId`
+  - `shortId`
+  - `retryAttempt`
+  - canonical stage `short_detail_readback` or `library_fallback_readback`
+  - `surface` of `short_detail`, `library_fallback`, or `short_detail_manual_retry`
+  ([client/screens/short-detail/useShortDetailAvailability.ts](C:/Users/ajrhe/OneDrive/Desktop/vaiform-mobile-ed4c17b4253fd8138e52349f5468ac1cc794cbe1/client/screens/short-detail/useShortDetailAvailability.ts):77-316)
+
+2. Check canonical readback events:
+- `finalize.readback.short_detail_pending`
+- `finalize.readback.short_detail_ready`
+
+Emitter:
+- [src/controllers/shorts.controller.js](C:/Users/ajrhe/OneDrive/Desktop/vaiform-1-clean/src/controllers/shorts.controller.js):3-295
+
+3. Interpret:
+- `finalize.job.completed` and `finalize.job.settled` exist, but `finalize.readback.short_detail_pending` continues: completion happened, readback is lagging.
+- `finalize.readback_completion_lag_ms` growing means details are surfacing slower even after success.
+- `DETAIL_PENDING_RETRY` plus `LIBRARY_FALLBACK_HIT` means the detail endpoint lagged, but library readback saw the short first.
+- `DETAIL_RETRY_TIMEOUT` without terminal backend failure means availability stayed pending past the mobile retry window.
+
+## Quick Answer Paths
+
+Use these shortcuts when someone asks the common operator questions:
+
+- Did finalize fail before enqueue or after enqueue?
+  - Check for `finalize.job.created` / `finalize.job.queued`. Absence means before enqueue.
+- Are queued jobs growing?
+  - Check `finalize_queue_depth` and `finalize_queue_oldest_age_seconds`.
+- Are workers claiming work?
+  - Check `finalize_worker_claims_total`, `finalize_jobs_running`, and recent `finalize.job.claimed`.
+- Which stage is slow or failing?
+  - Check `finalize_stage_duration_ms` by stage and the latest `finalize.job.failed.stage`.
+- Are retries bounded or storming?
+  - Check `finalize_job_retries_total` and `finalize_jobs_retry_scheduled`.
+- Did billing reserve/settle drift?
+  - Check `finalize_billing_mismatches_total` and `finalize_billing_unsettled_jobs`.
+- Did completion happen but readback lag?
+  - Check `finalize.job.completed` / `finalize.job.settled` against `finalize.readback.short_detail_pending` and `finalize_readback_completion_lag_ms`.
 
 ## Redaction Checklist
 
-When inspecting backend stdout logs, verify the canonical logger path is not emitting:
+When inspecting backend logs or the diagnostic proof surface, verify the canonical logger path is not emitting:
 
-- raw `Authorization` values
+- raw `Authorization` headers
 - raw cookies
 - API keys or secrets
 - raw provider payloads
-- full storage/public URLs
-- unsafe raw prompt/caption/body blobs
+- full storage/public URLs beyond intended API payloads
+- unsafe raw prompt, caption, or request body blobs
 
-If any of the above appear in logs from the canonical logger path, the incident trace is not Phase 3 compliant and should be fixed before widening observability scope.
+If any of the above appear in the canonical finalize event stream, treat that as an observability bug before widening coverage further.

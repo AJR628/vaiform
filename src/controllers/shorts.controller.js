@@ -3,6 +3,19 @@ import { buildPublicUrl, getDownloadToken } from '../utils/storage.js';
 import { ok, fail } from '../http/respond.js';
 import logger from '../observability/logger.js';
 import { setRequestContextFromReq } from '../observability/request-context.js';
+import {
+  FINALIZE_EVENTS,
+  FINALIZE_SOURCE_ROLES,
+  FINALIZE_STAGES,
+  emitFinalizeEvent,
+} from '../observability/finalize-observability.js';
+
+function readbackLagMsFromShortDoc(snapshot) {
+  if (!snapshot?.exists) return null;
+  const completedAt = snapshot.data()?.completedAt?.toDate?.();
+  if (!(completedAt instanceof Date)) return null;
+  return Math.max(0, Date.now() - completedAt.getTime());
+}
 
 export async function getMyShorts(req, res) {
   try {
@@ -107,6 +120,7 @@ export async function getShortById(req, res) {
     const destBase = `artifacts/${ownerUid}/${jobId}/`;
     const bucket = admin.storage().bucket();
     const bucketName = bucket.name;
+    const shortDocPromise = admin.firestore().collection('shorts').doc(jobId).get().catch(() => null);
     const storyVideoPath = `${destBase}story.mp4`;
     const legacyVideoPath = `${destBase}short.mp4`;
     const storyCoverPath = `${destBase}thumb.jpg`;
@@ -140,10 +154,23 @@ export async function getShortById(req, res) {
     }
 
     if (meta?.urls?.video) {
+      const shortDoc = await shortDocPromise;
+      const finalizeAttemptId = shortDoc?.data?.()?.finalizeAttemptId || null;
       logger.info('shorts.detail.meta_hit', {
         routeStatus: `${req.method} ${req.originalUrl}`,
         shortId: jobId,
         hasCover: Boolean(meta.urls.cover),
+      });
+      emitFinalizeEvent('info', FINALIZE_EVENTS.READBACK_SHORT_DETAIL_READY, {
+        sourceRole: FINALIZE_SOURCE_ROLES.API,
+        requestId: req.id ?? null,
+        route: req.originalUrl,
+        uid: ownerUid,
+        attemptId: finalizeAttemptId,
+        shortId: jobId,
+        stage: FINALIZE_STAGES.SHORT_DETAIL_READBACK,
+        readbackLagMs: readbackLagMsFromShortDoc(shortDoc),
+        surface: 'short_detail',
       });
       const payload = buildPayload({
         videoUrl: meta.urls.video,
@@ -171,10 +198,23 @@ export async function getShortById(req, res) {
     }
 
     if (!videoFile || !videoPath) {
+      const shortDoc = await shortDocPromise;
+      const finalizeAttemptId = shortDoc?.data?.()?.finalizeAttemptId || null;
       logger.warn('shorts.detail.not_found', {
         routeStatus: `${req.method} ${req.originalUrl}`,
         shortId: jobId,
         debug,
+      });
+      emitFinalizeEvent('warn', FINALIZE_EVENTS.READBACK_SHORT_DETAIL_PENDING, {
+        sourceRole: FINALIZE_SOURCE_ROLES.API,
+        requestId: req.id ?? null,
+        route: req.originalUrl,
+        uid: ownerUid,
+        attemptId: finalizeAttemptId,
+        shortId: jobId,
+        stage: FINALIZE_STAGES.SHORT_DETAIL_READBACK,
+        httpStatus: 404,
+        surface: 'short_detail',
       });
       if (debug) return fail(req, res, 200, 'NO_VIDEO_OBJECT', 'NO_VIDEO_OBJECT');
       return fail(req, res, 404, 'NOT_FOUND', 'NOT_FOUND');
@@ -216,12 +256,25 @@ export async function getShortById(req, res) {
       coverImageUrl,
       meta,
     });
+    const shortDoc = await shortDocPromise;
+    const finalizeAttemptId = shortDoc?.data?.()?.finalizeAttemptId || null;
     logger.info('shorts.detail.storage_hit', {
       routeStatus: `${req.method} ${req.originalUrl}`,
       shortId: jobId,
       videoSource: videoPath === storyVideoPath ? 'story' : 'legacy',
       coverSource: coverPath === storyCoverPath ? 'story' : coverPath === legacyCoverPath ? 'legacy' : null,
       hasMeta: Boolean(meta),
+    });
+    emitFinalizeEvent('info', FINALIZE_EVENTS.READBACK_SHORT_DETAIL_READY, {
+      sourceRole: FINALIZE_SOURCE_ROLES.API,
+      requestId: req.id ?? null,
+      route: req.originalUrl,
+      uid: ownerUid,
+      attemptId: finalizeAttemptId,
+      shortId: jobId,
+      stage: FINALIZE_STAGES.SHORT_DETAIL_READBACK,
+      readbackLagMs: readbackLagMsFromShortDoc(shortDoc),
+      surface: 'short_detail',
     });
     if (debug) return ok(req, res, { source: 'storage.tokens', diag, payload });
     return ok(req, res, payload);

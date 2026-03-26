@@ -1,5 +1,7 @@
 import { Router } from 'express';
 import { getLastTtsState } from '../services/tts.service.js';
+import { snapshotFinalizeObservability } from '../observability/finalize-observability.js';
+import { captureFinalizeQueueMetricsSnapshot } from '../services/story-finalize.attempts.js';
 import { dump as storeDump } from '../studio/store.js';
 import { renderCaptionImage } from '../caption/renderCaptionImage.js';
 import crypto from 'node:crypto';
@@ -55,6 +57,23 @@ router.get('/tts_state', (_req, res) => {
   const provider = process.env.TTS_PROVIDER || 'openai';
   const configured = Boolean(process.env.OPENAI_API_KEY) || Boolean(process.env.ELEVENLABS_API_KEY);
   res.json({ success: true, provider, configured, last: getLastTtsState() });
+});
+
+router.get('/finalize-control-room', async (_req, res) => {
+  try {
+    const queueSnapshot = await captureFinalizeQueueMetricsSnapshot();
+    return res.json({
+      success: true,
+      source: 'diagnostic_only',
+      queueSnapshot,
+      observability: snapshotFinalizeObservability(),
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      error: error?.message || 'FINALIZE_CONTROL_ROOM_DIAG_FAILED',
+    });
+  }
 });
 
 router.get('/caption-smoke', async (_req, res) => {

@@ -31,6 +31,13 @@ import { ok, fail } from '../http/respond.js';
 import { isOutboundPolicyError } from '../utils/outbound.fetch.js';
 import logger from '../observability/logger.js';
 import { setRequestContextFromReq } from '../observability/request-context.js';
+import {
+  FINALIZE_EVENTS,
+  FINALIZE_SOURCE_ROLES,
+  FINALIZE_STAGES,
+  describeFinalizeError,
+  emitFinalizeEvent,
+} from '../observability/finalize-observability.js';
 
 const r = Router();
 r.use(requireAuth);
@@ -983,6 +990,22 @@ r.post('/finalize', idempotencyFinalize({ getSession: getStorySession }), async 
 
     if (req.finalizePrepared?.kind === 'enqueued') {
       notifyStoryFinalizeRunner();
+      emitFinalizeEvent('info', FINALIZE_EVENTS.API_ACCEPTED, {
+        sourceRole: FINALIZE_SOURCE_ROLES.API,
+        requestId: req.id ?? null,
+        route: req.originalUrl,
+        uid: req.user?.uid ?? null,
+        sessionId,
+        attemptId,
+        httpStatus: reply.status,
+        stage: FINALIZE_STAGES.QUEUE_ENQUEUE,
+        jobState: req.finalizePrepared?.attempt?.state ?? 'queued',
+        queuedAt: req.finalizePrepared?.attempt?.enqueuedAt ?? null,
+        durationMs:
+          Number.isFinite(Number(req.finalizeAdmissionStartedAt))
+            ? Date.now() - Number(req.finalizeAdmissionStartedAt)
+            : null,
+      });
       logger.info('story.finalize.accepted', {
         routeStatus: `${req.method} ${req.originalUrl}`,
         attemptId,
@@ -990,6 +1013,18 @@ r.post('/finalize', idempotencyFinalize({ getSession: getStorySession }), async 
       });
     } else if (req.finalizePrepared?.kind === 'active_same_key') {
       notifyStoryFinalizeRunner();
+      emitFinalizeEvent('info', FINALIZE_EVENTS.API_REPLAYED_PENDING, {
+        sourceRole: FINALIZE_SOURCE_ROLES.API,
+        requestId: req.id ?? null,
+        route: req.originalUrl,
+        uid: req.user?.uid ?? null,
+        sessionId: req.finalizePrepared?.attempt?.sessionId || sessionId,
+        attemptId: req.finalizePrepared?.attempt?.attemptId || attemptId,
+        httpStatus: reply.status,
+        stage: FINALIZE_STAGES.QUEUE_WAIT,
+        jobState: req.finalizePrepared?.attempt?.state ?? 'queued',
+        queuedAt: req.finalizePrepared?.attempt?.enqueuedAt ?? null,
+      });
       logger.info('story.finalize.replay_pending', {
         routeStatus: `${req.method} ${req.originalUrl}`,
         attemptId: req.finalizePrepared?.attempt?.attemptId || attemptId,
@@ -997,6 +1032,18 @@ r.post('/finalize', idempotencyFinalize({ getSession: getStorySession }), async 
       });
     } else if (req.finalizePrepared?.kind === 'active_other_key') {
       notifyStoryFinalizeRunner();
+      emitFinalizeEvent('warn', FINALIZE_EVENTS.API_CONFLICT_ACTIVE, {
+        sourceRole: FINALIZE_SOURCE_ROLES.API,
+        requestId: req.id ?? null,
+        route: req.originalUrl,
+        uid: req.user?.uid ?? null,
+        sessionId,
+        attemptId,
+        httpStatus: reply.status,
+        stage: FINALIZE_STAGES.QUEUE_WAIT,
+        jobState: req.finalizePrepared?.attempt?.state ?? 'queued',
+        failureReason: 'active_attempt_conflict',
+      });
       logger.warn('story.finalize.conflict_active_attempt', {
         routeStatus: `${req.method} ${req.originalUrl}`,
         attemptId,
@@ -1004,12 +1051,46 @@ r.post('/finalize', idempotencyFinalize({ getSession: getStorySession }), async 
         activeAttemptId: req.finalizePrepared?.attempt?.attemptId || null,
       });
     } else if (req.finalizePrepared?.kind === 'done_same_key') {
+      emitFinalizeEvent('info', FINALIZE_EVENTS.API_REPLAYED_DONE, {
+        sourceRole: FINALIZE_SOURCE_ROLES.API,
+        requestId: req.id ?? null,
+        route: req.originalUrl,
+        uid: req.user?.uid ?? null,
+        sessionId: req.finalizePrepared?.attempt?.sessionId || sessionId,
+        attemptId: req.finalizePrepared?.attempt?.attemptId || attemptId,
+        shortId: req.finalizePrepared?.attempt?.shortId || null,
+        httpStatus: reply.status,
+        stage: FINALIZE_STAGES.BILLING_SETTLE,
+        jobState: req.finalizePrepared?.attempt?.state ?? 'done',
+      });
       logger.info('story.finalize.replay_completed', {
         routeStatus: `${req.method} ${req.originalUrl}`,
         attemptId: req.finalizePrepared?.attempt?.attemptId || attemptId,
         shortId: req.finalizePrepared?.attempt?.shortId || null,
       });
     } else if (req.finalizePrepared?.kind === 'failed_same_key') {
+      emitFinalizeEvent('warn', FINALIZE_EVENTS.API_REPLAYED_FAILED, {
+        sourceRole: FINALIZE_SOURCE_ROLES.API,
+        requestId: req.id ?? null,
+        route: req.originalUrl,
+        uid: req.user?.uid ?? null,
+        sessionId: req.finalizePrepared?.attempt?.sessionId || sessionId,
+        attemptId: req.finalizePrepared?.attempt?.attemptId || attemptId,
+        httpStatus: reply.status,
+        stage: FINALIZE_STAGES.PERSIST_RECOVERY,
+        jobState: req.finalizePrepared?.attempt?.state ?? 'failed',
+        ...describeFinalizeError(
+          {
+            code: req.finalizePrepared?.attempt?.failure?.error || 'STORY_FINALIZE_FAILED',
+            status: reply.status,
+            message: req.finalizePrepared?.attempt?.failure?.detail || 'Failed to finalize story',
+          },
+          {
+            retryable: false,
+            failureReason: 'failed_same_key_replay',
+          }
+        ),
+      });
       logger.warn('story.finalize.replay_failed', {
         routeStatus: `${req.method} ${req.originalUrl}`,
         attemptId: req.finalizePrepared?.attempt?.attemptId || attemptId,
@@ -1022,6 +1103,23 @@ r.post('/finalize', idempotencyFinalize({ getSession: getStorySession }), async 
   } catch (e) {
     if (res.headersSent) return;
     const mapped = storyFailureFromError(e);
+    emitFinalizeEvent('error', FINALIZE_EVENTS.API_REJECTED, {
+      sourceRole: FINALIZE_SOURCE_ROLES.API,
+      requestId: req.id ?? null,
+      route: req.originalUrl,
+      uid: req.user?.uid ?? null,
+      sessionId: req.body?.sessionId ?? null,
+      attemptId: String(req.get('X-Idempotency-Key') || '').trim() || null,
+      httpStatus: mapped?.status ?? 500,
+      stage: FINALIZE_STAGES.ADMISSION_VALIDATE,
+      error: e,
+      ...describeFinalizeError(e, {
+        errorCode: mapped?.error ?? e?.code ?? 'STORY_FINALIZE_FAILED',
+        httpStatus: mapped?.status ?? 500,
+        retryable: false,
+        failureReason: 'finalize_route_failed',
+      }),
+    });
     logger.error('story.finalize.failed', {
       routeStatus: `${req.method} ${req.originalUrl}`,
       mappedStatus: mapped?.status,
@@ -1203,6 +1301,17 @@ r.get('/:sessionId', async (req, res) => {
         sessionId,
         attemptId: session.renderRecovery.attemptId || null,
         shortId: session.renderRecovery.shortId || null,
+      });
+      emitFinalizeEvent('info', FINALIZE_EVENTS.RECOVERY_POLL, {
+        sourceRole: FINALIZE_SOURCE_ROLES.API,
+        requestId: req.id ?? null,
+        route: req.originalUrl,
+        uid: req.user?.uid ?? null,
+        sessionId,
+        attemptId: session.renderRecovery.attemptId || null,
+        shortId: session.renderRecovery.shortId || null,
+        stage: FINALIZE_STAGES.CLIENT_RECOVERY_POLL,
+        jobState: session.renderRecovery.state || null,
       });
       logger.info('story.recovery.poll', {
         routeStatus: `${req.method} ${req.originalUrl}`,
