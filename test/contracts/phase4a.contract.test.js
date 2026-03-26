@@ -543,15 +543,16 @@ test('GET /api/story/:sessionId preserves recovery polling fields mobile reads a
   assert.equal(result.json.data.renderRecovery.attemptId, 'idem-recovery-1');
 });
 
-test('POST /api/story/update-beat-text returns sentences and shots with the updated search query', async () => {
+test('POST /api/story/update-beat-text updates narration without mutating visual-intent fields', async () => {
+  const preservedShot = buildShot('clip-1', 0, 'space ocean');
   seedStorySession(
     'user-1',
     buildBaseSession({
       id: 'story-update-beat',
       story: {
-        sentences: ['Old beat', 'Second beat'],
+        sentences: ['Old narration', 'Second beat'],
       },
-      shots: [buildShot('clip-1', 0, 'Old beat'), buildShot('clip-2', 1, 'Second beat')],
+      shots: [preservedShot, buildShot('clip-2', 1, 'Second beat')],
     })
   );
 
@@ -567,7 +568,10 @@ test('POST /api/story/update-beat-text returns sentences and shots with the upda
   assert.equal(result.status, 200);
   assert.equal(result.json.success, true);
   assert.equal(result.json.data.sentences[0], 'Updated beat text');
-  assert.equal(result.json.data.shots[0].searchQuery, 'Updated beat text');
+  assert.equal(result.json.data.shots[0].searchQuery, preservedShot.searchQuery);
+  assert.equal(result.json.data.shots[0].visualDescription, preservedShot.visualDescription);
+  assert.deepEqual(result.json.data.shots[0].selectedClip, preservedShot.selectedClip);
+  assert.deepEqual(result.json.data.shots[0].candidates, preservedShot.candidates);
 });
 
 test('POST /api/story/delete-beat returns the reduced sentences and reindexed shots', async () => {
@@ -673,6 +677,80 @@ test('POST /api/story/search-shot returns the single-shot pagination payload mob
   assert.equal(result.json.data.hasMore, true);
   assert.equal(result.json.data.shot.candidates.length, 2);
   assert.equal(result.json.data.shot.selectedClip.id, 'space ocean-shot-a');
+});
+
+test('POST /api/story/search-shot still uses preserved shot.searchQuery after beat-save', async () => {
+  setRuntimeOverride('story.providers.pexelsSearchVideos', async ({ query, page }) => ({
+    ok: true,
+    reason: 'OK',
+    nextPage: page + 1,
+    items: [
+      {
+        id: `${query}-shot-a`,
+        provider: 'pexels',
+        fileUrl: `https://cdn.example.com/${query}-shot-a.mp4`,
+        thumbUrl: `https://cdn.example.com/${query}-shot-a.jpg`,
+        duration: 5,
+        width: 720,
+        height: 1280,
+        photographer: 'Pexels Author',
+        sourceUrl: `https://pexels.example.com/${query}-shot-a`,
+      },
+    ],
+  }));
+  setRuntimeOverride('story.providers.pixabaySearchVideos', async () => ({
+    ok: false,
+    reason: 'HTTP_503',
+    items: [],
+    nextPage: null,
+    transient: true,
+  }));
+  setRuntimeOverride('story.providers.nasaSearchVideos', async () => ({
+    ok: false,
+    reason: 'HTTP_503',
+    items: [],
+    nextPage: null,
+    transient: true,
+  }));
+
+  seedStorySession(
+    'user-1',
+    buildBaseSession({
+      id: 'story-search-shot-preserved-query',
+      story: {
+        sentences: ['Old narration'],
+      },
+      shots: [buildShot('clip-1', 0, 'space ocean')],
+    })
+  );
+
+  const saveResult = await requestJson('/api/story/update-beat-text', {
+    method: 'POST',
+    body: {
+      sessionId: 'story-search-shot-preserved-query',
+      sentenceIndex: 0,
+      text: 'Updated narration text',
+    },
+  });
+
+  assert.equal(saveResult.status, 200);
+  assert.equal(saveResult.json.data.sentences[0], 'Updated narration text');
+  assert.equal(saveResult.json.data.shots[0].searchQuery, 'space ocean');
+
+  const result = await requestJson('/api/story/search-shot', {
+    method: 'POST',
+    body: {
+      sessionId: 'story-search-shot-preserved-query',
+      sentenceIndex: 0,
+      page: 1,
+    },
+  });
+
+  assert.equal(result.status, 200);
+  assert.equal(result.json.success, true);
+  assert.equal(result.json.data.shot.searchQuery, 'space ocean');
+  assert.equal(result.json.data.shot.selectedClip.id, 'space ocean-shot-a');
+  assert.equal(result.json.data.shot.candidates[0].id, 'space ocean-shot-a');
 });
 
 test('POST /api/story/search-shot returns retryable 503 only when all consulted providers fail transiently and no usable clips exist', async () => {

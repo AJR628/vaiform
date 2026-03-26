@@ -1138,11 +1138,8 @@ export async function updateBeatText({ uid, sessionId, sentenceIndex, text }) {
   // Update sentence text
   sentences[sentenceIndex] = text;
 
-  // Keep shot.searchQuery in sync if a shot exists, but DON'T touch selectedClip/candidates
-  const shot = shots.find((s) => s.sentenceIndex === sentenceIndex);
-  if (shot) {
-    shot.searchQuery = text;
-  }
+  // Preserve existing visual-intent fields for this beat. Narration edits should not
+  // silently rewrite later clip-search intent or clip state.
 
   session.updatedAt = new Date().toISOString();
   setHeuristicBillingEstimate(session);

@@ -98,7 +98,7 @@ It is intentionally conservative:
   - backend return: `src/routes/story.routes.js:840-856`, `src/services/story.service.js:1157-1160`
 - Result: both mobile screens now converge on refetch-after-save session SSOT without widening the backend contract.
 
-### Visual-intent separation and current mutation risk
+### Visual-intent separation and current mutation state
 
 - Visual planning currently exists as separate backend-owned fields.
   - visual plan output includes `visualDescription` and `searchQuery`: `src/services/story.llm.service.js:674-799`
@@ -106,10 +106,10 @@ It is intentionally conservative:
 - Current single-shot clip replacement also uses `shot.searchQuery` as the initial query.
   - mobile `client/screens/StoryEditorScreen.tsx:243-250`
   - backend single-shot fallback order is `query?.trim() || shot.searchQuery || sentence text`: `src/services/story.service.js:931-949`
-- Current beat text edits therefore mutate later visual search intent by overwriting `shot.searchQuery`.
-  - mutation site: `src/services/story.service.js:1141-1145`
-- I did not find current beat-edit code mutating `visualDescription`.
-  - checked current service implementation: `src/services/story.service.js:1126-1161`
+- Current beat text edits no longer mutate later visual search intent; beat-save preserves `shot.searchQuery` while still updating narration text.
+  - checked current service implementation: `src/services/story.service.js:1126-1157`
+- I did not find current beat-edit code mutating `visualDescription`, `selectedClip`, or `candidates`.
+  - checked current service implementation: `src/services/story.service.js:1126-1157`
 
 ### Remix / rewrite surface check
 
@@ -163,8 +163,8 @@ It is intentionally conservative:
 - Frozen policy:
   - `ScriptScreen` and `StoryEditor` must both converge on refetch-after-save session SSOT.
 - Repo proof:
-  - `ScriptScreen` currently locally adopts the partial response, while `StoryEditor` already refetches `GET /api/story/:sessionId` after save.
-  - Evidence: mobile `client/screens/ScriptScreen.tsx:182-209`, mobile `client/lib/storySession.ts:25-52`, mobile `client/screens/story-editor/useStoryEditorSession.ts:160-176`
+  - `ScriptScreen` and `StoryEditor` both now treat beat-save as success/failure only and refetch `GET /api/story/:sessionId` after save.
+  - Evidence: mobile `client/screens/ScriptScreen.tsx:174-236`, mobile `client/screens/story-editor/useStoryEditorSession.ts:160-176`, mobile `client/api/client.ts:672-689`
 - Phase 1 implication:
   - Remove split client normalization logic instead of broadening backend response shape.
   - Treat the current mobile transport typing drift as a bug to narrow, not as proof that the backend should expand.
@@ -174,8 +174,8 @@ It is intentionally conservative:
 - Frozen policy:
   - Beat narration edits must not overwrite stored visual search intent in v1.
 - Repo proof:
-  - Visual planning is already modeled with separate `visualDescription` and `searchQuery` fields; clip replacement seeds from `shot.searchQuery`; beat-save currently overwrites `shot.searchQuery`.
-  - Evidence: `src/services/story.llm.service.js:674-799`, `src/services/story.service.js:931-949`, `src/services/story.service.js:1141-1145`, mobile `client/screens/StoryEditorScreen.tsx:241-250`
+  - Visual planning is already modeled with separate `visualDescription` and `searchQuery` fields; clip replacement seeds from `shot.searchQuery`; beat-save now preserves `shot.searchQuery` while updating narration text.
+  - Evidence: `src/services/story.llm.service.js:674-799`, `src/services/story.service.js:931-949`, `src/services/story.service.js:1126-1157`, mobile `client/screens/StoryEditorScreen.tsx:241-250`
 - Phase 1 implication:
   - Preserve current visual-planning fields during beat-save.
   - Do not introduce a new visual-intent field in this pass.
@@ -249,6 +249,9 @@ It is intentionally conservative:
   - Preserve existing authenticated transport headers and normalized envelope handling.
 
 ### Pass 1B: Visual-intent preservation only
+
+- Status:
+  - Landed on 2026-03-25.
 
 - Purpose:
   - Stop beat-save from silently mutating later clip-search intent by preserving `shot.searchQuery`.
