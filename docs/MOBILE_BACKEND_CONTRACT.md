@@ -22,9 +22,9 @@ Purpose: canonical backend-owned contract, guarantees, and open mismatch record 
 
 ## Billing Cutover Note
 
-- Phase 1 of the hard-cutover billing migration adds canonical backend `GET /api/usage` and additive session `billingEstimate`.
-- Phase 2 of the hard-cutover billing migration moves backend render reservation/settlement to canonical usage seconds and adds additive finalize `data.billing`.
-- Phase 3 moves active mobile callers to `GET /api/usage`, updates mobile billing copy/gating to render-time semantics, and removes `/api/credits` from active caller usage.
+- Billing migration Phase 1 adds canonical backend `GET /api/usage` and additive session `billingEstimate`.
+- Billing migration Phase 2 moves backend render reservation/settlement to canonical usage seconds and adds additive finalize `data.billing`.
+- Billing migration Phase 3 moves active mobile callers to `GET /api/usage`, updates mobile billing copy/gating to render-time semantics, and removes `/api/credits` from active caller usage.
 - Current backend `billingEstimate.estimatedSec` is reservation-safe, not raw. The active source order is `speech_duration -> shot_durations -> caption_timeline`, where `speech_duration` is the backend-owned composite text heuristic and `caption_timeline` is retained only as an emergency fallback. Representative manual verification is still required before the estimate-proof gate is considered complete.
 - Phases 1 through 5 of the billing migration are now landed in code, but the overall integration is still not production-ready until the Phase 2 estimate-proof gate is manually closed and live Stripe/manual end-to-end verification is completed.
 
@@ -224,7 +224,7 @@ Purpose: canonical backend-owned contract, guarantees, and open mismatch record 
   - Mobile sends: `limit` and optional `cursor`.
   - Backend returns: `{ items, nextCursor, hasMore }` in `data`.
   - Mobile reads: list items and pagination fields.
-  - Additive Phase 2 note: finalized short docs now persist backend-owned `billing` metadata in Firestore; current mobile callers ignore it.
+  - Additive billing migration Phase 2 note: finalized short docs now persist backend-owned `billing` metadata in Firestore; current mobile callers ignore it.
   - Stability note: controller has an index-missing fallback path that disables pagination semantics when the composite index is absent.
 
 - `GET /api/shorts/:jobId`

@@ -6,6 +6,7 @@ let baseUrl;
 let firebaseMock;
 let runtimeOverrides;
 let finalizeRunner;
+let finalizeWorkerRuntime;
 
 function setTestEnv() {
   process.env.NODE_ENV = 'test';
@@ -21,17 +22,25 @@ async function loadModules() {
     return;
   }
   setTestEnv();
-  const [{ registerDejaVuFonts }, mockModule, overridesModule, finalizeRunnerModule] =
+  const [
+    { registerDejaVuFonts },
+    mockModule,
+    overridesModule,
+    finalizeRunnerModule,
+    finalizeWorkerRuntimeModule,
+  ] =
     await Promise.all([
       import('../../../src/caption/canvas-fonts.js'),
       import('../../../src/testing/firebase-admin.mock.js'),
       import('../../../src/testing/runtime-overrides.js'),
       import('../../../src/services/story-finalize.runner.js'),
+      import('../../../src/workers/story-finalize.worker.js'),
     ]);
   registerDejaVuFonts();
   firebaseMock = mockModule;
   runtimeOverrides = overridesModule;
   finalizeRunner = finalizeRunnerModule;
+  finalizeWorkerRuntime = finalizeWorkerRuntimeModule;
 }
 
 export async function startHarness() {
@@ -61,6 +70,7 @@ export async function stopHarness() {
 }
 
 export function resetHarnessState() {
+  finalizeWorkerRuntime?.stopStoryFinalizeWorkerRuntime?.('harness_reset');
   firebaseMock.resetMockFirebase();
   runtimeOverrides.clearRuntimeOverrides();
   finalizeRunner?.resetStoryFinalizeRunnerForTests?.();
@@ -72,6 +82,17 @@ export function resetHarnessState() {
     uid: 'user-2',
     email: 'user2@example.com',
   });
+}
+
+export function startFinalizeWorkerRuntime() {
+  if (!finalizeWorkerRuntime) {
+    throw new Error('Harness modules not loaded');
+  }
+  return finalizeWorkerRuntime.startStoryFinalizeWorkerRuntime({ installSignalHandlers: false });
+}
+
+export function stopFinalizeWorkerRuntime(signal = 'manual') {
+  finalizeWorkerRuntime?.stopStoryFinalizeWorkerRuntime?.(signal);
 }
 
 export async function requestJson(

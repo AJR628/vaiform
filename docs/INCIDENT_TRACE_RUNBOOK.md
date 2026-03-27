@@ -16,8 +16,8 @@ Use this runbook for:
 
 Phase 1 scope boundary:
 
-- this runbook instruments the current in-process finalize runner
-- this runbook does not assume a separate worker deployment yet
+- this runbook instruments the current finalize engine through the explicit finalize worker runtime introduced by Finalize Factory Phase 2
+- API health and worker health are now separate concerns
 - this runbook does not assume a dead-letter queue yet
 
 ## Control-Room Sources
@@ -42,7 +42,7 @@ Known boundaries that still apply:
 
 - backend logs are still stdout-backed even though the event schema is now canonical ([src/observability/logger.js](C:/Users/ajrhe/OneDrive/Desktop/vaiform-1-clean/src/observability/logger.js):18-39)
 - mobile diagnostics are still in-memory only and are cleared on app restart ([client/lib/diagnostics.ts](C:/Users/ajrhe/OneDrive/Desktop/vaiform-mobile-ed4c17b4253fd8138e52349f5468ac1cc794cbe1/client/lib/diagnostics.ts):36-153)
-- the current API process still boots the finalize runner in-process ([src/app.js](C:/Users/ajrhe/OneDrive/Desktop/vaiform-1-clean/src/app.js):32-33)
+- the API process no longer boots finalize execution; worker startup is separate through [story-finalize.worker.js](C:/Users/ajrhe/OneDrive/Desktop/vaiform-1-clean/story-finalize.worker.js):1-14 and [src/workers/story-finalize.worker.js](C:/Users/ajrhe/OneDrive/Desktop/vaiform-1-clean/src/workers/story-finalize.worker.js):1-49
 
 ## Correlation Keys
 
@@ -168,8 +168,8 @@ Current emitters:
 - [src/services/story-finalize.attempts.js](C:/Users/ajrhe/OneDrive/Desktop/vaiform-1-clean/src/services/story-finalize.attempts.js)
 
 2. Interpret queue vs worker conditions.
-- `finalize_queue_depth` rising while `finalize_worker_claims_total` is flat means the current in-process worker is not claiming work.
-- `finalize_jobs_running` near the render slot limit with `finalize_worker_saturation_ratio` near `1` means the current process is saturated, not idle.
+- `finalize_queue_depth` rising while `finalize_worker_claims_total` is flat means the current finalize worker runtime is not claiming work.
+- `finalize_jobs_running` near the render slot limit with `finalize_worker_saturation_ratio` near `1` means the current worker process is saturated, not idle.
 - `finalize_job_retries_total` growing with `reason=server_busy` means retries are bounded but pressure is rising.
 - `finalize_worker_lease_expirations_total` or repeated `finalize.worker.heartbeat_missed` means a job was lost after claim or a queued attempt expired unrecovered.
 

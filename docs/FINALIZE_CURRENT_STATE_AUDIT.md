@@ -44,12 +44,16 @@ If docs and code disagree, code wins for this audit.
 
 ### 1. API boot and route ownership
 
-- The Express app boots the finalize runner singleton during API startup by calling `ensureStoryFinalizeRunner()` directly from `src/app.js`, before route handling begins: `src/app.js:9`, `src/app.js:32-33`.
+- API startup no longer boots finalize execution. `src/app.js` now composes HTTP middleware and routes only: `src/app.js:1-292`.
+- The story finalize worker now has explicit runtime ownership outside API startup:
+  - worker runtime module: `src/workers/story-finalize.worker.js:1-49`
+  - worker process entrypoint: `story-finalize.worker.js:1-14`
+  - worker npm script: `package.json:25-40`
 - The story router is mounted at `/api/story`, and all story routes require auth through router-level `requireAuth`: `src/app.js:244-246`, `src/routes/story.routes.js:35-36`.
 
 ### 2. Finalize admission request
 
-- `POST /api/story/finalize` runs `idempotencyFinalize({ getSession })` before the route handler, so idempotency and reservation happen before the route emits JSON: `src/routes/story.routes.js:964-965`.
+- `POST /api/story/finalize` runs `idempotencyFinalize({ getSession })` before the route handler, so idempotency and reservation happen before the route emits JSON: `src/routes/story.routes.js:970-971`.
 - The middleware requires `X-Idempotency-Key`, rejects unauthenticated calls, validates `sessionId` before any Firestore reservation, and seeds request context with `sessionId` and `attemptId`: `src/middleware/idempotency.firestore.js:33-55`.
 
 ### 3. Durable admission and billing reservation
@@ -78,9 +82,10 @@ If docs and code disagree, code wins for this audit.
 
 ### 6. Background execution
 
-- The route handler itself does not execute the render pipeline. It returns the prepared reply and nudges the in-process runner with `notifyStoryFinalizeRunner()` when work is enqueued or a pending replay/conflict is observed: `src/routes/story.routes.js:984-1000`, `src/routes/story.routes.js:1021`.
-- The runner is a process-global singleton stored on `globalThis`: `src/services/story-finalize.runner.js:18`, `src/services/story-finalize.runner.js:182-191`.
-- The runner polls for queued attempts, claims them, heartbeats leases, runs `finalizeStory()`, settles success, requeues `SERVER_BUSY`, and marks terminal failure otherwise: `src/services/story-finalize.runner.js:30-57`, `src/services/story-finalize.runner.js:59-125`, `src/services/story-finalize.runner.js:127-156`.
+- The route handler itself does not execute the render pipeline. It returns the prepared reply and no longer nudges finalize execution directly; worker discovery is independent of the route: `src/routes/story.routes.js:970-1084`.
+- The runner is a process-global singleton stored on `globalThis`: `src/services/story-finalize.runner.js:27`, `src/services/story-finalize.runner.js:335-353`.
+- The dedicated worker runtime starts that runner explicitly with `keepProcessAlive: true`: `src/workers/story-finalize.worker.js:6-44`, `src/services/story-finalize.runner.js:30-53`, `src/services/story-finalize.runner.js:335-342`.
+- The runner polls for queued attempts, claims them, heartbeats leases, runs `finalizeStory()`, settles success, requeues `SERVER_BUSY`, and marks terminal failure otherwise: `src/services/story-finalize.runner.js:30-57`, `src/services/story-finalize.runner.js:86-225`, `src/services/story-finalize.runner.js:232-327`.
 
 ### 7. Current durable queue substrate
 
@@ -142,14 +147,18 @@ If docs and code disagree, code wins for this audit.
 ## Current Runtime Topology
 
 - There is one HTTP API process today. `server.js` starts Express and keeps a 15-minute server timeout for remaining blocking render routes: `server.js:27-43`.
-- Finalize execution is not its own deploy/runtime role yet. The API process also boots the finalize runner singleton: `src/app.js:32-33`.
-- The runner claims work only while `inflight.size < RENDER_SLOT_LIMIT`: `src/services/story-finalize.runner.js:127-156`.
+- Finalize execution is now its own runtime role. The API process does not boot the finalize runner singleton: `src/app.js:1-292`.
+- The current dedicated finalize worker runtime is booted separately through:
+  - `story-finalize.worker.js:1-14`
+  - `src/workers/story-finalize.worker.js:1-49`
+  - `package.json:25-40`
+- The runner claims work only while `inflight.size < RENDER_SLOT_LIMIT`: `src/services/story-finalize.runner.js:232-280`.
 - `RENDER_SLOT_LIMIT` is a hardcoded in-memory per-process limit of `3`: `src/utils/render.semaphore.js:1-23`.
 - Current OpenAI admission, story-search admission, and TTS slotting are also in-memory/process-local: `src/services/story.llm.service.js:160-170`, `src/services/story.service.js:66-113`, `src/services/tts.service.js:44-54`.
 
 ## Current Bottlenecks And Single-Room Behavior
 
-- Finalize execution is still API-process-owned because the runner boots inside `src/app.js`: `src/app.js:32-33`.
+- Finalize execution is no longer API-process-owned, but it is still a single worker-process concern unless multiple worker processes are deployed intentionally: `src/workers/story-finalize.worker.js:6-44`, `src/services/story-finalize.runner.js:30-53`.
 - Render concurrency is process-local because `withRenderSlot()` only counts local memory: `src/utils/render.semaphore.js:5-8`, `src/utils/render.semaphore.js:10-23`.
 - Upstream provider pressure is also process-local because OpenAI, story search, and TTS concurrency/cooldown state are all stored in process memory: `src/services/story.llm.service.js:160-170`, `src/services/story.service.js:67-71`, `src/services/story.service.js:120-130`, `src/services/tts.service.js:69-83`.
 - Finalize is still a wide pipeline rather than a narrow render-only worker task because it can backfill story, plan, search, and captions: `src/services/story.service.js:2552-2578`.
@@ -202,7 +211,7 @@ These behaviors are frozen for the factory conversion unless later code evidence
 
 ### Proven drift / gaps
 
-- `docs/API_CONTRACT.md` documents top-level finalize `shortId` as an established exception, but it does not currently document the live top-level `finalize` metadata used by accepted and conflict responses: `docs/API_CONTRACT.md:56-64`, `src/services/story-finalize.attempts.js:105-122`.
+- `docs/API_CONTRACT.md` now documents both established top-level finalize exceptions (`shortId` and `finalize`), so the earlier drift note is closed: `docs/API_CONTRACT.md:56-66`.
 - Mobile TypeScript does not strongly encode session truth because `StorySession` is still `any`; current caller truth is therefore the hooks/screens, not the type file: `client/types/story.ts:1-6`.
 - Active web creative caller behavior is not fully described by the mobile contract docs and must be frozen alongside mobile for this conversion: `docs/ACTIVE_SURFACES.md:83-85`, `web/public/js/pages/creative/creative.article.mjs:3998-4065`.
 

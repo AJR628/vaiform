@@ -63,7 +63,7 @@ Existing endpoints may still emit these until migrated; new code and framework-l
 - Established finalize top-level exceptions are:
   - `shortId` on terminal success replay
   - `finalize = { state, attemptId, pollSessionId }` on accepted and active-conflict responses
-- Current Phase 2 finalize success includes additive `data.billing = { billedSec, settledAt }` while keeping top-level `shortId`.
+- Current hard-cutover billing migration Phase 2 finalize success includes additive `data.billing = { billedSec, settledAt }` while keeping top-level `shortId`.
 - Current backend `billingEstimate.estimatedSec` is reservation-safe and backend-owned. Public sources are now `speech_duration | shot_durations | caption_timeline`, with `speech_duration` produced by the backend billing-specific composite text heuristic and `caption_timeline` retained only as an emergency fallback. Callers must treat it as backend truth, not recompute it locally.
 
 ## requestId

@@ -69,7 +69,10 @@ These contracts stay stable unless later repo evidence proves a change is unavoi
 
 ### POST /api/story/finalize
 
-- Request shape remains `{ sessionId }` plus `X-Idempotency-Key`: `src/middleware/idempotency.firestore.js:33-55`, `client/api/client.ts:804-823`, `web/public/js/pages/creative/creative.article.mjs:4004-4013`.
+- Caller compatibility remains frozen for current finalize callers:
+  - required `sessionId` plus `X-Idempotency-Key` remain stable for the current admission path: `src/middleware/idempotency.firestore.js:33-55`, `client/api/client.ts:804-823`
+  - currently tolerated additive caller fields must not be accidentally narrowed away during this conversion
+  - active web creative compatibility includes the currently wired additive finalize options path under `body.options`: `web/public/js/pages/creative/creative.article.mjs:4004-4013`
 - Accepted work continues to return quickly with accepted finalize state instead of blocking full render completion: `src/routes/story.routes.js:964-1021`, `src/services/story-finalize.attempts.js:517-526`.
 - Same-key replay, same-session different-key conflict, and terminal success replay semantics stay stable: `src/services/story-finalize.attempts.js:527-593`.
 
@@ -94,7 +97,7 @@ These contracts stay stable unless later repo evidence proves a change is unavoi
 
 - Phase 0: Current-state truth freeze
 - Phase 1: Observability/control-room foundation
-- Phase 2: API/worker role split
+- Finalize Factory Phase 2: API/worker role split
 - Phase 3: Durable queue/job lifecycle conversion
 - Phase 4: Global concurrency/provider throttle/backpressure
 - Phase 5: State/storage/recovery tightening
@@ -160,19 +163,22 @@ These contracts stay stable unless later repo evidence proves a change is unavoi
 
 ## Phase 2 — API/Worker Role Split
 
+- Finalize Factory Phase 2 note: this section refers only to the finalize API/worker runtime split, not the unrelated billing-migration phase labels used elsewhere in backend/mobile contract docs.
 - Objective: stop running finalize execution as an API-owned in-process singleton.
-- Why it matters: the API app currently boots the runner directly: `src/app.js:32-33`.
-- Exact motivating evidence:
-  - runner is a process-global singleton: `src/services/story-finalize.runner.js:18`, `src/services/story-finalize.runner.js:182-191`
-  - API still owns runner startup and notification: `src/app.js:32-33`, `src/routes/story.routes.js:984-1000`
+- Why it matters: pre-split finalize execution was API-owned and hidden behind in-process startup side effects, which made API and worker ownership ambiguous.
+- Exact motivating evidence at phase start:
+  - runner was already a process-global singleton: `src/services/story-finalize.runner.js:27`, `src/services/story-finalize.runner.js:335-353`
+  - the live post-split topology authority is now `docs/FINALIZE_RUNTIME_TOPOLOGY_SPEC.md`
 - Scope / blast radius: backend runtime entrypoints, deploy scripts/docs, worker lifecycle docs.
 - Ownership: backend.
 - Deliverables:
   - dedicated worker entrypoint and startup model matching `docs/FINALIZE_RUNTIME_TOPOLOGY_SPEC.md`
   - API no longer auto-boots finalize execution
+  - route-layer wakeup ownership removed only after independent worker drain ownership is proven
   - worker separation documentation
 - Acceptance criteria:
   - API can serve finalize admission with workers down or saturated
+  - accepted finalize work can remain queued while workers are down and later be claimed/completed after a worker starts, with no client resubmission
   - worker can restart independently without HTTP ownership confusion
   - ownership is obvious from repo/runtime structure
 - What stays frozen:
@@ -188,6 +194,8 @@ These contracts stay stable unless later repo evidence proves a change is unavoi
   - startup topology doc update
   - worker separation test or verification script
   - proof that API process no longer executes finalize work
+  - proof that accepted finalize work remains queued while workers are down and later completes after worker start without caller replay or resubmission
+  - proof that route-level wakeup was removed only after independent worker drain/claim ownership existed
   - health/heartbeat proof for worker role
 
 ## Phase 3 — Durable Queue/Job Lifecycle Conversion

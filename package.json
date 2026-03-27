@@ -24,6 +24,8 @@
   },
   "scripts": {
     "start": "node server.js",
+    "start:api": "node server.js",
+    "start:worker:finalize": "node story-finalize.worker.js",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "check:netlify-redirects": "node scripts/check-no-netlify-redirects.mjs",

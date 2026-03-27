@@ -25,7 +25,6 @@ import {
   refreshStorySessionHeuristicEstimate,
   sanitizeStorySessionForClient,
 } from '../services/story.service.js';
-import { notifyStoryFinalizeRunner } from '../services/story-finalize.runner.js';
 import { extractStyleOnly } from '../utils/caption-style-helper.js';
 import { ok, fail } from '../http/respond.js';
 import { isOutboundPolicyError } from '../utils/outbound.fetch.js';
@@ -989,7 +988,6 @@ r.post('/finalize', idempotencyFinalize({ getSession: getStorySession }), async 
     }
 
     if (req.finalizePrepared?.kind === 'enqueued') {
-      notifyStoryFinalizeRunner();
       emitFinalizeEvent('info', FINALIZE_EVENTS.API_ACCEPTED, {
         sourceRole: FINALIZE_SOURCE_ROLES.API,
         requestId: req.id ?? null,
@@ -1012,7 +1010,6 @@ r.post('/finalize', idempotencyFinalize({ getSession: getStorySession }), async 
         sessionId,
       });
     } else if (req.finalizePrepared?.kind === 'active_same_key') {
-      notifyStoryFinalizeRunner();
       emitFinalizeEvent('info', FINALIZE_EVENTS.API_REPLAYED_PENDING, {
         sourceRole: FINALIZE_SOURCE_ROLES.API,
         requestId: req.id ?? null,
@@ -1031,7 +1028,6 @@ r.post('/finalize', idempotencyFinalize({ getSession: getStorySession }), async 
         sessionId: req.finalizePrepared?.attempt?.sessionId || sessionId,
       });
     } else if (req.finalizePrepared?.kind === 'active_other_key') {
-      notifyStoryFinalizeRunner();
       emitFinalizeEvent('warn', FINALIZE_EVENTS.API_CONFLICT_ACTIVE, {
         sourceRole: FINALIZE_SOURCE_ROLES.API,
         requestId: req.id ?? null,

@@ -9,9 +9,14 @@
 ## Proven Current Topology
 
 - One HTTP API process is started from `server.js`: `server.js:27-43`.
-- The API app boots the finalize runner singleton from `src/app.js`: `src/app.js:32-33`.
-- Finalize execution therefore still lives inside the API role today: `src/services/story-finalize.runner.js:182-191`.
-- The current render-capacity ceiling is process-local through `RENDER_SLOT_LIMIT = 3`: `src/utils/render.semaphore.js:1-23`.
+- API startup no longer boots finalize execution from `src/app.js`; the Express app composes HTTP middleware and routes only: `src/app.js:1-292`.
+- Finalize worker startup is now explicit and separate:
+  - repo runtime module: `src/workers/story-finalize.worker.js:1-49`
+  - process entrypoint: `story-finalize.worker.js:1-14`
+  - npm scripts: `package.json:25-40`
+- The worker owns the drain/claim loop by starting the runner explicitly through `ensureStoryFinalizeRunner({ keepProcessAlive: true })`: `src/workers/story-finalize.worker.js:6-44`, `src/services/story-finalize.runner.js:30-53`, `src/services/story-finalize.runner.js:335-342`.
+- The API finalize route no longer nudges execution ownership directly; it admits/replays/conflicts and returns the prepared response: `src/routes/story.routes.js:970-1084`.
+- The current render-capacity ceiling is still process-local through `RENDER_SLOT_LIMIT = 3`: `src/utils/render.semaphore.js:1-23`.
 
 ## Target Design Decision
 
@@ -21,19 +26,26 @@ The conversion target has three runtime responsibilities:
 2. Queue/durable state substrate
 3. Finalize worker/factory floor
 
-## Target API Role
+## Current API Role
 
 ### Meaning
 
 The API role owns:
 
-- authentication
+- finalize front-door auth
 - request validation
 - idempotency admission
 - usage reserve/reject decisions
-- durable job creation
-- fast HTTP responses
+- durable enqueue creation
+- fast caller-facing finalize responses
 - caller-facing recovery/readback routes
+
+Current evidence:
+
+- finalize front door and auth: `src/routes/story.routes.js:35-36`, `src/routes/story.routes.js:970-1084`
+- request validation: `src/routes/story.routes.js:973-976`
+- idempotency admission and reserve/reject/enqueue: `src/middleware/idempotency.firestore.js:33-132`, `src/services/story-finalize.attempts.js:364-593`
+- recovery/readback HTTP surfaces: `src/routes/story.routes.js:1183-1213`, `src/controllers/shorts.controller.js:95-295`
 
 ### Explicit non-ownership
 
@@ -44,24 +56,27 @@ The API role does not:
 - own worker leases
 - own render concurrency
 
-### Target entrypoint
+### Current entrypoint
 
 - `server.js` remains the API entrypoint unless a later replacement doc changes that.
 - `src/app.js` remains the HTTP app composition owner.
 
-## Target Worker Role
+## Current Worker Role
 
 ### Meaning
 
 The worker role owns:
 
 - claiming queued finalize jobs
-- creating execution-attempt lineage
 - stage execution
 - heartbeats / leases
 - retry scheduling
-- dead-letter transitions
 - settlement completion
+
+Current evidence:
+
+- explicit worker runtime startup: `src/workers/story-finalize.worker.js:6-49`, `story-finalize.worker.js:1-14`
+- queued-attempt claim / lease / heartbeat / retry / settle: `src/services/story-finalize.attempts.js:1025-1148`, `src/services/story-finalize.runner.js:86-327`
 
 ### Explicit non-ownership
 
@@ -71,19 +86,18 @@ The worker role does not:
 - perform auth or request validation for mobile/web clients
 - emit caller-facing response envelopes
 
-### Target entrypoint
+### Current entrypoint
 
-- Phase 2 must introduce a dedicated worker entrypoint under backend runtime ownership.
-- Phase 0 decision: that worker entrypoint is expected to live outside `src/app.js` and outside `server.js`.
-- Recommended repo boundary: `src/workers/story-finalize.worker.js` or equivalent dedicated worker module plus an explicit npm script.
-
-This is a target design decision, not current code truth.
+- Dedicated worker runtime module: `src/workers/story-finalize.worker.js`
+- Dedicated process entrypoint: `story-finalize.worker.js`
+- Explicit npm script: `npm run start:worker:finalize`
 
 ## Target Queue / Substrate Role
 
 - Firestore remains the durable queue/state substrate for this conversion, per `docs/FINALIZE_FACTORY_CONVERSION_PLAN.md`.
 - The queue/substrate role does not expose caller HTTP.
-- It owns durable enqueue order, job state, execution-attempt lineage, leases, retry schedule, and dead-letter durability.
+- In Finalize Factory Phase 2, it still owns durable enqueue order, current attempt state, leases, and retry schedule through the existing Firestore-backed finalize attempt model: `src/services/story-finalize.attempts.js:364-593`, `src/services/story-finalize.attempts.js:1025-1148`.
+- FinalizeJob / FinalizeExecutionAttempt lineage and dead-letter redesign remain later-phase work and are not live runtime truth yet: `docs/FINALIZE_FACTORY_CONVERSION_PLAN.md:193-223`.
 
 ## Process-Boundary Rules
 
@@ -92,7 +106,7 @@ This is a target design decision, not current code truth.
 - binds HTTP
 - exposes existing health routes
 - may emit queue-admission metrics
-- must not execute finalize worker stages after Phase 2
+- must not execute finalize worker stages after Finalize Factory Phase 2
 
 ### Worker process
 
@@ -109,24 +123,29 @@ This is a target design decision, not current code truth.
 
 ### Worker health
 
-- Worker health after Phase 2 is owned by:
+- Worker health after Finalize Factory Phase 2 is owned by:
   - worker process liveness
   - worker heartbeat metrics/events
   - lease freshness
   - successful claim-loop activity
+- Current worker health evidence lives in:
+  - worker runtime start/stop: `src/workers/story-finalize.worker.js:6-49`
+  - canonical worker events: `src/services/story-finalize.runner.js:64-74`, `src/services/story-finalize.runner.js:110-146`, `src/services/story-finalize.runner.js:268-276`, `src/services/story-finalize.runner.js:310-325`
+  - lease freshness / missed heartbeat / stale-work reaping: `src/services/story-finalize.attempts.js:956-1012`, `src/services/story-finalize.attempts.js:1116-1148`
 
 ### Startup rule
 
-- Starting the API must not implicitly start finalize execution after Phase 2.
+- Starting the API must not implicitly start finalize execution after Finalize Factory Phase 2.
 - Starting a worker must not require binding the public API listener.
 
-## Phase 2 Success Definition
+## Finalize Factory Phase 2 Success Definition
 
-Phase 2 is only complete when all of the following are true:
+Finalize Factory Phase 2 is only complete when all of the following are true:
 
 - `server.js` / `src/app.js` no longer bootstrap finalize execution
 - worker startup is explicit and separate
 - API can admit finalize requests while workers are stopped
+- accepted finalize work can remain queued while workers are stopped and later complete after a worker starts, with no client resubmission
 - workers can restart without changing API request handling
 - no caller-visible finalize contract changes were introduced
 

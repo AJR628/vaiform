@@ -27,9 +27,10 @@ import {
 const RUNNER_KEY = Symbol.for('vaiform.storyFinalizeRunner');
 const TEST_MODE = process.env.NODE_ENV === 'test' && process.env.VAIFORM_TEST_MODE === '1';
 
-function createRunner() {
+function createRunner({ keepProcessAlive = false } = {}) {
   const runnerId = `story-finalize-runner-${process.pid}-${Math.random().toString(36).slice(2, 10)}`;
   const inflight = new Map();
+  const shouldUnrefTimers = !keepProcessAlive;
 
   let stopped = false;
   let pollTimer = null;
@@ -49,7 +50,7 @@ function createRunner() {
       pollTimer = null;
       void drainQueue();
     }, delayMs);
-    pollTimer.unref?.();
+    if (shouldUnrefTimers) pollTimer.unref?.();
   };
 
   const scheduleReaper = () => {
@@ -79,7 +80,7 @@ function createRunner() {
         scheduleReaper();
       }
     }, FINALIZE_REAPER_INTERVAL_MS);
-    reaperTimer.unref?.();
+    if (shouldUnrefTimers) reaperTimer.unref?.();
   };
 
   const runAttempt = async (attempt) => {
@@ -104,7 +105,7 @@ function createRunner() {
             leaseMs: FINALIZE_RUNNER_LEASE_MS,
           });
         }, FINALIZE_RUNNER_HEARTBEAT_MS);
-        heartbeat.unref?.();
+        if (shouldUnrefTimers) heartbeat.unref?.();
 
         try {
           emitFinalizeEvent('info', FINALIZE_EVENTS.JOB_STARTED, {
@@ -331,9 +332,11 @@ function createRunner() {
   };
 }
 
-export function ensureStoryFinalizeRunner() {
+export function ensureStoryFinalizeRunner(options = {}) {
   if (!globalThis[RUNNER_KEY]) {
-    globalThis[RUNNER_KEY] = createRunner();
+    globalThis[RUNNER_KEY] = createRunner({
+      keepProcessAlive: options.keepProcessAlive === true,
+    });
   }
   return globalThis[RUNNER_KEY];
 }
@@ -342,9 +345,13 @@ export function notifyStoryFinalizeRunner() {
   ensureStoryFinalizeRunner().notify();
 }
 
-export function resetStoryFinalizeRunnerForTests() {
+export function stopStoryFinalizeRunner() {
   if (globalThis[RUNNER_KEY]) {
     globalThis[RUNNER_KEY].stop();
     delete globalThis[RUNNER_KEY];
   }
+}
+
+export function resetStoryFinalizeRunnerForTests() {
+  stopStoryFinalizeRunner();
 }

@@ -6,7 +6,6 @@ import path from 'path';
 
 import routes from './routes/index.js';
 import './config/firebase.js'; // ensure Firebase Admin is initialized
-import { ensureStoryFinalizeRunner } from './services/story-finalize.runner.js';
 
 // Font registration moved to src/caption/canvas-fonts.js and called from server.js
 
@@ -30,7 +29,6 @@ envCheck(); // presence-only checks; CI bypasses via NODE_ENV=test
 const DBG = process.env.VAIFORM_DEBUG === '1';
 
 const app = express();
-ensureStoryFinalizeRunner();
 
 // Trust proxy (before routes)
 app.set('trust proxy', Number(process.env.TRUST_PROXY_HOPS || 1));
