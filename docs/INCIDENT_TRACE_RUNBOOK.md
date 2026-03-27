@@ -88,6 +88,11 @@ Use these stage names when triaging:
 
 Stage authority: [src/observability/finalize-observability.js](C:/Users/ajrhe/OneDrive/Desktop/vaiform-1-clean/src/observability/finalize-observability.js):15-34
 
+Repeated happy-path stage note:
+
+- `hydrate_session` can appear twice on a successful finalize because the current engine loads the session up front and reloads it after render before terminal projection.
+- `persist_recovery` can appear twice on a successful finalize because the current engine writes `renderRecovery.pending` before work and `renderRecovery.done` after work.
+
 ## Canonical Metrics
 
 Use these Phase 1 metrics first:

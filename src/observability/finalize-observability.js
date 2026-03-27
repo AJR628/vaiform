@@ -377,8 +377,6 @@ function normalizeEventPayload(event, details = {}) {
       ? Number(details.workerSaturationRatio)
       : null,
     ...details,
-    attemptId: identity.attemptId,
-    finalizeJobId: identity.finalizeJobId,
   };
 }
 

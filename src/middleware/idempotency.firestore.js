@@ -291,7 +291,9 @@ export default function idempotencyFirestore({ ttlMinutes = 60 } = {}) {
         } else {
           await docRef.delete().catch(() => {});
         }
-      } catch {}
+      } catch {
+        // Best-effort idempotency cleanup only; never mask the committed response.
+      }
       return origJson(body);
     };
 
@@ -299,7 +301,9 @@ export default function idempotencyFirestore({ ttlMinutes = 60 } = {}) {
       if (res.headersSent && res.statusCode >= 500) {
         try {
           await docRef.delete();
-        } catch {}
+        } catch {
+          // Best-effort idempotency cleanup only; never mask the completed response.
+        }
       }
     });
 

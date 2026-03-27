@@ -88,6 +88,11 @@ These stage names are fixed for later phases.
 
 Stage names are intentionally narrower than route names so operators can answer where work is spending time or failing.
 
+Phase 1 clarification on repeated happy-path stages:
+
+- `hydrate_session` is expected to occur more than once on a successful finalize because the current engine loads the session before execution and reloads it after render to pick up `finalVideo`.
+- `persist_recovery` is expected to occur more than once on a successful finalize because the current engine projects `renderRecovery.pending` before work and `renderRecovery.done` after work.
+
 ## Target Requirement: Canonical Event Names
 
 ### API/front-desk events
