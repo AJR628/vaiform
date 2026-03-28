@@ -4,6 +4,7 @@ import test from 'node:test';
 import { __testables } from '../../src/utils/ffmpeg.video.js';
 
 const {
+  readJobColorspaceCompatibility,
   resolveColorspaceDecision,
   stripColorspaceFromArgs,
   runFfmpegWithColorspaceFallback,
@@ -65,6 +66,7 @@ test('conservative auto skips non-bt709 colorspace metadata', () => {
 test('classified colorspace failure retries once without colorspace and succeeds', async () => {
   const logger = createLogger();
   const calls = [];
+  const colorMetaCache = new Map();
   const args = [
     '-i',
     'input.mp4',
@@ -78,7 +80,8 @@ test('classified colorspace failure retries once without colorspace and succeeds
     args,
     usingCaptionPng: false,
     finalFilter: '[0:v]format=yuv420p,colorspace=all=bt709:fast=1[vout]',
-    colorspaceLog: { mode: 'force', color_space: 'force' },
+    colorspaceLog: { mode: 'auto', color_space: 'bt709' },
+    colorMetaCache,
     logger,
     runFfmpegImpl: async (nextArgs) => {
       calls.push(nextArgs);
@@ -98,6 +101,7 @@ test('classified colorspace failure retries once without colorspace and succeeds
   assert.equal(calls.length, 2);
   assert.equal(calls[0][3].includes('colorspace=all=bt709:fast=1'), true);
   assert.equal(calls[1][3].includes('colorspace=all=bt709:fast=1'), false);
+  assert.equal(readJobColorspaceCompatibility(colorMetaCache).incompatibleAfterRetry, true);
   assert.equal(
     calls[1][3],
     stripColorspaceFromArgs(args)[3],
@@ -108,6 +112,57 @@ test('classified colorspace failure retries once without colorspace and succeeds
     ['warn', 'log'],
     'successful classified retry should emit one retry warn and one success log'
   );
+  assert.equal(logger.entries[1].payload.compatibilityMemory, 'job_incompatible_after_retry');
+});
+
+test('same-job incompatible auto render skips later colorspace-first attempts across paths', async () => {
+  const sharedCache = new Map();
+  const firstAttemptDecision = resolveColorspaceDecision({
+    usingCaptionPng: false,
+    mode: 'auto',
+    meta: { color_space: 'bt709', color_primaries: 'bt709', color_transfer: 'bt709' },
+    compatibilityState: readJobColorspaceCompatibility(sharedCache),
+  });
+
+  assert.equal(firstAttemptDecision.addColorspaceFilter, true);
+  assert.equal(firstAttemptDecision.log.reason, 'auto_explicit_bt709');
+
+  await runFfmpegWithColorspaceFallback({
+    args: [
+      '-i',
+      'segment-a.mp4',
+      '-filter_complex',
+      '[0:v]format=yuv420p,colorspace=all=bt709:fast=1[vout]',
+      '-map',
+      '[vout]',
+    ],
+    usingCaptionPng: false,
+    finalFilter: '[0:v]format=yuv420p,colorspace=all=bt709:fast=1[vout]',
+    colorspaceLog: { mode: 'auto', color_space: 'bt709' },
+    colorMetaCache: sharedCache,
+    logger: createLogger(),
+    runFfmpegImpl: async (nextArgs) => {
+      if (nextArgs[3].includes('colorspace=all=bt709:fast=1')) {
+        const error = new Error(
+          'Unsupported input colorspace 2 (unknown)\nError while filtering: Invalid argument'
+        );
+        error.stderr =
+          'Unsupported input colorspace 2 (unknown)\nError while filtering: Invalid argument';
+        throw error;
+      }
+      return { stdout: '', stderr: '' };
+    },
+  });
+
+  const laterPathDecision = resolveColorspaceDecision({
+    usingCaptionPng: false,
+    mode: 'auto',
+    meta: { color_space: 'bt709', color_primaries: 'bt709', color_transfer: 'bt709' },
+    compatibilityState: readJobColorspaceCompatibility(sharedCache),
+  });
+
+  assert.equal(laterPathDecision.addColorspaceFilter, false);
+  assert.equal(laterPathDecision.log.reason, 'job_incompatible_after_retry');
 });
 
 test('non-colorspace ffmpeg failure does not take the colorspace fallback path', async () => {

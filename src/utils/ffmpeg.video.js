@@ -172,6 +172,9 @@ async function getVideoColorMeta(videoPath) {
 /** Unknown/unspecified values for FFmpeg color metadata that should skip the colorspace filter */
 const UNKNOWN_COLORSPACE = new Set(['unknown', 'unspecified', '2', '']);
 const SAFE_AUTO_COLORSPACES = new Set(['bt709']);
+const COLORSPACE_CACHE_KEYS = Object.freeze({
+  jobIncompatibleAfterRetry: Symbol('vaiform.colorspace.jobIncompatibleAfterRetry'),
+});
 
 function normalizeColorValue(value) {
   if (value == null) return null;
@@ -197,7 +200,20 @@ function isSafeAutoColorspace(meta) {
   return SAFE_AUTO_COLORSPACES.has(colorSpace);
 }
 
-function resolveColorspaceDecision({ usingCaptionPng, mode, meta }) {
+function readJobColorspaceCompatibility(colorMetaCache) {
+  if (!(colorMetaCache instanceof Map)) return { incompatibleAfterRetry: false };
+  return {
+    incompatibleAfterRetry: colorMetaCache.get(COLORSPACE_CACHE_KEYS.jobIncompatibleAfterRetry) === true,
+  };
+}
+
+function markJobColorspaceIncompatibleAfterRetry(colorMetaCache, classification) {
+  if (!(colorMetaCache instanceof Map)) return;
+  if (!classification?.retryable) return;
+  colorMetaCache.set(COLORSPACE_CACHE_KEYS.jobIncompatibleAfterRetry, true);
+}
+
+function resolveColorspaceDecision({ usingCaptionPng, mode, meta, compatibilityState = null }) {
   const colorLog = colorMetaForLog(meta);
   if (usingCaptionPng) {
     return {
@@ -233,6 +249,18 @@ function resolveColorspaceDecision({ usingCaptionPng, mode, meta }) {
         color_space: 'force',
         color_primaries: colorLog.color_primaries,
         color_transfer: colorLog.color_transfer,
+      },
+    };
+  }
+
+  if (compatibilityState?.incompatibleAfterRetry) {
+    return {
+      addColorspaceFilter: false,
+      log: {
+        status: 'skipped',
+        mode,
+        reason: 'job_incompatible_after_retry',
+        ...colorLog,
       },
     };
   }
@@ -329,6 +357,7 @@ async function runFfmpegWithColorspaceFallback({
   usingCaptionPng,
   finalFilter,
   colorspaceLog,
+  colorMetaCache = null,
   runFfmpegImpl = runFfmpeg,
   runFfmpegOptions = undefined,
   logger = console,
@@ -350,9 +379,16 @@ async function runFfmpegWithColorspaceFallback({
 
       try {
         await runFfmpegImpl(stripColorspaceFromArgs(args), runFfmpegOptions);
+        if (colorspaceLog?.mode === 'auto') {
+          markJobColorspaceIncompatibleAfterRetry(colorMetaCache, classification);
+        }
         logger.log('[ffmpeg] colorspace retry succeeded', {
           reason: classification.reason,
           retryWithout: 'colorspace=all=bt709:fast=1',
+          compatibilityMemory:
+            colorspaceLog?.mode === 'auto' && colorMetaCache instanceof Map
+              ? 'job_incompatible_after_retry'
+              : null,
         });
         return { retriedWithoutColorspace: true, classification };
       } catch (fallbackErr) {
@@ -2327,6 +2363,7 @@ export async function renderVideoQuoteOverlay({
   } else {
     const mode = getColorspaceMode();
     let meta = null;
+    const compatibilityState = readJobColorspaceCompatibility(colorMetaCache);
     if (mode === 'off') {
       meta = null;
     } else if (mode === 'auto') {
@@ -2340,7 +2377,7 @@ export async function renderVideoQuoteOverlay({
         meta = { color_space: null, color_primaries: null, color_transfer: null };
       }
     }
-    const decision = resolveColorspaceDecision({ usingCaptionPng, mode, meta });
+    const decision = resolveColorspaceDecision({ usingCaptionPng, mode, meta, compatibilityState });
     addColorspaceFilter = decision.addColorspaceFilter;
     colorSpaceLog = decision.log;
   }
@@ -2537,6 +2574,7 @@ export async function renderVideoQuoteOverlay({
       usingCaptionPng,
       finalFilter,
       colorspaceLog: colorSpaceLog,
+      colorMetaCache,
       runFfmpegOptions: { logErrors: false },
     });
     if (retryResult?.retriedWithoutColorspace) {
@@ -2960,9 +2998,12 @@ export default {
 };
 
 export const __testables = {
+  COLORSPACE_CACHE_KEYS,
   normalizeColorValue,
   isUnknownColorValue,
   isSafeAutoColorspace,
+  readJobColorspaceCompatibility,
+  markJobColorspaceIncompatibleAfterRetry,
   resolveColorspaceDecision,
   extractColorspaceFailureInfo,
   stripColorspaceFromArgs,
