@@ -2,8 +2,8 @@ entrypoint = "server.js"
 modules = ["nodejs-22"]
 hidden = [".config", "package-lock.json"]
 
-# 👇 This is what the green Run button executes
-run = "npm start"
+# This is what the green Run button executes: API runtime + finalize worker runtime
+run = "node scripts/start-replit-runtime.mjs"
 
 [nix]
 channel = "stable-24_11"
