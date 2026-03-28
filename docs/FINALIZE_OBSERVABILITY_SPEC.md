@@ -12,7 +12,7 @@ This document defines the observability contract required for the finalize facto
 
 Current observability truth exists today through request IDs, AsyncLocalStorage request context, structured backend logs, the incident runbook, and mobile in-memory diagnostics: `src/middleware/reqId.js:4-8`, `src/observability/request-context.js:48-67`, `src/observability/logger.js:18-39`, `docs/INCIDENT_TRACE_RUNBOOK.md:5-128`, `client/lib/diagnostics.ts:36-143`.
 
-Phase 3 now lands the canonical identifier contract, queue/job lifecycle signals, and control-room truth below. Later phases may extend this spec, but they must not break these identifiers or metric meanings.
+Phase 4 now lands the canonical identifier contract, queue/job lifecycle signals, and the shared-vs-local control-room truth below. Later phases may extend this spec, but they must not break these identifiers or metric meanings.
 
 ## Current Observability Baseline
 
@@ -145,6 +145,11 @@ Phase 1 clarification on repeated happy-path stages:
 - `finalize.provider.cooldown_started`
 - `finalize.provider.cooldown_cleared`
 
+Phase 4 clarification:
+
+- provider admission/cooldown truth only becomes shared for finalize-relevant OpenAI, story-search, and TTS traffic in this phase
+- standalone non-finalize provider routes may still retain their existing local behavior unless they execute inside finalize context
+
 ## Target Requirement: Required Fields By Event Family
 
 ### All finalize events
@@ -221,11 +226,14 @@ Metric names below are required. Implementation may use any metrics backend, but
 - `finalize_provider_cooldown_active{provider}`
 - `finalize_billing_unsettled_jobs`
 
-Phase 3 sourcing rule:
+Phase 4 sourcing rule:
 
 - queue depth, running count, retry-scheduled count, and job-state control-room views read canonical `jobState` from the existing durable finalize job doc, not the legacy single-doc interpretation alone
 - `attemptId` remains the external alias to `finalizeJobId`
 - `executionAttemptId` comes from the active embedded execution attempt lineage
+- shared render capacity truth comes from Firestore lease ownership keyed by `executionAttemptId`, not from local `RENDER_SLOT_LIMIT`
+- shared provider cooldown/admission truth comes from the Firestore-backed finalize control service
+- in-process metrics remain useful, but they must be labeled local-process observability rather than whole-system truth
 
 ### Histograms
 
@@ -235,6 +243,28 @@ Phase 3 sourcing rule:
 - `finalize_stage_duration_ms{stage}`
 - `finalize_provider_request_duration_ms{provider,stage}`
 - `finalize_readback_completion_lag_ms{surface}`
+
+## Target Requirement: Control-Room Truth
+
+`/diag/finalize-control-room` must distinguish shared-system pressure from local-process observability.
+
+### Shared-system truth section
+
+- backlog snapshot sourced from canonical finalize job state
+- backlog definition frozen to `queued + running + retry_scheduled`
+- overload state sourced from shared backlog vs configured cap
+- shared render lease usage sourced from Firestore leases owned by `executionAttemptId`
+- shared provider admission/cooldown state sourced from Firestore finalize-control records
+
+### Local-process observability section
+
+- local worker inflight count
+- local worker saturation ratio
+- local metrics/events registry output
+
+### Compatibility rule
+
+- control-room may add shared/local sections, but it must not imply that API-process-local counters are whole-system truth
 
 ## Target Requirement: Dashboards
 
@@ -247,6 +277,7 @@ Minimum dashboard set:
 - jobs by state
 - retry-scheduled count
 - dead-letter depth
+- overload gate state
 
 ### 2. Worker Health
 
@@ -255,6 +286,7 @@ Minimum dashboard set:
 - worker saturation ratio
 - claim rate
 - lease expiration count
+- shared render leases in use
 
 ### 3. Stage Timing
 
@@ -268,6 +300,7 @@ Minimum dashboard set:
 - OpenAI busy/timeout/failure rate
 - story-search provider transient failures and cooldown activity
 - TTS retry/quota/429 activity
+- shared provider cooldown/admission state by provider
 
 ### 5. Billing / Reconciliation
 

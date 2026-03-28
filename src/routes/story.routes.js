@@ -1118,8 +1118,46 @@ r.post('/finalize', idempotencyFinalize({ getSession: getStorySession }), async 
         sessionId: req.finalizePrepared?.attempt?.sessionId || sessionId,
         errorCode: req.finalizePrepared?.attempt?.failure?.error || null,
       });
+    } else if (req.finalizePrepared?.kind === 'overloaded') {
+      emitFinalizeEvent('warn', FINALIZE_EVENTS.API_REJECTED, {
+        sourceRole: FINALIZE_SOURCE_ROLES.API,
+        requestId: req.id ?? null,
+        route: req.originalUrl,
+        uid: req.user?.uid ?? null,
+        sessionId,
+        attemptId,
+        httpStatus: reply.status,
+        stage: FINALIZE_STAGES.QUEUE_ENQUEUE,
+        durationMs:
+          Number.isFinite(Number(req.finalizeAdmissionStartedAt))
+            ? Date.now() - Number(req.finalizeAdmissionStartedAt)
+            : null,
+        ...describeFinalizeError(
+          {
+            code: 'SERVER_BUSY',
+            status: reply.status,
+            message: reply.body?.detail || 'Finalize backlog is busy. Please retry shortly.',
+          },
+          {
+            retryable: true,
+            failureReason: 'shared_overload_gate',
+          }
+        ),
+      });
+      logger.warn('story.finalize.overload_rejected', {
+        routeStatus: `${req.method} ${req.originalUrl}`,
+        attemptId,
+        sessionId,
+      });
     }
 
+    if (reply.headers && typeof reply.headers === 'object') {
+      for (const [header, value] of Object.entries(reply.headers)) {
+        if (value != null) {
+          res.setHeader(header, value);
+        }
+      }
+    }
     return res.status(reply.status).json(reply.body);
   } catch (e) {
     if (res.headersSent) return;

@@ -15,6 +15,7 @@ import {
   sanitizeStorySessionForClient,
 } from './story.service.js';
 import { isOutboundPolicyError } from '../utils/outbound.fetch.js';
+import { shouldRejectFinalizeAdmissionForBackpressure } from './finalize-control.service.js';
 
 const ATTEMPTS_COLLECTION = 'idempotency';
 const SESSION_LOCKS_COLLECTION = 'storyFinalizeSessions';
@@ -634,6 +635,19 @@ export async function getFinalizeAttempt({ uid, attemptId }) {
   return normalizeAttempt(snap.data(), snap.id);
 }
 
+async function getActiveFinalizeAttemptForSession({ uid, sessionId, attemptId }) {
+  const lockSnap = await sessionLockRef(uid, sessionId).get();
+  if (!lockSnap.exists) return null;
+  const lock = lockSnap.data() || {};
+  const activeAttemptId =
+    typeof lock.attemptId === 'string' && lock.attemptId.trim().length > 0 ? lock.attemptId.trim() : null;
+  if (!activeAttemptId || activeAttemptId === attemptId) {
+    return null;
+  }
+  const activeAttempt = await getFinalizeAttempt({ uid, attemptId: activeAttemptId });
+  return FINALIZE_ACTIVE_STATES.has(activeAttempt?.state) ? activeAttempt : null;
+}
+
 export function mapFinalizeFailureFromError(error) {
   if (isOutboundPolicyError(error)) {
     return {
@@ -803,6 +817,20 @@ export async function prepareFinalizeAttempt({
       status: 409,
       error: 'BILLING_ESTIMATE_UNAVAILABLE',
       detail: 'Render-time estimate is unavailable for this session.',
+    };
+  }
+
+  const activeSessionAttempt = await getActiveFinalizeAttemptForSession({ uid, sessionId, attemptId });
+  if (activeSessionAttempt) {
+    return { kind: 'active_other_key', attempt: activeSessionAttempt };
+  }
+
+  const overloadDecision = await shouldRejectFinalizeAdmissionForBackpressure();
+  if (overloadDecision.reject) {
+    return {
+      kind: 'overloaded',
+      retryAfterSec: overloadDecision.retryAfterSec,
+      backlog: overloadDecision,
     };
   }
 
@@ -1135,6 +1163,20 @@ export async function buildFinalizeHttpReply({ req, uid, sessionId, getSession, 
       return {
         status: prepared.attempt.status || 500,
         body: finalizeFailureReplayEnvelope(req, prepared.attempt),
+      };
+    }
+    case 'overloaded': {
+      return {
+        status: 503,
+        headers: {
+          'Retry-After': String(prepared.retryAfterSec || FINALIZE_BUSY_RETRY_MS / 1000),
+        },
+        body: {
+          success: false,
+          error: 'SERVER_BUSY',
+          detail: 'Finalize backlog is busy. Please retry shortly.',
+          requestId: requestIdOf(req),
+        },
       };
     }
     default:

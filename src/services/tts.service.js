@@ -9,6 +9,14 @@ import {
 } from '../adapters/elevenlabs.adapter.js';
 import { normalizeVoiceSettings, logNormalizedSettings } from '../utils/voice.normalize.js';
 import { withAbortTimeout } from '../utils/fetch.timeout.js';
+import {
+  acquireFinalizeTtsAdmission,
+  getFinalizeProviderRetryAfterSec,
+  isFinalizeTtsCooldownActive,
+  markFinalizeTtsQuotaCooldown,
+  markFinalizeTtsSuccess,
+  releaseFinalizeTtsAdmission,
+} from './finalize-control.service.js';
 
 const TTS_PROVIDER = (process.env.TTS_PROVIDER || 'openai').toLowerCase();
 const OPENAI_MODEL = process.env.OPENAI_TTS_MODEL || 'gpt-4o-mini-tts';
@@ -144,6 +152,16 @@ async function withRetry(fetchFn, { tries = MAX_TRIES, baseDelay = BASE_DELAY } 
   return res;
 }
 
+function markLocalTtsPressureState({ status, code, key = null, retryAfter = null }) {
+  lastTtsState = {
+    status,
+    code,
+    when: new Date().toISOString(),
+    cache: { hit: false, key },
+    headers: retryAfter ? { 'retry-after': String(retryAfter) } : {},
+  };
+}
+
 // Always resolves; never throws
 export async function synthVoice({ text, voiceId, modelId, outputFormat, voiceSettings }) {
   try {
@@ -176,6 +194,13 @@ export async function synthVoice({ text, voiceId, modelId, outputFormat, voiceSe
 
     if (Date.now() < quotaBlockedUntil) {
       console.warn('[tts] quota cooldown active; skipping provider');
+      markLocalTtsPressureState({ status: 503, code: 'tts_quota_cooldown_active' });
+      return { audioPath: null, durationMs: null };
+    }
+
+    if (await isFinalizeTtsCooldownActive()) {
+      console.warn('[tts] shared finalize cooldown active; skipping provider');
+      markLocalTtsPressureState({ status: 503, code: 'tts_shared_cooldown_active' });
       return { audioPath: null, durationMs: null };
     }
 
@@ -217,47 +242,66 @@ export async function synthVoice({ text, voiceId, modelId, outputFormat, voiceSe
       return { audioPath, durationMs: Number.isFinite(hit.durationMs) ? hit.durationMs : null };
     }
 
-    // Single-slot limiter and one polite retry
-    return await withTtsSlot(async () => {
-      try {
-        const { buf } = await fetchWithRetry(async () => {
-          if (isOpenAI)
-            return await doOpenAI({ text: t, model: payload.modelId, voice: payload.voiceId });
-          if (isEleven) {
-            console.log(`[elevenlabs] Render synthesis: ${payload.text.substring(0, 50)}...`);
-            return await doElevenSSOT(payload);
-          }
-          return {
-            res: new Response(null, { status: 503 }),
-            buf: Buffer.alloc(0),
-            headers: new Headers(),
-          };
-        }, key);
+    const sharedAdmission = await acquireFinalizeTtsAdmission();
+    const sharedControlled = sharedAdmission?.bypassed !== true;
+    if (sharedControlled && sharedAdmission?.acquired !== true) {
+      const retryAfter = getFinalizeProviderRetryAfterSec(sharedAdmission, 1);
+      console.warn('[tts] shared finalize admission busy; skipping provider');
+      markLocalTtsPressureState({
+        status: 503,
+        code: 'tts_shared_busy',
+        retryAfter,
+      });
+      return { audioPath: null, durationMs: null };
+    }
 
-        const dir = await mkdtemp(join(tmpdir(), 'vaiform-tts-'));
-        const audioPath = join(dir, 'quote.mp3');
-        await writeFile(audioPath, buf);
-        let durationMs = null;
+    // Single-slot limiter and one polite retry
+    try {
+      return await withTtsSlot(async () => {
         try {
-          const { stat } = await import('node:fs/promises');
-          const st = await stat(audioPath);
-          const { getDurationMsFromMedia } = await import('../utils/media.duration.js');
-          const ms = await getDurationMsFromMedia(audioPath);
-          durationMs = Number.isFinite(ms) ? ms : null;
-          console.log(
-            '[elevenlabs] Render synthesis OK:',
-            st?.size || 0,
-            'bytes, duration:',
-            ms ? (ms / 1000).toFixed(2) + 's' : 'unknown'
-          );
-        } catch {}
-        ttsMem.set(key, { buf, ts: Date.now(), durationMs });
-        return { audioPath, durationMs };
-      } catch (err) {
-        console.warn('[tts] soft-fail:', err?.message || err);
-        return { audioPath: null, durationMs: null };
+          const { buf } = await fetchWithRetry(async () => {
+            if (isOpenAI)
+              return await doOpenAI({ text: t, model: payload.modelId, voice: payload.voiceId });
+            if (isEleven) {
+              console.log(`[elevenlabs] Render synthesis: ${payload.text.substring(0, 50)}...`);
+              return await doElevenSSOT(payload);
+            }
+            return {
+              res: new Response(null, { status: 503 }),
+              buf: Buffer.alloc(0),
+              headers: new Headers(),
+            };
+          }, key);
+
+          const dir = await mkdtemp(join(tmpdir(), 'vaiform-tts-'));
+          const audioPath = join(dir, 'quote.mp3');
+          await writeFile(audioPath, buf);
+          let durationMs = null;
+          try {
+            const { stat } = await import('node:fs/promises');
+            const st = await stat(audioPath);
+            const { getDurationMsFromMedia } = await import('../utils/media.duration.js');
+            const ms = await getDurationMsFromMedia(audioPath);
+            durationMs = Number.isFinite(ms) ? ms : null;
+            console.log(
+              '[elevenlabs] Render synthesis OK:',
+              st?.size || 0,
+              'bytes, duration:',
+              ms ? (ms / 1000).toFixed(2) + 's' : 'unknown'
+            );
+          } catch {}
+          ttsMem.set(key, { buf, ts: Date.now(), durationMs });
+          return { audioPath, durationMs };
+        } catch (err) {
+          console.warn('[tts] soft-fail:', err?.message || err);
+          return { audioPath: null, durationMs: null };
+        }
+      });
+    } finally {
+      if (sharedControlled) {
+        await releaseFinalizeTtsAdmission().catch(() => false);
       }
-    });
+    }
   } catch (err) {
     console.warn('[tts] soft-fail:', err?.message || err);
     return { audioPath: null, durationMs: null };
@@ -285,10 +329,14 @@ async function fetchWithRetry(doFetch, key) {
       headers: pickHeaders(headers || new Headers()),
     };
 
-    if (res && res.ok) return { buf };
+    if (res && res.ok) {
+      await markFinalizeTtsSuccess();
+      return { buf };
+    }
 
     if (code === 'insufficient_quota') {
       quotaBlockedUntil = Date.now() + 10 * 60 * 1000; // 10 min
+      await markFinalizeTtsQuotaCooldown({ errorCode: code });
       break;
     }
     if (status === 429) {
@@ -464,6 +512,13 @@ export async function synthVoiceWithTimestamps({
 
     if (Date.now() < quotaBlockedUntil) {
       console.warn('[tts.timestamps] quota cooldown active; skipping');
+      markLocalTtsPressureState({ status: 503, code: 'tts_quota_cooldown_active' });
+      return { audioPath: null, durationMs: null, timestamps: null };
+    }
+
+    if (await isFinalizeTtsCooldownActive()) {
+      console.warn('[tts.timestamps] shared finalize cooldown active; skipping');
+      markLocalTtsPressureState({ status: 503, code: 'tts_shared_cooldown_active' });
       return { audioPath: null, durationMs: null, timestamps: null };
     }
 
@@ -481,15 +536,30 @@ export async function synthVoiceWithTimestamps({
 
     logNormalizedSettings('[tts.timestamps]', voiceSettings, normalizedSettings);
 
-    // Generate with timestamps
-    return await withTtsSlot(async () => {
-      try {
-        const { buffer, timestamps } = await elevenLabsSynthesizeWithTimestamps(payload);
+    const sharedAdmission = await acquireFinalizeTtsAdmission();
+    const sharedControlled = sharedAdmission?.bypassed !== true;
+    if (sharedControlled && sharedAdmission?.acquired !== true) {
+      const retryAfter = getFinalizeProviderRetryAfterSec(sharedAdmission, 1);
+      console.warn('[tts.timestamps] shared finalize admission busy; skipping');
+      markLocalTtsPressureState({
+        status: 503,
+        code: 'tts_shared_busy',
+        retryAfter,
+      });
+      return { audioPath: null, durationMs: null, timestamps: null };
+    }
 
-        // Save audio to temp file
-        const dir = await mkdtemp(join(tmpdir(), 'vaiform-tts-'));
-        const audioPath = join(dir, 'quote.mp3');
-        await writeFile(audioPath, buffer);
+    // Generate with timestamps
+    try {
+      return await withTtsSlot(async () => {
+        try {
+          const { buffer, timestamps } = await elevenLabsSynthesizeWithTimestamps(payload);
+          await markFinalizeTtsSuccess();
+
+          // Save audio to temp file
+          const dir = await mkdtemp(join(tmpdir(), 'vaiform-tts-'));
+          const audioPath = join(dir, 'quote.mp3');
+          await writeFile(audioPath, buffer);
 
         // Get duration if possible
         let durationMs = null;
@@ -562,12 +632,24 @@ export async function synthVoiceWithTimestamps({
           }
         }
 
-        return { audioPath, durationMs, timestamps };
-      } catch (err) {
-        console.warn('[tts.timestamps] soft-fail:', err?.message || err);
-        return { audioPath: null, durationMs: null, timestamps: null };
+          return { audioPath, durationMs, timestamps };
+        } catch (err) {
+          if (
+            err?.status === 429 &&
+            typeof err?.detail === 'string' &&
+            err.detail.toLowerCase().includes('quota')
+          ) {
+            await markFinalizeTtsQuotaCooldown({ errorCode: 'quota_exceeded' });
+          }
+          console.warn('[tts.timestamps] soft-fail:', err?.message || err);
+          return { audioPath: null, durationMs: null, timestamps: null };
+        }
+      });
+    } finally {
+      if (sharedControlled) {
+        await releaseFinalizeTtsAdmission().catch(() => false);
       }
-    });
+    }
   } catch (err) {
     console.warn('[tts.timestamps] soft-fail:', err?.message || err);
     return { audioPath: null, durationMs: null, timestamps: null };

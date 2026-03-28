@@ -5,6 +5,10 @@ import { captureFinalizeQueueMetricsSnapshot } from '../services/story-finalize.
 import { dump as storeDump } from '../studio/store.js';
 import { renderCaptionImage } from '../caption/renderCaptionImage.js';
 import crypto from 'node:crypto';
+import {
+  captureSharedFinalizePressureSnapshot,
+  getFinalizePressureConfig,
+} from '../services/finalize-control.service.js';
 
 const router = Router();
 
@@ -61,14 +65,19 @@ router.get('/tts_state', (_req, res) => {
 
 router.get('/finalize-control-room', async (_req, res) => {
   try {
-    const queueSnapshot = await captureFinalizeQueueMetricsSnapshot();
+    const [queueSnapshot, sharedSystemPressure] = await Promise.all([
+      captureFinalizeQueueMetricsSnapshot(),
+      captureSharedFinalizePressureSnapshot(),
+    ]);
     return res.json({
       success: true,
       source: 'diagnostic_only',
       finalizeStorageTruth: 'phase3_canonical_job_on_existing_durable_doc',
       executionLineage: 'embedded_execution_attempts_on_same_doc',
       queueSnapshot,
-      observability: snapshotFinalizeObservability(),
+      sharedSystemPressure,
+      pressureConfig: getFinalizePressureConfig(),
+      localProcessObservability: snapshotFinalizeObservability(),
     });
   } catch (error) {
     return res.status(500).json({

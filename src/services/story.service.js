@@ -42,6 +42,16 @@ import {
   withFinalizeStage,
 } from '../observability/finalize-observability.js';
 import { getRuntimeOverride } from '../testing/runtime-overrides.js';
+import { withRenderSlot } from '../utils/render.semaphore.js';
+import {
+  acquireFinalizeStorySearchAdmission,
+  getFinalizeProviderRetryAfterSec,
+  isFinalizeStorySearchProviderCooldownActive,
+  markFinalizeStorySearchProviderSuccess,
+  markFinalizeStorySearchProviderTransientFailure,
+  releaseFinalizeStorySearchAdmission,
+  withSharedFinalizeRenderLease,
+} from './finalize-control.service.js';
 
 const TTL_HOURS = Number(process.env.STORY_TTL_HOURS || 48);
 const BILLING_ESTIMATE_HEURISTIC_PAD_SEC = Math.max(
@@ -104,7 +114,19 @@ function createRetryableStoryError(code, detail, retryAfter = STORY_SEARCH_RETRY
 }
 
 async function withStorySearchAdmission(fn) {
+  const sharedAdmission = await acquireFinalizeStorySearchAdmission();
+  const sharedControlled = sharedAdmission?.bypassed !== true;
+  if (sharedControlled && sharedAdmission?.acquired !== true) {
+    throw createRetryableStoryError(
+      'STORY_SEARCH_BUSY',
+      'Story search is busy. Please retry shortly.',
+      getFinalizeProviderRetryAfterSec(sharedAdmission, STORY_SEARCH_RETRY_AFTER_SEC)
+    );
+  }
   if (activeStorySearchRequests >= MAX_CONCURRENT_STORY_SEARCH_REQUESTS) {
+    if (sharedControlled) {
+      await releaseFinalizeStorySearchAdmission().catch(() => false);
+    }
     throw createRetryableStoryError(
       'STORY_SEARCH_BUSY',
       'Story search is busy. Please retry shortly.'
@@ -116,6 +138,9 @@ async function withStorySearchAdmission(fn) {
     return await fn();
   } finally {
     activeStorySearchRequests -= 1;
+    if (sharedControlled) {
+      await releaseFinalizeStorySearchAdmission().catch(() => false);
+    }
   }
 }
 
@@ -165,7 +190,10 @@ async function callProviderSearch(provider, run, { consulted = true } = {}) {
     };
   }
 
-  if (isProviderCooldownActive(provider)) {
+  if (
+    (await isFinalizeStorySearchProviderCooldownActive(provider)) ||
+    isProviderCooldownActive(provider)
+  ) {
     return {
       provider,
       ok: false,
@@ -192,13 +220,16 @@ async function callProviderSearch(provider, run, { consulted = true } = {}) {
 
     if (normalized.ok || !normalized.transient) {
       resetProviderSearchHealth(provider);
+      await markFinalizeStorySearchProviderSuccess(provider);
     } else {
       markProviderTransientFailure(provider);
+      await markFinalizeStorySearchProviderTransientFailure(provider, normalized.reason);
     }
 
     return normalized;
   } catch (error) {
     markProviderTransientFailure(provider);
+    await markFinalizeStorySearchProviderTransientFailure(provider, error?.code || 'ERROR');
     return {
       provider,
       ok: false,
@@ -2613,7 +2644,14 @@ export async function finalizeStory({ uid, sessionId, options = {}, attemptId = 
     // Step 6: Render segments
     if (!session.finalVideo) {
       await withFinalizeStage(FINALIZE_STAGES.RENDER_VIDEO, { sessionId, attemptId }, async () => {
-        await renderStory({ uid, sessionId });
+        await withSharedFinalizeRenderLease(() =>
+          withRenderSlot(() =>
+            renderStory({
+              uid,
+              sessionId,
+            })
+          )
+        );
       });
       // Reload session to get updated finalVideo field
       session = await withFinalizeStage(

@@ -1,6 +1,6 @@
 # MOBILE_BACKEND_CONTRACT
 
-Cross-repo verification date: 2026-03-20.
+Cross-repo verification date: 2026-03-28.
 
 Purpose: canonical backend-owned contract, guarantees, and open mismatch record for mobile production. Current mobile caller-truth lives in the mobile repo. If a route is not `MOBILE_CORE_NOW` or `MOBILE_CORE_SOON` here, it is not first-class for mobile launch.
 
@@ -42,6 +42,7 @@ Purpose: canonical backend-owned contract, guarantees, and open mismatch record 
 - `STATUS`: Active mobile editor/search routes now map known domain failures to stable 4xx/404 responses instead of collapsing them into generic 500s.
 - `STATUS`: Cross-Repo Phase 3 request-scoped observability is landed for auth bootstrap, provider-backed story generation/search, finalize/idempotent replay/recovery, and short-detail recovery.
 - `STATUS`: Phase 5 expensive-route admission control and deterministic busy/timeout mapping are now landed on the active generation/planning/search/finalize paths.
+- `STATUS`: Finalize Factory Phase 4 shared Firestore-backed pressure control is now landed for finalize render capacity, finalize backlog admission gating, finalize-relevant provider pressure, and truthful control-room views.
 
 ## MOBILE_CORE_NOW Contract
 
@@ -207,16 +208,23 @@ Purpose: canonical backend-owned contract, guarantees, and open mismatch record 
     - same-key terminal success replay: `200` with full session in `data`, additive `data.billing`, and top-level `shortId`
     - same-key terminal failure replay: stored terminal failure payload
     - same-session different-key conflict while another attempt is active: `409 FINALIZE_ALREADY_ACTIVE` with additive `finalize: { state: "pending", attemptId, pollSessionId }`
+    - genuinely new admissions may return `503 SERVER_BUSY` with `Retry-After` only when the shared finalize backlog gate is over cap
   - Mobile reads: `status`, `shortId`, additive `finalize.state`, `finalize.attemptId`, `finalize.pollSessionId`, additive `data.billing.billedSec` when available, and on failures `retryAfter`, `code/error`, `message/detail`.
-  - Guardrails: Firestore-backed async finalize attempt SSOT, exact-once usage reservation/settlement/release helpers, session-scoped active-attempt lockout, backend lease/heartbeat reaping, and per-process `withRenderSlot()` execution inside the finalize runner.
+  - Guardrails: Firestore-backed async finalize attempt SSOT, exact-once usage reservation/settlement/release helpers, session-scoped active-attempt lockout, backend lease/heartbeat reaping, shared Firestore-backed render leases owned by `executionAttemptId`, shared finalize backlog gating, and shared finalize-relevant OpenAI/story-search/TTS pressure with local process guards retained as secondary safety.
+  - Admission precedence order is frozen to:
+    1. same-key replay
+    2. same-session active conflict
+    3. shared overload gate
+    4. billing reserve plus enqueue
   - Retryable busy behavior:
     - finalize no longer returns route-level `503` for render-slot saturation; accepted attempts queue instead
+    - overload rejection is now based on shared backlog definition `queued + running + retry_scheduled`
     - the legacy blocking `POST /api/story/render` route still owns direct render-slot `503 SERVER_BUSY` behavior
   - Current 402 semantics: backend uses time-based billing failures such as `INSUFFICIENT_RENDER_TIME`, and mobile now mirrors that render-time wording.
   - Recovery contract: backend persists additive `renderRecovery.pending` before returning `202`, then persists `renderRecovery.done` or `renderRecovery.failed` with the same attempt identity. On `202 pending`, `409 FINALIZE_ALREADY_ACTIVE`, `TIMEOUT`, `NETWORK_ERROR`, or legacy same-key in-progress replay, mobile keeps or adopts the active attempt key and polls `GET /api/story/:sessionId` until that same-attempt recovery state reaches a terminal result.
   - Contract caveat: recovery is now same-session and restart-safe through stored finalize attempt identity, but it does not widen into a global recovery inbox or background mobile job system.
   - Diagnostics note: finalize, idempotent replay, and recovery boundary events now correlate by `requestId` plus additive `sessionId` / `attemptId`, and mobile failure diagnostics enrich the same request/attempt context in memory.
-  - Observability caveat: render-slot concurrency remains per-process even though finalize attempt claiming and stale-attempt cleanup are now Firestore-backed.
+  - Observability caveat: `/diag/finalize-control-room` now distinguishes shared-system pressure truth from local-process observability; Phase 4 does not turn the full in-process metrics registry into a distributed metrics platform.
 
 - `GET /api/shorts/mine`
   - Mobile caller(s): `client/screens/LibraryScreen.tsx:80-118`, `client/screens/short-detail/useShortDetailAvailability.ts:149-205`

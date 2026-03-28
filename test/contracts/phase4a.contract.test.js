@@ -82,6 +82,27 @@ function buildShot(id, sentenceIndex, query, durationSec = 4) {
   };
 }
 
+function withEnv(patch) {
+  const previous = new Map();
+  for (const [key, value] of Object.entries(patch)) {
+    previous.set(key, process.env[key]);
+    if (value == null) {
+      delete process.env[key];
+    } else {
+      process.env[key] = String(value);
+    }
+  }
+  return () => {
+    for (const [key, value] of previous.entries()) {
+      if (value == null) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    }
+  };
+}
+
 const unauthorizedRoutes = [
   ['POST', '/api/users/ensure', {}],
   ['GET', '/api/usage', undefined],
@@ -1507,6 +1528,214 @@ test('POST /api/story/finalize returns 409 FINALIZE_ALREADY_ACTIVE for a differe
     });
   } finally {
     stopFinalizeWorkerRuntime('contract_finalize_conflict_cleanup');
+  }
+});
+
+test('POST /api/story/finalize rejects new admissions with 503 SERVER_BUSY and Retry-After once shared backlog is at cap without creating durable finalize artifacts', async () => {
+  const restoreEnv = withEnv({
+    STORY_FINALIZE_SHARED_BACKLOG_LIMIT: 1,
+    STORY_FINALIZE_OVERLOAD_RETRY_AFTER_SEC: 45,
+  });
+
+  try {
+    seedUserDoc('user-1', {
+      plan: 'creator',
+      membership: {
+        status: 'active',
+        kind: 'subscription',
+        billingCadence: 'monthly',
+      },
+      usage: {
+        cycleIncludedSec: 600,
+        cycleUsedSec: 20,
+        cycleReservedSec: 0,
+      },
+    });
+    seedStorySession(
+      'user-1',
+      buildBaseSession({
+        id: 'story-finalize-overload-new',
+        story: {
+          sentences: ['Beat one'],
+        },
+        shots: [buildShot('clip-overload-1', 0, 'Beat one')],
+        billingEstimate: {
+          estimatedSec: 8,
+          source: 'heuristic',
+          updatedAt: '2026-03-19T00:00:00.000Z',
+        },
+      })
+    );
+    seedFirestoreDoc('idempotency', 'user-1:existing-overload-attempt', {
+      flow: 'story.finalize',
+      uid: 'user-1',
+      attemptId: 'existing-overload-attempt',
+      jobId: 'existing-overload-attempt',
+      externalAttemptId: 'existing-overload-attempt',
+      sessionId: 'story-existing-overload',
+      state: 'queued',
+      jobState: 'queued',
+      isActive: true,
+      createdAt: timestamp('2026-03-26T10:00:00.000Z'),
+      updatedAt: timestamp('2026-03-26T10:00:00.000Z'),
+      enqueuedAt: timestamp('2026-03-26T10:00:00.000Z'),
+      availableAfter: timestamp('2026-03-26T10:00:00.000Z'),
+    });
+
+    const result = await requestJson('/api/story/finalize', {
+      method: 'POST',
+      headers: {
+        'X-Idempotency-Key': 'idem-finalize-overload-new',
+        'x-client': 'mobile',
+      },
+      body: {
+        sessionId: 'story-finalize-overload-new',
+      },
+    });
+
+    assert.equal(result.status, 503);
+    assert.equal(result.json.success, false);
+    assert.equal(result.json.error, 'SERVER_BUSY');
+    assert.equal(result.response.headers.get('retry-after'), '45');
+    assert.equal(readDoc('idempotency', 'user-1:idem-finalize-overload-new'), null);
+    assert.equal(readDoc('storyFinalizeSessions', 'user-1:story-finalize-overload-new'), null);
+    assert.equal(readDoc('users', 'user-1').usage.cycleReservedSec, 0);
+  } finally {
+    restoreEnv();
+  }
+});
+
+test('POST /api/story/finalize same-key replay bypasses the shared overload gate', async () => {
+  const restoreEnv = withEnv({
+    STORY_FINALIZE_SHARED_BACKLOG_LIMIT: 1,
+  });
+
+  try {
+    seedUserDoc('user-1', {
+      plan: 'creator',
+      membership: {
+        status: 'active',
+        kind: 'subscription',
+        billingCadence: 'monthly',
+      },
+      usage: {
+        cycleIncludedSec: 600,
+        cycleUsedSec: 20,
+        cycleReservedSec: 0,
+      },
+    });
+    seedStorySession(
+      'user-1',
+      buildBaseSession({
+        id: 'story-finalize-overload-replay',
+        story: {
+          sentences: ['Beat one'],
+        },
+        shots: [buildShot('clip-overload-replay', 0, 'Beat one')],
+        billingEstimate: {
+          estimatedSec: 8,
+          source: 'heuristic',
+          updatedAt: '2026-03-19T00:00:00.000Z',
+        },
+      })
+    );
+
+    const first = await requestJson('/api/story/finalize', {
+      method: 'POST',
+      headers: {
+        'X-Idempotency-Key': 'idem-finalize-overload-replay',
+        'x-client': 'mobile',
+      },
+      body: {
+        sessionId: 'story-finalize-overload-replay',
+      },
+    });
+
+    assert.equal(first.status, 202);
+
+    const replay = await requestJson('/api/story/finalize', {
+      method: 'POST',
+      headers: {
+        'X-Idempotency-Key': 'idem-finalize-overload-replay',
+        'x-client': 'mobile',
+      },
+      body: {
+        sessionId: 'story-finalize-overload-replay',
+      },
+    });
+
+    assert.equal(replay.status, 202);
+    assert.equal(replay.json.success, true);
+    assert.equal(replay.json.finalize.attemptId, 'idem-finalize-overload-replay');
+  } finally {
+    restoreEnv();
+  }
+});
+
+test('POST /api/story/finalize same-session active conflict still returns 409 before the shared overload gate', async () => {
+  const restoreEnv = withEnv({
+    STORY_FINALIZE_SHARED_BACKLOG_LIMIT: 1,
+  });
+
+  try {
+    seedUserDoc('user-1', {
+      plan: 'creator',
+      membership: {
+        status: 'active',
+        kind: 'subscription',
+        billingCadence: 'monthly',
+      },
+      usage: {
+        cycleIncludedSec: 600,
+        cycleUsedSec: 20,
+        cycleReservedSec: 0,
+      },
+    });
+    seedStorySession(
+      'user-1',
+      buildBaseSession({
+        id: 'story-finalize-overload-conflict',
+        story: {
+          sentences: ['Beat one'],
+        },
+        shots: [buildShot('clip-overload-conflict', 0, 'Beat one')],
+        billingEstimate: {
+          estimatedSec: 8,
+          source: 'heuristic',
+          updatedAt: '2026-03-19T00:00:00.000Z',
+        },
+      })
+    );
+
+    const first = await requestJson('/api/story/finalize', {
+      method: 'POST',
+      headers: {
+        'X-Idempotency-Key': 'idem-finalize-overload-conflict-a',
+        'x-client': 'mobile',
+      },
+      body: {
+        sessionId: 'story-finalize-overload-conflict',
+      },
+    });
+
+    assert.equal(first.status, 202);
+
+    const second = await requestJson('/api/story/finalize', {
+      method: 'POST',
+      headers: {
+        'X-Idempotency-Key': 'idem-finalize-overload-conflict-b',
+        'x-client': 'mobile',
+      },
+      body: {
+        sessionId: 'story-finalize-overload-conflict',
+      },
+    });
+
+    assert.equal(second.status, 409);
+    assert.equal(second.json.error, 'FINALIZE_ALREADY_ACTIVE');
+    assert.equal(second.json.finalize.attemptId, 'idem-finalize-overload-conflict-a');
+  } finally {
+    restoreEnv();
   }
 });
 

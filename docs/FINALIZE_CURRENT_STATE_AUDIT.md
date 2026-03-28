@@ -8,7 +8,7 @@
 
 ## Purpose
 
-This document freezes how finalize works after Phase 3 landed and before later phases change internals.
+This document freezes how finalize works after Phase 4 landed and before Phase 5 or Phase 6 change internals.
 
 Every statement below is current-state repo truth unless explicitly marked otherwise.
 
@@ -62,6 +62,7 @@ If docs and code disagree, code wins for this audit.
   - replays same-key prior state from Firestore `idempotency`: `src/services/story-finalize.attempts.js:305-319`
   - loads the session and requires `billingEstimate.estimatedSec`: `src/services/story-finalize.attempts.js:321-339`
   - rejects same-session different-key conflicts via `storyFinalizeSessions`: `src/services/story-finalize.attempts.js:356-374`
+  - applies the shared overload gate only for genuinely new admissions after replay/conflict checks and before reserve/enqueue: `src/services/story-finalize.attempts.js:779-840`
   - checks available render time from canonical usage state: `src/services/story-finalize.attempts.js:376-393`
   - reuses the existing `idempotency/<uid:attemptId>` doc keyspace as the canonical `FinalizeJob` record, creates embedded `executionAttempts[0]` plus `currentExecution`, preserves the required top-level compatibility fields, creates a session lock doc, and increments `users.usage.cycleReservedSec`
 
@@ -72,6 +73,7 @@ If docs and code disagree, code wins for this audit.
 - Same-session different-key conflict returns `409 FINALIZE_ALREADY_ACTIVE` with top-level `finalize`: `src/services/story-finalize.attempts.js:113-122`, `src/services/story-finalize.attempts.js:553-560`.
 - Same-key terminal success replay returns `200` with session `data`, top-level `shortId`, and additive `data.billing`: `src/services/story-finalize.attempts.js:562-587`.
 - Same-key terminal failure replay returns the stored terminal failure payload: `src/services/story-finalize.attempts.js:124-134`, `src/services/story-finalize.attempts.js:589-593`.
+- Genuinely new admissions may now return `503 SERVER_BUSY` with `Retry-After` when the shared backlog gate is over cap; those rejections do not reserve usage, do not create finalize job docs, and do not create session lock docs: `src/services/story-finalize.attempts.js:779-840`, `src/services/story-finalize.attempts.js:1168-1181`, `src/routes/story.routes.js:1121-1155`.
 
 ### 5. Session recovery state
 
@@ -85,7 +87,7 @@ If docs and code disagree, code wins for this audit.
 - The route handler itself does not execute the render pipeline. It returns the prepared reply and no longer nudges finalize execution directly; worker discovery is independent of the route: `src/routes/story.routes.js:970-1084`.
 - The runner is a process-global singleton stored on `globalThis`: `src/services/story-finalize.runner.js:27`, `src/services/story-finalize.runner.js:335-353`.
 - The dedicated worker runtime starts that runner explicitly with `keepProcessAlive: true`: `src/workers/story-finalize.worker.js:6-44`, `src/services/story-finalize.runner.js:30-53`, `src/services/story-finalize.runner.js:335-342`.
-- The runner polls for queued attempts, claims them, heartbeats leases, runs `finalizeStory()`, settles success, requeues `SERVER_BUSY`, and marks terminal failure otherwise: `src/services/story-finalize.runner.js:30-57`, `src/services/story-finalize.runner.js:86-225`, `src/services/story-finalize.runner.js:232-327`.
+- The runner polls for queued attempts, claims them, heartbeats leases, runs `finalizeStory()`, settles success, requeues `SERVER_BUSY`, and marks terminal failure otherwise: `src/services/story-finalize.runner.js:30-89`, `src/services/story-finalize.runner.js:90-226`, `src/services/story-finalize.runner.js:252-304`.
 
 ### 7. Current durable queue substrate
 
@@ -182,22 +184,27 @@ Phase 3 keeps these top-level fields readable and writable on the canonical dura
   - `story-finalize.worker.js:1-14`
   - `src/workers/story-finalize.worker.js:1-49`
   - `package.json:25-40`
-- The runner claims work only while `inflight.size < RENDER_SLOT_LIMIT`: `src/services/story-finalize.runner.js:232-280`.
-- `RENDER_SLOT_LIMIT` is a hardcoded in-memory per-process limit of `3`: `src/utils/render.semaphore.js:1-23`.
-- Current OpenAI admission, story-search admission, and TTS slotting are also in-memory/process-local: `src/services/story.llm.service.js:160-170`, `src/services/story.service.js:66-113`, `src/services/tts.service.js:44-54`.
+- The runner still has a local per-process inflight guard, but it no longer uses `RENDER_SLOT_LIMIT` as the primary render-capacity truth: `src/services/story-finalize.runner.js:26-33`, `src/services/story-finalize.runner.js:252-304`.
+- Shared render capacity is now Firestore-backed and lease-owned by `executionAttemptId`, with stale leases reaped by the worker loop: `src/services/finalize-control.service.js`, `src/services/story.service.js:2613-2624`, `src/services/story-finalize.runner.js:61-89`.
+- The local `RENDER_SLOT_LIMIT` semaphore remains as a secondary in-process safety guard only: `src/utils/render.semaphore.js:1-23`, `src/services/story.service.js:2613-2624`.
+- Current OpenAI admission, story-search admission/cooldown, and TTS throttle/cooldown are now shared for finalize-context work through the Firestore-backed control layer while retaining their existing local guards as secondary process safety: `src/services/finalize-control.service.js`, `src/services/story.llm.service.js:152-184`, `src/services/story.service.js:98-212`, `src/services/tts.service.js:166-345`, `src/services/tts.service.js:489-657`.
 
-## Current Bottlenecks And Single-Room Behavior
+## Current Pressure Map Freeze
 
-- Finalize execution is no longer API-process-owned, but it is still a single worker-process concern unless multiple worker processes are deployed intentionally: `src/workers/story-finalize.worker.js:6-44`, `src/services/story-finalize.runner.js:30-53`.
-- Render concurrency is process-local because `withRenderSlot()` only counts local memory: `src/utils/render.semaphore.js:5-8`, `src/utils/render.semaphore.js:10-23`.
-- Upstream provider pressure is also process-local because OpenAI, story search, and TTS concurrency/cooldown state are all stored in process memory: `src/services/story.llm.service.js:160-170`, `src/services/story.service.js:67-71`, `src/services/story.service.js:120-130`, `src/services/tts.service.js:69-83`.
-- Finalize is still a wide pipeline rather than a narrow render-only worker task because it can backfill story, plan, search, and captions: `src/services/story.service.js:2552-2578`.
+- Render capacity primary truth is now the shared Firestore lease layer owned by `executionAttemptId`; the local semaphore is secondary only: `src/services/finalize-control.service.js`, `src/services/story.service.js:2613-2624`, `src/utils/render.semaphore.js:1-23`.
+- Worker inflight/saturation remains local-process observability and local claim pacing; it is no longer the system-wide render ceiling: `src/services/story-finalize.runner.js:26-33`, `src/services/story-finalize.runner.js:252-304`, `src/observability/finalize-observability.js:614-621`.
+- OpenAI admission for finalize-triggered story generation/planning now consults shared Firestore provider pressure first, then local process safety: `src/services/finalize-control.service.js`, `src/services/story.llm.service.js:152-184`.
+- Story-search admission/cooldown for finalize-triggered clip search now consult shared Firestore provider pressure first, then local process safety: `src/services/finalize-control.service.js`, `src/services/story.service.js:98-212`.
+- TTS throttle/cooldown for finalize-triggered rendering now consult shared Firestore provider pressure first, then local process safety: `src/services/finalize-control.service.js`, `src/services/tts.service.js:166-345`, `src/services/tts.service.js:489-657`.
+- Shared overload truth is defined as `queued + running + retry_scheduled` across canonical finalize job docs and is evaluated only for genuinely new finalize admissions after replay/conflict checks: `src/services/finalize-control.service.js`, `src/services/story-finalize.attempts.js:779-840`.
+- Finalize is still a wide pipeline rather than a narrow render-only worker task because it can backfill story, plan, search, and captions before rendering: `src/services/story.service.js:2577-2617`.
 
 ## Current Observability That Already Exists
 
 - Request IDs are assigned early and echoed in `X-Request-Id`: `src/middleware/reqId.js:4-8`, `src/app.js:46-49`.
 - Backend request context carries `requestId`, `uid`, `sessionId`, `attemptId`, and `shortId`: `src/observability/request-context.js:48-67`.
 - Backend logger emits structured JSON with those fields: `src/observability/logger.js:18-39`.
+- `/diag/finalize-control-room` now distinguishes shared-system pressure truth from local-process observability. Shared backlog/render/provider state comes from the Firestore-backed control service, while the existing in-process metrics snapshot remains visible under an explicit local label: `src/routes/diag.routes.js:66-81`, `src/services/finalize-control.service.js`, `src/observability/finalize-observability.js:614-621`.
 - There is an operator runbook for finalize/replay/recovery and readback incidents: `docs/INCIDENT_TRACE_RUNBOOK.md:5-16`, `docs/INCIDENT_TRACE_RUNBOOK.md:29-128`.
 - Mobile keeps a bounded in-memory diagnostics buffer for API/client failures and enriches finalize/recovery/readback failures with context: `client/lib/diagnostics.ts:36-66`, `client/lib/diagnostics.ts:81-143`.
 
@@ -210,6 +217,8 @@ These behaviors are frozen for the factory conversion unless later code evidence
 - The route must remain authenticated and idempotent on `X-Idempotency-Key`: `src/routes/story.routes.js:35-36`, `src/middleware/idempotency.firestore.js:33-40`.
 - Accepted work must continue to return quickly rather than block on full render completion: `src/routes/story.routes.js:964-1021`, `src/services/story-finalize.attempts.js:517-526`.
 - Same-key replay and same-session different-key conflict semantics must remain stable: `src/services/story-finalize.attempts.js:527-560`.
+- Admission precedence is now frozen to: same-key replay, same-session active conflict, shared overload gate, then billing reserve plus enqueue: `src/services/story-finalize.attempts.js:779-840`.
+- Shared overload uses backlog definition `queued + running + retry_scheduled` and returns `503 SERVER_BUSY` plus `Retry-After` only for genuinely new admissions: `src/services/finalize-control.service.js`, `src/services/story-finalize.attempts.js:779-840`, `src/services/story-finalize.attempts.js:1168-1181`.
 - Success replay must continue to expose top-level `shortId` and additive `data.billing`: `src/services/story-finalize.attempts.js:562-587`.
 
 ### GET /api/story/:sessionId recovery expectations
@@ -244,6 +253,7 @@ These behaviors are frozen for the factory conversion unless later code evidence
 - `docs/API_CONTRACT.md` now documents both established top-level finalize exceptions (`shortId` and `finalize`), so the earlier drift note is closed: `docs/API_CONTRACT.md:56-66`.
 - Mobile TypeScript does not strongly encode session truth because `StorySession` is still `any`; current caller truth is therefore the hooks/screens, not the type file: `client/types/story.ts:1-6`.
 - Active web creative caller behavior is not fully described by the mobile contract docs and must be frozen alongside mobile for this conversion: `docs/ACTIVE_SURFACES.md:83-85`, `web/public/js/pages/creative/creative.article.mjs:3998-4065`.
+- Phase 5 storage/recovery tightening and Phase 6 threshold tuning/load testing remain deferred. Phase 4 lands the shared pressure-control mechanism and truthful control-room behavior only.
 
 ## Out Of Scope For This Audit
 

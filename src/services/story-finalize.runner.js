@@ -7,7 +7,6 @@ import {
   emitFinalizeEvent,
   runWithFinalizeObservabilityContext,
 } from '../observability/finalize-observability.js';
-import { withRenderSlot, RENDER_SLOT_LIMIT } from '../utils/render.semaphore.js';
 import { finalizeStory, persistStoryRenderRecovery } from './story.service.js';
 import {
   FINALIZE_REAPER_INTERVAL_MS,
@@ -24,9 +23,14 @@ import {
   refreshFinalizeQueueMetrics,
   settleFinalizeAttemptSuccess,
 } from './story-finalize.attempts.js';
+import { reapSharedFinalizePressureState } from './finalize-control.service.js';
 
 const RUNNER_KEY = Symbol.for('vaiform.storyFinalizeRunner');
 const TEST_MODE = process.env.NODE_ENV === 'test' && process.env.VAIFORM_TEST_MODE === '1';
+const LOCAL_WORKER_INFLIGHT_LIMIT = Math.max(
+  1,
+  Number(process.env.STORY_FINALIZE_LOCAL_WORKER_INFLIGHT_LIMIT || (TEST_MODE ? 2 : 6))
+);
 
 function createRunner({ keepProcessAlive = false } = {}) {
   const runnerId = `story-finalize-runner-${process.pid}-${Math.random().toString(36).slice(2, 10)}`;
@@ -41,7 +45,7 @@ function createRunner({ keepProcessAlive = false } = {}) {
   const currentWorkerMetrics = () => ({
     workersActive: stopped ? 0 : 1,
     jobsRunning: inflight.size,
-    workerSaturationRatio: Number((inflight.size / RENDER_SLOT_LIMIT).toFixed(3)),
+    workerSaturationRatio: Number((inflight.size / LOCAL_WORKER_INFLIGHT_LIMIT).toFixed(3)),
   });
 
   const schedulePoll = (delayMs = FINALIZE_RUNNER_POLL_MS) => {
@@ -61,6 +65,7 @@ function createRunner({ keepProcessAlive = false } = {}) {
       reaperTimer = null;
       try {
         await reapStaleFinalizeAttempts();
+        await reapSharedFinalizePressureState();
       } catch (error) {
         emitFinalizeEvent('error', FINALIZE_EVENTS.WORKER_CLAIM_LOOP_ERROR, {
           sourceRole: FINALIZE_SOURCE_ROLES.WORKER,
@@ -134,13 +139,11 @@ function createRunner({ keepProcessAlive = false } = {}) {
             startedAt: startedAttempt.startedAt ?? attempt.startedAt ?? null,
             ...currentWorkerMetrics(),
           });
-          const session = await withRenderSlot(() =>
-            finalizeStory({
-              uid: attempt.uid,
-              sessionId: attempt.sessionId,
-              attemptId: attempt.attemptId,
-            })
-          );
+          const session = await finalizeStory({
+            uid: attempt.uid,
+            sessionId: attempt.sessionId,
+            attemptId: attempt.attemptId,
+          });
           const shortId = session?.finalVideo?.jobId || null;
           emitFinalizeEvent('info', FINALIZE_EVENTS.JOB_COMPLETED, {
             sourceRole: FINALIZE_SOURCE_ROLES.WORKER,
@@ -250,7 +253,7 @@ function createRunner({ keepProcessAlive = false } = {}) {
     if (stopped || draining) return;
     draining = true;
     try {
-      while (!stopped && inflight.size < RENDER_SLOT_LIMIT) {
+      while (!stopped && inflight.size < LOCAL_WORKER_INFLIGHT_LIMIT) {
         const attempt = await claimNextFinalizeAttempt({
           runnerId,
           leaseMs: FINALIZE_RUNNER_LEASE_MS,

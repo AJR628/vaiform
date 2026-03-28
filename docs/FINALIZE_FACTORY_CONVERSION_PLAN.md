@@ -244,34 +244,62 @@ These contracts stay stable unless later repo evidence proves a change is unavoi
 
 ## Phase 4 — Global Concurrency / Provider Throttle / Backpressure
 
-- Objective: replace process-local concurrency and provider pressure handling with system-wide controls.
-- Why it matters: render, OpenAI, story-search, and TTS pressure are all currently managed in process memory: `src/utils/render.semaphore.js:1-23`, `src/services/story.llm.service.js:160-170`, `src/services/story.service.js:100-130`, `src/services/tts.service.js:44-54`.
-- Exact motivating evidence:
-  - render limit is per-process and explicitly documented as such: `src/utils/render.semaphore.js:5-8`
-  - provider admission/cooldown state is process-local: `src/services/story.service.js:67-71`, `src/services/story.service.js:120-130`
-- Scope / blast radius: worker scheduler, provider wrappers, queue admission behavior.
+- Objective: replace process-local finalize pressure handling with a shared Firestore-backed control layer while keeping the current finalize/mobile/web caller contracts frozen.
+- Why it matters: finalize can still backfill story generation, shot planning, clip search, caption work, and render, so local-only pressure controls become untruthful once multiple workers/providers behave as one system: `src/services/story.service.js:2577-2617`.
+- Exact motivating evidence at Phase 4 start:
+  - render limit was per-process memory only: `src/utils/render.semaphore.js:1-23`
+  - worker inflight/saturation was local and not whole-system truth: `src/services/story-finalize.runner.js:31-45`, `src/services/story-finalize.runner.js:253-301`
+  - OpenAI admission was process-local: `src/services/story.llm.service.js:160-170`
+  - story-search admission/cooldown was process-local: `src/services/story.service.js:72-77`, `src/services/story.service.js:120-130`
+  - TTS throttle/cooldown was process-local: `src/services/tts.service.js:44-54`, `src/services/tts.service.js:69-83`
+  - control-room mixed Firestore queue truth with API-process-local metrics: `src/routes/diag.routes.js:62-72`, `src/observability/finalize-observability.js:614-621`
+- Scope / blast radius: shared control service, render-stage admission, finalize admission gating, finalize-relevant provider wrappers, control-room truth.
 - Ownership: backend.
 - Deliverables:
-  - global render-capacity policy
-  - provider throttle policy
-  - overload/backpressure behavior
+  - one backend-owned Firestore-backed shared control service as the only shared pressure-state owner
+  - shared render-capacity leases owned by `executionAttemptId`
+  - shared finalize backlog/admission gate using backlog definition `queued + running + retry_scheduled`
+  - shared finalize-relevant provider admission/cooldown truth for OpenAI, story search, and TTS
+  - control-room output that distinguishes shared-system truth from local-process observability
 - Acceptance criteria:
-  - scaling workers increases capacity predictably
-  - provider pain does not multiply blindly with worker count
-  - overload produces bounded queueing and stable caller behavior
+  - two worker identities cannot exceed the configured shared render limit
+  - same-key replay still bypasses overload rejection and same-session active conflict still returns `409 FINALIZE_ALREADY_ACTIVE`
+  - genuinely new finalize admissions over cap return `503 SERVER_BUSY` plus `Retry-After` without reserving usage or creating durable finalize artifacts
+  - finalize-relevant provider cooldown/admission set by one process is observable by another
+  - control-room no longer implies local API metrics are whole-system truth
+  - overload produces bounded queueing and stable caller behavior without changing caller-visible finalize/mobile/web contracts
 - What stays frozen:
-  - external finalize contract
-  - external billing semantics
+  - public finalize success/replay/conflict semantics
+  - `GET /api/story/:sessionId` recovery semantics
+  - shorts detail/library eventual-readback behavior
+  - billing reserve/settle semantics
 - What may change:
-  - internal concurrency governors
-  - retry pacing
-  - provider wrappers
+  - additive Firestore control collections/lease records
+  - finalize worker/provider internal admission behavior
+  - control-room payload sections for shared vs local pressure views
 - Dependencies: Phase 3 job model.
 - Required proof artifacts:
-  - concurrency policy doc
-  - saturation test results
-  - provider throttle tests
-  - alert/dash updates for saturation signals
+  - contract tests proving replay/conflict/recovery/shorts behavior stayed stable
+  - shared render lease tests proving capacity, release, and stale reap behavior by `executionAttemptId`
+  - overload gate tests proving precedence order, `503 SERVER_BUSY` plus `Retry-After`, and no reserve/job/lock side effects on rejection
+  - shared provider-pressure tests for finalize-relevant OpenAI/story-search/TTS paths
+  - control-room tests proving shared-system truth and local-process observability are distinct
+
+### Phase 4 Frozen Decisions
+
+- Add exactly one backend-owned shared control service and keep it as the only shared pressure-state owner.
+- Use lease-style ownership with expiry/reaping rather than naked shared counters as the primary truth.
+- Render lease ownership is `executionAttemptId`.
+- Keep the local render semaphore as a secondary in-process safety guard only.
+- Freeze finalize admission precedence to:
+  1. same-key replay
+  2. same-session active conflict
+  3. shared overload gate
+  4. billing reserve plus enqueue
+- Freeze overload backlog definition to `queued + running + retry_scheduled`.
+- Freeze overload rejection semantics to `503 SERVER_BUSY` plus `Retry-After`, with no usage reserve, no finalize job doc, and no session lock/helper doc creation.
+- Limit provider-control scope in Phase 4 to finalize-relevant OpenAI, story-search, and TTS pressure only.
+- Keep Phase 5 storage/recovery tightening and Phase 6 threshold tuning/load testing deferred.
 
 ## Phase 5 — State/Storage/Recovery Tightening
 

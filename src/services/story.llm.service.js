@@ -8,6 +8,11 @@ import { isOutboundPolicyError } from '../utils/outbound.fetch.js';
 import { calculateReadingDuration } from '../utils/text.duration.js';
 import logger from '../observability/logger.js';
 import { getRuntimeOverride } from '../testing/runtime-overrides.js';
+import {
+  acquireFinalizeOpenAiAdmission,
+  getFinalizeProviderRetryAfterSec,
+  releaseFinalizeOpenAiAdmission,
+} from './finalize-control.service.js';
 
 const OPENAI_BASE = process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1';
 const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
@@ -158,7 +163,20 @@ function createRetryableOpenAiError(code, detail, retryAfter = OPENAI_RETRY_AFTE
 }
 
 async function withOpenAiAdmission({ code, detail, retryAfter = OPENAI_RETRY_AFTER_SEC }, fn) {
+  const sharedAdmission = await acquireFinalizeOpenAiAdmission();
+  const sharedControlled = sharedAdmission?.bypassed !== true;
+  if (sharedControlled && sharedAdmission?.acquired !== true) {
+    throw createRetryableOpenAiError(
+      code,
+      detail,
+      getFinalizeProviderRetryAfterSec(sharedAdmission, retryAfter)
+    );
+  }
+
   if (activeOpenAiRequests >= MAX_CONCURRENT_OPENAI_REQUESTS) {
+    if (sharedControlled) {
+      await releaseFinalizeOpenAiAdmission().catch(() => false);
+    }
     throw createRetryableOpenAiError(code, detail, retryAfter);
   }
 
@@ -167,6 +185,9 @@ async function withOpenAiAdmission({ code, detail, retryAfter = OPENAI_RETRY_AFT
     return await fn();
   } finally {
     activeOpenAiRequests -= 1;
+    if (sharedControlled) {
+      await releaseFinalizeOpenAiAdmission().catch(() => false);
+    }
   }
 }
 

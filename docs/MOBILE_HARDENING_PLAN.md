@@ -1,6 +1,6 @@
 # MOBILE_HARDENING_PLAN
 
-Cross-repo verification date: 2026-03-21.
+Cross-repo verification date: 2026-03-28.
 
 Goal: harden only the backend surface that the current mobile app actually depends on. This is a continuation ledger for the current repos, not a rebuild proposal.
 
@@ -108,13 +108,15 @@ Goal: harden only the backend surface that the current mobile app actually depen
   - Backend evidence: `src/services/story-finalize.attempts.js`, `src/services/story-finalize.runner.js`, `src/services/story.service.js`
 - `DONE`: the Firestore composite index required for async finalize claim ordering is now source-controlled in root `firestore.indexes.json`, and root `firebase.json` now wires Firestore rules plus indexes for repo-managed deploys via `firebase deploy --project <firebase-project-id> --only firestore`.
   - Backend evidence: `src/services/story-finalize.attempts.js`, `firestore.indexes.json`, `firebase.json`
-- `LIMITATION`: render concurrency remains per-process.
-  - Current backend evidence: `src/utils/render.semaphore.js`, `src/services/story-finalize.runner.js`, `server.js`
-  - Scope note: Phase 3 hardens async finalize and crash cleanup, but it does not introduce a multi-instance global render-slot ceiling.
+- `DONE`: Finalize Factory Phase 4 shared pressure control is now landed on top of the async finalize path.
+  - Backend evidence: `src/services/finalize-control.service.js`, `src/services/story-finalize.attempts.js`, `src/services/story-finalize.runner.js`, `src/services/story.llm.service.js`, `src/services/story.service.js`, `src/services/tts.service.js`, `src/routes/diag.routes.js`
+  - Scope note: Phase 4 adds shared Firestore-backed render leases owned by `executionAttemptId`, a shared finalize backlog admission gate, shared finalize-relevant provider pressure, and a control-room view that separates shared-system truth from local-process observability.
+  - Deferred note: Phase 5 storage/recovery tightening and Phase 6 threshold tuning/load testing remain explicitly out of scope here.
 
 ## Exit Criteria
 
 - `Phase 0`: no mobile user can appear app-ready before backend provisioning succeeds, and request correlation is preserved in the mobile normalization layer.
 - `Phase 1`: timeout/network-loss recovery is backend-backed, and newly rendered shorts use the current shorts-detail compatibility bridge while `/api/shorts/mine` fallback remains available during eventual consistency.
 - `Phase 2`: editor/search routes stop collapsing known domain failures into generic 500s, and expensive mobile-used routes have explicit admission-control coverage.
-- `Phase 3`: render work no longer depends on a long-lived blocking finalize HTTP request, but per-process-only render concurrency remains an explicit documented limitation.
+- `Phase 3`: render work no longer depends on a long-lived blocking finalize HTTP request.
+- `Phase 4`: shared Firestore-backed pressure control now governs finalize render capacity, backlog rejection, and finalize-relevant provider pressure without changing the caller-visible finalize/mobile contract.
