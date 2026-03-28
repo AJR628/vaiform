@@ -169,19 +169,205 @@ async function getVideoColorMeta(videoPath) {
   });
 }
 
-/** Unknown/unspecified values for color_space that should skip the colorspace filter */
+/** Unknown/unspecified values for FFmpeg color metadata that should skip the colorspace filter */
 const UNKNOWN_COLORSPACE = new Set(['unknown', 'unspecified', '2', '']);
+const SAFE_AUTO_COLORSPACES = new Set(['bt709']);
 
-/**
- * Return true only if meta.color_space is present and not unknown/unspecified.
- * @param {{ color_space: string|null, color_primaries: string|null, color_transfer: string|null }} meta
- * @returns {boolean}
- */
-function isKnownColorSpace(meta) {
-  if (!meta || meta.color_space == null) return false;
-  const cs = String(meta.color_space).toLowerCase().trim();
-  if (!cs || UNKNOWN_COLORSPACE.has(cs)) return false;
-  return true;
+function normalizeColorValue(value) {
+  if (value == null) return null;
+  const normalized = String(value).toLowerCase().trim();
+  return normalized || null;
+}
+
+function colorMetaForLog(meta) {
+  return {
+    color_space: normalizeColorValue(meta?.color_space),
+    color_primaries: normalizeColorValue(meta?.color_primaries),
+    color_transfer: normalizeColorValue(meta?.color_transfer),
+  };
+}
+
+function isUnknownColorValue(value) {
+  const normalized = normalizeColorValue(value);
+  return !normalized || UNKNOWN_COLORSPACE.has(normalized);
+}
+
+function isSafeAutoColorspace(meta) {
+  const colorSpace = normalizeColorValue(meta?.color_space);
+  return SAFE_AUTO_COLORSPACES.has(colorSpace);
+}
+
+function resolveColorspaceDecision({ usingCaptionPng, mode, meta }) {
+  const colorLog = colorMetaForLog(meta);
+  if (usingCaptionPng) {
+    return {
+      addColorspaceFilter: false,
+      log: {
+        status: 'skipped',
+        mode: 'raster',
+        reason: 'raster_png_path',
+        ...colorLog,
+      },
+    };
+  }
+
+  if (mode === 'off') {
+    return {
+      addColorspaceFilter: false,
+      log: {
+        status: 'skipped',
+        mode,
+        reason: 'mode_off',
+        ...colorLog,
+      },
+    };
+  }
+
+  if (mode === 'force') {
+    return {
+      addColorspaceFilter: true,
+      log: {
+        status: 'applied',
+        mode,
+        reason: 'mode_force',
+        color_space: 'force',
+        color_primaries: colorLog.color_primaries,
+        color_transfer: colorLog.color_transfer,
+      },
+    };
+  }
+
+  if (isUnknownColorValue(meta?.color_space)) {
+    return {
+      addColorspaceFilter: false,
+      log: {
+        status: 'skipped',
+        mode,
+        reason: 'unknown_input_colorspace',
+        ...colorLog,
+      },
+    };
+  }
+
+  if (!isSafeAutoColorspace(meta)) {
+    return {
+      addColorspaceFilter: false,
+      log: {
+        status: 'skipped',
+        mode,
+        reason: 'auto_requires_explicit_bt709',
+        ...colorLog,
+      },
+    };
+  }
+
+  return {
+    addColorspaceFilter: true,
+    log: {
+      status: 'applied',
+      mode,
+      reason: 'auto_explicit_bt709',
+      ...colorLog,
+    },
+  };
+}
+
+function extractColorspaceFailureInfo(error) {
+  const combined = [
+    error?.stderr,
+    error?.message,
+    error?.cause?.stderr,
+    error?.cause?.message,
+  ]
+    .filter(Boolean)
+    .join('\n');
+
+  if (!combined) {
+    return { retryable: false, reason: null, excerpt: null };
+  }
+
+  if (/Unsupported input colorspace/i.test(combined)) {
+    const match = combined.match(/Unsupported input colorspace[^\r\n]*/i);
+    return {
+      retryable: true,
+      reason: 'unsupported_input_colorspace',
+      excerpt: match?.[0] ?? 'Unsupported input colorspace',
+    };
+  }
+
+  if (/Error while filtering:\s*Invalid argument/i.test(combined) && /colorspace/i.test(combined)) {
+    return {
+      retryable: true,
+      reason: 'colorspace_filter_invalid_argument',
+      excerpt: 'Error while filtering: Invalid argument',
+    };
+  }
+
+  return {
+    retryable: false,
+    reason: null,
+    excerpt: combined.slice(0, 240),
+  };
+}
+
+function stripColorspaceFromArgs(args) {
+  const argsWithoutColorspace = args.map((arg) =>
+    typeof arg === 'string' ? arg.replace(/,?colorspace=all=bt709:fast=1/g, '') : arg
+  );
+  const filterIdx = argsWithoutColorspace.indexOf('-filter_complex');
+  if (filterIdx >= 0 && typeof argsWithoutColorspace[filterIdx + 1] === 'string') {
+    argsWithoutColorspace[filterIdx + 1] = argsWithoutColorspace[filterIdx + 1].replace(
+      /,?colorspace=all=bt709:fast=1/g,
+      ''
+    );
+  }
+  return argsWithoutColorspace;
+}
+
+async function runFfmpegWithColorspaceFallback({
+  args,
+  usingCaptionPng,
+  finalFilter,
+  colorspaceLog,
+  runFfmpegImpl = runFfmpeg,
+  runFfmpegOptions = undefined,
+  logger = console,
+}) {
+  try {
+    await runFfmpegImpl(args, runFfmpegOptions);
+    return { retriedWithoutColorspace: false, classification: null };
+  } catch (error) {
+    const chainHadColorspace = finalFilter.includes('colorspace=all=bt709');
+    const classification = extractColorspaceFailureInfo(error);
+
+    if (chainHadColorspace && !usingCaptionPng && classification.retryable) {
+      logger.warn('[ffmpeg] colorspace retry', {
+        reason: classification.reason,
+        excerpt: classification.excerpt,
+        mode: colorspaceLog?.mode ?? null,
+        color_space: colorspaceLog?.color_space ?? null,
+      });
+
+      try {
+        await runFfmpegImpl(stripColorspaceFromArgs(args), runFfmpegOptions);
+        logger.log('[ffmpeg] colorspace retry succeeded', {
+          reason: classification.reason,
+          retryWithout: 'colorspace=all=bt709:fast=1',
+        });
+        return { retriedWithoutColorspace: true, classification };
+      } catch (fallbackErr) {
+        logger.error('[ffmpeg] colorspace retry failed', {
+          reason: classification.reason,
+          excerpt:
+            extractColorspaceFailureInfo(fallbackErr).excerpt ??
+            String(fallbackErr?.message || '').slice(0, 240),
+        });
+        throw error;
+      }
+    }
+
+    throw error;
+  }
 }
 
 /**
@@ -474,6 +660,7 @@ function wrapCaption(raw, w, h, opts = {}) {
 
 function runFfmpeg(args, opts = {}) {
   return new Promise((resolve, reject) => {
+    const logErrors = opts.logErrors !== false;
     // Log full args JSON for diagnostics
     try {
       console.log('[ffmpeg] spawn args JSON:', JSON.stringify(['-y', ...args]));
@@ -505,25 +692,25 @@ function runFfmpeg(args, opts = {}) {
 
     p.on('exit', (code, signal) => {
       clearTimeout(timeout);
-      if (code !== 0)
+      if (code !== 0 && logErrors)
         console.error('[ffmpeg] exit', { code, signal, stderr: String(stderr).slice(0, 8000) });
       if (code === 0) {
         resolve({ stdout, stderr });
       } else {
         const err = new Error(`ffmpeg exited with code ${code} signal ${signal || ''}: ${stderr}`);
+        err.code = code;
+        err.signal = signal;
         err.stderr = stderr;
         reject(err);
       }
-    });
-    p.on('close', (code, signal) => {
-      if (code !== 0)
-        console.error('[ffmpeg] close', { code, signal, stderr: String(stderr).slice(0, 8000) });
     });
 
     p.on('error', (err) => {
       clearTimeout(timeout);
       try {
-        console.error('[ffmpeg] error', { message: err?.message, stack: err?.stack });
+        if (logErrors) {
+          console.error('[ffmpeg] error', { message: err?.message, stack: err?.stack });
+        }
       } catch {}
       reject(new Error(`FFmpeg spawn error: ${err.message}`));
     });
@@ -2119,23 +2306,31 @@ export async function renderVideoQuoteOverlay({
 
   console.log(`[captions] strategy=${strategy} reason="${reason}"`);
 
-  // Colorspace filter: skip when raster; otherwise respect mode (auto = probe, off/force = no probe)
+  // Colorspace filter: skip when raster; otherwise respect mode (auto uses explicit bt709-only policy)
   let addColorspaceFilter = false;
-  let colorSpaceLog = { mode: null, color_space: null };
+  let colorSpaceLog = {
+    status: 'skipped',
+    mode: null,
+    reason: null,
+    color_space: null,
+    color_primaries: null,
+    color_transfer: null,
+  };
   if (usingCaptionPng) {
-    addColorspaceFilter = false;
-    colorSpaceLog = { mode: 'raster', color_space: null };
+    const decision = resolveColorspaceDecision({
+      usingCaptionPng,
+      mode: 'raster',
+      meta: null,
+    });
+    addColorspaceFilter = decision.addColorspaceFilter;
+    colorSpaceLog = decision.log;
   } else {
     const mode = getColorspaceMode();
-    colorSpaceLog.mode = mode;
+    let meta = null;
     if (mode === 'off') {
-      addColorspaceFilter = false;
-    } else if (mode === 'force') {
-      addColorspaceFilter = true;
-      colorSpaceLog.color_space = 'force';
-    } else {
+      meta = null;
+    } else if (mode === 'auto') {
       const cache = colorMetaCache ?? new Map();
-      let meta;
       if (videoPath && cache.has(videoPath)) {
         meta = cache.get(videoPath);
       } else if (videoPath) {
@@ -2144,15 +2339,12 @@ export async function renderVideoQuoteOverlay({
       } else {
         meta = { color_space: null, color_primaries: null, color_transfer: null };
       }
-      addColorspaceFilter = isKnownColorSpace(meta);
-      colorSpaceLog.color_space = meta?.color_space ?? 'unknown';
     }
+    const decision = resolveColorspaceDecision({ usingCaptionPng, mode, meta });
+    addColorspaceFilter = decision.addColorspaceFilter;
+    colorSpaceLog = decision.log;
   }
-  console.log(
-    '[ffmpeg] colorspace filter:',
-    addColorspaceFilter ? 'applied' : 'skipped',
-    colorSpaceLog
-  );
+  console.log('[ffmpeg] colorspace decision', colorSpaceLog);
 
   const vchain = buildVideoChain({
     width: W,
@@ -2340,36 +2532,17 @@ export async function renderVideoQuoteOverlay({
     args.splice(args.indexOf('-c:v'), 0, '-shortest');
   }
   try {
-    await runFfmpeg(args);
-  } catch (e) {
-    // Check if filter chain had colorspace filter
-    const chainHadColorspace = finalFilter.includes('colorspace=all=bt709');
-
-    if (chainHadColorspace && !usingCaptionPng) {
-      // Retry without colorspace filter (only for non-raster paths)
-      console.warn('[ffmpeg] colorspace filter failed, retrying without colorspace...');
-      const argsFallback = args.map((arg) =>
-        typeof arg === 'string' ? arg.replace(/,?colorspace=all=bt709:fast=1/g, '') : arg
-      );
-      const filterIdx = argsFallback.indexOf('-filter_complex');
-      if (filterIdx >= 0) {
-        argsFallback[filterIdx + 1] = argsFallback[filterIdx + 1].replace(
-          /,?colorspace=all=bt709:fast=1/g,
-          ''
-        );
-      }
-
-      try {
-        await runFfmpeg(argsFallback);
-        console.log('[ffmpeg] Fallback succeeded without colorspace filter');
-        return { outPath, durationSec: outSec };
-      } catch (fallbackErr) {
-        // Fallback also failed, throw original error
-        console.error('[ffmpeg] Fallback also failed');
-        throw e;
-      }
+    const retryResult = await runFfmpegWithColorspaceFallback({
+      args,
+      usingCaptionPng,
+      finalFilter,
+      colorspaceLog: colorSpaceLog,
+      runFfmpegOptions: { logErrors: false },
+    });
+    if (retryResult?.retriedWithoutColorspace) {
+      return { outPath, durationSec: outSec };
     }
-
+  } catch (e) {
     // Original error handling
     const err = new Error('RENDER_FAILED');
     err.filter = finalFilter;
@@ -2784,4 +2957,14 @@ export default {
   exportPoster,
   exportAudioMp3,
   exportSocialImage,
+};
+
+export const __testables = {
+  normalizeColorValue,
+  isUnknownColorValue,
+  isSafeAutoColorspace,
+  resolveColorspaceDecision,
+  extractColorspaceFailureInfo,
+  stripColorspaceFromArgs,
+  runFfmpegWithColorspaceFallback,
 };

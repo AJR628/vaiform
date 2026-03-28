@@ -98,6 +98,7 @@ If docs and code disagree, code wins for this audit.
 ### 8. Current finalize pipeline internals
 
 - `finalizeStory()` is not render-only. It can still backfill missing story generation, shot planning, clip search, and caption timings before rendering: `src/services/story.service.js:2522-2586`.
+- Finalize segment renders flow through `renderVideoQuoteOverlay()`. Active backend colorspace policy is now explicit there: raster/PNG mode never injects the colorspace filter, non-raster `auto` only applies `colorspace=all=bt709:fast=1` for explicit `bt709` inputs, and the helper retries once without that filter only for the known colorspace failure family; unrelated FFmpeg failures do not take that fallback: `src/services/story.service.js:2037-2054`, `src/services/story.service.js:2327-2344`, `src/utils/ffmpeg.video.js:172-264`, `src/utils/ffmpeg.video.js:2122-2169`, `src/utils/ffmpeg.video.js:2342-2389`.
 - Successful render uploads the final video and thumbnail, writes `shorts/<jobId>`, persists `session.finalVideo.jobId`, sets `session.status = rendered`, and then persists `renderRecovery.done`: `src/services/story.service.js:2373-2455`, `src/services/story.service.js:2588-2603`.
 - Failure persists `renderRecovery.failed` and rethrows: `src/services/story.service.js:2604-2625`.
 
