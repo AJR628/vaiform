@@ -65,6 +65,8 @@ router.get('/finalize-control-room', async (_req, res) => {
     return res.json({
       success: true,
       source: 'diagnostic_only',
+      finalizeStorageTruth: 'phase3_canonical_job_on_existing_durable_doc',
+      executionLineage: 'embedded_execution_attempts_on_same_doc',
       queueSnapshot,
       observability: snapshotFinalizeObservability(),
     });

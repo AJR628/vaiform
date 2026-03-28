@@ -4,7 +4,7 @@
 - Owner repo: backend
 - Source of truth for: target finalize job model, canonical status ownership, billing ownership, retry ownership, client recovery projection rules, and current-to-target mapping
 - Canonical counterpart/source: `docs/FINALIZE_CURRENT_STATE_AUDIT.md`, `docs/FINALIZE_FACTORY_CONVERSION_PLAN.md`
-- Last verified against: backend repo plus current mobile repo on 2026-03-26
+- Last verified against: backend repo plus current mobile repo on 2026-03-28
 
 ## Purpose
 
@@ -16,17 +16,19 @@ This document resolves the current job-vs-attempt ambiguity for the target facto
 - Today retries rewrite that same durable attempt doc back to `queued`: `src/services/story-finalize.attempts.js:817-858`.
 - Today callers treat the stable external `attemptId` as the recovery identity: `client/screens/story-editor/model.ts:63-72`, `src/services/story.service.js:349-409`.
 
-## Target Design Decision
+## Phase 3 Design Decision
 
 ### Canonical durable object
 
-- The target canonical durable object is `FinalizeJob`.
+- The canonical durable object is `FinalizeJob`.
+- Phase 3 implements `FinalizeJob` by reusing the existing `idempotency/<uid:attemptId>` durable doc keyspace.
 - `FinalizeJob.jobId` is the stable external finalize identity.
 - Compatibility rule: the existing external field name `attemptId` remains caller-visible during this conversion, but it maps 1:1 to `FinalizeJob.jobId`.
 
 ### Retry lineage object
 
-- The target retry lineage object is `FinalizeExecutionAttempt`.
+- The retry lineage object is `FinalizeExecutionAttempt`.
+- Phase 3 stores that lineage as embedded `executionAttempts[]` plus `currentExecution` on the same canonical durable job doc.
 - Each worker claim/retry produces a new `FinalizeExecutionAttempt`.
 - `FinalizeExecutionAttempt.executionAttemptId` is internal and not a replacement for caller-visible `attemptId`.
 
@@ -34,7 +36,7 @@ This document resolves the current job-vs-attempt ambiguity for the target facto
 
 - Current callers already need one stable identity for replay/recovery: `client/screens/story-editor/useStoryEditorFinalize.ts:390-425`, `web/public/js/pages/creative/creative.article.mjs:3863-3910`.
 - A queue-backed worker system needs retry lineage that the current single-doc attempt model does not preserve: `src/services/story-finalize.attempts.js:817-858`.
-- This split preserves current caller behavior while making retries, dead letters, and worker history explicit.
+- This split preserves current caller behavior while making retries and worker history explicit without introducing a second top-level storage authority in Phase 3.
 
 ## Canonical Ownership Decisions
 
@@ -68,34 +70,36 @@ This document resolves the current job-vs-attempt ambiguity for the target facto
 - Owner after conversion: `FinalizeJob` in backend storage, projected into session `renderRecovery` for caller compatibility.
 - Compatibility rule: `GET /api/story/:sessionId` remains the caller-facing recovery surface.
 
-## Target Data Model
+## Phase 3 Canonical Data Model
 
 ### FinalizeJob
 
 Required fields:
 
+- `schemaVersion`
 - `jobId`
 - `uid`
 - `sessionId`
 - `externalAttemptId`
-- `state`
+- `jobState`
 - `currentStage`
 - `queue`
 - `billing`
 - `result`
 - `retry`
 - `projection`
+- `currentExecution`
+- `executionAttempts`
 - `createdAt`
 - `updatedAt`
 
-### FinalizeJob.state values
+### FinalizeJob.jobState values
 
 - `queued`
 - `claimed`
 - `started`
 - `retry_scheduled`
 - `failed_terminal`
-- `completed`
 - `settled`
 
 These state names are fixed for the conversion target.
@@ -105,9 +109,10 @@ These state names are fixed for the conversion target.
 Required fields:
 
 - `executionAttemptId`
-- `jobId`
 - `attemptNumber`
 - `workerId`
+- `createdAt`
+- `claimedAt`
 - `state`
 - `startedAt`
 - `finishedAt`
@@ -124,6 +129,41 @@ Required fields:
 - `failed_retryable`
 - `failed_terminal`
 - `abandoned`
+
+## Compatibility Mirror Policy
+
+Phase 3 keeps only the required top-level compatibility mirrors on the canonical durable job doc:
+
+- `flow`
+- `uid`
+- `attemptId`
+- `sessionId`
+- `state`
+- `status`
+- `isActive`
+- `shortId`
+- `requestId`
+- `usageReservation`
+- `billingSettlement`
+- `failure`
+- `createdAt`
+- `updatedAt`
+- `enqueuedAt`
+- `startedAt`
+- `finishedAt`
+- `expiresAt`
+- `availableAfter`
+- `leaseHeartbeatAt`
+- `leaseExpiresAt`
+- `runnerId`
+
+These mirrors exist for caller, route, diag, worker, test, and rollback compatibility only. Canonical lifecycle truth lives in `jobState`, `currentExecution`, and `executionAttempts`.
+
+## Stale-Worker Mapping
+
+- When a running worker lease expires, the active `FinalizeExecutionAttempt.state` becomes `abandoned`.
+- The canonical job becomes terminal failed using the existing caller-visible `FINALIZE_WORKER_LOST` semantics.
+- This mapping is frozen for Phase 3 and does not introduce new public failure semantics.
 
 ## Projection Rules
 
@@ -148,8 +188,8 @@ Required fields:
 
 | Current object | Current role | Target mapping |
 | --- | --- | --- |
-| `idempotency` attempt doc | admission + running + retry + settlement + failure | split into `FinalizeJob` plus `FinalizeExecutionAttempt` lineage |
-| `storyFinalizeSessions` lock doc | same-session active lock | remains a lock/projection helper or is absorbed into the job model, but is not the canonical status owner |
+| `idempotency` attempt doc | admission + running + retry + settlement + failure | reused as canonical `FinalizeJob` on the same durable keyspace, with embedded `FinalizeExecutionAttempt` lineage |
+| `storyFinalizeSessions` lock doc | same-session active lock | remains a helper/lock record only and is not the canonical status owner |
 | `story.json.renderRecovery` | caller-facing recovery truth | remains projection only |
 | `users/<uid>.usage` | usage ledger | remains usage ledger |
 | `shorts/<jobId>` | readback/library model | remains readback/library model |
@@ -166,6 +206,8 @@ This split is intentional:
 
 ## Non-Goals
 
-- This document does not prescribe the exact Firestore collection names to be implemented later.
+- This document does not authorize a second top-level jobs collection in Phase 3.
+- This document does not authorize a Firestore execution-attempt subcollection in Phase 3.
 - This document does not authorize changing the caller-visible `attemptId` field name.
 - This document does not change billing semantics or short/library route contracts.
+- Phase 4 global concurrency/provider throttle/backpressure work remains deferred.

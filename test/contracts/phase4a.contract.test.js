@@ -991,6 +991,18 @@ test('POST /api/story/finalize returns 202 pending first, then same-key replay r
     assert.equal(first.json.finalize.pollSessionId, 'story-finalize-success');
     assert.equal(first.json.data.renderRecovery.state, 'pending');
 
+    const acceptedAttempt = readDoc('idempotency', 'user-1:idem-finalize-1');
+    assert.equal(acceptedAttempt.schemaVersion, 3);
+    assert.equal(acceptedAttempt.jobId, 'idem-finalize-1');
+    assert.equal(acceptedAttempt.externalAttemptId, 'idem-finalize-1');
+    assert.ok(['queued', 'claimed', 'started', 'settled'].includes(acceptedAttempt.jobState));
+    assert.equal(acceptedAttempt.currentExecution.executionAttemptId, 'idem-finalize-1:exec:1');
+    assert.equal(acceptedAttempt.executionAttempts.length, 1);
+    assert.equal(acceptedAttempt.executionAttempts[0].executionAttemptId, 'idem-finalize-1:exec:1');
+    assert.ok(
+      ['created', 'claimed', 'running', 'succeeded'].includes(acceptedAttempt.executionAttempts[0].state)
+    );
+
     await waitFor(() => readDoc('idempotency', 'user-1:idem-finalize-1')?.state === 'done', {
       timeoutMs: 1000,
       intervalMs: 20,
@@ -1012,6 +1024,15 @@ test('POST /api/story/finalize returns 202 pending first, then same-key replay r
     assert.equal(replay.json.shortId, 'short-finalized-1');
     assert.equal(replay.json.data.finalVideo.jobId, 'short-finalized-1');
     assert.equal(replay.json.data.billing.billedSec, 9);
+
+    const settledAttempt = readDoc('idempotency', 'user-1:idem-finalize-1');
+    assert.equal(settledAttempt.jobId, 'idem-finalize-1');
+    assert.equal(settledAttempt.jobState, 'settled');
+    assert.equal(settledAttempt.executionAttempts.length, 1);
+    assert.equal(settledAttempt.executionAttempts[0].executionAttemptId, 'idem-finalize-1:exec:1');
+    assert.equal(settledAttempt.executionAttempts[0].state, 'succeeded');
+    assert.equal(settledAttempt.currentExecution.executionAttemptId, 'idem-finalize-1:exec:1');
+    assert.equal(settledAttempt.currentExecution.state, 'succeeded');
 
     const usageDoc = readDoc('users', 'user-1');
     assert.equal(usageDoc.usage.cycleUsedSec, 69);
@@ -1249,6 +1270,133 @@ test('POST /api/story/finalize replays 202 pending for the same key while the ba
   }
 });
 
+test('POST /api/story/finalize preserves caller behavior while retrying with canonical execution lineage', async () => {
+  seedUserDoc('user-1', {
+    plan: 'creator',
+    membership: {
+      status: 'active',
+      kind: 'subscription',
+      billingCadence: 'monthly',
+    },
+    usage: {
+      cycleIncludedSec: 600,
+      cycleUsedSec: 20,
+      cycleReservedSec: 0,
+    },
+  });
+  seedStorySession(
+    'user-1',
+    buildBaseSession({
+      id: 'story-finalize-retry-lineage',
+      status: 'clips_searched',
+      story: {
+        sentences: ['Beat one'],
+      },
+      shots: [buildShot('clip-retry', 0, 'Beat one')],
+      billingEstimate: {
+        estimatedSec: 8,
+        source: 'heuristic',
+        updatedAt: '2026-03-19T00:00:00.000Z',
+      },
+    })
+  );
+
+  let finalizeCalls = 0;
+  setRuntimeOverride('story.service.finalizeStory', async ({ uid, sessionId, attemptId }) => {
+    finalizeCalls += 1;
+    if (finalizeCalls === 1) {
+      const error = new Error('SERVER_BUSY');
+      error.code = 'SERVER_BUSY';
+      throw error;
+    }
+    const session = readStorySession(uid, sessionId);
+    session.status = 'rendered';
+    session.finalVideo = {
+      jobId: 'short-finalized-retry',
+      durationSec: 8,
+      videoUrl: 'https://cdn.example.com/finalized-retry.mp4',
+    };
+    session.renderRecovery = {
+      state: 'done',
+      attemptId,
+      shortId: 'short-finalized-retry',
+      startedAt: '2026-03-19T03:00:00.000Z',
+      updatedAt: '2026-03-19T03:00:05.000Z',
+      finishedAt: '2026-03-19T03:00:05.000Z',
+    };
+    seedStorySession(uid, session);
+    return session;
+  });
+
+  startFinalizeWorkerRuntime();
+  try {
+    const first = await requestJson('/api/story/finalize', {
+      method: 'POST',
+      headers: {
+        'X-Idempotency-Key': 'idem-finalize-retry-lineage',
+        'x-client': 'mobile',
+      },
+      body: {
+        sessionId: 'story-finalize-retry-lineage',
+      },
+    });
+
+    assert.equal(first.status, 202);
+    assert.equal(first.json.success, true);
+    assert.equal(first.json.shortId, null);
+    assert.equal(first.json.finalize.state, 'pending');
+    assert.equal(first.json.finalize.attemptId, 'idem-finalize-retry-lineage');
+
+    await waitFor(
+      () => readDoc('idempotency', 'user-1:idem-finalize-retry-lineage')?.executionAttempts?.length === 2,
+      { timeoutMs: 1000, intervalMs: 20 }
+    );
+
+    const retriedAttempt = readDoc('idempotency', 'user-1:idem-finalize-retry-lineage');
+    assert.equal(retriedAttempt.jobId, 'idem-finalize-retry-lineage');
+    assert.equal(retriedAttempt.externalAttemptId, 'idem-finalize-retry-lineage');
+    assert.equal(retriedAttempt.jobState, 'retry_scheduled');
+    assert.equal(retriedAttempt.executionAttempts.length, 2);
+    assert.equal(retriedAttempt.executionAttempts[0].executionAttemptId, 'idem-finalize-retry-lineage:exec:1');
+    assert.equal(retriedAttempt.executionAttempts[0].state, 'failed_retryable');
+    assert.equal(retriedAttempt.executionAttempts[1].executionAttemptId, 'idem-finalize-retry-lineage:exec:2');
+    assert.equal(retriedAttempt.executionAttempts[1].state, 'created');
+    assert.equal(retriedAttempt.currentExecution.executionAttemptId, 'idem-finalize-retry-lineage:exec:2');
+    assert.equal(retriedAttempt.currentExecution.state, 'created');
+
+    await waitFor(() => readDoc('idempotency', 'user-1:idem-finalize-retry-lineage')?.state === 'done', {
+      timeoutMs: 1500,
+      intervalMs: 20,
+    });
+
+    const replay = await requestJson('/api/story/finalize', {
+      method: 'POST',
+      headers: {
+        'X-Idempotency-Key': 'idem-finalize-retry-lineage',
+        'x-client': 'mobile',
+      },
+      body: {
+        sessionId: 'story-finalize-retry-lineage',
+      },
+    });
+
+    assert.equal(replay.status, 200);
+    assert.equal(replay.json.success, true);
+    assert.equal(replay.json.shortId, 'short-finalized-retry');
+    assert.equal(replay.json.data.finalVideo.jobId, 'short-finalized-retry');
+
+    const settledAttempt = readDoc('idempotency', 'user-1:idem-finalize-retry-lineage');
+    assert.equal(settledAttempt.jobState, 'settled');
+    assert.equal(settledAttempt.executionAttempts.length, 2);
+    assert.equal(settledAttempt.executionAttempts[0].state, 'failed_retryable');
+    assert.equal(settledAttempt.executionAttempts[1].state, 'succeeded');
+    assert.equal(settledAttempt.currentExecution.executionAttemptId, 'idem-finalize-retry-lineage:exec:2');
+    assert.equal(settledAttempt.currentExecution.state, 'succeeded');
+  } finally {
+    stopFinalizeWorkerRuntime('contract_finalize_retry_lineage_cleanup');
+  }
+});
+
 test('POST /api/story/finalize returns 409 FINALIZE_ALREADY_ACTIVE for a different key on the same active session without double-reserving', async () => {
   seedUserDoc('user-1', {
     plan: 'creator',
@@ -1341,6 +1489,12 @@ test('POST /api/story/finalize returns 409 FINALIZE_ALREADY_ACTIVE for a differe
     assert.equal(second.json.error, 'FINALIZE_ALREADY_ACTIVE');
     assert.equal(second.json.finalize.attemptId, 'idem-finalize-conflict-a');
     assert.equal(second.json.finalize.pollSessionId, 'story-finalize-conflict');
+
+    const acceptedAttempt = readDoc('idempotency', 'user-1:idem-finalize-conflict-a');
+    assert.equal(acceptedAttempt.jobId, 'idem-finalize-conflict-a');
+    assert.equal(acceptedAttempt.externalAttemptId, 'idem-finalize-conflict-a');
+    assert.equal(acceptedAttempt.executionAttempts.length, 1);
+    assert.equal(acceptedAttempt.executionAttempts[0].executionAttemptId, 'idem-finalize-conflict-a:exec:1');
 
     const usageDoc = readDoc('users', 'user-1');
     assert.equal(usageDoc.usage.cycleReservedSec, 8);
@@ -1648,8 +1802,11 @@ test('stale running finalize attempts are reaped into terminal failure, release 
     flow: 'story.finalize',
     uid: 'user-1',
     attemptId: 'idem-finalize-stale',
+    jobId: 'idem-finalize-stale',
+    externalAttemptId: 'idem-finalize-stale',
     sessionId: 'story-finalize-stale',
     state: 'running',
+    jobState: 'started',
     isActive: true,
     status: 202,
     createdAt: timestamp('2026-03-19T06:00:00.000Z'),
@@ -1662,6 +1819,36 @@ test('stale running finalize attempts are reaped into terminal failure, release 
       estimatedSec: 8,
       reservedSec: 8,
     },
+    currentExecution: {
+      executionAttemptId: 'idem-finalize-stale:exec:1',
+      attemptNumber: 1,
+      state: 'running',
+      workerId: 'lost-runner',
+      createdAt: timestamp('2026-03-19T06:00:00.000Z'),
+      claimedAt: timestamp('2026-03-19T06:00:01.000Z'),
+      startedAt: timestamp('2026-03-19T06:00:01.000Z'),
+      finishedAt: null,
+      lease: {
+        heartbeatAt: timestamp('2026-03-19T06:00:02.000Z'),
+        expiresAt: timestamp(Date.now() - 1000),
+      },
+    },
+    executionAttempts: [
+      {
+        executionAttemptId: 'idem-finalize-stale:exec:1',
+        attemptNumber: 1,
+        state: 'running',
+        workerId: 'lost-runner',
+        createdAt: timestamp('2026-03-19T06:00:00.000Z'),
+        claimedAt: timestamp('2026-03-19T06:00:01.000Z'),
+        startedAt: timestamp('2026-03-19T06:00:01.000Z'),
+        finishedAt: null,
+        lease: {
+          heartbeatAt: timestamp('2026-03-19T06:00:02.000Z'),
+          expiresAt: timestamp(Date.now() - 1000),
+        },
+      },
+    ],
     runnerId: 'lost-runner',
     leaseHeartbeatAt: timestamp('2026-03-19T06:00:02.000Z'),
     leaseExpiresAt: timestamp(Date.now() - 1000),
@@ -1697,7 +1884,13 @@ test('stale running finalize attempts are reaped into terminal failure, release 
     });
 
     const attemptDoc = readDoc('idempotency', 'user-1:idem-finalize-stale');
+    assert.equal(attemptDoc.jobState, 'failed_terminal');
     assert.equal(attemptDoc.failure.error, 'FINALIZE_WORKER_LOST');
+    assert.equal(attemptDoc.executionAttempts.length, 1);
+    assert.equal(attemptDoc.executionAttempts[0].executionAttemptId, 'idem-finalize-stale:exec:1');
+    assert.equal(attemptDoc.executionAttempts[0].state, 'abandoned');
+    assert.equal(attemptDoc.currentExecution.executionAttemptId, 'idem-finalize-stale:exec:1');
+    assert.equal(attemptDoc.currentExecution.state, 'abandoned');
     assert.equal(readDoc('storyFinalizeSessions', 'user-1:story-finalize-stale'), null);
 
     const usageDoc = readDoc('users', 'user-1');

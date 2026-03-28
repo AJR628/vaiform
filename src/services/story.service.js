@@ -352,7 +352,7 @@ function normalizeRenderRecoveryAttemptId(attemptId, previous = null) {
   return null;
 }
 
-function renderRecoveryFromState({
+export function buildRenderRecoveryProjection({
   state,
   attemptId,
   previous = {},
@@ -454,7 +454,7 @@ async function persistRenderRecovery({
     session.renderRecovery && typeof session.renderRecovery === 'object'
       ? session.renderRecovery
       : {};
-  const next = renderRecoveryFromState({
+  const next = buildRenderRecoveryProjection({
     state,
     attemptId,
     previous,

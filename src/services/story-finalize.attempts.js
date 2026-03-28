@@ -9,13 +9,42 @@ import {
   markFinalizeQueueSnapshot,
 } from '../observability/finalize-observability.js';
 import { buildCanonicalUsageState, getAvailableSec } from './usage.service.js';
-import { persistStoryRenderRecovery, sanitizeStorySessionForClient } from './story.service.js';
+import {
+  buildRenderRecoveryProjection,
+  persistStoryRenderRecovery,
+  sanitizeStorySessionForClient,
+} from './story.service.js';
 import { isOutboundPolicyError } from '../utils/outbound.fetch.js';
 
 const ATTEMPTS_COLLECTION = 'idempotency';
 const SESSION_LOCKS_COLLECTION = 'storyFinalizeSessions';
 const FLOW = 'story.finalize';
 const TEST_MODE = process.env.NODE_ENV === 'test' && process.env.VAIFORM_TEST_MODE === '1';
+export const FINALIZE_JOB_SCHEMA_VERSION = 3;
+export const FINALIZE_COMPATIBILITY_TOP_LEVEL_FIELDS = Object.freeze([
+  'flow',
+  'uid',
+  'attemptId',
+  'sessionId',
+  'state',
+  'status',
+  'isActive',
+  'shortId',
+  'requestId',
+  'usageReservation',
+  'billingSettlement',
+  'failure',
+  'createdAt',
+  'updatedAt',
+  'enqueuedAt',
+  'startedAt',
+  'finishedAt',
+  'expiresAt',
+  'availableAfter',
+  'leaseHeartbeatAt',
+  'leaseExpiresAt',
+  'runnerId',
+]);
 
 const numberFromEnv = (name, fallback) => {
   const raw = Number(process.env[name]);
@@ -50,6 +79,7 @@ const attemptDocId = (uid, attemptId) => `${uid}:${attemptId}`;
 const attemptRef = (uid, attemptId) => db.collection(ATTEMPTS_COLLECTION).doc(attemptDocId(uid, attemptId));
 const sessionLockRef = (uid, sessionId) =>
   db.collection(SESSION_LOCKS_COLLECTION).doc(`${uid}:${sessionId}`);
+const buildExecutionAttemptId = (jobId, attemptNumber) => `${jobId}:exec:${attemptNumber}`;
 
 const toMillis = (value) => {
   if (value == null) return null;
@@ -63,6 +93,396 @@ const toMillis = (value) => {
 const toIso = (value) => {
   const ms = toMillis(value);
   return Number.isFinite(ms) ? new Date(ms).toISOString() : null;
+};
+
+const cloneValue = (value) => {
+  if (Array.isArray(value)) return value.map((item) => cloneValue(item));
+  if (value && typeof value === 'object') return { ...value };
+  return value ?? null;
+};
+
+const deepCloneValue = (value) => {
+  if (Array.isArray(value)) return value.map((item) => deepCloneValue(item));
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, deepCloneValue(item)]));
+  }
+  return value ?? null;
+};
+
+const jobStateFromCompatState = (data = {}) => {
+  const current = typeof data?.jobState === 'string' ? data.jobState : null;
+  if (current) return current;
+  switch (data?.state) {
+    case 'queued':
+      return Number.isFinite(toMillis(data?.availableAfter)) && toMillis(data.availableAfter) > Date.now()
+        ? 'retry_scheduled'
+        : 'queued';
+    case 'running':
+      return toMillis(data?.startedAt) ? 'started' : 'claimed';
+    case 'done':
+      return 'settled';
+    case 'failed':
+    case 'expired':
+      return 'failed_terminal';
+    default:
+      return 'queued';
+  }
+};
+
+const executionStateFromCompatState = (data = {}) => {
+  if (typeof data?.currentExecution?.state === 'string') return data.currentExecution.state;
+  switch (data?.state) {
+    case 'queued':
+      return Number.isFinite(toMillis(data?.startedAt)) ? 'claimed' : 'created';
+    case 'running':
+      return 'running';
+    case 'done':
+      return 'succeeded';
+    case 'failed':
+    case 'expired':
+      return 'failed_terminal';
+    default:
+      return 'created';
+  }
+};
+
+const normalizeExecutionAttempt = (execution, { jobId, attemptNumber, compat = {} } = {}) => {
+  const number =
+    Number.isFinite(Number(execution?.attemptNumber)) && Number(execution.attemptNumber) > 0
+      ? Number(execution.attemptNumber)
+      : attemptNumber;
+  const executionAttemptId =
+    typeof execution?.executionAttemptId === 'string' && execution.executionAttemptId.trim().length > 0
+      ? execution.executionAttemptId.trim()
+      : buildExecutionAttemptId(jobId, number);
+  return {
+    executionAttemptId,
+    attemptNumber: number,
+    state:
+      typeof execution?.state === 'string' && execution.state.trim().length > 0
+        ? execution.state.trim()
+        : executionStateFromCompatState(compat),
+    workerId: execution?.workerId || compat.runnerId || null,
+    createdAt: execution?.createdAt ?? compat.createdAt ?? compat.enqueuedAt ?? null,
+    claimedAt: execution?.claimedAt ?? null,
+    startedAt: execution?.startedAt ?? compat.startedAt ?? null,
+    finishedAt: execution?.finishedAt ?? compat.finishedAt ?? null,
+    failure: cloneValue(execution?.failure ?? null),
+    stageTimings: deepCloneValue(execution?.stageTimings ?? {}),
+    lease: {
+      heartbeatAt: execution?.lease?.heartbeatAt ?? compat.leaseHeartbeatAt ?? null,
+      expiresAt: execution?.lease?.expiresAt ?? compat.leaseExpiresAt ?? null,
+    },
+  };
+};
+
+const deriveLegacyExecutionAttempts = (data, jobId) => {
+  const derived = normalizeExecutionAttempt(
+    {
+      executionAttemptId:
+        typeof data?.currentExecution?.executionAttemptId === 'string'
+          ? data.currentExecution.executionAttemptId
+          : null,
+      attemptNumber:
+        Number.isFinite(Number(data?.currentExecution?.attemptNumber)) &&
+        Number(data.currentExecution.attemptNumber) > 0
+          ? Number(data.currentExecution.attemptNumber)
+          : 1,
+      state: executionStateFromCompatState(data),
+      workerId: data?.runnerId || null,
+      createdAt: data?.createdAt ?? data?.enqueuedAt ?? null,
+      claimedAt: data?.startedAt ?? null,
+      startedAt: data?.startedAt ?? null,
+      finishedAt: data?.finishedAt ?? null,
+      failure: data?.failure || null,
+      lease: {
+        heartbeatAt: data?.leaseHeartbeatAt ?? null,
+        expiresAt: data?.leaseExpiresAt ?? null,
+      },
+    },
+    { jobId, attemptNumber: 1, compat: data }
+  );
+  return [derived];
+};
+
+const normalizeExecutionAttempts = (data, jobId) => {
+  if (Array.isArray(data?.executionAttempts) && data.executionAttempts.length > 0) {
+    return data.executionAttempts.map((execution, index) =>
+      normalizeExecutionAttempt(execution, {
+        jobId,
+        attemptNumber: index + 1,
+        compat: data,
+      })
+    );
+  }
+  return deriveLegacyExecutionAttempts(data, jobId);
+};
+
+const getCurrentExecutionAttempt = (attempt) => {
+  const currentExecutionId =
+    typeof attempt?.currentExecution?.executionAttemptId === 'string'
+      ? attempt.currentExecution.executionAttemptId
+      : null;
+  if (currentExecutionId) {
+    const existing = attempt?.executionAttempts?.find(
+      (execution) => execution.executionAttemptId === currentExecutionId
+    );
+    if (existing) return existing;
+  }
+  return attempt?.executionAttempts?.[attempt.executionAttempts.length - 1] || null;
+};
+
+const buildCurrentExecutionSummary = (execution) => {
+  if (!execution) return null;
+  return {
+    executionAttemptId: execution.executionAttemptId,
+    attemptNumber: execution.attemptNumber,
+    state: execution.state,
+    workerId: execution.workerId || null,
+    createdAt: execution.createdAt ?? null,
+    claimedAt: execution.claimedAt ?? null,
+    startedAt: execution.startedAt ?? null,
+    finishedAt: execution.finishedAt ?? null,
+    lease: {
+      heartbeatAt: execution?.lease?.heartbeatAt ?? null,
+      expiresAt: execution?.lease?.expiresAt ?? null,
+    },
+  };
+};
+
+const buildProjectionState = ({ state, compatState, jobState }) => {
+  if (state) return state;
+  if (compatState === 'done' || jobState === 'settled') return 'done';
+  if (compatState === 'failed' || compatState === 'expired' || jobState === 'failed_terminal') {
+    return 'failed';
+  }
+  return 'pending';
+};
+
+const buildCanonicalProjection = ({
+  attempt,
+  state = null,
+  shortId = null,
+  error = null,
+  previous = null,
+}) => {
+  const prior =
+    (previous && typeof previous === 'object' ? previous : null) ||
+    (attempt?.projection?.renderRecovery && typeof attempt.projection.renderRecovery === 'object'
+      ? attempt.projection.renderRecovery
+      : {});
+  return buildRenderRecoveryProjection({
+    state: buildProjectionState({
+      state,
+      compatState: attempt?.state ?? null,
+      jobState: attempt?.jobState ?? null,
+    }),
+    attemptId: attempt?.attemptId ?? attempt?.jobId ?? null,
+    previous: prior,
+    shortId: shortId ?? attempt?.shortId ?? null,
+    error: error ?? attempt?.failure ?? null,
+  });
+};
+
+const buildCanonicalJobRecord = (data, id = null) => {
+  const compat = data && typeof data === 'object' ? data : {};
+  const jobId =
+    typeof compat.jobId === 'string' && compat.jobId.trim().length > 0
+      ? compat.jobId.trim()
+      : typeof compat.attemptId === 'string' && compat.attemptId.trim().length > 0
+        ? compat.attemptId.trim()
+        : null;
+  const executionAttempts = normalizeExecutionAttempts(compat, jobId);
+  const currentExecution = getCurrentExecutionAttempt({
+    currentExecution: compat.currentExecution,
+    executionAttempts,
+  });
+  const jobState = jobStateFromCompatState(compat);
+  const projection =
+    compat.projection && typeof compat.projection === 'object' ? deepCloneValue(compat.projection) : {};
+  if (!projection.renderRecovery) {
+    projection.renderRecovery = buildCanonicalProjection({
+      attempt: {
+        ...compat,
+        attemptId: compat.attemptId ?? jobId,
+        jobId,
+        jobState,
+        executionAttempts,
+        currentExecution,
+      },
+    });
+  }
+  return {
+    id,
+    schemaVersion:
+      Number.isFinite(Number(compat.schemaVersion)) && Number(compat.schemaVersion) > 0
+        ? Number(compat.schemaVersion)
+        : FINALIZE_JOB_SCHEMA_VERSION,
+    flow: compat.flow || null,
+    uid: compat.uid || null,
+    attemptId: compat.attemptId || null,
+    jobId,
+    externalAttemptId: compat.externalAttemptId || compat.attemptId || jobId || null,
+    sessionId: compat.sessionId || null,
+    state: compat.state || null,
+    jobState,
+    status: Number.isFinite(Number(compat.status)) ? Number(compat.status) : null,
+    isActive: compat.isActive === true,
+    shortId: compat.shortId ?? null,
+    requestId: compat.requestId ?? null,
+    usageReservation: cloneValue(compat.usageReservation),
+    billingSettlement: cloneValue(compat.billingSettlement),
+    failure: cloneValue(compat.failure),
+    createdAt: toIso(compat.createdAt),
+    updatedAt: toIso(compat.updatedAt),
+    enqueuedAt: toIso(compat.enqueuedAt),
+    startedAt: toIso(compat.startedAt),
+    finishedAt: toIso(compat.finishedAt),
+    expiresAt: toIso(compat.expiresAt),
+    availableAfter: toIso(compat.availableAfter),
+    leaseHeartbeatAt: toIso(compat.leaseHeartbeatAt),
+    leaseExpiresAt: toIso(compat.leaseExpiresAt),
+    runnerId: compat.runnerId || null,
+    currentStage: compat.currentStage || null,
+    queue: {
+      ...(deepCloneValue(compat.queue) || {}),
+      enqueuedAt: toIso(compat?.queue?.enqueuedAt ?? compat.enqueuedAt),
+      availableAfter: toIso(compat?.queue?.availableAfter ?? compat.availableAfter),
+      expiresAt: toIso(compat?.queue?.expiresAt ?? compat.expiresAt),
+      claimedAt: toIso(compat?.queue?.claimedAt ?? currentExecution?.claimedAt ?? null),
+      lastQueuedAt: toIso(compat?.queue?.lastQueuedAt ?? compat.enqueuedAt ?? compat.createdAt),
+    },
+    retry: {
+      count:
+        Number.isFinite(Number(compat?.retry?.count)) && Number(compat.retry.count) >= 0
+          ? Number(compat.retry.count)
+          : Math.max(0, executionAttempts.length - 1),
+      scheduledAt: toIso(compat?.retry?.scheduledAt ?? compat.availableAfter),
+      lastFailure: cloneValue(compat?.retry?.lastFailure ?? null),
+    },
+    billing: {
+      reservation: cloneValue(compat?.billing?.reservation ?? compat.usageReservation ?? null),
+      settlement: cloneValue(compat?.billing?.settlement ?? compat.billingSettlement ?? null),
+    },
+    result: {
+      ...(deepCloneValue(compat.result) || {}),
+      shortId: compat?.result?.shortId ?? compat.shortId ?? null,
+      status: Number.isFinite(Number(compat?.result?.status))
+        ? Number(compat.result.status)
+        : Number.isFinite(Number(compat.status))
+          ? Number(compat.status)
+          : null,
+      failure: cloneValue(compat?.result?.failure ?? compat.failure ?? null),
+    },
+    projection,
+    currentExecution: buildCurrentExecutionSummary(currentExecution),
+    executionAttempts,
+    executionAttemptId: currentExecution?.executionAttemptId ?? null,
+  };
+};
+
+const toStoredDate = (value) => {
+  const ms = toMillis(value);
+  return Number.isFinite(ms) ? new Date(ms) : null;
+};
+
+const serializeExecutionAttempt = (execution) => ({
+  executionAttemptId: execution.executionAttemptId,
+  attemptNumber: execution.attemptNumber,
+  state: execution.state,
+  workerId: execution.workerId || null,
+  createdAt: toStoredDate(execution.createdAt),
+  claimedAt: toStoredDate(execution.claimedAt),
+  startedAt: toStoredDate(execution.startedAt),
+  finishedAt: toStoredDate(execution.finishedAt),
+  failure: cloneValue(execution.failure),
+  stageTimings: deepCloneValue(execution.stageTimings),
+  lease: {
+    heartbeatAt: toStoredDate(execution?.lease?.heartbeatAt),
+    expiresAt: toStoredDate(execution?.lease?.expiresAt),
+  },
+});
+
+const serializeCanonicalFields = (attempt) => ({
+  schemaVersion: FINALIZE_JOB_SCHEMA_VERSION,
+  jobId: attempt.jobId,
+  externalAttemptId: attempt.externalAttemptId,
+  jobState: attempt.jobState,
+  currentStage: attempt.currentStage ?? null,
+  queue: {
+    ...(deepCloneValue(attempt.queue) || {}),
+    enqueuedAt: toStoredDate(attempt?.queue?.enqueuedAt),
+    availableAfter: toStoredDate(attempt?.queue?.availableAfter),
+    expiresAt: toStoredDate(attempt?.queue?.expiresAt),
+    claimedAt: toStoredDate(attempt?.queue?.claimedAt),
+    lastQueuedAt: toStoredDate(attempt?.queue?.lastQueuedAt),
+  },
+  retry: {
+    ...(deepCloneValue(attempt.retry) || {}),
+    count: Number.isFinite(Number(attempt?.retry?.count)) ? Number(attempt.retry.count) : 0,
+    scheduledAt: toStoredDate(attempt?.retry?.scheduledAt),
+  },
+  billing: {
+    reservation: cloneValue(attempt?.billing?.reservation ?? null),
+    settlement: cloneValue(attempt?.billing?.settlement ?? null),
+  },
+  result: {
+    ...(deepCloneValue(attempt.result) || {}),
+    shortId: attempt?.result?.shortId ?? null,
+    status: Number.isFinite(Number(attempt?.result?.status)) ? Number(attempt.result.status) : null,
+    failure: cloneValue(attempt?.result?.failure ?? null),
+  },
+  projection: {
+    ...(deepCloneValue(attempt.projection) || {}),
+    renderRecovery: cloneValue(attempt?.projection?.renderRecovery ?? null),
+  },
+  currentExecution: {
+    ...(buildCurrentExecutionSummary(attempt.currentExecution) || {}),
+    createdAt: toStoredDate(attempt?.currentExecution?.createdAt),
+    claimedAt: toStoredDate(attempt?.currentExecution?.claimedAt),
+    startedAt: toStoredDate(attempt?.currentExecution?.startedAt),
+    finishedAt: toStoredDate(attempt?.currentExecution?.finishedAt),
+    lease: {
+      heartbeatAt: toStoredDate(attempt?.currentExecution?.lease?.heartbeatAt),
+      expiresAt: toStoredDate(attempt?.currentExecution?.lease?.expiresAt),
+    },
+  },
+  executionAttempts: Array.isArray(attempt.executionAttempts)
+    ? attempt.executionAttempts.map((execution) => serializeExecutionAttempt(execution))
+    : [],
+});
+
+const updateExecutionAttempt = (attempt, executionAttemptId, updater) =>
+  attempt.executionAttempts.map((execution) => {
+    if (execution.executionAttemptId !== executionAttemptId) return execution;
+    return normalizeExecutionAttempt(updater(deepCloneValue(execution)), {
+      jobId: attempt.jobId,
+      attemptNumber: execution.attemptNumber,
+      compat: attempt,
+    });
+  });
+
+const appendExecutionAttempt = (attempt, patch = {}) => {
+  const nextAttemptNumber =
+    Math.max(0, ...attempt.executionAttempts.map((execution) => execution.attemptNumber || 0)) + 1;
+  const execution = normalizeExecutionAttempt(
+    {
+      executionAttemptId: buildExecutionAttemptId(attempt.jobId, nextAttemptNumber),
+      attemptNumber: nextAttemptNumber,
+      createdAt: patch.createdAt ?? new Date(),
+      ...patch,
+    },
+    { jobId: attempt.jobId, attemptNumber: nextAttemptNumber, compat: attempt }
+  );
+  return {
+    attempt: {
+      ...attempt,
+      executionAttempts: [...attempt.executionAttempts, execution],
+      currentExecution: buildCurrentExecutionSummary(execution),
+      executionAttemptId: execution.executionAttemptId,
+    },
+    execution,
+  };
 };
 
 const getEstimatedSecFromSession = (session) => {
@@ -151,31 +571,7 @@ function safeRefreshFinalizeQueueMetrics() {
 
 function normalizeAttempt(data, id = null) {
   if (!data || typeof data !== 'object') return null;
-  return {
-    id,
-    flow: data.flow || null,
-    uid: data.uid || null,
-    attemptId: data.attemptId || null,
-    sessionId: data.sessionId || null,
-    state: data.state || null,
-    status: Number.isFinite(Number(data.status)) ? Number(data.status) : null,
-    isActive: data.isActive === true,
-    shortId: data.shortId ?? null,
-    requestId: data.requestId ?? null,
-    usageReservation: data.usageReservation || null,
-    billingSettlement: data.billingSettlement || null,
-    failure: data.failure || null,
-    createdAt: toIso(data.createdAt),
-    updatedAt: toIso(data.updatedAt),
-    enqueuedAt: toIso(data.enqueuedAt),
-    startedAt: toIso(data.startedAt),
-    finishedAt: toIso(data.finishedAt),
-    expiresAt: toIso(data.expiresAt),
-    availableAfter: toIso(data.availableAfter),
-    leaseHeartbeatAt: toIso(data.leaseHeartbeatAt),
-    leaseExpiresAt: toIso(data.leaseExpiresAt),
-    runnerId: data.runnerId || null,
-    };
+  return buildCanonicalJobRecord(data, id);
 }
 
 export async function captureFinalizeQueueMetricsSnapshot({ now = Date.now() } = {}) {
@@ -189,24 +585,28 @@ export async function captureFinalizeQueueMetricsSnapshot({ now = Date.now() } =
   let jobsRetryScheduled = 0;
   let oldestQueuedAtMs = null;
   let billingUnsettledJobs = 0;
+  const jobStateCounts = {};
   for (const doc of snapshot.docs) {
     const attempt = normalizeAttempt(doc.data(), doc.id);
     if (!attempt) continue;
+    if (attempt.jobState) {
+      jobStateCounts[attempt.jobState] = (jobStateCounts[attempt.jobState] || 0) + 1;
+    }
     if (attempt.isActive !== true) continue;
     billingUnsettledJobs += 1;
-    if (attempt.state === 'queued') {
+    if (attempt.jobState === 'queued' || attempt.jobState === 'retry_scheduled') {
       queueDepth += 1;
-      const createdAtMs = toMillis(attempt.createdAt);
+      const createdAtMs = toMillis(attempt.queue?.lastQueuedAt ?? attempt.enqueuedAt ?? attempt.createdAt);
       if (Number.isFinite(createdAtMs)) {
         oldestQueuedAtMs =
           oldestQueuedAtMs == null ? createdAtMs : Math.min(oldestQueuedAtMs, createdAtMs);
       }
-      const availableAfterMs = toMillis(attempt.availableAfter);
-      if (Number.isFinite(availableAfterMs) && availableAfterMs > now) {
+      const availableAfterMs = toMillis(attempt.queue?.availableAfter ?? attempt.availableAfter);
+      if (attempt.jobState === 'retry_scheduled' || (Number.isFinite(availableAfterMs) && availableAfterMs > now)) {
         jobsRetryScheduled += 1;
       }
     }
-    if (attempt.state === 'running') {
+    if (attempt.jobState === 'claimed' || attempt.jobState === 'started') {
       jobsRunning += 1;
     }
   }
@@ -218,6 +618,7 @@ export async function captureFinalizeQueueMetricsSnapshot({ now = Date.now() } =
     jobsRunning,
     jobsRetryScheduled,
     billingUnsettledJobs,
+    jobStateCounts,
   };
 }
 
@@ -459,6 +860,101 @@ export async function prepareFinalizeAttempt({
         throw err;
       }
 
+      const executionAttempt = normalizeExecutionAttempt(
+        {
+          executionAttemptId: buildExecutionAttemptId(attemptId, 1),
+          attemptNumber: 1,
+          state: 'created',
+          createdAt,
+          workerId: null,
+          lease: {
+            heartbeatAt: null,
+            expiresAt: null,
+          },
+        },
+        {
+          jobId: attemptId,
+          attemptNumber: 1,
+          compat: {
+            attemptId,
+            sessionId,
+            createdAt,
+            enqueuedAt: createdAt,
+          },
+        }
+      );
+      const queuedAttempt = normalizeAttempt(
+        {
+          flow: FLOW,
+          uid,
+          attemptId,
+          sessionId,
+          requestId,
+          state: 'queued',
+          isActive: true,
+          status: FINALIZE_ACCEPTED_STATUS,
+          shortId: null,
+          createdAt,
+          updatedAt: createdAt,
+          enqueuedAt: createdAt,
+          expiresAt,
+          availableAfter,
+          usageReservation: {
+            estimatedSec,
+            reservedSec: estimatedSec,
+          },
+          billingSettlement: null,
+          failure: null,
+          runnerId: null,
+          leaseHeartbeatAt: null,
+          leaseExpiresAt: null,
+          schemaVersion: FINALIZE_JOB_SCHEMA_VERSION,
+          jobId: attemptId,
+          externalAttemptId: attemptId,
+          jobState: 'queued',
+          currentStage: FINALIZE_STAGES.QUEUE_ENQUEUE,
+          queue: {
+            enqueuedAt: createdAt,
+            availableAfter,
+            expiresAt,
+            claimedAt: null,
+            lastQueuedAt: createdAt,
+          },
+          retry: {
+            count: 0,
+            scheduledAt: null,
+            lastFailure: null,
+          },
+          billing: {
+            reservation: {
+              estimatedSec,
+              reservedSec: estimatedSec,
+            },
+            settlement: null,
+          },
+          result: {
+            shortId: null,
+            status: FINALIZE_ACCEPTED_STATUS,
+            failure: null,
+          },
+          projection: {
+            renderRecovery: buildRenderRecoveryProjection({
+              state: 'pending',
+              attemptId,
+              previous:
+                reservationSession?.renderRecovery && typeof reservationSession.renderRecovery === 'object'
+                  ? reservationSession.renderRecovery
+                  : {},
+              shortId: null,
+              error: null,
+            }),
+          },
+          currentExecution: buildCurrentExecutionSummary(executionAttempt),
+          executionAttempts: [serializeExecutionAttempt(executionAttempt)],
+        },
+        attemptDocId(uid, attemptId)
+      );
+
       tx.set(attemptRef(uid, attemptId), {
         flow: FLOW,
         uid,
@@ -483,6 +979,7 @@ export async function prepareFinalizeAttempt({
         runnerId: null,
         leaseHeartbeatAt: null,
         leaseExpiresAt: null,
+        ...serializeCanonicalFields(queuedAttempt),
       });
 
       tx.set(lockRef, {
@@ -513,28 +1010,7 @@ export async function prepareFinalizeAttempt({
 
       return {
         kind: 'enqueued',
-        attempt: normalizeAttempt(
-          {
-            flow: FLOW,
-            uid,
-            attemptId,
-            sessionId,
-            requestId,
-            state: 'queued',
-            isActive: true,
-            status: FINALIZE_ACCEPTED_STATUS,
-            createdAt,
-            updatedAt: createdAt,
-            enqueuedAt: createdAt,
-            expiresAt,
-            availableAfter,
-            usageReservation: {
-              estimatedSec,
-              reservedSec: estimatedSec,
-            },
-          },
-          attemptDocId(uid, attemptId)
-        ),
+        attempt: queuedAttempt,
       };
     });
 
@@ -674,6 +1150,7 @@ export async function finalizeAttemptFailure({
   detail,
   state = 'failed',
   stage = FINALIZE_STAGES.PERSIST_RECOVERY,
+  executionState = 'failed_terminal',
   failureReason = null,
   emitObservability = true,
 }) {
@@ -690,6 +1167,69 @@ export async function finalizeAttemptFailure({
     if (!currentSnap.exists) return;
     const current = normalizeAttempt(currentSnap.data(), currentSnap.id);
     if (!FINALIZE_ACTIVE_STATES.has(current?.state)) return;
+    const activeExecution = getCurrentExecutionAttempt(current);
+    const failurePayload = {
+      error,
+      detail,
+      failedAt: now,
+    };
+    const executionAttempts = activeExecution
+      ? updateExecutionAttempt(current, activeExecution.executionAttemptId, (execution) => ({
+          ...execution,
+          state: executionState,
+          workerId: current.runnerId || execution.workerId || null,
+          finishedAt: now,
+          failure: failurePayload,
+          lease: {
+            heartbeatAt: null,
+            expiresAt: null,
+          },
+        }))
+      : current.executionAttempts;
+    const currentExecution =
+      executionAttempts.find(
+        (execution) => execution.executionAttemptId === activeExecution?.executionAttemptId
+      ) || activeExecution;
+    const updatedAttempt = {
+      ...current,
+      state,
+      isActive: false,
+      status,
+      failure: failurePayload,
+      finishedAt: now.toISOString(),
+      updatedAt: now.toISOString(),
+      runnerId: null,
+      leaseHeartbeatAt: null,
+      leaseExpiresAt: null,
+      jobState: 'failed_terminal',
+      currentStage: stage,
+      retry: {
+        ...(current.retry || {}),
+        lastFailure: {
+          error,
+          detail,
+          failedAt: now.toISOString(),
+          executionAttemptId: activeExecution?.executionAttemptId ?? null,
+        },
+      },
+      result: {
+        ...(current.result || {}),
+        shortId: current.shortId ?? null,
+        status,
+        failure: failurePayload,
+      },
+      projection: {
+        ...(current.projection || {}),
+        renderRecovery: buildCanonicalProjection({
+          attempt: current,
+          state: 'failed',
+          error: { code: error, message: detail },
+        }),
+      },
+      currentExecution: buildCurrentExecutionSummary(currentExecution),
+      executionAttempts,
+      executionAttemptId: currentExecution?.executionAttemptId ?? null,
+    };
 
     const reservedSec = Number(current?.usageReservation?.reservedSec || 0);
     const userRef = db.collection('users').doc(uid);
@@ -717,19 +1257,16 @@ export async function finalizeAttemptFailure({
     tx.set(
       docRef,
       {
-        state,
-        isActive: false,
-        status,
-        failure: {
-          error,
-          detail,
-          failedAt: now,
-        },
+        state: updatedAttempt.state,
+        isActive: updatedAttempt.isActive,
+        status: updatedAttempt.status,
+        failure: updatedAttempt.failure,
         finishedAt: now,
         updatedAt: now,
         runnerId: null,
         leaseHeartbeatAt: null,
         leaseExpiresAt: null,
+        ...serializeCanonicalFields(updatedAttempt),
       },
       { merge: true }
     );
@@ -759,7 +1296,9 @@ export async function finalizeAttemptFailure({
       uid,
       sessionId: attempt?.sessionId ?? currentAttempt.sessionId,
       attemptId,
-      jobState: attempt?.state ?? state,
+      finalizeJobId: attempt?.jobId ?? attemptId,
+      executionAttemptId: attempt?.executionAttemptId ?? currentAttempt.executionAttemptId ?? null,
+      jobState: attempt?.jobState ?? 'failed_terminal',
       stage,
       shortId: attempt?.shortId ?? null,
       durationMs:
@@ -868,6 +1407,66 @@ export async function settleFinalizeAttemptSuccess({ uid, attemptId, session, sh
     const accountState = buildCanonicalUsageState(userData);
     const usage = accountState.usage;
     const reservedSec = Number(attempt?.usageReservation?.reservedSec || 0);
+    const activeExecution = getCurrentExecutionAttempt(attempt);
+    const executionAttempts = activeExecution
+      ? updateExecutionAttempt(attempt, activeExecution.executionAttemptId, (execution) => ({
+          ...execution,
+          state: 'succeeded',
+          workerId: attempt.runnerId || execution.workerId || null,
+          finishedAt: settledAt,
+          failure: null,
+          lease: {
+            heartbeatAt: null,
+            expiresAt: null,
+          },
+        }))
+      : attempt.executionAttempts;
+    const currentExecution =
+      executionAttempts.find(
+        (execution) => execution.executionAttemptId === activeExecution?.executionAttemptId
+      ) || activeExecution;
+    const settlement = {
+      billedSec,
+      settledAt,
+    };
+    const updatedAttempt = {
+      ...attempt,
+      state: 'done',
+      isActive: false,
+      status,
+      shortId: shortId ?? null,
+      billingSettlement: settlement,
+      failure: null,
+      finishedAt: settledAt.toISOString(),
+      updatedAt: settledAt.toISOString(),
+      runnerId: null,
+      leaseHeartbeatAt: null,
+      leaseExpiresAt: null,
+      jobState: 'settled',
+      currentStage: FINALIZE_STAGES.BILLING_SETTLE,
+      billing: {
+        ...(attempt.billing || {}),
+        reservation: cloneValue(attempt?.billing?.reservation ?? attempt.usageReservation ?? null),
+        settlement,
+      },
+      result: {
+        ...(attempt.result || {}),
+        shortId: shortId ?? null,
+        status,
+        failure: null,
+      },
+      projection: {
+        ...(attempt.projection || {}),
+        renderRecovery: buildCanonicalProjection({
+          attempt,
+          state: 'done',
+          shortId: shortId ?? null,
+        }),
+      },
+      currentExecution: buildCurrentExecutionSummary(currentExecution),
+      executionAttempts,
+      executionAttemptId: currentExecution?.executionAttemptId ?? null,
+    };
     tx.set(
       userRef,
       {
@@ -887,20 +1486,18 @@ export async function settleFinalizeAttemptSuccess({ uid, attemptId, session, sh
     tx.set(
       docRef,
       {
-        state: 'done',
-        isActive: false,
-        status,
-        shortId: shortId ?? null,
-        billingSettlement: {
-          billedSec,
-          settledAt,
-        },
+        state: updatedAttempt.state,
+        isActive: updatedAttempt.isActive,
+        status: updatedAttempt.status,
+        shortId: updatedAttempt.shortId,
+        billingSettlement: updatedAttempt.billingSettlement,
         failure: null,
         finishedAt: settledAt,
         updatedAt: settledAt,
         runnerId: null,
         leaseHeartbeatAt: null,
         leaseExpiresAt: null,
+        ...serializeCanonicalFields(updatedAttempt),
       },
       { merge: true }
     );
@@ -939,7 +1536,9 @@ export async function settleFinalizeAttemptSuccess({ uid, attemptId, session, sh
     sessionId: currentAttempt.sessionId,
     attemptId,
     shortId: shortId ?? null,
-    jobState: attempt?.state ?? 'done',
+    finalizeJobId: attempt?.jobId ?? attemptId,
+    executionAttemptId: attempt?.executionAttemptId ?? currentAttempt.executionAttemptId ?? null,
+    jobState: attempt?.jobState ?? 'settled',
     stage: FINALIZE_STAGES.BILLING_SETTLE,
     estimatedSec,
     reservedSec: Number(currentAttempt?.usageReservation?.reservedSec || 0),
@@ -973,16 +1572,89 @@ export async function markFinalizeAttemptQueuedForRetry({
     const attempt = normalizeAttempt(docSnap.data(), docSnap.id);
     if (attempt.state !== 'running') return;
     if (attempt.runnerId && runnerId && attempt.runnerId !== runnerId) return;
+    const currentExecution = getCurrentExecutionAttempt(attempt);
+    const executionAttempts = currentExecution
+      ? updateExecutionAttempt(attempt, currentExecution.executionAttemptId, (execution) => ({
+          ...execution,
+          state: 'failed_retryable',
+          workerId: runnerId ?? execution.workerId ?? null,
+          finishedAt: new Date(),
+          failure: {
+            error: 'SERVER_BUSY',
+            detail: 'Finalize worker was busy and rescheduled the job.',
+            failedAt: new Date(),
+          },
+          lease: {
+            heartbeatAt: null,
+            expiresAt: null,
+          },
+        }))
+      : attempt.executionAttempts;
+    const appended = appendExecutionAttempt(
+      {
+        ...attempt,
+        executionAttempts,
+      },
+      {
+        state: 'created',
+        createdAt: new Date(),
+        workerId: null,
+        lease: {
+          heartbeatAt: null,
+          expiresAt: null,
+        },
+      }
+    );
+    const updatedAttempt = {
+      ...appended.attempt,
+      state: 'queued',
+      updatedAt: new Date().toISOString(),
+      availableAfter: retryAt.toISOString(),
+      runnerId: null,
+      leaseHeartbeatAt: null,
+      leaseExpiresAt: null,
+      jobState: 'retry_scheduled',
+      currentStage: FINALIZE_STAGES.QUEUE_WAIT,
+      queue: {
+        ...(attempt.queue || {}),
+        availableAfter: retryAt.toISOString(),
+        lastQueuedAt: new Date().toISOString(),
+      },
+      retry: {
+        ...(attempt.retry || {}),
+        count: Number(attempt?.retry?.count || 0) + 1,
+        scheduledAt: retryAt.toISOString(),
+        lastFailure: {
+          error: 'SERVER_BUSY',
+          detail: 'Finalize worker was busy and rescheduled the job.',
+          failedAt: new Date().toISOString(),
+          executionAttemptId: currentExecution?.executionAttemptId ?? null,
+        },
+      },
+      result: {
+        ...(attempt.result || {}),
+        status: attempt.status,
+      },
+      projection: {
+        ...(attempt.projection || {}),
+        renderRecovery: buildCanonicalProjection({
+          attempt,
+          state: 'pending',
+        }),
+      },
+      executionAttemptId: appended.execution.executionAttemptId,
+    };
 
     tx.set(
       docRef,
       {
-        state: 'queued',
+        state: updatedAttempt.state,
         updatedAt: new Date(),
         availableAfter: retryAt,
         runnerId: null,
         leaseHeartbeatAt: null,
         leaseExpiresAt: null,
+        ...serializeCanonicalFields(updatedAttempt),
       },
       { merge: true }
     );
@@ -1007,8 +1679,10 @@ export async function markFinalizeAttemptQueuedForRetry({
     uid,
     sessionId: attempt?.sessionId ?? null,
     attemptId,
+    finalizeJobId: attempt?.jobId ?? attemptId,
+    executionAttemptId: attempt?.executionAttemptId ?? null,
     workerId: runnerId ?? null,
-    jobState: attempt?.state ?? 'queued',
+    jobState: attempt?.jobState ?? 'retry_scheduled',
     stage: FINALIZE_STAGES.QUEUE_WAIT,
     retryAfterMs,
     ...describeFinalizeError(
@@ -1047,16 +1721,54 @@ export async function claimNextFinalizeAttempt({ runnerId, leaseMs = FINALIZE_RU
 
       const now = new Date();
       const leaseExpiresAt = new Date(now.getTime() + leaseMs);
+      const activeExecution = getCurrentExecutionAttempt(current);
+      const executionAttempts = activeExecution
+        ? updateExecutionAttempt(current, activeExecution.executionAttemptId, (execution) => ({
+            ...execution,
+            state: 'claimed',
+            workerId: runnerId,
+            claimedAt: now,
+            lease: {
+              heartbeatAt: now,
+              expiresAt: leaseExpiresAt,
+            },
+          }))
+        : current.executionAttempts;
+      const currentExecution =
+        executionAttempts.find(
+          (execution) => execution.executionAttemptId === activeExecution?.executionAttemptId
+        ) || activeExecution;
+      const claimedAttempt = {
+        ...current,
+        state: 'running',
+        updatedAt: now.toISOString(),
+        startedAt: current.startedAt || now.toISOString(),
+        runnerId,
+        leaseHeartbeatAt: now.toISOString(),
+        leaseExpiresAt: leaseExpiresAt.toISOString(),
+        availableAfter: null,
+        jobState: 'claimed',
+        currentStage: FINALIZE_STAGES.WORKER_CLAIM,
+        queue: {
+          ...(current.queue || {}),
+          availableAfter: null,
+          claimedAt: now.toISOString(),
+        },
+        currentExecution: buildCurrentExecutionSummary(currentExecution),
+        executionAttempts,
+        executionAttemptId: currentExecution?.executionAttemptId ?? null,
+      };
       tx.set(
         docRef,
         {
-          state: 'running',
+          state: claimedAttempt.state,
           updatedAt: now,
           startedAt: current.startedAt ? new Date(current.startedAt) : now,
           runnerId,
           leaseHeartbeatAt: now,
           leaseExpiresAt,
           availableAfter: null,
+          ...serializeCanonicalFields(claimedAttempt),
         },
         { merge: true }
       );
@@ -1073,19 +1785,7 @@ export async function claimNextFinalizeAttempt({ runnerId, leaseMs = FINALIZE_RU
         },
         { merge: true }
       );
-      return normalizeAttempt(
-        {
-          ...current,
-          state: 'running',
-          updatedAt: now,
-          startedAt: current.startedAt || now.toISOString(),
-          runnerId,
-          leaseHeartbeatAt: now,
-          leaseExpiresAt,
-          availableAfter: null,
-        },
-        current.id
-      );
+      return claimedAttempt;
     });
 
     if (claimed) {
@@ -1095,8 +1795,10 @@ export async function claimNextFinalizeAttempt({ runnerId, leaseMs = FINALIZE_RU
         uid: claimed.uid,
         sessionId: claimed.sessionId,
         attemptId: claimed.attemptId,
+        finalizeJobId: claimed.jobId ?? claimed.attemptId,
+        executionAttemptId: claimed.executionAttemptId ?? null,
         workerId: runnerId,
-        jobState: claimed.state,
+        jobState: claimed.jobState ?? 'claimed',
         stage: FINALIZE_STAGES.WORKER_CLAIM,
         queuedAt: claimed.enqueuedAt,
         startedAt: claimed.startedAt,
@@ -1113,6 +1815,57 @@ export async function claimNextFinalizeAttempt({ runnerId, leaseMs = FINALIZE_RU
   return null;
 }
 
+export async function markFinalizeAttemptStarted({
+  uid,
+  attemptId,
+  runnerId,
+  stage = FINALIZE_STAGES.WORKER_CLAIM,
+}) {
+  const now = new Date();
+  await db.runTransaction(async (tx) => {
+    const docRef = attemptRef(uid, attemptId);
+    const docSnap = await tx.get(docRef);
+    if (!docSnap.exists) return;
+    const attempt = normalizeAttempt(docSnap.data(), docSnap.id);
+    if (attempt.state !== 'running') return;
+    if (attempt.runnerId && runnerId && attempt.runnerId !== runnerId) return;
+    const activeExecution = getCurrentExecutionAttempt(attempt);
+    if (!activeExecution) return;
+    const executionAttempts = updateExecutionAttempt(attempt, activeExecution.executionAttemptId, (execution) => ({
+      ...execution,
+      state: 'running',
+      workerId: runnerId ?? execution.workerId ?? null,
+      startedAt: execution.startedAt ?? now,
+      lease: {
+        heartbeatAt: attempt.leaseHeartbeatAt ?? now,
+        expiresAt: attempt.leaseExpiresAt ?? null,
+      },
+    }));
+    const currentExecution =
+      executionAttempts.find(
+        (execution) => execution.executionAttemptId === activeExecution.executionAttemptId
+      ) || activeExecution;
+    const updatedAttempt = {
+      ...attempt,
+      jobState: 'started',
+      currentStage: stage,
+      currentExecution: buildCurrentExecutionSummary(currentExecution),
+      executionAttempts,
+      executionAttemptId: currentExecution.executionAttemptId,
+    };
+    tx.set(
+      docRef,
+      {
+        startedAt: attempt.startedAt ? new Date(attempt.startedAt) : now,
+        updatedAt: now,
+        ...serializeCanonicalFields(updatedAttempt),
+      },
+      { merge: true }
+    );
+  });
+  return await getFinalizeAttempt({ uid, attemptId });
+}
+
 export async function heartbeatFinalizeAttempt({ uid, attemptId, runnerId, leaseMs = FINALIZE_RUNNER_LEASE_MS }) {
   await db.runTransaction(async (tx) => {
     const docRef = attemptRef(uid, attemptId);
@@ -1123,12 +1876,39 @@ export async function heartbeatFinalizeAttempt({ uid, attemptId, runnerId, lease
     if (attempt.runnerId && runnerId && attempt.runnerId !== runnerId) return;
 
     const now = new Date();
+    const activeExecution = getCurrentExecutionAttempt(attempt);
+    const executionAttempts =
+      activeExecution && activeExecution.executionAttemptId
+        ? updateExecutionAttempt(attempt, activeExecution.executionAttemptId, (execution) => ({
+            ...execution,
+            workerId: runnerId ?? execution.workerId ?? null,
+            lease: {
+              heartbeatAt: now,
+              expiresAt: new Date(now.getTime() + leaseMs),
+            },
+          }))
+        : attempt.executionAttempts;
+    const currentExecution =
+      executionAttempts.find(
+        (execution) => execution.executionAttemptId === activeExecution?.executionAttemptId
+      ) || activeExecution;
+    const updatedAttempt = {
+      ...attempt,
+      updatedAt: now.toISOString(),
+      leaseHeartbeatAt: now.toISOString(),
+      leaseExpiresAt: new Date(now.getTime() + leaseMs).toISOString(),
+      jobState: attempt.jobState === 'claimed' ? 'started' : attempt.jobState,
+      currentExecution: buildCurrentExecutionSummary(currentExecution),
+      executionAttempts,
+      executionAttemptId: currentExecution?.executionAttemptId ?? null,
+    };
     tx.set(
       docRef,
       {
         updatedAt: now,
         leaseHeartbeatAt: now,
         leaseExpiresAt: new Date(now.getTime() + leaseMs),
+        ...serializeCanonicalFields(updatedAttempt),
       },
       { merge: true }
     );
@@ -1140,8 +1920,10 @@ export async function heartbeatFinalizeAttempt({ uid, attemptId, runnerId, lease
     uid,
     sessionId: attempt?.sessionId ?? null,
     attemptId,
+    finalizeJobId: attempt?.jobId ?? attemptId,
+    executionAttemptId: attempt?.executionAttemptId ?? null,
     workerId: runnerId ?? null,
-    jobState: attempt?.state ?? null,
+    jobState: attempt?.jobState ?? null,
   });
 }
 
@@ -1173,8 +1955,10 @@ export async function reapStaleFinalizeAttempts() {
         uid: attempt.uid,
         sessionId: attempt.sessionId,
         attemptId: attempt.attemptId,
+        finalizeJobId: attempt.jobId ?? attempt.attemptId,
+        executionAttemptId: attempt.executionAttemptId ?? null,
         workerId: attempt.runnerId ?? null,
-        jobState: attempt.state,
+        jobState: attempt.jobState ?? attempt.state,
         stage: FINALIZE_STAGES.QUEUE_WAIT,
         ...describeFinalizeError(
           { code: 'FINALIZE_ATTEMPT_EXPIRED', status: 500 },
@@ -1205,8 +1989,10 @@ export async function reapStaleFinalizeAttempts() {
         uid: attempt.uid,
         sessionId: attempt.sessionId,
         attemptId: attempt.attemptId,
+        finalizeJobId: attempt.jobId ?? attempt.attemptId,
+        executionAttemptId: attempt.executionAttemptId ?? null,
         workerId: attempt.runnerId ?? null,
-        jobState: attempt.state,
+        jobState: attempt.jobState ?? attempt.state,
         stage: FINALIZE_STAGES.RENDER_VIDEO,
         ...describeFinalizeError(
           { code: 'FINALIZE_WORKER_LOST', status: 500 },
@@ -1222,6 +2008,7 @@ export async function reapStaleFinalizeAttempts() {
         status: 500,
         error: 'FINALIZE_WORKER_LOST',
         detail: 'Finalize worker stopped before completion.',
+        executionState: 'abandoned',
       });
       await persistStoryRenderRecovery({
         uid: attempt.uid,

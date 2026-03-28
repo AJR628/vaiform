@@ -4,7 +4,7 @@
 - Owner repo: backend
 - Source of truth for: current and target finalize runtime roles, process boundaries, entrypoints, worker/API separation rules, and health/startup ownership
 - Canonical counterpart/source: `docs/FINALIZE_FACTORY_CONVERSION_PLAN.md`, `docs/FINALIZE_OBSERVABILITY_SPEC.md`
-- Last verified against: backend repo on 2026-03-26
+- Last verified against: backend repo on 2026-03-28
 
 ## Proven Current Topology
 
@@ -72,6 +72,7 @@ The worker role owns:
 - heartbeats / leases
 - retry scheduling
 - settlement completion
+- updates to canonical `jobState` and embedded execution-attempt lineage on the durable finalize job doc
 
 Current evidence:
 
@@ -96,8 +97,9 @@ The worker role does not:
 
 - Firestore remains the durable queue/state substrate for this conversion, per `docs/FINALIZE_FACTORY_CONVERSION_PLAN.md`.
 - The queue/substrate role does not expose caller HTTP.
-- In Finalize Factory Phase 2, it still owns durable enqueue order, current attempt state, leases, and retry schedule through the existing Firestore-backed finalize attempt model: `src/services/story-finalize.attempts.js:364-593`, `src/services/story-finalize.attempts.js:1025-1148`.
-- FinalizeJob / FinalizeExecutionAttempt lineage and dead-letter redesign remain later-phase work and are not live runtime truth yet: `docs/FINALIZE_FACTORY_CONVERSION_PLAN.md:193-223`.
+- In Phase 3, the existing durable `idempotency/<uid:attemptId>` doc keyspace becomes the canonical `FinalizeJob` storage truth.
+- In Phase 3, `executionAttempts[]` plus `currentExecution` are embedded on that same durable doc, and `storyFinalizeSessions` remains a helper/lock record only.
+- Phase 4 global concurrency/provider throttle/backpressure redesign remains later-phase work and is not changed by Phase 3.
 
 ## Process-Boundary Rules
 

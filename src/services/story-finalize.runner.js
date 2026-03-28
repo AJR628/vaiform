@@ -19,6 +19,7 @@ import {
   heartbeatFinalizeAttempt,
   mapFinalizeFailureFromError,
   markFinalizeAttemptQueuedForRetry,
+  markFinalizeAttemptStarted,
   reapStaleFinalizeAttempts,
   refreshFinalizeQueueMetrics,
   settleFinalizeAttemptSuccess,
@@ -91,8 +92,10 @@ function createRunner({ keepProcessAlive = false } = {}) {
         uid: attempt.uid,
         sessionId: attempt.sessionId,
         attemptId: attempt.attemptId,
+        finalizeJobId: attempt.jobId ?? attempt.attemptId,
+        executionAttemptId: attempt.executionAttemptId ?? null,
         workerId: runnerId,
-        jobState: attempt.state,
+        jobState: attempt.jobState ?? attempt.state,
         queuedAt: attempt.enqueuedAt ?? null,
         startedAt: attempt.startedAt ?? null,
       },
@@ -108,17 +111,27 @@ function createRunner({ keepProcessAlive = false } = {}) {
         if (shouldUnrefTimers) heartbeat.unref?.();
 
         try {
+          const startedAttempt =
+            (await markFinalizeAttemptStarted({
+              uid: attempt.uid,
+              attemptId: attempt.attemptId,
+              runnerId,
+              stage: FINALIZE_STAGES.WORKER_CLAIM,
+            })) || attempt;
           emitFinalizeEvent('info', FINALIZE_EVENTS.JOB_STARTED, {
             sourceRole: FINALIZE_SOURCE_ROLES.WORKER,
-            requestId: attempt.requestId ?? null,
-            uid: attempt.uid,
-            sessionId: attempt.sessionId,
-            attemptId: attempt.attemptId,
+            requestId: startedAttempt.requestId ?? attempt.requestId ?? null,
+            uid: startedAttempt.uid ?? attempt.uid,
+            sessionId: startedAttempt.sessionId ?? attempt.sessionId,
+            attemptId: startedAttempt.attemptId ?? attempt.attemptId,
+            finalizeJobId: startedAttempt.jobId ?? attempt.jobId ?? attempt.attemptId,
+            executionAttemptId:
+              startedAttempt.executionAttemptId ?? attempt.executionAttemptId ?? null,
             workerId: runnerId,
-            jobState: 'running',
+            jobState: startedAttempt.jobState ?? 'started',
             stage: FINALIZE_STAGES.WORKER_CLAIM,
-            queuedAt: attempt.enqueuedAt ?? null,
-            startedAt: attempt.startedAt ?? null,
+            queuedAt: startedAttempt.enqueuedAt ?? attempt.enqueuedAt ?? null,
+            startedAt: startedAttempt.startedAt ?? attempt.startedAt ?? null,
             ...currentWorkerMetrics(),
           });
           const session = await withRenderSlot(() =>
@@ -135,6 +148,8 @@ function createRunner({ keepProcessAlive = false } = {}) {
             uid: attempt.uid,
             sessionId: attempt.sessionId,
             attemptId: attempt.attemptId,
+            finalizeJobId: attempt.jobId ?? attempt.attemptId,
+            executionAttemptId: attempt.executionAttemptId ?? null,
             workerId: runnerId,
             shortId,
             jobState: 'completed',
@@ -170,6 +185,8 @@ function createRunner({ keepProcessAlive = false } = {}) {
             uid: attempt.uid,
             sessionId: attempt.sessionId,
             attemptId: attempt.attemptId,
+            finalizeJobId: attempt.jobId ?? attempt.attemptId,
+            executionAttemptId: attempt.executionAttemptId ?? null,
             workerId: runnerId,
             jobState: 'failed',
             stage: error?.finalizeStage || FINALIZE_STAGES.RENDER_VIDEO,
@@ -248,6 +265,8 @@ function createRunner({ keepProcessAlive = false } = {}) {
               uid: attempt.uid,
               sessionId: attempt.sessionId,
               attemptId: attempt.attemptId,
+              finalizeJobId: attempt.jobId ?? attempt.attemptId,
+              executionAttemptId: attempt.executionAttemptId ?? null,
               workerId: runnerId,
               error,
               ...currentWorkerMetrics(),
@@ -271,6 +290,8 @@ function createRunner({ keepProcessAlive = false } = {}) {
               uid: attempt.uid,
               sessionId: attempt.sessionId,
               attemptId: attempt.attemptId,
+              finalizeJobId: attempt.jobId ?? attempt.attemptId,
+              executionAttemptId: attempt.executionAttemptId ?? null,
               workerId: runnerId,
               ...currentWorkerMetrics(),
             });

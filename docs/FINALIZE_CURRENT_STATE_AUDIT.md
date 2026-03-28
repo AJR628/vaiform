@@ -4,11 +4,11 @@
 - Owner repo: backend
 - Source of truth for: current finalize/render behavior, active caller ownership, current storage/runtime topology, and frozen external finalize contracts for the factory conversion
 - Canonical counterpart/source: `docs/FINALIZE_FACTORY_CONVERSION_PLAN.md`, `docs/FINALIZE_JOB_MODEL_SPEC.md`, `docs/FINALIZE_OBSERVABILITY_SPEC.md`, `docs/FINALIZE_RUNTIME_TOPOLOGY_SPEC.md`
-- Last verified against: backend repo plus current mobile repo on 2026-03-26
+- Last verified against: backend repo plus current mobile repo on 2026-03-28
 
 ## Purpose
 
-This document freezes how finalize works today before later phases change internals.
+This document freezes how finalize works after Phase 3 landed and before later phases change internals.
 
 Every statement below is current-state repo truth unless explicitly marked otherwise.
 
@@ -63,7 +63,7 @@ If docs and code disagree, code wins for this audit.
   - loads the session and requires `billingEstimate.estimatedSec`: `src/services/story-finalize.attempts.js:321-339`
   - rejects same-session different-key conflicts via `storyFinalizeSessions`: `src/services/story-finalize.attempts.js:356-374`
   - checks available render time from canonical usage state: `src/services/story-finalize.attempts.js:376-393`
-  - creates a queued attempt doc, creates a session lock doc, and increments `users.usage.cycleReservedSec`: `src/services/story-finalize.attempts.js:395-444`
+  - reuses the existing `idempotency/<uid:attemptId>` doc keyspace as the canonical `FinalizeJob` record, creates embedded `executionAttempts[0]` plus `currentExecution`, preserves the required top-level compatibility fields, creates a session lock doc, and increments `users.usage.cycleReservedSec`
 
 ### 4. Current finalize response behavior
 
@@ -90,9 +90,10 @@ If docs and code disagree, code wins for this audit.
 ### 7. Current durable queue substrate
 
 - The durable queue substrate today is Firestore:
-  - attempts live in collection `idempotency`: `src/services/story-finalize.attempts.js:7`, `src/services/story-finalize.attempts.js:41-42`
-  - same-session active locks live in `storyFinalizeSessions`: `src/services/story-finalize.attempts.js:8`, `src/services/story-finalize.attempts.js:43-44`
-  - queue claim uses `where(flow == story.finalize, state == queued).orderBy(createdAt asc)`: `src/services/story-finalize.attempts.js:860-867`
+  - canonical finalize jobs still live in collection `idempotency`, reusing the existing durable doc id/keyspace
+  - embedded execution lineage now lives on that same durable job doc through `executionAttempts[]` plus `currentExecution`
+  - same-session active locks still live in `storyFinalizeSessions`, but only as helper/lock records
+  - queue claim still uses the existing `idempotency` query and then reads canonical `jobState` plus embedded execution lineage from the claimed durable doc
   - the required composite index is source-controlled: `firestore.indexes.json:11-19`, `firebase.json:1-5`
 
 ### 8. Current finalize pipeline internals
@@ -113,9 +114,36 @@ If docs and code disagree, code wins for this audit.
 
 ### 10. Current stale-work and retry behavior
 
-- Busy render-slot failures are requeued by moving the same durable attempt doc back to `queued` with `availableAfter`: `src/services/story-finalize.runner.js:86-94`, `src/services/story-finalize.attempts.js:817-858`.
+- Busy render-slot failures preserve one stable external `attemptId`, append a new embedded execution attempt, close the prior execution attempt as `failed_retryable`, and schedule the canonical job back to `retry_scheduled` with compatibility `state = queued`.
 - Queued attempts that expire are marked `expired`, have reservations released, and persist `renderRecovery.failed` with `FINALIZE_ATTEMPT_EXPIRED`: `src/services/story-finalize.attempts.js:956-989`.
-- Running attempts with expired leases are marked terminally failed, have reservations released, and persist `renderRecovery.failed` with `FINALIZE_WORKER_LOST`: `src/services/story-finalize.attempts.js:991-1010`.
+- Running attempts with expired leases mark the active embedded execution attempt `abandoned`, mark the canonical job terminally failed with the existing caller-visible `FINALIZE_WORKER_LOST` semantics, release reservations, and persist `renderRecovery.failed`.
+
+## Phase 3 Compatibility Mirror Fields
+
+Phase 3 keeps these top-level fields readable and writable on the canonical durable job doc for rollback safety and current route/test compatibility:
+
+- `flow`
+- `uid`
+- `attemptId`
+- `sessionId`
+- `state`
+- `status`
+- `isActive`
+- `shortId`
+- `requestId`
+- `usageReservation`
+- `billingSettlement`
+- `failure`
+- `createdAt`
+- `updatedAt`
+- `enqueuedAt`
+- `startedAt`
+- `finishedAt`
+- `expiresAt`
+- `availableAfter`
+- `leaseHeartbeatAt`
+- `leaseExpiresAt`
+- `runnerId`
 
 ## Current Caller Behavior
 
@@ -138,8 +166,9 @@ If docs and code disagree, code wins for this audit.
 
 | Concern | Current canonical owner | Current evidence |
 | --- | --- | --- |
-| Durable admission state | Firestore `idempotency` attempt doc | `src/services/story-finalize.attempts.js:395-418` |
-| Same-session active lock | Firestore `storyFinalizeSessions` doc | `src/services/story-finalize.attempts.js:420-429` |
+| Durable admission state | Firestore `idempotency` canonical finalize job doc on the existing durable keyspace | `src/services/story-finalize.attempts.js` |
+| Execution lineage | Embedded `executionAttempts[]` plus `currentExecution` on that same `idempotency` job doc | `src/services/story-finalize.attempts.js` |
+| Same-session active lock | Firestore `storyFinalizeSessions` helper/lock doc | `src/services/story-finalize.attempts.js` |
 | Usage reserve/release/settle ledger | Firestore `users/<uid>.usage` | `src/services/usage.service.js:65-134`, `src/services/story-finalize.attempts.js:431-444`, `src/services/story-finalize.attempts.js:748-762` |
 | Client recovery projection | Session `story.json.renderRecovery` | `src/services/story.service.js:349-462` |
 | Completed short read model | Firestore `shorts/<jobId>` plus storage objects | `src/services/story.service.js:2415-2455`, `src/controllers/shorts.controller.js:122-227` |

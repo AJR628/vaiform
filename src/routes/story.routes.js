@@ -995,9 +995,11 @@ r.post('/finalize', idempotencyFinalize({ getSession: getStorySession }), async 
         uid: req.user?.uid ?? null,
         sessionId,
         attemptId,
+        finalizeJobId: req.finalizePrepared?.attempt?.jobId ?? attemptId,
+        executionAttemptId: req.finalizePrepared?.attempt?.executionAttemptId ?? null,
         httpStatus: reply.status,
         stage: FINALIZE_STAGES.QUEUE_ENQUEUE,
-        jobState: req.finalizePrepared?.attempt?.state ?? 'queued',
+        jobState: req.finalizePrepared?.attempt?.jobState ?? req.finalizePrepared?.attempt?.state ?? 'queued',
         queuedAt: req.finalizePrepared?.attempt?.enqueuedAt ?? null,
         durationMs:
           Number.isFinite(Number(req.finalizeAdmissionStartedAt))
@@ -1017,9 +1019,15 @@ r.post('/finalize', idempotencyFinalize({ getSession: getStorySession }), async 
         uid: req.user?.uid ?? null,
         sessionId: req.finalizePrepared?.attempt?.sessionId || sessionId,
         attemptId: req.finalizePrepared?.attempt?.attemptId || attemptId,
+        finalizeJobId:
+          req.finalizePrepared?.attempt?.jobId ||
+          req.finalizePrepared?.attempt?.attemptId ||
+          attemptId,
+        executionAttemptId: req.finalizePrepared?.attempt?.executionAttemptId || null,
         httpStatus: reply.status,
         stage: FINALIZE_STAGES.QUEUE_WAIT,
-        jobState: req.finalizePrepared?.attempt?.state ?? 'queued',
+        jobState:
+          req.finalizePrepared?.attempt?.jobState ?? req.finalizePrepared?.attempt?.state ?? 'queued',
         queuedAt: req.finalizePrepared?.attempt?.enqueuedAt ?? null,
       });
       logger.info('story.finalize.replay_pending', {
@@ -1035,9 +1043,14 @@ r.post('/finalize', idempotencyFinalize({ getSession: getStorySession }), async 
         uid: req.user?.uid ?? null,
         sessionId,
         attemptId,
+        finalizeJobId:
+          req.finalizePrepared?.attempt?.jobId ||
+          req.finalizePrepared?.attempt?.attemptId ||
+          attemptId,
         httpStatus: reply.status,
         stage: FINALIZE_STAGES.QUEUE_WAIT,
-        jobState: req.finalizePrepared?.attempt?.state ?? 'queued',
+        jobState:
+          req.finalizePrepared?.attempt?.jobState ?? req.finalizePrepared?.attempt?.state ?? 'queued',
         failureReason: 'active_attempt_conflict',
       });
       logger.warn('story.finalize.conflict_active_attempt', {
@@ -1054,10 +1067,16 @@ r.post('/finalize', idempotencyFinalize({ getSession: getStorySession }), async 
         uid: req.user?.uid ?? null,
         sessionId: req.finalizePrepared?.attempt?.sessionId || sessionId,
         attemptId: req.finalizePrepared?.attempt?.attemptId || attemptId,
+        finalizeJobId:
+          req.finalizePrepared?.attempt?.jobId ||
+          req.finalizePrepared?.attempt?.attemptId ||
+          attemptId,
+        executionAttemptId: req.finalizePrepared?.attempt?.executionAttemptId || null,
         shortId: req.finalizePrepared?.attempt?.shortId || null,
         httpStatus: reply.status,
         stage: FINALIZE_STAGES.BILLING_SETTLE,
-        jobState: req.finalizePrepared?.attempt?.state ?? 'done',
+        jobState:
+          req.finalizePrepared?.attempt?.jobState ?? req.finalizePrepared?.attempt?.state ?? 'done',
       });
       logger.info('story.finalize.replay_completed', {
         routeStatus: `${req.method} ${req.originalUrl}`,
@@ -1072,9 +1091,15 @@ r.post('/finalize', idempotencyFinalize({ getSession: getStorySession }), async 
         uid: req.user?.uid ?? null,
         sessionId: req.finalizePrepared?.attempt?.sessionId || sessionId,
         attemptId: req.finalizePrepared?.attempt?.attemptId || attemptId,
+        finalizeJobId:
+          req.finalizePrepared?.attempt?.jobId ||
+          req.finalizePrepared?.attempt?.attemptId ||
+          attemptId,
+        executionAttemptId: req.finalizePrepared?.attempt?.executionAttemptId || null,
         httpStatus: reply.status,
         stage: FINALIZE_STAGES.PERSIST_RECOVERY,
-        jobState: req.finalizePrepared?.attempt?.state ?? 'failed',
+        jobState:
+          req.finalizePrepared?.attempt?.jobState ?? req.finalizePrepared?.attempt?.state ?? 'failed',
         ...describeFinalizeError(
           {
             code: req.finalizePrepared?.attempt?.failure?.error || 'STORY_FINALIZE_FAILED',

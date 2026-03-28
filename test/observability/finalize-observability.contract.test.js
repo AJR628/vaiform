@@ -128,6 +128,7 @@ test('finalize event emitter bridges attemptId into finalizeJobId and records me
       uid: 'user-1',
       sessionId: 'session-1',
       attemptId: 'attempt-1',
+      executionAttemptId: 'attempt-1:exec:1',
       workerId: 'worker-1',
       jobState: 'running',
     },
@@ -148,6 +149,7 @@ test('finalize event emitter bridges attemptId into finalizeJobId and records me
 
   assert.equal(recordedEvents[0].finalizeJobId, 'attempt-1');
   assert.equal(recordedEvents[0].attemptId, 'attempt-1');
+  assert.equal(recordedEvents[0].executionAttemptId, 'attempt-1:exec:1');
   assert.equal(recordedEvents[0].requestId, 'request-1');
   assert.equal(recordedEvents[0].workerId, 'worker-1');
   assert.equal(recordedEvents[0].sourceRole, 'worker');

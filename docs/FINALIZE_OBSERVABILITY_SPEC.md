@@ -4,7 +4,7 @@
 - Owner repo: backend
 - Source of truth for: finalize identifiers, stage names, event names, metrics, dashboards, alerts, and operator-answerability requirements
 - Canonical counterpart/source: `docs/FINALIZE_FACTORY_CONVERSION_PLAN.md`, `docs/FINALIZE_RUNTIME_TOPOLOGY_SPEC.md`, `docs/FINALIZE_JOB_MODEL_SPEC.md`
-- Last verified against: backend repo plus current mobile repo on 2026-03-26
+- Last verified against: backend repo plus current mobile repo on 2026-03-28
 
 ## Purpose
 
@@ -12,7 +12,7 @@ This document defines the observability contract required for the finalize facto
 
 Current observability truth exists today through request IDs, AsyncLocalStorage request context, structured backend logs, the incident runbook, and mobile in-memory diagnostics: `src/middleware/reqId.js:4-8`, `src/observability/request-context.js:48-67`, `src/observability/logger.js:18-39`, `docs/INCIDENT_TRACE_RUNBOOK.md:5-128`, `client/lib/diagnostics.ts:36-143`.
 
-Everything below under "Target requirement" is a Phase 0 design requirement for later implementation phases.
+Phase 3 now lands the canonical identifier contract, queue/job lifecycle signals, and control-room truth below. Later phases may extend this spec, but they must not break these identifiers or metric meanings.
 
 ## Current Observability Baseline
 
@@ -54,6 +54,7 @@ All finalize signals must use the following identifiers consistently.
 
 - The current caller-visible `attemptId` remains the external compatibility identifier and maps to `finalizeJobId`.
 - Internal worker retry lineage uses `executionAttemptId` and must not replace the caller-visible `attemptId`.
+- In Phase 3, `executionAttemptId` must come from the canonical embedded `executionAttempts[]` lineage on the durable finalize job doc. Observability must not synthesize placeholder execution ids anymore.
 
 ## Target Requirement: Canonical Stage Names
 
@@ -219,6 +220,12 @@ Metric names below are required. Implementation may use any metrics backend, but
 - `finalize_worker_saturation_ratio`
 - `finalize_provider_cooldown_active{provider}`
 - `finalize_billing_unsettled_jobs`
+
+Phase 3 sourcing rule:
+
+- queue depth, running count, retry-scheduled count, and job-state control-room views read canonical `jobState` from the existing durable finalize job doc, not the legacy single-doc interpretation alone
+- `attemptId` remains the external alias to `finalizeJobId`
+- `executionAttemptId` comes from the active embedded execution attempt lineage
 
 ### Histograms
 

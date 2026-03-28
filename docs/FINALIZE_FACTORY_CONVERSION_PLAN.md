@@ -4,7 +4,7 @@
 - Owner repo: backend
 - Source of truth for: target finalize factory architecture, frozen external contracts, phase-by-phase implementation authority, and required proof artifacts
 - Canonical counterpart/source: `docs/FINALIZE_CURRENT_STATE_AUDIT.md`, `docs/FINALIZE_JOB_MODEL_SPEC.md`, `docs/FINALIZE_OBSERVABILITY_SPEC.md`, `docs/FINALIZE_RUNTIME_TOPOLOGY_SPEC.md`
-- Last verified against: backend repo plus current mobile repo on 2026-03-26
+- Last verified against: backend repo plus current mobile repo on 2026-03-28
 
 ## Purpose
 
@@ -200,7 +200,7 @@ These contracts stay stable unless later repo evidence proves a change is unavoi
 
 ## Phase 3 — Durable Queue/Job Lifecycle Conversion
 
-- Objective: convert the current Firestore attempt model into the target `FinalizeJob` plus `FinalizeExecutionAttempt` lifecycle.
+- Objective: convert the current Firestore attempt model into canonical job truth plus real execution-attempt lineage without changing caller-facing behavior.
 - Why it matters: the current single-doc attempt model cannot express retry lineage cleanly while preserving one stable caller identity: `src/services/story-finalize.attempts.js:305-319`, `src/services/story-finalize.attempts.js:817-858`.
 - Exact motivating evidence:
   - one durable attempt doc currently owns admission, running state, retry schedule, and settlement: `src/services/story-finalize.attempts.js:136-161`, `src/services/story-finalize.attempts.js:395-418`, `src/services/story-finalize.attempts.js:764-781`
@@ -208,27 +208,39 @@ These contracts stay stable unless later repo evidence proves a change is unavoi
 - Scope / blast radius: backend job storage, worker claim logic, status projection.
 - Ownership: backend with mobile/web contract verification.
 - Deliverables:
-  - job/attempt storage implementation matching `docs/FINALIZE_JOB_MODEL_SPEC.md`
-  - canonical lifecycle state machine
-  - dead-letter and stuck-job handling
+  - canonical `FinalizeJob` fields on the existing durable `idempotency/<uid:attemptId>` doc keyspace
+  - embedded `executionAttempts[]` plus `currentExecution` lineage on that same durable doc
+  - canonical lifecycle state machine for enqueue, claim, start, retry, settle, and stale-worker reap
+  - compatibility mirrors kept only for existing callers, routes, tests, and rollback safety
 - Acceptance criteria:
   - one stable external job identity remains replayable
   - retry lineage is durable and inspectable
-  - queue backlog and terminal failures are easy to query
+  - stale worker loss maps to `executionAttempt.state = abandoned` plus existing caller-visible terminal failure semantics
+  - queue backlog and terminal failures are easy to query from canonical job state
 - What stays frozen:
   - external `attemptId` semantics
   - `renderRecovery` contract
   - client recovery/readback paths
 - What may change:
-  - internal Firestore collections/doc shapes
-  - claim/lease/retry implementation
+  - additive fields on the existing durable `idempotency` doc
+  - embedded execution lineage and canonical `jobState` sourcing
+  - claim/lease/retry implementation inside the current API/worker split
 - Dependencies: Phase 2 worker split.
 - Required proof artifacts:
-  - state-machine tests
-  - idempotency/replay tests
-  - retry/dead-letter tests
-  - migration/backfill plan if data shape changes
-  - doc updates to job model and current-state audit
+  - worker-runtime proof that queued work still survives worker downtime and completes after worker startup without resubmission
+  - canonical job/lineage tests for enqueue, retry lineage growth, and stale-worker reap
+  - idempotency/replay/conflict tests proving caller envelopes stayed stable
+  - diag/observability tests proving queue truth comes from canonical `jobState` and real `executionAttemptId`
+  - doc updates to job model, observability, runtime topology, and current-state audit
+
+### Phase 3 Frozen Decisions
+
+- Reuse the existing durable finalize doc keyspace as the canonical `FinalizeJob` record in this phase.
+- Do not create a second top-level jobs collection in Phase 3.
+- Store execution lineage as embedded `executionAttempts[]` plus `currentExecution` on the same durable doc.
+- Keep `storyFinalizeSessions` as a helper/lock record only; it is not the canonical status owner.
+- Keep top-level compatibility mirror fields only where current callers, routes, diag, worker logic, or rollback safety still need them.
+- Phase 4 global concurrency/provider throttle/backpressure work remains deferred until after Phase 3 job truth is landed.
 
 ## Phase 4 — Global Concurrency / Provider Throttle / Backpressure
 

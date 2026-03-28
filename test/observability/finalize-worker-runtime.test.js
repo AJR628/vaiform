@@ -132,6 +132,15 @@ test('API startup does not bootstrap finalize execution and accepted finalize st
   const attemptDoc = readDoc('idempotency', `user-1:${attemptId}`);
   assert.equal(attemptDoc.state, 'queued');
   assert.equal(attemptDoc.isActive, true);
+  assert.equal(attemptDoc.schemaVersion, 3);
+  assert.equal(attemptDoc.jobId, attemptId);
+  assert.equal(attemptDoc.externalAttemptId, attemptId);
+  assert.equal(attemptDoc.jobState, 'queued');
+  assert.equal(attemptDoc.currentExecution.executionAttemptId, `${attemptId}:exec:1`);
+  assert.equal(attemptDoc.currentExecution.state, 'created');
+  assert.equal(attemptDoc.executionAttempts.length, 1);
+  assert.equal(attemptDoc.executionAttempts[0].executionAttemptId, `${attemptId}:exec:1`);
+  assert.equal(attemptDoc.executionAttempts[0].state, 'created');
   assert.equal(readStorySession('user-1', sessionId)?.renderRecovery?.state, 'pending');
 });
 
@@ -177,14 +186,49 @@ test('an accepted finalize remains queued while workers are down and completes a
 
   assert.equal(attemptDoc.state, 'done');
   assert.equal(attemptDoc.shortId, `short-${attemptId}`);
+  assert.equal(attemptDoc.jobId, attemptId);
+  assert.equal(attemptDoc.jobState, 'settled');
+  assert.equal(attemptDoc.executionAttempts.length, 1);
+  assert.equal(attemptDoc.executionAttempts[0].executionAttemptId, `${attemptId}:exec:1`);
+  assert.equal(attemptDoc.executionAttempts[0].state, 'succeeded');
+  assert.equal(attemptDoc.currentExecution.executionAttemptId, `${attemptId}:exec:1`);
+  assert.equal(attemptDoc.currentExecution.state, 'succeeded');
   assert.equal(session?.renderRecovery?.state, 'done');
   assert.equal(session?.renderRecovery?.attemptId, attemptId);
   assert.equal(session?.finalVideo?.jobId, `short-${attemptId}`);
   assert.ok(snapshot.recentEvents.some((event) => event.event === FINALIZE_EVENTS.WORKER_STARTED));
-  assert.ok(snapshot.recentEvents.some((event) => event.event === FINALIZE_EVENTS.JOB_CLAIMED));
-  assert.ok(snapshot.recentEvents.some((event) => event.event === FINALIZE_EVENTS.JOB_STARTED));
-  assert.ok(snapshot.recentEvents.some((event) => event.event === FINALIZE_EVENTS.JOB_COMPLETED));
-  assert.ok(snapshot.recentEvents.some((event) => event.event === FINALIZE_EVENTS.JOB_SETTLED));
+  assert.ok(
+    snapshot.recentEvents.some(
+      (event) =>
+        event.event === FINALIZE_EVENTS.JOB_CLAIMED &&
+        event.executionAttemptId === `${attemptId}:exec:1` &&
+        event.finalizeJobId === attemptId
+    )
+  );
+  assert.ok(
+    snapshot.recentEvents.some(
+      (event) =>
+        event.event === FINALIZE_EVENTS.JOB_STARTED &&
+        event.executionAttemptId === `${attemptId}:exec:1` &&
+        event.finalizeJobId === attemptId
+    )
+  );
+  assert.ok(
+    snapshot.recentEvents.some(
+      (event) =>
+        event.event === FINALIZE_EVENTS.JOB_COMPLETED &&
+        event.executionAttemptId === `${attemptId}:exec:1` &&
+        event.finalizeJobId === attemptId
+    )
+  );
+  assert.ok(
+    snapshot.recentEvents.some(
+      (event) =>
+        event.event === FINALIZE_EVENTS.JOB_SETTLED &&
+        event.executionAttemptId === `${attemptId}:exec:1` &&
+        event.finalizeJobId === attemptId
+    )
+  );
 });
 
 test('worker runtime can restart without changing API admission handling', async () => {
