@@ -137,6 +137,11 @@ Phase 1 clarification on repeated happy-path stages:
 - `finalize.readback.library_fallback_hit`
 - `finalize.readback.library_fallback_miss`
 
+Phase 5 recovery-poll sourcing rule:
+
+- `finalize.recovery.poll` must source `attemptId`, `jobState`, and `shortId` from canonical finalize attempt truth as resolved by `src/services/finalize-status.service.js`, not from raw session `renderRecovery` alone
+- when the helper chooses among active-lock, session-hint, latest-attempt, or session-compat paths, observability may include `resolutionSource` so operators can see which canonical-read branch produced the returned recovery state
+
 ### Provider events
 
 - `finalize.provider.request`
@@ -186,6 +191,14 @@ Phase 4 clarification:
 - `failureReason`
 - `retryAfterMs` when retry scheduled
 - `provider` when applicable
+
+### Recovery poll events
+
+- all common fields
+- `attemptId`
+- `jobState`
+- `shortId`
+- `resolutionSource` when canonical recovery was resolved through the Phase 5 helper
 
 ### Billing events
 

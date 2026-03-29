@@ -8,7 +8,7 @@
 
 ## Purpose
 
-This document freezes how finalize works after Phase 4 landed and before Phase 5 or Phase 6 change internals.
+This document freezes how finalize works after Phase 5 landed and before Phase 6 changes tuning or load-validation internals.
 
 Every statement below is current-state repo truth unless explicitly marked otherwise.
 
@@ -78,9 +78,15 @@ If docs and code disagree, code wins for this audit.
 ### 5. Session recovery state
 
 - On a newly enqueued finalize attempt, the middleware persists `renderRecovery.pending` before replying `202`: `src/middleware/idempotency.firestore.js:69-93`.
-- `renderRecovery` is currently stored inside the broader session `story.json` blob through `saveJSON/loadJSON`, not in Firestore: `src/services/story.service.js:414-417`, `src/services/story.service.js:422-433`, `src/services/story.service.js:436-462`.
-- The current `renderRecovery` shape is `{ state, attemptId, startedAt, updatedAt, shortId, finishedAt, failedAt, code, message }`: `src/services/story.service.js:349-409`.
-- `GET /api/story/:sessionId` is the canonical recovery poll surface and logs `story.recovery.poll` when `renderRecovery.state` exists: `src/routes/story.routes.js:1183-1213`.
+- `renderRecovery` is still stored inside the broader session `story.json` blob through `saveJSON/loadJSON`, but after Phase 5 it is compatibility storage only rather than the primary status source: `src/services/story.service.js:414-417`, `src/services/story.service.js:422-433`, `src/services/story.service.js:436-462`, `src/services/finalize-status.service.js`.
+- The canonical caller-facing recovery projection is now `attempt.projection.renderRecovery` on the finalize job doc in `idempotency`: `src/services/story-finalize.attempts.js`, `src/services/finalize-status.service.js`.
+- The caller-visible `renderRecovery` shape remains `{ state, attemptId, startedAt, updatedAt, shortId, finishedAt, failedAt, code, message }`: `src/services/story.service.js:349-409`, `src/services/finalize-status.service.js`.
+- `GET /api/story/:sessionId` remains the canonical recovery poll surface, but it now overlays canonical attempt truth via `src/services/finalize-status.service.js` and emits `story.recovery.poll` from canonical attempt/projection data rather than raw session state: `src/routes/story.routes.js`, `src/services/finalize-status.service.js`.
+- The frozen Phase 5 resolution order is now:
+  1. active `storyFinalizeSessions` helper lock -> active attempt
+  2. attempt referenced by `session.renderRecovery.attemptId`
+  3. latest finalize attempt for the same `uid + sessionId + flow`
+  4. short/readback reconciliation using settled `shortId`
 
 ### 6. Background execution
 
@@ -96,13 +102,13 @@ If docs and code disagree, code wins for this audit.
   - embedded execution lineage now lives on that same durable job doc through `executionAttempts[]` plus `currentExecution`
   - same-session active locks still live in `storyFinalizeSessions`, but only as helper/lock records
   - queue claim still uses the existing `idempotency` query and then reads canonical `jobState` plus embedded execution lineage from the claimed durable doc
-  - the required composite index is source-controlled: `firestore.indexes.json:11-19`, `firebase.json:1-5`
+  - the required composite indexes are source-controlled for both queue claim ordering and the Phase 5 latest-attempt fallback query: `firestore.indexes.json`, `firebase.json:1-5`
 
 ### 8. Current finalize pipeline internals
 
 - `finalizeStory()` is not render-only. It can still backfill missing story generation, shot planning, clip search, and caption timings before rendering: `src/services/story.service.js:2522-2586`.
 - Finalize segment renders flow through `renderVideoQuoteOverlay()`. Active backend colorspace policy is now explicit there: raster/PNG mode never injects the colorspace filter, non-raster `auto` only applies `colorspace=all=bt709:fast=1` for explicit `bt709` inputs, the helper retries once without that filter only for the known colorspace failure family, and the shared render-job `colorMetaCache` now carries job-local incompatibility memory so later segments in the same job skip the colorspace-first attempt after one classified retry success; unrelated FFmpeg failures do not take that fallback: `src/services/story.service.js:2037-2054`, `src/services/story.service.js:2327-2344`, `src/utils/ffmpeg.video.js:172-390`, `src/utils/ffmpeg.video.js:2309-2362`, `src/utils/ffmpeg.video.js:2535-2562`.
-- Successful render uploads the final video and thumbnail, writes `shorts/<jobId>`, persists `session.finalVideo.jobId`, sets `session.status = rendered`, and then persists `renderRecovery.done`: `src/services/story.service.js:2373-2455`, `src/services/story.service.js:2588-2603`.
+- Successful render uploads the final video and thumbnail, writes `shorts/<jobId>`, persists `session.finalVideo.jobId`, sets `session.status = rendered`, and then persists `renderRecovery.done`; Phase 5 read paths now reconcile that compatibility session data back against canonical attempt `result.shortId` and `projection.renderRecovery.shortId`: `src/services/story.service.js:2373-2455`, `src/services/story.service.js:2588-2603`, `src/services/finalize-status.service.js`.
 - Failure persists `renderRecovery.failed` and rethrows: `src/services/story.service.js:2604-2625`.
 
 ### 9. Billing reserve / settle / release truth
@@ -172,9 +178,9 @@ Phase 3 keeps these top-level fields readable and writable on the canonical dura
 | Execution lineage | Embedded `executionAttempts[]` plus `currentExecution` on that same `idempotency` job doc | `src/services/story-finalize.attempts.js` |
 | Same-session active lock | Firestore `storyFinalizeSessions` helper/lock doc | `src/services/story-finalize.attempts.js` |
 | Usage reserve/release/settle ledger | Firestore `users/<uid>.usage` | `src/services/usage.service.js:65-134`, `src/services/story-finalize.attempts.js:431-444`, `src/services/story-finalize.attempts.js:748-762` |
-| Client recovery projection | Session `story.json.renderRecovery` | `src/services/story.service.js:349-462` |
+| Client recovery projection | Finalize job `projection.renderRecovery`; session `story.json.renderRecovery` remains compatibility-only storage | `src/services/story-finalize.attempts.js`, `src/services/finalize-status.service.js`, `src/services/story.service.js:349-462` |
 | Completed short read model | Firestore `shorts/<jobId>` plus storage objects | `src/services/story.service.js:2415-2455`, `src/controllers/shorts.controller.js:122-227` |
-| Client-facing current render status | `GET /api/story/:sessionId` response | `src/routes/story.routes.js:1183-1213`, `client/screens/story-editor/useStoryEditorFinalize.ts:177-249`, `web/public/js/pages/creative/creative.article.mjs:3863-3910` |
+| Client-facing current render status | `GET /api/story/:sessionId` response projected by `src/services/finalize-status.service.js` | `src/routes/story.routes.js`, `src/services/finalize-status.service.js`, `client/screens/story-editor/useStoryEditorFinalize.ts:177-249`, `web/public/js/pages/creative/creative.article.mjs:3863-3910` |
 
 ## Current Runtime Topology
 
@@ -223,8 +229,8 @@ These behaviors are frozen for the factory conversion unless later code evidence
 
 ### GET /api/story/:sessionId recovery expectations
 
-- This remains the canonical caller-facing recovery read path for both mobile and the active web creative caller: `src/routes/story.routes.js:1183-1213`, `client/screens/story-editor/useStoryEditorFinalize.ts:177-249`, `web/public/js/pages/creative/creative.article.mjs:3863-3910`.
-- Additive `renderRecovery` remains caller-visible and keyed by the current external `attemptId` identity: `src/services/story.service.js:349-409`, `client/screens/story-editor/model.ts:63-72`.
+- This remains the canonical caller-facing recovery read path for both mobile and the active web creative caller: `src/routes/story.routes.js`, `src/services/finalize-status.service.js`, `client/screens/story-editor/useStoryEditorFinalize.ts:177-249`, `web/public/js/pages/creative/creative.article.mjs:3863-3910`.
+- Additive `renderRecovery` remains caller-visible and keyed by the current external `attemptId` identity, but the route now derives it from canonical finalize job truth before returning the session: `src/services/story.service.js:349-409`, `src/services/finalize-status.service.js`, `client/screens/story-editor/model.ts:63-72`.
 
 ### Additive billing metadata
 
@@ -253,7 +259,7 @@ These behaviors are frozen for the factory conversion unless later code evidence
 - `docs/API_CONTRACT.md` now documents both established top-level finalize exceptions (`shortId` and `finalize`), so the earlier drift note is closed: `docs/API_CONTRACT.md:56-66`.
 - Mobile TypeScript does not strongly encode session truth because `StorySession` is still `any`; current caller truth is therefore the hooks/screens, not the type file: `client/types/story.ts:1-6`.
 - Active web creative caller behavior is not fully described by the mobile contract docs and must be frozen alongside mobile for this conversion: `docs/ACTIVE_SURFACES.md:83-85`, `web/public/js/pages/creative/creative.article.mjs:3998-4065`.
-- Phase 5 storage/recovery tightening and Phase 6 threshold tuning/load testing remain deferred. Phase 4 lands the shared pressure-control mechanism and truthful control-room behavior only.
+- Phase 5 storage/recovery tightening is now landed through the canonical finalize-status read helper and GET/replay projection alignment. Phase 6 threshold tuning/load testing remains deferred.
 
 ## Out Of Scope For This Audit
 

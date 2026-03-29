@@ -25,6 +25,10 @@ import {
   refreshStorySessionHeuristicEstimate,
   sanitizeStorySessionForClient,
 } from '../services/story.service.js';
+import {
+  getCanonicalFinalizeStatusForSession,
+  overlayCanonicalFinalizeStatusOnSession,
+} from '../services/finalize-status.service.js';
 import { extractStyleOnly } from '../utils/caption-style-helper.js';
 import { ok, fail } from '../http/respond.js';
 import { isOutboundPolicyError } from '../utils/outbound.fetch.js';
@@ -74,6 +78,25 @@ const sendMappedStoryFailure = (req, res, mapped) => {
   }
   return fail(req, res, mapped.status, mapped.error, mapped.detail);
 };
+
+async function overlayCanonicalFinalizeRecoveryForResponse({
+  uid,
+  sessionId,
+  reply,
+  prepared,
+}) {
+  if (!reply?.body?.data || typeof reply.body.data !== 'object') return reply;
+  if (!prepared || !['enqueued', 'active_same_key', 'done_same_key'].includes(prepared.kind)) {
+    return reply;
+  }
+  const canonicalStatus = await getCanonicalFinalizeStatusForSession({
+    uid,
+    sessionId: prepared?.attempt?.sessionId || sessionId,
+    session: reply.body.data,
+  });
+  reply.body.data = overlayCanonicalFinalizeStatusOnSession(reply.body.data, canonicalStatus);
+  return reply;
+}
 
 function phase2StoryFailureFromError(error) {
   const rawCode = typeof error?.code === 'string' ? error.code : null;
@@ -986,6 +1009,12 @@ r.post('/finalize', idempotencyFinalize({ getSession: getStorySession }), async 
     if (!reply) {
       throw new Error('Finalize reply was not prepared by idempotency middleware');
     }
+    await overlayCanonicalFinalizeRecoveryForResponse({
+      uid: req.user?.uid ?? null,
+      sessionId,
+      reply,
+      prepared: req.finalizePrepared,
+    });
 
     if (req.finalizePrepared?.kind === 'enqueued') {
       emitFinalizeEvent('info', FINALIZE_EVENTS.API_ACCEPTED, {
@@ -1355,11 +1384,20 @@ r.get('/:sessionId', async (req, res) => {
       return fail(req, res, 404, 'SESSION_NOT_FOUND', 'Session not found');
     }
 
-    if (session.renderRecovery?.state) {
+    const finalizeStatus = await getCanonicalFinalizeStatusForSession({
+      uid: req.user.uid,
+      sessionId,
+      session,
+    });
+    const sessionForResponse = overlayCanonicalFinalizeStatusOnSession(session, finalizeStatus);
+    const canonicalRecovery = finalizeStatus?.renderRecovery;
+    const canonicalAttempt = finalizeStatus?.attempt;
+
+    if (canonicalRecovery?.state) {
       setRequestContextFromReq(req, {
         sessionId,
-        attemptId: session.renderRecovery.attemptId || null,
-        shortId: session.renderRecovery.shortId || null,
+        attemptId: canonicalAttempt?.attemptId || canonicalRecovery.attemptId || null,
+        shortId: finalizeStatus?.shortTruth?.shortId || canonicalRecovery.shortId || null,
       });
       emitFinalizeEvent('info', FINALIZE_EVENTS.RECOVERY_POLL, {
         sourceRole: FINALIZE_SOURCE_ROLES.API,
@@ -1367,18 +1405,20 @@ r.get('/:sessionId', async (req, res) => {
         route: req.originalUrl,
         uid: req.user?.uid ?? null,
         sessionId,
-        attemptId: session.renderRecovery.attemptId || null,
-        shortId: session.renderRecovery.shortId || null,
+        attemptId: canonicalAttempt?.attemptId || canonicalRecovery.attemptId || null,
+        shortId: finalizeStatus?.shortTruth?.shortId || canonicalRecovery.shortId || null,
         stage: FINALIZE_STAGES.CLIENT_RECOVERY_POLL,
-        jobState: session.renderRecovery.state || null,
+        jobState: canonicalAttempt?.jobState ?? canonicalRecovery.state ?? null,
+        resolutionSource: finalizeStatus?.source || null,
       });
       logger.info('story.recovery.poll', {
         routeStatus: `${req.method} ${req.originalUrl}`,
-        recoveryState: session.renderRecovery.state,
+        recoveryState: canonicalRecovery.state,
+        resolutionSource: finalizeStatus?.source || null,
       });
     }
 
-    return okStorySession(req, res, session);
+    return okStorySession(req, res, sessionForResponse);
   } catch (e) {
     logger.error('story.get.failed', {
       routeStatus: `${req.method} ${req.originalUrl}`,

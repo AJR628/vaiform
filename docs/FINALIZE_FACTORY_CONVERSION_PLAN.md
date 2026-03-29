@@ -31,8 +31,8 @@ These are design decisions for the conversion target. They are not claims that t
 ### 3. Canonical current render status after conversion
 
 - Decision: the canonical backend source of truth for current finalize status after conversion is the `FinalizeJob` record defined in `docs/FINALIZE_JOB_MODEL_SPEC.md`.
-- Compatibility rule: `GET /api/story/:sessionId` remains the canonical caller-facing recovery read path, and `renderRecovery` remains an additive projection derived from job truth.
-- Why: current callers already depend on `GET /api/story/:sessionId`, but the current backend truth is fragmented across attempts, session JSON, usage, and shorts: `src/routes/story.routes.js:1183-1213`, `src/services/story.service.js:436-462`, `src/services/story-finalize.attempts.js:395-418`.
+- Compatibility rule: `GET /api/story/:sessionId` remains the canonical caller-facing recovery read path, and `renderRecovery` remains an additive projection derived from job truth through `src/services/finalize-status.service.js`.
+- Why: current callers already depend on `GET /api/story/:sessionId`, but the backend truth is fragmented across attempts, session JSON, usage, and shorts until the Phase 5 canonical read helper overlays the caller projection from job truth: `src/routes/story.routes.js`, `src/services/finalize-status.service.js`, `src/services/story.service.js:436-462`, `src/services/story-finalize.attempts.js:395-418`.
 
 ### 4. Active web creative surfaces frozen alongside mobile
 
@@ -299,7 +299,7 @@ These contracts stay stable unless later repo evidence proves a change is unavoi
 - Freeze overload backlog definition to `queued + running + retry_scheduled`.
 - Freeze overload rejection semantics to `503 SERVER_BUSY` plus `Retry-After`, with no usage reserve, no finalize job doc, and no session lock/helper doc creation.
 - Limit provider-control scope in Phase 4 to finalize-relevant OpenAI, story-search, and TTS pressure only.
-- Keep Phase 5 storage/recovery tightening and Phase 6 threshold tuning/load testing deferred.
+- Keep Phase 6 threshold tuning/load testing deferred.
 
 ## Phase 5 — State/Storage/Recovery Tightening
 
@@ -330,6 +330,19 @@ These contracts stay stable unless later repo evidence proves a change is unavoi
   - projection tests for `renderRecovery`
   - billing/readback consistency tests
   - doc updates to current-state audit and job spec
+
+### Phase 5 landed implementation note
+
+- Phase 5 is now landed through `src/services/finalize-status.service.js`.
+- The frozen resolution order is:
+  1. active `storyFinalizeSessions` helper lock -> active attempt
+  2. attempt referenced by `session.renderRecovery.attemptId`
+  3. latest finalize attempt for the same `uid + sessionId + flow`
+  4. short/readback reconciliation using settled `shortId`
+- `GET /api/story/:sessionId` and same-key replay now both project caller-facing `renderRecovery` from that helper, so replay and GET cannot drift for the same attempt.
+- `attempt.projection.renderRecovery` is now the canonical caller projection; session `renderRecovery` remains compatibility-only storage.
+- Because step 3 is live, the repo now ships the minimal composite Firestore index for `idempotency(flow ASC, uid ASC, sessionId ASC, createdAt DESC)` in `firestore.indexes.json`.
+- Phase 6 threshold tuning/load testing remains deferred.
 
 ## Phase 6 — Load Testing, Thresholds, And Runbooks
 

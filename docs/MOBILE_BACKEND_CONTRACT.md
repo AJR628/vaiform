@@ -85,12 +85,12 @@ Purpose: canonical backend-owned contract, guarantees, and open mismatch record 
 
 - `GET /api/story/:sessionId`
   - Mobile caller(s): `client/screens/ScriptScreen.tsx:64-84`, `client/screens/story-editor/useStoryEditorSession.ts:36-78`, `client/screens/story-editor/useStoryEditorFinalize.ts:182-225`
-  - Backend handler(s): `src/routes/story.routes.js:1147-1178`, `src/services/story.service.js:355-357`
+  - Backend handler(s): `src/routes/story.routes.js`, `src/services/finalize-status.service.js`, `src/services/story.service.js:355-357`
   - Recovery-state writer(s): `src/services/story.service.js:2325-2417`
   - Mobile sends: no body.
   - Backend returns: full session in `data`.
   - Mobile reads: `story.sentences` with helper fallbacks, `shots`, `overlayCaption.placement`, additive `billingEstimate.estimatedSec`, `shot.selectedClip.thumbUrl`, `shot.searchQuery`, and `renderRecovery` during finalize recovery polling and same-session restart-safe finalize resume.
-  - Recovery role: this route remains the canonical finalize recovery contract. Additive `renderRecovery` fields expose `{ state, attemptId, startedAt, updatedAt, shortId, finishedAt, failedAt, code, message }`, and mobile trusts them only when `renderRecovery.attemptId` matches the active finalize attempt.
+  - Recovery role: this route remains the canonical finalize recovery contract. Additive `renderRecovery` fields still expose `{ state, attemptId, startedAt, updatedAt, shortId, finishedAt, failedAt, code, message }`, and mobile still trusts them only when `renderRecovery.attemptId` matches the active finalize attempt. Backend Phase 5 now derives that additive projection from canonical finalize attempt/job truth through `src/services/finalize-status.service.js`; session `renderRecovery` remains compatibility storage only.
   - Stable failure now: `404 SESSION_NOT_FOUND`.
   - Diagnostics note: failed recovery polls now keep `requestId` in normalized mobile failures and enrich diagnostics with `sessionId` plus the active finalize `attemptId`.
 
@@ -198,10 +198,10 @@ Purpose: canonical backend-owned contract, guarantees, and open mismatch record 
 
 - `POST /api/story/finalize`
   - Mobile caller(s): `client/screens/story-editor/useStoryEditorFinalize.ts:344-562`, `client/api/client.ts:756-902`
-  - Backend handler(s): `src/routes/story.routes.js`, `src/middleware/idempotency.firestore.js`, `src/services/story-finalize.attempts.js`, `src/services/story-finalize.runner.js`, `src/services/story.service.js`
+  - Backend handler(s): `src/routes/story.routes.js`, `src/middleware/idempotency.firestore.js`, `src/services/story-finalize.attempts.js`, `src/services/story-finalize.runner.js`, `src/services/finalize-status.service.js`, `src/services/story.service.js`
   - Mobile sends now: `{ sessionId }` plus `X-Idempotency-Key`.
   - Backend requires now: `{ sessionId }` plus `X-Idempotency-Key`.
-  - Firestore deploy prerequisite: the queued-attempt claim query in `src/services/story-finalize.attempts.js` depends on the composite index tracked in root `firestore.indexes.json` for `idempotency(flow ASC, state ASC, createdAt ASC)`. Root `firebase.json` now wires `firestore.rules` plus `firestore.indexes.json`, and the repo-managed deploy path is `firebase deploy --project <firebase-project-id> --only firestore`.
+  - Firestore deploy prerequisite: the queued-attempt claim query in `src/services/story-finalize.attempts.js` depends on `idempotency(flow ASC, state ASC, createdAt ASC)`, and the Phase 5 latest-attempt canonical-status fallback depends on `idempotency(flow ASC, uid ASC, sessionId ASC, createdAt DESC)`. Both composite indexes are tracked in root `firestore.indexes.json`. Root `firebase.json` now wires `firestore.rules` plus `firestore.indexes.json`, and the repo-managed deploy path is `firebase deploy --project <firebase-project-id> --only firestore`.
   - Backend returns now:
     - initial accepted response: `202` with full session in `data`, top-level `shortId: null`, and additive `finalize: { state: "pending", attemptId, pollSessionId }`
     - same-key active replay: `202` with the same pending finalize metadata
@@ -221,7 +221,7 @@ Purpose: canonical backend-owned contract, guarantees, and open mismatch record 
     - overload rejection is now based on shared backlog definition `queued + running + retry_scheduled`
     - the legacy blocking `POST /api/story/render` route still owns direct render-slot `503 SERVER_BUSY` behavior
   - Current 402 semantics: backend uses time-based billing failures such as `INSUFFICIENT_RENDER_TIME`, and mobile now mirrors that render-time wording.
-  - Recovery contract: backend persists additive `renderRecovery.pending` before returning `202`, then persists `renderRecovery.done` or `renderRecovery.failed` with the same attempt identity. On `202 pending`, `409 FINALIZE_ALREADY_ACTIVE`, `TIMEOUT`, `NETWORK_ERROR`, or legacy same-key in-progress replay, mobile keeps or adopts the active attempt key and polls `GET /api/story/:sessionId` until that same-attempt recovery state reaches a terminal result.
+  - Recovery contract: backend persists additive `renderRecovery.pending` before returning `202`, then persists `renderRecovery.done` or `renderRecovery.failed` with the same attempt identity. Phase 5 keeps that caller contract frozen but makes `GET /api/story/:sessionId` and same-key replay derive caller-facing recovery from canonical finalize attempt truth first, with session `renderRecovery` retained as compatibility-only storage. On `202 pending`, `409 FINALIZE_ALREADY_ACTIVE`, `TIMEOUT`, `NETWORK_ERROR`, or legacy same-key in-progress replay, mobile keeps or adopts the active attempt key and polls `GET /api/story/:sessionId` until that same-attempt recovery state reaches a terminal result.
   - Contract caveat: recovery is now same-session and restart-safe through stored finalize attempt identity, but it does not widen into a global recovery inbox or background mobile job system.
   - Diagnostics note: finalize, idempotent replay, and recovery boundary events now correlate by `requestId` plus additive `sessionId` / `attemptId`, and mobile failure diagnostics enrich the same request/attempt context in memory.
   - Observability caveat: `/diag/finalize-control-room` now distinguishes shared-system pressure truth from local-process observability; Phase 4 does not turn the full in-process metrics registry into a distributed metrics platform.

@@ -82,6 +82,114 @@ function buildShot(id, sentenceIndex, query, durationSec = 4) {
   };
 }
 
+function buildFinalizeAttemptDoc({
+  uid = 'user-1',
+  attemptId = 'idem-finalize-test',
+  sessionId = 'story-finalize-test',
+  state = 'queued',
+  jobState = null,
+  shortId = null,
+  status = state === 'done' ? 200 : 202,
+  createdAt = '2026-03-19T00:00:00.000Z',
+  updatedAt = '2026-03-19T00:00:05.000Z',
+  enqueuedAt = createdAt,
+  startedAt = null,
+  finishedAt = null,
+  renderRecovery = null,
+  result = null,
+} = {}) {
+  const resolvedJobState =
+    jobState ||
+    (state === 'done'
+      ? 'settled'
+      : state === 'failed' || state === 'expired'
+        ? 'failed_terminal'
+        : state === 'running'
+          ? 'started'
+          : 'queued');
+  const resolvedRenderRecovery =
+    renderRecovery ||
+    {
+      state: state === 'done' ? 'done' : state === 'failed' || state === 'expired' ? 'failed' : 'pending',
+      attemptId,
+      shortId: state === 'done' ? shortId : null,
+      startedAt: startedAt || createdAt,
+      updatedAt,
+      finishedAt: state === 'done' ? finishedAt || updatedAt : null,
+      failedAt: state === 'failed' || state === 'expired' ? finishedAt || updatedAt : null,
+      code: state === 'failed' || state === 'expired' ? 'STORY_FINALIZE_FAILED' : null,
+      message: state === 'failed' || state === 'expired' ? 'Failed to finalize story' : null,
+    };
+  return {
+    flow: 'story.finalize',
+    uid,
+    attemptId,
+    jobId: attemptId,
+    externalAttemptId: attemptId,
+    sessionId,
+    state,
+    jobState: resolvedJobState,
+    isActive: state === 'queued' || state === 'running',
+    status,
+    shortId,
+    createdAt: timestamp(createdAt),
+    updatedAt: timestamp(updatedAt),
+    enqueuedAt: timestamp(enqueuedAt),
+    startedAt: startedAt ? timestamp(startedAt) : null,
+    finishedAt: finishedAt ? timestamp(finishedAt) : null,
+    expiresAt: timestamp('2026-03-19T01:00:00.000Z'),
+    availableAfter: resolvedJobState === 'retry_scheduled' ? timestamp('2026-03-19T00:01:00.000Z') : null,
+    usageReservation: {
+      estimatedSec: 8,
+      reservedSec: state === 'queued' || state === 'running' ? 8 : 0,
+    },
+    billingSettlement:
+      state === 'done'
+        ? {
+            estimatedSec: 8,
+            billedSec: 8,
+            settledAt: timestamp(finishedAt || updatedAt),
+            source: 'finalVideo.durationSec',
+          }
+        : null,
+    failure:
+      state === 'failed' || state === 'expired'
+        ? {
+            error: resolvedRenderRecovery.code,
+            detail: resolvedRenderRecovery.message,
+          }
+        : null,
+    result: result || {
+      shortId: state === 'done' ? shortId : null,
+      status,
+      failure: null,
+    },
+    projection: {
+      renderRecovery: resolvedRenderRecovery,
+    },
+  };
+}
+
+function buildFinalizeSessionLock({
+  uid = 'user-1',
+  sessionId = 'story-finalize-test',
+  attemptId = 'idem-finalize-test',
+  state = 'queued',
+  createdAt = '2026-03-19T00:00:00.000Z',
+  updatedAt = '2026-03-19T00:00:05.000Z',
+} = {}) {
+  return {
+    flow: 'story.finalize',
+    uid,
+    sessionId,
+    attemptId,
+    state,
+    createdAt: timestamp(createdAt),
+    updatedAt: timestamp(updatedAt),
+    expiresAt: timestamp('2026-03-19T01:00:00.000Z'),
+  };
+}
+
 function withEnv(patch) {
   const previous = new Map();
   for (const [key, value] of Object.entries(patch)) {
@@ -574,6 +682,289 @@ test('GET /api/story/:sessionId preserves recovery polling fields mobile reads a
   assert.equal(result.json.success, true);
   assert.equal(result.json.data.renderRecovery.state, 'pending');
   assert.equal(result.json.data.renderRecovery.attemptId, 'idem-recovery-1');
+});
+
+test('GET /api/story/:sessionId returns canonical pending when session recovery is missing but an active lock + attempt exist', async () => {
+  seedStorySession(
+    'user-1',
+    buildBaseSession({
+      id: 'story-recovery-canonical-pending',
+      status: 'rendering',
+      story: {
+        sentences: ['A', 'B'],
+      },
+    })
+  );
+  seedFirestoreDoc(
+    'idempotency',
+    'user-1:idem-recovery-canonical-pending',
+    buildFinalizeAttemptDoc({
+      attemptId: 'idem-recovery-canonical-pending',
+      sessionId: 'story-recovery-canonical-pending',
+      state: 'running',
+      jobState: 'started',
+      createdAt: '2026-03-19T01:00:00.000Z',
+      updatedAt: '2026-03-19T01:00:10.000Z',
+      startedAt: '2026-03-19T01:00:05.000Z',
+      renderRecovery: {
+        state: 'pending',
+        attemptId: 'idem-recovery-canonical-pending',
+        shortId: null,
+        startedAt: '2026-03-19T01:00:05.000Z',
+        updatedAt: '2026-03-19T01:00:10.000Z',
+        finishedAt: null,
+        failedAt: null,
+        code: null,
+        message: null,
+      },
+    })
+  );
+  seedFirestoreDoc(
+    'storyFinalizeSessions',
+    'user-1:story-recovery-canonical-pending',
+    buildFinalizeSessionLock({
+      sessionId: 'story-recovery-canonical-pending',
+      attemptId: 'idem-recovery-canonical-pending',
+      state: 'running',
+      createdAt: '2026-03-19T01:00:00.000Z',
+      updatedAt: '2026-03-19T01:00:10.000Z',
+    })
+  );
+
+  const result = await requestJson('/api/story/story-recovery-canonical-pending');
+  assert.equal(result.status, 200);
+  assert.equal(result.json.success, true);
+  assert.equal(result.json.data.renderRecovery.state, 'pending');
+  assert.equal(result.json.data.renderRecovery.attemptId, 'idem-recovery-canonical-pending');
+  assert.equal(result.json.data.renderRecovery.shortId, null);
+});
+
+test('GET /api/story/:sessionId returns canonical done + shortId when the settled attempt is newer than the session projection', async () => {
+  seedStorySession(
+    'user-1',
+    buildBaseSession({
+      id: 'story-recovery-canonical-done',
+      status: 'rendered',
+      story: {
+        sentences: ['A', 'B'],
+      },
+      finalVideo: {
+        jobId: 'short-canonical-done',
+        durationSec: 8,
+        videoUrl: 'https://cdn.example.com/short-canonical-done.mp4',
+      },
+      renderRecovery: {
+        state: 'pending',
+        attemptId: 'idem-recovery-canonical-done',
+        shortId: null,
+        startedAt: '2026-03-19T02:00:00.000Z',
+        updatedAt: '2026-03-19T02:00:01.000Z',
+      },
+    })
+  );
+  seedFirestoreDoc(
+    'idempotency',
+    'user-1:idem-recovery-canonical-done',
+    buildFinalizeAttemptDoc({
+      attemptId: 'idem-recovery-canonical-done',
+      sessionId: 'story-recovery-canonical-done',
+      state: 'done',
+      jobState: 'settled',
+      shortId: 'short-canonical-done',
+      status: 200,
+      createdAt: '2026-03-19T02:00:00.000Z',
+      updatedAt: '2026-03-19T02:00:10.000Z',
+      startedAt: '2026-03-19T02:00:02.000Z',
+      finishedAt: '2026-03-19T02:00:10.000Z',
+      renderRecovery: {
+        state: 'done',
+        attemptId: 'idem-recovery-canonical-done',
+        shortId: 'short-canonical-done',
+        startedAt: '2026-03-19T02:00:02.000Z',
+        updatedAt: '2026-03-19T02:00:10.000Z',
+        finishedAt: '2026-03-19T02:00:10.000Z',
+        failedAt: null,
+        code: null,
+        message: null,
+      },
+      result: {
+        shortId: 'short-canonical-done',
+        status: 200,
+        failure: null,
+      },
+    })
+  );
+  seedShortDoc('short-canonical-done', {
+    ownerId: 'user-1',
+    status: 'ready',
+    videoUrl: 'https://cdn.example.com/short-canonical-done.mp4',
+    finalizeAttemptId: 'idem-recovery-canonical-done',
+  });
+
+  const result = await requestJson('/api/story/story-recovery-canonical-done');
+  assert.equal(result.status, 200);
+  assert.equal(result.json.success, true);
+  assert.equal(result.json.data.renderRecovery.state, 'done');
+  assert.equal(result.json.data.renderRecovery.attemptId, 'idem-recovery-canonical-done');
+  assert.equal(result.json.data.renderRecovery.shortId, 'short-canonical-done');
+  assert.equal(readDoc('idempotency', 'user-1:idem-recovery-canonical-done').result.shortId, 'short-canonical-done');
+  assert.equal(readDoc('shorts', 'short-canonical-done').finalizeAttemptId, 'idem-recovery-canonical-done');
+});
+
+test('GET /api/story/:sessionId does not leak a stale shortId from session recovery when canonical attempt lineage is retry_scheduled', async () => {
+  seedStorySession(
+    'user-1',
+    buildBaseSession({
+      id: 'story-recovery-retry-scheduled',
+      status: 'rendering',
+      story: {
+        sentences: ['A'],
+      },
+      finalVideo: {
+        jobId: 'short-stale-session',
+        durationSec: 8,
+        videoUrl: 'https://cdn.example.com/short-stale-session.mp4',
+      },
+      renderRecovery: {
+        state: 'done',
+        attemptId: 'idem-recovery-retry-scheduled',
+        shortId: 'short-stale-session',
+        startedAt: '2026-03-19T03:00:00.000Z',
+        updatedAt: '2026-03-19T03:00:05.000Z',
+        finishedAt: '2026-03-19T03:00:05.000Z',
+      },
+    })
+  );
+  seedFirestoreDoc(
+    'idempotency',
+    'user-1:idem-recovery-retry-scheduled',
+    buildFinalizeAttemptDoc({
+      attemptId: 'idem-recovery-retry-scheduled',
+      sessionId: 'story-recovery-retry-scheduled',
+      state: 'queued',
+      jobState: 'retry_scheduled',
+      createdAt: '2026-03-19T03:00:00.000Z',
+      updatedAt: '2026-03-19T03:00:10.000Z',
+      renderRecovery: {
+        state: 'pending',
+        attemptId: 'idem-recovery-retry-scheduled',
+        shortId: null,
+        startedAt: '2026-03-19T03:00:00.000Z',
+        updatedAt: '2026-03-19T03:00:10.000Z',
+        finishedAt: null,
+        failedAt: null,
+        code: null,
+        message: null,
+      },
+      result: {
+        shortId: null,
+        status: 202,
+        failure: null,
+      },
+    })
+  );
+
+  const result = await requestJson('/api/story/story-recovery-retry-scheduled');
+  assert.equal(result.status, 200);
+  assert.equal(result.json.success, true);
+  assert.equal(result.json.data.renderRecovery.state, 'pending');
+  assert.equal(result.json.data.renderRecovery.attemptId, 'idem-recovery-retry-scheduled');
+  assert.equal(result.json.data.renderRecovery.shortId, null);
+});
+
+test('same-key replay and GET /api/story/:sessionId return the same canonical recovery projection', async () => {
+  seedUserDoc('user-1', {
+    plan: 'creator',
+    membership: {
+      status: 'active',
+      kind: 'subscription',
+      billingCadence: 'monthly',
+    },
+    usage: {
+      cycleIncludedSec: 600,
+      cycleUsedSec: 10,
+      cycleReservedSec: 0,
+    },
+  });
+  seedStorySession(
+    'user-1',
+    buildBaseSession({
+      id: 'story-replay-canonical-sync',
+      status: 'rendered',
+      story: {
+        sentences: ['A'],
+      },
+      finalVideo: {
+        jobId: 'short-replay-canonical-sync',
+        durationSec: 8,
+        videoUrl: 'https://cdn.example.com/short-replay-canonical-sync.mp4',
+      },
+      renderRecovery: {
+        state: 'pending',
+        attemptId: 'idem-replay-canonical-sync',
+        shortId: null,
+        startedAt: '2026-03-19T04:00:00.000Z',
+        updatedAt: '2026-03-19T04:00:01.000Z',
+      },
+    })
+  );
+  seedFirestoreDoc(
+    'idempotency',
+    'user-1:idem-replay-canonical-sync',
+    buildFinalizeAttemptDoc({
+      attemptId: 'idem-replay-canonical-sync',
+      sessionId: 'story-replay-canonical-sync',
+      state: 'done',
+      jobState: 'settled',
+      shortId: 'short-replay-canonical-sync',
+      status: 200,
+      createdAt: '2026-03-19T04:00:00.000Z',
+      updatedAt: '2026-03-19T04:00:10.000Z',
+      startedAt: '2026-03-19T04:00:02.000Z',
+      finishedAt: '2026-03-19T04:00:10.000Z',
+      renderRecovery: {
+        state: 'done',
+        attemptId: 'idem-replay-canonical-sync',
+        shortId: 'short-replay-canonical-sync',
+        startedAt: '2026-03-19T04:00:02.000Z',
+        updatedAt: '2026-03-19T04:00:10.000Z',
+        finishedAt: '2026-03-19T04:00:10.000Z',
+        failedAt: null,
+        code: null,
+        message: null,
+      },
+      result: {
+        shortId: 'short-replay-canonical-sync',
+        status: 200,
+        failure: null,
+      },
+    })
+  );
+  seedShortDoc('short-replay-canonical-sync', {
+    ownerId: 'user-1',
+    status: 'ready',
+    videoUrl: 'https://cdn.example.com/short-replay-canonical-sync.mp4',
+    finalizeAttemptId: 'idem-replay-canonical-sync',
+  });
+
+  const replay = await requestJson('/api/story/finalize', {
+    method: 'POST',
+    headers: {
+      'x-client': 'mobile',
+      'X-Idempotency-Key': 'idem-replay-canonical-sync',
+    },
+    body: {
+      sessionId: 'story-replay-canonical-sync',
+    },
+  });
+  const storyGet = await requestJson('/api/story/story-replay-canonical-sync');
+
+  assert.equal(replay.status, 200);
+  assert.equal(replay.json.success, true);
+  assert.equal(replay.json.shortId, 'short-replay-canonical-sync');
+  assert.equal(storyGet.status, 200);
+  assert.deepEqual(replay.json.data.renderRecovery, storyGet.json.data.renderRecovery);
+  assert.equal(replay.json.data.renderRecovery.shortId, 'short-replay-canonical-sync');
 });
 
 test('POST /api/story/update-beat-text updates narration without mutating visual-intent fields', async () => {

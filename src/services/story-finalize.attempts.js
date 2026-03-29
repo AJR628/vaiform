@@ -54,6 +54,7 @@ const numberFromEnv = (name, fallback) => {
 
 export const FINALIZE_ACCEPTED_STATUS = 202;
 export const FINALIZE_ACTIVE_STATES = new Set(['queued', 'running']);
+export const FINALIZE_FLOW = FLOW;
 export const FINALIZE_RUNNER_HEARTBEAT_MS = numberFromEnv(
   'STORY_FINALIZE_RUNNER_HEARTBEAT_MS',
   TEST_MODE ? 25 : 5000
@@ -633,6 +634,36 @@ export async function getFinalizeAttempt({ uid, attemptId }) {
   const snap = await attemptRef(uid, attemptId).get();
   if (!snap.exists) return null;
   return normalizeAttempt(snap.data(), snap.id);
+}
+
+export async function getFinalizeSessionLock({ uid, sessionId }) {
+  const snap = await sessionLockRef(uid, sessionId).get();
+  if (!snap.exists) return null;
+  const data = snap.data() || {};
+  return {
+    uid: data.uid || uid || null,
+    sessionId: data.sessionId || sessionId || null,
+    attemptId:
+      typeof data.attemptId === 'string' && data.attemptId.trim().length > 0 ? data.attemptId.trim() : null,
+    state: data.state || null,
+    createdAt: toIso(data.createdAt),
+    updatedAt: toIso(data.updatedAt),
+    expiresAt: toIso(data.expiresAt),
+  };
+}
+
+export async function getLatestFinalizeAttemptForSession({ uid, sessionId }) {
+  const snapshot = await db
+    .collection(ATTEMPTS_COLLECTION)
+    .where('flow', '==', FLOW)
+    .where('uid', '==', uid)
+    .where('sessionId', '==', sessionId)
+    .orderBy('createdAt', 'desc')
+    .limit(1)
+    .get();
+  const doc = snapshot.docs[0];
+  if (!doc) return null;
+  return normalizeAttempt(doc.data(), doc.id);
 }
 
 async function getActiveFinalizeAttemptForSession({ uid, sessionId, attemptId }) {

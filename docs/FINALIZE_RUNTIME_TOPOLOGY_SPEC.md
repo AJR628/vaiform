@@ -103,7 +103,9 @@ The worker role does not:
 - In Phase 4, Firestore also becomes the shared finalize pressure-control substrate through one backend-owned finalize control service.
 - Phase 4 shared render leases are owned by `executionAttemptId`.
 - Phase 4 overload gating is evaluated on new finalize admissions only, after replay/conflict checks and before billing reserve plus enqueue.
-- Phase 5 storage/recovery tightening and Phase 6 threshold tuning/load testing remain later-phase work.
+- In Phase 5, canonical finalize recovery reads now resolve through `src/services/finalize-status.service.js`, which projects caller-facing `renderRecovery` from canonical finalize job truth instead of trusting session storage as primary truth.
+- In Phase 5, same-key replay and `GET /api/story/:sessionId` both use that canonical read layer, and the latest-attempt fallback query is backed by a source-controlled Firestore composite index in `firestore.indexes.json`.
+- Phase 6 threshold tuning/load testing remains later-phase work.
 
 ## Process-Boundary Rules
 
@@ -112,6 +114,7 @@ The worker role does not:
 - binds HTTP
 - exposes existing health routes
 - may emit queue-admission metrics
+- may project canonical finalize recovery/readback state for caller responses
 - must not execute finalize worker stages after Finalize Factory Phase 2
 
 ### Worker process

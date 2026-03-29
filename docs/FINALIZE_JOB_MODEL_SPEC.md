@@ -67,7 +67,7 @@ This document resolves the current job-vs-attempt ambiguity for the target facto
 
 ### Canonical client recovery truth owner
 
-- Owner after conversion: `FinalizeJob` in backend storage, projected into session `renderRecovery` for caller compatibility.
+- Owner after conversion: `FinalizeJob.projection.renderRecovery` in backend storage, projected into session `renderRecovery` for caller compatibility only.
 - Compatibility rule: `GET /api/story/:sessionId` remains the caller-facing recovery surface.
 
 ## Phase 3 Canonical Data Model
@@ -170,8 +170,9 @@ These mirrors exist for caller, route, diag, worker, test, and rollback compatib
 ### Session renderRecovery
 
 - `renderRecovery` remains an additive session projection for caller compatibility.
-- It must be derived from `FinalizeJob`, not treated as the canonical operational truth.
+- It must be derived from `FinalizeJob.projection.renderRecovery`, not treated as the canonical operational truth.
 - Compatibility shape remains `{ state, attemptId, startedAt, updatedAt, shortId, finishedAt, failedAt, code, message }`: `src/services/story.service.js:349-409`.
+- Phase 5 canonicalization makes session `renderRecovery` compatibility-only storage; read paths must prefer canonical finalize job truth and only use session data as a hint/cache.
 
 ### Shorts read model
 
@@ -190,7 +191,7 @@ These mirrors exist for caller, route, diag, worker, test, and rollback compatib
 | --- | --- | --- |
 | `idempotency` attempt doc | admission + running + retry + settlement + failure | reused as canonical `FinalizeJob` on the same durable keyspace, with embedded `FinalizeExecutionAttempt` lineage |
 | `storyFinalizeSessions` lock doc | same-session active lock | remains a helper/lock record only and is not the canonical status owner |
-| `story.json.renderRecovery` | caller-facing recovery truth | remains projection only |
+| `story.json.renderRecovery` | caller-facing recovery storage | remains compatibility projection/cache only |
 | `users/<uid>.usage` | usage ledger | remains usage ledger |
 | `shorts/<jobId>` | readback/library model | remains readback/library model |
 
@@ -198,6 +199,13 @@ These mirrors exist for caller, route, diag, worker, test, and rollback compatib
 
 - Backend canonical current render status after conversion: read `FinalizeJob`.
 - Caller-facing canonical recovery path after conversion: read `GET /api/story/:sessionId`, which projects from `FinalizeJob`.
+- Phase 5 canonical helper: `src/services/finalize-status.service.js`.
+- Frozen resolution order:
+  1. active `storyFinalizeSessions` helper lock -> active attempt
+  2. attempt referenced by `session.renderRecovery.attemptId`
+  3. latest finalize attempt for the same `uid + sessionId + flow`
+  4. short/readback reconciliation using settled `shortId`
+- Phase 5 fallback-query note: because the helper now uses step 3 when steps 1 and 2 do not resolve a canonical attempt, the repo ships a minimal composite Firestore index for `idempotency(flow ASC, uid ASC, sessionId ASC, createdAt DESC)` in `firestore.indexes.json`.
 
 This split is intentional:
 
@@ -210,4 +218,4 @@ This split is intentional:
 - This document does not authorize a Firestore execution-attempt subcollection in Phase 3.
 - This document does not authorize changing the caller-visible `attemptId` field name.
 - This document does not change billing semantics or short/library route contracts.
-- Phase 4 global concurrency/provider throttle/backpressure work remains deferred.
+- Phase 6 threshold tuning/load testing remains deferred.

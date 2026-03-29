@@ -58,10 +58,10 @@ Goal: harden only the backend surface that the current mobile app actually depen
 
 ## Phase 1 Completed: Finalize Recovery + Shorts Detail Bridge
 
-- `DONE`: Finalize recovery is now backend-backed through additive session `renderRecovery` state.
-  - Backend evidence: `src/routes/story.routes.js:964-1021`, `src/routes/story.routes.js:1183-1213`, `src/services/story.service.js:349-409`, `src/services/story.service.js:436-480`, `src/services/story.service.js:2535-2599`
+- `DONE`: Finalize recovery is now backend-backed through additive session `renderRecovery`, but canonical read truth now comes from finalize attempt/job projection rather than trusting session storage as primary status truth.
+  - Backend evidence: `src/routes/story.routes.js`, `src/services/finalize-status.service.js`, `src/services/story.service.js:349-409`, `src/services/story.service.js:436-480`, `src/services/story.service.js:2535-2599`
   - Mobile evidence: `client/screens/StoryEditorScreen.tsx:112-132`, `client/screens/story-editor/useStoryEditorFinalize.ts:164-342`, `client/screens/story-editor/useStoryEditorFinalize.ts:344-562`
-  - Contract: `renderRecovery` now persists `pending`, `done`, and `failed` states with the active finalize `attemptId`, and mobile only trusts those states when the attempt identity matches the active `X-Idempotency-Key`.
+  - Contract: `renderRecovery` still persists `pending`, `done`, and `failed` states with the active finalize `attemptId`, and mobile still only trusts those states when the attempt identity matches the active `X-Idempotency-Key`.
 
 - `DONE`: `renderRecovery.pending` is persisted before the async finalize attempt is handed off, and existing session readers remain untouched.
   - Backend evidence: `src/services/story.service.js:2542-2553`
@@ -111,7 +111,10 @@ Goal: harden only the backend surface that the current mobile app actually depen
 - `DONE`: Finalize Factory Phase 4 shared pressure control is now landed on top of the async finalize path.
   - Backend evidence: `src/services/finalize-control.service.js`, `src/services/story-finalize.attempts.js`, `src/services/story-finalize.runner.js`, `src/services/story.llm.service.js`, `src/services/story.service.js`, `src/services/tts.service.js`, `src/routes/diag.routes.js`
   - Scope note: Phase 4 adds shared Firestore-backed render leases owned by `executionAttemptId`, a shared finalize backlog admission gate, shared finalize-relevant provider pressure, and a control-room view that separates shared-system truth from local-process observability.
-  - Deferred note: Phase 5 storage/recovery tightening and Phase 6 threshold tuning/load testing remain explicitly out of scope here.
+- `DONE`: Finalize Factory Phase 5 canonical status/recovery read-path tightening is now landed.
+  - Backend evidence: `src/services/finalize-status.service.js`, `src/routes/story.routes.js`, `src/services/story-finalize.attempts.js`, `firestore.indexes.json`
+  - Scope note: `GET /api/story/:sessionId` and same-key replay now share one canonical finalize-status helper, `attempt.projection.renderRecovery` is the canonical caller projection, and session `renderRecovery` remains compatibility-only storage.
+  - Deferred note: Phase 6 threshold tuning/load testing remains explicitly out of scope here.
 
 ## Exit Criteria
 
