@@ -7,8 +7,8 @@
 
 Dashboard contract authority:
 
-- [docs/FINALIZE_OBSERVABILITY_SPEC.md](C:/Users/ajrhe/OneDrive/Desktop/vaiform-1-clean/docs/FINALIZE_OBSERVABILITY_SPEC.md)
-- [src/observability/finalize-observability.js](C:/Users/ajrhe/OneDrive/Desktop/vaiform-1-clean/src/observability/finalize-observability.js)
+- `docs/FINALIZE_OBSERVABILITY_SPEC.md`
+- `src/observability/finalize-observability.js`
 
 Phase 1 rule:
 
@@ -188,6 +188,6 @@ Phase 6 note:
 
 - the control-room payload shape is now frozen as `queueSnapshot`, `sharedSystemPressure`, `pressureConfig`, and `localProcessObservability`
 - threshold ranges and scenario proof now come from the checked-in artifact/report set:
-  - [docs/artifacts/finalize-phase6/ARTIFACT_SCHEMA.md](C:/Users/ajrhe/OneDrive/Desktop/vaiform-1-clean/docs/artifacts/finalize-phase6/ARTIFACT_SCHEMA.md)
-  - [docs/FINALIZE_THRESHOLD_REPORT.md](C:/Users/ajrhe/OneDrive/Desktop/vaiform-1-clean/docs/FINALIZE_THRESHOLD_REPORT.md)
-  - [docs/FINALIZE_SCALING_RUNBOOK.md](C:/Users/ajrhe/OneDrive/Desktop/vaiform-1-clean/docs/FINALIZE_SCALING_RUNBOOK.md)
+  - `docs/artifacts/finalize-phase6/ARTIFACT_SCHEMA.md`
+  - `docs/FINALIZE_THRESHOLD_REPORT.md`
+  - `docs/FINALIZE_SCALING_RUNBOOK.md`

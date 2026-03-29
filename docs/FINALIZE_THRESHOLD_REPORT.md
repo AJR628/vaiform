@@ -25,29 +25,28 @@
 
 ## Observations
 
-- Queue depth observed: max 2
+- Queue depth observed: max 1
 - Queue oldest age observed: max 0s
-- Queue wait observed: max 65ms
+- Queue wait observed: max 114ms
 - Jobs running observed: max 2
 - Worker saturation observed: max 1
 - Shared render leases observed: max 2
 - Provider cooldown observed: yes (pexels, pixabay)
 - Readback lag observed: max 0ms
-- Retry-scheduled observed: max 2
+- Retry-scheduled observed: max 0
 - Billing mismatches observed: 1
 
 ## Operating Ranges
 
-- Queue depth: green <= 2; yellow <= 3; red > 3 (current max 2)
+- Queue depth: green <= 1; yellow <= 2; red > 2 (current max 1)
 - Queue oldest age: green <= 0; yellow <= 1; red > 1 (current max 0)
-- Queue wait: green <= 65; yellow <= 115; red > 115 (current max 65)
+- Queue wait: green <= 114; yellow <= 164; red > 164 (current max 114)
 - Worker saturation ratio: green <= 1; yellow <= 1; red > 1 (current max 1)
 - Readback lag: green <= 0; yellow <= 100; red > 100 (current max 0)
-- Retry-scheduled count: green <= 2; yellow <= 3; red > 3 (current max 2)
+- Retry-scheduled count: green <= 0; yellow <= 1; red > 1 (current max 0)
 - Billing mismatches: green = 0; yellow = investigate immediately; red = repeated or sustained mismatch
 
 ## Must-Fix List
 
-- Render-stage `SERVER_BUSY` retries were observed under controlled pressure; treat render contention as a carry-forward must-watch item before raising concurrency.
 - `BILLING_ESTIMATE_TOO_LOW` was reproduced in the mismatch probe; keep billing mismatch alerts active and do not tune estimates inside Phase 6.
 

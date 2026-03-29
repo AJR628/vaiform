@@ -4,8 +4,8 @@
 - Owner repo: backend
 - Source of truth for: Phase 6 finalize scenario execution, threshold interpretation, and operator actions
 - Artifact/report companions:
-  - [docs/artifacts/finalize-phase6/ARTIFACT_SCHEMA.md](C:/Users/ajrhe/OneDrive/Desktop/vaiform-1-clean/docs/artifacts/finalize-phase6/ARTIFACT_SCHEMA.md)
-  - [docs/FINALIZE_THRESHOLD_REPORT.md](C:/Users/ajrhe/OneDrive/Desktop/vaiform-1-clean/docs/FINALIZE_THRESHOLD_REPORT.md)
+  - `docs/artifacts/finalize-phase6/ARTIFACT_SCHEMA.md`
+  - `docs/FINALIZE_THRESHOLD_REPORT.md`
 
 ## Scope
 
@@ -24,6 +24,7 @@ Run these from the backend repo root:
 - `npm run report:finalize:thresholds`
 
 Each scenario writes deterministic artifacts under `docs/artifacts/finalize-phase6/`.
+Those artifacts and the threshold report are generated proof bundles committed in repo; rerunning the Phase 6 scripts refreshes those tracked files in place.
 
 ## Healthy vs Degraded
 
@@ -169,4 +170,4 @@ Operator actions:
 1. Run the required scenarios.
 2. Confirm each run directory contains `run-summary.json`, `samples.ndjson`, `verdict.json`, and `control-room/*.json`.
 3. Run `npm run report:finalize:thresholds`.
-4. Review [docs/FINALIZE_THRESHOLD_REPORT.md](C:/Users/ajrhe/OneDrive/Desktop/vaiform-1-clean/docs/FINALIZE_THRESHOLD_REPORT.md) for green/yellow/red ranges before changing worker count or admission pressure.
+4. Review `docs/FINALIZE_THRESHOLD_REPORT.md` for green/yellow/red ranges before changing worker count or admission pressure.

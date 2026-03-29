@@ -32,20 +32,20 @@ Use these sources in this order:
 Diagnostic proof surface:
 
 - `GET /diag/finalize-control-room`
-- Mounted only when `VAIFORM_DEBUG=1` via [src/app.js](C:/Users/ajrhe/OneDrive/Desktop/vaiform-1-clean/src/app.js):217-223 and [src/routes/diag.routes.js](C:/Users/ajrhe/OneDrive/Desktop/vaiform-1-clean/src/routes/diag.routes.js):1-145
+- Mounted only when `VAIFORM_DEBUG=1` via `src/app.js:217-223` and `src/routes/diag.routes.js:1-145`
 - Returns:
   - `queueSnapshot`
   - `sharedSystemPressure`
   - `pressureConfig`
   - `localProcessObservability.metrics`
   - `localProcessObservability.recentEvents`
-- Phase 6 checked-in proof artifacts now live under [docs/artifacts/finalize-phase6/ARTIFACT_SCHEMA.md](C:/Users/ajrhe/OneDrive/Desktop/vaiform-1-clean/docs/artifacts/finalize-phase6/ARTIFACT_SCHEMA.md) and are summarized by [docs/FINALIZE_THRESHOLD_REPORT.md](C:/Users/ajrhe/OneDrive/Desktop/vaiform-1-clean/docs/FINALIZE_THRESHOLD_REPORT.md)
+- Phase 6 checked-in proof artifacts now live under `docs/artifacts/finalize-phase6/ARTIFACT_SCHEMA.md` and are summarized by `docs/FINALIZE_THRESHOLD_REPORT.md`
 
 Known boundaries that still apply:
 
-- backend logs are still stdout-backed even though the event schema is now canonical ([src/observability/logger.js](C:/Users/ajrhe/OneDrive/Desktop/vaiform-1-clean/src/observability/logger.js):18-39)
-- mobile diagnostics are still in-memory only and are cleared on app restart ([client/lib/diagnostics.ts](C:/Users/ajrhe/OneDrive/Desktop/vaiform-mobile-ed4c17b4253fd8138e52349f5468ac1cc794cbe1/client/lib/diagnostics.ts):36-153)
-- the API process no longer boots finalize execution; worker startup is separate through [story-finalize.worker.js](C:/Users/ajrhe/OneDrive/Desktop/vaiform-1-clean/story-finalize.worker.js):1-14 and [src/workers/story-finalize.worker.js](C:/Users/ajrhe/OneDrive/Desktop/vaiform-1-clean/src/workers/story-finalize.worker.js):1-49
+- backend logs are still stdout-backed even though the event schema is now canonical (`src/observability/logger.js:18-39`)
+- mobile diagnostics are still in-memory only and are cleared on app restart (mobile repo `client/lib/diagnostics.ts:36-153`)
+- the API process no longer boots finalize execution; worker startup is separate through `story-finalize.worker.js:1-14` and `src/workers/story-finalize.worker.js:1-49`
 
 ## Correlation Keys
 
@@ -64,7 +64,7 @@ Capture as many of these as possible:
 
 Phase 1 bridge rule:
 
-- `finalizeJobId` is an observability alias of the current external `attemptId`; Phase 1 has not migrated runtime job storage yet ([src/observability/finalize-observability.js](C:/Users/ajrhe/OneDrive/Desktop/vaiform-1-clean/src/observability/finalize-observability.js):276-278)
+- `finalizeJobId` is an observability alias of the current external `attemptId`; Phase 1 has not migrated runtime job storage yet (`src/observability/finalize-observability.js:276-278`)
 
 ## Canonical Stage Map
 
@@ -89,7 +89,7 @@ Use these stage names when triaging:
 - `short_detail_readback`
 - `library_fallback_readback`
 
-Stage authority: [src/observability/finalize-observability.js](C:/Users/ajrhe/OneDrive/Desktop/vaiform-1-clean/src/observability/finalize-observability.js):15-34
+Stage authority: `src/observability/finalize-observability.js:15-34`
 
 Repeated happy-path stage note:
 
@@ -121,13 +121,13 @@ Use these Phase 1 metrics first:
 - `finalize_stage_duration_ms`
 - `finalize_readback_completion_lag_ms`
 
-Metric authority: [src/observability/finalize-observability.js](C:/Users/ajrhe/OneDrive/Desktop/vaiform-1-clean/src/observability/finalize-observability.js):111-240
+Metric authority: `src/observability/finalize-observability.js:111-240`
 
 ## Finalize Admission / Replay / Queue Triage
 
 1. Start from mobile or web caller evidence.
-- Mobile finalize callers preserve `requestId`, `sessionId`, `attemptId`, `surface`, and stage context in diagnostics ([client/screens/story-editor/useStoryEditorFinalize.ts](C:/Users/ajrhe/OneDrive/Desktop/vaiform-mobile-ed4c17b4253fd8138e52349f5468ac1cc794cbe1/client/screens/story-editor/useStoryEditorFinalize.ts):164-245, [client/screens/story-editor/useStoryEditorFinalize.ts](C:/Users/ajrhe/OneDrive/Desktop/vaiform-mobile-ed4c17b4253fd8138e52349f5468ac1cc794cbe1/client/screens/story-editor/useStoryEditorFinalize.ts):365-512)
-- Active web creative still uses the same finalize and recovery surfaces; Phase 1 must preserve those semantics ([web/public/js/pages/creative/creative.article.mjs](C:/Users/ajrhe/OneDrive/Desktop/vaiform-1-clean/web/public/js/pages/creative/creative.article.mjs):3788-3909, [web/public/js/pages/creative/creative.article.mjs](C:/Users/ajrhe/OneDrive/Desktop/vaiform-1-clean/web/public/js/pages/creative/creative.article.mjs):4004-4060)
+- Mobile finalize callers preserve `requestId`, `sessionId`, `attemptId`, `surface`, and stage context in diagnostics (mobile repo `client/screens/story-editor/useStoryEditorFinalize.ts:164-245` and `client/screens/story-editor/useStoryEditorFinalize.ts:365-512`)
+- Active web creative still uses the same finalize and recovery surfaces; Phase 1 must preserve those semantics (`web/public/js/pages/creative/creative.article.mjs:3788-3909` and `web/public/js/pages/creative/creative.article.mjs:4004-4060`)
 
 2. Check canonical API events by `requestId` or `attemptId`.
 - `finalize.api.requested`
@@ -139,8 +139,8 @@ Metric authority: [src/observability/finalize-observability.js](C:/Users/ajrhe/O
 - `finalize.api.conflict_active`
 
 Current emitters:
-- [src/middleware/idempotency.firestore.js](C:/Users/ajrhe/OneDrive/Desktop/vaiform-1-clean/src/middleware/idempotency.firestore.js)
-- [src/routes/story.routes.js](C:/Users/ajrhe/OneDrive/Desktop/vaiform-1-clean/src/routes/story.routes.js)
+- `src/middleware/idempotency.firestore.js`
+- `src/routes/story.routes.js`
 
 3. Answer the first split immediately:
 - If the latest terminal event is `finalize.api.rejected`, failure happened before enqueue.
@@ -167,8 +167,8 @@ Current emitters:
 - `finalize.job.settled`
 
 Current emitters:
-- [src/services/story-finalize.runner.js](C:/Users/ajrhe/OneDrive/Desktop/vaiform-1-clean/src/services/story-finalize.runner.js)
-- [src/services/story-finalize.attempts.js](C:/Users/ajrhe/OneDrive/Desktop/vaiform-1-clean/src/services/story-finalize.attempts.js)
+- `src/services/story-finalize.runner.js`
+- `src/services/story-finalize.attempts.js`
 
 2. Interpret queue vs worker conditions.
 - `finalize_queue_depth` rising while `finalize_worker_claims_total` is flat means the current finalize worker runtime is not claiming work.
@@ -188,7 +188,7 @@ Current emitters:
 1. Filter `finalize.job.stage.started` and `finalize.job.stage.completed` by `attemptId` / `finalizeJobId`.
 2. Compare missing terminal stage-complete events and long `finalize_stage_duration_ms{stage=...}` values.
 3. Current stage emitters are narrow wrappers around the existing monolith, not a new pipeline split:
-- [src/services/story.service.js](C:/Users/ajrhe/OneDrive/Desktop/vaiform-1-clean/src/services/story.service.js):2373-2627
+- `src/services/story.service.js:2373-2627`
 
 Interpretation:
 
@@ -207,7 +207,7 @@ Interpretation:
 
 2. Interpret:
 - `finalize_billing_unsettled_jobs` rising means accepted work has not yet settled or released.
-- `finalize_billing_mismatches_total > 0` means reserve/settle drift has been observed. Current mismatch emission is wired at settle time in [src/services/story-finalize.attempts.js](C:/Users/ajrhe/OneDrive/Desktop/vaiform-1-clean/src/services/story-finalize.attempts.js):676-943.
+- `finalize_billing_mismatches_total > 0` means reserve/settle drift has been observed. Current mismatch emission is wired at settle time in `src/services/story-finalize.attempts.js:676-943`.
 - If `/api/usage` looks wrong after terminal finalize, correlate the same `attemptId` against `finalize.job.settled` or terminal `finalize.job.failed`.
 
 ## Readback Lag Triage
@@ -219,14 +219,14 @@ Interpretation:
   - `retryAttempt`
   - canonical stage `short_detail_readback` or `library_fallback_readback`
   - `surface` of `short_detail`, `library_fallback`, or `short_detail_manual_retry`
-  ([client/screens/short-detail/useShortDetailAvailability.ts](C:/Users/ajrhe/OneDrive/Desktop/vaiform-mobile-ed4c17b4253fd8138e52349f5468ac1cc794cbe1/client/screens/short-detail/useShortDetailAvailability.ts):77-316)
+  (mobile repo `client/screens/short-detail/useShortDetailAvailability.ts:77-316`)
 
 2. Check canonical readback events:
 - `finalize.readback.short_detail_pending`
 - `finalize.readback.short_detail_ready`
 
 Emitter:
-- [src/controllers/shorts.controller.js](C:/Users/ajrhe/OneDrive/Desktop/vaiform-1-clean/src/controllers/shorts.controller.js):3-295
+- `src/controllers/shorts.controller.js:3-295`
 
 3. Interpret:
 - `finalize.job.completed` and `finalize.job.settled` exist, but `finalize.readback.short_detail_pending` continues: completion happened, readback is lagging.

@@ -253,7 +253,7 @@ These behaviors are frozen for the factory conversion unless later code evidence
 - Backend hardening status: `docs/MOBILE_HARDENING_PLAN.md:59-120`
 - Cross-repo hardening audit: `docs/CROSS_REPO_PRODUCTION_HARDENING_PLAN.md:68-108`, `docs/CROSS_REPO_PRODUCTION_HARDENING_PLAN.md:570-583`
 - Incident/runbook truth: `docs/INCIDENT_TRACE_RUNBOOK.md:5-128`
-- Mobile caller-truth doc: `../vaiform-mobile-ed4c17b4253fd8138e52349f5468ac1cc794cbe1/docs/MOBILE_USED_SURFACES.md:13-18`, `../vaiform-mobile-ed4c17b4253fd8138e52349f5468ac1cc794cbe1/docs/MOBILE_USED_SURFACES.md:49-53`
+- Mobile caller-truth doc: sibling mobile repo `docs/MOBILE_USED_SURFACES.md:13-18` and `docs/MOBILE_USED_SURFACES.md:49-53`
 
 ### Proven drift / gaps
 

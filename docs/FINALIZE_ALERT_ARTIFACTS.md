@@ -7,8 +7,8 @@
 
 Alert contract authority:
 
-- [docs/FINALIZE_OBSERVABILITY_SPEC.md](C:/Users/ajrhe/OneDrive/Desktop/vaiform-1-clean/docs/FINALIZE_OBSERVABILITY_SPEC.md)
-- [src/observability/finalize-observability.js](C:/Users/ajrhe/OneDrive/Desktop/vaiform-1-clean/src/observability/finalize-observability.js)
+- `docs/FINALIZE_OBSERVABILITY_SPEC.md`
+- `src/observability/finalize-observability.js`
 
 Phase 1 rule:
 
@@ -20,9 +20,9 @@ Phase 6 rule:
 
 - alert families stay stable, but threshold guidance should now be set from checked-in Phase 6 proof artifacts rather than intuition alone
 - the proof/report front door is:
-  - [docs/artifacts/finalize-phase6/ARTIFACT_SCHEMA.md](C:/Users/ajrhe/OneDrive/Desktop/vaiform-1-clean/docs/artifacts/finalize-phase6/ARTIFACT_SCHEMA.md)
-  - [docs/FINALIZE_THRESHOLD_REPORT.md](C:/Users/ajrhe/OneDrive/Desktop/vaiform-1-clean/docs/FINALIZE_THRESHOLD_REPORT.md)
-  - [docs/FINALIZE_SCALING_RUNBOOK.md](C:/Users/ajrhe/OneDrive/Desktop/vaiform-1-clean/docs/FINALIZE_SCALING_RUNBOOK.md)
+  - `docs/artifacts/finalize-phase6/ARTIFACT_SCHEMA.md`
+  - `docs/FINALIZE_THRESHOLD_REPORT.md`
+  - `docs/FINALIZE_SCALING_RUNBOOK.md`
 
 ## Alert 1: Queue Backlog Growing
 
@@ -133,11 +133,11 @@ Phase 6 rule:
 
 Every finalize alert should link operators to:
 
-- [docs/INCIDENT_TRACE_RUNBOOK.md](C:/Users/ajrhe/OneDrive/Desktop/vaiform-1-clean/docs/INCIDENT_TRACE_RUNBOOK.md)
-- [docs/FINALIZE_THRESHOLD_REPORT.md](C:/Users/ajrhe/OneDrive/Desktop/vaiform-1-clean/docs/FINALIZE_THRESHOLD_REPORT.md)
-- [docs/FINALIZE_SCALING_RUNBOOK.md](C:/Users/ajrhe/OneDrive/Desktop/vaiform-1-clean/docs/FINALIZE_SCALING_RUNBOOK.md)
-- the canonical stage map in [src/observability/finalize-observability.js](C:/Users/ajrhe/OneDrive/Desktop/vaiform-1-clean/src/observability/finalize-observability.js):15-34
-- the canonical metric definitions in [src/observability/finalize-observability.js](C:/Users/ajrhe/OneDrive/Desktop/vaiform-1-clean/src/observability/finalize-observability.js):111-240
+- `docs/INCIDENT_TRACE_RUNBOOK.md`
+- `docs/FINALIZE_THRESHOLD_REPORT.md`
+- `docs/FINALIZE_SCALING_RUNBOOK.md`
+- the canonical stage map in `src/observability/finalize-observability.js:15-34`
+- the canonical metric definitions in `src/observability/finalize-observability.js:111-240`
 
 Every alert payload should include, when known:
 

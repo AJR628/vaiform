@@ -4,6 +4,10 @@
 - Owner repo: backend
 - Source of truth for: Phase 6 measurement contract, artifact schema, and checked-in result layout
 - Artifact root: `docs/artifacts/finalize-phase6/`
+- Generated-proof note:
+  - the scenario bundles and `docs/FINALIZE_THRESHOLD_REPORT.md` are generated outputs, not hand-maintained prose
+  - rerunning the Phase 6 scenario scripts refreshes those tracked artifacts in place
+  - artifact presence is the Phase 6 proof gate for this repo, not the report markdown alone
 
 ## Measurement Contract
 
