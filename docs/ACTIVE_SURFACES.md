@@ -15,7 +15,7 @@ Audit date: 2026-03-13
 - Netlify redirect/proxy SSOT is `netlify.toml` (no `_redirects` files under `web/`).
 - Frontend browser API ingress is same-origin relative `/api/*` via the Netlify proxy.
 - Direct backend origins are not allowed in `web/public/**` and are guarded by `npm run check:hardcoded-backend-origins`.
-- Backend serves API + required static assets only.
+- Backend serves API + required static assets, plus the internal finalize dashboard when explicitly enabled.
 
 ## Frontend entry surfaces
 
@@ -56,6 +56,10 @@ Audit date: 2026-03-13
   - `/api/user/*`, `/api/users/ensure`
 - Backend static (required only):
   - `/assets/*` (including `/assets/fonts/*`)
+- Internal backend-served page (only when `FINALIZE_DASHBOARD_ENABLED=1`):
+  - `GET /admin/finalize`
+- Internal backend-served data (only when `FINALIZE_DASHBOARD_ENABLED=1` and founder auth/allowlist pass):
+  - `GET /api/admin/finalize/data`
 
 ## Removed/non-active surfaces
 
@@ -77,6 +81,18 @@ Audit date: 2026-03-13
   - `/diag/*`
   - `/api/diag/headers`
   - `/api/diag/caption-smoke`
+
+## Finalize Dashboard V1
+
+- Page route stays outside `/diag/*`: `/admin/finalize`
+- Data route stays under `/api/*`: `/api/admin/finalize/data`
+- The page shell may load when enabled.
+- The data route is internal-only and requires:
+  - Firebase auth
+  - verified email
+  - founder allowlist via `FINALIZE_DASHBOARD_ALLOWED_EMAILS`
+- Top health banner is derived from shared live truth plus `docs/artifacts/finalize-phase6/phase6-threshold-summary.json`
+- Local process metrics/events are displayed only in a clearly labeled secondary panel
 
 ## Caller-backed notes
 

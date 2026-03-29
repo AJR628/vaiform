@@ -19,6 +19,7 @@ import requestContextMiddleware from './observability/request-context.js';
 import whoamiRoutes from './routes/whoami.routes.js';
 import usageRoutes from './routes/usage.routes.js';
 import diagRoutes from './routes/diag.routes.js';
+import adminFinalizeRoutes from './routes/admin.finalize.routes.js';
 // Old webhook routes removed - using /stripe/webhook instead
 import diagHeadersRoutes from './routes/diag.headers.routes.js';
 import { ok } from './http/respond.js';
@@ -213,6 +214,7 @@ app.use('/assets/fonts', (req, res, next) => {
 console.log('Mounted static /assets (fonts) before API routes');
 
 // ---------- API ROUTES ----------
+app.use(adminFinalizeRoutes);
 if (process.env.VAIFORM_DEBUG === '1') app.use('/diag', diagRoutes);
 app.use('/api/whoami', whoamiRoutes);
 app.use('/api/usage', usageRoutes);

@@ -16,7 +16,11 @@ export default async function requireAuth(req, res, next) {
     }
     const idToken = m[1];
     const decoded = await admin.auth().verifyIdToken(idToken);
-    req.user = { uid: decoded.uid, email: decoded.email || null };
+    req.user = {
+      uid: decoded.uid,
+      email: decoded.email || null,
+      emailVerified: decoded.email_verified === true || decoded.emailVerified === true,
+    };
     setRequestContextFromReq(req);
     next();
   } catch (err) {

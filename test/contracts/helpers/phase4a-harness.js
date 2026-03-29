@@ -77,10 +77,12 @@ export function resetHarnessState() {
   firebaseMock.seedAuthToken('token-user-1', {
     uid: 'user-1',
     email: 'user1@example.com',
+    email_verified: true,
   });
   firebaseMock.seedAuthToken('token-user-2', {
     uid: 'user-2',
     email: 'user2@example.com',
+    email_verified: true,
   });
 }
 
@@ -119,6 +121,29 @@ export async function requestJson(
   return { response, status: response.status, json };
 }
 
+export async function requestText(
+  path,
+  { method = 'GET', body, authToken = 'token-user-1', headers = {}, auth = true } = {}
+) {
+  if (!baseUrl) {
+    throw new Error('Harness not started');
+  }
+  const requestHeaders = { ...headers };
+  if (body !== undefined && !requestHeaders['Content-Type']) {
+    requestHeaders['Content-Type'] = 'application/json';
+  }
+  if (auth) {
+    requestHeaders.Authorization = `Bearer ${authToken}`;
+  }
+  const response = await fetch(`${baseUrl}${path}`, {
+    method,
+    headers: requestHeaders,
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  const text = await response.text();
+  return { response, status: response.status, text };
+}
+
 export function seedUserDoc(uid = 'user-1', doc = {}) {
   const plan = doc.plan || 'free';
   firebaseMock.seedDoc('users', uid, {
@@ -151,6 +176,10 @@ export function seedUserDoc(uid = 'user-1', doc = {}) {
 
 export function seedFirestoreDoc(collectionName, id, data) {
   firebaseMock.seedDoc(collectionName, id, data);
+}
+
+export function seedAuthToken(token, decoded) {
+  firebaseMock.seedAuthToken(token, decoded);
 }
 
 export function seedShortDoc(id, doc) {

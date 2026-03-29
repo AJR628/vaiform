@@ -25,6 +25,7 @@ Trust these first for current work:
 - backend repo `docs/FINALIZE_OBSERVABILITY_COVERAGE_MATRIX.md`
 - backend repo `docs/FINALIZE_RUNTIME_TOPOLOGY_SPEC.md`
 - backend repo `docs/FINALIZE_DASHBOARD_ARTIFACTS.md`
+- backend repo `docs/FINALIZE_CONTROL_ROOM_DASHBOARD.md`
 - backend repo `docs/FINALIZE_ALERT_ARTIFACTS.md`
 - backend repo `docs/SCRIPT_CONTROL_PREIMPLEMENTATION_AUDIT.md`
 - backend repo `docs/CROSS_REPO_PRODUCTION_HARDENING_PLAN.md`
@@ -53,6 +54,7 @@ Update these first when backend/mobile contract or hardening truth changes:
 - `docs/FINALIZE_OBSERVABILITY_COVERAGE_MATRIX.md`
 - `docs/FINALIZE_RUNTIME_TOPOLOGY_SPEC.md`
 - `docs/FINALIZE_DASHBOARD_ARTIFACTS.md`
+- `docs/FINALIZE_CONTROL_ROOM_DASHBOARD.md`
 - `docs/FINALIZE_ALERT_ARTIFACTS.md`
 - `docs/MOBILE_BACKEND_CONTRACT.md`
 - `docs/MOBILE_HARDENING_PLAN.md`

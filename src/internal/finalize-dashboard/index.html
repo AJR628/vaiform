@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Vaiform Finalize Control Room</title>
+    <link rel="stylesheet" href="/admin/finalize/styles.css" />
+  </head>
+  <body>
+    <div class="backdrop"></div>
+    <main class="page-shell">
+      <header class="page-header">
+        <div>
+          <p class="eyebrow">Internal Only</p>
+          <h1>Finalize Control Room</h1>
+          <p class="context-note" id="context-note">
+            Backend-served founder dashboard. Shared truth drives the top banner.
+          </p>
+        </div>
+        <div class="header-actions">
+          <div class="auth-chip" id="auth-chip">Checking sign-in...</div>
+          <button id="auth-button" class="ghost-button" type="button">Sign In</button>
+          <button id="refresh-button" class="primary-button" type="button">Refresh</button>
+        </div>
+      </header>
+
+      <section class="status-strip">
+        <div class="status-banner is-loading" id="status-banner">
+          <div>
+            <p class="status-label">Health</p>
+            <h2 id="status-title">Loading shared finalize health...</h2>
+          </div>
+          <p class="status-text" id="status-text">
+            Waiting for live finalize data and Phase 6 threshold summary.
+          </p>
+        </div>
+
+        <aside class="timestamp-card">
+          <p>Last updated</p>
+          <strong id="last-updated">Not loaded yet</strong>
+        </aside>
+      </section>
+
+      <section class="notice-panel" id="notice-panel" hidden></section>
+
+      <section class="content-grid" id="dashboard-content" hidden>
+        <section class="card founder-summary">
+          <div class="card-heading">
+            <p class="eyebrow">Founder Summary</p>
+            <h3 id="summary-headline">Waiting for data</h3>
+          </div>
+          <dl class="summary-list">
+            <div>
+              <dt>What is happening</dt>
+              <dd id="summary-what">Loading...</dd>
+            </div>
+            <div>
+              <dt>Why it matters</dt>
+              <dd id="summary-why">Loading...</dd>
+            </div>
+            <div>
+              <dt>What to do next</dt>
+              <dd id="summary-next">Loading...</dd>
+            </div>
+          </dl>
+        </section>
+
+        <section class="card">
+          <div class="card-heading">
+            <p class="eyebrow">Shared Live Health</p>
+            <h3>Current shared finalize pressure</h3>
+          </div>
+          <div class="metric-grid" id="shared-metrics"></div>
+          <div class="subsection">
+            <h4>Pressure Config</h4>
+            <div class="config-grid" id="pressure-config"></div>
+          </div>
+          <div class="subsection">
+            <h4>Provider State</h4>
+            <div class="provider-list" id="provider-list"></div>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="card-heading">
+            <p class="eyebrow">Phase 6 Proof</p>
+            <h3>Threshold and scenario summary</h3>
+          </div>
+          <div class="threshold-meta" id="threshold-meta"></div>
+          <div class="threshold-grid" id="threshold-grid"></div>
+          <div class="watch-list" id="watch-list"></div>
+        </section>
+
+        <section class="card">
+          <div class="card-heading">
+            <p class="eyebrow">Runbooks</p>
+            <h3>What to open next</h3>
+          </div>
+          <div class="link-grid" id="link-grid"></div>
+        </section>
+
+        <section class="card local-panel">
+          <div class="card-heading">
+            <p class="eyebrow">Local API Process Only</p>
+            <h3>Secondary observability</h3>
+          </div>
+          <p class="local-note" id="local-note">
+            These values are local to the API process serving this page.
+          </p>
+          <div class="metric-grid compact" id="local-metrics"></div>
+          <div class="subsection">
+            <h4>Recent finalize events</h4>
+            <div class="event-table-wrap">
+              <table class="event-table">
+                <thead>
+                  <tr>
+                    <th>Time</th>
+                    <th>Event</th>
+                    <th>Attempt</th>
+                    <th>Stage</th>
+                    <th>Error</th>
+                  </tr>
+                </thead>
+                <tbody id="event-table-body"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+      </section>
+    </main>
+
+    <script type="module" src="/admin/finalize/app.js"></script>
+  </body>
+</html>

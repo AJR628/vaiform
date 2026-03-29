@@ -191,3 +191,24 @@ Phase 6 note:
   - `docs/artifacts/finalize-phase6/ARTIFACT_SCHEMA.md`
   - `docs/FINALIZE_THRESHOLD_REPORT.md`
   - `docs/FINALIZE_SCALING_RUNBOOK.md`
+
+## Control Room Dashboard V1
+
+- Backend-served internal page route: `/admin/finalize`
+- Backend-served internal data route: `/api/admin/finalize/data`
+- This dashboard is not the raw `/diag/*` surface.
+- V1 page behavior:
+  - plain HTML/CSS/JS
+  - read-only
+  - founder-facing summary first
+  - shared truth top banner
+  - local-process-only observability panel second
+- V1 data sources:
+  - live shared truth from the existing finalize control-room functions
+  - threshold/proof JSON from `docs/artifacts/finalize-phase6/phase6-threshold-summary.json`
+  - markdown docs only as human links, not as parsed logic inputs
+- Access control:
+  - `FINALIZE_DASHBOARD_ENABLED=1`
+  - Firebase-authenticated user
+  - verified email
+  - founder allowlist via `FINALIZE_DASHBOARD_ALLOWED_EMAILS`
