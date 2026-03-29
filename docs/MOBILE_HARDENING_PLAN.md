@@ -114,7 +114,9 @@ Goal: harden only the backend surface that the current mobile app actually depen
 - `DONE`: Finalize Factory Phase 5 canonical status/recovery read-path tightening is now landed.
   - Backend evidence: `src/services/finalize-status.service.js`, `src/routes/story.routes.js`, `src/services/story-finalize.attempts.js`, `firestore.indexes.json`
   - Scope note: `GET /api/story/:sessionId` and same-key replay now share one canonical finalize-status helper, `attempt.projection.renderRecovery` is the canonical caller projection, and session `renderRecovery` remains compatibility-only storage.
-  - Deferred note: Phase 6 threshold tuning/load testing remains explicitly out of scope here.
+- `DONE`: Finalize Factory Phase 6 proof artifacts, threshold report, and scaling runbook are now landed without changing mobile caller semantics.
+  - Backend evidence: `scripts/load/`, `docs/artifacts/finalize-phase6/`, `docs/FINALIZE_THRESHOLD_REPORT.md`, `docs/FINALIZE_SCALING_RUNBOOK.md`
+  - Scope note: this closes the measurement/runbook gap only; it does not change finalize/mobile contracts, render-slot retry behavior, or billing heuristics.
 
 ## Exit Criteria
 

@@ -32,7 +32,7 @@ const LOCAL_WORKER_INFLIGHT_LIMIT = Math.max(
   Number(process.env.STORY_FINALIZE_LOCAL_WORKER_INFLIGHT_LIMIT || (TEST_MODE ? 2 : 6))
 );
 
-function createRunner({ keepProcessAlive = false } = {}) {
+export function createStoryFinalizeRunner({ keepProcessAlive = false } = {}) {
   const runnerId = `story-finalize-runner-${process.pid}-${Math.random().toString(36).slice(2, 10)}`;
   const inflight = new Map();
   const shouldUnrefTimers = !keepProcessAlive;
@@ -358,7 +358,7 @@ function createRunner({ keepProcessAlive = false } = {}) {
 
 export function ensureStoryFinalizeRunner(options = {}) {
   if (!globalThis[RUNNER_KEY]) {
-    globalThis[RUNNER_KEY] = createRunner({
+    globalThis[RUNNER_KEY] = createStoryFinalizeRunner({
       keepProcessAlive: options.keepProcessAlive === true,
     });
   }

@@ -42,6 +42,11 @@
     "prepare": "husky install",
     "check:responses": "node scripts/check-responses.js",
     "check:responses:changed": "node scripts/check-responses-changed.mjs",
+    "load:finalize:baseline": "node scripts/load/finalize-scenario-baseline.mjs",
+    "load:finalize:restart": "node scripts/load/finalize-scenario-worker-restart.mjs",
+    "load:finalize:provider": "node scripts/load/finalize-scenario-provider-slowdown.mjs",
+    "load:finalize:retry-storm": "node scripts/load/finalize-scenario-retry-storm.mjs",
+    "report:finalize:thresholds": "node scripts/load/finalize-threshold-report.mjs",
     "smoke": "node scripts/smoke.mjs",
     "test:poster": "node scripts/test-poster.mjs",
     "test:caption-preview-contract": "node scripts/test-caption-preview-contract.mjs"

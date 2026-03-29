@@ -342,7 +342,7 @@ These contracts stay stable unless later repo evidence proves a change is unavoi
 - `GET /api/story/:sessionId` and same-key replay now both project caller-facing `renderRecovery` from that helper, so replay and GET cannot drift for the same attempt.
 - `attempt.projection.renderRecovery` is now the canonical caller projection; session `renderRecovery` remains compatibility-only storage.
 - Because step 3 is live, the repo now ships the minimal composite Firestore index for `idempotency(flow ASC, uid ASC, sessionId ASC, createdAt DESC)` in `firestore.indexes.json`.
-- Phase 6 threshold tuning/load testing remains deferred.
+- Phase 6 proof remains additive to the landed Phase 5 runtime and does not reopen the architecture.
 
 ## Phase 6 — Load Testing, Thresholds, And Runbooks
 
@@ -354,7 +354,8 @@ These contracts stay stable unless later repo evidence proves a change is unavoi
 - Scope / blast radius: verification, infra sizing docs, runbooks.
 - Ownership: backend primary, cross-repo verification.
 - Deliverables:
-  - load-test scripts
+  - repo-owned Node scenario scripts under `scripts/load/`
+  - deterministic artifact schema and checked-in results under `docs/artifacts/finalize-phase6/`
   - threshold report
   - scaling runbook
   - must-fix list for any observed bottlenecks
@@ -371,11 +372,46 @@ These contracts stay stable unless later repo evidence proves a change is unavoi
   - runbooks
 - Dependencies: Phases 1 through 5.
 - Required proof artifacts:
-  - load-test scripts and results
-  - threshold doc with green/yellow/red ranges
-  - worker restart test results
-  - billing correctness verification under failure
-  - updated runbooks and dashboards
+  - `scripts/load/finalize-load-runner.mjs`
+  - `scripts/load/finalize-scenario-baseline.mjs`
+  - `scripts/load/finalize-scenario-worker-restart.mjs`
+  - `scripts/load/finalize-scenario-provider-slowdown.mjs`
+  - `scripts/load/finalize-scenario-retry-storm.mjs`
+  - `scripts/load/finalize-threshold-report.mjs`
+  - `docs/artifacts/finalize-phase6/ARTIFACT_SCHEMA.md`
+  - checked-in `run-summary.json`, `samples.ndjson`, `control-room/*.json`, and `verdict.json` bundles per scenario
+  - `docs/FINALIZE_THRESHOLD_REPORT.md`
+  - `docs/FINALIZE_SCALING_RUNBOOK.md`
+
+### Phase 6 landed implementation note
+
+- Phase 6 is now implemented as a proof pass, not an architecture rewrite.
+- The shipped measurement contract freezes the Phase 6 route surface to:
+  - `POST /api/story/start`
+  - `POST /api/story/finalize`
+  - `GET /api/story/:sessionId`
+  - `GET /api/shorts/:jobId`
+  - `GET /api/shorts/mine?limit=50`
+  - `GET /diag/finalize-control-room`
+- The shipped control-room payload shape for Phase 6 docs and artifacts is:
+  - `queueSnapshot`
+  - `sharedSystemPressure`
+  - `pressureConfig`
+  - `localProcessObservability`
+- The shipped scenario matrix covers:
+  - single-worker low-concurrency baseline
+  - multi-worker baseline
+  - worker restart while jobs are queued
+  - worker restart while a job is running
+  - provider slowdown / cooldown activation
+  - controlled retry storm
+  - readback lag after successful completion
+  - billing correctness under retry/failure pressure
+- Caller-visible finalize/mobile/web contracts stay frozen in this phase; Phase 6 adds scripts, artifacts, and operator docs only.
+- Carry-forward risks remain measurement targets, not auto-fixes in this phase:
+  - render contention still retries at render stage
+  - `BILLING_ESTIMATE_TOO_LOW` remains an alert-worthy billing mismatch risk
+  - the local semaphore remains per-process safety only
 
 ## Unresolved Decisions
 

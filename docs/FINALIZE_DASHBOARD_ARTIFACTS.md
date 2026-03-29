@@ -162,7 +162,7 @@ Purpose:
 
 Required sources:
 
-- `observability.recentEvents` from `GET /diag/finalize-control-room`
+- `localProcessObservability.recentEvents` from `GET /diag/finalize-control-room`
 - stdout-backed canonical `finalize.*` event logs
 
 Required columns:
@@ -183,3 +183,11 @@ Required columns:
 Phase 1 note:
 
 - this lens is a proof and local-debug surface, not the production dashboard backend
+
+Phase 6 note:
+
+- the control-room payload shape is now frozen as `queueSnapshot`, `sharedSystemPressure`, `pressureConfig`, and `localProcessObservability`
+- threshold ranges and scenario proof now come from the checked-in artifact/report set:
+  - [docs/artifacts/finalize-phase6/ARTIFACT_SCHEMA.md](C:/Users/ajrhe/OneDrive/Desktop/vaiform-1-clean/docs/artifacts/finalize-phase6/ARTIFACT_SCHEMA.md)
+  - [docs/FINALIZE_THRESHOLD_REPORT.md](C:/Users/ajrhe/OneDrive/Desktop/vaiform-1-clean/docs/FINALIZE_THRESHOLD_REPORT.md)
+  - [docs/FINALIZE_SCALING_RUNBOOK.md](C:/Users/ajrhe/OneDrive/Desktop/vaiform-1-clean/docs/FINALIZE_SCALING_RUNBOOK.md)

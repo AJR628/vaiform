@@ -35,8 +35,11 @@ Diagnostic proof surface:
 - Mounted only when `VAIFORM_DEBUG=1` via [src/app.js](C:/Users/ajrhe/OneDrive/Desktop/vaiform-1-clean/src/app.js):217-223 and [src/routes/diag.routes.js](C:/Users/ajrhe/OneDrive/Desktop/vaiform-1-clean/src/routes/diag.routes.js):1-145
 - Returns:
   - `queueSnapshot`
-  - `observability.metrics`
-  - `observability.recentEvents`
+  - `sharedSystemPressure`
+  - `pressureConfig`
+  - `localProcessObservability.metrics`
+  - `localProcessObservability.recentEvents`
+- Phase 6 checked-in proof artifacts now live under [docs/artifacts/finalize-phase6/ARTIFACT_SCHEMA.md](C:/Users/ajrhe/OneDrive/Desktop/vaiform-1-clean/docs/artifacts/finalize-phase6/ARTIFACT_SCHEMA.md) and are summarized by [docs/FINALIZE_THRESHOLD_REPORT.md](C:/Users/ajrhe/OneDrive/Desktop/vaiform-1-clean/docs/FINALIZE_THRESHOLD_REPORT.md)
 
 Known boundaries that still apply:
 

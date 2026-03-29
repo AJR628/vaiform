@@ -1,5 +1,9 @@
 import logger from '../observability/logger.js';
-import { ensureStoryFinalizeRunner, stopStoryFinalizeRunner } from '../services/story-finalize.runner.js';
+import {
+  createStoryFinalizeRunner,
+  ensureStoryFinalizeRunner,
+  stopStoryFinalizeRunner,
+} from '../services/story-finalize.runner.js';
 
 const WORKER_RUNTIME_KEY = Symbol.for('vaiform.storyFinalizeWorkerRuntime');
 
@@ -42,6 +46,49 @@ export function startStoryFinalizeWorkerRuntime({ installSignalHandlers = false 
   });
   globalThis[WORKER_RUNTIME_KEY] = runtime;
   return runtime;
+}
+
+export function startIsolatedStoryFinalizeWorkerRuntime({
+  installSignalHandlers = false,
+  runtimeLabel = 'isolated',
+} = {}) {
+  const runner = createStoryFinalizeRunner({ keepProcessAlive: true });
+  let stopped = false;
+  let signalHandlersInstalled = false;
+
+  const stop = (signal = 'manual') => {
+    if (stopped) return;
+    stopped = true;
+    runner.stop();
+    logger.info('story.finalize.worker_runtime.stopped', {
+      runnerId: runner.runnerId,
+      signal,
+      runtimeLabel,
+      isolated: true,
+    });
+  };
+
+  if (installSignalHandlers) {
+    const handleSignal = (signal) => {
+      stop(signal);
+      process.exit(0);
+    };
+    process.once('SIGINT', () => handleSignal('SIGINT'));
+    process.once('SIGTERM', () => handleSignal('SIGTERM'));
+    signalHandlersInstalled = true;
+  }
+
+  logger.info('story.finalize.worker_runtime.started', {
+    runnerId: runner.runnerId,
+    signalHandlersInstalled,
+    runtimeLabel,
+    isolated: true,
+  });
+
+  return {
+    runnerId: runner.runnerId,
+    stop,
+  };
 }
 
 export function stopStoryFinalizeWorkerRuntime(signal = 'manual') {

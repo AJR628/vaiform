@@ -8,7 +8,7 @@
 
 ## Purpose
 
-This document freezes how finalize works after Phase 5 landed and before Phase 6 changes tuning or load-validation internals.
+This document freezes how finalize works after Phase 5 landed and alongside the additive Phase 6 proof artifacts.
 
 Every statement below is current-state repo truth unless explicitly marked otherwise.
 
@@ -213,6 +213,7 @@ Phase 3 keeps these top-level fields readable and writable on the canonical dura
 - `/diag/finalize-control-room` now distinguishes shared-system pressure truth from local-process observability. Shared backlog/render/provider state comes from the Firestore-backed control service, while the existing in-process metrics snapshot remains visible under an explicit local label: `src/routes/diag.routes.js:66-81`, `src/services/finalize-control.service.js`, `src/observability/finalize-observability.js:614-621`.
 - There is an operator runbook for finalize/replay/recovery and readback incidents: `docs/INCIDENT_TRACE_RUNBOOK.md:5-16`, `docs/INCIDENT_TRACE_RUNBOOK.md:29-128`.
 - Mobile keeps a bounded in-memory diagnostics buffer for API/client failures and enriches finalize/recovery/readback failures with context: `client/lib/diagnostics.ts:36-66`, `client/lib/diagnostics.ts:81-143`.
+- Phase 6 proof artifacts are now checked in under `docs/artifacts/finalize-phase6/`, with the schema frozen in `docs/artifacts/finalize-phase6/ARTIFACT_SCHEMA.md` and thresholds summarized in `docs/FINALIZE_THRESHOLD_REPORT.md`.
 
 ## Frozen External Contracts
 
@@ -259,7 +260,8 @@ These behaviors are frozen for the factory conversion unless later code evidence
 - `docs/API_CONTRACT.md` now documents both established top-level finalize exceptions (`shortId` and `finalize`), so the earlier drift note is closed: `docs/API_CONTRACT.md:56-66`.
 - Mobile TypeScript does not strongly encode session truth because `StorySession` is still `any`; current caller truth is therefore the hooks/screens, not the type file: `client/types/story.ts:1-6`.
 - Active web creative caller behavior is not fully described by the mobile contract docs and must be frozen alongside mobile for this conversion: `docs/ACTIVE_SURFACES.md:83-85`, `web/public/js/pages/creative/creative.article.mjs:3998-4065`.
-- Phase 5 storage/recovery tightening is now landed through the canonical finalize-status read helper and GET/replay projection alignment. Phase 6 threshold tuning/load testing remains deferred.
+- Phase 5 storage/recovery tightening is now landed through the canonical finalize-status read helper and GET/replay projection alignment.
+- Phase 6 proof is now additive only: scripts, checked-in artifacts, threshold docs, and runbooks. It does not change finalize/mobile/web caller contracts, render-slot retry semantics, or billing heuristics.
 
 ## Out Of Scope For This Audit
 
