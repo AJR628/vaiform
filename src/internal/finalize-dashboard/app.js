@@ -35,6 +35,17 @@ const state = {
   pollTimer: null,
 };
 
+function describeAuthError(error) {
+  const code = error?.code ? String(error.code) : null;
+  const message =
+    error?.message || 'Google sign-in could not complete on this origin.';
+  return {
+    code,
+    message,
+    detail: code ? `${code}: ${message}` : message,
+  };
+}
+
 function formatTimestamp(value) {
   if (!value) return 'Unavailable';
   const date = new Date(value);
@@ -353,15 +364,30 @@ async function loadDashboard({ silent = false } = {}) {
 
 async function handleAuthButton() {
   if (state.user) {
+    console.info('[finalize-dashboard] signing out current user', {
+      email: state.user.email || null,
+    });
     await signOut(auth);
     return;
   }
+  console.info('[finalize-dashboard] starting Google popup sign-in', {
+    origin: window.location.origin,
+  });
   provider.setCustomParameters({ prompt: 'select_account' });
-  await signInWithPopup(auth, provider);
+  const result = await signInWithPopup(auth, provider);
+  console.info('[finalize-dashboard] popup sign-in resolved', {
+    email: result.user?.email || null,
+    uid: result.user?.uid || null,
+  });
 }
 
 function updateAuthState(user) {
   state.user = user;
+  console.info('[finalize-dashboard] onAuthStateChanged', {
+    signedIn: Boolean(user),
+    email: user?.email || null,
+    uid: user?.uid || null,
+  });
   els.authChip.textContent = user?.email || 'Not signed in';
   els.authButton.textContent = user ? 'Sign Out' : 'Sign In';
   void loadDashboard();
@@ -375,9 +401,15 @@ els.authButton.addEventListener('click', async () => {
   try {
     await handleAuthButton();
   } catch (error) {
+    const authError = describeAuthError(error);
+    console.error('[finalize-dashboard] authentication failed', {
+      code: authError.code,
+      message: authError.message,
+      error,
+    });
     setNotice(
       'error',
-      `<strong>Authentication failed.</strong> ${error?.message || 'Google sign-in could not complete on this origin.'}`
+      `<strong>Authentication failed.</strong> ${authError.detail}`
     );
   }
 });

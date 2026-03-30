@@ -77,6 +77,28 @@ test('finalize dashboard page serves html when enabled', async () => {
     const page = await requestText('/admin/finalize', { auth: false });
     assert.equal(page.status, 200);
     assert.match(page.text, /Finalize Control Room/);
+    assert.equal(
+      page.response.headers.get('cross-origin-opener-policy'),
+      'same-origin-allow-popups'
+    );
+  } finally {
+    restoreEnv();
+  }
+});
+
+test('finalize dashboard data route keeps page-specific coop override off the api surface', async () => {
+  const restoreEnv = withEnv({
+    FINALIZE_DASHBOARD_ENABLED: '1',
+    FINALIZE_DASHBOARD_ALLOWED_EMAILS: 'user1@example.com',
+  });
+
+  try {
+    const result = await requestJson('/api/admin/finalize/data', {
+      authToken: 'token-user-1',
+    });
+
+    assert.equal(result.status, 200);
+    assert.equal(result.response.headers.get('cross-origin-opener-policy'), 'same-origin');
   } finally {
     restoreEnv();
   }
