@@ -4,6 +4,7 @@ import {
   signInWithPopup,
   signOut,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
+import { getSignaledProviders } from './shared-flow.js';
 
 const POLL_MS = 10_000;
 
@@ -221,7 +222,14 @@ function renderSharedFlowSnapshot(sharedFlowSnapshot) {
   els.flowProviderNote.textContent = sharedFlowSnapshot.providerPressure?.note || '';
   renderCardGrid(els.flowProviderGrid, sharedFlowSnapshot.providerPressure?.cards || []);
 
-  els.flowProviderList.innerHTML = (sharedFlowSnapshot.providerPressure?.providers || [])
+  const signaledProviders = getSignaledProviders(sharedFlowSnapshot.providerPressure?.providers || []);
+  if (!signaledProviders.length) {
+    els.flowProviderList.innerHTML =
+      '<p class="provider-empty">No current provider pressure signal across shared providers.</p>';
+    return;
+  }
+
+  els.flowProviderList.innerHTML = signaledProviders
     .map(
       (provider) => `
         <article class="provider-card ${provider.pressureState === 'warning' ? 'cooldown' : ''}">

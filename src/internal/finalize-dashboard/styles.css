@@ -246,6 +246,12 @@ button:hover {
   grid-column: span 12;
 }
 
+.shared-health-panel,
+.phase-proof-panel,
+.runbooks-panel {
+  grid-column: span 12;
+}
+
 .summary-list {
   display: grid;
   gap: 16px;
@@ -386,6 +392,15 @@ button:hover {
 
 .provider-card.cooldown {
   border-color: rgba(199, 130, 24, 0.3);
+}
+
+.provider-empty {
+  padding: 16px;
+  border-radius: var(--radius-sm);
+  border: 1px dashed rgba(24, 34, 43, 0.16);
+  background: rgba(255, 255, 255, 0.52);
+  color: var(--muted);
+  line-height: 1.5;
 }
 
 .link-card {

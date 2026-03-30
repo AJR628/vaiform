@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+import { getSignaledProviders } from '../../src/internal/finalize-dashboard/shared-flow.js';
 import {
   FINALIZE_EVENTS,
   emitFinalizeEvent,
@@ -77,6 +78,9 @@ test('finalize dashboard page serves html when enabled', async () => {
     const page = await requestText('/admin/finalize', { auth: false });
     assert.equal(page.status, 200);
     assert.match(page.text, /Finalize Control Room/);
+    assert.match(page.text, /class="card shared-health-panel"/);
+    assert.match(page.text, /class="card phase-proof-panel"/);
+    assert.match(page.text, /class="card runbooks-panel"/);
     assert.equal(
       page.response.headers.get('cross-origin-opener-policy'),
       'same-origin-allow-popups'
@@ -207,6 +211,32 @@ test('finalize dashboard data returns shared-truth verdict and labels local-only
   } finally {
     restoreEnv();
   }
+});
+
+test('shared flow provider filtering keeps only non-healthy providers in the detailed list', () => {
+  const providers = [
+    {
+      key: 'openai',
+      label: 'OpenAI',
+      pressureState: 'warning',
+    },
+    {
+      key: 'tts',
+      label: 'TTS',
+      pressureState: 'healthy',
+    },
+    {
+      key: 'pexels',
+      label: 'Pexels',
+      pressureState: 'warning',
+    },
+  ];
+
+  const filtered = getSignaledProviders(providers);
+  assert.deepEqual(
+    filtered.map((provider) => provider.label),
+    ['OpenAI', 'Pexels']
+  );
 });
 
 test('finalize dashboard data rejects unverified allowlisted users', async () => {
