@@ -81,6 +81,43 @@
           </div>
         </section>
 
+        <section class="card shared-flow-panel">
+          <div class="card-heading">
+            <p class="eyebrow">Shared Live Snapshot</p>
+            <h3>Shared Flow &amp; Bottleneck Correlation</h3>
+          </div>
+          <p class="shared-flow-note" id="shared-flow-note">
+            Shared live snapshot only. This section does not show rolling throughput history.
+          </p>
+
+          <div class="subsection">
+            <h4>Queue Flow</h4>
+            <div class="metric-grid" id="flow-queue-grid"></div>
+          </div>
+
+          <div class="subsection">
+            <h4>Drain Correlation</h4>
+            <div class="flow-callout">
+              <strong id="flow-drain-headline">Waiting for shared drain correlation</strong>
+              <p id="flow-drain-detail">Loading shared render and backlog state.</p>
+            </div>
+            <div class="metric-grid" id="flow-drain-grid"></div>
+          </div>
+
+          <div class="subsection">
+            <h4>Provider Pressure Correlation</h4>
+            <div class="flow-callout">
+              <strong id="flow-provider-headline">Waiting for shared provider state</strong>
+              <p id="flow-provider-detail">Loading shared provider pressure signals.</p>
+            </div>
+            <p class="shared-flow-subnote" id="flow-provider-note">
+              Provider cards show current shared provider state only.
+            </p>
+            <div class="metric-grid" id="flow-provider-grid"></div>
+            <div class="provider-list" id="flow-provider-list"></div>
+          </div>
+        </section>
+
         <section class="card">
           <div class="card-heading">
             <p class="eyebrow">Phase 6 Proof</p>

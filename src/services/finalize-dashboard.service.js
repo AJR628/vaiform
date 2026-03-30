@@ -109,6 +109,16 @@ function normalizeProviderEntries(providers = {}) {
   return entries;
 }
 
+function buildFlowCard({ label, value, detail = '', status = 'healthy', unit = null }) {
+  return {
+    label,
+    value,
+    detail,
+    status,
+    unit,
+  };
+}
+
 async function loadPhase6ThresholdSummary() {
   try {
     const raw = await fs.readFile(PHASE6_SUMMARY_PATH, 'utf8');
@@ -177,8 +187,16 @@ async function loadPhase6ThresholdSummary() {
   }
 }
 
-function buildFounderSummary({ verdict, issues, queueSnapshot, providerEntries, thresholdSummary }) {
-  const cooldownProviders = providerEntries.filter((entry) => entry.cooldownActive).map((entry) => entry.label);
+function buildFounderSummary({
+  verdict,
+  issues,
+  queueSnapshot,
+  providerEntries,
+  thresholdSummary,
+}) {
+  const cooldownProviders = providerEntries
+    .filter((entry) => entry.cooldownActive)
+    .map((entry) => entry.label);
   const queueDepth = Number(queueSnapshot.queueDepth || 0);
   const queueAge = Number(queueSnapshot.queueOldestAgeSeconds || 0);
   const retryScheduled = Number(queueSnapshot.jobsRetryScheduled || 0);
@@ -193,7 +211,8 @@ function buildFounderSummary({ verdict, issues, queueSnapshot, providerEntries, 
   }
 
   if (verdict === 'bad') {
-    const primaryIssue = issues[0] || 'Shared finalize pressure is above the measured operating range.';
+    const primaryIssue =
+      issues[0] || 'Shared finalize pressure is above the measured operating range.';
     return {
       headline: 'Shared finalize pressure is unhealthy',
       what: primaryIssue,
@@ -291,7 +310,9 @@ function buildSharedHealth({
     verdict = 'warning';
   }
   if (cooldownProviders.length > 0) {
-    issues.push(`Provider cooldown active: ${cooldownProviders.map((entry) => entry.label).join(', ')}.`);
+    issues.push(
+      `Provider cooldown active: ${cooldownProviders.map((entry) => entry.label).join(', ')}.`
+    );
   }
 
   const renderLimit = Number(sharedSystemPressure?.render?.limit || 0);
@@ -309,12 +330,7 @@ function buildSharedHealth({
 
   return {
     verdict,
-    headline:
-      verdict === 'bad'
-        ? 'Bad'
-        : verdict === 'warning'
-          ? 'Warning'
-          : 'Healthy',
+    headline: verdict === 'bad' ? 'Bad' : verdict === 'warning' ? 'Warning' : 'Healthy',
     issues,
     providerEntries,
     metrics: {
@@ -370,7 +386,12 @@ function buildSharedHealth({
       storySearchSharedLimit: pressureConfig.storySearchSharedLimit,
       ttsSharedLimit: pressureConfig.ttsSharedLimit,
     },
-    sources: ['queueSnapshot', 'sharedSystemPressure', 'pressureConfig', 'phase6-threshold-summary.json'],
+    sources: [
+      'queueSnapshot',
+      'sharedSystemPressure',
+      'pressureConfig',
+      'phase6-threshold-summary.json',
+    ],
   };
 }
 
@@ -407,6 +428,227 @@ function buildLocalObservability(localProcessObservability = {}) {
   };
 }
 
+function buildSharedFlowSnapshot({ queueSnapshot, sharedSystemPressure }) {
+  const backlog = sharedSystemPressure?.backlog || {};
+  const render = sharedSystemPressure?.render || {};
+  const providerEntries = normalizeProviderEntries(sharedSystemPressure?.providers);
+
+  const queuedNow = Number(backlog.queued || 0);
+  const runningNow = Number(backlog.running || 0);
+  const retryScheduledNow = Number(backlog.retryScheduled || 0);
+  const backlogCount = Number(backlog.backlog || 0);
+  const capacityLimit = Number(backlog.limit || 0);
+  const overloaded = backlog.overloaded === true;
+  const oldestQueuedAgeSeconds = Number(queueSnapshot?.queueOldestAgeSeconds || 0);
+
+  const activeRenderLeases = Number(render.activeLeases || 0);
+  const availableRenderCapacity = Number(render.availableLeases || 0);
+  const renderLimit = Number(render.limit || 0);
+  const sharedBacklogPresent = backlogCount > 0;
+  const renderCapacityState =
+    renderLimit > 0 && activeRenderLeases >= renderLimit ? 'saturated' : 'available';
+
+  let drainHeadline = 'Shared queue is draining without an active render bottleneck';
+  let drainDetail =
+    'No shared backlog is visible right now, so render capacity is not the current bottleneck.';
+
+  if (sharedBacklogPresent && renderCapacityState === 'saturated') {
+    drainHeadline = 'Shared backlog is waiting on render capacity';
+    drainDetail =
+      'Shared backlog exists while all shared render leases are in use. Render capacity is the likeliest bottleneck right now.';
+  } else if (sharedBacklogPresent) {
+    drainHeadline = 'Shared backlog exists, but render capacity is still available';
+    drainDetail =
+      'Work is queued in the shared backlog, but render leases are not fully saturated. Pressure may be elsewhere in the pipeline.';
+  } else if (renderCapacityState === 'saturated') {
+    drainHeadline = 'Render capacity is full while in-flight work drains';
+    drainDetail =
+      'All shared render leases are in use, but there is no queued shared backlog at this moment.';
+  }
+
+  const providersInCooldown = providerEntries.filter((entry) => entry.cooldownActive);
+  const providersAtLeasePressure = providerEntries.filter(
+    (entry) => entry.slotLimit > 0 && entry.activeLeases >= entry.slotLimit
+  );
+  const providersWithFailureSignal = providerEntries.filter((entry) => entry.failureCount > 0);
+
+  let providerHeadline = 'No provider pressure signal is active right now';
+  let providerDetail =
+    'Shared provider state does not currently show cooldowns or retained failure pressure.';
+
+  if (providersInCooldown.length > 0 && sharedBacklogPresent) {
+    providerHeadline = 'Provider cooldown is coinciding with shared backlog';
+    providerDetail =
+      'A shared provider cooldown is active while backlog is present, so provider pressure may be contributing to the current bottleneck.';
+  } else if (providersInCooldown.length > 0) {
+    providerHeadline = 'Provider cooldown is active';
+    providerDetail =
+      'Shared provider state shows an active cooldown. This is a current provider pressure signal, not a rolling failure trend.';
+  } else if (providersAtLeasePressure.length > 0) {
+    providerHeadline = 'Shared provider lease pressure is visible';
+    providerDetail =
+      'At least one shared provider is at its slot limit, which can constrain pipeline progress even without an active cooldown.';
+  } else if (providersWithFailureSignal.length > 0) {
+    providerHeadline = 'Shared provider state shows retained failure signals';
+    providerDetail =
+      'Failure counts are present in shared provider state. Treat them as current pressure context, not as a recent failure rate.';
+  }
+
+  return {
+    note: 'Shared live snapshot only. This section shows current shared state, not rolling throughput history.',
+    queueFlow: {
+      queuedNow,
+      runningNow,
+      retryScheduledNow,
+      oldestQueuedAgeSeconds,
+      backlog: backlogCount,
+      capacityLimit,
+      overloaded,
+      cards: [
+        buildFlowCard({
+          label: 'Queued now',
+          value: queuedNow,
+          detail: 'Shared backlog snapshot',
+          status: overloaded ? 'bad' : queuedNow > 0 ? 'warning' : 'healthy',
+        }),
+        buildFlowCard({
+          label: 'Running now',
+          value: runningNow,
+          detail: 'Shared backlog snapshot',
+        }),
+        buildFlowCard({
+          label: 'Retry scheduled now',
+          value: retryScheduledNow,
+          detail: 'Shared backlog snapshot',
+          status: retryScheduledNow > 0 ? 'warning' : 'healthy',
+        }),
+        buildFlowCard({
+          label: 'Oldest queued age',
+          value: oldestQueuedAgeSeconds,
+          detail: 'Shared queue snapshot',
+          unit: 's',
+          status: oldestQueuedAgeSeconds > 0 ? 'warning' : 'healthy',
+        }),
+        buildFlowCard({
+          label: 'Backlog',
+          value: backlogCount,
+          detail: formatCountSummary(backlogCount, capacityLimit),
+          status: overloaded ? 'bad' : backlogCount > 0 ? 'warning' : 'healthy',
+        }),
+        buildFlowCard({
+          label: 'Capacity limit',
+          value: capacityLimit,
+          detail: 'Shared backlog cap',
+        }),
+        buildFlowCard({
+          label: 'Overloaded',
+          value: overloaded ? 'Yes' : 'No',
+          detail: overloaded
+            ? 'Shared backlog is at or above the cap.'
+            : 'Shared backlog is below the cap.',
+          status: overloaded ? 'bad' : 'healthy',
+        }),
+      ],
+    },
+    drainCorrelation: {
+      activeRenderLeases,
+      availableRenderCapacity,
+      sharedBacklogPresent,
+      renderCapacityState,
+      headline: drainHeadline,
+      detail: drainDetail,
+      cards: [
+        buildFlowCard({
+          label: 'Active render leases',
+          value: activeRenderLeases,
+          detail: formatCountSummary(activeRenderLeases, renderLimit),
+          status:
+            sharedBacklogPresent && renderCapacityState === 'saturated' ? 'warning' : 'healthy',
+        }),
+        buildFlowCard({
+          label: 'Available render capacity',
+          value: availableRenderCapacity,
+          detail: `${renderLimit} shared lease${renderLimit === 1 ? '' : 's'} total`,
+          status: renderCapacityState === 'saturated' ? 'warning' : 'healthy',
+        }),
+        buildFlowCard({
+          label: 'Shared backlog present',
+          value: sharedBacklogPresent ? 'Yes' : 'No',
+          detail: sharedBacklogPresent
+            ? `${backlogCount} job${backlogCount === 1 ? '' : 's'} in shared backlog`
+            : 'No queued/running/retry-scheduled backlog',
+          status: sharedBacklogPresent ? 'warning' : 'healthy',
+        }),
+      ],
+    },
+    providerPressure: {
+      activeCooldownCount: providersInCooldown.length,
+      pressuredProviderCount: providersAtLeasePressure.length,
+      failureSignalCount: providersWithFailureSignal.length,
+      headline: providerHeadline,
+      detail: providerDetail,
+      note: 'Provider cards show current shared provider state only. They are not rolling failure-rate or throughput metrics.',
+      cards: [
+        buildFlowCard({
+          label: 'Providers in cooldown',
+          value: providersInCooldown.length,
+          detail:
+            providersInCooldown.length > 0
+              ? providersInCooldown.map((entry) => entry.label).join(', ')
+              : 'None',
+          status: providersInCooldown.length > 0 ? 'warning' : 'healthy',
+        }),
+        buildFlowCard({
+          label: 'Providers at lease pressure',
+          value: providersAtLeasePressure.length,
+          detail:
+            providersAtLeasePressure.length > 0
+              ? providersAtLeasePressure.map((entry) => entry.label).join(', ')
+              : 'None',
+          status: providersAtLeasePressure.length > 0 ? 'warning' : 'healthy',
+        }),
+        buildFlowCard({
+          label: 'Providers with failure signal',
+          value: providersWithFailureSignal.length,
+          detail:
+            providersWithFailureSignal.length > 0
+              ? providersWithFailureSignal.map((entry) => entry.label).join(', ')
+              : 'None',
+          status: providersWithFailureSignal.length > 0 ? 'warning' : 'healthy',
+        }),
+      ],
+      providers: providerEntries.map((entry) => ({
+        key: entry.key,
+        label: entry.label,
+        cooldownActive: entry.cooldownActive,
+        activeLeases: entry.activeLeases,
+        slotLimit: entry.slotLimit,
+        failureCount: entry.failureCount,
+        lastFailureCode: entry.lastFailureCode,
+        pressureState:
+          entry.cooldownActive || (entry.slotLimit > 0 && entry.activeLeases >= entry.slotLimit)
+            ? 'warning'
+            : entry.failureCount > 0
+              ? 'warning'
+              : 'healthy',
+        pressureSummary: entry.cooldownActive
+          ? `Cooldown active${entry.cooldownUntil ? ` until ${entry.cooldownUntil}` : ''}`
+          : entry.slotLimit > 0 && entry.activeLeases >= entry.slotLimit
+            ? `At shared slot limit (${entry.activeLeases}/${entry.slotLimit})`
+            : entry.failureCount > 0
+              ? `Failure count ${entry.failureCount}${entry.lastFailureCode ? ` (${entry.lastFailureCode})` : ''}`
+              : 'No current provider pressure signal',
+      })),
+    },
+    sources: [
+      'sharedSystemPressure.backlog',
+      'sharedSystemPressure.render',
+      'sharedSystemPressure.providers',
+      'queueSnapshot.queueOldestAgeSeconds',
+    ],
+  };
+}
+
 export async function buildFinalizeDashboardPayload() {
   const [queueSnapshot, sharedSystemPressure, thresholdSummary] = await Promise.all([
     captureFinalizeQueueMetricsSnapshot(),
@@ -437,6 +679,10 @@ export async function buildFinalizeDashboardPayload() {
       note: 'Backend-served internal dashboard. Top verdict uses shared finalize truth only.',
     },
     sharedHealth,
+    sharedFlowSnapshot: buildSharedFlowSnapshot({
+      queueSnapshot,
+      sharedSystemPressure,
+    }),
     founderSummary,
     thresholdSummary,
     queueSnapshot,

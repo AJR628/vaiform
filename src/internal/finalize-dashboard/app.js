@@ -1,5 +1,9 @@
 import { auth, provider } from '/admin/finalize/vendor/firebaseClient.js';
-import { onAuthStateChanged, signInWithPopup, signOut } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
+import {
+  onAuthStateChanged,
+  signInWithPopup,
+  signOut,
+} from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 
 const POLL_MS = 10_000;
 
@@ -9,6 +13,15 @@ const els = {
   contextNote: document.getElementById('context-note'),
   dashboardContent: document.getElementById('dashboard-content'),
   eventTableBody: document.getElementById('event-table-body'),
+  flowDrainDetail: document.getElementById('flow-drain-detail'),
+  flowDrainGrid: document.getElementById('flow-drain-grid'),
+  flowDrainHeadline: document.getElementById('flow-drain-headline'),
+  flowProviderDetail: document.getElementById('flow-provider-detail'),
+  flowProviderGrid: document.getElementById('flow-provider-grid'),
+  flowProviderHeadline: document.getElementById('flow-provider-headline'),
+  flowProviderList: document.getElementById('flow-provider-list'),
+  flowProviderNote: document.getElementById('flow-provider-note'),
+  flowQueueGrid: document.getElementById('flow-queue-grid'),
   lastUpdated: document.getElementById('last-updated'),
   linkGrid: document.getElementById('link-grid'),
   localMetrics: document.getElementById('local-metrics'),
@@ -18,6 +31,7 @@ const els = {
   providerList: document.getElementById('provider-list'),
   refreshButton: document.getElementById('refresh-button'),
   sharedMetrics: document.getElementById('shared-metrics'),
+  sharedFlowNote: document.getElementById('shared-flow-note'),
   statusBanner: document.getElementById('status-banner'),
   statusText: document.getElementById('status-text'),
   statusTitle: document.getElementById('status-title'),
@@ -37,8 +51,7 @@ const state = {
 
 function describeAuthError(error) {
   const code = error?.code ? String(error.code) : null;
-  const message =
-    error?.message || 'Google sign-in could not complete on this origin.';
+  const message = error?.message || 'Google sign-in could not complete on this origin.';
   return {
     code,
     message,
@@ -99,6 +112,10 @@ function metricCard(metric) {
 function renderSharedMetrics(sharedHealth) {
   const metrics = Object.values(sharedHealth.metrics || {});
   els.sharedMetrics.innerHTML = metrics.map(metricCard).join('');
+}
+
+function renderCardGrid(element, cards = []) {
+  element.innerHTML = cards.map(metricCard).join('');
 }
 
 function renderPressureConfig(summary = {}) {
@@ -189,6 +206,47 @@ function renderLinks(links = []) {
     .join('');
 }
 
+function renderSharedFlowSnapshot(sharedFlowSnapshot) {
+  els.sharedFlowNote.textContent = sharedFlowSnapshot.note;
+  renderCardGrid(els.flowQueueGrid, sharedFlowSnapshot.queueFlow?.cards || []);
+
+  els.flowDrainHeadline.textContent =
+    sharedFlowSnapshot.drainCorrelation?.headline || 'Unavailable';
+  els.flowDrainDetail.textContent = sharedFlowSnapshot.drainCorrelation?.detail || 'Unavailable';
+  renderCardGrid(els.flowDrainGrid, sharedFlowSnapshot.drainCorrelation?.cards || []);
+
+  els.flowProviderHeadline.textContent =
+    sharedFlowSnapshot.providerPressure?.headline || 'Unavailable';
+  els.flowProviderDetail.textContent = sharedFlowSnapshot.providerPressure?.detail || 'Unavailable';
+  els.flowProviderNote.textContent = sharedFlowSnapshot.providerPressure?.note || '';
+  renderCardGrid(els.flowProviderGrid, sharedFlowSnapshot.providerPressure?.cards || []);
+
+  els.flowProviderList.innerHTML = (sharedFlowSnapshot.providerPressure?.providers || [])
+    .map(
+      (provider) => `
+        <article class="provider-card ${provider.pressureState === 'warning' ? 'cooldown' : ''}">
+          <strong>${provider.label}</strong>
+          <div class="provider-state">${
+            provider.cooldownActive
+              ? 'Cooldown active'
+              : provider.pressureState === 'warning'
+                ? 'Pressure signal'
+                : 'Ready'
+          }</div>
+          <div class="provider-detail">Slots ${provider.activeLeases}/${provider.slotLimit || 0}</div>
+          <div class="provider-detail">Failure count ${provider.failureCount}</div>
+          <div class="provider-detail">${
+            provider.lastFailureCode
+              ? `Last failure ${provider.lastFailureCode}`
+              : 'No retained failure code'
+          }</div>
+          <div class="provider-detail">${provider.pressureSummary}</div>
+        </article>
+      `
+    )
+    .join('');
+}
+
 function renderLocalObservability(localObservability) {
   els.localNote.textContent = localObservability.note;
   const metrics = [
@@ -263,6 +321,7 @@ function renderDashboard(payload) {
   renderSharedMetrics(payload.sharedHealth);
   renderPressureConfig(payload.sharedHealth.pressureConfigSummary);
   renderProviderList(payload.sharedHealth.providerEntries);
+  renderSharedFlowSnapshot(payload.sharedFlowSnapshot);
   renderThresholdSummary(payload.thresholdSummary);
   renderLinks(payload.links);
   renderLocalObservability(payload.localObservability);
@@ -293,7 +352,11 @@ async function fetchDashboardData() {
 
 async function loadDashboard({ silent = false } = {}) {
   if (!silent) {
-    setBanner('loading', 'Loading shared finalize health...', 'Fetching live shared truth and Phase 6 summary.');
+    setBanner(
+      'loading',
+      'Loading shared finalize health...',
+      'Fetching live shared truth and Phase 6 summary.'
+    );
   }
 
   const result = await fetchDashboardData().catch((error) => ({
@@ -407,10 +470,7 @@ els.authButton.addEventListener('click', async () => {
       message: authError.message,
       error,
     });
-    setNotice(
-      'error',
-      `<strong>Authentication failed.</strong> ${authError.detail}`
-    );
+    setNotice('error', `<strong>Authentication failed.</strong> ${authError.detail}`);
   }
 });
 

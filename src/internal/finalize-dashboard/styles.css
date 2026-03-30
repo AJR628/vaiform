@@ -13,7 +13,7 @@
   --shadow: 0 20px 60px rgba(31, 47, 56, 0.12);
   --radius: 22px;
   --radius-sm: 14px;
-  font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+  font-family: 'IBM Plex Sans', 'Segoe UI', sans-serif;
 }
 
 * {
@@ -81,7 +81,7 @@ p {
 }
 
 h1 {
-  font-family: "Avenir Next", "Segoe UI", sans-serif;
+  font-family: 'Avenir Next', 'Segoe UI', sans-serif;
   font-size: clamp(2rem, 4vw, 3.2rem);
   line-height: 0.95;
   letter-spacing: -0.04em;
@@ -399,6 +399,43 @@ button:hover {
 
 .local-panel {
   grid-column: span 12;
+}
+
+.shared-flow-panel {
+  grid-column: span 12;
+}
+
+.shared-flow-note,
+.shared-flow-subnote {
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.shared-flow-note {
+  margin-bottom: 4px;
+}
+
+.shared-flow-subnote {
+  margin: 12px 0 14px;
+}
+
+.flow-callout {
+  margin-bottom: 14px;
+  padding: 16px 18px;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(14, 95, 109, 0.16);
+  background: rgba(246, 250, 250, 0.92);
+}
+
+.flow-callout strong {
+  display: block;
+  font-size: 1rem;
+}
+
+.flow-callout p {
+  margin-top: 8px;
+  color: var(--muted);
+  line-height: 1.5;
 }
 
 .local-note {

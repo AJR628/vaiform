@@ -34,6 +34,7 @@ Live shared truth:
 - `queueSnapshot`
 - `sharedSystemPressure`
 - `pressureConfig`
+- derived shared snapshot section built from those sources for founder-facing flow/correlation copy
 
 Threshold / proof JSON:
 
@@ -71,6 +72,27 @@ Local-only values do not drive the top banner:
 - recent finalize events
 
 Those remain visible only in the clearly labeled local API-process panel.
+
+## Shared Flow Snapshot Section
+
+The dashboard now includes a founder-facing `Shared Flow Snapshot` section under the shared health area.
+
+This section is shared-truth-only and is a point-in-time operational snapshot, not a throughput-history surface.
+
+It uses:
+
+- `sharedSystemPressure.backlog` for queued, running, retry-scheduled, backlog, limit, and overloaded state
+- `queueSnapshot.queueOldestAgeSeconds` for oldest queued age
+- `sharedSystemPressure.render` for render drain / lease saturation correlation
+- `sharedSystemPressure.providers` for current provider cooldown and pressure signals
+
+It does not use:
+
+- local process metrics
+- local recent events
+- rolling windows
+- per-minute rate cards
+- charts or history views
 
 ## Founder Viewing Model
 

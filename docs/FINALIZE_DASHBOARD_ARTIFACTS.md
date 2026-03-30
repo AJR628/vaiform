@@ -202,11 +202,19 @@ Phase 6 note:
   - read-only
   - founder-facing summary first
   - shared truth top banner
+  - shared flow snapshot / bottleneck correlation section from existing shared truth only
   - local-process-only observability panel second
 - V1 data sources:
   - live shared truth from the existing finalize control-room functions
   - threshold/proof JSON from `docs/artifacts/finalize-phase6/phase6-threshold-summary.json`
   - markdown docs only as human links, not as parsed logic inputs
+- Shared Flow Snapshot section rules:
+  - use `sharedSystemPressure.backlog` for queue composition and overload state
+  - use `queueSnapshot.queueOldestAgeSeconds` for oldest queued age
+  - use `sharedSystemPressure.render` for drain / render-capacity correlation
+  - use `sharedSystemPressure.providers` for current provider pressure signals
+  - keep wording founder-facing and operational
+  - do not present this section as rolling throughput history, rate cards, or trend analytics
 - Access control:
   - `FINALIZE_DASHBOARD_ENABLED=1`
   - Firebase-authenticated user

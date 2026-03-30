@@ -155,7 +155,51 @@ test('finalize dashboard data returns shared-truth verdict and labels local-only
     assert.equal(json.success, true);
     assert.equal(json.data.sharedHealth.verdict, 'healthy');
     assert.equal(json.data.sharedHealth.sources.includes('phase6-threshold-summary.json'), true);
+    assert.equal(typeof json.data.sharedFlowSnapshot, 'object');
+    assert.equal(
+      json.data.sharedFlowSnapshot.queueFlow.queuedNow,
+      json.data.sharedSystemPressure.backlog.queued
+    );
+    assert.equal(
+      json.data.sharedFlowSnapshot.queueFlow.runningNow,
+      json.data.sharedSystemPressure.backlog.running
+    );
+    assert.equal(
+      json.data.sharedFlowSnapshot.queueFlow.retryScheduledNow,
+      json.data.sharedSystemPressure.backlog.retryScheduled
+    );
+    assert.equal(
+      json.data.sharedFlowSnapshot.queueFlow.backlog,
+      json.data.sharedSystemPressure.backlog.backlog
+    );
+    assert.equal(
+      json.data.sharedFlowSnapshot.queueFlow.capacityLimit,
+      json.data.sharedSystemPressure.backlog.limit
+    );
+    assert.equal(
+      json.data.sharedFlowSnapshot.queueFlow.oldestQueuedAgeSeconds,
+      json.data.queueSnapshot.queueOldestAgeSeconds
+    );
+    assert.equal(
+      json.data.sharedFlowSnapshot.drainCorrelation.activeRenderLeases,
+      json.data.sharedSystemPressure.render.activeLeases
+    );
+    assert.equal(
+      json.data.sharedFlowSnapshot.drainCorrelation.availableRenderCapacity,
+      json.data.sharedSystemPressure.render.availableLeases
+    );
+    assert.match(json.data.sharedFlowSnapshot.note, /shared live snapshot/i);
+    assert.match(json.data.sharedFlowSnapshot.note, /not rolling throughput history/i);
+    assert.equal(Array.isArray(json.data.sharedFlowSnapshot.providerPressure.providers), true);
+    assert.equal(
+      json.data.sharedFlowSnapshot.providerPressure.providers.some(
+        (provider) => provider.label === 'OpenAI'
+      ),
+      true
+    );
     assert.equal(json.data.localObservability.metrics.workerSaturationRatio, 9);
+    assert.equal(json.data.sharedFlowSnapshot.queueFlow.backlog, 0);
+    assert.equal(json.data.sharedFlowSnapshot.drainCorrelation.activeRenderLeases, 0);
     assert.match(json.data.localObservability.note, /not system-wide truth/i);
     assert.equal(typeof json.data.thresholdSummary.runCount, 'number');
     assert.equal(Array.isArray(json.data.links), true);
