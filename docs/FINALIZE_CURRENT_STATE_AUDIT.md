@@ -4,7 +4,7 @@
 - Owner repo: backend
 - Source of truth for: current finalize/render behavior, active caller ownership, current storage/runtime topology, and frozen external finalize contracts for the factory conversion
 - Canonical counterpart/source: `docs/FINALIZE_FACTORY_CONVERSION_PLAN.md`, `docs/FINALIZE_JOB_MODEL_SPEC.md`, `docs/FINALIZE_OBSERVABILITY_SPEC.md`, `docs/FINALIZE_RUNTIME_TOPOLOGY_SPEC.md`
-- Last verified against: backend repo plus current mobile repo on 2026-03-28
+- Last verified against: backend repo plus current mobile repo on 2026-04-01
 
 ## Purpose
 
@@ -49,12 +49,12 @@ If docs and code disagree, code wins for this audit.
   - worker runtime module: `src/workers/story-finalize.worker.js:1-49`
   - worker process entrypoint: `story-finalize.worker.js:1-14`
   - worker npm script: `package.json:25-40`
-- The story router is mounted at `/api/story`, and all story routes require auth through router-level `requireAuth`: `src/app.js:244-246`, `src/routes/story.routes.js:35-36`.
+- The story router is mounted at `/api/story`, and all story routes require auth through router-level `requireAuth`: `src/app.js:244-246`, `src/routes/story.routes.js:45-46`.
 
 ### 2. Finalize admission request
 
-- `POST /api/story/finalize` runs `idempotencyFinalize({ getSession })` before the route handler, so idempotency and reservation happen before the route emits JSON: `src/routes/story.routes.js:970-971`.
-- The middleware requires `X-Idempotency-Key`, rejects unauthenticated calls, validates `sessionId` before any Firestore reservation, and seeds request context with `sessionId` and `attemptId`: `src/middleware/idempotency.firestore.js:33-55`.
+- `POST /api/story/finalize` runs `idempotencyFinalize({ getSession })` before the route handler, so idempotency and reservation happen before the route emits JSON: `src/routes/story.routes.js:993-994`.
+- The middleware requires `X-Idempotency-Key`, rejects unauthenticated calls, validates `sessionId` before any Firestore reservation, and seeds request context with `sessionId` and `attemptId`: `src/middleware/idempotency.firestore.js:44-113`.
 
 ### 3. Durable admission and billing reservation
 
@@ -68,12 +68,12 @@ If docs and code disagree, code wins for this audit.
 
 ### 4. Current finalize response behavior
 
-- Accepted work returns `202` with the session in `data`, top-level `shortId: null`, and top-level `finalize: { state: "pending", attemptId, pollSessionId }`: `src/services/story-finalize.attempts.js:105-111`, `src/services/story-finalize.attempts.js:517-526`.
-- Same-key active replay returns the same `202 pending` shape: `src/services/story-finalize.attempts.js:527-551`.
-- Same-session different-key conflict returns `409 FINALIZE_ALREADY_ACTIVE` with top-level `finalize`: `src/services/story-finalize.attempts.js:113-122`, `src/services/story-finalize.attempts.js:553-560`.
-- Same-key terminal success replay returns `200` with session `data`, top-level `shortId`, and additive `data.billing`: `src/services/story-finalize.attempts.js:562-587`.
-- Same-key terminal failure replay returns the stored terminal failure payload: `src/services/story-finalize.attempts.js:124-134`, `src/services/story-finalize.attempts.js:589-593`.
-- Genuinely new admissions may now return `503 SERVER_BUSY` with `Retry-After` when the shared backlog gate is over cap; those rejections do not reserve usage, do not create finalize job docs, and do not create session lock docs: `src/services/story-finalize.attempts.js:779-840`, `src/services/story-finalize.attempts.js:1168-1181`, `src/routes/story.routes.js:1121-1155`.
+- Accepted work returns `202` with the session in `data`, top-level `shortId: null`, and top-level `finalize: { state: "pending", attemptId, pollSessionId }`: `src/services/story-finalize.attempts.js:535-541`, `src/services/story-finalize.attempts.js:1121-1129`.
+- Same-key active replay returns the same `202 pending` shape: `src/services/story-finalize.attempts.js:535-541`, `src/services/story-finalize.attempts.js:1131-1155`.
+- Same-session different-key conflict returns `409 FINALIZE_ALREADY_ACTIVE` with top-level `finalize`: `src/services/story-finalize.attempts.js:543-552`, `src/services/story-finalize.attempts.js:1157-1164`.
+- Same-key terminal success replay returns `200` with session `data`, top-level `shortId`, and additive `data.billing`: `src/services/story-finalize.attempts.js:528-533`, `src/services/story-finalize.attempts.js:1184-1191`.
+- Same-key terminal failure replay returns the stored terminal failure payload: `src/services/story-finalize.attempts.js:554-564`, `src/services/story-finalize.attempts.js:1193-1197`.
+- Genuinely new admissions may now return `503 SERVER_BUSY` with `Retry-After` when the shared backlog gate is over cap; those rejections do not reserve usage, do not create finalize job docs, and do not create session lock docs: `src/services/story-finalize.attempts.js:779-840`, `src/services/story-finalize.attempts.js:1199-1210`, `src/routes/story.routes.js:1150-1190`.
 
 ### 5. Session recovery state
 
@@ -90,9 +90,9 @@ If docs and code disagree, code wins for this audit.
 
 ### 6. Background execution
 
-- The route handler itself does not execute the render pipeline. It returns the prepared reply and no longer nudges finalize execution directly; worker discovery is independent of the route: `src/routes/story.routes.js:970-1084`.
-- The runner is a process-global singleton stored on `globalThis`: `src/services/story-finalize.runner.js:27`, `src/services/story-finalize.runner.js:335-353`.
-- The dedicated worker runtime starts that runner explicitly with `keepProcessAlive: true`: `src/workers/story-finalize.worker.js:6-44`, `src/services/story-finalize.runner.js:30-53`, `src/services/story-finalize.runner.js:335-342`.
+- The route handler itself does not execute the render pipeline. It returns the prepared reply and no longer nudges finalize execution directly; worker discovery is independent of the route: `src/routes/story.routes.js:993-1222`.
+- The runner is a process-global singleton stored on `globalThis`: `src/services/story-finalize.runner.js:28-29`, `src/services/story-finalize.runner.js:359-365`.
+- The dedicated worker runtime starts that runner explicitly with `keepProcessAlive: true`: `src/workers/story-finalize.worker.js:10-48`, `src/services/story-finalize.runner.js:35-59`, `src/services/story-finalize.runner.js:359-365`.
 - The runner polls for queued attempts, claims them, heartbeats leases, runs `finalizeStory()`, settles success, requeues `SERVER_BUSY`, and marks terminal failure otherwise: `src/services/story-finalize.runner.js:30-89`, `src/services/story-finalize.runner.js:90-226`, `src/services/story-finalize.runner.js:252-304`.
 
 ### 7. Current durable queue substrate
@@ -221,12 +221,12 @@ These behaviors are frozen for the factory conversion unless later code evidence
 
 ### POST /api/story/finalize
 
-- The route must remain authenticated and idempotent on `X-Idempotency-Key`: `src/routes/story.routes.js:35-36`, `src/middleware/idempotency.firestore.js:33-40`.
-- Accepted work must continue to return quickly rather than block on full render completion: `src/routes/story.routes.js:964-1021`, `src/services/story-finalize.attempts.js:517-526`.
-- Same-key replay and same-session different-key conflict semantics must remain stable: `src/services/story-finalize.attempts.js:527-560`.
+- The route must remain authenticated and idempotent on `X-Idempotency-Key`: `src/routes/story.routes.js:45-46`, `src/middleware/idempotency.firestore.js:44-68`.
+- Accepted work must continue to return quickly rather than block on full render completion: `src/routes/story.routes.js:993-1017`, `src/services/story-finalize.attempts.js:1121-1129`.
+- Same-key replay and same-session different-key conflict semantics must remain stable: `src/services/story-finalize.attempts.js:1131-1164`.
 - Admission precedence is now frozen to: same-key replay, same-session active conflict, shared overload gate, then billing reserve plus enqueue: `src/services/story-finalize.attempts.js:779-840`.
-- Shared overload uses backlog definition `queued + running + retry_scheduled` and returns `503 SERVER_BUSY` plus `Retry-After` only for genuinely new admissions: `src/services/finalize-control.service.js`, `src/services/story-finalize.attempts.js:779-840`, `src/services/story-finalize.attempts.js:1168-1181`.
-- Success replay must continue to expose top-level `shortId` and additive `data.billing`: `src/services/story-finalize.attempts.js:562-587`.
+- Shared overload uses backlog definition `queued + running + retry_scheduled` and returns `503 SERVER_BUSY` plus `Retry-After` only for genuinely new admissions: `src/services/finalize-control.service.js`, `src/services/story-finalize.attempts.js:779-840`, `src/services/story-finalize.attempts.js:1199-1210`.
+- Success replay must continue to expose top-level `shortId` and additive `data.billing`: `src/services/story-finalize.attempts.js:1184-1190`.
 
 ### GET /api/story/:sessionId recovery expectations
 
@@ -236,7 +236,7 @@ These behaviors are frozen for the factory conversion unless later code evidence
 ### Additive billing metadata
 
 - `billingEstimate.estimatedSec` remains the admission-time reservation source: `src/services/story-finalize.attempts.js:331-339`.
-- Additive `data.billing.billedSec` on terminal success replay remains caller-visible: `src/services/story-finalize.attempts.js:580-586`, `client/lib/renderUsage.ts:30-35`.
+- Additive `data.billing.billedSec` on terminal success replay remains caller-visible: `src/services/story-finalize.attempts.js:1186-1189`, `client/lib/renderUsage.ts:30-35`.
 
 ### Short / library eventual readback
 
@@ -248,12 +248,12 @@ These behaviors are frozen for the factory conversion unless later code evidence
 
 ### Current authoritative docs
 
-- Backend front door and doc ownership: `README.md:3-17`, `docs/DOCS_INDEX.md:15-31`
-- Backend finalize/mobile contract truth: `docs/MOBILE_BACKEND_CONTRACT.md:191-212`
+- Backend front door and doc ownership: `README.md:3-17`, `docs/DOCS_INDEX.md:9-13`, `docs/DOCS_INDEX.md:15-77`
+- Backend finalize/mobile contract truth: `docs/MOBILE_BACKEND_CONTRACT.md:47-248`
 - Backend hardening status: `docs/MOBILE_HARDENING_PLAN.md:59-120`
 - Cross-repo hardening audit: `docs/CROSS_REPO_PRODUCTION_HARDENING_PLAN.md:68-108`, `docs/CROSS_REPO_PRODUCTION_HARDENING_PLAN.md:570-583`
 - Incident/runbook truth: `docs/INCIDENT_TRACE_RUNBOOK.md:5-128`
-- Mobile caller-truth doc: sibling mobile repo `docs/MOBILE_USED_SURFACES.md:13-18` and `docs/MOBILE_USED_SURFACES.md:49-53`
+- Mobile caller-truth doc: sibling mobile repo `docs/MOBILE_USED_SURFACES.md:13-19` and `docs/MOBILE_USED_SURFACES.md:23-110`
 
 ### Proven drift / gaps
 

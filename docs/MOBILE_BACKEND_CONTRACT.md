@@ -1,6 +1,6 @@
 # MOBILE_BACKEND_CONTRACT
 
-Cross-repo verification date: 2026-03-28.
+Cross-repo verification date: 2026-04-01.
 
 Purpose: canonical backend-owned contract, guarantees, and open mismatch record for mobile production. Current mobile caller-truth lives in the mobile repo. If a route is not `MOBILE_CORE_NOW` or `MOBILE_CORE_SOON` here, it is not first-class for mobile launch.
 
@@ -14,11 +14,11 @@ Purpose: canonical backend-owned contract, guarantees, and open mismatch record 
 
 ## Request Rules
 
-- Authenticated mobile requests use `Authorization: Bearer <Firebase ID token>` when a token is available (`client/api/client.ts:167-183`, `client/api/client.ts:227-241`, `src/middleware/requireAuth.js:7-27`).
+- Authenticated mobile requests use `Authorization: Bearer <Firebase ID token>` when a token is available (`client/api/client.ts:176-189`, `client/api/client.ts:244-257`, `src/middleware/requireAuth.js:7-31`).
 - JSON requests use `Content-Type: application/json`.
-- Mobile callers send `x-client: mobile` (`client/api/client.ts:171-175`, `client/api/client.ts:231-235`). Caption preview uses that header as part of the mobile/server-measured path selection when `measure` is omitted (`src/routes/caption.preview.routes.js:131-145`).
-- Backend finalize requires `X-Idempotency-Key`, and the current mobile finalize caller sends it (`src/middleware/idempotency.firestore.js:69-94`, `client/api/client.ts:743-780`).
-- `GET /api/usage` is the active mobile billing surface (`client/api/client.ts:547-551`, `client/contexts/AuthContext.tsx:159-180`, `src/routes/usage.routes.js:1-8`).
+- Mobile callers send `x-client: mobile` (`client/api/client.ts:176-180`, `client/api/client.ts:244-248`). Caption preview uses that header as part of the mobile/server-measured path selection when `measure` is omitted (`src/routes/caption.preview.routes.js:131-145`).
+- Backend finalize requires `X-Idempotency-Key`, and the current mobile finalize caller sends it (`src/middleware/idempotency.firestore.js:44-113`, `client/api/client.ts:804-828`).
+- `GET /api/usage` is the active mobile billing surface (`client/api/client.ts:598-603`, `client/contexts/AuthContext.tsx:159-180`, `src/routes/usage.routes.js:1-8`).
 
 ## Billing Cutover Note
 
@@ -32,8 +32,8 @@ Purpose: canonical backend-owned contract, guarantees, and open mismatch record 
 
 - Standard backend success envelope: `{ success: true, data, requestId }` (`src/http/respond.js:14-17`).
 - Standard backend failure envelope: `{ success: false, error, detail, requestId, fields? }` (`src/http/respond.js:28-34`).
-- Mobile normalization layer now preserves `requestId` while converting success envelopes to `{ ok: true, data, requestId }` and failure envelopes to `{ ok: false, status, code, message, requestId }` (`client/api/client.ts:94-160`, `client/api/client.ts:223-289`).
-- Finalize is the current launch exception: the backend returns top-level `shortId`, and accepted/conflict responses also return top-level `finalize = { state, attemptId, pollSessionId }`; the mobile client explicitly extracts both from the raw response (`src/services/story-finalize.attempts.js:105-122`, `src/services/story-finalize.attempts.js:517-587`, `client/api/client.ts:898-937`).
+- Mobile normalization layer now preserves `requestId` while converting success envelopes to `{ ok: true, data, requestId }` and failure envelopes to `{ ok: false, status, code, message, requestId }` (`client/api/client.ts:127-160`, `client/api/client.ts:230-307`).
+- Finalize is the current launch exception: the backend returns top-level `shortId`, and accepted/conflict responses also return top-level `finalize = { state, attemptId, pollSessionId }`; the mobile client explicitly extracts both from the raw response (`src/services/story-finalize.attempts.js:528-564`, `src/services/story-finalize.attempts.js:1118-1197`, `client/api/client.ts:804-937`).
 - Cross-Repo Phase 3 observability is now live on the named hot paths only: backend request context is seeded immediately after request ID assignment, backend hot-path boundary events flow through one structured stdout logger with built-in redaction, and mobile keeps a bounded in-memory diagnostics buffer for normalized failures with additive context from auth bootstrap, finalize/recovery, and short-detail retry surfaces.
 - Phase 3 caveat: deeper finalize/render internals inside the active finalize path still contain legacy `console.*` logging and were not fully migrated in this phase.
 
@@ -67,14 +67,14 @@ Purpose: canonical backend-owned contract, guarantees, and open mismatch record 
 ### Story Creation And Session Truth
 
 - `POST /api/story/start`
-  - Mobile caller(s): mobile `client/screens/HomeScreen.tsx:89-123`
+  - Mobile caller(s): mobile `client/screens/HomeScreen.tsx:101-149`
   - Backend handler(s): `src/routes/story.routes.js:188-220`, `src/services/story.service.js:486-511`
   - Mobile sends: `{ input, inputType, styleKey? }`. Home omits `styleKey` unless the user explicitly selects `default`, `hype`, or `cozy`.
   - Backend returns: full session in `data`.
   - Mobile reads: `data.id` only.
 
 - `POST /api/story/generate`
-  - Mobile caller(s): mobile `client/screens/HomeScreen.tsx:120-138`
+  - Mobile caller(s): mobile `client/screens/HomeScreen.tsx:131-149`
   - Backend handler(s): `src/routes/story.routes.js:233-268`, `src/services/story.service.js:524-552`, `src/services/story.llm.service.js:223-323`
   - Mobile sends: `{ sessionId }` only. `styleKey` is stored at start-time and is not part of the generate request.
   - Backend returns: full session in `data`.
@@ -173,7 +173,7 @@ Purpose: canonical backend-owned contract, guarantees, and open mismatch record 
     - `400 CLIP_NOT_FOUND_IN_CANDIDATES`
 
 - `POST /api/caption/preview`
-  - Mobile caller(s): `client/hooks/useCaptionPreview.ts:45-259`, `client/screens/story-editor/useStoryEditorCaptionPlacement.ts:58-66`
+  - Mobile caller(s): `client/hooks/useCaptionPreview.ts:45-133`, `client/screens/story-editor/useStoryEditorCaptionPlacement.ts:58-66`
   - Backend handler(s): `src/routes/caption.preview.routes.js:109-313`
   - Mobile sends: `{ ssotVersion: 3, mode: "raster", measure: "server", text, placement, yPct, frameW, frameH }`; current mobile preview flow does not send `style`.
   - Backend returns: `data.meta` including `rasterUrl`, `rasterW`, `rasterH`, `yPx_png`, `frameW`, `frameH`, and other compiler metadata.
@@ -197,7 +197,7 @@ Purpose: canonical backend-owned contract, guarantees, and open mismatch record 
   - `docs/FINALIZE_RUNTIME_TOPOLOGY_SPEC.md`
 
 - `POST /api/story/finalize`
-  - Mobile caller(s): `client/screens/story-editor/useStoryEditorFinalize.ts:344-562`, `client/api/client.ts:756-902`
+  - Mobile caller(s): `client/screens/story-editor/useStoryEditorFinalize.ts:347-520`, `client/api/client.ts:804-953`
   - Backend handler(s): `src/routes/story.routes.js`, `src/middleware/idempotency.firestore.js`, `src/services/story-finalize.attempts.js`, `src/services/story-finalize.runner.js`, `src/services/finalize-status.service.js`, `src/services/story.service.js`
   - Mobile sends now: `{ sessionId }` plus `X-Idempotency-Key`.
   - Backend requires now: `{ sessionId }` plus `X-Idempotency-Key`.
@@ -260,15 +260,15 @@ Purpose: canonical backend-owned contract, guarantees, and open mismatch record 
 
 | Route                                   | Classification     | Verified caller evidence                                                                                                                                                                                                  | Handling policy                                          |
 | --------------------------------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
-| `POST /api/users/ensure`                | `MOBILE_CORE_NOW`  | Mobile auth bootstrap (`client/contexts/AuthContext.tsx:63-76`)                                                                                                                                                           | Harden and document now.                                 |
-| `GET /api/usage`                        | `MOBILE_CORE_NOW`  | Mobile auth bootstrap and billing refresh (`client/api/client.ts:519-527`, `client/contexts/AuthContext.tsx:142-178`)                                                                                                     | Harden and document now.                                 |
-| `POST /api/story/start`                 | `MOBILE_CORE_NOW`  | Mobile home create flow (`client/screens/HomeScreen.tsx:79-107`)                                                                                                                                                          | Harden now.                                              |
-| `POST /api/story/generate`              | `MOBILE_CORE_NOW`  | Mobile create flow (`client/screens/HomeScreen.tsx:109-127`)                                                                                                                                                              | Harden now.                                              |
+| `POST /api/users/ensure`                | `MOBILE_CORE_NOW`  | Mobile auth bootstrap (`client/contexts/AuthContext.tsx:82-188`)                                                                                                                                                          | Harden and document now.                                 |
+| `GET /api/usage`                        | `MOBILE_CORE_NOW`  | Mobile auth bootstrap and billing refresh (`client/api/client.ts:598-603`, `client/contexts/AuthContext.tsx:159-180`)                                                                                                     | Harden and document now.                                 |
+| `POST /api/story/start`                 | `MOBILE_CORE_NOW`  | Mobile home create flow (`client/screens/HomeScreen.tsx:101-149`)                                                                                                                                                         | Harden now.                                              |
+| `POST /api/story/generate`              | `MOBILE_CORE_NOW`  | Mobile create flow (`client/screens/HomeScreen.tsx:131-149`)                                                                                                                                                              | Harden now.                                              |
 | `GET /api/story/:sessionId`             | `MOBILE_CORE_NOW`  | Mobile script/editor and finalize-recovery truth (`client/screens/ScriptScreen.tsx:65-82`, `client/screens/story-editor/useStoryEditorSession.ts:36-78`, `client/screens/story-editor/useStoryEditorFinalize.ts:182-225`) | Harden now.                                              |
 | `POST /api/story/plan`                  | `MOBILE_CORE_NOW`  | Mobile storyboard step (`client/screens/ScriptScreen.tsx:126-159`)                                                                                                                                                        | Harden now.                                              |
 | `POST /api/story/search`                | `MOBILE_CORE_NOW`  | Mobile storyboard step (`client/screens/ScriptScreen.tsx:141-159`)                                                                                                                                                        | Harden now.                                              |
 | `POST /api/story/update-beat-text`      | `MOBILE_CORE_NOW`  | Mobile script/editor beat editing (`client/screens/ScriptScreen.tsx:174-236`, `client/screens/story-editor/useStoryEditorSession.ts:131-176`)                                                                             | Harden now.                                              |
-| `POST /api/story/delete-beat`           | `MOBILE_CORE_NOW`  | Mobile script/editor deletion (`client/screens/ScriptScreen.tsx:260-266`, `client/screens/story-editor/useStoryEditorSession.ts:190-231`)                                                                                 | Harden now.                                              |
+| `POST /api/story/delete-beat`           | `MOBILE_CORE_NOW`  | Mobile script/editor deletion (`client/screens/ScriptScreen.tsx:248-262`, `client/screens/story-editor/useStoryEditorSession.ts:190-231`)                                                                                 | Harden now.                                              |
 | `POST /api/story/search-shot`           | `MOBILE_CORE_NOW`  | Mobile clip picker (`client/screens/ClipSearchModal.tsx:49-80`)                                                                                                                                                           | Harden now.                                              |
 | `POST /api/story/update-shot`           | `MOBILE_CORE_NOW`  | Mobile clip replacement (`client/screens/ClipSearchModal.tsx:83-104`)                                                                                                                                                     | Harden now.                                              |
 | `POST /api/caption/preview`             | `MOBILE_CORE_NOW`  | Mobile beat-card preview (`client/hooks/useCaptionPreview.ts:59-120`)                                                                                                                                                     | Harden now.                                              |

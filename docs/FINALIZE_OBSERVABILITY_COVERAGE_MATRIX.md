@@ -1,14 +1,16 @@
 # FINALIZE_OBSERVABILITY_COVERAGE_MATRIX
 
-- Status: CANONICAL FOR PHASE 1
+- Status: PHASE_SCOPED_REFERENCE
 - Owner repo: backend
-- Source of truth for: Phase 1 mapping from the Phase 0 finalize observability contract to current code owners, missing gaps, and Phase 1 instrumentation boundaries
-- Canonical counterpart/source: `docs/FINALIZE_OBSERVABILITY_SPEC.md`, `docs/FINALIZE_FACTORY_CONVERSION_PLAN.md`
-- Last verified against: backend repo plus current mobile repo on 2026-03-26
+- Source of truth for: historical Phase 1 mapping from the earlier finalize observability contract to then-missing owner boundaries and instrumentation gaps
+- Canonical counterpart/source: `docs/FINALIZE_OBSERVABILITY_SPEC.md`, `src/observability/finalize-observability.js`, `test/observability/finalize-observability.contract.test.js`
+- Last verified against: backend repo plus current mobile repo on 2026-04-01
+
+> Historical note: this matrix is retained as a Phase 1 planning snapshot. It is not the live canonical observability contract. For current truth, use `docs/FINALIZE_OBSERVABILITY_SPEC.md`, `src/observability/finalize-observability.js`, and `test/observability/finalize-observability.contract.test.js`.
 
 ## Purpose
 
-This matrix freezes the Phase 1 observability build scope before deeper factory-conversion work begins.
+This matrix freezes the Phase 1 observability build scope as it existed before deeper factory-conversion work began.
 
 It answers:
 
