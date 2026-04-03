@@ -947,12 +947,12 @@ r.post('/captions', async (req, res) => {
   }
 });
 
-// POST /api/story/render - Render final video (Phase 6)
-// When DISABLE_STORY_RENDER_ROUTE=1, returns 405 and directs clients to POST /api/story/finalize.
+// POST /api/story/render - Render final video (legacy blocking path)
+// Disabled by default; set ENABLE_STORY_RENDER_ROUTE=1 to opt in explicitly.
 r.post(
   '/render',
   (req, res, next) => {
-    if (process.env.DISABLE_STORY_RENDER_ROUTE === '1') {
+    if (process.env.ENABLE_STORY_RENDER_ROUTE !== '1') {
       return fail(req, res, 405, 'RENDER_DISABLED', 'Use POST /api/story/finalize');
     }
     next();

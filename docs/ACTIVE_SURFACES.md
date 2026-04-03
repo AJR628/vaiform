@@ -98,7 +98,7 @@ Audit date: 2026-03-13
 
 - Creative story pipeline remains caller-backed via `web/public/creative.html` -> `web/public/js/pages/creative/creative.article.mjs`.
 - The current creative web caller uses `/api/story/start`, `/api/story/generate`, `/api/story/plan`, `/api/story/search`, `/api/assets/options`, `/api/story/update-shot`, `/api/story/search-shot`, `/api/story/update-video-cuts`, `/api/story/create-manual-session`, `/api/story/finalize`, and `GET /api/story/:sessionId`.
-- No current web caller in `web/public/**` hits `/api/story/render`; finalize is the caller-backed render path.
+- No current web caller in `web/public/**` hits `/api/story/render`; finalize is the caller-backed render path, and `/api/story/render` is disabled by default unless `ENABLE_STORY_RENDER_ROUTE=1`.
 - Caption preview remains caller-backed via `web/public/js/caption-preview.js` and `web/public/js/caption-live.js`.
 - Shorts library remains caller-backed via `web/public/my-shorts.html` -> `web/public/js/my-shorts.js`.
 - Checkout start remains caller-backed via `web/public/pricing.html` -> `web/public/js/pricing.js`.

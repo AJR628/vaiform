@@ -580,7 +580,7 @@ DONE: take finalize completion off the long-lived request path without changing 
 
 - `src/utils/render.semaphore.js` is still per-process only.
 - The Firestore finalize runner coordinates attempt ownership and stale-attempt cleanup, but it does not create a global multi-instance render-slot ceiling.
-- `server.js` still keeps a 15-minute timeout for legacy blocking render flows such as `POST /api/story/render`; that timeout is no longer the finalize scalability strategy.
+- `server.js` now keeps the 15-minute timeout only when the legacy blocking render route is explicitly re-enabled with `ENABLE_STORY_RENDER_ROUTE=1`; that timeout is no longer the finalize scalability strategy.
 
 ### 7. Proposed plan in order
 

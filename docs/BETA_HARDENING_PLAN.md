@@ -306,7 +306,7 @@ Add targeted admission control to the expensive story and asset surfaces and clo
 #### Why It Matters
 
 - Caption preview already has a real rate limit, but story search/manual/finalize and assets options do not.
-- Current web callers finalize through `/api/story/finalize`; the active creative caller now recovers transport-level `HTTP_502` / `HTTP_504` and `IDEMPOTENT_IN_PROGRESS` by polling `GET /api/story/:sessionId`, while `/api/story/render` remains mounted without a caller-backed need.
+- Current web callers finalize through `/api/story/finalize`; the active creative caller now recovers transport-level `HTTP_502` / `HTTP_504` and `IDEMPOTENT_IN_PROGRESS` by polling `GET /api/story/:sessionId`, while `/api/story/render` is disabled by default unless `ENABLE_STORY_RENDER_ROUTE=1`.
 - Render capacity is still 3 concurrent jobs per process, so the remaining beta work here is admission control rather than more finalize UX band-aids.
 
 #### Evidence Pointers

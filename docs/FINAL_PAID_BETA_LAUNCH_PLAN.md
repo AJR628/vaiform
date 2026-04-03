@@ -65,11 +65,11 @@ Phase 1 is now complete. The former mobile release-gate blockers below are retai
 - Proof: backend canonical docs still say the billing cutover is not release-ready until the estimate-proof gate and live Stripe/manual verification are closed, and `docs/FINALIZE_THRESHOLD_REPORT.md` still records a billing mismatch probe.
 - Proof type: docs + artifact evidence + externally unproven launch path
 
-### Blocker 4: legacy blocking `/api/story/render` is still live by default
+### Blocker 4: legacy blocking `/api/story/render` still needs live-proof closeout after repo-side fencing
 
-- Why it matters: paid beta should not keep an unused expensive legacy render path mounted when the async finalize path is the intended live contract.
+- Why it matters: paid beta should not depend on an unused expensive legacy render path when the async finalize path is the intended live contract, and the remaining Phase 2 work should now focus on factual launch-path proof.
 - Area: backend
-- Proof: `src/routes/story.routes.js` still mounts `POST /api/story/render` unless `DISABLE_STORY_RENDER_ROUTE=1`, and `server.js` still keeps a 15-minute server timeout because this blocking path exists.
+- Proof: repo-side closure now disables `POST /api/story/render` by default unless `ENABLE_STORY_RENDER_ROUTE=1`, and `server.js` only keeps the 15-minute blocking timeout when that same explicit opt-in is enabled.
 - Proof type: code + canonical contract docs
 
 ### Blocker 5: paid-beta env validation is still fail-open for critical services
@@ -143,7 +143,7 @@ Phase 1 is now complete. The former mobile release-gate blockers below are retai
   - verify Stripe/webhook/finalize behavior on the real launch configuration
 - Exact tasks:
   - re-trace the live paid path end to end across both repos: auth bootstrap, `GET /api/usage`, `POST /api/story/finalize`, `GET /api/story/:sessionId`, `GET /api/shorts/:jobId`, `GET /api/shorts/mine`, Stripe checkout/webhook handling, and mobile recovery/readback behavior
-  - default-disable or remove `POST /api/story/render` from the live beta surface
+  - keep `POST /api/story/render` disabled by default on the live beta surface, with explicit opt-in only if the legacy escape hatch is intentionally needed
   - run representative manual proof for the paid launch path on the real environment:
     - subscription or paid-entitlement activation path
     - usage visibility before and after finalize

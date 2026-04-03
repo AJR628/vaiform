@@ -31,7 +31,7 @@ Audit date: 2026-03-13
 | GET      | `/api/shorts/:jobId`         | Short detail                                                                                                                                                                                                       |
 | POST     | `/api/assets/options`        | Article draft clip search                                                                                                                                                                                          |
 | GET      | `/api/limits/usage`          | Mounted; no current web caller found                                                                                                                                                                               |
-| GET/POST | `/api/story/*`               | Creative story flow via `creative.article.mjs`; caller-backed routes include `GET /api/story/:sessionId` plus POST draft/editor/finalize paths. `/api/story/render` remains mounted but has no current web caller. |
+| GET/POST | `/api/story/*`               | Creative story flow via `creative.article.mjs`; caller-backed routes include `GET /api/story/:sessionId` plus POST draft/editor/finalize paths. `/api/story/render` remains present only behind `ENABLE_STORY_RENDER_ROUTE=1` and has no current web caller. |
 | POST     | `/api/caption/preview`       | Caption preview (auth-required)                                                                                                                                                                                    |
 | GET/POST | `/api/user/*`                | Mounted; no current web caller found                                                                                                                                                                               |
 | POST     | `/api/users/ensure`          | Firebase login bootstrap                                                                                                                                                                                           |
@@ -78,4 +78,4 @@ Audit date: 2026-03-13
 - Frontend is served by Netlify; backend serves API + required assets only.
 - Checkout is canonicalized under `/api/checkout/*`.
 - Current `/api/user/*` is router-backed under `/api/user`; only an older inline alias is gone.
-- Current caller-backed render path is `/api/story/finalize` with `GET /api/story/:sessionId` polling; `/api/story/render` is mounted but not caller-backed in `web/public/**`.
+- Current caller-backed render path is `/api/story/finalize` with `GET /api/story/:sessionId` polling; `/api/story/render` is disabled by default and only available when `ENABLE_STORY_RENDER_ROUTE=1`.

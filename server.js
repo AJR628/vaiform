@@ -12,10 +12,10 @@ const PORT = process.env.PORT || 3000;
 const HOST = process.env.HOST || '0.0.0.0'; // Replit-friendly
 
 process.on('unhandledRejection', (reason, p) => {
-  console.error('🧯 Unhandled Rejection at:', p, 'reason:', reason);
+  console.error('[server] Unhandled Rejection at:', p, 'reason:', reason);
 });
 process.on('uncaughtException', (err) => {
-  console.error('🧯 Uncaught Exception:', err);
+  console.error('[server] Uncaught Exception:', err);
 });
 
 // Register DejaVu fonts before starting server
@@ -25,28 +25,30 @@ console.log('[server] Font registration result:', fontStatus);
 
 let server;
 function start() {
+  const legacyStoryRenderRouteEnabled = process.env.ENABLE_STORY_RENDER_ROUTE === '1';
+
   server = app.listen(PORT, HOST, () => {
-    console.log(`🚀 Vaiform backend running on http://${HOST}:${PORT}`);
+    console.log(`[server] Vaiform backend running on http://${HOST}:${PORT}`);
   });
 
-  // Keep a 15-minute server timeout for remaining long-lived render work.
-  // Phase 6 moved POST /api/story/finalize to reserve/enqueue/respond, but
-  // POST /api/story/render and other legacy blocking flows can still hold an
-  // HTTP connection open during render execution. This timeout is not a
-  // scalability fix and does not solve multi-instance worker concurrency.
-  server.timeout = 900000; // 15 minutes
+  // Keep a 15-minute server timeout only when the legacy blocking render route
+  // is explicitly re-enabled. Finalize is async and should not require the
+  // long blocking timeout by default.
+  if (legacyStoryRenderRouteEnabled) {
+    server.timeout = 900000; // 15 minutes
+  }
   server.keepAliveTimeout = 65000; // 65 seconds
   server.headersTimeout = 66000; // 66 seconds
 
   console.log(
-    `⏱️  Server timeouts configured: timeout=${server.timeout}ms, keepAlive=${server.keepAliveTimeout}ms, headers=${server.headersTimeout}ms`
+    `[server] Timeouts configured: timeout=${server.timeout}ms, keepAlive=${server.keepAliveTimeout}ms, headers=${server.headersTimeout}ms, legacyStoryRenderRouteEnabled=${legacyStoryRenderRouteEnabled}`
   );
 }
 function shutdown(signal) {
-  console.log(`\n${signal} received. Shutting down gracefully…`);
+  console.log(`\n${signal} received. Shutting down gracefully...`);
   if (server) {
     server.close(() => {
-      console.log('✅ Closed out remaining connections.');
+      console.log('[server] Closed out remaining connections.');
       process.exit(0);
     });
   } else {

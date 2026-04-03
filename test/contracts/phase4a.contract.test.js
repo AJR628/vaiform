@@ -363,6 +363,36 @@ test('GET /api/shorts/:jobId preserves the current 404 pending bridge when no vi
   assert.equal(result.json.error, 'NOT_FOUND');
 });
 
+test('POST /api/story/render is disabled by default and directs callers to finalize', async () => {
+  const result = await requestJson('/api/story/render', {
+    method: 'POST',
+    body: {
+      sessionId: 'story-render-disabled-default',
+    },
+  });
+
+  assert.equal(result.status, 405);
+  assert.equal(result.json.success, false);
+  assert.equal(result.json.error, 'RENDER_DISABLED');
+  assert.equal(result.json.detail, 'Use POST /api/story/finalize');
+});
+
+test('POST /api/story/render clears the default disable gate when ENABLE_STORY_RENDER_ROUTE=1', async () => {
+  const restoreEnv = withEnv({ ENABLE_STORY_RENDER_ROUTE: '1' });
+  try {
+    const result = await requestJson('/api/story/render', {
+      method: 'POST',
+      body: {},
+    });
+
+    assert.equal(result.status, 400);
+    assert.equal(result.json.success, false);
+    assert.equal(result.json.error, 'INVALID_INPUT');
+  } finally {
+    restoreEnv();
+  }
+});
+
 test('POST /api/story/start creates a draft story session for the authenticated user', async () => {
   const result = await requestJson('/api/story/start', {
     method: 'POST',
