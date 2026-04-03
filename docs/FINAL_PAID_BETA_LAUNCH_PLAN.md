@@ -42,18 +42,20 @@ Vaiform is ready enough for paid beta only when all of the following are true on
 
 ## 3. Current Repo-Verified Blockers
 
-### Blocker 1: active mobile runtime does not type-check cleanly
+Phase 1 is now complete. The former mobile release-gate blockers below are retained as closure notes; blockers 3+ remain open launch blockers.
 
-- Why it matters: paid beta should not ship with known compile/type failures in active auth, navigation, and creation/edit flows.
+### Phase 1 closure 1: active mobile runtime now type-checks cleanly
+
+- Why it mattered: paid beta could not ship with known compile/type failures in active auth, navigation, and creation/edit flows.
 - Area: mobile
-- Proof: `npm run check:types` currently fails on `client/lib/firebase.ts`, `client/screens/ClipSearchModal.tsx`, `client/navigation/HomeStackNavigator.tsx`, `client/navigation/MainTabNavigator26.tsx`, `client/components/Toast.tsx`, and `server/index.ts`.
+- Proof: `npm run check:types` now passes after the narrow mobile-only release-gate fixes landed on `client/lib/firebase.ts`, `client/screens/ClipSearchModal.tsx`, `client/navigation/HomeStackNavigator.tsx`, `client/navigation/MainTabNavigator26.tsx`, `client/components/Toast.tsx`, and `server/index.ts`.
 - Proof type: check + code
 
-### Blocker 2: mobile CI does not enforce the launch-critical type gate
+### Phase 1 closure 2: mobile CI now enforces the launch-critical correctness gate
 
-- Why it matters: even after the current type errors are fixed, the repo can regress back into a broken launch state without CI catching it.
+- Why it mattered: even after the type errors were fixed, the repo could regress back into a broken launch state without CI catching it.
 - Area: mobile
-- Proof: `.github/workflows/mobile-ci.yml` runs `npm ci` and `npm run test:ci`, but does not run `npm run check:types`.
+- Proof: `.github/workflows/mobile-ci.yml` now runs `npm ci`, `npm run check:types`, and `npm run test:ci`, the affected mobile docs no longer describe the lane as test-only, and `jest.config.js` now ignores repo-root `.cache` and `.bun` trees so `test:ci` stays focused on repo-owned tests in affected workspaces.
 - Proof type: code
 
 ### Blocker 3: paid billing/finalize proof is still not closed
@@ -95,34 +97,41 @@ Vaiform is ready enough for paid beta only when all of the following are true on
 
 ### Phase 1: Release Gate Correctness
 
+- Status: complete
 - Phase type: bundled
 - Why this phase exists: the active shipped mobile runtime must be clean enough that the launch candidate is not knowingly broken before any paid trust work starts.
-- Scope:
-  - fix the current TypeScript failures on active runtime files only
-  - make CI enforce the same minimum correctness gate that launch depends on
-- Exact tasks:
-  - resolve the current `npm run check:types` failures in the active mobile files already identified by the repo
-  - keep the fixes narrowly scoped to auth/bootstrap, clip search, navigation, toast typing, and the repo-local server typing error
-  - update mobile CI so the launch lane fails on type regressions, not just test regressions
-  - rerun the existing mobile launch-relevant checks after the fixes land
-- Likely files/docs involved:
-  - `vaiform-mobile/package.json`
+- Completed scope:
+  - resolved the active mobile TypeScript release-gate failures with narrow, behavior-preserving fixes only
+  - made mobile CI enforce the same minimum correctness gate that launch depends on
+- Completed work:
+  - fixed the active `npm run check:types` failures in the mobile release-gate files already identified by the repo
+  - kept the fixes tightly scoped to auth/bootstrap, clip search, navigation typing, toast typing, and the repo-local server typing surface
+  - added `npm run check:types` to the mobile CI lane alongside `npm run test:ci`
+  - updated the affected mobile docs so the CI lane no longer reads as test-only
+  - tightened `vaiform-mobile/jest.config.js` so `test:ci` ignores repo-root `.cache` and `.bun` trees instead of wandering into Bun cache content in affected workspaces
+  - reran the relevant release-gate checks and kept the phase mobile-only; no backend runtime behavior changed
+  - closed with targeted manual checks of auth/session persistence behavior, storyboard creation, and clip replacement
+- Files/docs touched:
   - `vaiform-mobile/.github/workflows/mobile-ci.yml`
+  - `vaiform-mobile/jest.config.js`
   - `vaiform-mobile/client/lib/firebase.ts`
   - `vaiform-mobile/client/screens/ClipSearchModal.tsx`
   - `vaiform-mobile/client/navigation/HomeStackNavigator.tsx`
   - `vaiform-mobile/client/navigation/MainTabNavigator26.tsx`
   - `vaiform-mobile/client/components/Toast.tsx`
   - `vaiform-mobile/server/index.ts`
-  - `vaiform-mobile/docs/MOBILE_RELEASE_RUNBOOK.md` only if the minimum launch lane changes materially
-- Checks/tests/manual validations before closing:
-  - `npm run check:types` in mobile
-  - `npm run test:ci` in mobile
-  - confirm the CI workflow now runs the same minimum gate
-- Must remain out of scope:
+  - `vaiform-mobile/docs/MOBILE_RELEASE_RUNBOOK.md`
+  - `vaiform-mobile/docs/DOCS_INDEX.md`
+- Phase 1 closeout checks:
+  - mobile `npm run check:types` passes
+  - mobile `npm run test:ci` passes
+  - the CI workflow now runs the same minimum gate as the local release gate
+  - targeted manual probes covered auth/session persistence, storyboard creation, and clip replacement
+- Stayed out of scope:
   - broad `expo lint` cleanup
   - formatting sweeps
   - unrelated navigation or UI refactors
+  - runtime redesign, dependency/package-manager churn, or later launch-phase work
 
 ### Phase 2: Paid Trust Path Closure
 
@@ -403,7 +412,8 @@ Primary mobile code/check areas re-verified:
 - `client/screens/ShortDetailScreen.test.tsx`
 - `client/lib/storyFinalizeAttemptStorage.test.ts`
 
-Checks re-verified during this planning pass:
+Checks re-verified during this doc-truth pass:
 
-- mobile `npm run check:types` is still failing and remains a live blocker
+- mobile `npm run check:types` passes
+- mobile `npm run test:ci` passes
 - backend launch-readiness conclusions continue to match the currently promoted canonical docs, code paths, and previously run contract/observability/security checks from the current audit thread
