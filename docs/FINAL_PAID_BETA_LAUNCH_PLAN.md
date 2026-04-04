@@ -4,7 +4,7 @@
 - Owner repo: backend
 - Source of truth for: final ordered pre-launch work for Vaiform paid beta readiness across backend and mobile
 - Canonical counterparts/source: backend `docs/MOBILE_BACKEND_CONTRACT.md`, backend `docs/MOBILE_HARDENING_PLAN.md`, backend `docs/API_CONTRACT.md`, backend `docs/FINALIZE_CONTROL_ROOM_DASHBOARD.md`, mobile `docs/MOBILE_USED_SURFACES.md`, mobile `docs/MOBILE_RELEASE_RUNBOOK.md`
-- Last re-verified against both repos: 2026-04-02
+- Last re-verified against both repos: 2026-04-03
 
 ## 1. Purpose
 
@@ -42,7 +42,7 @@ Vaiform is ready enough for paid beta only when all of the following are true on
 
 ## 3. Current Repo-Verified Blockers
 
-Phase 1 is now complete. The former mobile release-gate blockers below are retained as closure notes; blockers 3+ remain open launch blockers.
+Phases 1 and 2 are now complete. The former closure items below are retained as closure notes; blockers 5+ remain open launch blockers.
 
 ### Phase 1 closure 1: active mobile runtime now type-checks cleanly
 
@@ -58,19 +58,19 @@ Phase 1 is now complete. The former mobile release-gate blockers below are retai
 - Proof: `.github/workflows/mobile-ci.yml` now runs `npm ci`, `npm run check:types`, and `npm run test:ci`, the affected mobile docs no longer describe the lane as test-only, and `jest.config.js` now ignores repo-root `.cache` and `.bun` trees so `test:ci` stays focused on repo-owned tests in affected workspaces.
 - Proof type: code
 
-### Blocker 3: paid billing/finalize proof is still not closed
+### Phase 2 closure 3: paid billing/finalize proof is now closed on the launch path
 
-- Why it matters: Vaiform is launching with paid subscriptions on day one, so unresolved billing/finalize trust is a launch blocker, not a later improvement.
+- Why it mattered: Vaiform is launching with paid subscriptions on day one, so billing/finalize trust had to be proven on the real launch path rather than assumed from code alone.
 - Area: cross-repo
-- Proof: backend canonical docs still say the billing cutover is not release-ready until the estimate-proof gate and live Stripe/manual verification are closed, and `docs/FINALIZE_THRESHOLD_REPORT.md` still records a billing mismatch probe.
-- Proof type: docs + artifact evidence + externally unproven launch path
+- Proof: real Pro monthly subscription checkout was completed on the intended launch environment, 1800 included render seconds were granted, Stripe webhook delivery succeeded, replay of the same `checkout.session.completed` event returned `200` without double-granting time, async finalize completed a representative render, and same-key finalize replay returned the existing settled result without extra usage deduction or a duplicate short. Evidence is recorded in `docs/PHASE2_PAID_TRUST_PROOF_LOG.md`.
+- Proof type: code + manual/live proof artifact
 
-### Blocker 4: legacy blocking `/api/story/render` still needs live-proof closeout after repo-side fencing
+### Phase 2 closure 4: legacy blocking `/api/story/render` is fenced off from the live beta surface by default
 
-- Why it matters: paid beta should not depend on an unused expensive legacy render path when the async finalize path is the intended live contract, and the remaining Phase 2 work should now focus on factual launch-path proof.
+- Why it mattered: paid beta should not depend on an unused expensive legacy render path when the async finalize path is the intended live contract.
 - Area: backend
-- Proof: repo-side closure now disables `POST /api/story/render` by default unless `ENABLE_STORY_RENDER_ROUTE=1`, and `server.js` only keeps the 15-minute blocking timeout when that same explicit opt-in is enabled.
-- Proof type: code + canonical contract docs
+- Proof: repo-side closure now disables `POST /api/story/render` by default unless `ENABLE_STORY_RENDER_ROUTE=1`, `server.js` only keeps the 15-minute blocking timeout when that same explicit opt-in is enabled, and focused backend contract coverage protects the disabled-by-default behavior.
+- Proof type: code + tests + canonical contract docs
 
 ### Blocker 5: paid-beta env validation is still fail-open for critical services
 
@@ -135,42 +135,28 @@ Phase 1 is now complete. The former mobile release-gate blockers below are retai
 
 ### Phase 2: Paid Trust Path Closure
 
+- Status: complete
 - Phase type: standalone deep-context phase
 - Why this phase exists: paid subscriptions plus async finalize are the core trust path for launch; this is the highest-risk cross-repo surface and needs one focused pass.
-- Scope:
-  - close billing/finalize proof for the actual launch path
-  - fence or remove the legacy blocking render path
-  - verify Stripe/webhook/finalize behavior on the real launch configuration
-- Exact tasks:
-  - re-trace the live paid path end to end across both repos: auth bootstrap, `GET /api/usage`, `POST /api/story/finalize`, `GET /api/story/:sessionId`, `GET /api/shorts/:jobId`, `GET /api/shorts/mine`, Stripe checkout/webhook handling, and mobile recovery/readback behavior
-  - keep `POST /api/story/render` disabled by default on the live beta surface, with explicit opt-in only if the legacy escape hatch is intentionally needed
-  - run representative manual proof for the paid launch path on the real environment:
-    - subscription or paid-entitlement activation path
-    - usage visibility before and after finalize
-    - accepted finalize -> worker completion -> short detail availability
-    - same-attempt recovery after timeout/network interruption
-    - Stripe webhook settlement path and duplicate-event safety
-  - record estimate-versus-billed evidence and resolve any unexplained mismatch before launch
-  - update the canonical backend docs after proof is closed
-- Likely files/docs involved:
-  - `src/routes/story.routes.js`
-  - `src/middleware/idempotency.firestore.js`
-  - `src/services/story-finalize.attempts.js`
-  - `src/services/story-finalize.runner.js`
-  - `src/services/finalize-status.service.js`
-  - `src/routes/stripe.webhook.js`
-  - `src/controllers/checkout.controller.js`
-  - `server.js`
-  - `docs/MOBILE_BACKEND_CONTRACT.md`
-  - `docs/MOBILE_HARDENING_PLAN.md`
-  - `docs/FINALIZE_THRESHOLD_REPORT.md`
-  - `docs/FINALIZE_SCALING_RUNBOOK.md`
-  - `vaiform-mobile/docs/MOBILE_USED_SURFACES.md` only if caller truth actually changes
-- Checks/tests/manual validations before closing:
-  - `npm run test:contracts`
-  - `npm run test:observability`
-  - `npm run check:responses`
-  - manual proof log for the real paid launch path with recorded request IDs, attempt IDs, billed usage evidence, and webhook outcome
+- Completed scope:
+  - closed billing/finalize proof for the actual launch path
+  - fenced the legacy blocking render path behind explicit opt-in only
+  - verified Stripe/webhook/finalize behavior on the real launch configuration
+- Completed work:
+  - re-traced the live paid path end to end across both repos: auth bootstrap, `GET /api/usage`, `POST /api/story/finalize`, `GET /api/story/:sessionId`, `GET /api/shorts/:jobId`, `GET /api/shorts/mine`, Stripe checkout/webhook handling, and mobile recovery/readback behavior
+  - kept `POST /api/story/render` disabled by default on the live beta surface and required `ENABLE_STORY_RENDER_ROUTE=1` for any legacy opt-in
+  - made the long blocking `server.timeout` conditional on that same explicit opt-in
+  - added focused backend contract coverage for the disabled-by-default legacy render route behavior
+  - completed real subscription checkout on the intended launch environment for the Pro monthly plan, which granted 1800 included render seconds
+  - confirmed Stripe webhook delivery and same-event duplicate replay safety for `checkout.session.completed`
+  - confirmed async finalize success, same-key replay safety, no duplicate short creation, no extra usage deduction on replay, and representative settlement of ~13.48 seconds actual duration to 14 billed seconds
+  - recorded the empirical proof in `docs/PHASE2_PAID_TRUST_PROOF_LOG.md`
+  - updated canonical backend docs after repo-side closure and live proof were complete
+- Phase 2 closeout checks:
+  - `npm run test:contracts` passed
+  - `npm run test:observability` passed
+  - `npm run check:responses` passed
+  - real launch-path proof is recorded in `docs/PHASE2_PAID_TRUST_PROOF_LOG.md`
 - Must remain out of scope:
   - scale tuning beyond small beta
   - pricing model changes
@@ -285,13 +271,14 @@ Pass criteria:
 
 ### Gate B: Billing And Finalize Trust Gate
 
-Pass criteria:
+- Status: closed on launch commit `951558d4e7d6d8ee7a49cf4a1e8b837d6c489a78`
+- Closure evidence:
 
 - the live beta surface no longer depends on the legacy blocking `/api/story/render` path
 - the real launch billing/finalize path has been manually verified end to end
-- estimate-versus-billed usage has no unexplained mismatch on representative launch-path samples
+- representative live proof settled ~13.48 seconds of actual duration at 14 billed seconds with no unexplained mismatch on that sample
 - Stripe webhook handling has been validated on the real launch configuration, including duplicate-event safety
-- finalize recovery, readback, and usage refresh behavior are confirmed on the real launch path
+- finalize replay returned the existing settled result without extra usage deduction or duplicate short creation
 
 ### Gate C: Beta Safety And Guardrails Gate
 

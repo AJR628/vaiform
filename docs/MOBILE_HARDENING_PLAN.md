@@ -14,9 +14,9 @@ Goal: harden only the backend surface that the current mobile app actually depen
 
 - The canonical billing-model replacement plan is `docs/TIME_BASED_RENDER_USAGE_MIGRATION_PLAN.md`.
 - Phase 1 of that plan adds backend-only `GET /api/usage` and additive session `billingEstimate`.
-- Phase 2 of that plan cuts backend finalize reservation/settlement over to usage seconds and adds additive finalize `data.billing`, but the estimate-proof gate still requires representative manual verification before the backend cutover can be marked verified.
+- Phase 2 of that plan cuts backend finalize reservation/settlement over to usage seconds and adds additive finalize `data.billing`; the estimate-proof gate is now empirically closed and recorded in `docs/PHASE2_PAID_TRUST_PROOF_LOG.md`.
 - Phase 3 moved active mobile billing callers to `GET /api/usage`, render-time copy, and backend-owned estimate/availability checks; Phase 5 removed `GET /api/credits` from runtime.
-- The Phase 5 cleanup/removal work is now landed. The overall cutover is still not release-ready until the Phase 2 estimate-proof gate and live Stripe/manual end-to-end verification are empirically closed.
+- The Phase 5 cleanup/removal work is now landed. The Phase 2 estimate-proof gate and live Stripe/manual end-to-end verification are empirically closed; remaining launch blockers live in later backend launch phases, not in this billing cutover note.
 
 ## Working Rules
 

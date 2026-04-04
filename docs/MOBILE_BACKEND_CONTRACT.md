@@ -1,6 +1,6 @@
 # MOBILE_BACKEND_CONTRACT
 
-Cross-repo verification date: 2026-04-01.
+Cross-repo verification date: 2026-04-03.
 
 Purpose: canonical backend-owned contract, guarantees, and open mismatch record for mobile production. Current mobile caller-truth lives in the mobile repo. If a route is not `MOBILE_CORE_NOW` or `MOBILE_CORE_SOON` here, it is not first-class for mobile launch.
 
@@ -25,8 +25,8 @@ Purpose: canonical backend-owned contract, guarantees, and open mismatch record 
 - Billing migration Phase 1 adds canonical backend `GET /api/usage` and additive session `billingEstimate`.
 - Billing migration Phase 2 moves backend render reservation/settlement to canonical usage seconds and adds additive finalize `data.billing`.
 - Billing migration Phase 3 moves active mobile callers to `GET /api/usage`, updates mobile billing copy/gating to render-time semantics, and removes `/api/credits` from active caller usage.
-- Current backend `billingEstimate.estimatedSec` is reservation-safe, not raw. The active source order is `speech_duration -> shot_durations -> caption_timeline`, where `speech_duration` is the backend-owned composite text heuristic and `caption_timeline` is retained only as an emergency fallback. Representative manual verification is still required before the estimate-proof gate is considered complete.
-- Phases 1 through 5 of the billing migration are now landed in code, but the overall integration is still not production-ready until the Phase 2 estimate-proof gate is manually closed and live Stripe/manual end-to-end verification is completed.
+- Current backend `billingEstimate.estimatedSec` is reservation-safe, not raw. The active source order is `speech_duration -> shot_durations -> caption_timeline`, where `speech_duration` is the backend-owned composite text heuristic and `caption_timeline` is retained only as an emergency fallback. Phase 2 live proof is now recorded in `docs/PHASE2_PAID_TRUST_PROOF_LOG.md`, including a representative launch-path settle of ~13.48 seconds actual duration to 14 billed seconds.
+- Phases 1 through 5 of the billing migration are now landed in code, and the Phase 2 estimate-proof gate plus live Stripe/manual end-to-end verification are empirically closed for the paid trust path. The historical Phase 6 mismatch probe remains recorded for operator awareness, but it is no longer the open launch blocker for this phase.
 
 ## Response Rules
 
@@ -219,7 +219,7 @@ Purpose: canonical backend-owned contract, guarantees, and open mismatch record 
   - Retryable busy behavior:
     - finalize no longer returns route-level `503` for render-slot saturation; accepted attempts queue instead
     - overload rejection is now based on shared backlog definition `queued + running + retry_scheduled`
-    - the legacy blocking `POST /api/story/render` route still owns direct render-slot `503 SERVER_BUSY` behavior
+    - if explicitly re-enabled with `ENABLE_STORY_RENDER_ROUTE=1`, the legacy blocking `POST /api/story/render` route still owns direct render-slot `503 SERVER_BUSY` behavior; it is disabled by default on the live beta surface
   - Current 402 semantics: backend uses time-based billing failures such as `INSUFFICIENT_RENDER_TIME`, and mobile now mirrors that render-time wording.
   - Recovery contract: backend persists additive `renderRecovery.pending` before returning `202`, then persists `renderRecovery.done` or `renderRecovery.failed` with the same attempt identity. Phase 5 keeps that caller contract frozen but makes `GET /api/story/:sessionId` and same-key replay derive caller-facing recovery from canonical finalize attempt truth first, with session `renderRecovery` retained as compatibility-only storage. On `202 pending`, `409 FINALIZE_ALREADY_ACTIVE`, `TIMEOUT`, `NETWORK_ERROR`, or legacy same-key in-progress replay, mobile keeps or adopts the active attempt key and polls `GET /api/story/:sessionId` until that same-attempt recovery state reaches a terminal result.
   - Contract caveat: recovery is now same-session and restart-safe through stored finalize attempt identity, but it does not widen into a global recovery inbox or background mobile job system.

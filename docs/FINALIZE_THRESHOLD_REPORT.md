@@ -10,6 +10,7 @@
 - Routes exercised: /api/story/start, /api/story/finalize, /api/story/:sessionId, /api/shorts/:jobId, /api/shorts/mine?limit=50, /diag/finalize-control-room
 - Control-room payload fields frozen for Phase 6: `queueSnapshot`, `sharedSystemPressure`, `pressureConfig`, `localProcessObservability`
 - Artifact inputs only: this report is generated from checked-in Phase 6 artifacts and does not infer new thresholds outside those artifacts
+- Phase 2 live paid-trust verification is tracked separately in `docs/PHASE2_PAID_TRUST_PROOF_LOG.md`; this report remains the historical Phase 6 artifact record and should not be read as the full launch-path proof by itself
 
 ## Tested Matrix
 
@@ -49,4 +50,3 @@
 ## Must-Fix List
 
 - `BILLING_ESTIMATE_TOO_LOW` was reproduced in the mismatch probe; keep billing mismatch alerts active and do not tune estimates inside Phase 6.
-
