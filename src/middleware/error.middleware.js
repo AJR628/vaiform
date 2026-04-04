@@ -1,5 +1,6 @@
 // src/middleware/error.middleware.js
 import { fail } from '../http/respond.js';
+import { failInternalServerError } from '../http/internal-error.js';
 import logger from '../observability/logger.js';
 
 function fieldsFromZodIssues(issues) {
@@ -49,6 +50,10 @@ export default function errorHandler(err, req, res, _next) {
 
   if (fields) {
     return fail(req, res, status, 'VALIDATION_FAILED', 'Invalid request', fields);
+  }
+
+  if (status >= 500) {
+    return failInternalServerError(req, res, 'INTERNAL_ERROR');
   }
 
   const error = String(err?.code ?? err?.name ?? 'INTERNAL_ERROR');

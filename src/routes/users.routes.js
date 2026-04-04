@@ -2,6 +2,7 @@
 import { Router } from 'express';
 import requireAuth from '../middleware/requireAuth.js';
 import { ok, fail } from '../http/respond.js';
+import { failInternalServerError } from '../http/internal-error.js';
 import { ensureUserDocByUid } from '../services/user-doc.service.js';
 import { ensureCanonicalUsageState } from '../services/usage.service.js';
 import logger from '../observability/logger.js';
@@ -45,7 +46,7 @@ r.post('/ensure', requireAuth, async (req, res) => {
       routeStatus: `${req.method} ${req.originalUrl}`,
       error: e,
     });
-    return fail(req, res, 500, 'ENSURE_FAILED', e?.message || 'Failed to ensure user document');
+    return failInternalServerError(req, res, 'ENSURE_FAILED', 'Failed to ensure user document');
   }
 });
 

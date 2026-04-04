@@ -13,6 +13,7 @@ import { CAPTION_LIMITS } from '../captions/constants.js';
 import { extractStyleOnly } from '../utils/caption-style-helper.js';
 import requireAuth from '../middleware/requireAuth.js';
 import { ok, fail } from '../http/respond.js';
+import { failInternalServerError } from '../http/internal-error.js';
 const { createCanvas } = pkg;
 
 // V3 raster schema (pixel-based with frame coordinates)
@@ -1054,7 +1055,12 @@ router.post(
           });
         } catch (e) {
           console.error('[overlay-preview] Preview failed:', e);
-          return fail(req, res, 500, 'RENDER_FAILED', e.message);
+          return failInternalServerError(
+            req,
+            res,
+            'RENDER_FAILED',
+            'Failed to generate caption preview'
+          );
         }
       } // End legacy path block scope
       // Note: The following else block appears to be unreachable (V3 path returns early above)

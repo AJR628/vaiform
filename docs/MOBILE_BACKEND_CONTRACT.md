@@ -32,6 +32,7 @@ Purpose: canonical backend-owned contract, guarantees, and open mismatch record 
 
 - Standard backend success envelope: `{ success: true, data, requestId }` (`src/http/respond.js:14-17`).
 - Standard backend failure envelope: `{ success: false, error, detail, requestId, fields? }` (`src/http/respond.js:28-34`).
+- Active mobile-core 5xx responses now keep `requestId` but sanitize unexpected internal/provider detail at the backend boundary; known 4xx/404 and retryable 503 mappings remain route-specific.
 - Mobile normalization layer now preserves `requestId` while converting success envelopes to `{ ok: true, data, requestId }` and failure envelopes to `{ ok: false, status, code, message, requestId }` (`client/api/client.ts:127-160`, `client/api/client.ts:230-307`).
 - Finalize is the current launch exception: the backend returns top-level `shortId`, and accepted/conflict responses also return top-level `finalize = { state, attemptId, pollSessionId }`; the mobile client explicitly extracts both from the raw response (`src/services/story-finalize.attempts.js:528-564`, `src/services/story-finalize.attempts.js:1118-1197`, `client/api/client.ts:804-937`).
 - Cross-Repo Phase 3 observability is now live on the named hot paths only: backend request context is seeded immediately after request ID assignment, backend hot-path boundary events flow through one structured stdout logger with built-in redaction, and mobile keeps a bounded in-memory diagnostics buffer for normalized failures with additive context from auth bootstrap, finalize/recovery, and short-detail retry surfaces.
@@ -179,6 +180,7 @@ Purpose: canonical backend-owned contract, guarantees, and open mismatch record 
   - Backend returns: `data.meta` including `rasterUrl`, `rasterW`, `rasterH`, `yPx_png`, `frameW`, `frameH`, and other compiler metadata.
   - Mobile reads: `meta.rasterUrl`, `rasterW`, `rasterH`, `yPx_png`, and uses fallback centering when `xPx_png` is absent.
   - Guardrails: auth-required, `20/min`, `200kb` body cap.
+  - Launch note: preview-request failure remains an accepted non-gate beta UX risk because the current mobile hook can go silent on preview fetch failure, but caption placement persistence still surfaces save failures and finalize does not depend on preview success.
 
 - `POST /api/story/update-caption-style`
   - Mobile caller(s): `client/screens/story-editor/useStoryEditorCaptionPlacement.ts:115-155`

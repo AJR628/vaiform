@@ -56,10 +56,15 @@ export function listConfiguredMonthlyPlans() {
     .filter(Boolean)
 }
 
+export function listMonthlyPlanConfigs() {
+  return Object.values(MONTHLY_PLAN_CATALOG)
+}
+
 export default {
   PLAN_CYCLE_INCLUDED_SEC,
   getMonthlyPlanConfig,
   getMonthlyPlanPriceId,
   getPlanForMonthlyPriceId,
   listConfiguredMonthlyPlans,
+  listMonthlyPlanConfigs,
 }

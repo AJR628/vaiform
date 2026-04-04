@@ -1,39 +1,78 @@
 // src/middleware/envCheck.js
+import { listMonthlyPlanConfigs } from '../config/commerce.js';
+
+function hasNonEmptyEnv(name) {
+  return typeof process.env[name] === 'string' && process.env[name].trim().length > 0;
+}
+
+function exitWithMissing(message, missing = []) {
+  const suffix = Array.isArray(missing) && missing.length ? `: ${missing.join(', ')}` : '';
+  console.error(`${message}${suffix}`);
+  process.exit(1);
+}
+
+function hasFirebaseCredentials() {
+  const hasB64 = hasNonEmptyEnv('FIREBASE_SERVICE_ACCOUNT_B64');
+  const hasSplit = hasNonEmptyEnv('FIREBASE_CLIENT_EMAIL') && hasNonEmptyEnv('FIREBASE_PRIVATE_KEY');
+  return hasB64 || hasSplit;
+}
+
+function strictPaidBetaEnvNames() {
+  const required = [
+    'FIREBASE_PROJECT_ID',
+    'FIREBASE_STORAGE_BUCKET',
+    'OPENAI_API_KEY',
+    'STRIPE_SECRET_KEY',
+    'STRIPE_WEBHOOK_SECRET',
+    'FRONTEND_URL',
+    ...listMonthlyPlanConfigs().map((plan) => plan.stripePriceEnvKey),
+  ];
+
+  const ttsProvider = (process.env.TTS_PROVIDER || 'openai').trim().toLowerCase();
+  if (ttsProvider === 'elevenlabs') {
+    required.push('ELEVENLABS_API_KEY');
+  }
+
+  return [...new Set(required)];
+}
+
 export default function envCheck() {
-  // In CI (Health Check workflow), we set NODE_ENV=test and dummy envs.
   if (process.env.NODE_ENV === 'test') {
-    console.log('⚙️ envCheck: test mode (CI) — skipping strict checks');
+    console.log('envCheck: test mode, skipping strict checks');
     return;
   }
 
   const required = ['FIREBASE_PROJECT_ID', 'FIREBASE_STORAGE_BUCKET'];
-
-  // Firebase credentials: require either B64 JSON or split vars
-  const hasB64 = !!process.env.FIREBASE_SERVICE_ACCOUNT_B64;
-  const hasSplit = !!(process.env.FIREBASE_CLIENT_EMAIL && process.env.FIREBASE_PRIVATE_KEY);
-  if (!hasB64 && !hasSplit) {
-    console.error(
-      '❌ Missing Firebase credentials: set FIREBASE_SERVICE_ACCOUNT_B64 OR (FIREBASE_CLIENT_EMAIL + FIREBASE_PRIVATE_KEY)'
-    );
-    process.exit(1);
-  }
-
   const optional = ['OPENAI_API_KEY', 'STRIPE_SECRET_KEY', 'REPLICATE_API_TOKEN'];
+  const strictMode = process.env.PAID_BETA_STRICT_ENV === '1';
 
-  const missing = required.filter((k) => !process.env[k]);
-  const missingOptional = optional.filter((k) => !process.env[k]);
-
-  if (missing.length) {
-    console.error('❌ Missing required env vars:', missing.join(', '));
-    process.exit(1);
+  if (!hasFirebaseCredentials()) {
+    exitWithMissing(
+      'Missing Firebase credentials. Set FIREBASE_SERVICE_ACCOUNT_B64 or both FIREBASE_CLIENT_EMAIL and FIREBASE_PRIVATE_KEY'
+    );
   }
 
+  const missing = required.filter((key) => !hasNonEmptyEnv(key));
+  if (missing.length) {
+    exitWithMissing('Missing required env vars', missing);
+  }
+
+  if (strictMode) {
+    const missingStrict = strictPaidBetaEnvNames().filter((key) => !hasNonEmptyEnv(key));
+    if (missingStrict.length) {
+      exitWithMissing('Missing paid beta strict env vars', missingStrict);
+    }
+    console.log('envCheck passed in paid beta strict mode');
+    return;
+  }
+
+  const missingOptional = optional.filter((key) => !hasNonEmptyEnv(key));
   if (missingOptional.length) {
     console.warn(
-      '⚠️ Missing optional env vars (some features disabled):',
+      'Missing optional env vars (some features disabled):',
       missingOptional.join(', ')
     );
   }
 
-  console.log('✅ envCheck passed');
+  console.log('envCheck passed');
 }

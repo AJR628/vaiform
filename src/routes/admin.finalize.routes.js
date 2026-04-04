@@ -2,6 +2,7 @@ import express, { Router } from 'express';
 import path from 'path';
 
 import { fail, ok } from '../http/respond.js';
+import { failInternalServerError } from '../http/internal-error.js';
 import {
   isFinalizeDashboardEnabled,
   requireFinalizeDashboardDataEnabled,
@@ -64,12 +65,11 @@ router.get(
       res.set('Cache-Control', 'no-store');
       return ok(req, res, await buildFinalizeDashboardPayload());
     } catch (error) {
-      return fail(
+      return failInternalServerError(
         req,
         res,
-        500,
         'FINALIZE_DASHBOARD_DATA_FAILED',
-        error?.message || 'FINALIZE_DASHBOARD_DATA_FAILED'
+        'Failed to load finalize dashboard data'
       );
     }
   }

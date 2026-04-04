@@ -483,6 +483,36 @@ test('POST /api/story/generate returns retryable 503 when generation hits a tran
   assert.equal(result.json.error, 'SERVER_BUSY');
 });
 
+test('POST /api/story/generate sanitizes unexpected 500 detail while preserving requestId', async () => {
+  seedUserDoc('user-1');
+  setRuntimeOverride('story.llm.generateStoryFromInput', async () => {
+    throw new Error('OpenAI upstream 500 with internal provider detail');
+  });
+
+  const started = await requestJson('/api/story/start', {
+    method: 'POST',
+    body: {
+      input: 'Sanitized story input',
+      inputType: 'idea',
+    },
+  });
+
+  const result = await requestJson('/api/story/generate', {
+    method: 'POST',
+    body: { sessionId: started.json.data.id },
+  });
+
+  assert.equal(result.status, 500);
+  assert.equal(result.json.success, false);
+  assert.equal(result.json.error, 'STORY_GENERATE_FAILED');
+  assert.equal(result.json.detail, 'Failed to generate story');
+  assert.equal(typeof result.json.requestId, 'string');
+  assert.equal(
+    result.json.detail.includes('OpenAI upstream 500 with internal provider detail'),
+    false
+  );
+});
+
 test('POST /api/story/plan returns the active shot plan shape for generated sessions', async () => {
   seedUserDoc('user-1');
   setRuntimeOverride('story.llm.planVisualShots', async ({ sentences }) =>

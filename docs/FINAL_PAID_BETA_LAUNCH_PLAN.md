@@ -42,7 +42,7 @@ Vaiform is ready enough for paid beta only when all of the following are true on
 
 ## 3. Current Repo-Verified Blockers
 
-Phases 1 and 2 are now complete. The former closure items below are retained as closure notes; blockers 5+ remain open launch blockers.
+Phases 1 through 3 are now complete. The former closure items below are retained as closure notes; operator readiness remains the next open launch blocker.
 
 ### Phase 1 closure 1: active mobile runtime now type-checks cleanly
 
@@ -72,21 +72,28 @@ Phases 1 and 2 are now complete. The former closure items below are retained as 
 - Proof: repo-side closure now disables `POST /api/story/render` by default unless `ENABLE_STORY_RENDER_ROUTE=1`, `server.js` only keeps the 15-minute blocking timeout when that same explicit opt-in is enabled, and focused backend contract coverage protects the disabled-by-default behavior.
 - Proof type: code + tests + canonical contract docs
 
-### Blocker 5: paid-beta env validation is still fail-open for critical services
+### Phase 3 closure 5: paid-beta env validation is now fail-closed in explicit launch mode
 
-- Why it matters: launch should not succeed into a partially broken state where Stripe or OpenAI failures are only discovered after real users hit the product.
+- Why it mattered: launch should not succeed into a partially broken state where Stripe or OpenAI failures are only discovered after real users hit the product.
 - Area: backend
-- Proof: `src/middleware/envCheck.js` requires Firebase credentials, but treats `OPENAI_API_KEY`, `STRIPE_SECRET_KEY`, and `REPLICATE_API_TOKEN` as optional warnings.
+- Proof: `src/middleware/envCheck.js` now keeps normal dev warnings intact but enforces `PAID_BETA_STRICT_ENV=1` before boot, requiring the live paid-beta path envs proved by repo truth: Firebase runtime credentials, `OPENAI_API_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `FRONTEND_URL`, both live monthly Stripe price envs, and `ELEVENLABS_API_KEY` only when `TTS_PROVIDER=elevenlabs`.
 - Proof type: code
 
-### Blocker 6: outward 5xx detail posture is still too permissive
+### Phase 3 closure 6: outward 5xx detail posture is now sanitized on active paid-beta surfaces
 
-- Why it matters: paid beta should preserve request correlation and logs without leaking raw provider/internal exception messages back to users.
+- Why it mattered: paid beta should preserve request correlation and logs without leaking raw provider/internal exception messages back to users.
 - Area: backend
-- Proof: `src/middleware/error.middleware.js` returns `err.code` or `err.name` plus raw `err.message`, and some route-level handlers still forward raw thrown messages.
+- Proof: `src/middleware/error.middleware.js` now sanitizes uncaught 5xx responses, and the active paid-beta catches now return safe route-level detail on `/api/users/ensure`, `/api/usage`, active `/api/story/*` mobile surfaces, `/api/caption/preview`, `/api/checkout/start`, `/api/checkout/portal`, `/api/shorts/mine`, `/stripe/webhook`, and `/api/admin/finalize/data`.
 - Proof type: code
 
-### Blocker 7: operator readiness is implemented in code, but not yet empirically closed for launch
+### Phase 3 closure 7: caption-preview decision is closed and finalize dashboard protections remain verified
+
+- Why it mattered: Phase 3 needed to close the last small UX uncertainty without turning it into a broad mobile refactor, and to confirm the internal dashboard had not drifted.
+- Area: cross-repo
+- Proof: mobile `useCaptionPreview` still swallows preview-request failures, but placement persistence still surfaces save errors and finalize does not depend on preview success, so this remains an accepted non-gate beta UX risk; finalize dashboard runtime truth still stays disabled by default and founder-gated when enabled, with the existing observability tests continuing to cover 404/401/403/COOP behavior.
+- Proof type: code + tests
+
+### Blocker 8: operator readiness is implemented in code, but not yet empirically closed for launch
 
 - Why it matters: the dashboard and worker observability are strong enough to use, but paid beta still needs a live rehearsal that proves the operator can see and respond to real launch-path failures.
 - Area: cross-repo / operations
@@ -164,33 +171,43 @@ Phases 1 and 2 are now complete. The former closure items below are retained as 
 
 ### Phase 3: Paid Beta Safety Hardening
 
+- Status: complete
 - Phase type: bundled
 - Why this phase exists: after the main trust path is closed, the remaining pre-launch work should remove obvious fail-open and leak-prone behavior without expanding scope.
-- Scope:
+- Completed scope:
   - fail-closed env posture for paid beta
-  - safer outward error posture
-  - close or explicitly accept the remaining active UX weak spots that can confuse first users
-- Exact tasks:
-  - tighten env validation so the actual paid-beta deployment refuses to boot without the services the launch path depends on
-  - scrub raw provider/internal detail from outward 5xxs while preserving `requestId` and structured logging for debugging
-  - review active caption preview failure handling and choose one of two launch-safe outcomes:
-    - fix the user-visible failure/diagnostic path before launch, or
-    - explicitly mark it as a non-gate accepted risk if storyboard trust is not materially harmed
-  - verify the finalize dashboard remains internal-only by default and founder-gated when enabled
+  - safer outward error posture on active paid-beta surfaces
+  - explicit closeout of the caption-preview launch decision
+  - re-verification of finalize dashboard protections without rebuilding the feature
+- Completed work:
+  - added explicit launch-only strict env enforcement behind `PAID_BETA_STRICT_ENV=1` while preserving the existing `NODE_ENV=test` bypass and non-strict warning-friendly behavior
+  - derived strict-mode requirements from the live paid-beta path only: Firebase runtime credentials, `OPENAI_API_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `FRONTEND_URL`, both live monthly Stripe price envs, and `ELEVENLABS_API_KEY` only when `TTS_PROVIDER=elevenlabs`
+  - kept `ELEVEN_VOICE_ID` out of strict-mode required envs because the current ElevenLabs runtime still has preset/default voice fallbacks
+  - confirmed both Creator and Pro monthly plans are still live in current repo truth and required both Stripe price envs in strict mode
+  - added one small shared internal-failure helper and migrated active paid-beta 5xx catches so outward detail is sanitized while `requestId`, structured logging, stable 4xxs, retryable 503s, and Stripe signature `400` behavior remain intact
+  - included `GET /api/shorts/mine` in the 5xx sanitization sweep because it remains an active mobile-used paid-beta surface
+  - re-verified current mobile/backend caption-preview behavior and recorded it as an accepted non-gate beta UX risk instead of widening Phase 3 into a mobile rewrite
+  - re-verified finalize dashboard runtime truth as disabled by default and founder-gated when enabled; only the data-route 5xx catch changed
 - Likely files/docs involved:
   - `src/middleware/envCheck.js`
   - `src/middleware/error.middleware.js`
+  - `src/http/internal-error.js`
+  - `src/controllers/usage.controller.js`
+  - `src/controllers/shorts.controller.js`
+  - `src/controllers/checkout.controller.js`
+  - `src/routes/users.routes.js`
+  - `src/routes/story.routes.js`
+  - `src/routes/caption.preview.routes.js`
   - `src/routes/stripe.webhook.js`
-  - `src/middleware/finalizeDashboardAccess.js`
   - `src/routes/admin.finalize.routes.js`
-  - `vaiform-mobile/client/hooks/useCaptionPreview.ts`
   - `docs/API_CONTRACT.md`
+  - `docs/MOBILE_BACKEND_CONTRACT.md`
   - `docs/FINALIZE_CONTROL_ROOM_DASHBOARD.md`
-- Checks/tests/manual validations before closing:
-  - rerun backend `npm run test:contracts`
-  - rerun backend `npm run test:observability`
-  - rerun mobile `npm run test:ci` if mobile caption-preview behavior changes
-  - targeted manual probe of representative 5xx paths to confirm user-facing detail is sanitized and correlated by `requestId`
+- Phase 3 closeout checks:
+  - backend `npm run test:contracts` reran clean on the Phase 3 pass
+  - backend `npm run test:observability` reran clean on the Phase 3 pass
+  - backend `npm run check:responses` reran clean on the Phase 3 pass
+  - targeted manual/logic probes confirmed strict launch-mode env failure, representative sanitized 5xx behavior with `requestId`, preserved story-route 4xx/503 mappings, preserved Stripe signature `400`, and unchanged finalize dashboard protections
 - Must remain out of scope:
   - token revocation redesign
   - broad auth-system changes
@@ -281,6 +298,8 @@ Pass criteria:
 - finalize replay returned the existing settled result without extra usage deduction or duplicate short creation
 
 ### Gate C: Beta Safety And Guardrails Gate
+
+- Status: closed on the current Phase 3 repo pass
 
 Pass criteria:
 

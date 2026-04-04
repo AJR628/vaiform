@@ -31,6 +31,7 @@ import {
 } from '../services/finalize-status.service.js';
 import { extractStyleOnly } from '../utils/caption-style-helper.js';
 import { ok, fail } from '../http/respond.js';
+import { failInternalServerError } from '../http/internal-error.js';
 import { isOutboundPolicyError } from '../utils/outbound.fetch.js';
 import logger from '../observability/logger.js';
 import { setRequestContextFromReq } from '../observability/request-context.js';
@@ -249,13 +250,7 @@ r.post('/start', async (req, res) => {
     return okStorySession(req, res, session);
   } catch (e) {
     console.error('[story][start] error:', e);
-    return fail(
-      req,
-      res,
-      500,
-      'STORY_START_FAILED',
-      e?.message || 'Failed to create story session'
-    );
+    return failInternalServerError(req, res, 'STORY_START_FAILED', 'Failed to create story session');
   }
 });
 
@@ -292,7 +287,7 @@ r.post('/generate', enforceScriptDailyCap(300), async (req, res) => {
     if (mapped) {
       return sendMappedStoryFailure(req, res, mapped);
     }
-    return fail(req, res, 500, 'STORY_GENERATE_FAILED', e?.message || 'Failed to generate story');
+    return failInternalServerError(req, res, 'STORY_GENERATE_FAILED', 'Failed to generate story');
   }
 });
 
@@ -397,12 +392,11 @@ r.post('/update-caption-style', async (req, res) => {
     return ok(req, res, { overlayCaption: session.overlayCaption });
   } catch (e) {
     console.error('[story][update-caption-style] error:', e);
-    return fail(
+    return failInternalServerError(
       req,
       res,
-      500,
       'STORY_UPDATE_CAPTION_STYLE_FAILED',
-      e?.message || 'Failed to update caption style'
+      'Failed to update caption style'
     );
   }
 });
@@ -624,7 +618,7 @@ r.post('/plan', enforceScriptDailyCap(300), async (req, res) => {
     if (mapped) {
       return sendMappedStoryFailure(req, res, mapped);
     }
-    return fail(req, res, 500, 'STORY_PLAN_FAILED', e?.message || 'Failed to plan shots');
+    return failInternalServerError(req, res, 'STORY_PLAN_FAILED', 'Failed to plan shots');
   }
 });
 
@@ -658,7 +652,7 @@ r.post('/search', async (req, res) => {
     if (mapped) {
       return sendMappedStoryFailure(req, res, mapped);
     }
-    return fail(req, res, 500, 'STORY_SEARCH_FAILED', e?.message || 'Failed to search clips');
+    return failInternalServerError(req, res, 'STORY_SEARCH_FAILED', 'Failed to search clips');
   }
 });
 
@@ -691,7 +685,7 @@ r.post('/update-shot', async (req, res) => {
       return fail(req, res, mapped.status, mapped.error, mapped.detail);
     }
     console.error('[story][update-shot] error:', e);
-    return fail(req, res, 500, 'STORY_UPDATE_SHOT_FAILED', e?.message || 'Failed to update shot');
+    return failInternalServerError(req, res, 'STORY_UPDATE_SHOT_FAILED', 'Failed to update shot');
   }
 });
 
@@ -789,12 +783,11 @@ r.post('/search-shot', async (req, res) => {
     if (mapped) {
       return sendMappedStoryFailure(req, res, mapped);
     }
-    return fail(
+    return failInternalServerError(
       req,
       res,
-      500,
       'STORY_SEARCH_SHOT_FAILED',
-      e?.message || 'Failed to search clips for shot'
+      'Failed to search clips for shot'
     );
   }
 });
@@ -855,7 +848,7 @@ r.post('/delete-beat', async (req, res) => {
       return fail(req, res, mapped.status, mapped.error, mapped.detail);
     }
     console.error('[story][delete-beat] error:', e);
-    return fail(req, res, 500, 'STORY_DELETE_BEAT_FAILED', e?.message || 'Failed to delete beat');
+    return failInternalServerError(req, res, 'STORY_DELETE_BEAT_FAILED', 'Failed to delete beat');
   }
 });
 
@@ -889,12 +882,11 @@ r.post('/update-beat-text', async (req, res) => {
       return fail(req, res, mapped.status, mapped.error, mapped.detail);
     }
     console.error('[story][update-beat-text] error:', e);
-    return fail(
+    return failInternalServerError(
       req,
       res,
-      500,
       'STORY_UPDATE_BEAT_TEXT_FAILED',
-      e?.message || 'Failed to update beat text'
+      'Failed to update beat text'
     );
   }
 });
@@ -1217,7 +1209,7 @@ r.post('/finalize', idempotencyFinalize({ getSession: getStorySession }), async 
     if (mapped) {
       return sendMappedStoryFailure(req, res, mapped);
     }
-    return fail(req, res, 500, 'STORY_FINALIZE_FAILED', e?.message || 'Failed to finalize story');
+    return failInternalServerError(req, res, 'STORY_FINALIZE_FAILED', 'Failed to finalize story');
   }
 });
 
@@ -1424,7 +1416,7 @@ r.get('/:sessionId', async (req, res) => {
       routeStatus: `${req.method} ${req.originalUrl}`,
       error: e,
     });
-    return fail(req, res, 500, 'STORY_GET_FAILED', e?.message || 'Failed to get story session');
+    return failInternalServerError(req, res, 'STORY_GET_FAILED', 'Failed to get story session');
   }
 });
 

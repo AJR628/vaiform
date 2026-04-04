@@ -1,6 +1,7 @@
 import { stripe } from '../config/stripe.js'
 import { getMonthlyPlanConfig, getMonthlyPlanPriceId } from '../config/commerce.js'
 import { ok, fail } from '../http/respond.js'
+import { failInternalServerError } from '../http/internal-error.js'
 
 function getFrontendBase(req) {
   const envBase = (process.env.FRONTEND_URL || 'https://vaiform.com').replace(/\/+$/, '')
@@ -63,7 +64,7 @@ export async function startPlanCheckout(req, res) {
     return ok(req, res, { url: session.url })
   } catch (error) {
     console.error('[checkout/start] error', error)
-    return fail(req, res, 500, 'CHECKOUT_FAILED', error?.message || 'Checkout failed')
+    return failInternalServerError(req, res, 'CHECKOUT_FAILED', 'Checkout failed')
   }
 }
 
@@ -104,6 +105,6 @@ export async function createBillingPortalSession(req, res) {
     return ok(req, res, { url: portal.url })
   } catch (error) {
     console.error('createBillingPortalSession error:', error)
-    return fail(req, res, 500, 'BILLING_PORTAL_FAILED', 'Billing portal failed')
+    return failInternalServerError(req, res, 'BILLING_PORTAL_FAILED', 'Billing portal failed')
   }
 }

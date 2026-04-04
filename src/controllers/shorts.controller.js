@@ -1,6 +1,7 @@
 import admin from '../config/firebase.js';
 import { buildPublicUrl, getDownloadToken } from '../utils/storage.js';
 import { ok, fail } from '../http/respond.js';
+import { failInternalServerError } from '../http/internal-error.js';
 import logger from '../observability/logger.js';
 import { setRequestContextFromReq } from '../observability/request-context.js';
 import {
@@ -101,7 +102,7 @@ export async function getMyShorts(req, res) {
     }
   } catch (error) {
     console.error('/shorts/mine error:', error);
-    return fail(req, res, 500, 'FETCH_FAILED', error?.message || 'FETCH_FAILED');
+    return failInternalServerError(req, res, 'FETCH_FAILED', 'Failed to fetch shorts');
   }
 }
 

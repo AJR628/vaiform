@@ -4,6 +4,7 @@ import { stripe, STRIPE_WEBHOOK_SECRET } from '../config/stripe.js'
 import { getMonthlyPlanConfig, getPlanForMonthlyPriceId } from '../config/commerce.js'
 import { buildCanonicalUsageState } from '../services/usage.service.js'
 import { ok, fail } from '../http/respond.js'
+import { failSafeError } from '../http/internal-error.js'
 
 const router = express.Router()
 const RENEWAL_BILLING_REASONS = new Set(['subscription_cycle'])
@@ -450,13 +451,10 @@ router.post('/', express.raw({ type: 'application/json', limit: '1mb' }), async 
     return ok(req, res, { received: true, ...result })
   } catch (error) {
     console.error('[webhook] handler error', error)
-    return fail(
-      req,
-      res,
-      error?.status || 500,
-      error?.code || 'WEBHOOK_ERROR',
-      error?.message || 'Webhook processing failed'
-    )
+    return failSafeError(req, res, error, {
+      fallbackError: 'WEBHOOK_ERROR',
+      safeDetail: 'Webhook processing failed',
+    })
   }
 })
 

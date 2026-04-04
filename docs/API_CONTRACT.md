@@ -7,7 +7,7 @@ All JSON API responses must use this envelope so clients and tests never have to
 ```json
 {
   "success": true,
-  "data": <any>,
+  "data": "<any>",
   "requestId": "<string or null>"
 }
 ```
@@ -31,6 +31,7 @@ All JSON API responses must use this envelope so clients and tests never have to
 - **success:** Always `false`.
 - **error:** Error code (e.g. `VALIDATION_FAILED`, `UNAUTHENTICATED`, `FORBIDDEN`, `ERROR`).
 - **detail:** Human-readable message.
+- **5xx detail rule:** unexpected server failures must return sanitized `detail` text and must not echo raw provider/internal exception messages.
 - **fields:** Optional. Present for validation errors; object keyed by field path, value is message. Omit key entirely when not applicable.
 - **requestId:** Same as success.
 
@@ -74,8 +75,9 @@ Set by `reqId` middleware from the `X-Request-Id` request header or a generated 
 
 Use `src/http/respond.js`:
 
-- `respond.ok(req, res, data)` — success response.
-- `respond.fail(req, res, status, error, detail, fields?)` — failure response.
+- `respond.ok(req, res, data)` for success responses.
+- `respond.fail(req, res, status, error, detail, fields?)` for failure responses.
+- Use `src/http/internal-error.js` for sanitized route-level 5xx responses and similar internal failures.
 
 ## Webhook Retry Note
 
@@ -83,4 +85,4 @@ Use `src/http/respond.js`:
 
 - Return `200` only after the webhook event was safely committed, was already committed (duplicate no-op), or was intentionally ignored. Current Stripe billing events now update entitlement plus usage-period state and never grant credits.
 - Return `400` only for signature/body verification failures that cannot succeed on retry.
-- Return `500` for retryable processing failures after signature verification so Stripe retries.
+- Return `500` for retryable processing failures after signature verification so Stripe retries, but keep outward `detail` sanitized and preserve `requestId`.

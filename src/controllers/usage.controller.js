@@ -1,4 +1,5 @@
-import { ok, fail } from '../http/respond.js';
+import { ok } from '../http/respond.js';
+import { failInternalServerError } from '../http/internal-error.js';
 import { getUsageSummary } from '../services/usage.service.js';
 import logger from '../observability/logger.js';
 import { setRequestContextFromReq } from '../observability/request-context.js';
@@ -15,7 +16,7 @@ export async function getUsage(req, res) {
       routeStatus: `${req.method} ${req.originalUrl}`,
       error: err,
     });
-    return fail(req, res, 500, 'USAGE_ERROR', err?.message || 'Failed to fetch usage');
+    return failInternalServerError(req, res, 'USAGE_ERROR', 'Failed to fetch usage');
   }
 }
 
