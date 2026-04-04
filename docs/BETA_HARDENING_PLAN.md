@@ -21,6 +21,7 @@ Evidence/history remains in:
 - `docs/TRUTH_FREEZE_AUDIT_2026-02-28.md`
 
 ## Purpose
+
 Use this file as preserved beta hardening roadmap history and implementation context.
 
 Use it to:
