@@ -3,7 +3,7 @@
 - Status: CANONICAL
 - Owner repo: backend
 - Source of truth for: Phase 1 finalize control-room triage on the current finalize engine
-- Last verified against repo code: 2026-03-26
+- Last verified against repo code: 2026-04-04
 
 ## Scope
 
@@ -46,6 +46,7 @@ Known boundaries that still apply:
 - backend logs are still stdout-backed even though the event schema is now canonical (`src/observability/logger.js:18-39`)
 - mobile diagnostics are still in-memory only and are cleared on app restart (mobile repo `client/lib/diagnostics.ts:36-153`)
 - the API process no longer boots finalize execution; worker startup is separate through `story-finalize.worker.js:1-14` and `src/workers/story-finalize.worker.js:1-49`
+- API-process restarts clear prior `localProcessObservability.recentEvents` history in the dashboard; fall back to shared dashboard truth plus persisted `requestId` / `sessionId` / `attemptId` traces when local history is gone
 
 ## Correlation Keys
 

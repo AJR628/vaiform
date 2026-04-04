@@ -94,6 +94,7 @@ Backend bridge/pointer only:
 
 Useful for audits and paper trail, but not the first place to update when contract truth changes:
 
+- `docs/PHASE4_OPERATOR_READINESS_PROOF_LOG.md`
 - `docs/MOBILE_DOCS_VERIFICATION_REPORT.md`
 - `ROUTE_TRUTH_TABLE.md`
 - `docs/ACTIVE_SURFACES.md`

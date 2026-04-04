@@ -1,6 +1,6 @@
 # DEPLOY_ROLLBACK_HOTFIX_RUNBOOK
 
-Last verified against repo code: 2026-03-23.
+Last verified against repo code: 2026-04-04.
 
 Purpose: repo-scoped deploy, rollback, and hotfix guidance for the Vaiform backend's mobile-used surface.
 
@@ -53,6 +53,19 @@ Purpose: repo-scoped deploy, rollback, and hotfix guidance for the Vaiform backe
 3. Confirm whether the hotfix also requires a Firestore rules/index deploy.
 4. Record the incident requestId, affected route, and exact hotfix commit SHA outside the repo.
 5. After deploy, run the same verification steps as the normal deploy path.
+
+## Phase 4 Verified Live Probes
+
+The 2026-04-04 Phase 4 operator rehearsal re-verified these live probes on the intended launch environment:
+
+- `GET /health`
+- founder-authenticated `GET /api/admin/finalize/data`
+- `GET /api/story/:sessionId` recovery confirmation after finalize
+- `GET /api/shorts/:jobId`
+- `GET /api/usage`
+
+The proof details live in `docs/PHASE4_OPERATOR_READINESS_PROOF_LOG.md`.
+If the API process restarts and local dashboard history disappears, continue from persisted requestIds/session state instead of treating the dashboard reset as proof loss.
 
 ## Explicit repo boundaries
 

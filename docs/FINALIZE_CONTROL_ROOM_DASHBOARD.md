@@ -3,6 +3,7 @@
 - Status: CANONICAL
 - Owner repo: backend
 - Source of truth for: Finalize Control Room / Ops Dashboard V1 page shape, access model, and data composition
+- Live proof companion: `docs/PHASE4_OPERATOR_READINESS_PROOF_LOG.md`
 
 ## Routes
 
@@ -50,6 +51,17 @@ Markdown docs are linked for humans only:
 - `docs/FINALIZE_THRESHOLD_REPORT.md`
 - `docs/INCIDENT_TRACE_RUNBOOK.md`
 - `docs/FINALIZE_ALERT_ARTIFACTS.md`
+
+## Phase 4 Live Verification Notes
+
+Verified on the intended launch environment on 2026-04-04:
+
+- founder-authenticated dashboard access worked on the backend origin at `/admin/finalize`
+- unauthenticated `GET /api/admin/finalize/data` returned `401`
+- founder-authenticated `GET /api/admin/finalize/data` returned `200`
+- the existing linked runbooks were sufficient for the supervised operator rehearsal
+
+No dashboard code change was justified by the rehearsal.
 
 ## Shared vs Local Rule
 
@@ -107,3 +119,4 @@ Production later:
 2. Visit `/admin/finalize`.
 
 This doc does not add or depend on Netlify/main-site routing.
+The 2026-04-04 Phase 4 rehearsal also used the backend origin directly; the main-site shell should not be assumed to serve `/admin/finalize`.

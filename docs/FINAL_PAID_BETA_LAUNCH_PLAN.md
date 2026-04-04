@@ -215,6 +215,7 @@ Phases 1 through 3 are now complete. The former closure items below are retained
 
 ### Phase 4: Operator Readiness And Launch Monitoring Closure
 
+- Status: closed on 2026-04-04 via `docs/PHASE4_OPERATOR_READINESS_PROOF_LOG.md`
 - Phase type: standalone deep-context phase
 - Why this phase exists: the codebase already has meaningful finalize observability, but launch requires an explicit operator posture and one real rehearsal.
 - Scope:
@@ -241,6 +242,10 @@ Phases 1 through 3 are now complete. The former closure items below are retained
   - confirm backend `npm run test:observability` still passes on the release candidate commit
   - manual dashboard access verification
   - recorded operator rehearsal notes for the intended launch environment
+- Closeout evidence:
+  - `docs/PHASE4_OPERATOR_READINESS_PROOF_LOG.md`
+  - live founder-authenticated dashboard proof on the intended backend origin
+  - one recorded bootstrap -> story creation -> finalize -> readback -> usage rehearsal
 - Must remain out of scope:
   - distributed metrics platform work
   - long-term alerting/history systems beyond what small beta needs now
@@ -310,6 +315,8 @@ Pass criteria:
 
 ### Gate D: Operator Readiness Gate
 
+- Status: closed on 2026-04-04 via `docs/PHASE4_OPERATOR_READINESS_PROOF_LOG.md`
+
 Pass criteria:
 
 - the intended API + worker topology is chosen and verified in the deployment
@@ -349,7 +356,9 @@ These items matter, but they should not block first paid beta unless the corresp
   - do not launch with multiple worker processes until the paid trust path is closed and the operator has rehearsed the current dashboard signals
 - Shared limits:
   - keep the current shared defaults unless live proof from Phase 2 and Phase 4 justifies a change
-  - current repo defaults are shared render limit `3`, shared backlog limit `25`, and overload retry-after `30s`
+  - live Phase 4 proof on 2026-04-04 verified shared render limit `3`, shared backlog limit `25`, overload retry-after `30s`, OpenAI shared limit `2`, story-search shared limit `2`, and TTS shared limit `1`
+- Operator entrypoint:
+  - the Phase 4 rehearsal used the backend origin directly for `/admin/finalize`; do not assume the main site serves the dashboard shell
 - Watch during beta:
   - billing mismatch signals
   - queue depth
@@ -379,6 +388,7 @@ Primary docs used to build this plan:
 - `docs/API_CONTRACT.md`
 - `docs/MOBILE_BACKEND_CONTRACT.md`
 - `docs/MOBILE_HARDENING_PLAN.md`
+- `docs/PHASE4_OPERATOR_READINESS_PROOF_LOG.md`
 - `docs/FINALIZE_THRESHOLD_REPORT.md`
 - `docs/FINALIZE_CONTROL_ROOM_DASHBOARD.md`
 - `docs/FINALIZE_SCALING_RUNBOOK.md`

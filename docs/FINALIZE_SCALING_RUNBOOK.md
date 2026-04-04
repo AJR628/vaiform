@@ -13,6 +13,16 @@
 - It does not change public finalize/mobile/web contracts.
 - It does not redesign render-slot wait behavior, billing heuristics, or finalize storage/runtime architecture.
 
+## Phase 4 Beta Proof Snapshot
+
+Verified on the intended launch environment on 2026-04-04:
+
+- shared verdict was `healthy` before finalize, immediately after enqueue, and after backend restart
+- live shared limits remained `render=3`, `backlog=25`, `retry-after=30s`
+- live provider slot limits remained `openai=2`, `story-search=2`, `tts=1`
+- the supervised rehearsal reached `renderRecovery.state = done` and short readback succeeded through `GET /api/shorts/:jobId`
+- an API restart later cleared prior local-panel history, so shared truth and persisted session/readback state remained the durable operator sources
+
 ## Scenario Entry Points
 
 Run these from the backend repo root:
