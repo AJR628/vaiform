@@ -1,6 +1,9 @@
 # Beta Hardening Plan
 
-**This doc is a plan/roadmap, not runtime truth.**
+> Historical Roadmap Notice (2026-04-04)
+> This file is preserved as historical roadmap context only.
+> It is not current runtime truth, current launch authority, or the docs front door.
+> Phases 1-3 are now closed in current repo truth; use `docs/FINAL_PAID_BETA_LAUNCH_PLAN.md` for the live launch-phase record and `docs/DOCS_INDEX.md` for current doc navigation.
 
 Current docs front door is `docs/DOCS_INDEX.md`.
 
@@ -18,7 +21,7 @@ Evidence/history remains in:
 - `docs/TRUTH_FREEZE_AUDIT_2026-02-28.md`
 
 ## Purpose
-Use this file as the living beta hardening roadmap and implementation checklist.
+Use this file as preserved beta hardening roadmap history and implementation context.
 
 Use it to:
 
@@ -27,6 +30,7 @@ Use it to:
 - force SSOT-safe implementation discipline
 
 Do not use this file as runtime truth for routes, callers, or contracts.
+Do not use the route lists, timeout notes, or implementation order below as current-state truth without re-verifying against the current canonical docs and code.
 
 ## Meta Rules
 

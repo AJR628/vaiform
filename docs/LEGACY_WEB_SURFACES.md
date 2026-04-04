@@ -36,12 +36,12 @@ These routes are mounted in the backend but had no current mobile caller and no 
 
 | Route | Verified repo state | Why remove later | Retirement condition |
 | --- | --- | --- | --- |
-| `POST /api/story/update-script` | Mounted at `src/routes/story.routes.js:174-205`; no current mobile caller in `client/`; no current `web/public` caller in repo search | Superseded by per-beat editing via `update-beat-text`. | Remove after freeze unless a real caller is reintroduced. |
-| `POST /api/story/timeline` | Mounted at `src/routes/story.routes.js:727-746`; no current mobile or `web/public` caller found | Internal phase route, not a product surface. | Remove after freeze. |
-| `POST /api/story/captions` | Mounted at `src/routes/story.routes.js:748-773`; no current mobile or `web/public` caller found | Internal phase route, not a product surface. | Remove after freeze. |
-| `POST /api/story/render` | Mounted at `src/routes/story.routes.js:775-816`; no current mobile or `web/public` caller found | Competes with finalize and bypasses finalize idempotency path. | Default-disable first, then remove. |
-| `POST /api/user/setup` | Mounted at `src/routes/user.routes.js:13-29`; no current mobile or `web/public` caller found | No current product caller. | Remove after freeze. |
-| `GET /api/user/me` | Mounted at `src/routes/user.routes.js:34-56`; no current mobile or `web/public` caller found | Stale profile surface that is mounted but unused. | Remove after freeze unless mobile adopts it explicitly. |
+| `POST /api/story/update-script` | Mounted at `src/routes/story.routes.js:295-325`; no current mobile caller in `client/`; no current `web/public` caller in repo search | Superseded by per-beat editing via `update-beat-text`. | Remove after freeze unless a real caller is reintroduced. |
+| `POST /api/story/timeline` | Mounted at `src/routes/story.routes.js:895-913`; no current mobile or `web/public` caller found | Internal phase route, not a product surface. | Remove after freeze. |
+| `POST /api/story/captions` | Mounted at `src/routes/story.routes.js:916-940`; no current mobile or `web/public` caller found | Internal phase route, not a product surface. | Remove after freeze. |
+| `POST /api/story/render` | Mounted at `src/routes/story.routes.js:942-983`; no current mobile or `web/public` caller found | Competes with finalize and bypasses finalize idempotency path. | Default-disable first, then remove. |
+| `POST /api/user/setup` | Mounted at `src/routes/user.routes.js:13-28`; no current mobile or `web/public` caller found | No current product caller. | Remove after freeze. |
+| `GET /api/user/me` | Mounted at `src/routes/user.routes.js:33-55`; no current mobile or `web/public` caller found | Stale profile surface that is mounted but unused. | Remove after freeze unless mobile adopts it explicitly. |
 | `GET /api/whoami` | Mounted at `src/routes/whoami.routes.js:11-16`; no current mobile or `web/public` caller found | Console/helper-only route. | Remove after freeze. |
 | `GET /api/limits/usage` | Mounted at `src/routes/limits.routes.js:7`; no current mobile or `web/public` caller found | Mounted with no current user-facing caller. | Remove after freeze. |
 

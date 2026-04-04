@@ -4,7 +4,7 @@
 - Owner repo: backend
 - Source of truth for: backend docs ownership, precedence, and the mobile/backend documentation split
 - Canonical counterpart/source: mobile repo `docs/DOCS_INDEX.md` and mobile repo `docs/MOBILE_USED_SURFACES.md`
-- Last verified against: both repos on 2026-04-01
+- Last verified against: both repos on 2026-04-04
 
 ## Ownership Split
 
@@ -18,6 +18,7 @@ Start here for current live truth and update-first docs:
 
 - backend repo `README.md`
 - backend repo `docs/DOCS_INDEX.md`
+- backend repo `docs/FINAL_PAID_BETA_LAUNCH_PLAN.md` - current launch-phase authority after Phases 1-3 closure
 - backend repo `docs/API_CONTRACT.md`
 - backend repo `docs/FINALIZE_CURRENT_STATE_AUDIT.md`
 - backend repo `docs/FINALIZE_OBSERVABILITY_SPEC.md`
@@ -50,13 +51,14 @@ Do not start from evidence, historical, or phase/reference docs unless the live-
 
 Update these first when backend/mobile contract or hardening truth changes:
 
+- `docs/FINAL_PAID_BETA_LAUNCH_PLAN.md`
 - `docs/SCRIPT_CONTROL_PREIMPLEMENTATION_AUDIT.md`
 - `docs/FINALIZE_CURRENT_STATE_AUDIT.md`
 - `docs/FINALIZE_OBSERVABILITY_SPEC.md`
 - `docs/FINALIZE_RUNTIME_TOPOLOGY_SPEC.md`
 - `docs/FINALIZE_CONTROL_ROOM_DASHBOARD.md`
 - `docs/MOBILE_BACKEND_CONTRACT.md`
-- `docs/MOBILE_HARDENING_PLAN.md`
+- `docs/MOBILE_HARDENING_PLAN.md` - current hardening-status ledger, not the primary launch-phase front door
 - `docs/LEGACY_WEB_SURFACES.md`
 - `docs/API_CONTRACT.md`
 - `docs/COHESION_GUARDRAILS.md`
