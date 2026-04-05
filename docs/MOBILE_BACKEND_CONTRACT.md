@@ -1,16 +1,21 @@
 # MOBILE_BACKEND_CONTRACT
 
-Cross-repo verification date: 2026-04-03.
+Cross-repo verification date: 2026-04-04.
 
 Purpose: canonical backend-owned contract, guarantees, and open mismatch record for mobile production. Current mobile caller-truth lives in the mobile repo. If a route is not `MOBILE_CORE_NOW` or `MOBILE_CORE_SOON` here, it is not first-class for mobile launch.
 
 ## Source Order
 
 1. Actual current mobile repo usage and callsites
-2. Actual mounted backend behavior
+2. Actual mounted backend behavior from `src/app.js`
 3. mobile repo `docs/MOBILE_USED_SURFACES.md`
 4. this doc and `docs/MOBILE_HARDENING_PLAN.md`
 5. Older spec docs only as historical context
+
+Route-authority note:
+
+- Runtime route mounts are owned by `src/app.js`.
+- `src/routes/index.js` remains an internal export/helper map for a subset of routers and is not the place to answer "where are routes mounted?"
 
 ## Request Rules
 
@@ -32,6 +37,7 @@ Purpose: canonical backend-owned contract, guarantees, and open mismatch record 
 
 - Standard backend success envelope: `{ success: true, data, requestId }` (`src/http/respond.js:14-17`).
 - Standard backend failure envelope: `{ success: false, error, detail, requestId, fields? }` (`src/http/respond.js:28-34`).
+- Ops-tooling rule: future maintenance automation must trust the canonical backend envelope fields above plus `docs/API_CONTRACT.md`; mobile normalization to `{ ok, code, message }` is a compatibility boundary, not backend contract authority.
 - Active mobile-core 5xx responses now keep `requestId` but sanitize unexpected internal/provider detail at the backend boundary; known 4xx/404 and retryable 503 mappings remain route-specific.
 - Mobile normalization layer now preserves `requestId` while converting success envelopes to `{ ok: true, data, requestId }` and failure envelopes to `{ ok: false, status, code, message, requestId }` (`client/api/client.ts:127-160`, `client/api/client.ts:230-307`).
 - Finalize is the current launch exception: the backend returns top-level `shortId`, and accepted/conflict responses also return top-level `finalize = { state, attemptId, pollSessionId }`; the mobile client explicitly extracts both from the raw response (`src/services/story-finalize.attempts.js:528-564`, `src/services/story-finalize.attempts.js:1118-1197`, `client/api/client.ts:804-937`).

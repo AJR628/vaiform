@@ -4,6 +4,7 @@
 - Owner repo: backend
 - Source of truth for: Finalize Control Room / Ops Dashboard V1 page shape, access model, and data composition
 - Live proof companion: `docs/PHASE4_OPERATOR_READINESS_PROOF_LOG.md`
+- Founder/operator maintenance front door: `docs/MAINTENANCE_FRONT_DOOR.md`
 
 ## Routes
 
@@ -12,6 +13,21 @@
 
 The page route is intentionally outside `/diag/*`.
 The data route is intentionally under `/api/*`.
+
+## Current Scope
+
+This dashboard is for:
+
+- shared finalize pressure and queue health
+- shared-vs-local observability separation
+- recent operator correlation support around finalize failures and backlog
+
+This dashboard is not for:
+
+- business intelligence
+- product analytics
+- historical throughput reporting
+- replacing incident packets or canonical runbooks
 
 ## Access Control
 

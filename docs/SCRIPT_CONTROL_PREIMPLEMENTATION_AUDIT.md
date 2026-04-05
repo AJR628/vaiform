@@ -4,7 +4,7 @@
 - Owner repo: backend
 - Source of truth for: pre-code freeze on script-quality control ownership, current contracts, and the first safe implementation slice
 - Canonical counterpart/source: mobile repo `docs/DOCS_INDEX.md`, mobile repo `docs/MOBILE_USED_SURFACES.md`, backend repo `docs/MOBILE_BACKEND_CONTRACT.md`, backend repo `docs/MOBILE_HARDENING_PLAN.md`, backend repo `docs/LEGACY_WEB_SURFACES.md`
-- Last verified against: both repos on 2026-03-25
+- Last verified against: both repos on 2026-04-04
 
 ## Purpose
 
@@ -23,15 +23,18 @@ It is intentionally conservative:
 ### Canonical backend owner
 
 - The current mounted backend owner for story creation, generation, and beat editing is `/api/story`, not `/api/studio`.
-  - Backend mount: `src/app.js:244-246`
-  - Router export: `src/routes/index.js:8-18`
+  - Runtime mount authority: `src/app.js:244-246`
+  - Internal helper export map still used by that mount block: `src/routes/index.js:8-18`
   - Story router auth gate: `src/routes/story.routes.js:35-36`
+- Route-authority note:
+  - `src/app.js` is the file that answers where backend routes are mounted.
+  - `src/routes/index.js` is not the route-mount authority; it is a helper export map for a subset of routers still mounted from `src/app.js`.
 - Current backend handlers:
   - `POST /api/story/start`: `src/routes/story.routes.js:204-231`
   - `POST /api/story/generate`: `src/routes/story.routes.js:233-268`
   - `POST /api/story/update-beat-text`: `src/routes/story.routes.js:833-871`
 - I checked the current backend route inventory and mount file for `/api/studio` and found no mounted `/api/studio` authoring surface in the live app path.
-  - Checked: `src/app.js:217-267`, `src/routes/index.js:1-19`
+  - Checked: `src/app.js:217-267` and the helper export map at `src/routes/index.js:1-19`
 
 ### Canonical mobile callers
 
@@ -315,7 +318,7 @@ It is intentionally conservative:
 The following must be true before coding starts:
 
 - [x] `/api/story` ownership is proven and documented.
-  - Evidence: `src/app.js:244-246`, `src/routes/index.js:8-18`, `src/routes/story.routes.js:204-871`
+  - Evidence: `src/app.js:244-246`, helper export map `src/routes/index.js:8-18`, `src/routes/story.routes.js:204-871`
 - [x] `styleKey` ownership is proven and frozen as v1 policy.
   - Evidence: mobile `client/api/client.ts:607-617`, `src/routes/story.routes.js:188-218`, `src/services/story.service.js:486-565`, `src/services/story.llm.service.js:223-227`, `src/services/story.llm.service.js:320-323`
 - [x] `update-beat-text` response contract is proven and frozen as v1 policy.

@@ -12,11 +12,20 @@
 - The backend repo owns server contract truth, backend guarantees, hardening status, and legacy surface classification.
 - When mobile/backend contract work changes, verify actual code in both repos first, then update the owning doc set.
 
+## Founder / Operator Front Door
+
+For live maintenance, incident triage, and founder/operator orientation, start here first:
+
+- backend repo `docs/MAINTENANCE_FRONT_DOOR.md`
+
+This index remains the broader ownership map. Use it after the maintenance front door when you need deeper backend doc ownership or update precedence.
+
 ## Active Docs Map
 
-Start here for current live truth and update-first docs:
+For current live truth and update-first backend docs:
 
 - backend repo `README.md`
+- backend repo `docs/MAINTENANCE_FRONT_DOOR.md` - founder/operator maintenance front door
 - backend repo `docs/DOCS_INDEX.md`
 - backend repo `docs/FINAL_PAID_BETA_LAUNCH_PLAN.md` - current launch-phase authority after Phases 1-3 closure
 - backend repo `docs/API_CONTRACT.md`
@@ -51,6 +60,7 @@ Do not start from evidence, historical, or phase/reference docs unless the live-
 
 Update these first when backend/mobile contract or hardening truth changes:
 
+- `docs/MAINTENANCE_FRONT_DOOR.md`
 - `docs/FINAL_PAID_BETA_LAUNCH_PLAN.md`
 - `docs/SCRIPT_CONTROL_PREIMPLEMENTATION_AUDIT.md`
 - `docs/FINALIZE_CURRENT_STATE_AUDIT.md`
