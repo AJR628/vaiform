@@ -42,7 +42,7 @@ Vaiform is ready enough for paid beta only when all of the following are true on
 
 ## 3. Current Repo-Verified Blockers
 
-Phases 1 through 3 are now complete. The former closure items below are retained as closure notes; operator readiness remains the next open launch blocker.
+Phases 1 through 4 are now complete. The former closure items below are retained as closure notes; final launch approval in Phase 5 is the next open launch gate.
 
 ### Phase 1 closure 1: active mobile runtime now type-checks cleanly
 
