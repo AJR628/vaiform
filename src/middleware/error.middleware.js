@@ -14,10 +14,14 @@ function fieldsFromZodIssues(issues) {
   return Object.keys(fields).length > 0 ? fields : undefined;
 }
 
-export default function errorHandler(err, req, res, _next) {
-  const isZod = err?.name === 'ZodError' || err?.code === 'ZOD_ERROR' || Array.isArray(err?.issues);
+export function isZodValidationError(err) {
+  return err?.name === 'ZodError' || err?.code === 'ZOD_ERROR' || Array.isArray(err?.issues);
+}
 
-  const status =
+export function getErrorStatus(err) {
+  const isZod = isZodValidationError(err);
+
+  return (
     err?.status ??
     (isZod
       ? 400
@@ -29,7 +33,13 @@ export default function errorHandler(err, req, res, _next) {
             ? 403
             : err?.type === 'StripeSignatureVerificationError'
               ? 400
-              : 500);
+              : 500)
+  );
+}
+
+export default function errorHandler(err, req, res, _next) {
+  const isZod = isZodValidationError(err);
+  const status = getErrorStatus(err);
 
   const fields = isZod && err?.issues ? fieldsFromZodIssues(err.issues) : undefined;
   const log = {

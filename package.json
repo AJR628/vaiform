@@ -8,6 +8,7 @@
   },
   "dependencies": {
     "@napi-rs/canvas": "^0.1.80",
+    "@sentry/node": "^10.47.0",
     "cors": "^2.8.5",
     "dotenv": "^17.2.1",
     "express": "^4.19.2",
@@ -23,9 +24,10 @@
     "zod": "^3.25.76"
   },
   "scripts": {
-    "start": "node server.js",
-    "start:api": "node server.js",
+    "start": "node --import ./instrument.mjs server.js",
+    "start:api": "node --import ./instrument.mjs server.js",
     "start:worker:finalize": "node story-finalize.worker.js",
+    "sentry:verify": "node scripts/sentry.verify.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "check:netlify-redirects": "node scripts/check-no-netlify-redirects.mjs",

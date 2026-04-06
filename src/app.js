@@ -3,6 +3,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import dotenv from 'dotenv';
 import path from 'path';
+import * as Sentry from '@sentry/node';
 
 import routes from './routes/index.js';
 import './config/firebase.js'; // ensure Firebase Admin is initialized
@@ -12,7 +13,7 @@ import './config/firebase.js'; // ensure Firebase Admin is initialized
 // Gate A helpers
 import envCheck from './middleware/envCheck.js';
 import reqId from './middleware/reqId.js';
-import errorHandler from './middleware/error.middleware.js';
+import errorHandler, { getErrorStatus } from './middleware/error.middleware.js';
 import requestContextMiddleware from './observability/request-context.js';
 
 // Direct route imports for explicit mounting
@@ -289,6 +290,14 @@ if (process.env.VAIFORM_DEBUG === '1' && app?._router?.stack) {
 }
 
 /** ---- Centralized error handler (last) ---- */
+if (Sentry.isEnabled()) {
+  Sentry.setupExpressErrorHandler(app, {
+    shouldHandleError(error) {
+      return getErrorStatus(error) >= 500;
+    },
+  });
+}
+
 app.use(errorHandler);
 
 export default app;
