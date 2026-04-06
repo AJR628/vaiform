@@ -18,8 +18,9 @@ Use this doc first for live maintenance and incident triage.
 - Backend API startup now preloads `instrument.mjs` through the API launch commands in `package.json`; this pass instruments the API only.
 - Express Sentry capture is mounted in `src/app.js` before the existing final `errorHandler`, so Sentry sees qualifying failures while Vaiform keeps the canonical JSON response envelope.
 - Verification is manual and non-public through `npm run sentry:verify`, which imports the same instrumentation and sends one deliberate backend event after `SENTRY_DSN` is configured.
+- Backend API request-scoped events and traces now add searchable tags `surface=backend-api`, `service=api`, coarse path-based `flow`, and `request_id`, plus a small `vaiform_request` context with `method`, `path`, and `hasAuthorizationHeader`.
 - New env knobs live in `env.example`: `SENTRY_DSN`, `SENTRY_ENVIRONMENT`, `SENTRY_RELEASE`, `SENTRY_TRACES_SAMPLE_RATE`.
-- Deferred from this pass: finalize worker Sentry wiring, mobile Sentry wiring, release automation, alerts, and Vaiform-specific incident packet logic.
+- Deferred from this pass: finalize worker Sentry wiring, mobile Sentry wiring, session/attempt/short enrichment, release automation, alerts, and Vaiform-specific incident packet logic.
 
 ## Live Product Path
 1. Auth bootstrap -> `POST /api/users/ensure` -> `GET /api/usage`

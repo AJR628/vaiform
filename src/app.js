@@ -15,6 +15,7 @@ import envCheck from './middleware/envCheck.js';
 import reqId from './middleware/reqId.js';
 import errorHandler, { getErrorStatus } from './middleware/error.middleware.js';
 import requestContextMiddleware from './observability/request-context.js';
+import sentryRequestEnrichment from './observability/sentry-request-enrichment.js';
 
 // Direct route imports for explicit mounting
 import whoamiRoutes from './routes/whoami.routes.js';
@@ -46,6 +47,7 @@ app.use(
 // assign a request ID early
 app.use(reqId);
 app.use(requestContextMiddleware);
+app.use(sentryRequestEnrichment);
 
 /** ---- FRONTEND origin (for redirects/CORS) ---- */
 const FRONTEND = (process.env.FRONTEND_URL || 'http://localhost:8888').replace(/\/+$/, '');
