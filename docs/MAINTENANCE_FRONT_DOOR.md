@@ -22,6 +22,16 @@ Use this doc first for live maintenance and incident triage.
 - New env knobs live in `env.example`: `SENTRY_DSN`, `SENTRY_ENVIRONMENT`, `SENTRY_RELEASE`, `SENTRY_TRACES_SAMPLE_RATE`.
 - Deferred from this pass: finalize worker Sentry wiring, mobile Sentry wiring, session/attempt/short enrichment, release automation, alerts, and Vaiform-specific incident packet logic.
 
+## Read-Only Sentry Incident Bridge
+
+- Phase 1 is local/operator-only through `npm run sentry:read -- <command>` and the wrapper in `src/ops/sentry-reader/`; it is not mounted in `src/app.js` and is not a production backend route.
+- The bridge must use a dedicated read-only Sentry token from `SENTRY_BRIDGE_TOKEN`; do not paste tokens into chat, logs, incident packets, or docs.
+- First allowed commands only: `get-issue`, `get-issue-event`, `search-by-request-id`, and `build-incident-packet`.
+- The phase-1 lookup key is Sentry tag `request_id`, with `surface`, `service`, and `flow` treated as expected Sentry tags from the current backend enrichment.
+- Deeper Vaiform IDs (`sessionId`, `attemptId`, `finalizeJobId`, `shortId`, `workerId`) are conditional only: packets must keep them `null` unless the Sentry event actually contains matching tags.
+- The bridge returns an allowlisted incident packet, not raw Sentry payloads. Blocked fields include user identity, request headers, request data, breadcrumbs, frame vars/context, attachments, and replay data even if Sentry already sanitized upstream capture.
+- Out of scope for Phase 1: raw Sentry search, issue mutation, alert changes, production write actions, auto-remediation, auto-deploy, mobile/worker Sentry expansion, and broad trace exploration.
+
 ## Live Product Path
 1. Auth bootstrap -> `POST /api/users/ensure` -> `GET /api/usage`
 2. Story creation -> `POST /api/story/start` -> `POST /api/story/generate`

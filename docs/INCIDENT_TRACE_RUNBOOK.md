@@ -29,6 +29,12 @@ Use these sources in this order:
 3. Mobile in-memory diagnostics for finalize recovery and readback
 4. Legacy stdout log events only when extra local detail is needed
 
+Optional Sentry bridge input:
+
+- Use `npm run sentry:read -- build-incident-packet --request-id <requestId>` or `npm run sentry:read -- build-incident-packet --issue-id <issueId>` when a backend API Sentry issue/event already exists and a sanitized incident packet is useful for Codex repo-side investigation.
+- Treat the packet as read-only context. It is not a log firehose, not a replacement for canonical finalize observability, and not permission to mutate Sentry or deploy.
+- In Phase 1, `request_id`, `surface`, `service`, and `flow` are the expected Sentry correlation fields. `sessionId`, `attemptId`, `finalizeJobId`, `shortId`, and `workerId` remain conditional and must be treated as unknown/null unless present in the packet.
+
 Diagnostic proof surface:
 
 - `GET /diag/finalize-control-room`
