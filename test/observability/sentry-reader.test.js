@@ -66,6 +66,7 @@ test('searchByRequestId uses GET-only project issue lookup and never returns the
   assert.equal(calls[0].options.headers.Authorization, 'Bearer secret-token');
   assert.equal(calls[0].url.pathname, '/api/0/projects/vaiform/backend-api/issues/');
   assert.match(calls[0].url.searchParams.get('query'), /request_id:"req-123"/);
+  assert.doesNotMatch(calls[0].url.searchParams.get('query'), /is:unresolved/);
   assert.doesNotMatch(JSON.stringify(result), /secret-token/);
   assert.deepEqual(result[0], {
     id: '123',
@@ -206,6 +207,23 @@ test('incident packet keeps Sentry issue short ID separate from Vaiform shortId'
     'attachments',
     'replay',
   ]);
+});
+
+test('buildIncidentPacket preserves requested requestId when no Sentry issue matches', async () => {
+  const reader = new SentryReader({
+    token: 'secret-token',
+    orgSlug: 'vaiform',
+    projectSlug: 'backend-api',
+    fetchImpl: async () => mockJsonResponse([]),
+  });
+
+  const packet = await reader.buildIncidentPacket({ requestId: 'req-no-match' });
+
+  assert.equal(packet.correlation.requestId, 'req-no-match');
+  assert.equal(packet.sentry.org, 'vaiform');
+  assert.equal(packet.sentry.project, 'backend-api');
+  assert.equal(packet.sentry.issueId, null);
+  assert.equal(packet.sentry.eventId, null);
 });
 
 test('getIssueEvent rejects non-phase-1 selectors', async () => {

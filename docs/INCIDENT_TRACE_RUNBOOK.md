@@ -3,7 +3,7 @@
 - Status: CANONICAL
 - Owner repo: backend
 - Source of truth for: Phase 1 finalize control-room triage on the current finalize engine
-- Last verified against repo code: 2026-04-04
+- Last verified against repo code: finalize runbook on 2026-04-04; Sentry bridge note on 2026-04-07
 
 ## Scope
 
@@ -33,7 +33,7 @@ Optional Sentry bridge input:
 
 - Use `npm run sentry:read -- build-incident-packet --request-id <requestId>` or `npm run sentry:read -- build-incident-packet --issue-id <issueId>` when a backend API Sentry issue/event already exists and a sanitized incident packet is useful for Codex repo-side investigation.
 - Treat the packet as read-only context. It is not a log firehose, not a replacement for canonical finalize observability, and not permission to mutate Sentry or deploy.
-- In Phase 1, `request_id`, `surface`, `service`, and `flow` are the expected Sentry correlation fields. `sessionId`, `attemptId`, `finalizeJobId`, `shortId`, and `workerId` remain conditional and must be treated as unknown/null unless present in the packet.
+- In Phase 1, `request_id`, `surface`, `service`, and `flow` are the expected Sentry correlation fields. `search-by-request-id` searches by exact `request_id` tag and does not restrict to unresolved issues. `sessionId`, `attemptId`, `finalizeJobId`, `shortId`, and `workerId` remain conditional and must be treated as unknown/null unless present in the packet.
 
 Diagnostic proof surface:
 

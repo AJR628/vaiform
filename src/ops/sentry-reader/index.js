@@ -203,11 +203,17 @@ export function sanitizeEvent(event) {
   };
 }
 
-export function buildIncidentPacket({ issue = null, event = null, eventSelector = null } = {}) {
+export function buildIncidentPacket({
+  issue = null,
+  event = null,
+  eventSelector = null,
+  requestedRequestId = null,
+} = {}) {
   const safeIssue = sanitizeIssue(issue);
   const safeEvent = sanitizeEvent(event);
+  const fallbackRequestId = normalizeString(requestedRequestId);
   const correlation = {
-    requestId: safeEvent?.correlation?.requestId ?? null,
+    requestId: safeEvent?.correlation?.requestId ?? fallbackRequestId,
     surface: safeEvent?.correlation?.surface ?? null,
     service: safeEvent?.correlation?.service ?? null,
     flow: safeEvent?.correlation?.flow ?? null,
@@ -371,7 +377,7 @@ export class SentryReader {
     const safeRequestId = assertSafeRequestId(requestId);
     const issues = await this.sentryGet(`/projects/${this.orgSlug}/${this.projectSlug}/issues/`, {
       statsPeriod: normalizeString(statsPeriod) || '14d',
-      query: `is:unresolved request_id:${quoteSearchValue(safeRequestId)}`,
+      query: `request_id:${quoteSearchValue(safeRequestId)}`,
     });
 
     return Array.isArray(issues) ? issues.slice(0, this.maxResults).map(sanitizeIssue) : [];
@@ -380,12 +386,14 @@ export class SentryReader {
   async buildIncidentPacket({ issueId = null, requestId = null, event = 'recommended' } = {}) {
     const eventSelector = normalizeEventSelector(event);
     let issue = null;
+    let requestedRequestId = null;
     if (issueId) {
       issue = await this.sentryGet(
         `/organizations/${this.orgSlug}/issues/${assertSafeId('issue_id', issueId)}/`
       );
     } else if (requestId) {
-      const matches = await this.searchByRequestId(requestId);
+      requestedRequestId = assertSafeRequestId(requestId);
+      const matches = await this.searchByRequestId(requestedRequestId);
       if (matches.length > 0) {
         issue = matches[0];
       }
@@ -394,7 +402,20 @@ export class SentryReader {
     }
 
     if (!issue?.id) {
-      return buildIncidentPacket({ issue, event: null, eventSelector });
+      const packet = buildIncidentPacket({
+        issue,
+        event: null,
+        eventSelector,
+        requestedRequestId,
+      });
+      return {
+        ...packet,
+        sentry: {
+          ...packet.sentry,
+          org: this.orgSlug,
+          project: this.projectSlug,
+        },
+      };
     }
 
     const rawEvent = await this.sentryGet(
