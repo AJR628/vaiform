@@ -144,8 +144,12 @@ function showAuthRequiredModal() {
 
 function setLoading(buttonId, loading) {
   const button = document.getElementById(buttonId);
+  if (!button) return;
   button.disabled = loading;
   button.textContent = loading ? 'Loading...' : button.textContent.replace('Loading...', '');
+  if (typeof syncCreativeStepShell === 'function') {
+    syncCreativeStepShell();
+  }
 }
 
 // URL detection helper
@@ -242,6 +246,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (document.fonts) {
     await ensureDejaVuVariantsReady(3000);
   }
+  safe('creative-shell-setup', () => setupCreativeStepShell());
   safe('caption-size', () => typeof initCaptionSizeUI === 'function' && initCaptionSizeUI());
   if (!window.currentStorySessionId) {
     if (!window.draftStoryboard) {
@@ -250,6 +255,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     renderDraftStoryboard();
     updateRenderArticleButtonState();
   }
+  safe('default-view-mode', () => applyCurrentViewMode({ renderBeats: currentViewMode === 'beats' }));
+  safe('creative-shell-sync', () => syncCreativeStepShell());
 });
 
 // Move Caption Style section below storyboard when DOM is ready
@@ -305,6 +312,378 @@ function isValidBeat(beat) {
 // Phase 1: Generate stable ID for beats
 function generateBeatId() {
   return 'beat-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+}
+
+const CREATIVE_FLOW_STEPS = ['start', 'script', 'storyboard', 'render'];
+let currentCreativeStep = 'start';
+let creativeShellInitialized = false;
+let storyboardDeckListenersAttached = false;
+let storyboardDeckRaf = null;
+let activeStoryboardCardKey = null;
+
+function getScriptTextForShell() {
+  const textarea = document.getElementById('article-script-preview');
+  return textarea?.value || '';
+}
+
+function getScriptBeatsForShell() {
+  return getScriptTextForShell()
+    .split('\n')
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+}
+
+function getSessionStoryboardStats() {
+  const session = window.currentStorySession;
+  const sentences = session?.story?.sentences || [];
+  const shots = session?.shots || [];
+  const total = Math.max(sentences.length, shots.length);
+  let clipCount = 0;
+  let renderableCount = 0;
+
+  for (let i = 0; i < total; i++) {
+    const shot = shots.find((entry) => entry.sentenceIndex === i) || shots[i];
+    const text = sentences[i] || '';
+    const hasClip = !!shot?.selectedClip?.url;
+    const hasText = !!text.trim() && !isPlaceholderText(text);
+    if (hasClip) clipCount++;
+    if (hasClip && hasText) renderableCount++;
+  }
+
+  return { total, clipCount, renderableCount };
+}
+
+function getDraftStoryboardStats() {
+  const beats = window.draftStoryboard?.beats || [];
+  let clipCount = 0;
+  let renderableCount = 0;
+
+  for (const beat of beats) {
+    const hasClip = !!beat?.selectedClip?.url;
+    const hasText = !!beat?.text?.trim() && !isPlaceholderText(beat.text);
+    if (hasClip) clipCount++;
+    if (hasClip && hasText) renderableCount++;
+  }
+
+  return {
+    total: beats.length,
+    clipCount,
+    renderableCount,
+  };
+}
+
+function hasPreparedStoryboardSession() {
+  const stats = getSessionStoryboardStats();
+  return !!window.currentStorySessionId && stats.total > 0;
+}
+
+function hasRenderedStoryVideo() {
+  return !!window.currentStorySession?.finalVideo?.url;
+}
+
+function isStoryboardSyncedToScript() {
+  if (!hasPreparedStoryboardSession()) return false;
+  const currentBeats = getScriptBeatsForShell();
+  const originalBeats = window.currentStoryOriginalSentences || [];
+  if (currentBeats.length !== originalBeats.length) return false;
+  return originalBeats.every((beat, idx) => beat === currentBeats[idx]);
+}
+
+function hasRenderableStoryboardSession() {
+  if (!hasPreparedStoryboardSession()) return false;
+  return getSessionStoryboardStats().renderableCount > 0;
+}
+
+function getCreativeStepStates() {
+  const scriptBeats = getScriptBeatsForShell();
+  const scriptReady = scriptBeats.length > 0;
+  const storyboardReady = hasPreparedStoryboardSession();
+  const storyboardSynced = isStoryboardSyncedToScript();
+  const renderReady = storyboardReady && storyboardSynced && hasRenderableStoryboardSession();
+  const sessionStats = getSessionStoryboardStats();
+
+  return {
+    start: {
+      unlocked: true,
+      complete: scriptReady,
+      summary: scriptReady ? `${scriptBeats.length} beat${scriptBeats.length === 1 ? '' : 's'} ready` : 'Article, link, or idea',
+      stateLabel: currentCreativeStep === 'start' ? 'Current' : scriptReady ? 'Done' : 'Open',
+    },
+    script: {
+      unlocked: true,
+      complete: storyboardReady && storyboardSynced,
+      summary: !scriptReady
+        ? 'Create or paste beats'
+        : storyboardReady && !storyboardSynced
+          ? 'Storyboard needs refresh'
+          : `${scriptBeats.length} beat${scriptBeats.length === 1 ? '' : 's'}`,
+      stateLabel: currentCreativeStep === 'script' ? 'Current' : scriptReady ? 'Ready' : 'Available',
+    },
+    storyboard: {
+      unlocked: storyboardReady,
+      complete: renderReady,
+      summary: !storyboardReady
+        ? 'Unlocks after storyboard prep'
+        : !storyboardSynced
+          ? 'Refresh from script edits'
+          : `${sessionStats.clipCount}/${sessionStats.total} clips selected`,
+      stateLabel: currentCreativeStep === 'storyboard' ? 'Current' : renderReady ? 'Ready' : storyboardReady ? 'Open' : 'Locked',
+    },
+    render: {
+      unlocked: renderReady,
+      complete: hasRenderedStoryVideo(),
+      summary: hasRenderedStoryVideo()
+        ? 'Last render ready'
+        : renderReady
+          ? 'Neutral voice, ready to render'
+          : 'Revealed when a beat is render-ready',
+      stateLabel: currentCreativeStep === 'render' ? 'Current' : hasRenderedStoryVideo() ? 'Done' : renderReady ? 'Ready' : 'Locked',
+    },
+  };
+}
+
+function normalizeCreativeStep(step, states = getCreativeStepStates()) {
+  if (step === 'start') return 'start';
+  if (step === 'script') return 'script';
+  if (step === 'storyboard') {
+    return states.storyboard.unlocked ? 'storyboard' : 'script';
+  }
+  if (step === 'render') {
+    if (states.render.unlocked) return 'render';
+    if (states.storyboard.unlocked) return 'storyboard';
+    return 'script';
+  }
+  return 'start';
+}
+
+function getCurrentShellAction(states = getCreativeStepStates()) {
+  const primaryButton = document.getElementById('guided-step-primary-btn');
+  const summarizeBtn = document.getElementById('summarize-article-btn');
+  const prepareBtn = document.getElementById('prepare-storyboard-btn');
+  const renderBtn = document.getElementById('render-article-btn');
+  const inputText = document.getElementById('article-input')?.value.trim() || '';
+  const scriptReady = getScriptBeatsForShell().length > 0;
+  const storyboardSynced = isStoryboardSyncedToScript();
+
+  if (currentCreativeStep === 'start') {
+    return {
+      label: summarizeBtn?.textContent?.trim() || 'Create script',
+      helper: 'Turn your source into a first script draft.',
+      disabled: !inputText || !!summarizeBtn?.disabled,
+      type: 'button',
+      buttonId: 'summarize-article-btn',
+    };
+  }
+
+  if (currentCreativeStep === 'script') {
+    return {
+      label:
+        hasPreparedStoryboardSession() && !storyboardSynced
+          ? 'Refresh storyboard'
+          : prepareBtn?.textContent?.trim() || 'Continue to storyboard',
+      helper:
+        hasPreparedStoryboardSession() && !storyboardSynced
+          ? 'Your script changed after the last storyboard build.'
+          : 'Beat View is active by default. Continue when the beats feel right.',
+      disabled: !scriptReady || !!prepareBtn?.disabled,
+      type: 'button',
+      buttonId: 'prepare-storyboard-btn',
+    };
+  }
+
+  if (currentCreativeStep === 'storyboard') {
+    if (hasPreparedStoryboardSession() && !storyboardSynced) {
+      return {
+        label: 'Refresh storyboard',
+        helper: 'Rebuild the storyboard so clips match your latest script edits.',
+        disabled: !scriptReady,
+        type: 'button',
+        buttonId: 'prepare-storyboard-btn',
+      };
+    }
+
+    return {
+      label: 'Continue to voice & render',
+      helper: states.render.unlocked
+        ? 'At least one beat is fully ready to render.'
+        : 'Add a clip to at least one beat to continue.',
+      disabled: !states.render.unlocked,
+      type: 'step',
+      step: 'render',
+    };
+  }
+
+  return {
+    label: renderBtn?.textContent?.trim() || 'Render video',
+    helper: hasRenderedStoryVideo()
+      ? 'Render again if you need a fresh export.'
+      : 'Renders currently use the default neutral voice in this web flow.',
+    disabled: !!renderBtn?.disabled,
+    type: 'button',
+    buttonId: 'render-article-btn',
+  };
+}
+
+function getStoryboardCards() {
+  return Array.from(document.querySelectorAll('#storyboard-row .beat-card'));
+}
+
+function getStoryboardCardKey(card) {
+  if (!card) return null;
+  return card.dataset.sentenceIndex ?? card.dataset.beatId ?? null;
+}
+
+function setActiveStoryboardCard(card, { scroll = false } = {}) {
+  if (!card) return;
+  getStoryboardCards().forEach((entry) => entry.classList.remove('is-active'));
+  card.classList.add('is-active');
+  activeStoryboardCardKey = getStoryboardCardKey(card);
+  if (scroll) {
+    card.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+  }
+}
+
+function scheduleStoryboardDeckSelection() {
+  if (storyboardDeckRaf) cancelAnimationFrame(storyboardDeckRaf);
+  storyboardDeckRaf = requestAnimationFrame(() => {
+    const scrollEl = document.getElementById('storyboard-scroll');
+    const cards = getStoryboardCards();
+    if (!scrollEl || cards.length === 0) return;
+
+    const savedCard = cards.find((card) => getStoryboardCardKey(card) === activeStoryboardCardKey);
+    if (savedCard) {
+      setActiveStoryboardCard(savedCard);
+      return;
+    }
+
+    const scrollRect = scrollEl.getBoundingClientRect();
+    const scrollCenter = scrollRect.left + scrollRect.width / 2;
+    let winner = cards[0];
+    let winnerDistance = Number.POSITIVE_INFINITY;
+
+    cards.forEach((card) => {
+      const rect = card.getBoundingClientRect();
+      const center = rect.left + rect.width / 2;
+      const distance = Math.abs(center - scrollCenter);
+      if (distance < winnerDistance) {
+        winnerDistance = distance;
+        winner = card;
+      }
+    });
+
+    setActiveStoryboardCard(winner);
+  });
+}
+
+function ensureStoryboardDeckBindings() {
+  if (storyboardDeckListenersAttached) return;
+  const scrollEl = document.getElementById('storyboard-scroll');
+  const row = document.getElementById('storyboard-row');
+  if (!scrollEl || !row) return;
+
+  scrollEl.addEventListener('scroll', scheduleStoryboardDeckSelection, { passive: true });
+  row.addEventListener('click', (event) => {
+    const card = event.target.closest('.beat-card');
+    if (card) setActiveStoryboardCard(card);
+  });
+  window.addEventListener('resize', scheduleStoryboardDeckSelection);
+  storyboardDeckListenersAttached = true;
+}
+
+function setupCreativeStepShell() {
+  if (creativeShellInitialized) return;
+  creativeShellInitialized = true;
+
+  document.querySelectorAll('[data-step-nav]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const step = button.dataset.stepNav;
+      setCreativeStep(step, { scrollIntoView: true });
+    });
+  });
+
+  const primaryBtn = document.getElementById('guided-step-primary-btn');
+  if (primaryBtn) {
+    primaryBtn.addEventListener('click', () => {
+      const states = getCreativeStepStates();
+      const action = getCurrentShellAction(states);
+      if (!action || action.disabled) return;
+
+      if (action.type === 'step' && action.step) {
+        setCreativeStep(action.step, { scrollIntoView: true });
+        return;
+      }
+
+      if (action.type === 'button' && action.buttonId) {
+        document.getElementById(action.buttonId)?.click();
+      }
+    });
+  }
+}
+
+function setCreativeStep(step, options = {}) {
+  const { scrollIntoView = false, force = false } = options;
+  const states = getCreativeStepStates();
+  if (!force && step !== 'start' && step !== 'script' && !states[step]?.unlocked) {
+    return;
+  }
+
+  currentCreativeStep = normalizeCreativeStep(step, states);
+  syncCreativeStepShell();
+
+  if (scrollIntoView) {
+    document.querySelector('.creative-stage')?.scrollIntoView({
+      behavior: 'smooth',
+      block: 'start',
+    });
+  }
+}
+
+function syncCreativeStepShell() {
+  if (!creativeShellInitialized) return;
+
+  const states = getCreativeStepStates();
+  currentCreativeStep = normalizeCreativeStep(currentCreativeStep, states);
+
+  document.querySelectorAll('[data-step-panel]').forEach((panel) => {
+    const step = panel.dataset.stepPanel;
+    const active = step === currentCreativeStep;
+    panel.classList.toggle('is-active', active);
+    panel.hidden = !active;
+  });
+
+  document.querySelectorAll('[data-step-nav]').forEach((button) => {
+    const step = button.dataset.stepNav;
+    const state = states[step];
+    const canOpen = step === 'start' || step === 'script' || state?.unlocked;
+    button.disabled = !canOpen;
+    button.classList.toggle('is-active', step === currentCreativeStep);
+    button.classList.toggle('is-complete', !!state?.complete);
+    button.classList.toggle('is-locked', !canOpen);
+    button.setAttribute('aria-current', step === currentCreativeStep ? 'step' : 'false');
+
+    const summaryEl = document.getElementById(`step-summary-${step}`);
+    if (summaryEl && state?.summary) summaryEl.textContent = state.summary;
+    const stateEl = document.getElementById(`step-state-${step}`);
+    if (stateEl && state?.stateLabel) stateEl.textContent = state.stateLabel;
+  });
+
+  const primaryBtn = document.getElementById('guided-step-primary-btn');
+  const helperEl = document.getElementById('guided-step-helper');
+  const metaEl = document.getElementById('guided-step-meta');
+  const action = getCurrentShellAction(states);
+  if (primaryBtn && action) {
+    primaryBtn.textContent = action.label;
+    primaryBtn.disabled = !!action.disabled;
+  }
+  if (helperEl && action) helperEl.textContent = action.helper;
+  if (metaEl) {
+    metaEl.textContent = `Step ${CREATIVE_FLOW_STEPS.indexOf(currentCreativeStep) + 1} of ${CREATIVE_FLOW_STEPS.length}`;
+  }
+
+  if (currentCreativeStep === 'storyboard') {
+    ensureStoryboardDeckBindings();
+    scheduleStoryboardDeckSelection();
+  }
 }
 
 // Normalize script text into beats with caps
@@ -426,15 +805,42 @@ function updateScriptCounters() {
   if (prepareBtn) {
     prepareBtn.disabled = beats.length === 0;
   }
+
+  if (typeof syncCreativeStepShell === 'function') {
+    syncCreativeStepShell();
+  }
 }
 
 // Beat Editor functions (Phase 1: Mirror mode)
-let currentViewMode = 'raw'; // 'raw' or 'beats'
+let currentViewMode = 'beats'; // 'raw' or 'beats'
 
 // Phase 2: Raw draft tracking
 window.rawDraftText = '';
 window.rawDirty = false;
 window.pendingBeatParseResult = null;
+
+function applyCurrentViewMode({ renderBeats = true } = {}) {
+  const textarea = document.getElementById('article-script-preview');
+  const beatEditor = document.getElementById('beat-editor');
+  const toggleBtn = document.getElementById('toggle-view-btn');
+  const countersEl = document.getElementById('script-preview-counters');
+
+  if (!textarea || !beatEditor || !toggleBtn) return;
+
+  const isBeatView = currentViewMode === 'beats';
+  textarea.classList.toggle('hidden', isBeatView);
+  beatEditor.classList.toggle('hidden', !isBeatView);
+  if (countersEl) countersEl.classList.toggle('hidden', isBeatView);
+  toggleBtn.textContent = isBeatView ? 'Raw View' : 'Beat View';
+
+  if (isBeatView && renderBeats) {
+    renderBeatEditor();
+  }
+
+  if (typeof syncCreativeStepShell === 'function') {
+    syncCreativeStepShell();
+  }
+}
 
 // Sync textarea from beats array (with guard to prevent input handler firing)
 function syncTextareaFromBeats(beats) {
@@ -934,14 +1340,7 @@ function toggleViewMode() {
 
           // Switch to Beat view
           currentViewMode = 'beats';
-          textarea.classList.add('hidden');
-          beatEditor.classList.remove('hidden');
-          const countersEl = document.getElementById('script-preview-counters');
-          if (countersEl) countersEl.classList.add('hidden');
-          toggleBtn.textContent = 'Raw';
-
-          // Render beats from normalized textarea value
-          renderBeatEditor();
+          applyCurrentViewMode({ renderBeats: true });
         },
         () => {
           // Cancel: Do nothing, stay in Raw view
@@ -951,27 +1350,16 @@ function toggleViewMode() {
     } else {
       // No changes needed, switch immediately
       currentViewMode = 'beats';
-      textarea.classList.add('hidden');
-      beatEditor.classList.remove('hidden');
-      const countersEl = document.getElementById('script-preview-counters');
-      if (countersEl) countersEl.classList.add('hidden');
-      toggleBtn.textContent = 'Raw';
 
       // Clear dirty state
       window.rawDirty = false;
       window.rawDraftText = '';
 
-      // Render beats from current textarea value
-      renderBeatEditor();
+      applyCurrentViewMode({ renderBeats: true });
     }
   } else {
     // Switch to Raw view (always immediate)
     currentViewMode = 'raw';
-    textarea.classList.remove('hidden');
-    beatEditor.classList.add('hidden');
-    const countersEl = document.getElementById('script-preview-counters');
-    if (countersEl) countersEl.classList.remove('hidden');
-    toggleBtn.textContent = 'Beat View';
 
     // Clear any pending confirm UI
     const existing = document.getElementById('beat-apply-confirm');
@@ -981,6 +1369,7 @@ function toggleViewMode() {
     window.pendingBeatParseResult = null;
 
     // Textarea is already up to date (beats sync to it on every edit)
+    applyCurrentViewMode({ renderBeats: false });
   }
 }
 
@@ -1166,6 +1555,7 @@ async function summarizeArticle() {
       renderBeatEditor();
     }
 
+    setCreativeStep('script');
     console.log('[article] Story generated successfully:', sentences.length, 'sentences');
   } catch (error) {
     console.error('[article] Summarize failed:', error);
@@ -1429,6 +1819,7 @@ async function prepareStoryboard() {
       // Update render button state (session now exists)
       updateRenderArticleButtonState();
 
+      setCreativeStep('storyboard');
       console.log('[article] Storyboard prepared successfully');
       return;
     }
@@ -1541,6 +1932,7 @@ async function prepareStoryboard() {
       // Update render button state (session now exists)
       updateRenderArticleButtonState();
 
+      setCreativeStep('storyboard');
       console.log('[article] Storyboard prepared successfully (manual mode)');
       return;
     }
@@ -1688,8 +2080,7 @@ async function renderStoryboard(session) {
     const shot = shots.find((s) => s.sentenceIndex === idx) || shots[idx];
 
     const card = document.createElement('div');
-    card.className =
-      'beat-card relative w-40 h-[420px] flex-shrink-0 bg-black rounded-lg overflow-hidden border border-gray-700';
+    card.className = 'beat-card relative flex-shrink-0';
     card.setAttribute('data-sentence-index', idx);
 
     if (!shot || !shot.selectedClip) {
@@ -1699,7 +2090,7 @@ async function renderStoryboard(session) {
                             <p class="text-xs text-gray-400 text-center px-2">No clip found</p>
                             <div class="beat-controls">
                                 <button
-                                    class="delete-beat-btn absolute top-1 right-1 w-6 h-6 rounded-full bg-red-600 hover:bg-red-700 text-white text-xs flex items-center justify-center z-50"
+                                    class="delete-beat-btn absolute top-1 right-1 z-50"
                                     data-sentence-index="${idx}"
                                     title="Delete beat"
                                 >âœ•</button>
@@ -1738,7 +2129,7 @@ async function renderStoryboard(session) {
                             ></video>
                             <div class="beat-controls">
                                 <button
-                                    class="delete-beat-btn absolute top-1 right-1 w-6 h-6 rounded-full bg-red-600 hover:bg-red-700 text-white text-xs flex items-center justify-center z-50"
+                                    class="delete-beat-btn absolute top-1 right-1 z-50"
                                     data-sentence-index="${idx}"
                                     title="Delete beat"
                                 >âœ•</button>
@@ -1792,6 +2183,8 @@ async function renderStoryboard(session) {
 
   // Update render button state (session exists)
   updateRenderArticleButtonState();
+  ensureStoryboardDeckBindings();
+  scheduleStoryboardDeckSelection();
 
   // Video Cuts (beta) panel: show and refresh when storyboard is rendered
   refreshVideoCutsPanel();
@@ -1990,8 +2383,7 @@ function renderDraftStoryboard() {
     }
 
     const card = document.createElement('div');
-    card.className =
-      'beat-card relative w-40 h-[420px] flex-shrink-0 bg-black rounded-lg overflow-hidden border border-gray-700';
+    card.className = 'beat-card relative flex-shrink-0';
     card.setAttribute('data-beat-id', beat.id);
     card.setAttribute('data-draft', 'true');
 
@@ -2008,7 +2400,7 @@ function renderDraftStoryboard() {
                             <p class="text-xs text-gray-400 text-center px-2">+ Add clip</p>
                             <div class="beat-controls">
                                 <button
-                                    class="delete-beat-btn absolute top-1 right-1 w-6 h-6 rounded-full bg-red-600 hover:bg-red-700 text-white text-xs flex items-center justify-center z-50"
+                                    class="delete-beat-btn absolute top-1 right-1 z-50"
                                     data-beat-id="${beat.id}"
                                     data-draft="true"
                                     title="Delete beat"
@@ -2050,7 +2442,7 @@ function renderDraftStoryboard() {
                             ></video>
                             <div class="beat-controls">
                                 <button
-                                    class="delete-beat-btn absolute top-1 right-1 w-6 h-6 rounded-full bg-red-600 hover:bg-red-700 text-white text-xs flex items-center justify-center z-50"
+                                    class="delete-beat-btn absolute top-1 right-1 z-50"
                                     data-beat-id="${beat.id}"
                                     data-draft="true"
                                     title="Delete beat"
@@ -2100,6 +2492,8 @@ function renderDraftStoryboard() {
 
   // Update render button state (draft mode)
   updateRenderArticleButtonState();
+  ensureStoryboardDeckBindings();
+  scheduleStoryboardDeckSelection();
 
   // Apply beat previews (behind feature flag)
   if (window.BEAT_PREVIEW_ENABLED) {
@@ -2564,16 +2958,20 @@ function updateRenderArticleButtonState() {
   const renderBtn = document.getElementById('render-article-btn');
   if (!renderBtn) return;
 
-  // Enable if session exists OR draft is dirty
-  const hasSession = !!window.currentStorySessionId;
-  const draftDirty = isStoryboardDirty();
+  const sessionRenderable = hasRenderableStoryboardSession();
+  const draftRenderable = getDraftStoryboardStats().renderableCount > 0;
+  const canRender = sessionRenderable || draftRenderable;
 
-  if (hasSession || draftDirty) {
+  if (canRender) {
     renderBtn.disabled = false;
     renderBtn.title = '';
   } else {
     renderBtn.disabled = true;
-    renderBtn.title = 'Please add at least one clip or text to render';
+    renderBtn.title = 'Add text and a clip to at least one beat before rendering';
+  }
+
+  if (typeof syncCreativeStepShell === 'function') {
+    syncCreativeStepShell();
   }
 }
 
@@ -2782,7 +3180,7 @@ function renderClipPickerGrid(shot, pageInfo = null) {
 
   if (candidates.length === 0) {
     grid.innerHTML =
-      '<div class="text-sm text-gray-500 dark:text-gray-400 col-span-full text-center py-4">No clips found. Try a different search.</div>';
+      '<div class="text-sm text-gray-500 dark:text-gray-400 col-span-full text-center py-6">No clips found. Try a different search.</div>';
     // Hide pagination if no results
     const paginationBar = document.getElementById('clip-picker-pagination');
     if (paginationBar) {
@@ -2795,23 +3193,20 @@ function renderClipPickerGrid(shot, pageInfo = null) {
     .map((clip) => {
       const isSelected = shot.selectedClip?.id === clip.id;
       return `
-                    <div
-                        class="clip-option rounded overflow-hidden bg-gray-100 dark:bg-gray-800 border ${isSelected ? 'border-blue-500' : 'border-gray-300 dark:border-gray-700'} cursor-pointer hover:border-blue-500 transition"
-                        data-clip-id="${clip.id}"
-                    >
-                        <video
-                            class="w-full h-40 object-cover pointer-events-none"
-                            src="${clip.url || ''}"
-                            ${clip.thumbUrl ? `poster="${clip.thumbUrl}"` : ''}
-                            playsinline
-                            muted
-                            preload="none"
-                        ></video>
-                        <div class="p-1 text-[11px] truncate text-gray-600 dark:text-gray-300">
-                            ${clip.photographer || ''}
-                        </div>
-                    </div>
-                `;
+        <div class="clip-option ${isSelected ? 'is-selected' : ''}" data-clip-id="${clip.id}">
+          <video
+            class="w-full h-40 object-cover pointer-events-none"
+            src="${clip.url || ''}"
+            ${clip.thumbUrl ? `poster="${clip.thumbUrl}"` : ''}
+            playsinline
+            muted
+            preload="none"
+          ></video>
+          <div class="p-2 text-[11px] truncate text-gray-600 dark:text-gray-300">
+            ${clip.photographer || ''}
+          </div>
+        </div>
+      `;
     })
     .join('');
 
@@ -2863,6 +3258,16 @@ function updatePaginationControls(pageInfo) {
       nextBtn.disabled = false;
       nextBtn.classList.remove('opacity-50', 'cursor-not-allowed');
     }
+  }
+}
+
+function focusStoryboardCardForTarget(beatIdOrIndex, isDraft) {
+  const selector = isDraft
+    ? `#storyboard-row .beat-card[data-beat-id="${beatIdOrIndex}"]`
+    : `#storyboard-row .beat-card[data-sentence-index="${beatIdOrIndex}"]`;
+  const card = document.querySelector(selector);
+  if (card) {
+    setActiveStoryboardCard(card, { scroll: true });
   }
 }
 
@@ -2958,6 +3363,7 @@ function openClipPicker(beatIdOrIndex, isDraft = null) {
 
   // Show picker
   picker.classList.remove('hidden');
+  focusStoryboardCardForTarget(beatIdOrIndex, isDraft);
 
   // Setup close button
   if (closeBtn) {
@@ -3339,6 +3745,8 @@ function updateStoryboardCardForSentence(shot) {
     video.removeAttribute('poster');
   }
   video.load();
+  setActiveStoryboardCard(card);
+  updateRenderArticleButtonState();
 }
 
 async function runClipSearch(pageOverride = null, options = {}) {
@@ -4062,6 +4470,7 @@ async function renderArticle() {
     }
 
     applyRenderedStorySession(session, { resultDiv, videoEl, videoUrlEl });
+    setCreativeStep('render');
   } catch (error) {
     console.error('[article] Render failed:', error);
     showError('article-error', error.message || 'Failed to render video');
@@ -4107,6 +4516,10 @@ async function renderArticle() {
         // If in beat view, re-render to reflect textarea changes
         if (currentViewMode === 'beats') {
           renderBeatEditor();
+        }
+
+        if (typeof syncCreativeStepShell === 'function') {
+          syncCreativeStepShell();
         }
       }, 300);
     });
