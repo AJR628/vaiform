@@ -293,44 +293,7 @@
       <header class="creative-intro">
         <div class="creative-intro-copy">
           <p class="creative-kicker">Creative Studio</p>
-          <h1 class="creative-title">Build short-form videos in four focused steps.</h1>
-          <p class="creative-lede">
-            Start with a source, shape the script beat by beat, tighten the storyboard, then
-            render when the story is ready.
-          </p>
-        </div>
-        <div class="creative-intro-aside">
-          <div class="creative-intro-pill">Web-first launch flow</div>
-          <ol class="creative-intro-list">
-            <li>
-              <span class="creative-intro-index">1</span>
-              <div>
-                <strong>Start</strong>
-                <p>Bring in an article, link, or idea.</p>
-              </div>
-            </li>
-            <li>
-              <span class="creative-intro-index">2</span>
-              <div>
-                <strong>Script</strong>
-                <p>Review and shape the beats one at a time.</p>
-              </div>
-            </li>
-            <li>
-              <span class="creative-intro-index">3</span>
-              <div>
-                <strong>Storyboard</strong>
-                <p>Choose clips, refine cards, and prep the edit.</p>
-              </div>
-            </li>
-            <li>
-              <span class="creative-intro-index">4</span>
-              <div>
-                <strong>Voice &amp; Render</strong>
-                <p>Render only when the storyboard is genuinely ready.</p>
-              </div>
-            </li>
-          </ol>
+          <h1 class="creative-title">Build a short.</h1>
         </div>
       </header>
 
@@ -387,10 +350,7 @@
                 <p class="creative-panel-kicker">Step 1</p>
                 <h2 class="creative-panel-title">Start</h2>
               </div>
-              <p class="creative-panel-copy">
-                Choose the angle and bring in the source material. The script step takes over from
-                there.
-              </p>
+              <p class="creative-panel-copy">Choose a style and add the source.</p>
             </div>
 
             <div class="creative-form-card">
@@ -406,13 +366,10 @@
                 <label class="creative-label" for="article-input">Source</label>
                 <textarea
                   id="article-input"
-                  rows="5"
+                  rows="4"
                   placeholder="Paste an article URL, notes, or the idea you want to turn into a short."
                   class="creative-control creative-control-textarea"
                 ></textarea>
-                <p class="creative-field-help">
-                  Use a link when you have one. Notes or a rough idea work too.
-                </p>
               </div>
               <div class="creative-shell-hidden-action">
                 <button
@@ -433,10 +390,7 @@
                 <p class="creative-panel-kicker">Step 2</p>
                 <h2 class="creative-panel-title">Script</h2>
               </div>
-              <p class="creative-panel-copy">
-                Beat View leads by default. Raw View stays available when you want direct text
-                edits.
-              </p>
+              <p class="creative-panel-copy">Edit the beats.</p>
             </div>
 
             <div class="creative-script-layout">
@@ -448,12 +402,9 @@
                       Raw View
                     </button>
                   </div>
-                  <p class="creative-field-help">
-                    Each beat maps to one storyboard card. Keep beats concise and visually specific.
-                  </p>
                   <textarea
                     id="article-script-preview"
-                    rows="6"
+                    rows="5"
                     placeholder="Create a script from the Start step or paste your own beats here."
                     class="creative-control creative-control-textarea"
                   ></textarea>
@@ -472,14 +423,6 @@
                 </div>
               </div>
 
-              <aside class="creative-script-aside">
-                <p class="creative-script-aside-label">Script pacing</p>
-                <h3>Focused editing first.</h3>
-                <p>
-                  Beat-by-beat review stays here. Raw View remains a fallback, and later script
-                  tools can slot into this layout without reshuffling the flow again.
-                </p>
-              </aside>
             </div>
 
             <div class="creative-shell-hidden-action">
@@ -500,19 +443,10 @@
                 <p class="creative-panel-kicker">Step 3</p>
                 <h2 class="creative-panel-title">Storyboard</h2>
               </div>
-              <p class="creative-panel-copy">
-                Keep one beat in focus on mobile. Swap clips, edit beat text, and manage the card
-                sequence here.
-              </p>
+              <p class="creative-panel-copy">Choose clips and tighten the sequence.</p>
             </div>
 
             <div id="storyboard" class="creative-storyboard-stage hidden">
-              <div class="creative-storyboard-copy">
-                <p class="creative-field-help">
-                  Add or swap clips inside the active card. Voice &amp; Render unlocks after at
-                  least one beat has both text and a clip.
-                </p>
-              </div>
               <div id="storyboard-scroll" class="storyboard-scroll-wrapper">
                 <div id="storyboard-row" class="flex gap-3 pb-2"></div>
               </div>
@@ -686,19 +620,13 @@
                 <p class="creative-panel-kicker">Step 4</p>
                 <h2 class="creative-panel-title">Voice &amp; Render</h2>
               </div>
-              <p class="creative-panel-copy">
-                Keep the voice surface truthful for now, then render once the storyboard is ready.
-              </p>
+              <p class="creative-panel-copy">Default voice, then render.</p>
             </div>
 
             <div class="creative-form-card creative-render-card">
               <div class="creative-render-truth">
                 <p class="creative-render-truth-label">Voice</p>
                 <h3 class="creative-render-truth-title">Default neutral narration</h3>
-                <p class="creative-render-truth-copy">
-                  This web flow currently renders with the default neutral voice. Voice selection is
-                  intentionally not surfaced here until the backend path is fully caller-backed.
-                </p>
                 <input type="hidden" id="article-voice-preset" value="male_calm" />
               </div>
 
@@ -730,7 +658,30 @@
               <p id="guided-step-helper" class="creative-stage-footer-helper">
                 Paste a link, notes, or an idea to begin.
               </p>
-              <p id="guided-step-meta" class="creative-stage-footer-meta">Step 1 of 4</p>
+              <div id="render-status-banner" class="hidden" aria-live="polite" aria-atomic="true">
+                <svg
+                  id="render-status-spinner"
+                  class="animate-spin h-5 w-5"
+                  xmlns="http://www.w3.org/2000/svg"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                >
+                  <circle
+                    class="opacity-25"
+                    cx="12"
+                    cy="12"
+                    r="10"
+                    stroke="currentColor"
+                    stroke-width="4"
+                  ></circle>
+                  <path
+                    class="opacity-75"
+                    fill="currentColor"
+                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                  ></path>
+                </svg>
+                <span id="render-status-text" class="text-sm font-medium">Preparing video...</span>
+              </div>
             </div>
             <button id="guided-step-primary-btn" type="button" class="creative-primary-button">
               Create script
@@ -787,29 +738,5 @@
 
     <script type="module" src="/js/pages/creative/creative.article.mjs"></script>
 
-    <div id="render-status-banner" class="hidden">
-      <svg
-        id="render-status-spinner"
-        class="animate-spin h-5 w-5"
-        xmlns="http://www.w3.org/2000/svg"
-        fill="none"
-        viewBox="0 0 24 24"
-      >
-        <circle
-          class="opacity-25"
-          cx="12"
-          cy="12"
-          r="10"
-          stroke="currentColor"
-          stroke-width="4"
-        ></circle>
-        <path
-          class="opacity-75"
-          fill="currentColor"
-          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-        ></path>
-      </svg>
-      <span id="render-status-text" class="text-sm font-medium">Preparing video...</span>
-    </div>
   </body>
 </html>

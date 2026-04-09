@@ -247,6 +247,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     await ensureDejaVuVariantsReady(3000);
   }
   safe('creative-shell-setup', () => setupCreativeStepShell());
+  safe('creative-auth-setup', () => setupCreativeAuthState());
   safe('caption-size', () => typeof initCaptionSizeUI === 'function' && initCaptionSizeUI());
   if (!window.currentStorySessionId) {
     if (!window.draftStoryboard) {
@@ -320,6 +321,59 @@ let creativeShellInitialized = false;
 let storyboardDeckListenersAttached = false;
 let storyboardDeckRaf = null;
 let activeStoryboardCardKey = null;
+let creativeAuthState = {
+  listening: false,
+  resolved: false,
+  signedIn: false,
+};
+
+function getCreativeAuthStatus() {
+  if (!creativeAuthState.listening) return 'ready';
+  if (!creativeAuthState.resolved) return 'checking';
+  return creativeAuthState.signedIn ? 'ready' : 'signed_out';
+}
+
+function setupCreativeAuthState() {
+  if (creativeAuthState.listening) return;
+
+  const auth = window.auth;
+  const subscribe = window.onAuthStateChanged;
+  if (!auth || typeof subscribe !== 'function') {
+    creativeAuthState = {
+      listening: true,
+      resolved: true,
+      signedIn: true,
+    };
+    return;
+  }
+
+  creativeAuthState.listening = true;
+  creativeAuthState.signedIn = !!auth.currentUser;
+  if (auth.currentUser) {
+    creativeAuthState.resolved = true;
+  }
+
+  const fallback = window.setTimeout(() => {
+    if (creativeAuthState.resolved) return;
+    creativeAuthState.resolved = true;
+    creativeAuthState.signedIn = !!auth.currentUser;
+    syncCreativeStepShell();
+  }, 2500);
+
+  try {
+    subscribe(auth, (user) => {
+      window.clearTimeout(fallback);
+      creativeAuthState.resolved = true;
+      creativeAuthState.signedIn = !!user;
+      syncCreativeStepShell();
+    });
+  } catch (error) {
+    window.clearTimeout(fallback);
+    console.warn('[creative-shell] auth state listener failed:', error);
+    creativeAuthState.resolved = true;
+    creativeAuthState.signedIn = true;
+  }
+}
 
 function getScriptTextForShell() {
   const textarea = document.getElementById('article-script-preview');
@@ -406,38 +460,38 @@ function getCreativeStepStates() {
     start: {
       unlocked: true,
       complete: scriptReady,
-      summary: scriptReady ? `${scriptBeats.length} beat${scriptBeats.length === 1 ? '' : 's'} ready` : 'Article, link, or idea',
-      stateLabel: currentCreativeStep === 'start' ? 'Current' : scriptReady ? 'Done' : 'Open',
+      summary: scriptReady ? `${scriptBeats.length} beat${scriptBeats.length === 1 ? '' : 's'}` : 'Source',
+      stateLabel: currentCreativeStep === 'start' ? 'Now' : scriptReady ? 'Done' : 'Open',
     },
     script: {
       unlocked: true,
       complete: storyboardReady && storyboardSynced,
       summary: !scriptReady
-        ? 'Create or paste beats'
+        ? 'Waiting'
         : storyboardReady && !storyboardSynced
-          ? 'Storyboard needs refresh'
+          ? 'Refresh'
           : `${scriptBeats.length} beat${scriptBeats.length === 1 ? '' : 's'}`,
-      stateLabel: currentCreativeStep === 'script' ? 'Current' : scriptReady ? 'Ready' : 'Available',
+      stateLabel: currentCreativeStep === 'script' ? 'Now' : scriptReady ? 'Ready' : 'Open',
     },
     storyboard: {
       unlocked: storyboardReady,
       complete: renderReady,
       summary: !storyboardReady
-        ? 'Unlocks after storyboard prep'
+        ? 'Locked'
         : !storyboardSynced
-          ? 'Refresh from script edits'
+          ? 'Refresh'
           : `${sessionStats.clipCount}/${sessionStats.total} clips selected`,
-      stateLabel: currentCreativeStep === 'storyboard' ? 'Current' : renderReady ? 'Ready' : storyboardReady ? 'Open' : 'Locked',
+      stateLabel: currentCreativeStep === 'storyboard' ? 'Now' : renderReady ? 'Ready' : storyboardReady ? 'Open' : 'Locked',
     },
     render: {
       unlocked: renderReady,
       complete: hasRenderedStoryVideo(),
       summary: hasRenderedStoryVideo()
-        ? 'Last render ready'
+        ? 'Last render'
         : renderReady
-          ? 'Neutral voice, ready to render'
-          : 'Revealed when a beat is render-ready',
-      stateLabel: currentCreativeStep === 'render' ? 'Current' : hasRenderedStoryVideo() ? 'Done' : renderReady ? 'Ready' : 'Locked',
+          ? 'Ready'
+          : 'Locked',
+      stateLabel: currentCreativeStep === 'render' ? 'Now' : hasRenderedStoryVideo() ? 'Done' : renderReady ? 'Ready' : 'Locked',
     },
   };
 }
@@ -457,18 +511,38 @@ function normalizeCreativeStep(step, states = getCreativeStepStates()) {
 }
 
 function getCurrentShellAction(states = getCreativeStepStates()) {
-  const primaryButton = document.getElementById('guided-step-primary-btn');
   const summarizeBtn = document.getElementById('summarize-article-btn');
   const prepareBtn = document.getElementById('prepare-storyboard-btn');
   const renderBtn = document.getElementById('render-article-btn');
   const inputText = document.getElementById('article-input')?.value.trim() || '';
   const scriptReady = getScriptBeatsForShell().length > 0;
   const storyboardSynced = isStoryboardSyncedToScript();
+  const authStatus = getCreativeAuthStatus();
 
   if (currentCreativeStep === 'start') {
+    if (authStatus === 'checking') {
+      return {
+        label: 'Checking sign-in...',
+        helper: '',
+        disabled: true,
+        type: 'button',
+        buttonId: 'summarize-article-btn',
+      };
+    }
+
+    if (authStatus === 'signed_out') {
+      return {
+        label: 'Sign in to create',
+        helper: 'Sign in from the header.',
+        disabled: true,
+        type: 'button',
+        buttonId: 'summarize-article-btn',
+      };
+    }
+
     return {
       label: summarizeBtn?.textContent?.trim() || 'Create script',
-      helper: 'Turn your source into a first script draft.',
+      helper: inputText ? 'Create the first draft.' : 'Add a source.',
       disabled: !inputText || !!summarizeBtn?.disabled,
       type: 'button',
       buttonId: 'summarize-article-btn',
@@ -483,8 +557,8 @@ function getCurrentShellAction(states = getCreativeStepStates()) {
           : prepareBtn?.textContent?.trim() || 'Continue to storyboard',
       helper:
         hasPreparedStoryboardSession() && !storyboardSynced
-          ? 'Your script changed after the last storyboard build.'
-          : 'Beat View is active by default. Continue when the beats feel right.',
+          ? 'Refresh after edits.'
+          : 'Review the beats.',
       disabled: !scriptReady || !!prepareBtn?.disabled,
       type: 'button',
       buttonId: 'prepare-storyboard-btn',
@@ -495,7 +569,7 @@ function getCurrentShellAction(states = getCreativeStepStates()) {
     if (hasPreparedStoryboardSession() && !storyboardSynced) {
       return {
         label: 'Refresh storyboard',
-        helper: 'Rebuild the storyboard so clips match your latest script edits.',
+        helper: 'Refresh after edits.',
         disabled: !scriptReady,
         type: 'button',
         buttonId: 'prepare-storyboard-btn',
@@ -504,9 +578,7 @@ function getCurrentShellAction(states = getCreativeStepStates()) {
 
     return {
       label: 'Continue to voice & render',
-      helper: states.render.unlocked
-        ? 'At least one beat is fully ready to render.'
-        : 'Add a clip to at least one beat to continue.',
+      helper: states.render.unlocked ? 'Ready for render.' : 'Choose one clip to continue.',
       disabled: !states.render.unlocked,
       type: 'step',
       step: 'render',
@@ -515,9 +587,11 @@ function getCurrentShellAction(states = getCreativeStepStates()) {
 
   return {
     label: renderBtn?.textContent?.trim() || 'Render video',
-    helper: hasRenderedStoryVideo()
-      ? 'Render again if you need a fresh export.'
-      : 'Renders currently use the default neutral voice in this web flow.',
+    helper: renderStatusActive
+      ? ''
+      : hasRenderedStoryVideo()
+        ? 'Render again if needed.'
+        : 'Default voice.',
     disabled: !!renderBtn?.disabled,
     type: 'button',
     buttonId: 'render-article-btn',
@@ -669,15 +743,15 @@ function syncCreativeStepShell() {
 
   const primaryBtn = document.getElementById('guided-step-primary-btn');
   const helperEl = document.getElementById('guided-step-helper');
-  const metaEl = document.getElementById('guided-step-meta');
   const action = getCurrentShellAction(states);
   if (primaryBtn && action) {
     primaryBtn.textContent = action.label;
     primaryBtn.disabled = !!action.disabled;
   }
-  if (helperEl && action) helperEl.textContent = action.helper;
-  if (metaEl) {
-    metaEl.textContent = `Step ${CREATIVE_FLOW_STEPS.indexOf(currentCreativeStep) + 1} of ${CREATIVE_FLOW_STEPS.length}`;
+  if (helperEl) {
+    const helper = action?.helper || '';
+    helperEl.textContent = helper;
+    helperEl.hidden = !helper;
   }
 
   if (currentCreativeStep === 'storyboard') {
@@ -4097,9 +4171,9 @@ function setupStoryboardHover() {
 }
 
 // ========================================
-// Render Status Banner Management
+// Inline Render Status Management
 // ========================================
-// Shows a 3-step progress banner during /api/story/finalize execution:
+// Shows a 3-step progress status during /api/story/finalize execution:
 // - Immediately: "Preparing video..."
 // - After 3s: "Adding speech..."
 // - After 6s: "Finalizing video..."
@@ -4107,7 +4181,7 @@ function setupStoryboardHover() {
 // To modify timing or messages, update:
 // - showRenderStatus() timeout values (3000ms, 6000ms)
 // - Status text strings in showRenderStatus()
-// - Banner HTML element (#render-status-banner) near end of body
+// - Inline status element (#render-status-banner) in the step footer
 // ========================================
 
 let renderStatusTimeouts = [];
@@ -4133,6 +4207,7 @@ function showRenderStatus() {
   // Show banner and set initial text
   banner.classList.remove('hidden');
   textEl.textContent = 'Preparing video...';
+  syncCreativeStepShell();
 
   // After 3 seconds, change to "Adding speech..."
   const timeout1 = setTimeout(() => {
@@ -4169,6 +4244,7 @@ function hideRenderStatus() {
   if (textEl) {
     textEl.textContent = 'Preparing video...';
   }
+  syncCreativeStepShell();
 }
 
 function showRenderVerificationStatus(
@@ -4187,6 +4263,7 @@ function showRenderVerificationStatus(
   renderStatusActive = true;
   banner.classList.remove('hidden');
   textEl.textContent = message;
+  syncCreativeStepShell();
 }
 
 function isRenderedStorySession(session) {
