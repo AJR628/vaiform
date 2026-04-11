@@ -1,6 +1,6 @@
 // src/middleware/planGuards.js
 import admin from '../config/firebase.js';
-import { getUsageSummary } from '../services/usage.service.js';
+import { getAvailableMs, getUsageSummary, secondsToBillingMs } from '../services/usage.service.js';
 import { fail } from '../http/respond.js';
 
 function parseIsoMillis(value) {
@@ -298,8 +298,16 @@ export function enforceRenderTimeForRender(getSession) {
       return fail(req, res, 404, 'SESSION_NOT_FOUND', 'Session not found');
     }
 
-    const estimatedSec = Number(session?.billingEstimate?.estimatedSec);
-    if (!Number.isFinite(estimatedSec) || estimatedSec <= 0) {
+    const syncState = typeof session?.voiceSync?.state === 'string' ? session.voiceSync.state : 'never_synced';
+    if (syncState === 'never_synced') {
+      return fail(req, res, 409, 'VOICE_SYNC_REQUIRED', 'Sync voice and timing before render.');
+    }
+    if (syncState !== 'current') {
+      return fail(req, res, 409, 'VOICE_SYNC_STALE', 'Voice timing is stale. Re-sync before render.');
+    }
+
+    const estimatedMs = secondsToBillingMs(session?.billingEstimate?.estimatedSec ?? 0);
+    if (!(estimatedMs > 0)) {
       return fail(
         req,
         res,
@@ -323,13 +331,13 @@ export function enforceRenderTimeForRender(getSession) {
       );
     }
 
-    if ((usageSummary?.usage?.availableSec ?? 0) < estimatedSec) {
+    if (getAvailableMs(usageSummary?.usage || {}, usageSummary?.plan || 'free') < estimatedMs) {
       return fail(
         req,
         res,
         402,
         'INSUFFICIENT_RENDER_TIME',
-        `Insufficient render time. You need ${estimatedSec} seconds to render.`
+        `Insufficient render time. You need ${session?.billingEstimate?.estimatedSec} seconds to render.`
       );
     }
 

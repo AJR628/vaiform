@@ -20,11 +20,18 @@ import {
   updateBeatText,
   buildTimeline,
   generateCaptionTimings,
+  buildStoryVoiceSyncPlan,
   renderStory,
   saveStorySession,
+  syncStoryVoice,
   refreshStorySessionHeuristicEstimate,
   sanitizeStorySessionForClient,
 } from '../services/story.service.js';
+import {
+  failStorySyncAttempt,
+  prepareStorySyncAttempt,
+  settleStorySyncAttemptSuccess,
+} from '../services/story-sync.attempts.js';
 import {
   getCanonicalFinalizeStatusForSession,
   overlayCanonicalFinalizeStatusOnSession,
@@ -42,6 +49,7 @@ import {
   describeFinalizeError,
   emitFinalizeEvent,
 } from '../observability/finalize-observability.js';
+import { VOICE_PRESETS } from '../constants/voice.presets.js';
 
 const r = Router();
 r.use(requireAuth);
@@ -58,6 +66,13 @@ const zodFields = (error) => {
   }
   return fields;
 };
+
+const voicePresetKeys = Object.keys(VOICE_PRESETS);
+const SyncModeSchema = z.enum(['full', 'stale']);
+const VoicePresetSchema = z
+  .string()
+  .trim()
+  .refine((value) => voicePresetKeys.includes(value), 'Invalid voice preset');
 
 const serverBusyFailure = (
   req,
@@ -155,6 +170,104 @@ function phase2StoryFailureFromError(error) {
       status: 400,
       error: 'CLIP_NOT_FOUND_IN_CANDIDATES',
       detail: 'Clip not found in current candidates',
+    };
+  }
+  if (rawCode === 'INVALID_SENTENCE_TEXT' || rawMessage === 'INVALID_SENTENCE_TEXT') {
+    return {
+      status: 400,
+      error: 'INVALID_SENTENCE_TEXT',
+      detail: 'Beat text is required.',
+    };
+  }
+  if (rawCode === 'MAX_BEATS_EXCEEDED' || rawMessage === 'MAX_BEATS_EXCEEDED') {
+    return {
+      status: 400,
+      error: 'MAX_BEATS_EXCEEDED',
+      detail: 'Story exceeds the maximum number of beats.',
+    };
+  }
+  if (rawCode === 'MAX_BEAT_CHARS_EXCEEDED' || rawMessage === 'MAX_BEAT_CHARS_EXCEEDED') {
+    return {
+      status: 400,
+      error: 'MAX_BEAT_CHARS_EXCEEDED',
+      detail: 'Beat text exceeds the maximum character limit.',
+    };
+  }
+  if (rawCode === 'MAX_TOTAL_CHARS_EXCEEDED' || rawMessage === 'MAX_TOTAL_CHARS_EXCEEDED') {
+    return {
+      status: 400,
+      error: 'MAX_TOTAL_CHARS_EXCEEDED',
+      detail: 'Story exceeds the maximum total character limit.',
+    };
+  }
+  if (rawCode === 'VOICE_SYNC_REQUIRED' || rawMessage === 'VOICE_SYNC_REQUIRED') {
+    return {
+      status: 409,
+      error: 'VOICE_SYNC_REQUIRED',
+      detail: 'Sync voice and timing before render.',
+    };
+  }
+  if (rawCode === 'VOICE_SYNC_STALE' || rawMessage === 'VOICE_SYNC_STALE') {
+    return {
+      status: 409,
+      error: 'VOICE_SYNC_STALE',
+      detail: 'Voice timing is stale. Re-sync before render.',
+    };
+  }
+  if (rawCode === 'VOICE_SYNC_TIMESTAMPS_UNAVAILABLE' || rawMessage === 'VOICE_SYNC_TIMESTAMPS_UNAVAILABLE') {
+    return {
+      status: 503,
+      error: 'VOICE_SYNC_TIMESTAMPS_UNAVAILABLE',
+      detail: 'Voice sync is unavailable because timestamp-capable narration is not configured.',
+    };
+  }
+  if (rawCode === 'VOICE_SYNC_GENERATION_FAILED' || rawMessage === 'VOICE_SYNC_GENERATION_FAILED') {
+    return {
+      status: 503,
+      error: 'VOICE_SYNC_GENERATION_FAILED',
+      detail: 'Failed to generate synced narration.',
+    };
+  }
+  if (rawCode === 'VOICE_SYNC_DURATION_UNAVAILABLE' || rawMessage === 'VOICE_SYNC_DURATION_UNAVAILABLE') {
+    return {
+      status: 500,
+      error: 'VOICE_SYNC_DURATION_UNAVAILABLE',
+      detail: 'Failed to determine synced narration duration.',
+    };
+  }
+  if (rawCode === 'VOICE_SYNC_ARTIFACT_MISSING' || rawMessage === 'VOICE_SYNC_ARTIFACT_MISSING') {
+    return {
+      status: 409,
+      error: 'VOICE_SYNC_ARTIFACT_MISSING',
+      detail: 'Persisted synced narration artifacts are missing for this session.',
+    };
+  }
+  if (rawCode === 'VOICE_SYNC_CAPTION_MISSING' || rawMessage === 'VOICE_SYNC_CAPTION_MISSING') {
+    return {
+      status: 409,
+      error: 'VOICE_SYNC_CAPTION_MISSING',
+      detail: 'Synced caption timing is missing for this session.',
+    };
+  }
+  if (rawCode === 'VOICE_SYNC_SESSION_CHANGED' || rawMessage === 'VOICE_SYNC_SESSION_CHANGED') {
+    return {
+      status: 409,
+      error: 'VOICE_SYNC_SESSION_CHANGED',
+      detail: 'The session changed before sync started. Retry the sync request.',
+    };
+  }
+  if (rawCode === 'IDEMPOTENCY_KEY_REUSED' || rawMessage === 'IDEMPOTENCY_KEY_REUSED') {
+    return {
+      status: 409,
+      error: 'IDEMPOTENCY_KEY_REUSED',
+      detail: 'Idempotency key was already used for a different request.',
+    };
+  }
+  if (rawCode === 'INSUFFICIENT_SYNC_TIME' || rawMessage === 'INSUFFICIENT_SYNC_TIME') {
+    return {
+      status: 402,
+      error: 'INSUFFICIENT_SYNC_TIME',
+      detail: 'Insufficient balance to sync voice and timing.',
     };
   }
 
@@ -313,6 +426,10 @@ r.post('/update-script', async (req, res) => {
 
     return okStorySession(req, res, session);
   } catch (e) {
+    const mapped = storyFailureFromError(e);
+    if (mapped) {
+      return sendMappedStoryFailure(req, res, mapped);
+    }
     console.error('[story][update-script] error:', e);
     return fail(
       req,
@@ -385,6 +502,12 @@ r.post('/update-caption-style', async (req, res) => {
 
     // Strip any dangerous fields that might exist (defensive)
     session.overlayCaption = extractStyleOnly(mergedStyle);
+    delete session.finalVideo;
+    delete session.renderedSegments;
+    delete session.renderRecovery;
+    if (session.voiceSync?.state === 'current') {
+      session.status = 'voice_synced';
+    }
     session.updatedAt = new Date().toISOString();
 
     await saveStorySession({ uid: req.user.uid, sessionId, data: session });
@@ -540,6 +663,12 @@ r.post('/update-caption-meta', requireAuth, async (req, res) => {
 
       // Only save if we have successful updates (avoid pointless writes)
       if (results.length > 0) {
+        delete session.finalVideo;
+        delete session.renderedSegments;
+        delete session.renderRecovery;
+        if (session.voiceSync?.state === 'current') {
+          session.status = 'voice_synced';
+        }
         session.updatedAt = new Date().toISOString();
         await saveStorySession({ uid: req.user.uid, sessionId, data: session });
         console.log('[update-caption-meta] Saved', {
@@ -574,6 +703,12 @@ r.post('/update-caption-meta', requireAuth, async (req, res) => {
         );
       }
 
+      delete session.finalVideo;
+      delete session.renderedSegments;
+      delete session.renderRecovery;
+      if (session.voiceSync?.state === 'current') {
+        session.status = 'voice_synced';
+      }
       session.updatedAt = new Date().toISOString();
       await saveStorySession({ uid: req.user.uid, sessionId, data: session });
       console.log('[update-caption-meta] Saved', { mode: 'single', beatIndex, sessionId });
@@ -816,6 +951,10 @@ r.post('/insert-beat', async (req, res) => {
 
     return ok(req, res, result);
   } catch (e) {
+    const mapped = storyFailureFromError(e);
+    if (mapped) {
+      return sendMappedStoryFailure(req, res, mapped);
+    }
     console.error('[story][insert-beat] error:', e);
     return fail(req, res, 500, 'STORY_INSERT_BEAT_FAILED', e?.message || 'Failed to insert beat');
   }
@@ -936,6 +1075,197 @@ r.post('/captions', async (req, res) => {
       'STORY_CAPTIONS_FAILED',
       e?.message || 'Failed to generate caption timings'
     );
+  }
+});
+
+// POST /api/story/sync - Persist voice choice and generate truthful narration timing
+r.post('/sync', async (req, res) => {
+  const attemptId = req.get('X-Idempotency-Key');
+  if (!attemptId) {
+    return fail(req, res, 400, 'MISSING_IDEMPOTENCY_KEY', 'Provide X-Idempotency-Key header.');
+  }
+
+  const SyncSchema = z.object({
+    sessionId: z.string().min(3),
+    mode: SyncModeSchema.default('stale'),
+    voicePreset: VoicePresetSchema.optional(),
+    voicePacePreset: z.enum(['normal']).optional(),
+  });
+
+  const parsed = SyncSchema.safeParse(req.body || {});
+  if (!parsed.success) {
+    return fail(req, res, 400, 'INVALID_INPUT', 'Invalid request', zodFields(parsed.error));
+  }
+
+  const { sessionId, mode, voicePreset, voicePacePreset } = parsed.data;
+  setRequestContextFromReq(req, { sessionId, attemptId });
+
+  let admissionStarted = false;
+  try {
+    const preflight = await buildStoryVoiceSyncPlan({
+      uid: req.user.uid,
+      sessionId,
+      mode,
+      voicePreset: voicePreset || null,
+      voicePacePreset: voicePacePreset || null,
+    });
+    const requestFingerprint = JSON.stringify({
+      sessionId,
+      mode,
+      fullFingerprint: preflight.plan.fullFingerprint,
+      targetIndices: preflight.plan.targetIndices,
+      voicePreset: preflight.plan.voice.voicePresetKey,
+      voicePacePreset: preflight.plan.voice.voicePacePreset,
+    });
+
+    const prepared = await prepareStorySyncAttempt({
+      uid: req.user.uid,
+      attemptId,
+      sessionId,
+      requestId: req.id ?? null,
+      requestFingerprint,
+      estimatedSec: preflight.plan.nextEstimatedChargeSec || 0,
+      getSession: getStorySession,
+      request: {
+        mode,
+        voicePreset: preflight.plan.voice.voicePresetKey,
+        voicePacePreset: preflight.plan.voice.voicePacePreset,
+        fullFingerprint: preflight.plan.fullFingerprint,
+        targetIndices: preflight.plan.targetIndices,
+      },
+    });
+
+    if (prepared.kind === 'error') {
+      return fail(req, res, prepared.status, prepared.error, prepared.detail);
+    }
+
+    if (prepared.kind === 'active_other_key') {
+      return fail(
+        req,
+        res,
+        409,
+        'STORY_SYNC_ALREADY_ACTIVE',
+        'A voice sync is already running for this session.'
+      );
+    }
+
+    if (prepared.kind === 'active_same_key') {
+      const currentSession =
+        prepared.session ||
+        (await getStorySession({
+          uid: req.user.uid,
+          sessionId,
+        }));
+      return res.status(202).json({
+        success: true,
+        data: presentStorySession(currentSession),
+        requestId: requestIdOf(req),
+        sync: {
+          state: 'pending',
+          attemptId,
+          pollSessionId: sessionId,
+        },
+      });
+    }
+
+    if (prepared.kind === 'done_same_key') {
+      const currentSession = await getStorySession({
+        uid: req.user.uid,
+        sessionId,
+      });
+      if (!currentSession) {
+        return fail(req, res, 404, 'SESSION_NOT_FOUND', 'Session not found');
+      }
+      return okStorySession(req, res, currentSession);
+    }
+
+    if (prepared.kind === 'failed_same_key') {
+      return fail(
+        req,
+        res,
+        Number.isFinite(Number(prepared.attempt?.status)) ? Number(prepared.attempt.status) : 500,
+        prepared.attempt?.failure?.error || 'STORY_SYNC_FAILED',
+        prepared.attempt?.failure?.detail || 'Failed to sync story voice.'
+      );
+    }
+
+    admissionStarted = true;
+    const refreshed = await buildStoryVoiceSyncPlan({
+      uid: req.user.uid,
+      sessionId,
+      mode,
+      voicePreset: voicePreset || null,
+      voicePacePreset: voicePacePreset || null,
+    });
+    const refreshedFingerprint = JSON.stringify({
+      sessionId,
+      mode,
+      fullFingerprint: refreshed.plan.fullFingerprint,
+      targetIndices: refreshed.plan.targetIndices,
+      voicePreset: refreshed.plan.voice.voicePresetKey,
+      voicePacePreset: refreshed.plan.voice.voicePacePreset,
+    });
+    if (refreshedFingerprint !== requestFingerprint) {
+      await failStorySyncAttempt({
+        uid: req.user.uid,
+        attemptId,
+        status: 409,
+        error: 'VOICE_SYNC_SESSION_CHANGED',
+        detail: 'The session changed before sync started. Retry the sync request.',
+      });
+      admissionStarted = false;
+      return fail(
+        req,
+        res,
+        409,
+        'VOICE_SYNC_SESSION_CHANGED',
+        'The session changed before sync started. Retry the sync request.'
+      );
+    }
+
+    const result = await syncStoryVoice({
+      uid: req.user.uid,
+      sessionId,
+      mode,
+      voicePreset: voicePreset || null,
+      voicePacePreset: voicePacePreset || null,
+      session: refreshed.session,
+      plan: refreshed.plan,
+    });
+    await settleStorySyncAttemptSuccess({
+      uid: req.user.uid,
+      attemptId,
+      billedSec: result.billedSec || 0,
+      cached: result.cached === true,
+      result: {
+        fullFingerprint: refreshed.plan.fullFingerprint,
+        targetIndices: refreshed.plan.targetIndices,
+        voicePreset: refreshed.plan.voice.voicePresetKey,
+        voicePacePreset: refreshed.plan.voice.voicePacePreset,
+      },
+    });
+    admissionStarted = false;
+
+    return okStorySession(req, res, result.session);
+  } catch (e) {
+    if (admissionStarted) {
+      await failStorySyncAttempt({
+        uid: req.user.uid,
+        attemptId,
+        status: Number.isFinite(Number(e?.status)) ? Number(e.status) : 500,
+        error: e?.code || 'STORY_SYNC_FAILED',
+        detail: e?.message || 'Failed to sync story voice.',
+      }).catch(() => {});
+    }
+    const mapped = storyFailureFromError(e);
+    if (mapped) {
+      return sendMappedStoryFailure(req, res, mapped);
+    }
+    logger.error('story.sync.failed', {
+      routeStatus: `${req.method} ${req.originalUrl}`,
+      error: e,
+    });
+    return failInternalServerError(req, res, 'STORY_SYNC_FAILED', 'Failed to sync voice and timing');
   }
 });
 

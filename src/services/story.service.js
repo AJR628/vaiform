@@ -13,6 +13,7 @@ import { pexelsSearchVideos } from './pexels.videos.provider.js';
 import { pixabaySearchVideos } from './pixabay.videos.provider.js';
 import { nasaSearchVideos } from './nasa.videos.provider.js';
 import {
+  concatenateAudioFiles,
   concatenateClips,
   concatenateClipsVideoOnly,
   trimClipToSegment,
@@ -28,8 +29,9 @@ import {
 } from '../utils/text.duration.js';
 import admin from '../config/firebase.js';
 import { extractCoverJpeg } from '../utils/ffmpeg.cover.js';
+import { getDurationMsFromMedia } from '../utils/media.duration.js';
 import { synthVoiceWithTimestamps } from './tts.service.js';
-import { getVoicePreset } from '../constants/voice.presets.js';
+import { VOICE_PRESETS, getVoicePreset } from '../constants/voice.presets.js';
 import { buildKaraokeASSFromTimestamps } from '../utils/karaoke.ass.js';
 import { wrapTextWithFont } from '../utils/caption.wrap.js';
 import { deriveCaptionWrapWidthPx } from '../utils/caption.wrapWidth.js';
@@ -43,6 +45,12 @@ import {
 } from '../observability/finalize-observability.js';
 import { getRuntimeOverride } from '../testing/runtime-overrides.js';
 import { withRenderSlot } from '../utils/render.semaphore.js';
+import {
+  billingMsToSeconds,
+  computeRenderChargeMs,
+  computeSyncChargeMs,
+  secondsToBillingMs,
+} from './usage.service.js';
 import {
   acquireFinalizeStorySearchAdmission,
   getFinalizeProviderRetryAfterSec,
@@ -76,15 +84,369 @@ const BILLING_ESTIMATE_BEAT_BOUNDARY_PAD_MAX_SEC = Math.max(
 );
 
 // Manual script mode constants
-const MAX_BEATS = 8;
-const MAX_BEAT_CHARS = 160;
-const MAX_TOTAL_CHARS = 850;
+export const MAX_BEATS = 8;
+export const MAX_BEAT_CHARS = 160;
+export const MAX_TOTAL_CHARS = 850;
 const STORY_SEARCH_RETRY_AFTER_SEC = 15;
 const MAX_CONCURRENT_STORY_SEARCH_REQUESTS = 2;
 const SEARCH_PROVIDER_FAILURE_THRESHOLD = 2;
 const SEARCH_PROVIDER_COOLDOWN_MS = 60_000;
 let activeStorySearchRequests = 0;
 const providerSearchHealth = new Map();
+const VOICE_SYNC_SCHEMA_VERSION = 1;
+const VOICE_PACE_PRESET_DEFAULT = 'normal';
+const DEFAULT_VOICE_PRESET_KEY = 'male_calm';
+const SYNC_PREVIEW_CONTENT_TYPE = 'audio/mpeg';
+const SYNC_AUDIO_CONTENT_TYPE = 'audio/mpeg';
+const SYNC_TIMING_CONTENT_TYPE = 'application/json';
+
+function safeJsonClone(value) {
+  if (value == null) return value;
+  return JSON.parse(JSON.stringify(value));
+}
+
+function normalizeVoiceSyncState(state) {
+  return state === 'current' || state === 'stale' || state === 'syncing' ? state : 'never_synced';
+}
+
+function buildDefaultVoiceSync() {
+  return {
+    schemaVersion: VOICE_SYNC_SCHEMA_VERSION,
+    state: 'never_synced',
+    requiredForRender: true,
+    staleScope: 'full',
+    staleBeatIndices: [],
+    currentFingerprint: null,
+    nextEstimatedChargeSec: null,
+    totalDurationSec: null,
+    previewAudioUrl: null,
+    previewAudioStoragePath: null,
+    previewAudioDurationSec: null,
+    lastChargeSec: null,
+    totalBilledSec: 0,
+    lastSyncedAt: null,
+    cached: false,
+  };
+}
+
+function safeVoiceOptions() {
+  return Object.entries(VOICE_PRESETS).map(([key, preset]) => ({
+    key,
+    name: preset.name,
+    gender: preset.gender,
+    emotion: preset.emotion,
+  }));
+}
+
+function normalizeVoiceSyncBeatIndices(indices, sentenceCount = 0) {
+  if (!Array.isArray(indices) || indices.length === 0) return [];
+  const maxIndex = Math.max(0, Number(sentenceCount) - 1);
+  const unique = new Set();
+  for (const raw of indices) {
+    const index = Number(raw);
+    if (!Number.isInteger(index) || index < 0 || index > maxIndex) continue;
+    unique.add(index);
+  }
+  return Array.from(unique).sort((a, b) => a - b);
+}
+
+function normalizeVoiceSyncSummary(session) {
+  const current =
+    session?.voiceSync && typeof session.voiceSync === 'object' ? session.voiceSync : buildDefaultVoiceSync();
+  const sentenceCount = Array.isArray(session?.story?.sentences) ? session.story.sentences.length : 0;
+  return {
+    ...buildDefaultVoiceSync(),
+    ...current,
+    schemaVersion: VOICE_SYNC_SCHEMA_VERSION,
+    state: normalizeVoiceSyncState(current.state),
+    requiredForRender: true,
+    staleScope:
+      current.staleScope === 'beat' || current.staleScope === 'none' ? current.staleScope : 'full',
+    staleBeatIndices: normalizeVoiceSyncBeatIndices(current.staleBeatIndices, sentenceCount),
+    nextEstimatedChargeSec: (() => {
+      const value = Number(current.nextEstimatedChargeSec);
+      return Number.isFinite(value) && value >= 0 ? billingMsToSeconds(secondsToBillingMs(value)) : null;
+    })(),
+    totalDurationSec: (() => {
+      const value = Number(current.totalDurationSec);
+      return Number.isFinite(value) && value > 0 ? billingMsToSeconds(secondsToBillingMs(value)) : null;
+    })(),
+    previewAudioDurationSec: (() => {
+      const value = Number(current.previewAudioDurationSec);
+      return Number.isFinite(value) && value > 0 ? billingMsToSeconds(secondsToBillingMs(value)) : null;
+    })(),
+    lastChargeSec: (() => {
+      const value = Number(current.lastChargeSec);
+      return Number.isFinite(value) && value >= 0 ? billingMsToSeconds(secondsToBillingMs(value)) : null;
+    })(),
+    totalBilledSec: (() => {
+      const value = Number(current.totalBilledSec);
+      return Number.isFinite(value) && value >= 0 ? billingMsToSeconds(secondsToBillingMs(value)) : 0;
+    })(),
+  };
+}
+
+function isVoiceSyncCurrent(session) {
+  return normalizeVoiceSyncSummary(session).state === 'current';
+}
+
+function estimateScopeDurationMs(sentences = [], indices = []) {
+  if (!Array.isArray(sentences) || sentences.length === 0 || !Array.isArray(indices) || indices.length === 0) {
+    return 0;
+  }
+  let totalMs = 0;
+  for (const index of indices) {
+    const sentence = normalizeNarrationText(sentences[index]);
+    if (!sentence) continue;
+    const durationSec = calculateBillingSpeechDuration(sentence, {
+      baseTime: 2,
+      minDuration: 2,
+      roundTo: 0,
+    });
+    totalMs += secondsToBillingMs(durationSec);
+  }
+  return totalMs;
+}
+
+function buildSyncBillingEstimate(session, heuristicEstimate) {
+  const normalizedSync = normalizeVoiceSyncSummary(session);
+  if (normalizedSync.state === 'current' && Number(normalizedSync.totalDurationSec) > 0) {
+    const durationMs = secondsToBillingMs(normalizedSync.totalDurationSec);
+    return {
+      estimatedSec: billingMsToSeconds(computeRenderChargeMs(durationMs)),
+      source: 'synced_render_duration',
+      computedAt: new Date().toISOString(),
+      heuristicEstimatedSec: heuristicEstimate?.estimatedSec ?? null,
+      heuristicSource: heuristicEstimate?.source ?? null,
+      heuristicComputedAt: heuristicEstimate?.computedAt ?? null,
+    };
+  }
+
+  return {
+    estimatedSec: null,
+    source: 'voice_sync_required',
+    computedAt: new Date().toISOString(),
+    heuristicEstimatedSec: heuristicEstimate?.estimatedSec ?? null,
+    heuristicSource: heuristicEstimate?.source ?? null,
+    heuristicComputedAt: heuristicEstimate?.computedAt ?? null,
+  };
+}
+
+function deriveSessionEditingStatus(session) {
+  if (session?.finalVideo) return 'rendered';
+  if (normalizeVoiceSyncSummary(session).state === 'current') return 'voice_synced';
+  if (Array.isArray(session?.shots) && session.shots.some((shot) => shot?.selectedClip?.url)) {
+    return 'clips_searched';
+  }
+  if (Array.isArray(session?.plan) && session.plan.length > 0) return 'planned';
+  if (Array.isArray(session?.story?.sentences) && session.story.sentences.length > 0) {
+    return 'story_generated';
+  }
+  return session?.status || 'draft';
+}
+
+function invalidateRenderedOutput(session, nextStatus = null) {
+  if (!session || typeof session !== 'object') return session;
+  delete session.finalVideo;
+  delete session.renderedSegments;
+  delete session.renderRecovery;
+  session.status = nextStatus || deriveSessionEditingStatus(session);
+  return session;
+}
+
+function updateVoiceSyncEstimate(session) {
+  const sentences = Array.isArray(session?.story?.sentences) ? session.story.sentences : [];
+  const voiceSync = normalizeVoiceSyncSummary(session);
+  let scopeIndices = [];
+  if (voiceSync.state === 'never_synced' || voiceSync.staleScope === 'full') {
+    scopeIndices = sentences.map((_, index) => index);
+  } else if (voiceSync.staleScope === 'beat') {
+    scopeIndices = voiceSync.staleBeatIndices;
+  }
+
+  const estimatedDurationMs = estimateScopeDurationMs(sentences, scopeIndices);
+  voiceSync.nextEstimatedChargeSec =
+    estimatedDurationMs > 0 ? billingMsToSeconds(computeSyncChargeMs(estimatedDurationMs)) : null;
+  if (voiceSync.state === 'current') {
+    voiceSync.staleScope = 'none';
+    voiceSync.staleBeatIndices = [];
+  }
+  session.voiceSync = voiceSync;
+  return session;
+}
+
+function markVoiceSyncStale(session, { scope = 'full', beatIndices = [] } = {}) {
+  const voiceSync = normalizeVoiceSyncSummary(session);
+  if (voiceSync.state === 'never_synced') {
+    voiceSync.staleScope = 'full';
+    voiceSync.staleBeatIndices = [];
+  } else if (scope === 'full') {
+    voiceSync.state = 'stale';
+    voiceSync.staleScope = 'full';
+    voiceSync.staleBeatIndices = [];
+  } else {
+    const merged = new Set(voiceSync.staleScope === 'beat' ? voiceSync.staleBeatIndices : []);
+    for (const index of beatIndices) merged.add(index);
+    voiceSync.state = 'stale';
+    voiceSync.staleScope = 'beat';
+    voiceSync.staleBeatIndices = normalizeVoiceSyncBeatIndices(
+      Array.from(merged),
+      session?.story?.sentences?.length ?? 0
+    );
+  }
+  voiceSync.cached = false;
+  session.voiceSync = voiceSync;
+  invalidateRenderedOutput(session);
+  return updateVoiceSyncEstimate(session);
+}
+
+function resetVoiceSyncForNewScript(session) {
+  session.voiceSync = buildDefaultVoiceSync();
+  invalidateRenderedOutput(session, Array.isArray(session?.story?.sentences) ? 'story_generated' : 'draft');
+  return updateVoiceSyncEstimate(session);
+}
+
+function buildStorageObjectPath({ uid, sessionId, fingerprint, ext }) {
+  return `drafts/${uid}/${sessionId}/sync/v${VOICE_SYNC_SCHEMA_VERSION}/beats/${fingerprint}.${ext}`;
+}
+
+async function savePrivateObject({ bucketPath, body, contentType }) {
+  const bucket = admin.storage().bucket();
+  const file = bucket.file(bucketPath);
+  await file.save(body, {
+    contentType,
+    resumable: false,
+    validation: false,
+    metadata: { cacheControl: 'no-store' },
+  });
+  return { storagePath: bucketPath };
+}
+
+async function uploadPrivateLocalFile({ localPath, bucketPath, contentType }) {
+  const bucket = admin.storage().bucket();
+  await bucket.upload(localPath, {
+    destination: bucketPath,
+    resumable: false,
+    validation: false,
+    metadata: {
+      contentType,
+      cacheControl: 'no-store',
+    },
+  });
+  return { storagePath: bucketPath };
+}
+
+async function downloadPrivateObjectToTmp({ bucketPath, tmpDir, name }) {
+  const bucket = admin.storage().bucket();
+  const localPath = path.join(tmpDir, name);
+  await bucket.file(bucketPath).download({ destination: localPath });
+  return localPath;
+}
+
+async function readPrivateJson(bucketPath) {
+  const bucket = admin.storage().bucket();
+  const [buf] = await bucket.file(bucketPath).download();
+  return JSON.parse(buf.toString('utf8'));
+}
+
+function hashStableValue(value) {
+  return crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex');
+}
+
+function resolvedVoicePresetKey(key) {
+  return typeof key === 'string' && VOICE_PRESETS[key] ? key : DEFAULT_VOICE_PRESET_KEY;
+}
+
+function resolvedVoicePacePreset(key) {
+  return typeof key === 'string' && key.trim().length > 0 ? key.trim() : VOICE_PACE_PRESET_DEFAULT;
+}
+
+function resolveVoiceFingerprintPayload({ voicePresetKey, voicePacePreset }) {
+  const normalizedPresetKey = resolvedVoicePresetKey(voicePresetKey);
+  const normalizedPacePreset = resolvedVoicePacePreset(voicePacePreset);
+  const preset = getVoicePreset(normalizedPresetKey);
+  return {
+    voicePresetKey: normalizedPresetKey,
+    voicePacePreset: normalizedPacePreset,
+    voiceId: preset.voiceId,
+    voiceSettings: preset.voiceSettings,
+    modelId: process.env.ELEVEN_TTS_MODEL || 'eleven_flash_v2_5',
+  };
+}
+
+function buildBeatVoiceFingerprint({ text, voice }) {
+  return hashStableValue({
+    schemaVersion: VOICE_SYNC_SCHEMA_VERSION,
+    text: normalizeNarrationText(text),
+    voice,
+  });
+}
+
+function buildFullVoiceFingerprint(beatFingerprints = [], voice = {}) {
+  return hashStableValue({
+    schemaVersion: VOICE_SYNC_SCHEMA_VERSION,
+    voice,
+    beatFingerprints,
+  });
+}
+
+function buildVoiceSyncPlan(session, { mode = 'stale', voicePreset, voicePacePreset } = {}) {
+  const storySentences = Array.isArray(session?.story?.sentences) ? session.story.sentences : [];
+  const normalizedVoice = resolveVoiceFingerprintPayload({
+    voicePresetKey: voicePreset || session?.voicePreset || DEFAULT_VOICE_PRESET_KEY,
+    voicePacePreset: voicePacePreset || session?.voicePacePreset || VOICE_PACE_PRESET_DEFAULT,
+  });
+  const existingVoiceSync = normalizeVoiceSyncSummary(session);
+  const beatFingerprints = storySentences.map((text) =>
+    buildBeatVoiceFingerprint({
+      text,
+      voice: normalizedVoice,
+    })
+  );
+  const fullFingerprint = buildFullVoiceFingerprint(beatFingerprints, normalizedVoice);
+  const voiceChanged =
+    normalizedVoice.voicePresetKey !== resolvedVoicePresetKey(session?.voicePreset) ||
+    normalizedVoice.voicePacePreset !== resolvedVoicePacePreset(session?.voicePacePreset);
+
+  let scope = mode === 'full' || voiceChanged || existingVoiceSync.state === 'never_synced' ? 'full' : 'beat';
+  let targetIndices =
+    scope === 'full'
+      ? storySentences.map((_, index) => index)
+      : normalizeVoiceSyncBeatIndices(existingVoiceSync.staleBeatIndices, storySentences.length);
+  if (targetIndices.length === 0 && scope === 'beat') {
+    scope = 'full';
+    targetIndices = storySentences.map((_, index) => index);
+  }
+
+  const matchesStoredFingerprint =
+    fullFingerprint === existingVoiceSync.currentFingerprint && !voiceChanged;
+  const nextEstimatedChargeSec =
+    matchesStoredFingerprint
+      ? 0
+      : targetIndices.length > 0
+      ? billingMsToSeconds(computeSyncChargeMs(estimateScopeDurationMs(storySentences, targetIndices)))
+      : 0;
+
+  return {
+    scope,
+    targetIndices,
+    beatFingerprints,
+    fullFingerprint,
+    voice: normalizedVoice,
+    matchesStoredFingerprint,
+    nextEstimatedChargeSec,
+  };
+}
+
+function ensureTimestampCapableVoiceSync() {
+  const provider = (process.env.TTS_PROVIDER || 'openai').toLowerCase();
+  if (provider !== 'elevenlabs' || !process.env.ELEVENLABS_API_KEY) {
+    const error = new Error('VOICE_SYNC_TIMESTAMPS_UNAVAILABLE');
+    error.code = 'VOICE_SYNC_TIMESTAMPS_UNAVAILABLE';
+    error.status = 503;
+    throw error;
+  }
+}
 
 /**
  * Ensure session has default structure
@@ -95,6 +457,16 @@ function ensureSessionDefaults(session) {
   if (!session.input) session.input = { text: '', type: 'paragraph' };
   if (!session.createdAt) session.createdAt = new Date().toISOString();
   if (!session.updatedAt) session.updatedAt = new Date().toISOString();
+  if (!session.voicePreset) {
+    session.voicePreset = DEFAULT_VOICE_PRESET_KEY;
+  }
+  if (!session.voicePacePreset) {
+    session.voicePacePreset = VOICE_PACE_PRESET_DEFAULT;
+  }
+  if (!Array.isArray(session.beats)) {
+    session.beats = [];
+  }
+  session.voiceSync = normalizeVoiceSyncSummary(session);
 
   // Set expiration
   if (!session.expiresAt) {
@@ -102,6 +474,7 @@ function ensureSessionDefaults(session) {
     session.expiresAt = new Date(created + TTL_HOURS * 3600 * 1000).toISOString();
   }
 
+  updateVoiceSyncEstimate(session);
   return session;
 }
 
@@ -286,6 +659,38 @@ function getNormalizedNarrationScript(session) {
   return normalizeNarrationText(getNormalizedNarrationSentences(session).join(' '));
 }
 
+function validateStoryCharacterLimits(sentences = []) {
+  const normalizedSentences = Array.isArray(sentences)
+    ? sentences.map((sentence) => normalizeNarrationText(sentence)).filter(Boolean)
+    : [];
+
+  if (normalizedSentences.length > MAX_BEATS) {
+    const error = new Error('MAX_BEATS_EXCEEDED');
+    error.code = 'MAX_BEATS_EXCEEDED';
+    error.status = 400;
+    throw error;
+  }
+
+  for (const sentence of normalizedSentences) {
+    if (sentence.length > MAX_BEAT_CHARS) {
+      const error = new Error('MAX_BEAT_CHARS_EXCEEDED');
+      error.code = 'MAX_BEAT_CHARS_EXCEEDED';
+      error.status = 400;
+      throw error;
+    }
+  }
+
+  const totalChars = normalizedSentences.join('').length;
+  if (totalChars > MAX_TOTAL_CHARS) {
+    const error = new Error('MAX_TOTAL_CHARS_EXCEEDED');
+    error.code = 'MAX_TOTAL_CHARS_EXCEEDED';
+    error.status = 400;
+    throw error;
+  }
+
+  return normalizedSentences;
+}
+
 function withBillingEstimatePad(baseEstimatedSec, padSec) {
   const bufferedSec = baseEstimatedSec + padSec;
   return Math.max(1, Math.ceil(bufferedSec));
@@ -361,7 +766,9 @@ export function deriveHeuristicBillingEstimate(session) {
 }
 
 function setHeuristicBillingEstimate(session) {
-  session.billingEstimate = deriveHeuristicBillingEstimate(session);
+  const heuristic = deriveHeuristicBillingEstimate(session);
+  session.billingEstimate = buildSyncBillingEstimate(session, heuristic);
+  updateVoiceSyncEstimate(session);
   return session;
 }
 
@@ -370,7 +777,34 @@ export function refreshStorySessionHeuristicEstimate(session) {
 }
 
 export function sanitizeStorySessionForClient(session) {
-  return session;
+  if (!session || typeof session !== 'object') return session;
+  const safeSession = safeJsonClone(session);
+
+  delete safeSession.renderedSegments;
+  if (Array.isArray(safeSession.beats)) {
+    safeSession.beats = safeSession.beats.map((beat) => {
+      if (!beat || typeof beat !== 'object') return beat;
+      const nextBeat = { ...beat };
+      if (nextBeat.narration && typeof nextBeat.narration === 'object') {
+        nextBeat.narration = {
+          fingerprint: nextBeat.narration.fingerprint ?? null,
+          durationSec: nextBeat.narration.durationSec ?? null,
+          syncedAt: nextBeat.narration.syncedAt ?? null,
+        };
+      }
+      return nextBeat;
+    });
+  }
+
+  if (safeSession.voiceSync && typeof safeSession.voiceSync === 'object') {
+    safeSession.voiceSync = {
+      ...normalizeVoiceSyncSummary(safeSession),
+      previewAudioStoragePath: undefined,
+    };
+  }
+
+  safeSession.voiceOptions = safeVoiceOptions();
+  return safeSession;
 }
 
 function normalizeRenderRecoveryAttemptId(attemptId, previous = null) {
@@ -456,7 +890,7 @@ export async function saveStorySession({ uid, sessionId, data }) {
 /**
  * Load story session
  */
-async function loadStorySession({ uid, sessionId }) {
+export async function loadStorySession({ uid, sessionId }) {
   const data = await loadJSON({ uid, studioId: sessionId, file: 'story.json' });
   if (!data) return null;
 
@@ -598,6 +1032,7 @@ export async function generateStory({ uid, sessionId, input, inputType }) {
   });
 
   session.story = story;
+  resetVoiceSyncForNewScript(session);
   session.status = 'story_generated';
   session.updatedAt = new Date().toISOString();
 
@@ -621,11 +1056,15 @@ export async function updateStorySentences({ uid, sessionId, sentences }) {
     throw new Error('INVALID_SENTENCES');
   }
 
+  const normalizedSentences = validateStoryCharacterLimits(sentences);
+
   // Update story sentences
   if (!session.story) {
     session.story = {};
   }
-  session.story.sentences = sentences.map((s) => String(s).trim()).filter((s) => s.length > 0);
+  session.story.sentences = normalizedSentences;
+  session.beats = [];
+  resetVoiceSyncForNewScript(session);
 
   // Clear plan and shots to force re-plan with new sentences
   if (session.plan) delete session.plan;
@@ -952,6 +1391,7 @@ export async function searchShots({ uid, sessionId }) {
     }
 
     session.shots = shots;
+    invalidateRenderedOutput(session, 'clips_searched');
     session.status = 'clips_searched';
     session.updatedAt = new Date().toISOString();
 
@@ -1012,6 +1452,7 @@ export async function searchClipsForShot({ uid, sessionId, sentenceIndex, query,
     const maybeKeep =
       shot.selectedClip && mergedCandidates.find((c) => c.id === shot.selectedClip.id);
     shot.selectedClip = maybeKeep || best || null;
+    invalidateRenderedOutput(session);
 
     session.updatedAt = new Date().toISOString();
 
@@ -1042,6 +1483,7 @@ export async function updateShotSelectedClip({ uid, sessionId, sentenceIndex, cl
 
   // Update selectedClip
   shot.selectedClip = candidate;
+  invalidateRenderedOutput(session);
   session.updatedAt = new Date().toISOString();
 
   await saveStorySession({ uid, sessionId, data: session });
@@ -1058,20 +1500,31 @@ export async function insertBeatWithSearch({ uid, sessionId, insertAfterIndex, t
   if (!session.story) throw new Error('STORY_REQUIRED');
   if (!session.story.sentences) session.story.sentences = [];
   if (!session.shots) session.shots = [];
+  if (!Array.isArray(session.beats)) session.beats = [];
 
   // Handle insert at beginning (insertAfterIndex < 0)
   const newIndex = insertAfterIndex < 0 ? 0 : insertAfterIndex + 1;
+  const normalizedText = normalizeNarrationText(text);
+  if (!normalizedText) {
+    const error = new Error('INVALID_SENTENCE_TEXT');
+    error.code = 'INVALID_SENTENCE_TEXT';
+    error.status = 400;
+    throw error;
+  }
 
   // Insert sentence at newIndex
-  session.story.sentences.splice(newIndex, 0, text.trim());
+  session.story.sentences.splice(newIndex, 0, normalizedText);
+  validateStoryCharacterLimits(session.story.sentences);
+  session.beats.splice(newIndex, 0, {});
+  resetVoiceSyncForNewScript(session);
 
   // Calculate duration from text
-  const durationSec = calculateReadingDuration(text);
+  const durationSec = calculateReadingDuration(normalizedText);
 
   // Create new shot object
   const newShot = {
     sentenceIndex: newIndex,
-    searchQuery: text.trim(),
+    searchQuery: normalizedText,
     durationSec: durationSec,
     selectedClip: null,
     candidates: [],
@@ -1089,7 +1542,7 @@ export async function insertBeatWithSearch({ uid, sessionId, insertAfterIndex, t
   // After reindexing, get the shot from the array to ensure we're updating the correct object
   const insertedShot = session.shots[newIndex];
   try {
-    const { candidates, best } = await searchSingleShot(text.trim(), {
+    const { candidates, best } = await searchSingleShot(normalizedText, {
       perPage: 12,
       targetDur: durationSec,
     });
@@ -1139,6 +1592,7 @@ export async function deleteBeat({ uid, sessionId, sentenceIndex }) {
 
   // Remove sentence
   session.story.sentences.splice(sentenceIndex, 1);
+  validateStoryCharacterLimits(session.story.sentences);
 
   // Find and remove matching shot
   const shotIndex = session.shots.findIndex((s) => s.sentenceIndex === sentenceIndex);
@@ -1150,6 +1604,11 @@ export async function deleteBeat({ uid, sessionId, sentenceIndex }) {
   for (let i = 0; i < session.shots.length; i++) {
     session.shots[i].sentenceIndex = i;
   }
+
+  if (Array.isArray(session.beats)) {
+    session.beats.splice(sentenceIndex, 1);
+  }
+  resetVoiceSyncForNewScript(session);
 
   session.updatedAt = new Date().toISOString();
 
@@ -1181,11 +1640,24 @@ export async function updateBeatText({ uid, sessionId, sentenceIndex, text }) {
     throw new Error('INVALID_SENTENCE_INDEX');
   }
 
+  const normalizedText = normalizeNarrationText(text);
+  if (!normalizedText) {
+    const error = new Error('INVALID_SENTENCE_TEXT');
+    error.code = 'INVALID_SENTENCE_TEXT';
+    error.status = 400;
+    throw error;
+  }
+
+  const nextSentences = [...sentences];
+  nextSentences[sentenceIndex] = normalizedText;
+  validateStoryCharacterLimits(nextSentences);
+
   // Update sentence text
-  sentences[sentenceIndex] = text;
+  sentences[sentenceIndex] = normalizedText;
 
   // Preserve existing visual-intent fields for this beat. Narration edits should not
   // silently rewrite later clip-search intent or clip state.
+  markVoiceSyncStale(session, { scope: 'beat', beatIndices: [sentenceIndex] });
 
   session.updatedAt = new Date().toISOString();
   setHeuristicBillingEstimate(session);
@@ -1194,7 +1666,7 @@ export async function updateBeatText({ uid, sessionId, sentenceIndex, text }) {
   console.log(
     '[story.service] updateBeatText: sentenceIndex=%s, newText=%s',
     sentenceIndex,
-    text.slice(0, 80)
+    normalizedText.slice(0, 80)
   );
 
   return {
@@ -1309,6 +1781,7 @@ export async function generateCaptionTimings({ uid, sessionId }) {
   }
 
   session.captions = captions;
+  invalidateRenderedOutput(session);
   session.status = 'captions_timed';
   session.updatedAt = new Date().toISOString();
 
@@ -1634,6 +2107,7 @@ export async function updateVideoCuts({ uid, sessionId, videoCutsV1 }) {
     session.videoCutsV1Disabled = false;
     session.videoCutsV1 = { ...videoCutsV1, source: 'manual' };
   }
+  invalidateRenderedOutput(session);
   session.updatedAt = new Date().toISOString();
   await saveStorySession({ uid, sessionId, data: session });
   return session;
@@ -1800,13 +2274,409 @@ function computeVideoSegmentsFromCutsAutoBudget({
   return segments;
 }
 
+function buildCaptionMetaForBeat({ session, beatIndex, textRaw, overlayCaption }) {
+  const compiled = compileCaptionSSOT({
+    textRaw,
+    style: overlayCaption || {},
+    frameW: 1080,
+    frameH: 1920,
+  });
+  const beatMeta = session?.beats?.[beatIndex]?.captionMeta;
+  const currentTextHash = crypto
+    .createHash('sha256')
+    .update(textRaw.trim().toLowerCase())
+    .digest('hex')
+    .slice(0, 16);
+
+  if (
+    beatMeta?.lines &&
+    beatMeta?.styleHash &&
+    beatMeta?.textHash === currentTextHash &&
+    beatMeta?.styleHash === compiled.styleHash
+  ) {
+    return beatMeta;
+  }
+
+  return {
+    lines: compiled.lines,
+    effectiveStyle: compiled.effectiveStyle,
+    styleHash: compiled.styleHash,
+    wrapHash: compiled.wrapHash,
+    textHash: currentTextHash,
+    maxWidthPx: compiled.maxWidthPx,
+    totalTextH: compiled.totalTextH,
+  };
+}
+
+function buildCaptionsFromBeatDurations(sentences = [], beatDurationsMs = []) {
+  let cursorMs = 0;
+  return sentences.map((sentence, sentenceIndex) => {
+    const durationMs = Math.max(0, Number(beatDurationsMs[sentenceIndex]) || 0);
+    const startMs = cursorMs;
+    const endMs = cursorMs + durationMs;
+    cursorMs = endMs;
+    return {
+      sentenceIndex,
+      text: sentence,
+      startTimeSec: billingMsToSeconds(startMs),
+      endTimeSec: billingMsToSeconds(endMs),
+    };
+  });
+}
+
+function getBeatNarrationMeta(session, beatIndex) {
+  const beat = session?.beats?.[beatIndex];
+  if (!beat || typeof beat !== 'object') return null;
+  return beat.narration && typeof beat.narration === 'object' ? beat.narration : null;
+}
+
+async function loadStoredBeatTimingData(session, beatIndex) {
+  const narration = getBeatNarrationMeta(session, beatIndex);
+  if (!narration?.timingStoragePath) {
+    const error = new Error('VOICE_SYNC_ARTIFACT_MISSING');
+    error.code = 'VOICE_SYNC_ARTIFACT_MISSING';
+    error.status = 409;
+    throw error;
+  }
+  return await readPrivateJson(narration.timingStoragePath);
+}
+
+async function buildStoredRenderBeat({
+  session,
+  beatIndex,
+  tmpDir,
+}) {
+  const caption = session.captions.find((item) => item.sentenceIndex === beatIndex);
+  if (!caption) {
+    const error = new Error('VOICE_SYNC_CAPTION_MISSING');
+    error.code = 'VOICE_SYNC_CAPTION_MISSING';
+    error.status = 409;
+    throw error;
+  }
+
+  const narration = getBeatNarrationMeta(session, beatIndex);
+  if (!narration?.audioStoragePath || !narration?.timingStoragePath) {
+    const error = new Error('VOICE_SYNC_ARTIFACT_MISSING');
+    error.code = 'VOICE_SYNC_ARTIFACT_MISSING';
+    error.status = 409;
+    throw error;
+  }
+
+  const audioPath = await downloadPrivateObjectToTmp({
+    bucketPath: narration.audioStoragePath,
+    tmpDir,
+    name: `voice_${beatIndex}.mp3`,
+  });
+  const timing = await loadStoredBeatTimingData(session, beatIndex);
+  const overlayCaption = session.overlayCaption || session.captionStyle || {};
+  const textRaw = session.story?.sentences?.[beatIndex] ?? caption.text;
+  const captionMeta = buildCaptionMetaForBeat({
+    session,
+    beatIndex,
+    textRaw,
+    overlayCaption,
+  });
+
+  const assPath = await buildKaraokeASSFromTimestamps({
+    text: caption.text,
+    timestamps: timing.timestamps,
+    durationMs: timing.durationMs,
+    audioPath,
+    wrappedText: captionMeta.lines.join('\n'),
+    overlayCaption: captionMeta.effectiveStyle,
+    width: 1080,
+    height: 1920,
+  });
+
+  return {
+    ttsPath: audioPath,
+    assPath,
+    durationSec:
+      Number(narration.durationSec) ||
+      billingMsToSeconds(Number(timing.durationMs) || 0) ||
+      Math.max(0, Number(caption.endTimeSec) - Number(caption.startTimeSec)),
+    caption,
+    meta: captionMeta,
+    sentenceText: textRaw,
+    overlayCaption,
+  };
+}
+
+export async function buildStoryVoiceSyncPlan({
+  uid,
+  sessionId,
+  mode = 'stale',
+  voicePreset = null,
+  voicePacePreset = null,
+}) {
+  const session = await loadStorySession({ uid, sessionId });
+  if (!session) throw new Error('SESSION_NOT_FOUND');
+  if (!Array.isArray(session?.story?.sentences) || session.story.sentences.length === 0) {
+    throw new Error('STORY_REQUIRED');
+  }
+
+  validateStoryCharacterLimits(session.story.sentences);
+  const plan = buildVoiceSyncPlan(session, {
+    mode,
+    voicePreset,
+    voicePacePreset,
+  });
+
+  session.voiceSync = {
+    ...normalizeVoiceSyncSummary(session),
+    nextEstimatedChargeSec: plan.nextEstimatedChargeSec,
+  };
+  return {
+    session,
+    plan,
+  };
+}
+
+export async function syncStoryVoice({
+  uid,
+  sessionId,
+  mode = 'stale',
+  voicePreset = null,
+  voicePacePreset = null,
+  session: preloadedSession = null,
+  plan: preloadedPlan = null,
+}) {
+  ensureTimestampCapableVoiceSync();
+
+  const { session, plan } =
+    preloadedSession && preloadedPlan
+      ? { session: preloadedSession, plan: preloadedPlan }
+      : await buildStoryVoiceSyncPlan({
+          uid,
+          sessionId,
+          mode,
+          voicePreset,
+          voicePacePreset,
+        });
+  const now = new Date().toISOString();
+
+  if (plan.matchesStoredFingerprint) {
+    session.voicePreset = plan.voice.voicePresetKey;
+    session.voicePacePreset = plan.voice.voicePacePreset;
+    session.voiceSync = {
+      ...normalizeVoiceSyncSummary(session),
+      state: 'current',
+      staleScope: 'none',
+      staleBeatIndices: [],
+      currentFingerprint: plan.fullFingerprint,
+      nextEstimatedChargeSec: 0,
+      lastChargeSec: 0,
+      cached: true,
+    };
+    session.updatedAt = now;
+    setHeuristicBillingEstimate(session);
+    await saveStorySession({ uid, sessionId, data: session });
+    return {
+      session,
+      billedSec: 0,
+      cached: true,
+    };
+  }
+
+  if (!Array.isArray(session.beats)) session.beats = [];
+  const beatDurationsMs = [];
+  const localAudioPaths = new Map();
+
+  for (let beatIndex = 0; beatIndex < session.story.sentences.length; beatIndex += 1) {
+    const sentence = session.story.sentences[beatIndex];
+    const targetFingerprint = plan.beatFingerprints[beatIndex];
+    const currentNarration = getBeatNarrationMeta(session, beatIndex);
+    const shouldRegenerate =
+      plan.scope === 'full' ||
+      plan.targetIndices.includes(beatIndex) ||
+      currentNarration?.fingerprint !== targetFingerprint ||
+      !currentNarration?.audioStoragePath ||
+      !currentNarration?.timingStoragePath;
+
+    if (!session.beats[beatIndex] || typeof session.beats[beatIndex] !== 'object') {
+      session.beats[beatIndex] = {};
+    }
+
+    if (!shouldRegenerate) {
+      beatDurationsMs[beatIndex] = secondsToBillingMs(currentNarration.durationSec);
+      if (!(beatDurationsMs[beatIndex] > 0)) {
+        const storedTiming = await loadStoredBeatTimingData(session, beatIndex);
+        beatDurationsMs[beatIndex] = Number(storedTiming?.durationMs) || 0;
+      }
+      continue;
+    }
+
+    const ttsResult = await synthVoiceWithTimestamps({
+      text: sentence,
+      voiceId: plan.voice.voiceId,
+      modelId: plan.voice.modelId,
+      outputFormat: 'mp3_44100_128',
+      voiceSettings: plan.voice.voiceSettings,
+    });
+    if (!ttsResult.audioPath || !ttsResult.timestamps) {
+      const error = new Error('VOICE_SYNC_GENERATION_FAILED');
+      error.code = 'VOICE_SYNC_GENERATION_FAILED';
+      error.status = 503;
+      throw error;
+    }
+
+    const durationMs =
+      Number(ttsResult.durationMs) > 0
+        ? Number(ttsResult.durationMs)
+        : await getDurationMsFromMedia(ttsResult.audioPath);
+    if (!Number.isFinite(durationMs) || durationMs <= 0) {
+      const error = new Error('VOICE_SYNC_DURATION_UNAVAILABLE');
+      error.code = 'VOICE_SYNC_DURATION_UNAVAILABLE';
+      error.status = 500;
+      throw error;
+    }
+
+    const audioStoragePath = buildStorageObjectPath({
+      uid,
+      sessionId,
+      fingerprint: targetFingerprint,
+      ext: 'mp3',
+    });
+    const timingStoragePath = buildStorageObjectPath({
+      uid,
+      sessionId,
+      fingerprint: targetFingerprint,
+      ext: 'json',
+    });
+
+    await uploadPrivateLocalFile({
+      localPath: ttsResult.audioPath,
+      bucketPath: audioStoragePath,
+      contentType: SYNC_AUDIO_CONTENT_TYPE,
+    });
+    await savePrivateObject({
+      bucketPath: timingStoragePath,
+      body: Buffer.from(
+        JSON.stringify({
+          schemaVersion: VOICE_SYNC_SCHEMA_VERSION,
+          beatIndex,
+          text: sentence,
+          durationMs,
+          timestamps: ttsResult.timestamps,
+          voice: plan.voice,
+          fingerprint: targetFingerprint,
+          syncedAt: now,
+        }),
+        'utf8'
+      ),
+      contentType: SYNC_TIMING_CONTENT_TYPE,
+    });
+
+    session.beats[beatIndex].narration = {
+      schemaVersion: VOICE_SYNC_SCHEMA_VERSION,
+      fingerprint: targetFingerprint,
+      durationSec: billingMsToSeconds(durationMs),
+      audioStoragePath,
+      timingStoragePath,
+      syncedAt: now,
+    };
+    beatDurationsMs[beatIndex] = durationMs;
+    localAudioPaths.set(beatIndex, ttsResult.audioPath);
+  }
+
+  const previewTmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'vaiform-sync-preview-'));
+  try {
+    const previewAudioPaths = [];
+    for (let beatIndex = 0; beatIndex < session.story.sentences.length; beatIndex += 1) {
+      if (localAudioPaths.has(beatIndex)) {
+        previewAudioPaths.push(localAudioPaths.get(beatIndex));
+        continue;
+      }
+      const narration = getBeatNarrationMeta(session, beatIndex);
+      const audioPath = await downloadPrivateObjectToTmp({
+        bucketPath: narration.audioStoragePath,
+        tmpDir: previewTmpDir,
+        name: `reuse_${beatIndex}.mp3`,
+      });
+      previewAudioPaths.push(audioPath);
+      beatDurationsMs[beatIndex] =
+        beatDurationsMs[beatIndex] || secondsToBillingMs(narration.durationSec);
+    }
+
+    const previewLocalPath = path.join(previewTmpDir, 'preview.mp3');
+    await concatenateAudioFiles({
+      audioPaths: previewAudioPaths,
+      outPath: previewLocalPath,
+    });
+    const previewStoragePath = `artifacts/${uid}/${sessionId}/sync/${plan.fullFingerprint}/preview.mp3`;
+    const previewUpload = await uploadPublic(
+      previewLocalPath,
+      previewStoragePath,
+      SYNC_PREVIEW_CONTENT_TYPE
+    );
+    const totalDurationMs = beatDurationsMs.reduce(
+      (sum, value) => sum + (Number.isFinite(Number(value)) ? Number(value) : 0),
+      0
+    );
+    const billedMs = computeSyncChargeMs(
+      plan.targetIndices.reduce((sum, beatIndex) => sum + (Number(beatDurationsMs[beatIndex]) || 0), 0)
+    );
+
+    session.captions = buildCaptionsFromBeatDurations(session.story.sentences, beatDurationsMs);
+    session.voicePreset = plan.voice.voicePresetKey;
+    session.voicePacePreset = plan.voice.voicePacePreset;
+    session.voiceSync = {
+      ...normalizeVoiceSyncSummary(session),
+      state: 'current',
+      staleScope: 'none',
+      staleBeatIndices: [],
+      currentFingerprint: plan.fullFingerprint,
+      nextEstimatedChargeSec: 0,
+      totalDurationSec: billingMsToSeconds(totalDurationMs),
+      previewAudioUrl: previewUpload.publicUrl,
+      previewAudioStoragePath: previewStoragePath,
+      previewAudioDurationSec: billingMsToSeconds(totalDurationMs),
+      lastChargeSec: billingMsToSeconds(billedMs),
+      totalBilledSec: billingMsToSeconds(
+        secondsToBillingMs(normalizeVoiceSyncSummary(session).totalBilledSec) + billedMs
+      ),
+      lastSyncedAt: now,
+      cached: false,
+    };
+    session.status = session.finalVideo ? session.status : 'voice_synced';
+    session.updatedAt = now;
+    setHeuristicBillingEstimate(session);
+    await saveStorySession({ uid, sessionId, data: session });
+
+    return {
+      session,
+      billedSec: billingMsToSeconds(billedMs),
+      cached: false,
+    };
+  } finally {
+    try {
+      if (fs.existsSync(previewTmpDir)) {
+        fs.rmSync(previewTmpDir, { recursive: true, force: true });
+      }
+    } catch {}
+  }
+}
+
 /**
  * Render final video (Phase 6)
  * Renders each clip with its caption, then concatenates
  */
-export async function renderStory({ uid, sessionId }) {
+async function renderStoryLegacy({ uid, sessionId }) {
   const session = await loadStorySession({ uid, sessionId });
   if (!session) throw new Error('SESSION_NOT_FOUND');
+  const syncSummary = normalizeVoiceSyncSummary(session);
+  if (syncSummary.state === 'never_synced') {
+    const error = new Error('VOICE_SYNC_REQUIRED');
+    error.code = 'VOICE_SYNC_REQUIRED';
+    error.status = 409;
+    throw error;
+  }
+  if (syncSummary.state !== 'current') {
+    const error = new Error('VOICE_SYNC_STALE');
+    error.code = 'VOICE_SYNC_STALE';
+    error.status = 409;
+    throw error;
+  }
   if (!session.shots || !session.captions) {
     throw new Error('SHOTS_AND_CAPTIONS_REQUIRED');
   }
@@ -1894,11 +2764,6 @@ export async function renderStory({ uid, sessionId }) {
   if (shotsWithClips.length === 0) {
     throw new Error('NO_CLIPS_SELECTED');
   }
-
-  // Get voice preset (default to calm male if not set)
-  const voicePresetKey = session.voicePreset || 'male_calm';
-  const voicePreset = getVoicePreset(voicePresetKey);
-  console.log(`[story.service] Using voice preset: ${voicePreset.name} (${voicePresetKey})`);
 
   // Create temp directory for rendered segments
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'vaiform-story-render-'));
@@ -2515,6 +3380,389 @@ export async function renderStory({ uid, sessionId }) {
   }
 }
 
+void renderStoryLegacy;
+
+export async function renderStory({ uid, sessionId }) {
+  const session = await loadStorySession({ uid, sessionId });
+  if (!session) throw new Error('SESSION_NOT_FOUND');
+
+  const syncSummary = normalizeVoiceSyncSummary(session);
+  if (syncSummary.state === 'never_synced') {
+    const error = new Error('VOICE_SYNC_REQUIRED');
+    error.code = 'VOICE_SYNC_REQUIRED';
+    error.status = 409;
+    throw error;
+  }
+  if (syncSummary.state !== 'current') {
+    const error = new Error('VOICE_SYNC_STALE');
+    error.code = 'VOICE_SYNC_STALE';
+    error.status = 409;
+    throw error;
+  }
+  if (!session.shots || !session.captions) {
+    throw new Error('SHOTS_AND_CAPTIONS_REQUIRED');
+  }
+
+  const sentences = session.story?.sentences ?? [];
+  const N = sentences.length;
+  const enableVideoCutsV1 =
+    process.env.ENABLE_VIDEO_CUTS_V1 === 'true' || process.env.ENABLE_VIDEO_CUTS_V1 === '1';
+  const currentSentencesHash = sentencesHash(sentences);
+
+  let hasClipsForAllBeats = N > 0;
+  if (hasClipsForAllBeats) {
+    for (let beatIndex = 0; beatIndex < N; beatIndex += 1) {
+      const shot = session.shots.find((item) => item.sentenceIndex === beatIndex);
+      if (!shot?.selectedClip?.url) {
+        hasClipsForAllBeats = false;
+        break;
+      }
+    }
+  }
+
+  let source = 'classic';
+  let videoCutsV1ToUse = null;
+  let useVideoCutsV1 = false;
+
+  if (enableVideoCutsV1 && hasClipsForAllBeats && N >= 2 && session.videoCutsV1Disabled !== true) {
+    const v1 = session.videoCutsV1;
+    const bounds = v1?.boundaries;
+    const hasValidExisting =
+      bounds &&
+      Array.isArray(bounds) &&
+      bounds.length === N - 1 &&
+      bounds.every((boundary, index) => {
+        if (typeof boundary.leftBeat !== 'number' || boundary.leftBeat !== index) return false;
+        const pos = boundary.pos;
+        if (!pos || typeof pos.beatIndex !== 'number' || typeof pos.pct !== 'number') return false;
+        if (pos.beatIndex < index + 1 || pos.beatIndex >= N) return false;
+        if (pos.pct < 0 || pos.pct > 1) return false;
+        return true;
+      });
+
+    if (!hasValidExisting && bounds && bounds.length > 0) {
+      source = 'invalid';
+    } else if (!hasValidExisting) {
+      const autoCuts = buildAutoVideoCutsV1({ sessionId: session.id, sentences });
+      session.videoCutsV1 = {
+        version: 1,
+        boundaries: autoCuts.boundaries,
+        source: 'auto',
+        sentencesHash: currentSentencesHash,
+        autoGenV: AUTO_CUTS_GEN_V,
+      };
+      videoCutsV1ToUse = session.videoCutsV1;
+      source = 'auto';
+      useVideoCutsV1 = true;
+    } else if (v1.source !== 'auto') {
+      source = 'manual';
+      videoCutsV1ToUse = v1;
+      useVideoCutsV1 = true;
+    } else if (v1.sentencesHash === currentSentencesHash && v1.autoGenV === AUTO_CUTS_GEN_V) {
+      source = 'auto';
+      videoCutsV1ToUse = v1;
+      useVideoCutsV1 = true;
+    } else {
+      const autoCuts = buildAutoVideoCutsV1({ sessionId: session.id, sentences });
+      session.videoCutsV1 = {
+        version: 1,
+        boundaries: autoCuts.boundaries,
+        source: 'auto',
+        sentencesHash: currentSentencesHash,
+        autoGenV: AUTO_CUTS_GEN_V,
+      };
+      videoCutsV1ToUse = session.videoCutsV1;
+      source = 'auto';
+      useVideoCutsV1 = true;
+    }
+  }
+
+  console.log('[videoCuts]', `source=${source}`, {
+    sessionId: session.id,
+    pcts: source !== 'classic' ? videoCutsV1ToUse?.boundaries?.map((item) => item.pos.pct) : undefined,
+  });
+
+  const shotsWithClips = session.shots
+    .filter((shot) => shot.selectedClip?.url)
+    .sort((left, right) => left.sentenceIndex - right.sentenceIndex);
+  if (shotsWithClips.length === 0) {
+    throw new Error('NO_CLIPS_SELECTED');
+  }
+
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'vaiform-story-render-'));
+  const renderedSegments = [];
+  const segmentErrors = [];
+
+  try {
+    if (useVideoCutsV1) {
+      const beatsDurSecArr = [];
+      const perBeat = [];
+      for (let beatIndex = 0; beatIndex < N; beatIndex += 1) {
+        const info = await buildStoredRenderBeat({ session, beatIndex, tmpDir });
+        beatsDurSecArr.push(info.durationSec);
+        perBeat.push(info);
+      }
+
+      if (beatsDurSecArr.length !== N) {
+        throw new Error('VIDEO_CUTS_V1_SYNC_ARTIFACTS_INCOMPLETE');
+      }
+
+      const segments =
+        source === 'auto'
+          ? computeVideoSegmentsFromCutsAutoBudget({
+              beatsDurSec: beatsDurSecArr,
+              shots: session.shots,
+              videoCutsV1: videoCutsV1ToUse,
+              sessionId: session.id,
+              sentences,
+              sentencesHash: currentSentencesHash,
+            })
+          : computeVideoSegmentsFromCuts({
+              beatsDurSec: beatsDurSecArr,
+              shots: session.shots,
+              videoCutsV1: videoCutsV1ToUse,
+            });
+      if (segments.length === 0) {
+        throw new Error('VIDEO_CUTS_V1_NO_SEGMENTS');
+      }
+
+      const fetchedCache = new Map();
+      const trimmedPaths = [];
+      for (let segmentIndex = 0; segmentIndex < segments.length; segmentIndex += 1) {
+        const segment = segments[segmentIndex];
+        let fetched = fetchedCache.get(segment.clipUrl);
+        if (!fetched) {
+          fetched = await fetchVideoToTmp(segment.clipUrl);
+          fetchedCache.set(segment.clipUrl, fetched);
+        }
+        const outSeg = path.join(tmpDir, `v1_seg_${segmentIndex}.mp4`);
+        await trimClipToSegment({
+          path: fetched.path,
+          inSec: segment.inSec,
+          durSec: segment.durSec,
+          outPath: outSeg,
+          options: { width: 1080, height: 1920 },
+        });
+        trimmedPaths.push({ path: outSeg, durationSec: segment.durSec });
+      }
+
+      const globalTimelinePath = path.join(tmpDir, 'v1_global.mp4');
+      await concatenateClipsVideoOnly({
+        clips: trimmedPaths,
+        outPath: globalTimelinePath,
+        options: { width: 1080, height: 1920, fps: 24 },
+      });
+
+      let beatStartSec = 0;
+      const colorMetaCache = new Map();
+      for (let beatIndex = 0; beatIndex < N; beatIndex += 1) {
+        const info = perBeat[beatIndex];
+        const durationSec = beatsDurSecArr[beatIndex];
+        const slicePath = path.join(tmpDir, `v1_slice_${beatIndex}.mp4`);
+        await extractSegmentFromFile({
+          path: globalTimelinePath,
+          startSec: beatStartSec,
+          durSec: durationSec,
+          outPath: slicePath,
+          options: { width: 1080, height: 1920 },
+        });
+        const segmentPath = path.join(tmpDir, `segment_${beatIndex}.mp4`);
+        await renderVideoQuoteOverlay({
+          videoPath: slicePath,
+          outPath: segmentPath,
+          width: 1080,
+          height: 1920,
+          durationSec,
+          fps: 24,
+          text: info.caption.text,
+          captionText: info.caption.text,
+          ttsPath: info.ttsPath,
+          assPath: info.assPath,
+          overlayCaption: info.overlayCaption,
+          keepVideoAudio: true,
+          bgAudioVolume: 0.5,
+          watermark: true,
+          padSec: 0,
+          colorMetaCache,
+        });
+        renderedSegments.push({ path: segmentPath, durationSec });
+        beatStartSec += durationSec;
+      }
+    } else {
+      const colorMetaCache = new Map();
+      for (let index = 0; index < shotsWithClips.length; index += 1) {
+        const shot = shotsWithClips[index];
+        try {
+          const info = await buildStoredRenderBeat({
+            session,
+            beatIndex: shot.sentenceIndex,
+            tmpDir,
+          });
+          const fetched = await fetchVideoToTmp(shot.selectedClip.url);
+          const durationSec =
+            Number(info.durationSec) > 0
+              ? Number(info.durationSec)
+              : Math.max(
+                  0,
+                  Number(info.caption?.endTimeSec || 0) - Number(info.caption?.startTimeSec || 0)
+                ) || shot.durationSec || 3;
+
+          const clipDurMs = await getDurationMsFromMedia(fetched.path);
+          const clipDurSec = clipDurMs ? clipDurMs / 1000 : null;
+          const deficitSec =
+            Number.isFinite(clipDurSec) && Number.isFinite(durationSec)
+              ? Math.max(0, durationSec - clipDurSec)
+              : 0;
+          const rawPadSec = deficitSec > 0.25 ? deficitSec : 0;
+          const padSec = Math.min(rawPadSec, 5);
+
+          const segmentPath = path.join(tmpDir, `segment_${index}.mp4`);
+          await renderVideoQuoteOverlay({
+            videoPath: fetched.path,
+            outPath: segmentPath,
+            width: 1080,
+            height: 1920,
+            durationSec,
+            fps: 24,
+            text: info.caption.text,
+            captionText: info.caption.text,
+            ttsPath: info.ttsPath,
+            assPath: info.assPath,
+            overlayCaption: info.overlayCaption,
+            keepVideoAudio: true,
+            bgAudioVolume: 0.5,
+            watermark: true,
+            padSec,
+            colorMetaCache,
+          });
+          renderedSegments.push({ path: segmentPath, durationSec });
+        } catch (error) {
+          const caption = session.captions.find((item) => item.sentenceIndex === shot.sentenceIndex);
+          const errorMsg = error?.message || error?.stderr || String(error);
+          console.warn(
+            `[story.service] Render failed for segment ${index} (sentence "${caption?.text?.substring(0, 50) || shot.sentenceIndex}..."):`,
+            errorMsg
+          );
+          segmentErrors.push({
+            segmentIndex: index,
+            sentenceIndex: shot.sentenceIndex,
+            error: errorMsg,
+          });
+        }
+      }
+    }
+
+    if (renderedSegments.length === 0) {
+      const errorDetail =
+        segmentErrors.length > 0
+          ? `All ${segmentErrors.length} segments failed. First error: ${segmentErrors[0].error}`
+          : 'No segments were attempted';
+      throw new Error(`NO_SEGMENTS_RENDERED: ${errorDetail}`);
+    }
+
+    if (segmentErrors.length > 0) {
+      console.warn(
+        `[story.service] Rendered ${renderedSegments.length}/${shotsWithClips.length} segments successfully. ${segmentErrors.length} segments failed.`
+      );
+    } else {
+      console.log(`[story.service] Successfully rendered all ${renderedSegments.length} segments.`);
+    }
+
+    const finalPath = path.join(tmpDir, 'final.mp4');
+    await concatenateClips({
+      clips: renderedSegments,
+      outPath: finalPath,
+      options: { width: 1080, height: 1920, fps: 24 },
+    });
+
+    const jobId = `story-${Date.now().toString(36)}`;
+    const durationSec = renderedSegments.reduce((sum, segment) => sum + segment.durationSec, 0);
+    const joinedText = session.story?.sentences?.join(' ') || '';
+    let publicUrl = null;
+    let thumbUrl = null;
+    await withFinalizeStage(FINALIZE_STAGES.UPLOAD_ARTIFACTS, {}, async () => {
+      const destPath = `artifacts/${uid}/${jobId}/story.mp4`;
+      const uploadedVideo = await uploadPublic(finalPath, destPath, 'video/mp4');
+      publicUrl = uploadedVideo.publicUrl;
+
+      if (!fs.existsSync(finalPath)) return;
+      try {
+        const thumbLocal = path.join(tmpDir, 'thumb.jpg');
+        const ok = await extractCoverJpeg({
+          inPath: finalPath,
+          outPath: thumbLocal,
+          durationSec: durationSec || 8,
+          width: 720,
+        });
+        if (ok && fs.existsSync(thumbLocal)) {
+          const thumbDest = `artifacts/${uid}/${jobId}/thumb.jpg`;
+          const { publicUrl: thumbPublicUrl } = await uploadPublic(
+            thumbLocal,
+            thumbDest,
+            'image/jpeg'
+          );
+          thumbUrl = thumbPublicUrl;
+          console.log(`[story.service] Thumbnail uploaded: ${thumbUrl}`);
+        }
+      } catch (error) {
+        console.warn(`[story.service] Thumbnail extraction failed: ${error?.message || error}`);
+      }
+    });
+
+    const db = admin.firestore();
+    const shortsRef = db.collection('shorts').doc(jobId);
+
+    await withFinalizeStage(FINALIZE_STAGES.WRITE_SHORT, {}, async () => {
+      try {
+        await shortsRef.set({
+          ownerId: uid,
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          status: 'ready',
+          videoUrl: publicUrl,
+          thumbUrl,
+          coverImageUrl: thumbUrl,
+          durationSec,
+          quoteText: joinedText,
+          mode: 'story',
+          template: 'story',
+          voiceover: true,
+          wantAttribution: false,
+          captionMode: 'overlay',
+          watermark: true,
+          background: {
+            kind: 'video',
+            type: 'video',
+          },
+          completedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        console.log(`[story.service] Created Firestore doc in shorts collection: ${jobId}`);
+      } catch (error) {
+        console.warn(`[story.service] Failed to create Firestore doc: ${error.message}`);
+      }
+    });
+
+    session.renderedSegments = renderedSegments.map((segment) => segment.path);
+    session.finalVideo = {
+      url: publicUrl,
+      durationSec,
+      jobId,
+    };
+    session.status = 'rendered';
+    session.updatedAt = new Date().toISOString();
+
+    await saveStorySession({ uid, sessionId, data: session });
+    return session;
+  } finally {
+    try {
+      if (tmpDir && fs.existsSync(tmpDir)) {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+      }
+    } catch (cleanupErr) {
+      console.warn('[story.service] Cleanup failed:', cleanupErr.message);
+    }
+  }
+}
+
 /**
  * Create story session from manual script (manual mode)
  */
@@ -2555,6 +3803,7 @@ export async function createManualStorySession({ uid, scriptText }) {
 
   // Set story sentences (same structure as generateStory output)
   session.story = { sentences: beats };
+  resetVoiceSyncForNewScript(session);
   session.status = 'story_generated';
   session.updatedAt = new Date().toISOString();
 
@@ -2631,17 +3880,21 @@ export async function finalizeStory({ uid, sessionId, options = {}, attemptId = 
       });
     }
 
-    // Step 4: Build timeline if not done (optional, we render from individual clips)
-    // Skipped for now - we render directly from clips
-
-    // Step 5: Generate caption timings if not done
-    if (!session.captions) {
-      await withFinalizeStage(FINALIZE_STAGES.CAPTION_GENERATE, { sessionId, attemptId }, async () => {
-        await generateCaptionTimings({ uid, sessionId });
-      });
+    const syncSummary = normalizeVoiceSyncSummary(session);
+    if (syncSummary.state === 'never_synced') {
+      const error = new Error('VOICE_SYNC_REQUIRED');
+      error.code = 'VOICE_SYNC_REQUIRED';
+      error.status = 409;
+      throw error;
+    }
+    if (syncSummary.state !== 'current') {
+      const error = new Error('VOICE_SYNC_STALE');
+      error.code = 'VOICE_SYNC_STALE';
+      error.status = 409;
+      throw error;
     }
 
-    // Step 6: Render segments
+    // Step 4: Render segments from persisted synced narration artifacts
     if (!session.finalVideo) {
       await withFinalizeStage(FINALIZE_STAGES.RENDER_VIDEO, { sessionId, attemptId }, async () => {
         await withSharedFinalizeRenderLease(() =>

@@ -7,8 +7,10 @@ This document is the canonical implementation guide for replacing Vaiform's cred
 Target user-facing model:
 - Users receive render-time allowance per billing cycle.
 - User-facing language is `render time`, `minutes left`, `seconds left`, and `estimated usage`.
-- Internal billing unit is integer seconds.
-- Billing is based on final rendered output duration only.
+- Internal authoritative billing unit is integer milliseconds; public contract fields remain second-based decimals.
+- Billing is based on two additive operations on one unified ledger:
+  - voice sync charges `50%` of the narration duration generated in that sync operation
+  - final render charges `50%` of the final rendered output duration
 
 Explicitly out of scope:
 - Billing wall-clock app time.
@@ -61,7 +63,7 @@ Why this is a model refactor, not a rename:
 - Finalize must preserve current safety properties: reserve before render, replay idempotently, release on failure, settle once.
 
 ### Locked migration decisions
-- Billing unit is integer seconds.
+- Public contract unit remains seconds, but authoritative backend math uses integer milliseconds.
 - Active billing API is `GET /api/usage`.
 - `/api/credits` is removed during the cutover; it is not repurposed to mean seconds.
 - Credits are not migrated, preserved, or translated into a live compatibility balance.
@@ -76,7 +78,8 @@ Why this is a model refactor, not a rename:
   - Pro: `1800` sec per cycle.
 - No top-ups at launch.
 - No free included time at launch.
-- Billed seconds are `Math.ceil(finalVideo.durationSec)`.
+- Sync billed seconds are `generatedNarrationDurationSec * 0.5`.
+- Final render billed seconds are `finalVideo.durationSec * 0.5`.
 - Estimate reservation is treated as a conservative upper bound for supported stories.
 - A supported story must satisfy `billedSec <= reservedSec`.
 - There is no post-render overdraft, negative-balance, or retroactive delta-charge branch in the first cut.
@@ -136,6 +139,7 @@ availableSec = max(0, cycleIncludedSec - cycleUsedSec - cycleReservedSec)
 
 Rules:
 - `availableSec` is computed, returned, and never stored as canonical source-of-truth.
+- Storage and comparison safety use integer millisecond helpers; second fields are serialized from that source of truth.
 - Starting a new paid billing period resets `cycleUsedSec` to `0`.
 - `cycleReservedSec` may carry across a period transition only to preserve a legitimate in-flight finalize reservation until settle or failure release completes.
 - No top-up fields exist in the launch cutover schema.
@@ -160,7 +164,7 @@ Locked source order:
 Rules:
 - Estimate is backend-owned only.
 - Estimate is a conservative reservation target, not client-derived math.
-- Finalize settlement truth remains `Math.ceil(session.finalVideo.durationSec)`.
+- Finalize settlement truth remains `session.finalVideo.durationSec * 0.5`, serialized back to second-based contract fields from millisecond math.
 - Passive `GET /api/story/:sessionId` and generic session saves must not silently overwrite or recalculate estimates.
 - `speech_duration` uses a billing-specific composite text heuristic plus a small story-level reserve pad via `BILLING_ESTIMATE_HEURISTIC_PAD_SEC`.
 - Beat-aware speech estimation applies low per-beat billing timing plus a capped boundary pad via `BILLING_ESTIMATE_PER_BEAT_BASE_SEC`, `BILLING_ESTIMATE_PER_BEAT_MIN_SEC`, `BILLING_ESTIMATE_BEAT_BOUNDARY_PAD_SEC`, and `BILLING_ESTIMATE_BEAT_BOUNDARY_PAD_MAX_SEC`.
@@ -195,7 +199,7 @@ Locked finalize semantics:
    - never reserve twice for the same idempotency key.
 4. Render.
 5. Read `session.finalVideo.durationSec`.
-6. Compute `billedSec = Math.ceil(session.finalVideo.durationSec)`.
+6. Compute `billedSec = session.finalVideo.durationSec * 0.5`.
 7. Assert `billedSec <= reservedSec`.
 8. In one settlement transaction:
    - decrement `cycleReservedSec` by `reservedSec`,
@@ -266,6 +270,7 @@ Rules:
 
 Story/session contract additions:
 - Add `billingEstimate` to active session payloads.
+- Add `voiceSync.nextEstimatedChargeSec` for the next explicit sync action.
 - Add `billing` to finalize success payloads after settlement.
 
 Finalize success contract:
@@ -359,7 +364,7 @@ Temporary bridge:
 - A one-phase implementation stub is allowed only if needed to keep a branch coherent while callers are updated.
 
 Verification gates:
-- `billedSec = Math.ceil(finalVideo.durationSec)`.
+- `billedSec = finalVideo.durationSec * 0.5`.
 - Same idempotency key cannot double-bill.
 - Failure releases reserved seconds.
 - Successful finalize persists short `billing`.

@@ -1,6 +1,6 @@
 # MOBILE_BACKEND_CONTRACT
 
-Cross-repo verification date: 2026-04-04.
+Cross-repo verification date: 2026-04-11.
 
 Purpose: canonical backend-owned contract, guarantees, and open mismatch record for mobile production. Current mobile caller-truth lives in the mobile repo. If a route is not `MOBILE_CORE_NOW` or `MOBILE_CORE_SOON` here, it is not first-class for mobile launch.
 
@@ -22,7 +22,7 @@ Route-authority note:
 - Authenticated mobile requests use `Authorization: Bearer <Firebase ID token>` when a token is available (`client/api/client.ts:176-189`, `client/api/client.ts:244-257`, `src/middleware/requireAuth.js:7-31`).
 - JSON requests use `Content-Type: application/json`.
 - Mobile callers send `x-client: mobile` (`client/api/client.ts:176-180`, `client/api/client.ts:244-248`). Caption preview uses that header as part of the mobile/server-measured path selection when `measure` is omitted (`src/routes/caption.preview.routes.js:131-145`).
-- Backend finalize requires `X-Idempotency-Key`, and the current mobile finalize caller sends it (`src/middleware/idempotency.firestore.js:44-113`, `client/api/client.ts:804-828`).
+- Backend `POST /api/story/sync` and `POST /api/story/finalize` both require `X-Idempotency-Key`, and the current mobile callers send it (`src/routes/story.routes.js`, `src/middleware/idempotency.firestore.js:44-113`, `client/api/client.ts:739-802`, `client/api/client.ts:804-828`).
 - `GET /api/usage` is the active mobile billing surface (`client/api/client.ts:598-603`, `client/contexts/AuthContext.tsx:159-180`, `src/routes/usage.routes.js:1-8`).
 
 ## Billing Cutover Note
@@ -30,6 +30,9 @@ Route-authority note:
 - Billing migration Phase 1 adds canonical backend `GET /api/usage` and additive session `billingEstimate`.
 - Billing migration Phase 2 moves backend render reservation/settlement to canonical usage seconds and adds additive finalize `data.billing`.
 - Billing migration Phase 3 moves active mobile callers to `GET /api/usage`, updates mobile billing copy/gating to render-time semantics, and removes `/api/credits` from active caller usage.
+- Voice-sync storyboard billing is now live on the same unified usage ledger. Backend charge math is authoritative in integer milliseconds, while contract fields remain second-based decimals.
+- `POST /api/story/sync` charges `50%` of the narration duration generated in that sync operation, caches identical fingerprints at `0` charge, and adds those sync charges on top of the later render charge.
+- `POST /api/story/finalize` now charges `50%` of the full final output duration for the current synced session; prior sync charges do not reduce the final render charge.
 - Current backend `billingEstimate.estimatedSec` is reservation-safe, not raw. The active source order is `speech_duration -> shot_durations -> caption_timeline`, where `speech_duration` is the backend-owned composite text heuristic and `caption_timeline` is retained only as an emergency fallback. Phase 2 live proof is now recorded in `docs/PHASE2_PAID_TRUST_PROOF_LOG.md`, including a representative launch-path settle of ~13.48 seconds actual duration to 14 billed seconds.
 - Phases 1 through 5 of the billing migration are now landed in code, and the Phase 2 estimate-proof gate plus live Stripe/manual end-to-end verification are empirically closed for the paid trust path. The historical Phase 6 mismatch probe remains recorded for operator awareness, but it is no longer the open launch blocker for this phase.
 
@@ -96,7 +99,7 @@ Route-authority note:
   - Recovery-state writer(s): `src/services/story.service.js:2325-2417`
   - Mobile sends: no body.
   - Backend returns: full session in `data`.
-  - Mobile reads: `story.sentences` with helper fallbacks, `shots`, `overlayCaption.placement`, additive `billingEstimate.estimatedSec`, `shot.selectedClip.thumbUrl`, `shot.searchQuery`, and `renderRecovery` during finalize recovery polling and same-session restart-safe finalize resume.
+  - Mobile reads: `story.sentences`, `shots`, `overlayCaption.placement`, additive `billingEstimate.estimatedSec`, `voicePreset`, `voicePacePreset`, `voiceOptions`, `voiceSync`, synced `captions`, `shot.selectedClip.thumbUrl`, `shot.searchQuery`, and `renderRecovery` during finalize recovery polling and same-session restart-safe finalize resume.
   - Recovery role: this route remains the canonical finalize recovery contract. Additive `renderRecovery` fields still expose `{ state, attemptId, startedAt, updatedAt, shortId, finishedAt, failedAt, code, message }`, and mobile still trusts them only when `renderRecovery.attemptId` matches the active finalize attempt. Backend Phase 5 now derives that additive projection from canonical finalize attempt/job truth through `src/services/finalize-status.service.js`; session `renderRecovery` remains compatibility storage only.
   - Stable failure now: `404 SESSION_NOT_FOUND`.
   - Diagnostics note: failed recovery polls now keep `requestId` in normalized mobile failures and enrich diagnostics with `sessionId` plus the active finalize `attemptId`.
@@ -138,7 +141,29 @@ Route-authority note:
     - `404 SESSION_NOT_FOUND`
     - `400 STORY_REQUIRED`
     - `400 INVALID_SENTENCE_INDEX`
+    - `400 INVALID_SENTENCE_TEXT`
+    - `400 MAX_BEAT_CHARS_EXCEEDED`
+    - `400 MAX_TOTAL_CHARS_EXCEEDED`
   - Guardrail: service now checks `SESSION_NOT_FOUND` / `STORY_REQUIRED` before dereferencing `session.story`.
+
+- `POST /api/story/sync`
+  - Mobile caller(s): `client/screens/StoryEditorScreen.tsx`, `client/screens/story-editor/useStoryVoiceSync.ts`, `client/api/client.ts`
+  - Backend handler(s): `src/routes/story.routes.js`, `src/services/story-sync.attempts.js`, `src/services/story.service.js`
+  - Mobile sends: `{ sessionId, mode: "full" | "stale", voicePreset?, voicePacePreset?: "normal" }` plus `X-Idempotency-Key`.
+  - Backend returns: full session in `data`; same-key active replay returns `202` with additive top-level `sync: { state, attemptId, pollSessionId }`.
+  - Mobile reads: `voiceSync.state`, `voiceSync.staleScope`, `voiceSync.staleBeatIndices`, `voiceSync.nextEstimatedChargeSec`, `voiceSync.lastChargeSec`, `voiceSync.totalDurationSec`, `voiceSync.previewAudioUrl`, `voiceSync.cached`, persisted `voicePreset`, persisted `voicePacePreset`, synced `captions`, and updated render `billingEstimate.estimatedSec`.
+  - Contract rules:
+    - identical current sync fingerprint returns cached success and `0` charge
+    - full script changes, beat insert/delete, or voice changes require full re-sync
+    - single beat text edits mark only the touched beat stale
+    - clip swaps and caption-style changes do not stale narration timing
+  - Stable failures now:
+    - `400 MISSING_IDEMPOTENCY_KEY`
+    - `400 INVALID_INPUT`
+    - `404 SESSION_NOT_FOUND`
+    - `409 STORY_SYNC_ALREADY_ACTIVE`
+    - `409 VOICE_SYNC_SESSION_CHANGED`
+    - `503 VOICE_SYNC_TIMESTAMPS_UNAVAILABLE`
 
 - `POST /api/story/delete-beat`
   - Mobile caller(s): `client/screens/ScriptScreen.tsx:222-235`, `client/screens/story-editor/useStoryEditorSession.ts:190-231`
@@ -208,7 +233,7 @@ Route-authority note:
   - Mobile caller(s): `client/screens/story-editor/useStoryEditorFinalize.ts:347-520`, `client/api/client.ts:804-953`
   - Backend handler(s): `src/routes/story.routes.js`, `src/middleware/idempotency.firestore.js`, `src/services/story-finalize.attempts.js`, `src/services/story-finalize.runner.js`, `src/services/finalize-status.service.js`, `src/services/story.service.js`
   - Mobile sends now: `{ sessionId }` plus `X-Idempotency-Key`.
-  - Backend requires now: `{ sessionId }` plus `X-Idempotency-Key`.
+  - Backend requires now: `{ sessionId }` plus `X-Idempotency-Key`, and the session must have current voice sync state.
   - Firestore deploy prerequisite: the queued-attempt claim query in `src/services/story-finalize.attempts.js` depends on `idempotency(flow ASC, state ASC, createdAt ASC)`, and the Phase 5 latest-attempt canonical-status fallback depends on `idempotency(flow ASC, uid ASC, sessionId ASC, createdAt DESC)`. Both composite indexes are tracked in root `firestore.indexes.json`. Root `firebase.json` now wires `firestore.rules` plus `firestore.indexes.json`, and the repo-managed deploy path is `firebase deploy --project <firebase-project-id> --only firestore`.
   - Backend returns now:
     - initial accepted response: `202` with full session in `data`, top-level `shortId: null`, and additive `finalize: { state: "pending", attemptId, pollSessionId }`
@@ -216,9 +241,11 @@ Route-authority note:
     - same-key terminal success replay: `200` with full session in `data`, additive `data.billing`, and top-level `shortId`
     - same-key terminal failure replay: stored terminal failure payload
     - same-session different-key conflict while another attempt is active: `409 FINALIZE_ALREADY_ACTIVE` with additive `finalize: { state: "pending", attemptId, pollSessionId }`
+    - sync-gate failures: `409 VOICE_SYNC_REQUIRED` or `409 VOICE_SYNC_STALE`
     - genuinely new admissions may return `503 SERVER_BUSY` with `Retry-After` only when the shared finalize backlog gate is over cap
   - Mobile reads: `status`, `shortId`, additive `finalize.state`, `finalize.attemptId`, `finalize.pollSessionId`, additive `data.billing.billedSec` when available, and on failures `retryAfter`, `code/error`, `message/detail`.
   - Guardrails: Firestore-backed async finalize attempt SSOT, exact-once usage reservation/settlement/release helpers, session-scoped active-attempt lockout, backend lease/heartbeat reaping, shared Firestore-backed render leases owned by `executionAttemptId`, shared finalize backlog gating, and shared finalize-relevant OpenAI/story-search/TTS pressure with local process guards retained as secondary safety.
+  - Render truth rule: synced sessions now render from persisted synced narration/timing artifacts; finalize must not regenerate fresh narration timing for a supposedly current sync fingerprint.
   - Admission precedence order is frozen to:
     1. same-key replay
     2. same-session active conflict
@@ -281,6 +308,7 @@ Route-authority note:
 | `POST /api/story/update-shot`           | `MOBILE_CORE_NOW`  | Mobile clip replacement (`client/screens/ClipSearchModal.tsx:83-104`)                                                                                                                                                     | Harden now.                                              |
 | `POST /api/caption/preview`             | `MOBILE_CORE_NOW`  | Mobile beat-card preview (`client/hooks/useCaptionPreview.ts:59-120`)                                                                                                                                                     | Harden now.                                              |
 | `POST /api/story/update-caption-style`  | `MOBILE_CORE_NOW`  | Mobile caption placement persistence (`client/screens/story-editor/useStoryEditorCaptionPlacement.ts:115-155`)                                                                                                            | Harden now.                                              |
+| `POST /api/story/sync`                  | `MOBILE_CORE_NOW`  | Mobile speech/sync workflow (`client/screens/StoryEditorScreen.tsx`, `client/screens/story-editor/useStoryVoiceSync.ts`, `client/api/client.ts`)                                                                          | Harden now.                                              |
 | `POST /api/story/finalize`              | `MOBILE_CORE_NOW`  | Mobile render action (`client/screens/story-editor/useStoryEditorFinalize.ts:344-562`)                                                                                                                                    | Harden now; highest-risk contract surface.               |
 | `GET /api/shorts/mine`                  | `MOBILE_CORE_NOW`  | Mobile library list and detail fallback (`client/screens/LibraryScreen.tsx:80-118`, `client/screens/short-detail/useShortDetailAvailability.ts:149-205`)                                                                  | Harden now.                                              |
 | `GET /api/shorts/:jobId`                | `MOBILE_CORE_NOW`  | Mobile post-render detail path (`client/screens/short-detail/useShortDetailAvailability.ts:83-356`)                                                                                                                       | Harden now; compatibility bridge is active.              |

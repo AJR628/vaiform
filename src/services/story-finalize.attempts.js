@@ -8,7 +8,14 @@ import {
   emitFinalizeEvent,
   markFinalizeQueueSnapshot,
 } from '../observability/finalize-observability.js';
-import { buildCanonicalUsageState, getAvailableSec } from './usage.service.js';
+import {
+  applyUsageDelta,
+  billingMsToSeconds,
+  buildCanonicalUsageState,
+  computeRenderChargeMs,
+  getAvailableMs,
+  secondsToBillingMs,
+} from './usage.service.js';
 import {
   buildRenderRecoveryProjection,
   persistStoryRenderRecovery,
@@ -487,14 +494,34 @@ const appendExecutionAttempt = (attempt, patch = {}) => {
   };
 };
 
-const getEstimatedSecFromSession = (session) => {
-  const estimatedSec = Number(session?.billingEstimate?.estimatedSec);
-  return Number.isFinite(estimatedSec) && estimatedSec > 0 ? Math.ceil(estimatedSec) : null;
+const getVoiceSyncAdmissionError = (session) => {
+  const state = typeof session?.voiceSync?.state === 'string' ? session.voiceSync.state : 'never_synced';
+  if (state === 'never_synced') {
+    return {
+      status: 409,
+      error: 'VOICE_SYNC_REQUIRED',
+      detail: 'Sync voice and timing before render.',
+    };
+  }
+  if (state !== 'current') {
+    return {
+      status: 409,
+      error: 'VOICE_SYNC_STALE',
+      detail: 'Voice timing is stale. Re-sync before render.',
+    };
+  }
+  return null;
 };
 
-const getBilledSecFromSession = (session) => {
-  const durationSec = Number(session?.finalVideo?.durationSec);
-  return Number.isFinite(durationSec) && durationSec > 0 ? Math.ceil(durationSec) : null;
+const getEstimatedMsFromSession = (session) => {
+  const estimatedMs = secondsToBillingMs(session?.billingEstimate?.estimatedSec ?? 0);
+  return estimatedMs > 0 ? estimatedMs : null;
+};
+
+const getBilledMsFromSession = (session) => {
+  const durationMs = secondsToBillingMs(session?.finalVideo?.durationSec ?? 0);
+  const billedMs = computeRenderChargeMs(durationMs);
+  return billedMs > 0 ? billedMs : null;
 };
 
 const requestBillingOf = (settlement) => {
@@ -841,8 +868,18 @@ export async function prepareFinalizeAttempt({
     };
   }
 
-  const estimatedSec = getEstimatedSecFromSession(reservationSession);
-  if (!estimatedSec) {
+  const syncGateError = getVoiceSyncAdmissionError(reservationSession);
+  if (syncGateError) {
+    return {
+      kind: 'error',
+      status: syncGateError.status,
+      error: syncGateError.error,
+      detail: syncGateError.detail,
+    };
+  }
+
+  const estimatedMs = getEstimatedMsFromSession(reservationSession);
+  if (!estimatedMs) {
     return {
       kind: 'error',
       status: 409,
@@ -912,8 +949,10 @@ export async function prepareFinalizeAttempt({
       const userData = userSnap.data() || {};
       const accountState = buildCanonicalUsageState(userData);
       const usage = accountState.usage;
-      if (getAvailableSec(usage) < estimatedSec) {
-        const err = new Error(`Insufficient render time. You need ${estimatedSec} seconds to render.`);
+      if (getAvailableMs(usage, accountState.plan) < estimatedMs) {
+        const err = new Error(
+          `Insufficient render time. You need ${billingMsToSeconds(estimatedMs)} seconds to render.`
+        );
         err.code = 'INSUFFICIENT_RENDER_TIME';
         err.status = 402;
         throw err;
@@ -959,8 +998,10 @@ export async function prepareFinalizeAttempt({
           expiresAt,
           availableAfter,
           usageReservation: {
-            estimatedSec,
-            reservedSec: estimatedSec,
+            estimatedSec: billingMsToSeconds(estimatedMs),
+            reservedSec: billingMsToSeconds(estimatedMs),
+            estimatedMs,
+            reservedMs: estimatedMs,
           },
           billingSettlement: null,
           failure: null,
@@ -986,8 +1027,10 @@ export async function prepareFinalizeAttempt({
           },
           billing: {
             reservation: {
-              estimatedSec,
-              reservedSec: estimatedSec,
+              estimatedSec: billingMsToSeconds(estimatedMs),
+              reservedSec: billingMsToSeconds(estimatedMs),
+              estimatedMs,
+              reservedMs: estimatedMs,
             },
             settlement: null,
           },
@@ -1030,8 +1073,10 @@ export async function prepareFinalizeAttempt({
         expiresAt,
         availableAfter,
         usageReservation: {
-          estimatedSec,
-          reservedSec: estimatedSec,
+          estimatedSec: billingMsToSeconds(estimatedMs),
+          reservedSec: billingMsToSeconds(estimatedMs),
+          estimatedMs,
+          reservedMs: estimatedMs,
         },
         billingSettlement: null,
         failure: null,
@@ -1058,8 +1103,13 @@ export async function prepareFinalizeAttempt({
           plan: accountState.plan,
           membership: accountState.membership,
           usage: {
-            ...usage,
-            cycleReservedSec: usage.cycleReservedSec + estimatedSec,
+            ...applyUsageDelta(
+              usage,
+              {
+                reservedDeltaMs: estimatedMs,
+              },
+              accountState.plan
+            ),
             updatedAt: admin.firestore.FieldValue.serverTimestamp(),
           },
           updatedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -1304,21 +1354,27 @@ export async function finalizeAttemptFailure({
       executionAttemptId: currentExecution?.executionAttemptId ?? null,
     };
 
-    const reservedSec = Number(current?.usageReservation?.reservedSec || 0);
+    const reservedMs = secondsToBillingMs(
+      current?.usageReservation?.reservedSec ?? current?.usageReservation?.reservedMs ?? 0
+    );
     const userRef = db.collection('users').doc(uid);
     const userSnap = await tx.get(userRef);
     if (userSnap.exists) {
       const userData = userSnap.data() || {};
       const accountState = buildCanonicalUsageState(userData);
-      const usage = accountState.usage;
       tx.set(
         userRef,
         {
           plan: accountState.plan,
           membership: accountState.membership,
           usage: {
-            ...usage,
-            cycleReservedSec: Math.max(0, usage.cycleReservedSec - reservedSec),
+            ...applyUsageDelta(
+              accountState.usage,
+              {
+                reservedDeltaMs: -reservedMs,
+              },
+              accountState.plan
+            ),
             updatedAt: admin.firestore.FieldValue.serverTimestamp(),
           },
           updatedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -1407,15 +1463,19 @@ export async function settleFinalizeAttemptSuccess({ uid, attemptId, session, sh
     });
   }
 
-  const estimatedSec = Number(currentAttempt?.usageReservation?.estimatedSec || 0);
-  const billedSec = getBilledSecFromSession(session);
-  if (!billedSec) {
+  const estimatedMs = secondsToBillingMs(
+    currentAttempt?.usageReservation?.estimatedSec ?? currentAttempt?.usageReservation?.estimatedMs ?? 0
+  );
+  const billedMs = getBilledMsFromSession(session);
+  if (!billedMs) {
     throw Object.assign(new Error('BILLING_DURATION_UNAVAILABLE'), {
       code: 'BILLING_DURATION_UNAVAILABLE',
       status: 500,
     });
   }
-  if (estimatedSec > 0 && billedSec > estimatedSec) {
+  const estimatedSec = billingMsToSeconds(estimatedMs);
+  const billedSec = billingMsToSeconds(billedMs);
+  if (estimatedMs > 0 && billedMs > estimatedMs) {
     emitFinalizeEvent('error', FINALIZE_EVENTS.JOB_FAILED, {
       sourceRole: FINALIZE_SOURCE_ROLES.WORKER,
       requestId: currentAttempt.requestId ?? null,
@@ -1425,7 +1485,11 @@ export async function settleFinalizeAttemptSuccess({ uid, attemptId, session, sh
       jobState: currentAttempt.state,
       stage: FINALIZE_STAGES.BILLING_SETTLE,
       estimatedSec,
-      reservedSec: Number(currentAttempt?.usageReservation?.reservedSec || 0),
+      reservedSec: billingMsToSeconds(
+        secondsToBillingMs(
+          currentAttempt?.usageReservation?.reservedSec ?? currentAttempt?.usageReservation?.reservedMs ?? 0
+        )
+      ),
       billedSec,
       settlementState: 'mismatch',
       usageLedgerApplied: false,
@@ -1478,8 +1542,9 @@ export async function settleFinalizeAttemptSuccess({ uid, attemptId, session, sh
 
     const userData = userSnap.data() || {};
     const accountState = buildCanonicalUsageState(userData);
-    const usage = accountState.usage;
-    const reservedSec = Number(attempt?.usageReservation?.reservedSec || 0);
+    const reservedMs = secondsToBillingMs(
+      attempt?.usageReservation?.reservedSec ?? attempt?.usageReservation?.reservedMs ?? 0
+    );
     const activeExecution = getCurrentExecutionAttempt(attempt);
     const executionAttempts = activeExecution
       ? updateExecutionAttempt(attempt, activeExecution.executionAttemptId, (execution) => ({
@@ -1500,6 +1565,7 @@ export async function settleFinalizeAttemptSuccess({ uid, attemptId, session, sh
       ) || activeExecution;
     const settlement = {
       billedSec,
+      billedMs,
       settledAt,
     };
     const updatedAttempt = {
@@ -1546,9 +1612,14 @@ export async function settleFinalizeAttemptSuccess({ uid, attemptId, session, sh
         plan: accountState.plan,
         membership: accountState.membership,
         usage: {
-          ...usage,
-          cycleUsedSec: usage.cycleUsedSec + billedSec,
-          cycleReservedSec: Math.max(0, usage.cycleReservedSec - reservedSec),
+          ...applyUsageDelta(
+            accountState.usage,
+            {
+              usedDeltaMs: billedMs,
+              reservedDeltaMs: -reservedMs,
+            },
+            accountState.plan
+          ),
           updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         },
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -1583,10 +1654,10 @@ export async function settleFinalizeAttemptSuccess({ uid, attemptId, session, sh
         {
           finalizeAttemptId: attemptId,
           billing: {
-            estimatedSec: reservedSec,
+            estimatedSec: billingMsToSeconds(reservedMs),
             billedSec,
             settledAt: admin.firestore.FieldValue.serverTimestamp(),
-            source: 'finalVideo.durationSec',
+            source: 'finalVideo.durationSec*0.5',
           },
         },
         { merge: true }
@@ -1614,7 +1685,11 @@ export async function settleFinalizeAttemptSuccess({ uid, attemptId, session, sh
     jobState: attempt?.jobState ?? 'settled',
     stage: FINALIZE_STAGES.BILLING_SETTLE,
     estimatedSec,
-    reservedSec: Number(currentAttempt?.usageReservation?.reservedSec || 0),
+    reservedSec: billingMsToSeconds(
+      secondsToBillingMs(
+        currentAttempt?.usageReservation?.reservedSec ?? currentAttempt?.usageReservation?.reservedMs ?? 0
+      )
+    ),
     billedSec,
     settlementState: 'settled',
     usageLedgerApplied: true,

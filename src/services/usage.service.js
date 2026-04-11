@@ -3,6 +3,8 @@ import { PLAN_CYCLE_INCLUDED_SEC } from '../config/commerce.js'
 import { ensureUserDocByUid } from './user-doc.service.js'
 
 const db = admin.firestore()
+const BILLING_PRECISION_MS = 1
+const SEC_DECIMALS = 3
 
 export function normalizePlan(plan) {
   return typeof plan === 'string' && PLAN_CYCLE_INCLUDED_SEC[plan] != null ? plan : 'free'
@@ -31,6 +33,68 @@ function toMillisOrNull(value) {
 
 function toInt(value, fallback = 0) {
   return Number.isInteger(value) && value >= 0 ? value : fallback
+}
+
+export function secondsToBillingMs(value, fallback = 0) {
+  const numeric = Number(value)
+  if (!Number.isFinite(numeric) || numeric < 0) return fallback
+  return Math.round(numeric * 1000)
+}
+
+export function billingMsToSeconds(value, fallback = 0) {
+  const numeric = Number(value)
+  if (!Number.isFinite(numeric) || numeric < 0) return fallback
+  const roundedMs = Math.round(numeric / BILLING_PRECISION_MS) * BILLING_PRECISION_MS
+  return Number((roundedMs / 1000).toFixed(SEC_DECIMALS))
+}
+
+function normalizeStoredSeconds(value, fallback = 0) {
+  return billingMsToSeconds(secondsToBillingMs(value, secondsToBillingMs(fallback)))
+}
+
+export function getUsageMs(usage = {}, plan = 'free') {
+  const normalized = normalizeUsage(usage, plan)
+  return {
+    cycleIncludedMs: secondsToBillingMs(normalized.cycleIncludedSec),
+    cycleUsedMs: secondsToBillingMs(normalized.cycleUsedSec),
+    cycleReservedMs: secondsToBillingMs(normalized.cycleReservedSec),
+  }
+}
+
+export function getAvailableMs(usage = {}, plan = 'free') {
+  const normalized = getUsageMs(usage, plan)
+  return Math.max(
+    0,
+    normalized.cycleIncludedMs - normalized.cycleUsedMs - normalized.cycleReservedMs
+  )
+}
+
+export function applyUsageDelta(usage = {}, deltas = {}, plan = 'free') {
+  const normalized = normalizeUsage(usage, plan)
+  const current = getUsageMs(normalized, plan)
+  const usedDeltaMs = Number(deltas.usedDeltaMs) || 0
+  const reservedDeltaMs = Number(deltas.reservedDeltaMs) || 0
+
+  return {
+    ...normalized,
+    cycleIncludedSec: billingMsToSeconds(current.cycleIncludedMs),
+    cycleUsedSec: billingMsToSeconds(Math.max(0, current.cycleUsedMs + usedDeltaMs)),
+    cycleReservedSec: billingMsToSeconds(Math.max(0, current.cycleReservedMs + reservedDeltaMs)),
+  }
+}
+
+function scaleDurationMs(value, ratio = 1) {
+  const numeric = Number(value)
+  if (!Number.isFinite(numeric) || numeric <= 0) return 0
+  return Math.max(0, Math.round(numeric * ratio))
+}
+
+export function computeSyncChargeMs(durationMs) {
+  return scaleDurationMs(durationMs, 0.5)
+}
+
+export function computeRenderChargeMs(durationMs) {
+  return scaleDurationMs(durationMs, 0.5)
 }
 
 export function normalizeMembership(doc = {}, plan = 'free') {
@@ -68,9 +132,9 @@ export function normalizeUsage(usage = {}, plan = 'free') {
     billingUnit: 'sec',
     periodStartAt: usage.periodStartAt ?? null,
     periodEndAt: usage.periodEndAt ?? null,
-    cycleIncludedSec: toInt(usage.cycleIncludedSec, PLAN_CYCLE_INCLUDED_SEC[plan] ?? 0),
-    cycleUsedSec: toInt(usage.cycleUsedSec, 0),
-    cycleReservedSec: toInt(usage.cycleReservedSec, 0),
+    cycleIncludedSec: normalizeStoredSeconds(usage.cycleIncludedSec, PLAN_CYCLE_INCLUDED_SEC[plan] ?? 0),
+    cycleUsedSec: normalizeStoredSeconds(usage.cycleUsedSec, 0),
+    cycleReservedSec: normalizeStoredSeconds(usage.cycleReservedSec, 0),
     updatedAt: usage.updatedAt ?? null,
   }
 }
@@ -105,7 +169,7 @@ export function buildCanonicalUsageState(doc = {}, nowMs = Date.now()) {
 }
 
 export function getAvailableSec(usage = {}) {
-  return Math.max(0, usage.cycleIncludedSec - usage.cycleUsedSec - usage.cycleReservedSec)
+  return billingMsToSeconds(getAvailableMs(usage))
 }
 
 export function buildUsagePayload(doc = {}) {
@@ -168,12 +232,20 @@ export async function getUsageSummary(uid, email) {
 
 export default {
   PLAN_CYCLE_INCLUDED_SEC,
+  BILLING_PRECISION_MS,
   normalizePlan,
   normalizeMembership,
   normalizeUsage,
   hasExpiredCanceledSubscription,
   buildCanonicalUsageState,
+  secondsToBillingMs,
+  billingMsToSeconds,
+  getUsageMs,
+  getAvailableMs,
   getAvailableSec,
+  applyUsageDelta,
+  computeSyncChargeMs,
+  computeRenderChargeMs,
   buildUsagePayload,
   ensureCanonicalUsageState,
   getUsageSummary,

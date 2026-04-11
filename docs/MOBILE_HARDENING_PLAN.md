@@ -1,6 +1,6 @@
 # MOBILE_HARDENING_PLAN
 
-Cross-repo verification date: 2026-03-28.
+Cross-repo verification date: 2026-04-11.
 
 Goal: harden only the backend surface that the current mobile app actually depends on. This is a continuation ledger for the current repos, not a rebuild proposal.
 
@@ -16,6 +16,7 @@ Goal: harden only the backend surface that the current mobile app actually depen
 - Phase 1 of that plan adds backend-only `GET /api/usage` and additive session `billingEstimate`.
 - Phase 2 of that plan cuts backend finalize reservation/settlement over to usage seconds and adds additive finalize `data.billing`; the estimate-proof gate is now empirically closed and recorded in `docs/PHASE2_PAID_TRUST_PROOF_LOG.md`.
 - Phase 3 moved active mobile billing callers to `GET /api/usage`, render-time copy, and backend-owned estimate/availability checks; Phase 5 removed `GET /api/credits` from runtime.
+- Voice-synced storyboard billing is now layered onto the same usage ledger: sync charges settle at `50%` of generated narration duration per sync scope, and final render settles at `50%` of final output duration from the persisted synced state.
 - The Phase 5 cleanup/removal work is now landed. The Phase 2 estimate-proof gate and live Stripe/manual end-to-end verification are empirically closed; remaining launch blockers live in later backend launch phases, not in this billing cutover note.
 
 ## Working Rules
@@ -117,6 +118,24 @@ Goal: harden only the backend surface that the current mobile app actually depen
 - `DONE`: Finalize Factory Phase 6 proof artifacts, threshold report, and scaling runbook are now landed without changing mobile caller semantics.
   - Backend evidence: `scripts/load/`, `docs/artifacts/finalize-phase6/`, `docs/FINALIZE_THRESHOLD_REPORT.md`, `docs/FINALIZE_SCALING_RUNBOOK.md`
   - Scope note: this closes the measurement/runbook gap only; it does not change finalize/mobile contracts, render-slot retry behavior, or billing heuristics.
+
+## Voice Sync Storyboard Hardening Landed
+
+- `DONE`: `POST /api/story/sync` is now the single mobile-owned voice/timing sync route.
+  - Backend evidence: `src/routes/story.routes.js`, `src/services/story-sync.attempts.js`, `src/services/story.service.js`
+  - Scope note: the route persists voice selection only on successful sync, supports `mode: "full" | "stale"`, enforces idempotency, and reuses identical current fingerprints without charging again.
+
+- `DONE`: Story sessions now carry additive sync state without duplicating script or shot SSOT.
+  - Backend evidence: `src/services/story.service.js`
+  - Scope note: session payloads now expose `voicePreset`, `voicePacePreset`, `voiceOptions`, `voiceSync`, synced `captions`, and per-beat narration metadata while keeping `story.sentences` as script SSOT and `shots[]` as the current visual-selection SSOT.
+
+- `DONE`: Sync state now gates render on both client and server.
+  - Backend evidence: `src/routes/story.routes.js`, `src/services/story-finalize.attempts.js`, `src/services/story.service.js`, `src/middleware/planGuards.js`
+  - Scope note: finalize now fails closed with `409 VOICE_SYNC_REQUIRED` or `409 VOICE_SYNC_STALE`; single beat text edits stale only the touched beat, while voice/global script mutations stale the full narration.
+
+- `DONE`: Synced render now consumes persisted narration/timing artifacts instead of regenerating fresh narration timing.
+  - Backend evidence: `src/services/story.service.js`, `src/utils/ffmpeg.timeline.js`
+  - Scope note: heavy beat-level sync artifacts now live outside `story.json`, compatible with the 500KB session JSON cap.
 
 ## Exit Criteria
 

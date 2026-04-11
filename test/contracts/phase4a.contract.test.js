@@ -82,6 +82,81 @@ function buildShot(id, sentenceIndex, query, durationSec = 4) {
   };
 }
 
+function buildSyncedSession(overrides = {}) {
+  const baseNow = '2026-03-19T00:00:00.000Z';
+  const story = overrides.story || { sentences: ['Beat one'] };
+  const sentences = Array.isArray(story?.sentences) && story.sentences.length > 0
+    ? story.sentences
+    : ['Beat one'];
+  const shots = Array.isArray(overrides.shots) && overrides.shots.length > 0
+    ? overrides.shots
+    : sentences.map((text, index) => buildShot(`clip-${index + 1}`, index, text, 4));
+
+  let cursor = 0;
+  const captions = sentences.map((text, index) => {
+    const shot = shots.find((candidate) => candidate?.sentenceIndex === index);
+    const durationSec = Number(
+      shot?.durationSec ?? shot?.selectedClip?.duration ?? 4
+    );
+    const startTimeSec = cursor;
+    cursor += durationSec;
+    return {
+      sentenceIndex: index,
+      text,
+      startTimeSec,
+      endTimeSec: cursor,
+    };
+  });
+
+  const totalDurationSec = captions.length > 0 ? captions[captions.length - 1].endTimeSec : 0;
+  const renderChargeSec = totalDurationSec / 2;
+  const beats = captions.map((caption, index) => ({
+    captionMeta: null,
+    narration: {
+      fingerprint: `beat-sync-${overrides.id || 'session'}-${index}`,
+      durationSec: caption.endTimeSec - caption.startTimeSec,
+      syncedAt: baseNow,
+    },
+  }));
+  const voiceSync = overrides.voiceSync || {
+    schemaVersion: 1,
+    state: 'current',
+    requiredForRender: true,
+    staleScope: 'none',
+    staleBeatIndices: [],
+    currentFingerprint: `sync-${overrides.id || 'session'}`,
+    nextEstimatedChargeSec: 0,
+    totalDurationSec,
+    previewAudioUrl: `https://cdn.example.com/${overrides.id || 'session'}-preview.mp3`,
+    previewAudioDurationSec: totalDurationSec,
+    lastChargeSec: renderChargeSec,
+    totalBilledSec: renderChargeSec,
+    lastSyncedAt: baseNow,
+    cached: false,
+  };
+  const billingEstimate = overrides.billingEstimate || {
+    estimatedSec: renderChargeSec,
+    source: 'voice_sync.current',
+    computedAt: baseNow,
+    heuristicEstimatedSec: totalDurationSec,
+    heuristicSource: 'shot_durations',
+    heuristicComputedAt: baseNow,
+  };
+
+  return buildBaseSession({
+    status: 'voice_synced',
+    story,
+    shots,
+    captions,
+    beats,
+    voicePreset: 'male_calm',
+    voicePacePreset: 'normal',
+    voiceSync,
+    billingEstimate,
+    ...overrides,
+  });
+}
+
 function buildFinalizeAttemptDoc({
   uid = 'user-1',
   attemptId = 'idem-finalize-test',
@@ -450,7 +525,8 @@ test('POST /api/story/generate preserves the generated story envelope mobile rea
   assert.equal(result.json.data.status, 'story_generated');
   assert.equal(result.json.data.styleKey, 'default');
   assert.equal(result.json.data.story.sentences.length, 8);
-  assert.equal(result.json.data.billingEstimate.estimatedSec, 26);
+  assert.equal(result.json.data.billingEstimate.estimatedSec, null);
+  assert.equal(result.json.data.billingEstimate.heuristicEstimatedSec, 26);
   assert.equal(capturedStyleKey, 'default');
 });
 
@@ -1358,6 +1434,117 @@ test('POST /api/story/update-caption-style returns the persisted overlayCaption 
   assert.equal(result.json.data.overlayCaption.color, 'rgb(255,255,255)');
 });
 
+test('POST /api/story/sync requires X-Idempotency-Key', async () => {
+  seedUserDoc('user-1');
+  seedStorySession(
+    'user-1',
+    buildBaseSession({
+      id: 'story-sync-missing-key',
+      story: {
+        sentences: ['Beat one'],
+      },
+    })
+  );
+
+  const result = await requestJson('/api/story/sync', {
+    method: 'POST',
+    headers: {
+      'x-client': 'mobile',
+    },
+    body: {
+      sessionId: 'story-sync-missing-key',
+      mode: 'stale',
+    },
+  });
+
+  assert.equal(result.status, 400);
+  assert.equal(result.json.success, false);
+  assert.equal(result.json.error, 'MISSING_IDEMPOTENCY_KEY');
+});
+
+test('POST /api/story/sync reuses an identical current fingerprint without charging again', async () => {
+  const restoreEnv = withEnv({
+    TTS_PROVIDER: 'elevenlabs',
+    ELEVENLABS_API_KEY: 'test-eleven-key',
+  });
+
+  try {
+    seedUserDoc('user-1', {
+      plan: 'creator',
+      membership: {
+        status: 'active',
+        kind: 'subscription',
+        billingCadence: 'monthly',
+      },
+      usage: {
+        cycleIncludedSec: 600,
+        cycleUsedSec: 20,
+        cycleReservedSec: 0,
+      },
+    });
+    seedStorySession(
+      'user-1',
+      buildSyncedSession({
+        id: 'story-sync-cached',
+        story: {
+          sentences: ['Beat one'],
+        },
+        shots: [buildShot('clip-sync-cached', 0, 'Beat one', 8)],
+      })
+    );
+
+    const { buildStoryVoiceSyncPlan } = await import('../../src/services/story.service.js');
+    const { plan } = await buildStoryVoiceSyncPlan({
+      uid: 'user-1',
+      sessionId: 'story-sync-cached',
+      mode: 'stale',
+      voicePreset: 'male_calm',
+      voicePacePreset: 'normal',
+    });
+    const currentSession = readStorySession('user-1', 'story-sync-cached');
+    currentSession.voicePreset = 'male_calm';
+    currentSession.voicePacePreset = 'normal';
+    currentSession.voiceSync = {
+      ...currentSession.voiceSync,
+      state: 'current',
+      staleScope: 'none',
+      staleBeatIndices: [],
+      currentFingerprint: plan.fullFingerprint,
+      nextEstimatedChargeSec: 0,
+    };
+    seedStorySession('user-1', currentSession);
+
+    const result = await requestJson('/api/story/sync', {
+      method: 'POST',
+      headers: {
+        'x-client': 'mobile',
+        'X-Idempotency-Key': 'idem-story-sync-cached',
+      },
+      body: {
+        sessionId: 'story-sync-cached',
+        mode: 'stale',
+        voicePreset: 'male_calm',
+        voicePacePreset: 'normal',
+      },
+    });
+
+    assert.equal(result.status, 200);
+    assert.equal(result.json.success, true);
+    assert.equal(result.json.data.voiceSync.cached, true);
+    assert.equal(result.json.data.voiceSync.lastChargeSec, 0);
+    assert.equal(result.json.data.voiceSync.currentFingerprint, plan.fullFingerprint);
+
+    const attemptDoc = readDoc('storySyncAttempts', 'user-1:idem-story-sync-cached');
+    assert.equal(attemptDoc.state, 'done');
+    assert.equal(attemptDoc.billingSettlement.billedSec, 0);
+    assert.equal(readDoc('storySyncSessions', 'user-1:story-sync-cached'), null);
+    assert.equal(readDoc('users', 'user-1').usage.cycleUsedSec, 20);
+    assert.equal(readDoc('users', 'user-1').usage.cycleReservedSec, 0);
+  } finally {
+    restoreEnv();
+  }
+});
+
 test('POST /api/caption/preview locks the current mobile server-measured request and response shape', async () => {
   const result = await requestJson('/api/caption/preview', {
     method: 'POST',
@@ -1407,18 +1594,12 @@ test('POST /api/story/finalize returns 202 pending first, then same-key replay r
   });
   seedStorySession(
     'user-1',
-    buildBaseSession({
+    buildSyncedSession({
       id: 'story-finalize-success',
-      status: 'clips_searched',
       story: {
         sentences: ['Beat one', 'Beat two'],
       },
-      shots: [buildShot('clip-1', 0, 'Beat one'), buildShot('clip-2', 1, 'Beat two')],
-      billingEstimate: {
-        estimatedSec: 12,
-        source: 'heuristic',
-        updatedAt: '2026-03-19T00:00:00.000Z',
-      },
+      shots: [buildShot('clip-1', 0, 'Beat one', 4), buildShot('clip-2', 1, 'Beat two', 5)],
     })
   );
 
@@ -1495,7 +1676,7 @@ test('POST /api/story/finalize returns 202 pending first, then same-key replay r
     assert.equal(replay.json.success, true);
     assert.equal(replay.json.shortId, 'short-finalized-1');
     assert.equal(replay.json.data.finalVideo.jobId, 'short-finalized-1');
-    assert.equal(replay.json.data.billing.billedSec, 9);
+    assert.equal(replay.json.data.billing.billedSec, 4.5);
 
     const settledAttempt = readDoc('idempotency', 'user-1:idem-finalize-1');
     assert.equal(settledAttempt.jobId, 'idem-finalize-1');
@@ -1507,14 +1688,14 @@ test('POST /api/story/finalize returns 202 pending first, then same-key replay r
     assert.equal(settledAttempt.currentExecution.state, 'succeeded');
 
     const usageDoc = readDoc('users', 'user-1');
-    assert.equal(usageDoc.usage.cycleUsedSec, 69);
+    assert.equal(usageDoc.usage.cycleUsedSec, 64.5);
     assert.equal(usageDoc.usage.cycleReservedSec, 0);
   } finally {
     stopFinalizeWorkerRuntime('contract_finalize_success_cleanup');
   }
 });
 
-test('POST /api/story/finalize completes a fresh session with no captions via the real finalize caption-generation branch', async () => {
+test('POST /api/story/finalize fails closed with 409 VOICE_SYNC_REQUIRED when the session was never synced', async () => {
   seedUserDoc('user-1', {
     plan: 'creator',
     membership: {
@@ -1531,99 +1712,87 @@ test('POST /api/story/finalize completes a fresh session with no captions via th
   seedStorySession(
     'user-1',
     buildBaseSession({
-      id: 'story-finalize-fresh-captions',
-      status: 'clips_searched',
+      id: 'story-finalize-sync-required',
       story: {
         sentences: ['Beat one', 'Beat two'],
       },
-      plan: [
-        {
-          sentenceIndex: 0,
-          visualDescription: 'Beat one visual',
-          searchQuery: 'Beat one',
-          durationSec: 4,
-        },
-        {
-          sentenceIndex: 1,
-          visualDescription: 'Beat two visual',
-          searchQuery: 'Beat two',
-          durationSec: 5,
-        },
-      ],
       shots: [buildShot('clip-1', 0, 'Beat one', 4), buildShot('clip-2', 1, 'Beat two', 5)],
-      finalVideo: {
-        jobId: 'short-fresh-captions',
-        durationSec: 9,
-        videoUrl: 'https://cdn.example.com/fresh-captions.mp4',
+    })
+  );
+
+  const result = await requestJson('/api/story/finalize', {
+    method: 'POST',
+    headers: {
+      'x-client': 'mobile',
+      'X-Idempotency-Key': 'idem-finalize-sync-required',
+    },
+    body: {
+      sessionId: 'story-finalize-sync-required',
+    },
+  });
+
+  assert.equal(result.status, 409);
+  assert.equal(result.json.success, false);
+  assert.equal(result.json.error, 'VOICE_SYNC_REQUIRED');
+  assert.equal(readDoc('idempotency', 'user-1:idem-finalize-sync-required'), null);
+});
+
+test('POST /api/story/finalize fails closed with 409 VOICE_SYNC_STALE when narration timing is stale', async () => {
+  seedUserDoc('user-1', {
+    plan: 'creator',
+    membership: {
+      status: 'active',
+      kind: 'subscription',
+      billingCadence: 'monthly',
+    },
+    usage: {
+      cycleIncludedSec: 600,
+      cycleUsedSec: 40,
+      cycleReservedSec: 0,
+    },
+  });
+  seedStorySession(
+    'user-1',
+    buildSyncedSession({
+      id: 'story-finalize-sync-stale',
+      story: {
+        sentences: ['Beat one', 'Beat two'],
       },
-      billingEstimate: {
-        estimatedSec: 12,
-        source: 'heuristic',
-        updatedAt: '2026-03-19T00:00:00.000Z',
+      shots: [buildShot('clip-1', 0, 'Beat one', 4), buildShot('clip-2', 1, 'Beat two', 5)],
+      voiceSync: {
+        schemaVersion: 1,
+        state: 'stale',
+        requiredForRender: true,
+        staleScope: 'beat',
+        staleBeatIndices: [1],
+        currentFingerprint: 'sync-story-finalize-sync-stale',
+        nextEstimatedChargeSec: 2.5,
+        totalDurationSec: 9,
+        previewAudioUrl: 'https://cdn.example.com/story-finalize-sync-stale-preview.mp3',
+        previewAudioDurationSec: 9,
+        lastChargeSec: 4.5,
+        totalBilledSec: 4.5,
+        lastSyncedAt: '2026-03-19T00:00:00.000Z',
+        cached: false,
       },
     })
   );
 
-  startFinalizeWorkerRuntime();
-  try {
-    const first = await requestJson('/api/story/finalize', {
-      method: 'POST',
-      headers: {
-        'x-client': 'mobile',
-        'X-Idempotency-Key': 'idem-finalize-fresh-captions',
-      },
-      body: {
-        sessionId: 'story-finalize-fresh-captions',
-      },
-    });
+  const result = await requestJson('/api/story/finalize', {
+    method: 'POST',
+    headers: {
+      'x-client': 'mobile',
+      'X-Idempotency-Key': 'idem-finalize-sync-stale',
+    },
+    body: {
+      sessionId: 'story-finalize-sync-stale',
+    },
+  });
 
-    assert.equal(first.status, 202);
-    assert.equal(first.json.success, true);
-    assert.equal(first.json.shortId, null);
-    assert.equal(first.json.finalize.state, 'pending');
-    assert.equal(first.json.data.renderRecovery.state, 'pending');
-
-    await waitFor(
-      () => {
-        const attempt = readDoc('idempotency', 'user-1:idem-finalize-fresh-captions');
-        return attempt?.state === 'done' || attempt?.state === 'failed';
-      },
-      { timeoutMs: 1000, intervalMs: 20 }
-    );
-
-    const attempt = readDoc('idempotency', 'user-1:idem-finalize-fresh-captions');
-    assert.equal(attempt.state, 'done');
-    assert.equal(attempt.shortId, 'short-fresh-captions');
-
-    const replay = await requestJson('/api/story/finalize', {
-      method: 'POST',
-      headers: {
-        'x-client': 'mobile',
-        'X-Idempotency-Key': 'idem-finalize-fresh-captions',
-      },
-      body: {
-        sessionId: 'story-finalize-fresh-captions',
-      },
-    });
-
-    assert.equal(replay.status, 200);
-    assert.equal(replay.json.success, true);
-    assert.equal(replay.json.shortId, 'short-fresh-captions');
-    assert.equal(replay.json.data.finalVideo.jobId, 'short-fresh-captions');
-
-    const storedSession = readStorySession('user-1', 'story-finalize-fresh-captions');
-    assert.ok(Array.isArray(storedSession.captions));
-    assert.equal(storedSession.captions.length, 2);
-    assert.equal(storedSession.captions[0].startTimeSec, 0);
-    assert.equal(storedSession.renderRecovery.state, 'done');
-    assert.equal(storedSession.renderRecovery.shortId, 'short-fresh-captions');
-
-    const usageDoc = readDoc('users', 'user-1');
-    assert.equal(usageDoc.usage.cycleUsedSec, 49);
-    assert.equal(usageDoc.usage.cycleReservedSec, 0);
-  } finally {
-    stopFinalizeWorkerRuntime('contract_finalize_fresh_cleanup');
-  }
+  assert.equal(result.status, 409);
+  assert.equal(result.json.success, false);
+  assert.equal(result.json.error, 'VOICE_SYNC_STALE');
+  assert.equal(readDoc('idempotency', 'user-1:idem-finalize-sync-stale'), null);
 });
 
 test('POST /api/story/finalize replays 202 pending for the same key while the background attempt is still active', async () => {
@@ -1642,17 +1811,12 @@ test('POST /api/story/finalize replays 202 pending for the same key while the ba
   });
   seedStorySession(
     'user-1',
-    buildBaseSession({
+    buildSyncedSession({
       id: 'story-finalize-pending',
       story: {
         sentences: ['Beat one'],
       },
-      shots: [buildShot('clip-1', 0, 'Beat one')],
-      billingEstimate: {
-        estimatedSec: 8,
-        source: 'heuristic',
-        updatedAt: '2026-03-19T00:00:00.000Z',
-      },
+      shots: [buildShot('clip-1', 0, 'Beat one', 8)],
     })
   );
 
@@ -1713,7 +1877,7 @@ test('POST /api/story/finalize replays 202 pending for the same key while the ba
     assert.equal(second.json.finalize.attemptId, 'idem-finalize-pending');
 
     const usageDoc = readDoc('users', 'user-1');
-    assert.equal(usageDoc.usage.cycleReservedSec, 8);
+    assert.equal(usageDoc.usage.cycleReservedSec, 4);
 
     release();
     const first = await firstPromise;
@@ -1758,18 +1922,12 @@ test('POST /api/story/finalize preserves caller behavior while retrying with can
   });
   seedStorySession(
     'user-1',
-    buildBaseSession({
+    buildSyncedSession({
       id: 'story-finalize-retry-lineage',
-      status: 'clips_searched',
       story: {
         sentences: ['Beat one'],
       },
-      shots: [buildShot('clip-retry', 0, 'Beat one')],
-      billingEstimate: {
-        estimatedSec: 8,
-        source: 'heuristic',
-        updatedAt: '2026-03-19T00:00:00.000Z',
-      },
+      shots: [buildShot('clip-retry', 0, 'Beat one', 8)],
     })
   );
 
@@ -1885,17 +2043,12 @@ test('POST /api/story/finalize returns 409 FINALIZE_ALREADY_ACTIVE for a differe
   });
   seedStorySession(
     'user-1',
-    buildBaseSession({
+    buildSyncedSession({
       id: 'story-finalize-conflict',
       story: {
         sentences: ['Beat one'],
       },
-      shots: [buildShot('clip-1', 0, 'Beat one')],
-      billingEstimate: {
-        estimatedSec: 8,
-        source: 'heuristic',
-        updatedAt: '2026-03-19T00:00:00.000Z',
-      },
+      shots: [buildShot('clip-1', 0, 'Beat one', 8)],
     })
   );
 
@@ -1969,7 +2122,7 @@ test('POST /api/story/finalize returns 409 FINALIZE_ALREADY_ACTIVE for a differe
     assert.equal(acceptedAttempt.executionAttempts[0].executionAttemptId, 'idem-finalize-conflict-a:exec:1');
 
     const usageDoc = readDoc('users', 'user-1');
-    assert.equal(usageDoc.usage.cycleReservedSec, 8);
+    assert.equal(usageDoc.usage.cycleReservedSec, 4);
     assert.equal(readDoc('idempotency', 'user-1:idem-finalize-conflict-b'), null);
 
     release();
@@ -2004,17 +2157,12 @@ test('POST /api/story/finalize rejects new admissions with 503 SERVER_BUSY and R
     });
     seedStorySession(
       'user-1',
-      buildBaseSession({
+      buildSyncedSession({
         id: 'story-finalize-overload-new',
         story: {
           sentences: ['Beat one'],
         },
-        shots: [buildShot('clip-overload-1', 0, 'Beat one')],
-        billingEstimate: {
-          estimatedSec: 8,
-          source: 'heuristic',
-          updatedAt: '2026-03-19T00:00:00.000Z',
-        },
+        shots: [buildShot('clip-overload-1', 0, 'Beat one', 8)],
       })
     );
     seedFirestoreDoc('idempotency', 'user-1:existing-overload-attempt', {
@@ -2077,17 +2225,12 @@ test('POST /api/story/finalize same-key replay bypasses the shared overload gate
     });
     seedStorySession(
       'user-1',
-      buildBaseSession({
+      buildSyncedSession({
         id: 'story-finalize-overload-replay',
         story: {
           sentences: ['Beat one'],
         },
-        shots: [buildShot('clip-overload-replay', 0, 'Beat one')],
-        billingEstimate: {
-          estimatedSec: 8,
-          source: 'heuristic',
-          updatedAt: '2026-03-19T00:00:00.000Z',
-        },
+        shots: [buildShot('clip-overload-replay', 0, 'Beat one', 8)],
       })
     );
 
@@ -2144,17 +2287,12 @@ test('POST /api/story/finalize same-session active conflict still returns 409 be
     });
     seedStorySession(
       'user-1',
-      buildBaseSession({
+      buildSyncedSession({
         id: 'story-finalize-overload-conflict',
         story: {
           sentences: ['Beat one'],
         },
-        shots: [buildShot('clip-overload-conflict', 0, 'Beat one')],
-        billingEstimate: {
-          estimatedSec: 8,
-          source: 'heuristic',
-          updatedAt: '2026-03-19T00:00:00.000Z',
-        },
+        shots: [buildShot('clip-overload-conflict', 0, 'Beat one', 8)],
       })
     );
 
@@ -2206,13 +2344,12 @@ test('POST /api/story/finalize returns 402 INSUFFICIENT_RENDER_TIME before calli
   });
   seedStorySession(
     'user-1',
-    buildBaseSession({
+    buildSyncedSession({
       id: 'story-finalize-no-seconds',
-      billingEstimate: {
-        estimatedSec: 12,
-        source: 'heuristic',
-        updatedAt: '2026-03-19T00:00:00.000Z',
+      story: {
+        sentences: ['Beat one'],
       },
+      shots: [buildShot('clip-no-seconds', 0, 'Beat one', 24)],
     })
   );
 
@@ -2286,17 +2423,12 @@ test('POST /api/story/finalize preserves active web creative additive options co
   });
   seedStorySession(
     'user-1',
-    buildBaseSession({
+    buildSyncedSession({
       id: 'story-finalize-web-options',
       story: {
         sentences: ['Beat one'],
       },
-      shots: [buildShot('clip-web-options', 0, 'Beat one')],
-      billingEstimate: {
-        estimatedSec: 8,
-        source: 'heuristic',
-        updatedAt: '2026-03-19T00:00:00.000Z',
-      },
+      shots: [buildShot('clip-web-options', 0, 'Beat one', 8)],
     })
   );
 
@@ -2348,18 +2480,12 @@ test('POST /api/story/finalize queues accepted work instead of returning 503 whe
   ]) {
     seedStorySession(
       'user-1',
-      buildBaseSession({
+      buildSyncedSession({
         id: sessionId,
-        status: 'clips_searched',
         story: {
           sentences: ['Beat one'],
         },
-        shots: [buildShot(`clip-${sessionId}`, 0, 'Beat one')],
-        billingEstimate: {
-          estimatedSec: 8,
-          source: 'heuristic',
-          updatedAt: '2026-03-19T00:00:00.000Z',
-        },
+        shots: [buildShot(`clip-${sessionId}`, 0, 'Beat one', 8)],
       })
     );
   }

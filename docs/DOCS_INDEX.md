@@ -4,7 +4,7 @@
 - Owner repo: backend
 - Source of truth for: backend docs ownership, precedence, and the mobile/backend documentation split
 - Canonical counterpart/source: mobile repo `docs/DOCS_INDEX.md` and mobile repo `docs/MOBILE_USED_SURFACES.md`
-- Last verified against: both repos on 2026-04-04
+- Last verified against: both repos on 2026-04-11
 
 ## Ownership Split
 

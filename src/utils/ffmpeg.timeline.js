@@ -110,6 +110,44 @@ export async function concatenateClips({ clips, outPath, options = {} }) {
 }
 
 /**
+ * Concatenate audio files into a single MP3.
+ * @param {{ audioPaths: string[], outPath: string }}
+ * @returns {Promise<void>}
+ */
+export async function concatenateAudioFiles({ audioPaths, outPath }) {
+  if (!Array.isArray(audioPaths) || audioPaths.length === 0) {
+    throw new Error('AUDIO_PATHS_REQUIRED');
+  }
+
+  const validAudioPaths = audioPaths.filter((audioPath) => audioPath && fs.existsSync(audioPath));
+  if (validAudioPaths.length === 0) {
+    throw new Error('NO_VALID_AUDIO_PATHS');
+  }
+
+  const inputArgs = validAudioPaths.flatMap((audioPath) => ['-i', audioPath]);
+  const concatInputs = validAudioPaths.map((_, i) => `[${i}:a]`).join('');
+  const filterComplex = `${concatInputs}concat=n=${validAudioPaths.length}:v=0:a=1[outa]`;
+  const args = [
+    ...inputArgs,
+    '-filter_complex',
+    filterComplex,
+    '-map',
+    '[outa]',
+    '-c:a',
+    'libmp3lame',
+    '-b:a',
+    '128k',
+    '-ar',
+    '44100',
+    '-ac',
+    '2',
+    outPath,
+  ];
+
+  await runFfmpeg(args);
+}
+
+/**
  * Run FFmpeg command
  */
 function runFfmpeg(args) {
@@ -313,6 +351,7 @@ export async function fetchClipsToTmp(clips) {
 
 export default {
   concatenateClips,
+  concatenateAudioFiles,
   concatenateClipsVideoOnly,
   trimClipToSegment,
   extractSegmentFromFile,
