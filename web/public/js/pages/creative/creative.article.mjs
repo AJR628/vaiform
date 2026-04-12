@@ -744,6 +744,11 @@ function pauseStoryboardPreviewVideo() {
   }
 }
 
+function getStoryboardPreviewVideoUrl(previewVideo) {
+  if (!previewVideo) return '';
+  return previewVideo.currentSrc || previewVideo.getAttribute('src') || '';
+}
+
 function copyStoryboardOverlay(fromOverlay, toOverlay) {
   if (!toOverlay) return;
   if (!fromOverlay?.src) {
@@ -787,24 +792,30 @@ function updateStoryboardPreviewBeat(sentenceIndex, { autoplay = false } = {}) {
   const card = getStoryboardCardBySentenceIndex(safeIndex);
   const cardOverlay = card?.querySelector('.beat-caption-overlay');
 
-  storyboardPreviewActiveSentenceIndex = safeIndex;
   heading.textContent = `Beat ${safeIndex + 1} of ${Math.max(sentences.length, 1)}`;
   captionEl.textContent = matchingCaption?.text || currentSentence || 'Preview caption not ready yet.';
   copyStoryboardOverlay(cardOverlay, overlay);
 
   const nextVideoUrl = clip?.url || '';
   const nextPoster = clip?.thumbUrl || '';
+  const previousBeatIndex = storyboardPreviewActiveSentenceIndex;
+  const previousVideoUrl = getStoryboardPreviewVideoUrl(previewVideo);
+  const beatChanged = previousBeatIndex !== safeIndex;
+  const clipChanged = previousVideoUrl !== nextVideoUrl;
+  const shouldResetVideo = beatChanged || clipChanged;
 
   if (!nextVideoUrl) {
-    previewVideo.pause();
-    previewVideo.removeAttribute('src');
-    previewVideo.load();
+    if (previousVideoUrl) {
+      previewVideo.pause();
+      previewVideo.removeAttribute('src');
+      previewVideo.load();
+    }
     previewVideo.classList.add('hidden');
+    storyboardPreviewActiveSentenceIndex = safeIndex;
     return;
   }
 
-  const previousUrl = previewVideo.currentSrc || previewVideo.getAttribute('src') || '';
-  if (previousUrl !== nextVideoUrl) {
+  if (clipChanged) {
     previewVideo.src = nextVideoUrl;
     if (nextPoster) {
       previewVideo.setAttribute('poster', nextPoster);
@@ -815,15 +826,23 @@ function updateStoryboardPreviewBeat(sentenceIndex, { autoplay = false } = {}) {
   }
 
   previewVideo.classList.remove('hidden');
-  try {
-    previewVideo.currentTime = 0;
-  } catch {}
+  if (shouldResetVideo) {
+    try {
+      previewVideo.currentTime = 0;
+    } catch {}
+  }
 
   if (autoplay) {
-    previewVideo.play().catch(() => {});
+    if (shouldResetVideo || previewVideo.paused) {
+      previewVideo.play().catch(() => {});
+    }
   } else {
-    previewVideo.pause();
+    if (!previewVideo.paused) {
+      previewVideo.pause();
+    }
   }
+
+  storyboardPreviewActiveSentenceIndex = safeIndex;
 }
 
 function refreshStoryboardPreview(session = window.currentStorySession) {

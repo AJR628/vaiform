@@ -595,6 +595,14 @@ body.creative-studio-page {
   z-index: 3;
 }
 
+#storyboard-preview-blocked.hidden {
+  display: none !important;
+}
+
+#storyboard-sync-retry-btn.hidden {
+  display: none !important;
+}
+
 .creative-storyboard-preview-kicker {
   margin: 0;
   font-size: 0.74rem;
