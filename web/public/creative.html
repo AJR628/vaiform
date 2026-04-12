@@ -332,9 +332,9 @@
           <button type="button" class="creative-step-chip" data-step-nav="render">
             <span class="creative-step-chip-index">4</span>
             <span class="creative-step-chip-copy">
-              <span class="creative-step-chip-title">Voice &amp; Render</span>
+              <span class="creative-step-chip-title">Render</span>
               <span class="creative-step-chip-summary" id="step-summary-render"
-                >Revealed when a beat is render-ready</span
+                >Unlocked after synced preview</span
               >
             </span>
             <span class="creative-step-chip-state" id="step-state-render">Locked</span>
@@ -432,7 +432,7 @@
                 type="button"
                 class="creative-hidden-action-button"
               >
-                Continue to storyboard
+                Generate storyboard
               </button>
             </div>
           </section>
@@ -443,10 +443,87 @@
                 <p class="creative-panel-kicker">Step 3</p>
                 <h2 class="creative-panel-title">Storyboard</h2>
               </div>
-              <p class="creative-panel-copy">Choose clips and tighten the sequence.</p>
+              <p class="creative-panel-copy">Review the synced preview, then adjust the clip sequence.</p>
             </div>
 
             <div id="storyboard" class="creative-storyboard-stage hidden">
+              <div class="creative-storyboard-preview-shell">
+                <div class="creative-storyboard-preview-frame">
+                  <video
+                    id="storyboard-preview-video"
+                    class="creative-storyboard-preview-video hidden"
+                    muted
+                    loop
+                    playsinline
+                    preload="metadata"
+                  ></video>
+                  <img
+                    id="storyboard-preview-overlay"
+                    class="creative-storyboard-preview-overlay"
+                    alt="Preview caption overlay"
+                    style="display: none"
+                  />
+                  <div id="storyboard-preview-blocked" class="creative-storyboard-preview-blocked" aria-live="polite">
+                    <p id="storyboard-preview-status-kicker" class="creative-storyboard-preview-kicker">
+                      Synced preview
+                    </p>
+                    <h3 id="storyboard-preview-status-title" class="creative-storyboard-preview-title">
+                      Generate a storyboard to prepare the synced preview.
+                    </h3>
+                    <p id="storyboard-preview-status-copy" class="creative-storyboard-preview-copy">
+                      Vaiform will sync narration and timing before the preview is ready to watch.
+                    </p>
+                    <button
+                      id="storyboard-sync-retry-btn"
+                      type="button"
+                      class="creative-secondary-button hidden"
+                    >
+                      Retry sync
+                    </button>
+                  </div>
+                </div>
+
+                <div class="creative-storyboard-preview-sidebar">
+                  <div class="creative-render-truth">
+                    <p class="creative-render-truth-label">Synced preview</p>
+                    <h3 id="storyboard-preview-heading" class="creative-render-truth-title">
+                      Preview follows synced narration timing
+                    </h3>
+                    <p id="storyboard-preview-caption" class="creative-render-truth-copy">
+                      Generate a storyboard to unlock synced audio and timing.
+                    </p>
+                  </div>
+
+                  <div class="creative-storyboard-preview-stats">
+                    <div class="creative-storyboard-stat">
+                      <span class="creative-storyboard-stat-label">Duration</span>
+                      <strong id="storyboard-preview-duration" class="creative-storyboard-stat-value"
+                        >Not ready</strong
+                      >
+                    </div>
+                    <div class="creative-storyboard-stat">
+                      <span class="creative-storyboard-stat-label">Sync charge</span>
+                      <strong id="storyboard-preview-charge" class="creative-storyboard-stat-value"
+                        >Not ready</strong
+                      >
+                    </div>
+                    <div class="creative-storyboard-stat">
+                      <span class="creative-storyboard-stat-label">Render est.</span>
+                      <strong id="storyboard-preview-render-estimate" class="creative-storyboard-stat-value"
+                        >Waiting for sync</strong
+                      >
+                    </div>
+                  </div>
+
+                  <audio
+                    id="storyboard-preview-audio"
+                    class="creative-storyboard-preview-audio hidden"
+                    controls
+                    preload="none"
+                  ></audio>
+                </div>
+              </div>
+
               <div id="storyboard-scroll" class="storyboard-scroll-wrapper">
                 <div id="storyboard-row" class="flex gap-3 pb-2"></div>
               </div>
@@ -618,15 +695,16 @@
             <div class="creative-panel-header">
               <div>
                 <p class="creative-panel-kicker">Step 4</p>
-                <h2 class="creative-panel-title">Voice &amp; Render</h2>
+                <h2 class="creative-panel-title">Render</h2>
               </div>
-              <p class="creative-panel-copy">Default voice, then render.</p>
+              <p class="creative-panel-copy">Your preview is already synced. Render when ready.</p>
             </div>
 
             <div class="creative-form-card creative-render-card">
               <div class="creative-render-truth">
-                <p class="creative-render-truth-label">Voice</p>
-                <h3 class="creative-render-truth-title">Default neutral narration</h3>
+                <p class="creative-render-truth-label">Narration</p>
+                <h3 class="creative-render-truth-title">Synced default narration</h3>
+                <p class="creative-render-truth-copy">This pass keeps the launch flow on the default preset.</p>
                 <input type="hidden" id="article-voice-preset" value="male_calm" />
               </div>
 
