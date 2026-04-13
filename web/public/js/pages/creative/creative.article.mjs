@@ -324,6 +324,9 @@ let storyboardDeckRaf = null;
 let activeStoryboardCardKey = null;
 let storyboardPreviewBindingsAttached = false;
 let storyboardPreviewActiveSentenceIndex = null;
+let storyboardPreviewActiveSegmentIndex = null;
+let storyboardPreviewPendingSeekSec = null;
+let storyboardPreviewPendingAutoplay = false;
 let storyboardSyncInFlight = false;
 let storyboardSyncErrorMessage = '';
 const STORY_SYNC_TIMEOUT_MS = 35000;
@@ -466,7 +469,8 @@ function hasCurrentStoryPreviewSync(session = window.currentStorySession) {
     voiceSync.state === 'current' &&
     !!voiceSync.previewAudioUrl &&
     Array.isArray(session?.captions) &&
-    session.captions.length > 0
+    session.captions.length > 0 &&
+    !!getPlaybackTimeline(session)
   );
 }
 
@@ -723,6 +727,42 @@ function getCaptionTimeline(session = window.currentStorySession) {
     );
 }
 
+function getCaptionBySentenceIndex(sentenceIndex, session = window.currentStorySession) {
+  const safeIndex = Number(sentenceIndex);
+  if (!Number.isFinite(safeIndex)) return null;
+  return getCaptionTimeline(session).find((entry) => entry.sentenceIndex === safeIndex) || null;
+}
+
+function getCaptionStartTimeForSentenceIndex(sentenceIndex, session = window.currentStorySession) {
+  const caption = getCaptionBySentenceIndex(sentenceIndex, session);
+  return Number.isFinite(Number(caption?.startTimeSec)) ? Number(caption.startTimeSec) : 0;
+}
+
+function getPlaybackTimeline(session = window.currentStorySession) {
+  const timeline = session?.playbackTimelineV1;
+  if (!timeline || Number(timeline.version) !== 1 || !Array.isArray(timeline.segments) || timeline.segments.length === 0) {
+    return null;
+  }
+  return timeline;
+}
+
+function findPlaybackSegmentAtTime(timeSec, session = window.currentStorySession) {
+  const timeline = getPlaybackTimeline(session);
+  if (!timeline) return null;
+  const currentTime = Math.max(0, Number(timeSec) || 0);
+  for (const segment of timeline.segments) {
+    const globalStartSec = Number(segment?.globalStartSec);
+    const globalEndSec = Number(segment?.globalEndSec);
+    if (!Number.isFinite(globalStartSec) || !Number.isFinite(globalEndSec)) continue;
+    if (currentTime >= globalStartSec && currentTime < globalEndSec) {
+      return segment;
+    }
+  }
+  const last = timeline.segments[timeline.segments.length - 1];
+  if (last && currentTime >= Number(last.globalEndSec)) return last;
+  return timeline.segments[0] || null;
+}
+
 function findCaptionAtTime(timeSec, session = window.currentStorySession) {
   const timeline = getCaptionTimeline(session);
   if (!timeline.length) return null;
@@ -768,16 +808,48 @@ function copyStoryboardOverlay(fromOverlay, toOverlay) {
   toOverlay.style.display = 'block';
 }
 
+function clearStoryboardPreviewPendingSeek() {
+  storyboardPreviewPendingSeekSec = null;
+  storyboardPreviewPendingAutoplay = false;
+}
+
+function queueStoryboardPreviewSeek(seekSec, { autoplay = false } = {}) {
+  storyboardPreviewPendingSeekSec = Math.max(0, Number(seekSec) || 0);
+  storyboardPreviewPendingAutoplay = storyboardPreviewPendingAutoplay || autoplay;
+}
+
+function applyStoryboardPreviewPendingSeek(previewVideo, { autoplay = false } = {}) {
+  if (!previewVideo) return;
+  const pendingSeekSec = Number(storyboardPreviewPendingSeekSec);
+  const nextAutoplay = autoplay || storyboardPreviewPendingAutoplay;
+  if (Number.isFinite(pendingSeekSec)) {
+    try {
+      previewVideo.currentTime = pendingSeekSec;
+      clearStoryboardPreviewPendingSeek();
+    } catch {
+      return;
+    }
+  }
+  if (nextAutoplay) {
+    if (!previewVideo.classList.contains('hidden')) {
+      previewVideo.play().catch(() => {});
+    }
+    return;
+  }
+  if (!previewVideo.paused) {
+    previewVideo.pause();
+  }
+}
+
 function updateStoryboardPreviewBeat(sentenceIndex, { autoplay = false } = {}) {
   const session = window.currentStorySession;
   const {
-    frame: previewVideo,
     overlay,
     caption: captionEl,
     heading,
   } = getStoryboardPreviewElements();
 
-  if (!session || !previewVideo || !captionEl || !heading) return;
+  if (!session || !captionEl || !heading) return;
 
   const sentences = session.story?.sentences || [];
   const safeIndex =
@@ -785,10 +857,7 @@ function updateStoryboardPreviewBeat(sentenceIndex, { autoplay = false } = {}) {
       ? Number(sentenceIndex)
       : 0;
   const currentSentence = sentences[safeIndex] || '';
-  const shot = getSessionShotBySentenceIndex(session, safeIndex);
-  const clip = shot?.selectedClip || null;
-  const matchingCaption =
-    getCaptionTimeline(session).find((entry) => entry.sentenceIndex === safeIndex) || null;
+  const matchingCaption = getCaptionBySentenceIndex(safeIndex, session);
   const card = getStoryboardCardBySentenceIndex(safeIndex);
   const cardOverlay = card?.querySelector('.beat-caption-overlay');
 
@@ -796,53 +865,76 @@ function updateStoryboardPreviewBeat(sentenceIndex, { autoplay = false } = {}) {
   captionEl.textContent = matchingCaption?.text || currentSentence || 'Preview caption not ready yet.';
   copyStoryboardOverlay(cardOverlay, overlay);
 
-  const nextVideoUrl = clip?.url || '';
-  const nextPoster = clip?.thumbUrl || '';
-  const previousBeatIndex = storyboardPreviewActiveSentenceIndex;
-  const previousVideoUrl = getStoryboardPreviewVideoUrl(previewVideo);
-  const beatChanged = previousBeatIndex !== safeIndex;
-  const clipChanged = previousVideoUrl !== nextVideoUrl;
-  const shouldResetVideo = beatChanged || clipChanged;
+  storyboardPreviewActiveSentenceIndex = safeIndex;
+}
 
-  if (!nextVideoUrl) {
+function updateStoryboardPreviewSegment(segment, { audioTime = 0, autoplay = false, forceSeek = false } = {}) {
+  const { frame: previewVideo } = getStoryboardPreviewElements();
+  if (!previewVideo) return;
+
+  const segmentIndex = Number(segment?.segmentIndex);
+  const clipUrl = typeof segment?.clipUrl === 'string' ? segment.clipUrl : '';
+  if (!Number.isFinite(segmentIndex) || !clipUrl) {
+    const previousVideoUrl = getStoryboardPreviewVideoUrl(previewVideo);
     if (previousVideoUrl) {
       previewVideo.pause();
       previewVideo.removeAttribute('src');
       previewVideo.load();
     }
     previewVideo.classList.add('hidden');
-    storyboardPreviewActiveSentenceIndex = safeIndex;
+    storyboardPreviewActiveSegmentIndex = null;
+    clearStoryboardPreviewPendingSeek();
     return;
   }
 
+  const nextPoster = segment?.clipThumbUrl || '';
+  const previousVideoUrl = getStoryboardPreviewVideoUrl(previewVideo);
+  const clipChanged = previousVideoUrl !== clipUrl;
+  const segmentChanged = storyboardPreviewActiveSegmentIndex !== segmentIndex;
+  const globalStartSec = Number(segment?.globalStartSec) || 0;
+  const clipStartSec = Number(segment?.clipStartSec) || 0;
+  const audioOffsetSec = Math.max(0, (Number(audioTime) || 0) - globalStartSec);
+  const desiredSeekSec = Math.max(0, clipStartSec + audioOffsetSec);
+
+  previewVideo.classList.remove('hidden');
+
   if (clipChanged) {
-    previewVideo.src = nextVideoUrl;
+    previewVideo.src = clipUrl;
     if (nextPoster) {
       previewVideo.setAttribute('poster', nextPoster);
     } else {
       previewVideo.removeAttribute('poster');
     }
+    queueStoryboardPreviewSeek(desiredSeekSec, { autoplay });
     previewVideo.load();
-  }
-
-  previewVideo.classList.remove('hidden');
-  if (shouldResetVideo) {
-    try {
-      previewVideo.currentTime = 0;
-    } catch {}
-  }
-
-  if (autoplay) {
-    if (shouldResetVideo || previewVideo.paused) {
-      previewVideo.play().catch(() => {});
+  } else if (segmentChanged || forceSeek) {
+    queueStoryboardPreviewSeek(desiredSeekSec, { autoplay });
+    if (previewVideo.readyState >= 1) {
+      applyStoryboardPreviewPendingSeek(previewVideo, { autoplay });
     }
-  } else {
-    if (!previewVideo.paused) {
-      previewVideo.pause();
-    }
+  } else if (autoplay && previewVideo.paused) {
+    previewVideo.play().catch(() => {});
+  } else if (!autoplay && !previewVideo.paused) {
+    previewVideo.pause();
   }
 
-  storyboardPreviewActiveSentenceIndex = safeIndex;
+  storyboardPreviewActiveSegmentIndex = segmentIndex;
+}
+
+function syncStoryboardPreviewAtTime(timeSec, { autoplay = false, scroll = false, forceSeek = false } = {}) {
+  if (!hasCurrentStoryPreviewSync(window.currentStorySession)) return;
+  const caption = findCaptionAtTime(timeSec, window.currentStorySession);
+  if (!caption) return;
+  const card = getStoryboardCardBySentenceIndex(caption.sentenceIndex);
+  if (card) {
+    setActiveStoryboardCard(card, { scroll, syncPreview: false });
+  }
+  updateStoryboardPreviewBeat(caption.sentenceIndex);
+  updateStoryboardPreviewSegment(findPlaybackSegmentAtTime(timeSec, window.currentStorySession), {
+    audioTime: timeSec,
+    autoplay,
+    forceSeek,
+  });
 }
 
 function refreshStoryboardPreview(session = window.currentStorySession) {
@@ -879,6 +971,8 @@ function refreshStoryboardPreview(session = window.currentStorySession) {
     audio.classList.add('hidden');
     audio.pause();
     pauseStoryboardPreviewVideo();
+    storyboardPreviewActiveSegmentIndex = null;
+    clearStoryboardPreviewPendingSeek();
     if (statusKicker) statusKicker.textContent = 'Synced preview';
     if (statusTitle) statusTitle.textContent = 'Generate a storyboard to prepare the synced preview.';
     if (statusCopy) {
@@ -893,6 +987,8 @@ function refreshStoryboardPreview(session = window.currentStorySession) {
     audio.classList.add('hidden');
     audio.pause();
     pauseStoryboardPreviewVideo();
+    storyboardPreviewActiveSegmentIndex = null;
+    clearStoryboardPreviewPendingSeek();
 
     if (storyboardSyncInFlight) {
       if (statusKicker) statusKicker.textContent = 'Syncing preview';
@@ -903,13 +999,15 @@ function refreshStoryboardPreview(session = window.currentStorySession) {
       }
     } else {
       if (statusKicker) statusKicker.textContent = 'Preview blocked';
-      if (statusTitle) statusTitle.textContent = 'Synced preview is not ready yet.';
+      if (statusTitle) statusTitle.textContent = 'Render-aligned preview is not ready yet.';
       if (statusCopy) {
         statusCopy.textContent =
           storyboardSyncErrorMessage ||
           (voiceSync.state === 'stale'
             ? 'Preview needs a fresh sync to match the current script.'
-            : 'Run sync to unlock truthful narration timing for this storyboard.');
+            : voiceSync.state === 'current'
+              ? 'Preview unlocks after sync is current and every beat has a selected clip-backed playback timeline.'
+              : 'Run sync to unlock truthful narration timing for this storyboard.');
       }
       retryButton?.classList.remove('hidden');
     }
@@ -933,7 +1031,10 @@ function refreshStoryboardPreview(session = window.currentStorySession) {
     getStoryboardCards()[0] ||
     null;
   const sentenceIndex = Number(activeCard?.dataset?.sentenceIndex);
-  updateStoryboardPreviewBeat(sentenceIndex, { autoplay: !audio.paused });
+  const activeTimeSec = Number.isFinite(Number(audio.currentTime))
+    ? Number(audio.currentTime)
+    : getCaptionStartTimeForSentenceIndex(sentenceIndex, session);
+  syncStoryboardPreviewAtTime(activeTimeSec, { autoplay: !audio.paused, forceSeek: audio.paused });
 }
 
 function syncStoryboardPreviewToCard(card, { autoplay = false } = {}) {
@@ -942,21 +1043,20 @@ function syncStoryboardPreviewToCard(card, { autoplay = false } = {}) {
   if (!Number.isFinite(sentenceIndex)) return;
   refreshStoryboardPreview(window.currentStorySession);
   if (hasCurrentStoryPreviewSync(window.currentStorySession)) {
-    updateStoryboardPreviewBeat(sentenceIndex, { autoplay });
+    const timeSec = getCaptionStartTimeForSentenceIndex(sentenceIndex, window.currentStorySession);
+    updateStoryboardPreviewBeat(sentenceIndex);
+    updateStoryboardPreviewSegment(findPlaybackSegmentAtTime(timeSec, window.currentStorySession), {
+      audioTime: timeSec,
+      autoplay,
+      forceSeek: true,
+    });
   }
 }
 
-function syncStoryboardPreviewFromAudio({ scroll = false } = {}) {
+function syncStoryboardPreviewFromAudio({ scroll = false, forceSeek = false } = {}) {
   const audio = document.getElementById('storyboard-preview-audio');
   if (!audio || !hasCurrentStoryPreviewSync(window.currentStorySession)) return;
-
-  const caption = findCaptionAtTime(audio.currentTime, window.currentStorySession);
-  if (!caption) return;
-  const card = getStoryboardCardBySentenceIndex(caption.sentenceIndex);
-  if (card) {
-    setActiveStoryboardCard(card, { scroll, syncPreview: false });
-  }
-  updateStoryboardPreviewBeat(caption.sentenceIndex, { autoplay: !audio.paused });
+  syncStoryboardPreviewAtTime(audio.currentTime, { scroll, autoplay: !audio.paused, forceSeek });
 }
 
 async function retryStoryboardPreviewSync() {
@@ -994,14 +1094,14 @@ async function retryStoryboardPreviewSync() {
 
 function setupStoryboardPreviewBindings() {
   if (storyboardPreviewBindingsAttached) return;
-  const { audio, retryButton } = getStoryboardPreviewElements();
-  if (!audio || !retryButton) return;
+  const { frame: previewVideo, audio, retryButton } = getStoryboardPreviewElements();
+  if (!previewVideo || !audio || !retryButton) return;
 
   const syncFromAudio = () => syncStoryboardPreviewFromAudio();
   audio.addEventListener('loadedmetadata', syncFromAudio);
   audio.addEventListener('timeupdate', syncFromAudio);
-  audio.addEventListener('seeked', () => syncStoryboardPreviewFromAudio({ scroll: true }));
-  audio.addEventListener('seeking', syncFromAudio);
+  audio.addEventListener('seeked', () => syncStoryboardPreviewFromAudio({ scroll: true, forceSeek: true }));
+  audio.addEventListener('seeking', () => syncStoryboardPreviewFromAudio({ forceSeek: true }));
   audio.addEventListener('play', () => {
     const previewVideo = document.getElementById('storyboard-preview-video');
     if (previewVideo && !previewVideo.classList.contains('hidden')) {
@@ -1010,6 +1110,9 @@ function setupStoryboardPreviewBindings() {
   });
   audio.addEventListener('pause', pauseStoryboardPreviewVideo);
   audio.addEventListener('ended', pauseStoryboardPreviewVideo);
+  previewVideo.addEventListener('loadedmetadata', () => {
+    applyStoryboardPreviewPendingSeek(previewVideo, { autoplay: !audio.paused });
+  });
   retryButton.addEventListener('click', retryStoryboardPreviewSync);
   storyboardPreviewBindingsAttached = true;
 }
@@ -3009,6 +3112,8 @@ function setupVideoCutsPanelListeners() {
           window.currentStorySession = resp.data;
           if (typeof showToast === 'function') showToast('Saved video cuts');
           refreshVideoCutsPanel();
+          refreshStoryboardPreview(resp.data);
+          syncCreativeStepShell();
         } else {
           const msg = resp.error || resp.detail || 'Failed to save video cuts';
           if (typeof showToast === 'function') showToast(msg);
@@ -3037,6 +3142,8 @@ function setupVideoCutsPanelListeners() {
           window.currentStorySession = resp.data;
           if (typeof showToast === 'function') showToast('Reset video cuts');
           refreshVideoCutsPanel();
+          refreshStoryboardPreview(resp.data);
+          syncCreativeStepShell();
         } else {
           const msg = resp.error || resp.detail || 'Failed to reset video cuts';
           if (typeof showToast === 'function') showToast(msg);

@@ -100,6 +100,7 @@ Route-authority note:
   - Mobile sends: no body.
   - Backend returns: full session in `data`.
   - Mobile reads: `story.sentences`, `shots`, `overlayCaption.placement`, additive `billingEstimate.estimatedSec`, `voicePreset`, `voicePacePreset`, `voiceOptions`, `voiceSync`, synced `captions`, `shot.selectedClip.thumbUrl`, `shot.searchQuery`, and `renderRecovery` during finalize recovery polling and same-session restart-safe finalize resume.
+  - Additive field: web/editor responses may also include optional `playbackTimelineV1`, a backend-derived render/preview playback timeline used by the large storyboard preview. Mobile does not currently read this field.
   - Recovery role: this route remains the canonical finalize recovery contract. Additive `renderRecovery` fields still expose `{ state, attemptId, startedAt, updatedAt, shortId, finishedAt, failedAt, code, message }`, and mobile still trusts them only when `renderRecovery.attemptId` matches the active finalize attempt. Backend Phase 5 now derives that additive projection from canonical finalize attempt/job truth through `src/services/finalize-status.service.js`; session `renderRecovery` remains compatibility storage only.
   - Stable failure now: `404 SESSION_NOT_FOUND`.
   - Diagnostics note: failed recovery polls now keep `requestId` in normalized mobile failures and enrich diagnostics with `sessionId` plus the active finalize `attemptId`.

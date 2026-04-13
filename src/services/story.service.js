@@ -779,8 +779,10 @@ export function refreshStorySessionHeuristicEstimate(session) {
 export function sanitizeStorySessionForClient(session) {
   if (!session || typeof session !== 'object') return session;
   const safeSession = safeJsonClone(session);
+  const playbackTimelineV1 = buildStoryPlaybackTimelineV1(session);
 
   delete safeSession.renderedSegments;
+  delete safeSession.playbackTimelineV1;
   if (Array.isArray(safeSession.beats)) {
     safeSession.beats = safeSession.beats.map((beat) => {
       if (!beat || typeof beat !== 'object') return beat;
@@ -804,6 +806,9 @@ export function sanitizeStorySessionForClient(session) {
   }
 
   safeSession.voiceOptions = safeVoiceOptions();
+  if (playbackTimelineV1) {
+    safeSession.playbackTimelineV1 = playbackTimelineV1;
+  }
   return safeSession;
 }
 
@@ -2060,6 +2065,258 @@ function buildAutoVideoCutsV1({ sessionId, sentences }) {
   return { version: 1, boundaries };
 }
 
+function getShotBySentenceIndex(shots, sentenceIndex) {
+  const items = Array.isArray(shots) ? shots : [];
+  return items.find((entry) => entry?.sentenceIndex === sentenceIndex) || null;
+}
+
+function hasClipsForAllStoryBeats({ shots, beatCount }) {
+  if (!Number.isInteger(beatCount) || beatCount <= 0) return false;
+  for (let beatIndex = 0; beatIndex < beatCount; beatIndex += 1) {
+    const shot = getShotBySentenceIndex(shots, beatIndex);
+    if (!shot?.selectedClip?.url) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function hasValidVideoCutsV1({ videoCutsV1, beatCount }) {
+  const boundaries = videoCutsV1?.boundaries;
+  if (!Array.isArray(boundaries) || boundaries.length !== beatCount - 1) {
+    return false;
+  }
+  return boundaries.every((boundary, index) => {
+    if (typeof boundary?.leftBeat !== 'number' || boundary.leftBeat !== index) return false;
+    const pos = boundary.pos;
+    if (!pos || typeof pos.beatIndex !== 'number' || typeof pos.pct !== 'number') return false;
+    if (pos.beatIndex < index + 1 || pos.beatIndex >= beatCount) return false;
+    if (pos.pct < 0 || pos.pct > 1) return false;
+    return true;
+  });
+}
+
+function buildResolvedAutoVideoCutsV1({ sessionId, sentences, currentSentencesHash }) {
+  const autoCuts = buildAutoVideoCutsV1({ sessionId, sentences });
+  return {
+    version: 1,
+    boundaries: autoCuts.boundaries,
+    source: 'auto',
+    sentencesHash: currentSentencesHash,
+    autoGenV: AUTO_CUTS_GEN_V,
+  };
+}
+
+function resolveStoryVideoCutsPlan({ session, sentences = session?.story?.sentences ?? [] }) {
+  const beatCount = Array.isArray(sentences) ? sentences.length : 0;
+  const currentSentencesHash = sentencesHash(sentences);
+  const enableVideoCutsV1 =
+    process.env.ENABLE_VIDEO_CUTS_V1 === 'true' || process.env.ENABLE_VIDEO_CUTS_V1 === '1';
+  const hasClipsForAllBeats = hasClipsForAllStoryBeats({ shots: session?.shots, beatCount });
+  const canUseVideoCutsV1 =
+    enableVideoCutsV1 && hasClipsForAllBeats && beatCount >= 2 && session?.videoCutsV1Disabled !== true;
+
+  const plan = {
+    source: 'classic',
+    debugSource: 'classic',
+    useVideoCutsV1: false,
+    resolvedVideoCutsV1: null,
+    shouldPersistResolvedVideoCutsV1: false,
+    currentSentencesHash,
+    hasClipsForAllBeats,
+  };
+
+  if (!canUseVideoCutsV1) {
+    return plan;
+  }
+
+  const existingVideoCutsV1 = session?.videoCutsV1;
+  const hasValidExisting = hasValidVideoCutsV1({ videoCutsV1: existingVideoCutsV1, beatCount });
+  const hasExistingBoundaries =
+    Array.isArray(existingVideoCutsV1?.boundaries) && existingVideoCutsV1.boundaries.length > 0;
+
+  if (!hasValidExisting && hasExistingBoundaries) {
+    return {
+      ...plan,
+      debugSource: 'invalid',
+    };
+  }
+
+  if (!hasValidExisting) {
+    const resolvedVideoCutsV1 = buildResolvedAutoVideoCutsV1({
+      sessionId: session?.id,
+      sentences,
+      currentSentencesHash,
+    });
+    return {
+      ...plan,
+      source: 'auto',
+      debugSource: 'auto',
+      useVideoCutsV1: true,
+      resolvedVideoCutsV1,
+      shouldPersistResolvedVideoCutsV1: true,
+    };
+  }
+
+  if (existingVideoCutsV1.source !== 'auto') {
+    return {
+      ...plan,
+      source: 'manual',
+      debugSource: 'manual',
+      useVideoCutsV1: true,
+      resolvedVideoCutsV1: existingVideoCutsV1,
+    };
+  }
+
+  if (
+    existingVideoCutsV1.sentencesHash === currentSentencesHash &&
+    existingVideoCutsV1.autoGenV === AUTO_CUTS_GEN_V
+  ) {
+    return {
+      ...plan,
+      source: 'auto',
+      debugSource: 'auto',
+      useVideoCutsV1: true,
+      resolvedVideoCutsV1: existingVideoCutsV1,
+    };
+  }
+
+  const resolvedVideoCutsV1 = buildResolvedAutoVideoCutsV1({
+    sessionId: session?.id,
+    sentences,
+    currentSentencesHash,
+  });
+  return {
+    ...plan,
+    source: 'auto',
+    debugSource: 'auto',
+    useVideoCutsV1: true,
+    resolvedVideoCutsV1,
+    shouldPersistResolvedVideoCutsV1: true,
+  };
+}
+
+function buildBeatDurationsFromSyncedCaptions(session, beatCount) {
+  if (!Array.isArray(session?.captions) || beatCount <= 0) return null;
+  const captionBySentenceIndex = new Map();
+  for (const caption of session.captions) {
+    const sentenceIndex = Number(caption?.sentenceIndex);
+    const startTimeSec = Number(caption?.startTimeSec);
+    const endTimeSec = Number(caption?.endTimeSec);
+    if (!Number.isFinite(sentenceIndex) || !Number.isFinite(startTimeSec) || !Number.isFinite(endTimeSec)) {
+      continue;
+    }
+    captionBySentenceIndex.set(sentenceIndex, {
+      startTimeSec,
+      endTimeSec,
+    });
+  }
+
+  const beatsDurSec = [];
+  for (let beatIndex = 0; beatIndex < beatCount; beatIndex += 1) {
+    const caption = captionBySentenceIndex.get(beatIndex);
+    if (!caption) return null;
+    const durationSec = caption.endTimeSec - caption.startTimeSec;
+    if (!Number.isFinite(durationSec) || durationSec <= 0) return null;
+    beatsDurSec.push(durationSec);
+  }
+  return beatsDurSec;
+}
+
+function buildStoryPlaybackTimelineV1(session) {
+  const syncSummary = normalizeVoiceSyncSummary(session);
+  if (syncSummary.state !== 'current') return null;
+
+  const sentences = Array.isArray(session?.story?.sentences) ? session.story.sentences : [];
+  const beatCount = sentences.length;
+  if (beatCount === 0) return null;
+
+  const beatsDurSec = buildBeatDurationsFromSyncedCaptions(session, beatCount);
+  if (!Array.isArray(beatsDurSec) || beatsDurSec.length !== beatCount) {
+    return null;
+  }
+
+  const playbackPlan = resolveStoryVideoCutsPlan({ session, sentences });
+  if (!playbackPlan.hasClipsForAllBeats) {
+    return null;
+  }
+
+  const segments = playbackPlan.useVideoCutsV1
+    ? playbackPlan.source === 'auto'
+      ? computeVideoSegmentsFromCutsAutoBudget({
+          beatsDurSec,
+          shots: session.shots,
+          videoCutsV1: playbackPlan.resolvedVideoCutsV1,
+          sessionId: session.id,
+          sentences,
+          sentencesHash: playbackPlan.currentSentencesHash,
+        })
+      : computeVideoSegmentsFromCuts({
+          beatsDurSec,
+          shots: session.shots,
+          videoCutsV1: playbackPlan.resolvedVideoCutsV1,
+        })
+    : computeVideoSegmentsFromCuts({
+        beatsDurSec,
+        shots: session.shots,
+        videoCutsV1: { version: 1, boundaries: [] },
+      });
+
+  if (!Array.isArray(segments) || segments.length !== beatCount) {
+    return null;
+  }
+
+  const timelineSegments = segments
+    .map((segment, segmentIndex) => {
+      const clipUrl = typeof segment?.clipUrl === 'string' ? segment.clipUrl : '';
+      const globalStartSec = Number(segment?.globalStartSec);
+      const globalEndSec = Number(segment?.globalEndSec);
+      const clipStartSec = Number(segment?.inSec);
+      const durationSec = Number(segment?.durSec);
+      const sentenceIndex = Number(segment?.sentenceIndex);
+      const ownerSentenceIndex = Number(
+        Number.isFinite(Number(segment?.ownerSentenceIndex)) ? segment.ownerSentenceIndex : segment?.sentenceIndex
+      );
+      if (
+        !clipUrl ||
+        !Number.isFinite(globalStartSec) ||
+        !Number.isFinite(globalEndSec) ||
+        !Number.isFinite(clipStartSec) ||
+        !Number.isFinite(durationSec) ||
+        !Number.isFinite(sentenceIndex) ||
+        !Number.isFinite(ownerSentenceIndex)
+      ) {
+        return null;
+      }
+      return {
+        segmentIndex,
+        sentenceIndex,
+        ownerSentenceIndex,
+        clipUrl,
+        clipThumbUrl: segment?.clipThumbUrl ?? null,
+        globalStartSec,
+        globalEndSec,
+        clipStartSec,
+        durationSec,
+      };
+    })
+    .filter(Boolean);
+
+  if (timelineSegments.length !== beatCount) {
+    return null;
+  }
+
+  return {
+    version: 1,
+    source: playbackPlan.source,
+    totalDurationSec:
+      timelineSegments.length > 0
+        ? timelineSegments[timelineSegments.length - 1].globalEndSec
+        : beatsDurSec.reduce((sum, value) => sum + value, 0),
+    segments: timelineSegments,
+  };
+}
+
 /**
  * Update session video cuts (videoCutsV1). Validates against story length.
  */
@@ -2126,15 +2383,25 @@ function computeVideoSegmentsFromCuts({ beatsDurSec, shots, videoCutsV1 }) {
   const segments = [];
   let sumPrev = 0;
   for (let k = 0; k < N; k++) {
-    const shot = shots.find((s) => s.sentenceIndex === k);
-    const clipUrl = shot?.selectedClip?.url;
+    const shot = getShotBySentenceIndex(shots, k);
+    const clip = shot?.selectedClip || null;
+    const clipUrl = clip?.url;
     if (!clipUrl) continue;
     const globalStartSec = cutTimes[k];
     const globalEndSec = cutTimes[k + 1];
     const durSec = globalEndSec - globalStartSec;
     const inSec = globalStartSec - sumPrev;
     sumPrev += beatsDurSec[k];
-    segments.push({ clipUrl, inSec: Math.max(0, inSec), durSec, globalStartSec, globalEndSec });
+    segments.push({
+      sentenceIndex: k,
+      ownerSentenceIndex: k,
+      clipUrl,
+      clipThumbUrl: clip?.thumbUrl ?? null,
+      inSec: Math.max(0, inSec),
+      durSec,
+      globalStartSec,
+      globalEndSec,
+    });
   }
   return segments;
 }
@@ -2235,17 +2502,17 @@ function computeVideoSegmentsFromCutsAutoBudget({
   const mergesNeeded = N - K;
   const mergeSet = pickMergeBoundaries(N, mergesNeeded, { sessionId, sentencesHash, sentences });
   const owners = buildOwners(N, mergeSet);
-  const clipUrlByBeat = new Map();
+  const clipByBeat = new Map();
   for (let k = 0; k < N; k++) {
-    const shot = shots.find((s) => s.sentenceIndex === k);
-    const url = shot?.selectedClip?.url;
-    clipUrlByBeat.set(k, url);
+    const shot = getShotBySentenceIndex(shots, k);
+    clipByBeat.set(k, shot?.selectedClip || null);
   }
   const cursor = new Map();
   const segments = [];
   for (let k = 0; k < N; k++) {
     const owner = owners[k];
-    const clipUrl = clipUrlByBeat.get(owner);
+    const ownerClip = clipByBeat.get(owner);
+    const clipUrl = ownerClip?.url;
     if (!clipUrl) {
       throw new Error(`VIDEO_CUTS_AUTO_BUDGET_MISSING_CLIP: beat=${k} owner=${owner}`);
     }
@@ -2256,7 +2523,10 @@ function computeVideoSegmentsFromCutsAutoBudget({
     }
     const durSec = pieceDur[k];
     segments.push({
+      sentenceIndex: k,
+      ownerSentenceIndex: owner,
       clipUrl,
+      clipThumbUrl: ownerClip?.thumbUrl ?? null,
       inSec,
       durSec,
       globalStartSec: cutTimes[k],
@@ -3405,81 +3675,18 @@ export async function renderStory({ uid, sessionId }) {
 
   const sentences = session.story?.sentences ?? [];
   const N = sentences.length;
-  const enableVideoCutsV1 =
-    process.env.ENABLE_VIDEO_CUTS_V1 === 'true' || process.env.ENABLE_VIDEO_CUTS_V1 === '1';
-  const currentSentencesHash = sentencesHash(sentences);
-
-  let hasClipsForAllBeats = N > 0;
-  if (hasClipsForAllBeats) {
-    for (let beatIndex = 0; beatIndex < N; beatIndex += 1) {
-      const shot = session.shots.find((item) => item.sentenceIndex === beatIndex);
-      if (!shot?.selectedClip?.url) {
-        hasClipsForAllBeats = false;
-        break;
-      }
-    }
+  const playbackPlan = resolveStoryVideoCutsPlan({ session, sentences });
+  const source = playbackPlan.source;
+  const currentSentencesHash = playbackPlan.currentSentencesHash;
+  const videoCutsV1ToUse = playbackPlan.resolvedVideoCutsV1;
+  const useVideoCutsV1 = playbackPlan.useVideoCutsV1;
+  if (playbackPlan.shouldPersistResolvedVideoCutsV1 && playbackPlan.resolvedVideoCutsV1) {
+    session.videoCutsV1 = safeJsonClone(playbackPlan.resolvedVideoCutsV1);
   }
 
-  let source = 'classic';
-  let videoCutsV1ToUse = null;
-  let useVideoCutsV1 = false;
-
-  if (enableVideoCutsV1 && hasClipsForAllBeats && N >= 2 && session.videoCutsV1Disabled !== true) {
-    const v1 = session.videoCutsV1;
-    const bounds = v1?.boundaries;
-    const hasValidExisting =
-      bounds &&
-      Array.isArray(bounds) &&
-      bounds.length === N - 1 &&
-      bounds.every((boundary, index) => {
-        if (typeof boundary.leftBeat !== 'number' || boundary.leftBeat !== index) return false;
-        const pos = boundary.pos;
-        if (!pos || typeof pos.beatIndex !== 'number' || typeof pos.pct !== 'number') return false;
-        if (pos.beatIndex < index + 1 || pos.beatIndex >= N) return false;
-        if (pos.pct < 0 || pos.pct > 1) return false;
-        return true;
-      });
-
-    if (!hasValidExisting && bounds && bounds.length > 0) {
-      source = 'invalid';
-    } else if (!hasValidExisting) {
-      const autoCuts = buildAutoVideoCutsV1({ sessionId: session.id, sentences });
-      session.videoCutsV1 = {
-        version: 1,
-        boundaries: autoCuts.boundaries,
-        source: 'auto',
-        sentencesHash: currentSentencesHash,
-        autoGenV: AUTO_CUTS_GEN_V,
-      };
-      videoCutsV1ToUse = session.videoCutsV1;
-      source = 'auto';
-      useVideoCutsV1 = true;
-    } else if (v1.source !== 'auto') {
-      source = 'manual';
-      videoCutsV1ToUse = v1;
-      useVideoCutsV1 = true;
-    } else if (v1.sentencesHash === currentSentencesHash && v1.autoGenV === AUTO_CUTS_GEN_V) {
-      source = 'auto';
-      videoCutsV1ToUse = v1;
-      useVideoCutsV1 = true;
-    } else {
-      const autoCuts = buildAutoVideoCutsV1({ sessionId: session.id, sentences });
-      session.videoCutsV1 = {
-        version: 1,
-        boundaries: autoCuts.boundaries,
-        source: 'auto',
-        sentencesHash: currentSentencesHash,
-        autoGenV: AUTO_CUTS_GEN_V,
-      };
-      videoCutsV1ToUse = session.videoCutsV1;
-      source = 'auto';
-      useVideoCutsV1 = true;
-    }
-  }
-
-  console.log('[videoCuts]', `source=${source}`, {
+  console.log('[videoCuts]', `source=${playbackPlan.debugSource}`, {
     sessionId: session.id,
-    pcts: source !== 'classic' ? videoCutsV1ToUse?.boundaries?.map((item) => item.pos.pct) : undefined,
+    pcts: useVideoCutsV1 ? videoCutsV1ToUse?.boundaries?.map((item) => item.pos.pct) : undefined,
   });
 
   const shotsWithClips = session.shots

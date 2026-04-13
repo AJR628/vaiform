@@ -820,6 +820,131 @@ test('GET /api/story/:sessionId preserves recovery polling fields mobile reads a
   assert.equal(result.json.data.renderRecovery.attemptId, 'idem-recovery-1');
 });
 
+test('GET /api/story/:sessionId returns additive playbackTimelineV1 for synced sessions without persisting auto cuts', async () => {
+  const restoreEnv = withEnv({ ENABLE_VIDEO_CUTS_V1: '1' });
+
+  try {
+    seedStorySession(
+      'user-1',
+      buildSyncedSession({
+        id: 'story-playback-auto',
+        story: {
+          sentences: ['Beat one', 'Beat two', 'Beat three'],
+        },
+        shots: [
+          buildShot('clip-playback-1', 0, 'Beat one', 4),
+          buildShot('clip-playback-2', 1, 'Beat two', 5),
+          buildShot('clip-playback-3', 2, 'Beat three', 6),
+        ],
+        videoCutsV1: undefined,
+        videoCutsV1Disabled: false,
+      })
+    );
+
+    const result = await requestJson('/api/story/story-playback-auto');
+
+    assert.equal(result.status, 200);
+    assert.equal(result.json.success, true);
+    assert.equal(result.json.data.playbackTimelineV1.version, 1);
+    assert.equal(result.json.data.playbackTimelineV1.source, 'auto');
+    assert.equal(result.json.data.playbackTimelineV1.totalDurationSec, 15);
+    assert.equal(result.json.data.playbackTimelineV1.segments.length, 3);
+    assert.deepEqual(
+      result.json.data.playbackTimelineV1.segments.map((segment) => segment.segmentIndex),
+      [0, 1, 2]
+    );
+    assert.equal(readStorySession('user-1', 'story-playback-auto').videoCutsV1, undefined);
+  } finally {
+    restoreEnv();
+  }
+});
+
+test('GET /api/story/:sessionId reflects manual videoCutsV1 in playbackTimelineV1 and keeps adjacent same-url segments distinct', async () => {
+  const restoreEnv = withEnv({ ENABLE_VIDEO_CUTS_V1: '1' });
+
+  try {
+    seedStorySession(
+      'user-1',
+      buildSyncedSession({
+        id: 'story-playback-manual',
+        story: {
+          sentences: ['Beat one', 'Beat two'],
+        },
+        shots: [
+          buildShot('clip-shared', 0, 'Beat one', 4),
+          buildShot('clip-shared', 1, 'Beat two', 4),
+        ],
+        videoCutsV1Disabled: false,
+        videoCutsV1: {
+          version: 1,
+          source: 'manual',
+          boundaries: [
+            {
+              leftBeat: 0,
+              pos: { beatIndex: 1, pct: 0.5 },
+            },
+          ],
+        },
+      })
+    );
+
+    const result = await requestJson('/api/story/story-playback-manual');
+    const timeline = result.json.data.playbackTimelineV1;
+
+    assert.equal(result.status, 200);
+    assert.equal(result.json.success, true);
+    assert.equal(timeline.version, 1);
+    assert.equal(timeline.source, 'manual');
+    assert.equal(timeline.segments.length, 2);
+    assert.equal(timeline.segments[0].clipUrl, timeline.segments[1].clipUrl);
+    assert.equal(timeline.segments[0].segmentIndex, 0);
+    assert.equal(timeline.segments[1].segmentIndex, 1);
+    assert.equal(timeline.segments[0].globalEndSec, 6);
+    assert.equal(timeline.segments[1].globalStartSec, 6);
+    assert.equal(timeline.segments[1].clipStartSec, 2);
+    assert.equal(timeline.segments[0].ownerSentenceIndex, 0);
+    assert.equal(timeline.segments[1].ownerSentenceIndex, 1);
+  } finally {
+    restoreEnv();
+  }
+});
+
+test('GET /api/story/:sessionId omits playbackTimelineV1 when synced clip coverage is incomplete', async () => {
+  const restoreEnv = withEnv({ ENABLE_VIDEO_CUTS_V1: '1' });
+
+  try {
+    seedStorySession(
+      'user-1',
+      buildSyncedSession({
+        id: 'story-playback-incomplete',
+        story: {
+          sentences: ['Beat one', 'Beat two'],
+        },
+        shots: [
+          buildShot('clip-incomplete-1', 0, 'Beat one', 4),
+          {
+            sentenceIndex: 1,
+            visualDescription: 'Beat two visual',
+            searchQuery: 'Beat two',
+            durationSec: 4,
+            startTimeSec: 4,
+            selectedClip: null,
+            candidates: [],
+          },
+        ],
+      })
+    );
+
+    const result = await requestJson('/api/story/story-playback-incomplete');
+
+    assert.equal(result.status, 200);
+    assert.equal(result.json.success, true);
+    assert.equal(Object.prototype.hasOwnProperty.call(result.json.data, 'playbackTimelineV1'), false);
+  } finally {
+    restoreEnv();
+  }
+});
+
 test('GET /api/story/:sessionId returns canonical pending when session recovery is missing but an active lock + attempt exist', async () => {
   seedStorySession(
     'user-1',
