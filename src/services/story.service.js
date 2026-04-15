@@ -779,10 +779,12 @@ export function refreshStorySessionHeuristicEstimate(session) {
 export function sanitizeStorySessionForClient(session) {
   if (!session || typeof session !== 'object') return session;
   const safeSession = safeJsonClone(session);
-  const playbackTimelineV1 = buildStoryPlaybackTimelineV1(session);
+  const previewReadiness = buildStoryPreviewReadiness(session);
+  const playbackTimelineV1 = buildStoryPlaybackTimelineV1(session, previewReadiness);
 
   delete safeSession.renderedSegments;
   delete safeSession.playbackTimelineV1;
+  delete safeSession.previewReadinessV1;
   if (Array.isArray(safeSession.beats)) {
     safeSession.beats = safeSession.beats.map((beat) => {
       if (!beat || typeof beat !== 'object') return beat;
@@ -806,6 +808,14 @@ export function sanitizeStorySessionForClient(session) {
   }
 
   safeSession.voiceOptions = safeVoiceOptions();
+  safeSession.previewReadinessV1 = {
+    version: 1,
+    ready: previewReadiness.ready === true,
+    reasonCode: previewReadiness.reasonCode ?? null,
+    missingBeatIndices: Array.isArray(previewReadiness.missingBeatIndices)
+      ? previewReadiness.missingBeatIndices
+      : [],
+  };
   if (playbackTimelineV1) {
     safeSession.playbackTimelineV1 = playbackTimelineV1;
   }
@@ -2070,15 +2080,20 @@ function getShotBySentenceIndex(shots, sentenceIndex) {
   return items.find((entry) => entry?.sentenceIndex === sentenceIndex) || null;
 }
 
-function hasClipsForAllStoryBeats({ shots, beatCount }) {
-  if (!Number.isInteger(beatCount) || beatCount <= 0) return false;
+function getMissingClipBeatIndices({ shots, beatCount }) {
+  const missingBeatIndices = [];
+  if (!Number.isInteger(beatCount) || beatCount <= 0) return missingBeatIndices;
   for (let beatIndex = 0; beatIndex < beatCount; beatIndex += 1) {
     const shot = getShotBySentenceIndex(shots, beatIndex);
     if (!shot?.selectedClip?.url) {
-      return false;
+      missingBeatIndices.push(beatIndex);
     }
   }
-  return true;
+  return missingBeatIndices;
+}
+
+function hasClipsForAllStoryBeats({ shots, beatCount }) {
+  return getMissingClipBeatIndices({ shots, beatCount }).length === 0;
 }
 
 function hasValidVideoCutsV1({ videoCutsV1, beatCount }) {
@@ -2223,49 +2238,120 @@ function buildBeatDurationsFromSyncedCaptions(session, beatCount) {
   return beatsDurSec;
 }
 
-function buildStoryPlaybackTimelineV1(session) {
+function buildStoryPreviewReadiness(session) {
   const syncSummary = normalizeVoiceSyncSummary(session);
-  if (syncSummary.state !== 'current') return null;
+  if (syncSummary.state !== 'current') {
+    return {
+      ready: false,
+      reasonCode: 'VOICE_SYNC_NOT_CURRENT',
+      missingBeatIndices: [],
+      playbackSource: null,
+      segments: null,
+    };
+  }
+  if (!syncSummary.previewAudioUrl) {
+    return {
+      ready: false,
+      reasonCode: 'PREVIEW_AUDIO_MISSING',
+      missingBeatIndices: [],
+      playbackSource: null,
+      segments: null,
+    };
+  }
 
   const sentences = Array.isArray(session?.story?.sentences) ? session.story.sentences : [];
   const beatCount = sentences.length;
-  if (beatCount === 0) return null;
+  if (beatCount === 0) {
+    return {
+      ready: false,
+      reasonCode: 'CAPTIONS_INCOMPLETE',
+      missingBeatIndices: [],
+      playbackSource: null,
+      segments: null,
+    };
+  }
 
   const beatsDurSec = buildBeatDurationsFromSyncedCaptions(session, beatCount);
   if (!Array.isArray(beatsDurSec) || beatsDurSec.length !== beatCount) {
-    return null;
+    return {
+      ready: false,
+      reasonCode: 'CAPTIONS_INCOMPLETE',
+      missingBeatIndices: [],
+      playbackSource: null,
+      segments: null,
+    };
+  }
+
+  const missingBeatIndices = getMissingClipBeatIndices({ shots: session?.shots, beatCount });
+  if (missingBeatIndices.length > 0) {
+    return {
+      ready: false,
+      reasonCode: 'MISSING_CLIP_COVERAGE',
+      missingBeatIndices,
+      playbackSource: null,
+      segments: null,
+    };
   }
 
   const playbackPlan = resolveStoryVideoCutsPlan({ session, sentences });
-  if (!playbackPlan.hasClipsForAllBeats) {
-    return null;
-  }
-
-  const segments = playbackPlan.useVideoCutsV1
-    ? playbackPlan.source === 'auto'
-      ? computeVideoSegmentsFromCutsAutoBudget({
-          beatsDurSec,
-          shots: session.shots,
-          videoCutsV1: playbackPlan.resolvedVideoCutsV1,
-          sessionId: session.id,
-          sentences,
-          sentencesHash: playbackPlan.currentSentencesHash,
-        })
+  try {
+    const segments = playbackPlan.useVideoCutsV1
+      ? playbackPlan.source === 'auto'
+        ? computeVideoSegmentsFromCutsAutoBudget({
+            beatsDurSec,
+            shots: session.shots,
+            videoCutsV1: playbackPlan.resolvedVideoCutsV1,
+            sessionId: session.id,
+            sentences,
+            sentencesHash: playbackPlan.currentSentencesHash,
+          })
+        : computeVideoSegmentsFromCuts({
+            beatsDurSec,
+            shots: session.shots,
+            videoCutsV1: playbackPlan.resolvedVideoCutsV1,
+          })
       : computeVideoSegmentsFromCuts({
           beatsDurSec,
           shots: session.shots,
-          videoCutsV1: playbackPlan.resolvedVideoCutsV1,
-        })
-    : computeVideoSegmentsFromCuts({
-        beatsDurSec,
-        shots: session.shots,
-        videoCutsV1: { version: 1, boundaries: [] },
-      });
+          videoCutsV1: { version: 1, boundaries: [] },
+        });
 
-  if (!Array.isArray(segments) || segments.length !== beatCount) {
+    if (!Array.isArray(segments) || segments.length !== beatCount) {
+      return {
+        ready: false,
+        reasonCode: 'INVALID_PLAYBACK_SEGMENTS',
+        missingBeatIndices: [],
+        playbackSource: null,
+        segments: null,
+      };
+    }
+
+    return {
+      ready: true,
+      reasonCode: null,
+      missingBeatIndices: [],
+      playbackSource: playbackPlan.source,
+      segments,
+    };
+  } catch {
+    return {
+      ready: false,
+      reasonCode: 'INVALID_PLAYBACK_SEGMENTS',
+      missingBeatIndices: [],
+      playbackSource: null,
+      segments: null,
+    };
+  }
+}
+
+function buildStoryPlaybackTimelineV1(session, previewReadiness = null) {
+  const readiness = previewReadiness || buildStoryPreviewReadiness(session);
+  if (!readiness?.ready || !Array.isArray(readiness.segments)) {
     return null;
   }
 
+  const segments = readiness.segments;
+  const beatCount = segments.length;
   const timelineSegments = segments
     .map((segment, segmentIndex) => {
       const clipUrl = typeof segment?.clipUrl === 'string' ? segment.clipUrl : '';
@@ -2308,11 +2394,11 @@ function buildStoryPlaybackTimelineV1(session) {
 
   return {
     version: 1,
-    source: playbackPlan.source,
+    source: readiness.playbackSource,
     totalDurationSec:
       timelineSegments.length > 0
         ? timelineSegments[timelineSegments.length - 1].globalEndSec
-        : beatsDurSec.reduce((sum, value) => sum + value, 0),
+        : 0,
     segments: timelineSegments,
   };
 }

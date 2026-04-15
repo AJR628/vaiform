@@ -736,6 +736,9 @@ test('POST /api/story/search returns planned shots with selectedClip and candida
   assert.equal(result.status, 200);
   assert.equal(result.json.success, true);
   assert.equal(result.json.data.status, 'clips_searched');
+  assert.equal(result.json.data.previewReadinessV1.version, 1);
+  assert.equal(result.json.data.previewReadinessV1.ready, false);
+  assert.equal(result.json.data.previewReadinessV1.reasonCode, 'VOICE_SYNC_NOT_CURRENT');
   assert.equal(result.json.data.shots.length, 2);
   assert.equal(result.json.data.shots[0].candidates.length, 2);
   assert.equal(result.json.data.shots[0].selectedClip.id, 'space habit-clip-1');
@@ -845,6 +848,10 @@ test('GET /api/story/:sessionId returns additive playbackTimelineV1 for synced s
 
     assert.equal(result.status, 200);
     assert.equal(result.json.success, true);
+    assert.equal(result.json.data.previewReadinessV1.version, 1);
+    assert.equal(result.json.data.previewReadinessV1.ready, true);
+    assert.equal(result.json.data.previewReadinessV1.reasonCode, null);
+    assert.deepEqual(result.json.data.previewReadinessV1.missingBeatIndices, []);
     assert.equal(result.json.data.playbackTimelineV1.version, 1);
     assert.equal(result.json.data.playbackTimelineV1.source, 'auto');
     assert.equal(result.json.data.playbackTimelineV1.totalDurationSec, 15);
@@ -893,6 +900,9 @@ test('GET /api/story/:sessionId reflects manual videoCutsV1 in playbackTimelineV
 
     assert.equal(result.status, 200);
     assert.equal(result.json.success, true);
+    assert.equal(result.json.data.previewReadinessV1.version, 1);
+    assert.equal(result.json.data.previewReadinessV1.ready, true);
+    assert.equal(result.json.data.previewReadinessV1.reasonCode, null);
     assert.equal(timeline.version, 1);
     assert.equal(timeline.source, 'manual');
     assert.equal(timeline.segments.length, 2);
@@ -939,6 +949,10 @@ test('GET /api/story/:sessionId omits playbackTimelineV1 when synced clip covera
 
     assert.equal(result.status, 200);
     assert.equal(result.json.success, true);
+    assert.equal(result.json.data.previewReadinessV1.version, 1);
+    assert.equal(result.json.data.previewReadinessV1.ready, false);
+    assert.equal(result.json.data.previewReadinessV1.reasonCode, 'MISSING_CLIP_COVERAGE');
+    assert.deepEqual(result.json.data.previewReadinessV1.missingBeatIndices, [1]);
     assert.equal(Object.prototype.hasOwnProperty.call(result.json.data, 'playbackTimelineV1'), false);
   } finally {
     restoreEnv();
@@ -1658,6 +1672,10 @@ test('POST /api/story/sync reuses an identical current fingerprint without charg
     assert.equal(result.json.data.voiceSync.cached, true);
     assert.equal(result.json.data.voiceSync.lastChargeSec, 0);
     assert.equal(result.json.data.voiceSync.currentFingerprint, plan.fullFingerprint);
+    assert.equal(result.json.data.previewReadinessV1.version, 1);
+    assert.equal(result.json.data.previewReadinessV1.ready, true);
+    assert.equal(result.json.data.previewReadinessV1.reasonCode, null);
+    assert.equal(result.json.data.playbackTimelineV1.segments.length, 1);
 
     const attemptDoc = readDoc('storySyncAttempts', 'user-1:idem-story-sync-cached');
     assert.equal(attemptDoc.state, 'done');
@@ -1665,6 +1683,96 @@ test('POST /api/story/sync reuses an identical current fingerprint without charg
     assert.equal(readDoc('storySyncSessions', 'user-1:story-sync-cached'), null);
     assert.equal(readDoc('users', 'user-1').usage.cycleUsedSec, 20);
     assert.equal(readDoc('users', 'user-1').usage.cycleReservedSec, 0);
+  } finally {
+    restoreEnv();
+  }
+});
+
+test('POST /api/story/sync preserves current voiceSync but returns blocked preview readiness when clip coverage is incomplete', async () => {
+  const restoreEnv = withEnv({
+    TTS_PROVIDER: 'elevenlabs',
+    ELEVENLABS_API_KEY: 'test-eleven-key',
+  });
+
+  try {
+    seedUserDoc('user-1', {
+      plan: 'creator',
+      membership: {
+        status: 'active',
+        kind: 'subscription',
+        billingCadence: 'monthly',
+      },
+      usage: {
+        cycleIncludedSec: 600,
+        cycleUsedSec: 20,
+        cycleReservedSec: 0,
+      },
+    });
+    seedStorySession(
+      'user-1',
+      buildSyncedSession({
+        id: 'story-sync-incomplete-clips',
+        story: {
+          sentences: ['Beat one', 'Beat two'],
+        },
+        shots: [
+          buildShot('clip-sync-incomplete-1', 0, 'Beat one', 4),
+          {
+            sentenceIndex: 1,
+            visualDescription: 'Beat two visual',
+            searchQuery: 'Beat two',
+            durationSec: 4,
+            startTimeSec: 4,
+            selectedClip: null,
+            candidates: [],
+          },
+        ],
+      })
+    );
+
+    const { buildStoryVoiceSyncPlan } = await import('../../src/services/story.service.js');
+    const { plan } = await buildStoryVoiceSyncPlan({
+      uid: 'user-1',
+      sessionId: 'story-sync-incomplete-clips',
+      mode: 'stale',
+      voicePreset: 'male_calm',
+      voicePacePreset: 'normal',
+    });
+    const currentSession = readStorySession('user-1', 'story-sync-incomplete-clips');
+    currentSession.voicePreset = 'male_calm';
+    currentSession.voicePacePreset = 'normal';
+    currentSession.voiceSync = {
+      ...currentSession.voiceSync,
+      state: 'current',
+      staleScope: 'none',
+      staleBeatIndices: [],
+      currentFingerprint: plan.fullFingerprint,
+      nextEstimatedChargeSec: 0,
+    };
+    seedStorySession('user-1', currentSession);
+
+    const result = await requestJson('/api/story/sync', {
+      method: 'POST',
+      headers: {
+        'x-client': 'mobile',
+        'X-Idempotency-Key': 'idem-story-sync-incomplete-clips',
+      },
+      body: {
+        sessionId: 'story-sync-incomplete-clips',
+        mode: 'stale',
+        voicePreset: 'male_calm',
+        voicePacePreset: 'normal',
+      },
+    });
+
+    assert.equal(result.status, 200);
+    assert.equal(result.json.success, true);
+    assert.equal(result.json.data.voiceSync.state, 'current');
+    assert.equal(result.json.data.previewReadinessV1.version, 1);
+    assert.equal(result.json.data.previewReadinessV1.ready, false);
+    assert.equal(result.json.data.previewReadinessV1.reasonCode, 'MISSING_CLIP_COVERAGE');
+    assert.deepEqual(result.json.data.previewReadinessV1.missingBeatIndices, [1]);
+    assert.equal(Object.prototype.hasOwnProperty.call(result.json.data, 'playbackTimelineV1'), false);
   } finally {
     restoreEnv();
   }

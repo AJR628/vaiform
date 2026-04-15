@@ -100,7 +100,10 @@ Route-authority note:
   - Mobile sends: no body.
   - Backend returns: full session in `data`.
   - Mobile reads: `story.sentences`, `shots`, `overlayCaption.placement`, additive `billingEstimate.estimatedSec`, `voicePreset`, `voicePacePreset`, `voiceOptions`, `voiceSync`, synced `captions`, `shot.selectedClip.thumbUrl`, `shot.searchQuery`, and `renderRecovery` during finalize recovery polling and same-session restart-safe finalize resume.
-  - Additive field: web/editor responses may also include optional `playbackTimelineV1`, a backend-derived render/preview playback timeline used by the large storyboard preview. Mobile does not currently read this field.
+  - Additive preview fields:
+    - `playbackTimelineV1`: optional backend-derived render/preview playback timeline used by the large storyboard preview. It remains omitted when a truthful aligned preview timeline cannot be built.
+    - `previewReadinessV1 = { version, ready, reasonCode, missingBeatIndices }`: backend-owned aligned-preview readiness metadata. Current reason codes are `VOICE_SYNC_NOT_CURRENT`, `PREVIEW_AUDIO_MISSING`, `CAPTIONS_INCOMPLETE`, `MISSING_CLIP_COVERAGE`, and `INVALID_PLAYBACK_SEGMENTS`.
+  - Mobile does not currently read these preview-only additive fields.
   - Recovery role: this route remains the canonical finalize recovery contract. Additive `renderRecovery` fields still expose `{ state, attemptId, startedAt, updatedAt, shortId, finishedAt, failedAt, code, message }`, and mobile still trusts them only when `renderRecovery.attemptId` matches the active finalize attempt. Backend Phase 5 now derives that additive projection from canonical finalize attempt/job truth through `src/services/finalize-status.service.js`; session `renderRecovery` remains compatibility storage only.
   - Stable failure now: `404 SESSION_NOT_FOUND`.
   - Diagnostics note: failed recovery polls now keep `requestId` in normalized mobile failures and enrich diagnostics with `sessionId` plus the active finalize `attemptId`.
@@ -121,6 +124,7 @@ Route-authority note:
   - Mobile sends: `{ sessionId }`.
   - Backend returns: full session in `data`.
   - Mobile reads: success/failure only.
+  - Additive preview note: sanitized search responses now also include backend-owned `previewReadinessV1`; before sync it normally reports `ready = false` with `reasonCode = VOICE_SYNC_NOT_CURRENT`.
   - Success rule: preserve success whenever at least one consulted provider returns usable clips.
   - Stable failures now:
     - `404 SESSION_NOT_FOUND`
@@ -153,6 +157,7 @@ Route-authority note:
   - Mobile sends: `{ sessionId, mode: "full" | "stale", voicePreset?, voicePacePreset?: "normal" }` plus `X-Idempotency-Key`.
   - Backend returns: full session in `data`; same-key active replay returns `202` with additive top-level `sync: { state, attemptId, pollSessionId }`.
   - Mobile reads: `voiceSync.state`, `voiceSync.staleScope`, `voiceSync.staleBeatIndices`, `voiceSync.nextEstimatedChargeSec`, `voiceSync.lastChargeSec`, `voiceSync.totalDurationSec`, `voiceSync.previewAudioUrl`, `voiceSync.cached`, persisted `voicePreset`, persisted `voicePacePreset`, synced `captions`, and updated render `billingEstimate.estimatedSec`.
+  - Additive preview note: successful sync may still return `previewReadinessV1.ready = false` and omit `playbackTimelineV1` when the backend cannot build a truthful aligned preview timeline, most notably when clip coverage is incomplete.
   - Contract rules:
     - identical current sync fingerprint returns cached success and `0` charge
     - full script changes, beat insert/delete, or voice changes require full re-sync

@@ -463,7 +463,27 @@ function getStoryVoiceSync(session = window.currentStorySession) {
   return session?.voiceSync && typeof session.voiceSync === 'object' ? session.voiceSync : {};
 }
 
+function getStoryPreviewReadiness(session = window.currentStorySession) {
+  const readiness = session?.previewReadinessV1;
+  if (!readiness || Number(readiness.version) !== 1 || typeof readiness.ready !== 'boolean') {
+    return null;
+  }
+  return {
+    ready: readiness.ready === true,
+    reasonCode: typeof readiness.reasonCode === 'string' ? readiness.reasonCode : null,
+    missingBeatIndices: Array.isArray(readiness.missingBeatIndices)
+      ? readiness.missingBeatIndices
+          .map((value) => Number(value))
+          .filter((value) => Number.isFinite(value) && value >= 0)
+      : [],
+  };
+}
+
 function hasCurrentStoryPreviewSync(session = window.currentStorySession) {
+  const readiness = getStoryPreviewReadiness(session);
+  if (readiness) {
+    return readiness.ready && !!getPlaybackTimeline(session);
+  }
   const voiceSync = getStoryVoiceSync(session);
   return (
     voiceSync.state === 'current' &&
@@ -472,6 +492,38 @@ function hasCurrentStoryPreviewSync(session = window.currentStorySession) {
     session.captions.length > 0 &&
     !!getPlaybackTimeline(session)
   );
+}
+
+function hasBlockedAlignedPreviewState(session = window.currentStorySession) {
+  const readiness = getStoryPreviewReadiness(session);
+  if (readiness) {
+    return !readiness.ready && readiness.reasonCode !== 'VOICE_SYNC_NOT_CURRENT';
+  }
+  const voiceSync = getStoryVoiceSync(session);
+  return voiceSync.state === 'current' && !hasCurrentStoryPreviewSync(session);
+}
+
+function getStoryPreviewBlockedMessage(session = window.currentStorySession) {
+  const readiness = getStoryPreviewReadiness(session);
+  if (!readiness || readiness.ready) return null;
+  switch (readiness.reasonCode) {
+    case 'MISSING_CLIP_COVERAGE': {
+      const beats = readiness.missingBeatIndices.map((value) => value + 1);
+      if (beats.length === 0) {
+        return 'Aligned preview is unavailable until every beat has a selected clip.';
+      }
+      const beatLabel = beats.length === 1 ? 'beat' : 'beats';
+      return `Aligned preview is unavailable until ${beatLabel} ${beats.join(', ')} ${beats.length === 1 ? 'has' : 'have'} a selected clip.`;
+    }
+    case 'PREVIEW_AUDIO_MISSING':
+      return 'Voice sync finished, but preview audio is unavailable for this session.';
+    case 'CAPTIONS_INCOMPLETE':
+      return 'Voice sync finished, but caption timing is incomplete for this session.';
+    case 'INVALID_PLAYBACK_SEGMENTS':
+      return 'Voice sync finished, but the render-aligned preview timeline is unavailable for this session.';
+    default:
+      return null;
+  }
 }
 
 function formatSecondsLabel(value, fallback = 'Not ready') {
@@ -514,6 +566,8 @@ function getCreativeStepStates() {
   const storyboardReady = hasPreparedStoryboardSession();
   const storyboardSynced = isStoryboardSyncedToScript();
   const previewReady = hasCurrentStoryPreviewSync();
+  const previewBlockedAfterSync = hasBlockedAlignedPreviewState();
+  const previewBlockedMessage = getStoryPreviewBlockedMessage();
   const renderReady =
     storyboardReady && storyboardSynced && hasRenderableStoryboardSession() && previewReady;
   const sessionStats = getSessionStoryboardStats();
@@ -526,7 +580,7 @@ function getCreativeStepStates() {
         ? 'Syncing preview'
         : previewReady
           ? `${sessionStats.clipCount}/${sessionStats.total} clips selected`
-          : voiceSync.state === 'stale'
+          : previewBlockedAfterSync || voiceSync.state === 'stale'
             ? 'Preview blocked'
             : 'Preparing preview';
 
@@ -654,7 +708,9 @@ function getCurrentShellAction(states = getCreativeStepStates()) {
           ? 'Syncing narration and timing...'
           : storyboardSyncErrorMessage
             ? 'Retry sync to unlock render.'
-            : 'Wait for synced preview before rendering.',
+            : previewBlockedMessage
+              ? previewBlockedMessage
+              : 'Wait for synced preview before rendering.',
       disabled: !states.render.unlocked,
       type: 'step',
       step: 'render',
@@ -954,6 +1010,7 @@ function refreshStoryboardPreview(session = window.currentStorySession) {
   if (!previewVideo || !blocked || !audio || !duration || !charge || !renderEstimate) return;
 
   const voiceSync = getStoryVoiceSync(session);
+  const previewBlockedMessage = getStoryPreviewBlockedMessage(session);
   const previewReady = hasCurrentStoryPreviewSync(session);
   const renderEstimateValue = session?.billingEstimate?.estimatedSec;
   duration.textContent = formatSecondsLabel(voiceSync.totalDurationSec);
@@ -1005,8 +1062,8 @@ function refreshStoryboardPreview(session = window.currentStorySession) {
           storyboardSyncErrorMessage ||
           (voiceSync.state === 'stale'
             ? 'Preview needs a fresh sync to match the current script.'
-            : voiceSync.state === 'current'
-              ? 'Preview unlocks after sync is current and every beat has a selected clip-backed playback timeline.'
+            : previewBlockedMessage
+              ? previewBlockedMessage
               : 'Run sync to unlock truthful narration timing for this storyboard.');
       }
       retryButton?.classList.remove('hidden');
@@ -1082,7 +1139,12 @@ async function retryStoryboardPreviewSync() {
     storyboardSyncInFlight = false;
     storyboardSyncErrorMessage = '';
     await renderStoryboard(syncedSession);
-    showToast('Synced preview ready.');
+    showToast(
+      hasCurrentStoryPreviewSync(syncedSession)
+        ? 'Synced preview ready.'
+        : getStoryPreviewBlockedMessage(syncedSession) ||
+            'Voice sync finished, but the render-aligned preview is still unavailable.'
+    );
   } catch (error) {
     storyboardSyncInFlight = false;
     storyboardSyncErrorMessage = error?.message || 'Failed to sync storyboard preview.';

@@ -61,6 +61,7 @@ Existing endpoints may still emit these until migrated; new code and framework-l
 - `POST /api/checkout/start` now accepts `{ "plan": "creator" | "pro" }` only and returns the standard success envelope with `data.url`.
 - `POST /api/checkout/session` and `POST /api/checkout/subscription` have been removed from mounted runtime and must not be used by callers.
 - Additive session `billingEstimate` and additive billing payloads must stay nested under `data`; do not introduce top-level billing fields outside established finalize exceptions.
+- Additive story-session preview fields must stay nested under `data`. Current backend-owned fields are `playbackTimelineV1` for truthful render-aligned clip playback and `previewReadinessV1` for aligned-preview readiness state/reasoning.
 - Established finalize top-level exceptions are:
   - `shortId` on terminal success replay
   - `finalize = { state, attemptId, pollSessionId }` on accepted and active-conflict responses
