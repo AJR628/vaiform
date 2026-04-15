@@ -98,7 +98,7 @@ Audit date: 2026-03-13
 ## Caller-backed notes
 
 - Creative story pipeline remains caller-backed via `web/public/creative.html` -> `web/public/js/pages/creative/creative.article.mjs`.
-- The creative storyboard step now auto-runs `/api/story/sync` after `plan -> search` and lands in a preview-first storyboard shell backed by synced narration timing plus backend-owned aligned-preview contract fields.
+- The creative storyboard step now auto-runs `/api/story/sync` after `plan -> search` and lands in a compact preview-first editing surface: preview hero, transport row, filmstrip timeline, selected-clip inspector, and collapsed secondary controls, all still backed by synced narration timing plus backend-owned aligned-preview contract fields.
 - The large storyboard preview only unlocks when the sanitized story session includes truthful backend `playbackTimelineV1`; additive `previewReadinessV1` now carries the backend-owned blocked/ready reason state when that aligned timeline is unavailable.
 - Mobile storyboard speech flow now caller-backs `POST /api/story/sync` via `client/screens/StoryEditorScreen.tsx` and `client/screens/story-editor/useStoryVoiceSync.ts`.
 - The current creative web caller uses `/api/story/start`, `/api/story/generate`, `/api/story/plan`, `/api/story/search`, `/api/story/sync`, `/api/assets/options`, `/api/story/update-shot`, `/api/story/search-shot`, `/api/story/update-video-cuts`, `/api/story/create-manual-session`, `/api/story/finalize`, and `GET /api/story/:sessionId`.

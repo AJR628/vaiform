@@ -146,33 +146,33 @@
       }
 
       .beat-card.beat-hovered {
-        transform: translateY(-6px) scale(1.02);
+        transform: translateY(-1px);
         transform-origin: top center;
         z-index: 80;
         overflow: visible;
       }
 
       .beat-card.squish-left-1 {
-        transform: translateX(-10px);
+        transform: none;
       }
 
       .beat-card.squish-left-2 {
-        transform: translateX(-6px);
+        transform: none;
       }
 
       .beat-card.squish-right-1 {
-        transform: translateX(10px);
+        transform: none;
       }
 
       .beat-card.squish-right-2 {
-        transform: translateX(6px);
+        transform: none;
       }
 
       .storyboard-scroll-wrapper {
         overflow-x: auto;
         overflow-y: visible;
-        padding-top: 20px;
-        padding-bottom: 28px;
+        padding-top: 6px;
+        padding-bottom: 10px;
         width: 100%;
       }
 
@@ -181,7 +181,7 @@
       }
 
       #storyboard.storyboard-hovering .storyboard-scroll-wrapper {
-        padding-bottom: 36px;
+        padding-bottom: 12px;
       }
 
       #beat-focus-modal {
@@ -422,7 +422,6 @@
                   </div>
                 </div>
               </div>
-
             </div>
 
             <div class="creative-shell-hidden-action">
@@ -443,250 +442,420 @@
                 <p class="creative-panel-kicker">Step 3</p>
                 <h2 class="creative-panel-title">Storyboard</h2>
               </div>
-              <p class="creative-panel-copy">Review the synced preview, then adjust the clip sequence.</p>
+              <p class="creative-panel-copy">
+                Review the synced preview, then adjust the clip sequence.
+              </p>
             </div>
 
             <div id="storyboard" class="creative-storyboard-stage hidden">
-              <div class="creative-storyboard-preview-shell">
-                <div class="creative-storyboard-preview-frame">
-                  <video
-                    id="storyboard-preview-video"
-                    class="creative-storyboard-preview-video hidden"
-                    muted
-                    loop
-                    playsinline
-                    preload="metadata"
-                  ></video>
-                  <img
-                    id="storyboard-preview-overlay"
-                    class="creative-storyboard-preview-overlay"
-                    alt="Preview caption overlay"
-                    style="display: none"
-                  />
-                  <div id="storyboard-preview-blocked" class="creative-storyboard-preview-blocked" aria-live="polite">
-                    <p id="storyboard-preview-status-kicker" class="creative-storyboard-preview-kicker">
-                      Synced preview
-                    </p>
-                    <h3 id="storyboard-preview-status-title" class="creative-storyboard-preview-title">
-                      Generate a storyboard to prepare the synced preview.
-                    </h3>
-                    <p id="storyboard-preview-status-copy" class="creative-storyboard-preview-copy">
-                      Vaiform will sync narration and timing before the preview is ready to watch.
-                    </p>
-                    <button
-                      id="storyboard-sync-retry-btn"
-                      type="button"
-                      class="creative-secondary-button hidden"
-                    >
-                      Retry sync
-                    </button>
-                  </div>
-                </div>
-
-                <div class="creative-storyboard-preview-sidebar">
-                  <div class="creative-render-truth">
-                    <p class="creative-render-truth-label">Synced preview</p>
-                    <h3 id="storyboard-preview-heading" class="creative-render-truth-title">
-                      Preview follows synced narration timing
-                    </h3>
-                    <p id="storyboard-preview-caption" class="creative-render-truth-copy">
-                      Generate a storyboard to unlock synced audio and timing.
-                    </p>
-                  </div>
-
-                  <div class="creative-storyboard-preview-stats">
-                    <div class="creative-storyboard-stat">
-                      <span class="creative-storyboard-stat-label">Duration</span>
-                      <strong id="storyboard-preview-duration" class="creative-storyboard-stat-value"
-                        >Not ready</strong
-                      >
-                    </div>
-                    <div class="creative-storyboard-stat">
-                      <span class="creative-storyboard-stat-label">Sync charge</span>
-                      <strong id="storyboard-preview-charge" class="creative-storyboard-stat-value"
-                        >Not ready</strong
-                      >
-                    </div>
-                    <div class="creative-storyboard-stat">
-                      <span class="creative-storyboard-stat-label">Render est.</span>
-                      <strong id="storyboard-preview-render-estimate" class="creative-storyboard-stat-value"
-                        >Waiting for sync</strong
-                      >
-                    </div>
-                  </div>
-
-                  <audio
-                    id="storyboard-preview-audio"
-                    class="creative-storyboard-preview-audio hidden"
-                    controls
-                    preload="none"
-                  ></audio>
-                </div>
-              </div>
-
-              <div id="storyboard-scroll" class="storyboard-scroll-wrapper">
-                <div id="storyboard-row" class="flex gap-3 pb-2"></div>
-              </div>
-              <div id="caption-style-mount"></div>
-              <div id="caption-style-section" class="creative-caption-card" style="display: none">
-                <h2 class="text-xl font-semibold text-gray-900 dark:text-white">Caption Style</h2>
-
-                <div class="mb-4">
-                  <label class="flex items-center gap-2">
-                    <input type="checkbox" id="overlay-mode-toggle" class="rounded" />
-                    <span class="text-sm font-medium text-gray-700 dark:text-gray-300"
-                      >Use Draggable Overlay</span
-                    >
-                  </label>
-                </div>
-
-                <div id="overlay-controls" class="mb-4 space-y-3" style="display: none">
-                  <div>
-                    <label class="flex items-center gap-2">
-                      <input type="checkbox" id="show-outline-toggle" class="rounded" checked />
-                      <span class="text-sm font-medium text-gray-700 dark:text-gray-300"
-                        >Show outline</span
-                      >
-                    </label>
-                  </div>
-                  <div>
-                    <label class="flex items-center gap-2">
-                      <input type="checkbox" id="responsive-text-toggle" class="rounded" checked />
-                      <span class="text-sm font-medium text-gray-700 dark:text-gray-300"
-                        >Responsive text</span
-                      >
-                    </label>
-                  </div>
-                </div>
-
-                <div class="grid grid-cols-2 gap-4">
-                  <div>
-                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
-                      >Font</label
-                    >
-                    <select id="caption-font" class="creative-control">
-                      <option value="system">System</option>
-                      <option value="bold">Bold</option>
-                      <option value="cinematic">Cinematic</option>
-                      <option value="minimal">Minimal</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
-                      >Weight</label
-                    >
-                    <select id="caption-weight" class="creative-control">
-                      <option value="normal">Normal</option>
-                      <option value="bold">Bold</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
-                      >Size: <span id="size-value">80px</span></label
-                    >
-                    <input type="range" id="caption-size" min="0" max="100" value="60" class="w-full" />
-                  </div>
-                  <div>
-                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
-                      >Opacity: <span id="opacity-value">80%</span></label
-                    >
-                    <input
-                      type="range"
-                      id="caption-opacity"
-                      min="30"
-                      max="100"
-                      value="80"
-                      class="w-full"
+              <div class="creative-storyboard-surface">
+                <div class="creative-storyboard-preview-shell">
+                  <div class="creative-storyboard-preview-frame">
+                    <video
+                      id="storyboard-preview-video"
+                      class="creative-storyboard-preview-video hidden"
+                      muted
+                      loop
+                      playsinline
+                      preload="metadata"
+                    ></video>
+                    <img
+                      id="storyboard-preview-overlay"
+                      class="creative-storyboard-preview-overlay"
+                      alt="Preview caption overlay"
+                      style="display: none"
                     />
-                  </div>
-                  <div>
-                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
-                      >Placement</label
+                    <div
+                      id="storyboard-preview-blocked"
+                      class="creative-storyboard-preview-blocked"
+                      aria-live="polite"
                     >
-                    <select id="caption-placement" class="creative-control">
-                      <option value="top">Top</option>
-                      <option value="middle">Middle</option>
-                      <option value="bottom" selected>Bottom</option>
-                    </select>
+                      <p
+                        id="storyboard-preview-status-kicker"
+                        class="creative-storyboard-preview-kicker"
+                      >
+                        Synced preview
+                      </p>
+                      <h3
+                        id="storyboard-preview-status-title"
+                        class="creative-storyboard-preview-title"
+                      >
+                        Generate a storyboard to prepare the synced preview.
+                      </h3>
+                      <p
+                        id="storyboard-preview-status-copy"
+                        class="creative-storyboard-preview-copy"
+                      >
+                        Vaiform will sync narration and timing before the preview is ready to watch.
+                      </p>
+                      <button
+                        id="storyboard-sync-retry-btn"
+                        type="button"
+                        class="creative-secondary-button hidden"
+                      >
+                        Retry sync
+                      </button>
+                    </div>
                   </div>
-                  <div>
-                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
-                      >Background</label
+
+                  <div class="creative-storyboard-transport-bar">
+                    <div class="creative-storyboard-transport-copy">
+                      <p class="creative-storyboard-section-kicker">Now previewing</p>
+                      <h3 id="storyboard-preview-heading" class="creative-storyboard-section-title">
+                        Preview follows synced narration timing
+                      </h3>
+                      <p id="storyboard-preview-caption" class="creative-storyboard-section-copy">
+                        Generate a storyboard to unlock synced audio and timing.
+                      </p>
+                    </div>
+
+                    <audio
+                      id="storyboard-preview-audio"
+                      class="creative-storyboard-preview-audio hidden"
+                      controls
+                      preload="none"
+                    ></audio>
+                  </div>
+                </div>
+
+                <div class="creative-storyboard-timeline-shell">
+                  <div class="creative-storyboard-timeline-header">
+                    <div>
+                      <p class="creative-storyboard-section-kicker">Timeline</p>
+                      <h3 class="creative-storyboard-section-title">Select a clip to edit</h3>
+                    </div>
+                    <p class="creative-storyboard-section-copy">
+                      The active tile stays synced with preview playback.
+                    </p>
+                  </div>
+
+                  <div id="storyboard-scroll" class="storyboard-scroll-wrapper">
+                    <div id="storyboard-row" class="flex gap-3 pb-2"></div>
+                  </div>
+                </div>
+
+                <section
+                  id="storyboard-selection-inspector"
+                  class="creative-storyboard-inspector"
+                  aria-live="polite"
+                >
+                  <div class="creative-storyboard-inspector-media">
+                    <img
+                      id="storyboard-inspector-thumb"
+                      class="creative-storyboard-inspector-thumb hidden"
+                      alt="Selected clip thumbnail"
+                    />
+                    <div
+                      id="storyboard-inspector-thumb-empty"
+                      class="creative-storyboard-inspector-thumb-empty"
                     >
-                    <div class="flex items-center gap-4">
-                      <label class="flex items-center gap-2">
-                        <input type="checkbox" id="caption-background" class="rounded" />
-                        <span class="text-sm">Show box</span>
-                      </label>
-                      <div class="flex-1">
-                        <label class="block text-xs text-gray-400 mb-1"
-                          >Box opacity: <span id="bg-opacity-value">50%</span></label
-                        >
-                        <input
-                          type="range"
-                          id="caption-bg-opacity"
-                          min="0"
-                          max="100"
-                          value="50"
-                          class="w-full"
-                        />
+                      Select a clip
+                    </div>
+                  </div>
+
+                  <div class="creative-storyboard-inspector-body">
+                    <div class="creative-storyboard-inspector-header">
+                      <p
+                        id="storyboard-inspector-kicker"
+                        class="creative-storyboard-section-kicker"
+                      >
+                        Selected clip
+                      </p>
+                      <h3 id="storyboard-inspector-title" class="creative-storyboard-section-title">
+                        Choose a clip to edit
+                      </h3>
+                      <p id="storyboard-inspector-meta" class="creative-storyboard-section-copy">
+                        Tap a timeline tile to update clips and text without leaving the preview.
+                      </p>
+                    </div>
+
+                    <div
+                      id="storyboard-inspector-text"
+                      class="creative-storyboard-inspector-text beat-text"
+                      role="button"
+                      tabindex="0"
+                      aria-label="Edit selected beat text"
+                    >
+                      Select a tile to edit its beat text.
+                    </div>
+
+                    <div class="creative-storyboard-inspector-actions">
+                      <button
+                        id="storyboard-inspector-swap-btn"
+                        type="button"
+                        class="creative-secondary-button"
+                        disabled
+                      >
+                        Swap clip
+                      </button>
+                      <button
+                        id="storyboard-inspector-delete-btn"
+                        type="button"
+                        class="creative-secondary-button creative-storyboard-danger-button"
+                        disabled
+                      >
+                        Delete beat
+                      </button>
+                    </div>
+
+                    <p class="creative-storyboard-inspector-trim-note">
+                      Trim handles will plug into this inspector when backend span editing is ready.
+                    </p>
+                  </div>
+                </section>
+
+                <details id="storyboard-secondary-controls" class="creative-storyboard-secondary">
+                  <summary class="creative-storyboard-secondary-summary">
+                    <span>More controls</span>
+                    <span class="creative-storyboard-secondary-copy">
+                      Caption settings, preview details, and beta cuts
+                    </span>
+                  </summary>
+
+                  <div class="creative-storyboard-secondary-body">
+                    <div class="creative-storyboard-preview-sidebar">
+                      <div class="creative-render-truth">
+                        <p class="creative-render-truth-label">Synced preview</p>
+                        <h3 class="creative-render-truth-title">Backend-owned preview timing</h3>
+                        <p class="creative-render-truth-copy">
+                          Preview playback and blocked states still follow backend truth. Timeline
+                          widths stay visual-only.
+                        </p>
+                      </div>
+
+                      <div class="creative-storyboard-preview-stats">
+                        <div class="creative-storyboard-stat">
+                          <span class="creative-storyboard-stat-label">Duration</span>
+                          <strong
+                            id="storyboard-preview-duration"
+                            class="creative-storyboard-stat-value"
+                            >Not ready</strong
+                          >
+                        </div>
+                        <div class="creative-storyboard-stat">
+                          <span class="creative-storyboard-stat-label">Sync charge</span>
+                          <strong
+                            id="storyboard-preview-charge"
+                            class="creative-storyboard-stat-value"
+                            >Not ready</strong
+                          >
+                        </div>
+                        <div class="creative-storyboard-stat">
+                          <span class="creative-storyboard-stat-label">Render est.</span>
+                          <strong
+                            id="storyboard-preview-render-estimate"
+                            class="creative-storyboard-stat-value"
+                            >Waiting for sync</strong
+                          >
+                        </div>
                       </div>
                     </div>
-                  </div>
-                  <div class="mt-4">
-                    <button
-                      id="apply-caption-style-btn"
-                      type="button"
-                      class="creative-primary-button w-full"
-                    >
-                      Apply Caption Settings
-                    </button>
-                  </div>
-                </div>
-              </div>
 
-              <div id="video-cuts-panel" class="creative-video-cuts-panel hidden">
-                <div class="font-semibold text-gray-900 dark:text-white mb-2">Video Cuts (beta)</div>
-                <div
-                  id="video-cuts-warning"
-                  class="text-amber-600 dark:text-amber-400 text-xs mb-2 hidden"
-                ></div>
-                <div class="space-y-2">
-                  <label class="block text-gray-700 dark:text-gray-300"
-                    >Boundary
-                    <select id="video-cuts-boundary-index" class="creative-compact-control"></select
-                  ></label>
-                  <label class="block text-gray-700 dark:text-gray-300"
-                    >beatIndex
-                    <input
-                      type="number"
-                      id="video-cuts-beat-index"
-                      min="1"
-                      max="1"
-                      class="creative-compact-control creative-compact-control-number"
-                  /></label>
-                  <label class="block text-gray-700 dark:text-gray-300"
-                    >pct
-                    <input
-                      type="range"
-                      id="video-cuts-pct"
-                      min="0"
-                      max="1"
-                      step="0.01"
-                      value="0.35"
-                      class="align-middle"
-                    /><span id="video-cuts-pct-value" class="ml-1">0.35</span></label
-                  >
-                  <div class="flex gap-2 mt-2">
-                    <button type="button" id="video-cuts-save-btn" class="creative-secondary-button">
-                      Save Cuts
-                    </button>
-                    <button type="button" id="video-cuts-reset-btn" class="creative-secondary-button">
-                      Reset Cuts
-                    </button>
+                    <div id="caption-style-mount"></div>
+                    <div
+                      id="caption-style-section"
+                      class="creative-caption-card"
+                      style="display: none"
+                    >
+                      <h2 class="text-xl font-semibold text-gray-900 dark:text-white">
+                        Caption Style
+                      </h2>
+
+                      <div class="mb-4">
+                        <label class="flex items-center gap-2">
+                          <input type="checkbox" id="overlay-mode-toggle" class="rounded" />
+                          <span class="text-sm font-medium text-gray-700 dark:text-gray-300"
+                            >Use Draggable Overlay</span
+                          >
+                        </label>
+                      </div>
+
+                      <div id="overlay-controls" class="mb-4 space-y-3" style="display: none">
+                        <div>
+                          <label class="flex items-center gap-2">
+                            <input
+                              type="checkbox"
+                              id="show-outline-toggle"
+                              class="rounded"
+                              checked
+                            />
+                            <span class="text-sm font-medium text-gray-700 dark:text-gray-300"
+                              >Show outline</span
+                            >
+                          </label>
+                        </div>
+                        <div>
+                          <label class="flex items-center gap-2">
+                            <input
+                              type="checkbox"
+                              id="responsive-text-toggle"
+                              class="rounded"
+                              checked
+                            />
+                            <span class="text-sm font-medium text-gray-700 dark:text-gray-300"
+                              >Responsive text</span
+                            >
+                          </label>
+                        </div>
+                      </div>
+
+                      <div class="grid grid-cols-2 gap-4">
+                        <div>
+                          <label
+                            class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+                            >Font</label
+                          >
+                          <select id="caption-font" class="creative-control">
+                            <option value="system">System</option>
+                            <option value="bold">Bold</option>
+                            <option value="cinematic">Cinematic</option>
+                            <option value="minimal">Minimal</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label
+                            class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+                            >Weight</label
+                          >
+                          <select id="caption-weight" class="creative-control">
+                            <option value="normal">Normal</option>
+                            <option value="bold">Bold</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label
+                            class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+                            >Size: <span id="size-value">80px</span></label
+                          >
+                          <input
+                            type="range"
+                            id="caption-size"
+                            min="0"
+                            max="100"
+                            value="60"
+                            class="w-full"
+                          />
+                        </div>
+                        <div>
+                          <label
+                            class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+                            >Opacity: <span id="opacity-value">80%</span></label
+                          >
+                          <input
+                            type="range"
+                            id="caption-opacity"
+                            min="30"
+                            max="100"
+                            value="80"
+                            class="w-full"
+                          />
+                        </div>
+                        <div>
+                          <label
+                            class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+                            >Placement</label
+                          >
+                          <select id="caption-placement" class="creative-control">
+                            <option value="top">Top</option>
+                            <option value="middle">Middle</option>
+                            <option value="bottom" selected>Bottom</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label
+                            class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+                            >Background</label
+                          >
+                          <div class="flex items-center gap-4">
+                            <label class="flex items-center gap-2">
+                              <input type="checkbox" id="caption-background" class="rounded" />
+                              <span class="text-sm">Show box</span>
+                            </label>
+                            <div class="flex-1">
+                              <label class="block text-xs text-gray-400 mb-1"
+                                >Box opacity: <span id="bg-opacity-value">50%</span></label
+                              >
+                              <input
+                                type="range"
+                                id="caption-bg-opacity"
+                                min="0"
+                                max="100"
+                                value="50"
+                                class="w-full"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                        <div class="mt-4">
+                          <button
+                            id="apply-caption-style-btn"
+                            type="button"
+                            class="creative-primary-button w-full"
+                          >
+                            Apply Caption Settings
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div id="video-cuts-panel" class="creative-video-cuts-panel hidden">
+                      <div class="font-semibold text-gray-900 dark:text-white mb-2">
+                        Video Cuts (beta)
+                      </div>
+                      <div
+                        id="video-cuts-warning"
+                        class="text-amber-600 dark:text-amber-400 text-xs mb-2 hidden"
+                      ></div>
+                      <div class="space-y-2">
+                        <label class="block text-gray-700 dark:text-gray-300"
+                          >Boundary
+                          <select
+                            id="video-cuts-boundary-index"
+                            class="creative-compact-control"
+                          ></select
+                        ></label>
+                        <label class="block text-gray-700 dark:text-gray-300"
+                          >beatIndex
+                          <input
+                            type="number"
+                            id="video-cuts-beat-index"
+                            min="1"
+                            max="1"
+                            class="creative-compact-control creative-compact-control-number"
+                        /></label>
+                        <label class="block text-gray-700 dark:text-gray-300"
+                          >pct
+                          <input
+                            type="range"
+                            id="video-cuts-pct"
+                            min="0"
+                            max="1"
+                            step="0.01"
+                            value="0.35"
+                            class="align-middle"
+                          /><span id="video-cuts-pct-value" class="ml-1">0.35</span></label
+                        >
+                        <div class="flex gap-2 mt-2">
+                          <button
+                            type="button"
+                            id="video-cuts-save-btn"
+                            class="creative-secondary-button"
+                          >
+                            Save Cuts
+                          </button>
+                          <button
+                            type="button"
+                            id="video-cuts-reset-btn"
+                            class="creative-secondary-button"
+                          >
+                            Reset Cuts
+                          </button>
+                        </div>
+                      </div>
+                      <pre id="video-cuts-debug" class="creative-video-cuts-debug"></pre>
+                    </div>
                   </div>
-                </div>
-                <pre id="video-cuts-debug" class="creative-video-cuts-debug"></pre>
+                </details>
               </div>
             </div>
           </section>
@@ -704,7 +873,9 @@
               <div class="creative-render-truth">
                 <p class="creative-render-truth-label">Narration</p>
                 <h3 class="creative-render-truth-title">Synced default narration</h3>
-                <p class="creative-render-truth-copy">This pass keeps the launch flow on the default preset.</p>
+                <p class="creative-render-truth-copy">
+                  This pass keeps the launch flow on the default preset.
+                </p>
                 <input type="hidden" id="article-voice-preset" value="male_calm" />
               </div>
 
@@ -720,7 +891,9 @@
               </div>
 
               <div id="article-render-result" class="mt-2 hidden">
-                <h3 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Last render</h3>
+                <h3 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Last render
+                </h3>
                 <video id="article-render-video" controls class="w-full"></video>
                 <div id="article-render-links" class="mt-2 space-y-1">
                   <a id="article-video-url" href="#" target="_blank" class="creative-inline-link"
@@ -800,7 +973,10 @@
                 </button>
               </div>
               <div id="clip-picker-grid"></div>
-              <div id="clip-picker-pagination" class="flex justify-center items-center gap-2 mt-3 hidden">
+              <div
+                id="clip-picker-pagination"
+                class="flex justify-center items-center gap-2 mt-3 hidden"
+              >
                 <button id="clip-picker-prev" class="creative-secondary-button" type="button">
                   Previous
                 </button>
@@ -815,6 +991,5 @@
     </section>
 
     <script type="module" src="/js/pages/creative/creative.article.mjs"></script>
-
   </body>
 </html>

@@ -257,7 +257,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     renderDraftStoryboard();
     updateRenderArticleButtonState();
   }
-  safe('default-view-mode', () => applyCurrentViewMode({ renderBeats: currentViewMode === 'beats' }));
+  safe('default-view-mode', () =>
+    applyCurrentViewMode({ renderBeats: currentViewMode === 'beats' })
+  );
   safe('creative-shell-sync', () => syncCreativeStepShell());
 });
 
@@ -323,6 +325,7 @@ let storyboardDeckListenersAttached = false;
 let storyboardDeckRaf = null;
 let activeStoryboardCardKey = null;
 let storyboardPreviewBindingsAttached = false;
+let storyboardInspectorBindingsAttached = false;
 let storyboardPreviewActiveSentenceIndex = null;
 let storyboardPreviewActiveSegmentIndex = null;
 let storyboardPreviewPendingSeekSec = null;
@@ -588,7 +591,9 @@ function getCreativeStepStates() {
     start: {
       unlocked: true,
       complete: scriptReady,
-      summary: scriptReady ? `${scriptBeats.length} beat${scriptBeats.length === 1 ? '' : 's'}` : 'Source',
+      summary: scriptReady
+        ? `${scriptBeats.length} beat${scriptBeats.length === 1 ? '' : 's'}`
+        : 'Source',
       stateLabel: currentCreativeStep === 'start' ? 'Now' : scriptReady ? 'Done' : 'Open',
     },
     script: {
@@ -605,17 +610,27 @@ function getCreativeStepStates() {
       unlocked: storyboardReady,
       complete: renderReady,
       summary: storyboardSummary,
-      stateLabel: currentCreativeStep === 'storyboard' ? 'Now' : renderReady ? 'Ready' : storyboardReady ? 'Open' : 'Locked',
+      stateLabel:
+        currentCreativeStep === 'storyboard'
+          ? 'Now'
+          : renderReady
+            ? 'Ready'
+            : storyboardReady
+              ? 'Open'
+              : 'Locked',
     },
     render: {
       unlocked: renderReady,
       complete: hasRenderedStoryVideo(),
-      summary: hasRenderedStoryVideo()
-        ? 'Last render'
-        : renderReady
-          ? 'Ready'
-          : 'Locked',
-      stateLabel: currentCreativeStep === 'render' ? 'Now' : hasRenderedStoryVideo() ? 'Done' : renderReady ? 'Ready' : 'Locked',
+      summary: hasRenderedStoryVideo() ? 'Last render' : renderReady ? 'Ready' : 'Locked',
+      stateLabel:
+        currentCreativeStep === 'render'
+          ? 'Now'
+          : hasRenderedStoryVideo()
+            ? 'Done'
+            : renderReady
+              ? 'Ready'
+              : 'Locked',
     },
   };
 }
@@ -740,7 +755,256 @@ function getStoryboardCardKey(card) {
 }
 
 function getStoryboardCardBySentenceIndex(sentenceIndex) {
-  return document.querySelector(`#storyboard-row .beat-card[data-sentence-index="${sentenceIndex}"]`);
+  return document.querySelector(
+    `#storyboard-row .beat-card[data-sentence-index="${sentenceIndex}"]`
+  );
+}
+
+function getSelectedStoryboardCard() {
+  return (
+    getStoryboardCards().find((card) => getStoryboardCardKey(card) === activeStoryboardCardKey) ||
+    null
+  );
+}
+
+function getStoryboardTimelineDurationMap(session = window.currentStorySession) {
+  const timeline = getPlaybackTimeline(session);
+  if (!timeline) return null;
+
+  const durations = new Map();
+  timeline.segments.forEach((segment) => {
+    const ownerSentenceIndex = Number.isFinite(Number(segment?.ownerSentenceIndex))
+      ? Number(segment.ownerSentenceIndex)
+      : Number(segment?.sentenceIndex);
+    const durationSec = Number(segment?.durationSec);
+    if (!Number.isFinite(ownerSentenceIndex) || !Number.isFinite(durationSec) || durationSec <= 0) {
+      return;
+    }
+    durations.set(ownerSentenceIndex, (durations.get(ownerSentenceIndex) || 0) + durationSec);
+  });
+  return durations.size ? durations : null;
+}
+
+function formatStoryboardTileDuration(durationSec) {
+  const safeDuration = Number(durationSec);
+  if (!Number.isFinite(safeDuration) || safeDuration <= 0) return '';
+  if (safeDuration >= 10) return `${Math.round(safeDuration)}s`;
+  return `${Math.round(safeDuration * 10) / 10}s`;
+}
+
+function getStoryboardTileWidthRem(durationSec) {
+  const safeDuration = Number(durationSec);
+  if (!Number.isFinite(safeDuration) || safeDuration <= 0) return null;
+  const clampedDuration = Math.max(0.75, Math.min(8, safeDuration));
+  return (5.35 + clampedDuration * 0.82).toFixed(2);
+}
+
+function applyStoryboardCardDurationState(card, durationSec) {
+  if (!card) return;
+
+  const safeDuration = Number(durationSec);
+  const durationBadge = card.querySelector('[data-role="tile-duration"]');
+  if (!Number.isFinite(safeDuration) || safeDuration <= 0) {
+    card.style.removeProperty('--storyboard-tile-width');
+    delete card.dataset.durationSec;
+    durationBadge?.setAttribute('hidden', 'hidden');
+    if (durationBadge) durationBadge.textContent = '';
+    return;
+  }
+
+  const widthRem = getStoryboardTileWidthRem(safeDuration);
+  if (widthRem) {
+    card.style.setProperty('--storyboard-tile-width', `${widthRem}rem`);
+  }
+  card.dataset.durationSec = String(safeDuration);
+  if (durationBadge) {
+    durationBadge.textContent = formatStoryboardTileDuration(safeDuration);
+    durationBadge.removeAttribute('hidden');
+  }
+}
+
+function buildStoryboardCardMarkup({ beatLabel, text, clip, emptyLabel = 'Clip needed' }) {
+  const safeLabel = escapeHtml(beatLabel);
+  const safeText = escapeHtml(String(text || '').trim() || 'Add text...');
+  const hasClip = !!clip?.url;
+  const videoMarkup = hasClip
+    ? `
+      <video
+        src="${clip.url || ''}"
+        ${clip.thumbUrl ? `poster="${clip.thumbUrl}"` : ''}
+        muted
+        loop
+        preload="none"
+        class="w-full h-full object-cover transition-transform duration-150 storyboard-video"
+        aria-label="Preview for: ${safeText.slice(0, 50)}"
+      ></video>
+    `
+    : `<div class="storyboard-video-placeholder">${escapeHtml(emptyLabel)}</div>`;
+
+  return `
+    <div class="relative w-full h-40 beat-video-container overflow-hidden">
+      ${videoMarkup}
+      <div class="beat-card-chrome">
+        <span class="beat-card-chip">${safeLabel}</span>
+        <span class="beat-card-duration" data-role="tile-duration" hidden></span>
+      </div>
+    </div>
+    <div class="beat-card-copy">
+      <p class="beat-card-status">${hasClip ? 'Clip ready' : 'Clip needed'}</p>
+      <p class="beat-card-text" data-role="beat-text-preview">${safeText}</p>
+    </div>
+  `;
+}
+
+function getStoryboardInspectorElements() {
+  return {
+    container: document.getElementById('storyboard-selection-inspector'),
+    thumb: document.getElementById('storyboard-inspector-thumb'),
+    thumbEmpty: document.getElementById('storyboard-inspector-thumb-empty'),
+    kicker: document.getElementById('storyboard-inspector-kicker'),
+    title: document.getElementById('storyboard-inspector-title'),
+    meta: document.getElementById('storyboard-inspector-meta'),
+    text: document.getElementById('storyboard-inspector-text'),
+    swapButton: document.getElementById('storyboard-inspector-swap-btn'),
+    deleteButton: document.getElementById('storyboard-inspector-delete-btn'),
+  };
+}
+
+function getStoryboardInspectorSelection(card = null) {
+  const activeCard = card || getSelectedStoryboardCard() || getStoryboardCards()[0] || null;
+  if (!activeCard) return null;
+
+  const isDraft = activeCard.dataset.draft === 'true';
+  const cards = getStoryboardCards();
+  const visualIndex = Math.max(0, cards.indexOf(activeCard));
+  const durationSec = Number(activeCard.dataset.durationSec);
+  if (isDraft && !window.currentStorySessionId) {
+    const beatId = activeCard.dataset.beatId;
+    const beat = window.draftStoryboard?.beats?.find((entry) => entry.id === beatId) || null;
+    return {
+      card: activeCard,
+      isDraft: true,
+      beatId,
+      sentenceIndex: null,
+      beatNumber: visualIndex + 1,
+      text: beat?.text || '',
+      clip: beat?.selectedClip || null,
+      durationSec,
+    };
+  }
+
+  const sentenceIndex = Number(activeCard.dataset.sentenceIndex);
+  if (!Number.isFinite(sentenceIndex)) return null;
+  return {
+    card: activeCard,
+    isDraft: false,
+    beatId: null,
+    sentenceIndex,
+    beatNumber: sentenceIndex + 1,
+    text: window.currentStorySession?.story?.sentences?.[sentenceIndex] || '',
+    clip:
+      getSessionShotBySentenceIndex(window.currentStorySession, sentenceIndex)?.selectedClip ||
+      null,
+    durationSec,
+  };
+}
+
+function refreshStoryboardInspector(card = null) {
+  const { container, thumb, thumbEmpty, kicker, title, meta, text, swapButton, deleteButton } =
+    getStoryboardInspectorElements();
+  if (
+    !container ||
+    !thumb ||
+    !thumbEmpty ||
+    !kicker ||
+    !title ||
+    !meta ||
+    !text ||
+    !swapButton ||
+    !deleteButton
+  ) {
+    return;
+  }
+
+  const selection = getStoryboardInspectorSelection(card);
+  if (!selection) {
+    kicker.textContent = 'Selected clip';
+    title.textContent = 'Choose a clip to edit';
+    meta.textContent = 'Tap a timeline tile to update clips and text without leaving the preview.';
+    text.textContent = 'Select a tile to edit its beat text.';
+    text.removeAttribute('data-sentence-index');
+    text.removeAttribute('data-beat-id');
+    text.removeAttribute('data-draft');
+    text.setAttribute('aria-disabled', 'true');
+    swapButton.disabled = true;
+    deleteButton.disabled = true;
+    thumb.classList.add('hidden');
+    thumb.removeAttribute('src');
+    thumbEmpty.classList.remove('hidden');
+    return;
+  }
+
+  const {
+    beatNumber,
+    clip,
+    text: beatText,
+    durationSec,
+    isDraft,
+    sentenceIndex,
+    beatId,
+  } = selection;
+  const durationLabel = formatStoryboardTileDuration(durationSec);
+  kicker.textContent = clip ? 'Selected clip' : 'Clip needed';
+  title.textContent = `Beat ${beatNumber}`;
+  meta.textContent = clip
+    ? [durationLabel || null, 'Tap text to edit or replace this clip.'].filter(Boolean).join(' • ')
+    : 'Pick a clip for this beat, then keep preview and timeline in sync from one place.';
+  text.textContent = String(beatText || '').trim() || 'Add text...';
+  if (clip)
+    meta.textContent = [durationLabel || null, 'Tap text to edit or replace this clip.']
+      .filter(Boolean)
+      .join(' | ');
+  text.dataset.draft = isDraft ? 'true' : 'false';
+  if (isDraft) {
+    if (beatId) text.dataset.beatId = beatId;
+    delete text.dataset.sentenceIndex;
+  } else {
+    text.dataset.sentenceIndex = String(sentenceIndex);
+    delete text.dataset.beatId;
+  }
+  text.setAttribute('aria-disabled', 'false');
+
+  if (clip?.thumbUrl) {
+    thumb.src = clip.thumbUrl;
+    thumb.classList.remove('hidden');
+    thumbEmpty.classList.add('hidden');
+  } else {
+    thumb.classList.add('hidden');
+    thumb.removeAttribute('src');
+    thumbEmpty.classList.remove('hidden');
+    thumbEmpty.textContent = clip?.url ? 'Clip ready' : 'Select a clip';
+  }
+
+  swapButton.disabled = false;
+  swapButton.textContent = clip ? 'Swap clip' : 'Add clip';
+  deleteButton.disabled = false;
+  if (isDraft) {
+    if (beatId) {
+      swapButton.dataset.beatId = beatId;
+      deleteButton.dataset.beatId = beatId;
+    }
+    swapButton.dataset.draft = 'true';
+    deleteButton.dataset.draft = 'true';
+    delete swapButton.dataset.sentenceIndex;
+    delete deleteButton.dataset.sentenceIndex;
+  } else {
+    swapButton.dataset.sentenceIndex = String(sentenceIndex);
+    deleteButton.dataset.sentenceIndex = String(sentenceIndex);
+    delete swapButton.dataset.beatId;
+    delete deleteButton.dataset.beatId;
+    delete swapButton.dataset.draft;
+    delete deleteButton.dataset.draft;
+  }
 }
 
 function getStoryboardPreviewElements() {
@@ -763,7 +1027,9 @@ function getStoryboardPreviewElements() {
 
 function getSessionShotBySentenceIndex(session, sentenceIndex) {
   const shots = session?.shots || [];
-  return shots.find((entry) => entry?.sentenceIndex === sentenceIndex) || shots[sentenceIndex] || null;
+  return (
+    shots.find((entry) => entry?.sentenceIndex === sentenceIndex) || shots[sentenceIndex] || null
+  );
 }
 
 function getCaptionTimeline(session = window.currentStorySession) {
@@ -796,7 +1062,12 @@ function getCaptionStartTimeForSentenceIndex(sentenceIndex, session = window.cur
 
 function getPlaybackTimeline(session = window.currentStorySession) {
   const timeline = session?.playbackTimelineV1;
-  if (!timeline || Number(timeline.version) !== 1 || !Array.isArray(timeline.segments) || timeline.segments.length === 0) {
+  if (
+    !timeline ||
+    Number(timeline.version) !== 1 ||
+    !Array.isArray(timeline.segments) ||
+    timeline.segments.length === 0
+  ) {
     return null;
   }
   return timeline;
@@ -856,7 +1127,8 @@ function copyStoryboardOverlay(fromOverlay, toOverlay) {
   toOverlay.src = fromOverlay.src;
   ['--y-pct', '--raster-w-ratio', '--raster-h-ratio'].forEach((property) => {
     const value =
-      fromOverlay.style.getPropertyValue(property) || getComputedStyle(fromOverlay).getPropertyValue(property);
+      fromOverlay.style.getPropertyValue(property) ||
+      getComputedStyle(fromOverlay).getPropertyValue(property);
     if (value) {
       toOverlay.style.setProperty(property, value);
     }
@@ -899,11 +1171,7 @@ function applyStoryboardPreviewPendingSeek(previewVideo, { autoplay = false } = 
 
 function updateStoryboardPreviewBeat(sentenceIndex, { autoplay = false } = {}) {
   const session = window.currentStorySession;
-  const {
-    overlay,
-    caption: captionEl,
-    heading,
-  } = getStoryboardPreviewElements();
+  const { overlay, caption: captionEl, heading } = getStoryboardPreviewElements();
 
   if (!session || !captionEl || !heading) return;
 
@@ -918,13 +1186,17 @@ function updateStoryboardPreviewBeat(sentenceIndex, { autoplay = false } = {}) {
   const cardOverlay = card?.querySelector('.beat-caption-overlay');
 
   heading.textContent = `Beat ${safeIndex + 1} of ${Math.max(sentences.length, 1)}`;
-  captionEl.textContent = matchingCaption?.text || currentSentence || 'Preview caption not ready yet.';
+  captionEl.textContent =
+    matchingCaption?.text || currentSentence || 'Preview caption not ready yet.';
   copyStoryboardOverlay(cardOverlay, overlay);
 
   storyboardPreviewActiveSentenceIndex = safeIndex;
 }
 
-function updateStoryboardPreviewSegment(segment, { audioTime = 0, autoplay = false, forceSeek = false } = {}) {
+function updateStoryboardPreviewSegment(
+  segment,
+  { audioTime = 0, autoplay = false, forceSeek = false } = {}
+) {
   const { frame: previewVideo } = getStoryboardPreviewElements();
   if (!previewVideo) return;
 
@@ -977,7 +1249,10 @@ function updateStoryboardPreviewSegment(segment, { audioTime = 0, autoplay = fal
   storyboardPreviewActiveSegmentIndex = segmentIndex;
 }
 
-function syncStoryboardPreviewAtTime(timeSec, { autoplay = false, scroll = false, forceSeek = false } = {}) {
+function syncStoryboardPreviewAtTime(
+  timeSec,
+  { autoplay = false, scroll = false, forceSeek = false } = {}
+) {
   if (!hasCurrentStoryPreviewSync(window.currentStorySession)) return;
   const caption = findCaptionAtTime(timeSec, window.currentStorySession);
   if (!caption) return;
@@ -1031,9 +1306,11 @@ function refreshStoryboardPreview(session = window.currentStorySession) {
     storyboardPreviewActiveSegmentIndex = null;
     clearStoryboardPreviewPendingSeek();
     if (statusKicker) statusKicker.textContent = 'Synced preview';
-    if (statusTitle) statusTitle.textContent = 'Generate a storyboard to prepare the synced preview.';
+    if (statusTitle)
+      statusTitle.textContent = 'Generate a storyboard to prepare the synced preview.';
     if (statusCopy) {
-      statusCopy.textContent = 'Vaiform will sync narration and timing before the preview is ready to watch.';
+      statusCopy.textContent =
+        'Vaiform will sync narration and timing before the preview is ready to watch.';
     }
     return;
   }
@@ -1098,16 +1375,26 @@ function syncStoryboardPreviewToCard(card, { autoplay = false } = {}) {
   if (!card) return;
   const sentenceIndex = Number(card.dataset?.sentenceIndex);
   if (!Number.isFinite(sentenceIndex)) return;
-  refreshStoryboardPreview(window.currentStorySession);
   if (hasCurrentStoryPreviewSync(window.currentStorySession)) {
     const timeSec = getCaptionStartTimeForSentenceIndex(sentenceIndex, window.currentStorySession);
+    const audio = document.getElementById('storyboard-preview-audio');
+    if (
+      audio &&
+      Number.isFinite(timeSec) &&
+      Math.abs((Number(audio.currentTime) || 0) - timeSec) > 0.05
+    ) {
+      audio.currentTime = timeSec;
+    }
+    refreshStoryboardPreview(window.currentStorySession);
     updateStoryboardPreviewBeat(sentenceIndex);
     updateStoryboardPreviewSegment(findPlaybackSegmentAtTime(timeSec, window.currentStorySession), {
       audioTime: timeSec,
       autoplay,
       forceSeek: true,
     });
+    return;
   }
+  refreshStoryboardPreview(window.currentStorySession);
 }
 
 function syncStoryboardPreviewFromAudio({ scroll = false, forceSeek = false } = {}) {
@@ -1162,7 +1449,9 @@ function setupStoryboardPreviewBindings() {
   const syncFromAudio = () => syncStoryboardPreviewFromAudio();
   audio.addEventListener('loadedmetadata', syncFromAudio);
   audio.addEventListener('timeupdate', syncFromAudio);
-  audio.addEventListener('seeked', () => syncStoryboardPreviewFromAudio({ scroll: true, forceSeek: true }));
+  audio.addEventListener('seeked', () =>
+    syncStoryboardPreviewFromAudio({ scroll: true, forceSeek: true })
+  );
   audio.addEventListener('seeking', () => syncStoryboardPreviewFromAudio({ forceSeek: true }));
   audio.addEventListener('play', () => {
     const previewVideo = document.getElementById('storyboard-preview-video');
@@ -1179,12 +1468,61 @@ function setupStoryboardPreviewBindings() {
   storyboardPreviewBindingsAttached = true;
 }
 
+function setupStoryboardInspectorBindings() {
+  if (storyboardInspectorBindingsAttached) return;
+
+  const { text, swapButton, deleteButton } = getStoryboardInspectorElements();
+  if (!text || !swapButton || !deleteButton) return;
+
+  const startInspectorEdit = () => {
+    if (text.getAttribute('aria-disabled') === 'true') return;
+    handleEditBeatInline(text);
+  };
+
+  text.addEventListener('click', startInspectorEdit);
+  text.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    event.preventDefault();
+    startInspectorEdit();
+  });
+
+  swapButton.addEventListener('click', () => {
+    if (swapButton.disabled) return;
+    if (swapButton.dataset.draft === 'true') {
+      const beatId = swapButton.dataset.beatId;
+      if (beatId) openClipPicker(beatId, true);
+      return;
+    }
+    const sentenceIndex = Number(swapButton.dataset.sentenceIndex);
+    if (Number.isFinite(sentenceIndex)) {
+      openClipPicker(sentenceIndex, false);
+    }
+  });
+
+  deleteButton.addEventListener('click', () => {
+    if (deleteButton.disabled) return;
+    if (!confirm('Delete this beat?')) return;
+    if (deleteButton.dataset.draft === 'true') {
+      const beatId = deleteButton.dataset.beatId;
+      if (beatId) handleDeleteDraftBeat(beatId);
+      return;
+    }
+    const sentenceIndex = Number(deleteButton.dataset.sentenceIndex);
+    if (Number.isFinite(sentenceIndex)) {
+      handleDeleteBeat(sentenceIndex);
+    }
+  });
+
+  storyboardInspectorBindingsAttached = true;
+}
+
 function setActiveStoryboardCard(card, { scroll = false, syncPreview = true } = {}) {
   if (!card) return;
   const nextKey = getStoryboardCardKey(card);
   getStoryboardCards().forEach((entry) => entry.classList.remove('is-active'));
   card.classList.add('is-active');
   activeStoryboardCardKey = nextKey;
+  refreshStoryboardInspector(card);
   if (scroll) {
     card.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
   }
@@ -1194,18 +1532,31 @@ function setActiveStoryboardCard(card, { scroll = false, syncPreview = true } = 
   }
 }
 
+function handleStoryboardCardPrimaryInteraction(card, event) {
+  if (!card) return;
+  const interactive = event?.target?.closest?.(
+    'button, input, textarea, select, a, [contenteditable="true"]'
+  );
+  if (interactive) return;
+  event?.stopPropagation?.();
+  setActiveStoryboardCard(card);
+  if (window.matchMedia('(hover: hover) and (pointer: fine)').matches) {
+    showBeatFocusPreview(card);
+  }
+}
+
+function bindStoryboardCardSelection(card) {
+  if (!card || card.dataset.selectionBound === 'true') return;
+  card.dataset.selectionBound = 'true';
+  card.addEventListener('click', (event) => handleStoryboardCardPrimaryInteraction(card, event));
+}
+
 function scheduleStoryboardDeckSelection() {
   if (storyboardDeckRaf) cancelAnimationFrame(storyboardDeckRaf);
   storyboardDeckRaf = requestAnimationFrame(() => {
     const scrollEl = document.getElementById('storyboard-scroll');
     const cards = getStoryboardCards();
     if (!scrollEl || cards.length === 0) return;
-
-    const savedCard = cards.find((card) => getStoryboardCardKey(card) === activeStoryboardCardKey);
-    if (savedCard) {
-      setActiveStoryboardCard(savedCard);
-      return;
-    }
 
     const scrollRect = scrollEl.getBoundingClientRect();
     const scrollCenter = scrollRect.left + scrollRect.width / 2;
@@ -1233,10 +1584,6 @@ function ensureStoryboardDeckBindings() {
   if (!scrollEl || !row) return;
 
   scrollEl.addEventListener('scroll', scheduleStoryboardDeckSelection, { passive: true });
-  row.addEventListener('click', (event) => {
-    const card = event.target.closest('.beat-card');
-    if (card) setActiveStoryboardCard(card);
-  });
   window.addEventListener('resize', scheduleStoryboardDeckSelection);
   storyboardDeckListenersAttached = true;
 }
@@ -1282,10 +1629,14 @@ function setCreativeStep(step, options = {}) {
   syncCreativeStepShell();
 
   if (scrollIntoView) {
-    document.querySelector('.creative-stage')?.scrollIntoView({
-      behavior: 'smooth',
-      block: 'start',
-    });
+    const activePanel =
+      (currentCreativeStep === 'storyboard' && document.getElementById('storyboard')) ||
+      document.querySelector(`[data-step-panel="${currentCreativeStep}"]`) ||
+      document.querySelector('.creative-stage');
+    if (activePanel) {
+      const targetTop = Math.max(0, activePanel.getBoundingClientRect().top + window.scrollY - 12);
+      window.scrollTo({ top: targetTop, behavior: 'auto' });
+    }
   }
 }
 
@@ -1330,6 +1681,11 @@ function syncCreativeStepShell() {
     helperEl.textContent = helper;
     helperEl.hidden = !helper;
   }
+
+  document
+    .getElementById('guided-step-footer')
+    ?.setAttribute('data-active-step', currentCreativeStep);
+  document.querySelector('.creative-stage')?.setAttribute('data-active-step', currentCreativeStep);
 
   if (currentCreativeStep === 'storyboard') {
     ensureStoryboardDeckBindings();
@@ -2373,7 +2729,12 @@ function getStorySyncMode(session = window.currentStorySession, { scriptWasEdite
   return 'stale';
 }
 
-async function apiFetchWithTimeout(apiFetch, path, options = {}, timeoutMs = STORY_SYNC_TIMEOUT_MS) {
+async function apiFetchWithTimeout(
+  apiFetch,
+  path,
+  options = {},
+  timeoutMs = STORY_SYNC_TIMEOUT_MS
+) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -2405,7 +2766,9 @@ async function waitForStorySyncSession({ sessionId, apiFetch }) {
           lastRecoverableError = statusResp.error;
           continue;
         }
-        throw new Error(buildStorySyncErrorMessage(statusResp, 'Failed to check storyboard sync status.'));
+        throw new Error(
+          buildStorySyncErrorMessage(statusResp, 'Failed to check storyboard sync status.')
+        );
       }
 
       const prev = window.currentStorySession;
@@ -2617,7 +2980,7 @@ async function prepareStoryboard() {
 
       // Render storyboard shell before sync so clips stay intact on failure
       await renderStoryboard(session);
-      setCreativeStep('storyboard');
+      setCreativeStep('storyboard', { scrollIntoView: true });
 
       try {
         const syncedSession = await runStorySync({
@@ -2918,6 +3281,7 @@ async function renderStoryboard(session) {
 
   const sentences = session.story?.sentences || [];
   const shots = session.shots || [];
+  const durationMap = getStoryboardTimelineDurationMap(session);
 
   // Guard: handle mismatched counts gracefully
   if (sentences.length !== shots.length) {
@@ -3002,6 +3366,14 @@ async function renderStoryboard(session) {
                     `;
     }
 
+    card.innerHTML = buildStoryboardCardMarkup({
+      beatLabel: `Beat ${idx + 1}`,
+      text: sentence,
+      clip: shot?.selectedClip || null,
+      emptyLabel: 'Select clip',
+    });
+    bindStoryboardCardSelection(card);
+    applyStoryboardCardDurationState(card, durationMap?.get(idx));
     storyboardRow.appendChild(card);
 
     // Add "Add beat" button after each card
@@ -3035,7 +3407,9 @@ async function renderStoryboard(session) {
   // Update render button state (session exists)
   updateRenderArticleButtonState();
   setupStoryboardPreviewBindings();
+  setupStoryboardInspectorBindings();
   refreshStoryboardPreview(session);
+  refreshStoryboardInspector(getSelectedStoryboardCard() || getStoryboardCards()[0] || null);
   ensureStoryboardDeckBindings();
   scheduleStoryboardDeckSelection();
 
@@ -3050,6 +3424,7 @@ async function renderStoryboard(session) {
     const explicitStyle = extractStyleOnly(rawStyle);
     await BeatPreviewManager.applyAllPreviews(sentences, explicitStyle);
     refreshStoryboardPreview(session);
+    refreshStoryboardInspector(getSelectedStoryboardCard() || getStoryboardCards()[0] || null);
   }
 }
 
@@ -3325,6 +3700,13 @@ function renderDraftStoryboard() {
                     `;
     }
 
+    card.innerHTML = buildStoryboardCardMarkup({
+      beatLabel: `Beat ${storyboardRow.querySelectorAll('.beat-card').length + 1}`,
+      text: beat.text || '',
+      clip: beat.selectedClip || null,
+      emptyLabel: 'Select clip',
+    });
+    bindStoryboardCardSelection(card);
     storyboardRow.appendChild(card);
   });
 
@@ -3350,6 +3732,8 @@ function renderDraftStoryboard() {
 
   // Update render button state (draft mode)
   updateRenderArticleButtonState();
+  setupStoryboardInspectorBindings();
+  refreshStoryboardInspector(getSelectedStoryboardCard() || getStoryboardCards()[0] || null);
   ensureStoryboardDeckBindings();
   scheduleStoryboardDeckSelection();
 
@@ -3365,6 +3749,7 @@ function renderDraftStoryboard() {
       color: '#FFFFFF',
     };
     BeatPreviewManager.applyAllPreviews(beats, style);
+    refreshStoryboardInspector(getSelectedStoryboardCard() || getStoryboardCards()[0] || null);
   }
 }
 
@@ -3506,7 +3891,8 @@ function handleSwapButtonClick(e) {
     const interactive = e.target.closest(
       'button, .beat-text, input, textarea, select, [contenteditable="true"]'
     );
-    if (!interactive) {
+    const shouldUseFocusModal = window.matchMedia('(hover: hover) and (pointer: fine)').matches;
+    if (!interactive && shouldUseFocusModal) {
       showBeatFocusPreview(card);
       return;
     }
@@ -3580,7 +3966,8 @@ function showBeatFocusPreview(card) {
   }
 
   // Extract text
-  const cardText = card.querySelector('.beat-text');
+  const cardText =
+    card.querySelector('[data-role="beat-text-preview"]') || card.querySelector('.beat-text');
   if (cardText) {
     textEl.textContent = cardText.textContent || '';
   } else {
@@ -4587,24 +4974,38 @@ async function handleClipOptionClick(e) {
 }
 
 function updateStoryboardCardForSentence(shot) {
-  if (!shot || !shot.selectedClip) return;
+  if (!shot) return;
 
   const card = document.querySelector(
     `#storyboard-row [data-sentence-index="${shot.sentenceIndex}"]`
   );
   if (!card) return;
 
-  const video = card.querySelector('video');
-  if (!video) return;
-
-  const clip = shot.selectedClip;
-  video.src = clip.url || '';
-  if (clip.thumbUrl) {
-    video.setAttribute('poster', clip.thumbUrl);
-  } else {
-    video.removeAttribute('poster');
+  const sentenceText = window.currentStorySession?.story?.sentences?.[shot.sentenceIndex] || '';
+  const durationMap = getStoryboardTimelineDurationMap(window.currentStorySession);
+  card.innerHTML = buildStoryboardCardMarkup({
+    beatLabel: `Beat ${Number(shot.sentenceIndex) + 1}`,
+    text: sentenceText,
+    clip: shot.selectedClip || null,
+    emptyLabel: 'Select clip',
+  });
+  applyStoryboardCardDurationState(card, durationMap?.get(Number(shot.sentenceIndex)));
+  if (window.BEAT_PREVIEW_ENABLED) {
+    const rawStyle =
+      window.currentStorySession?.overlayCaption || window.currentStorySession?.captionStyle || {};
+    import('/js/caption-style-helper.js')
+      .then(({ extractStyleOnly }) =>
+        BeatPreviewManager.applyPreview(
+          card,
+          Number(shot.sentenceIndex),
+          sentenceText,
+          extractStyleOnly(rawStyle)
+        )
+      )
+      .catch((error) =>
+        console.warn('[article] Failed to refresh beat preview after clip swap:', error)
+      );
   }
-  video.load();
   setActiveStoryboardCard(card);
   updateRenderArticleButtonState();
 }
