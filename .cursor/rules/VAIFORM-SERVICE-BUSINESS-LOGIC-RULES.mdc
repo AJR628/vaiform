@@ -1,0 +1,21 @@
+---
+globs: src/services/**, src/utils/**
+alwaysApply: false
+---
+
+VAIFORM — SERVICE / BUSINESS LOGIC RULES
+
+Applies to:
+- src/services/**
+- src/utils/**
+
+Rules:
+- Keep backend business truth centralized.
+- Do not move business/timeline/render policy into callers.
+- Reuse existing service-layer SSOT rather than duplicating logic in routes/controllers.
+- Any service change must preserve current caller-consumed field names unless a contract change is explicitly approved and documented.
+- If touching finalize/render/timeline logic, verify the relevant FINALIZE_* docs and current caller-backed behavior first.
+- If touching preview/timeline/story logic, preserve backend ownership of:
+  - playbackTimelineV1
+  - previewReadinessV1
+- Do not introduce client-only or route-local timeline truth.

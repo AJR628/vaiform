@@ -1,0 +1,25 @@
+---
+globs: src/app.js, server.js, src/routes/
+alwaysApply: false
+---
+
+VAIFORM — ROUTES / APP / MOUNT RULES
+
+Applies to:
+- src/app.js
+- server.js
+- src/routes/**
+
+Rules:
+- src/app.js is the runtime mount authority.
+- Preserve /api-first posture.
+- Do not add new root aliases or dual mounts.
+- Do not mount product functionality outside /api/*.
+- Respect debug gating and internal-only route posture.
+- Any route/mount change must be verified against:
+  - docs/MAINTENANCE_FRONT_DOOR.md
+  - docs/DOCS_INDEX.md
+  - docs/API_CONTRACT.md
+  - relevant scope docs
+- If route truth changes materially, update the owning canonical docs first, then any needed evidence docs.
+- Do not infer route truth from exports alone; confirm actual mounts in src/app.js.

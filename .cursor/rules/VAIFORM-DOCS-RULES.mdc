@@ -1,0 +1,22 @@
+---
+globs: docs/**
+alwaysApply: false
+---
+
+VAIFORM — DOCS RULES
+
+Applies to:
+- docs/**
+- ROUTE_TRUTH_TABLE.md
+- VAIFORM_REPO_COHESION_AUDIT.md
+
+Rules:
+- Follow docs ownership from docs/DOCS_INDEX.md.
+- Update owning canonical docs first.
+- Do not treat evidence docs as the primary front door.
+- If changing docs, state whether each edited doc is:
+  - canonical
+  - evidence/reference
+  - historical
+- Keep docs aligned with verified code, not assumptions.
+- If overlapping stale docs appear to conflict, point to the canonical owner rather than silently editing everything.

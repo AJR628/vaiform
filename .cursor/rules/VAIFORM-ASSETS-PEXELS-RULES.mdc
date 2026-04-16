@@ -1,0 +1,18 @@
+---
+globs: src/services/pexels*.js, src/routes/assets*.js
+alwaysApply: false
+---
+
+VAIFORM — ASSETS / PEXELS RULES
+
+Applies to:
+- src/services/pexels*.js
+- src/routes/assets*.js
+
+Rules:
+- Preserve response field names consumed by callers.
+- Honor paging and return nextPage when available.
+- De-dupe results by provider ID.
+- Preserve retry/backoff behavior for provider limits.
+- Do not widen this surface into generic asset-contract rewrites without caller/doc verification.
+- Verify current callers before renaming or reshaping asset payloads.

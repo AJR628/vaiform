@@ -324,6 +324,8 @@ let creativeShellInitialized = false;
 let storyboardDeckListenersAttached = false;
 let storyboardDeckRaf = null;
 let activeStoryboardCardKey = null;
+let playbackActiveStoryboardCardKey = null;
+let storyboardSelectionAuthority = 'auto';
 let storyboardPreviewBindingsAttached = false;
 let storyboardInspectorBindingsAttached = false;
 let storyboardPreviewActiveSentenceIndex = null;
@@ -767,6 +769,46 @@ function getSelectedStoryboardCard() {
   );
 }
 
+function getPlaybackActiveStoryboardCard() {
+  return (
+    getStoryboardCards().find(
+      (card) => getStoryboardCardKey(card) === playbackActiveStoryboardCardKey
+    ) || null
+  );
+}
+
+function applyStoryboardCardVisualState() {
+  getStoryboardCards().forEach((card) => {
+    const key = getStoryboardCardKey(card);
+    const isSelected = !!key && key === activeStoryboardCardKey;
+    const isPlaybackActive = !!key && key === playbackActiveStoryboardCardKey;
+    card.classList.toggle('is-selected', isSelected);
+    card.classList.toggle('is-active', isSelected);
+    card.classList.toggle('is-playback-active', isPlaybackActive);
+  });
+}
+
+function setPlaybackActiveStoryboardCard(card, { scroll = false } = {}) {
+  const nextKey = getStoryboardCardKey(card);
+  playbackActiveStoryboardCardKey = nextKey || null;
+  applyStoryboardCardVisualState();
+  if (scroll && card) {
+    card.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+  }
+}
+
+function clearPlaybackActiveStoryboardCard() {
+  playbackActiveStoryboardCardKey = null;
+  applyStoryboardCardVisualState();
+}
+
+function shouldAllowStoryboardAutoSelection() {
+  const audio = document.getElementById('storyboard-preview-audio');
+  const hasSelectedCard = !!getSelectedStoryboardCard();
+  if (storyboardSelectionAuthority === 'explicit' && hasSelectedCard) return false;
+  return !audio || audio.paused;
+}
+
 function getStoryboardTimelineDurationMap(session = window.currentStorySession) {
   const timeline = getPlaybackTimeline(session);
   if (!timeline) return null;
@@ -823,7 +865,13 @@ function applyStoryboardCardDurationState(card, durationSec) {
   }
 }
 
-function buildStoryboardCardMarkup({ beatLabel, text, clip, emptyLabel = 'Clip needed' }) {
+function buildStoryboardCardMarkup({
+  beatLabel,
+  text,
+  clip,
+  emptyLabel = 'Clip needed',
+  compact = false,
+}) {
   const safeLabel = escapeHtml(beatLabel);
   const safeText = escapeHtml(String(text || '').trim() || 'Add text...');
   const hasClip = !!clip?.url;
@@ -841,6 +889,15 @@ function buildStoryboardCardMarkup({ beatLabel, text, clip, emptyLabel = 'Clip n
     `
     : `<div class="storyboard-video-placeholder">${escapeHtml(emptyLabel)}</div>`;
 
+  const copyMarkup = compact
+    ? ''
+    : `
+    <div class="beat-card-copy">
+      <p class="beat-card-status">${hasClip ? 'Clip ready' : 'Clip needed'}</p>
+      <p class="beat-card-text" data-role="beat-text-preview">${safeText}</p>
+    </div>
+  `;
+
   return `
     <div class="relative w-full h-40 beat-video-container overflow-hidden">
       ${videoMarkup}
@@ -849,10 +906,7 @@ function buildStoryboardCardMarkup({ beatLabel, text, clip, emptyLabel = 'Clip n
         <span class="beat-card-duration" data-role="tile-duration" hidden></span>
       </div>
     </div>
-    <div class="beat-card-copy">
-      <p class="beat-card-status">${hasClip ? 'Clip ready' : 'Clip needed'}</p>
-      <p class="beat-card-text" data-role="beat-text-preview">${safeText}</p>
-    </div>
+    ${copyMarkup}
   `;
 }
 
@@ -1212,6 +1266,7 @@ function updateStoryboardPreviewSegment(
     previewVideo.classList.add('hidden');
     storyboardPreviewActiveSegmentIndex = null;
     clearStoryboardPreviewPendingSeek();
+    clearPlaybackActiveStoryboardCard();
     return;
   }
 
@@ -1258,7 +1313,10 @@ function syncStoryboardPreviewAtTime(
   if (!caption) return;
   const card = getStoryboardCardBySentenceIndex(caption.sentenceIndex);
   if (card) {
-    setActiveStoryboardCard(card, { scroll, syncPreview: false });
+    setPlaybackActiveStoryboardCard(card, { scroll });
+    if (!getSelectedStoryboardCard() || storyboardSelectionAuthority !== 'explicit') {
+      setActiveStoryboardCard(card, { syncPreview: false });
+    }
   }
   updateStoryboardPreviewBeat(caption.sentenceIndex);
   updateStoryboardPreviewSegment(findPlaybackSegmentAtTime(timeSec, window.currentStorySession), {
@@ -1305,6 +1363,7 @@ function refreshStoryboardPreview(session = window.currentStorySession) {
     pauseStoryboardPreviewVideo();
     storyboardPreviewActiveSegmentIndex = null;
     clearStoryboardPreviewPendingSeek();
+    clearPlaybackActiveStoryboardCard();
     if (statusKicker) statusKicker.textContent = 'Synced preview';
     if (statusTitle)
       statusTitle.textContent = 'Generate a storyboard to prepare the synced preview.';
@@ -1323,6 +1382,7 @@ function refreshStoryboardPreview(session = window.currentStorySession) {
     pauseStoryboardPreviewVideo();
     storyboardPreviewActiveSegmentIndex = null;
     clearStoryboardPreviewPendingSeek();
+    clearPlaybackActiveStoryboardCard();
 
     if (storyboardSyncInFlight) {
       if (statusKicker) statusKicker.textContent = 'Syncing preview';
@@ -1375,6 +1435,7 @@ function syncStoryboardPreviewToCard(card, { autoplay = false } = {}) {
   if (!card) return;
   const sentenceIndex = Number(card.dataset?.sentenceIndex);
   if (!Number.isFinite(sentenceIndex)) return;
+  setPlaybackActiveStoryboardCard(card);
   if (hasCurrentStoryPreviewSync(window.currentStorySession)) {
     const timeSec = getCaptionStartTimeForSentenceIndex(sentenceIndex, window.currentStorySession);
     const audio = document.getElementById('storyboard-preview-audio');
@@ -1516,12 +1577,17 @@ function setupStoryboardInspectorBindings() {
   storyboardInspectorBindingsAttached = true;
 }
 
-function setActiveStoryboardCard(card, { scroll = false, syncPreview = true } = {}) {
+function setActiveStoryboardCard(
+  card,
+  { scroll = false, syncPreview = true, explicit = false } = {}
+) {
   if (!card) return;
   const nextKey = getStoryboardCardKey(card);
-  getStoryboardCards().forEach((entry) => entry.classList.remove('is-active'));
-  card.classList.add('is-active');
   activeStoryboardCardKey = nextKey;
+  if (explicit) {
+    storyboardSelectionAuthority = 'explicit';
+  }
+  applyStoryboardCardVisualState();
   refreshStoryboardInspector(card);
   if (scroll) {
     card.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
@@ -1539,7 +1605,7 @@ function handleStoryboardCardPrimaryInteraction(card, event) {
   );
   if (interactive) return;
   event?.stopPropagation?.();
-  setActiveStoryboardCard(card);
+  setActiveStoryboardCard(card, { explicit: true });
   if (window.matchMedia('(hover: hover) and (pointer: fine)').matches) {
     showBeatFocusPreview(card);
   }
@@ -1557,6 +1623,8 @@ function scheduleStoryboardDeckSelection() {
     const scrollEl = document.getElementById('storyboard-scroll');
     const cards = getStoryboardCards();
     if (!scrollEl || cards.length === 0) return;
+    if (!shouldAllowStoryboardAutoSelection()) return;
+    if (getSelectedStoryboardCard()) return;
 
     const scrollRect = scrollEl.getBoundingClientRect();
     const scrollCenter = scrollRect.left + scrollRect.width / 2;
@@ -1573,7 +1641,7 @@ function scheduleStoryboardDeckSelection() {
       }
     });
 
-    setActiveStoryboardCard(winner);
+    setActiveStoryboardCard(winner, { syncPreview: false });
   });
 }
 
@@ -3297,6 +3365,8 @@ async function renderStoryboard(session) {
     const card = document.createElement('div');
     card.className = 'beat-card relative flex-shrink-0';
     card.setAttribute('data-sentence-index', idx);
+    card.dataset.storyboardMode = 'session';
+    card.dataset.missingClip = shot?.selectedClip?.url ? 'false' : 'true';
 
     if (!shot || !shot.selectedClip) {
       // Placeholder for missing clip
@@ -3371,6 +3441,7 @@ async function renderStoryboard(session) {
       text: sentence,
       clip: shot?.selectedClip || null,
       emptyLabel: 'Select clip',
+      compact: true,
     });
     bindStoryboardCardSelection(card);
     applyStoryboardCardDurationState(card, durationMap?.get(idx));
@@ -3378,7 +3449,7 @@ async function renderStoryboard(session) {
 
     // Add "Add beat" button after each card
     const addBtn = document.createElement('button');
-    addBtn.className = 'add-beat-btn mx-2 flex-shrink-0';
+    addBtn.className = 'add-beat-btn add-beat-btn--inline flex-shrink-0';
     addBtn.setAttribute('data-insert-after-index', idx);
     addBtn.setAttribute('title', 'Add clip');
     addBtn.textContent = '+';
@@ -3388,7 +3459,7 @@ async function renderStoryboard(session) {
   // Add final "Add beat" button after the last card
   if (sentences.length > 0) {
     const finalAddBtn = document.createElement('button');
-    finalAddBtn.className = 'add-beat-btn mx-2 flex-shrink-0';
+    finalAddBtn.className = 'add-beat-btn add-beat-btn--tail flex-shrink-0';
     finalAddBtn.setAttribute('data-insert-after-index', sentences.length - 1);
     finalAddBtn.setAttribute('title', 'Add clip');
     finalAddBtn.textContent = '+';
@@ -3408,8 +3479,21 @@ async function renderStoryboard(session) {
   updateRenderArticleButtonState();
   setupStoryboardPreviewBindings();
   setupStoryboardInspectorBindings();
+  if (!getSelectedStoryboardCard()) {
+    storyboardSelectionAuthority = 'auto';
+  }
+  const nextSelectedCard =
+    getSelectedStoryboardCard() ||
+    getStoryboardCardBySentenceIndex(storyboardPreviewActiveSentenceIndex) ||
+    getStoryboardCards()[0] ||
+    null;
+  if (nextSelectedCard) {
+    setActiveStoryboardCard(nextSelectedCard, { syncPreview: false });
+  } else {
+    applyStoryboardCardVisualState();
+    refreshStoryboardInspector(null);
+  }
   refreshStoryboardPreview(session);
-  refreshStoryboardInspector(getSelectedStoryboardCard() || getStoryboardCards()[0] || null);
   ensureStoryboardDeckBindings();
   scheduleStoryboardDeckSelection();
 
@@ -3619,6 +3703,8 @@ function renderDraftStoryboard() {
     card.className = 'beat-card relative flex-shrink-0';
     card.setAttribute('data-beat-id', beat.id);
     card.setAttribute('data-draft', 'true');
+    card.dataset.storyboardMode = 'draft';
+    card.dataset.missingClip = beat?.selectedClip?.url ? 'false' : 'true';
 
     if (!beat.selectedClip) {
       // Placeholder for missing clip
@@ -3714,7 +3800,7 @@ function renderDraftStoryboard() {
   if (beats.length < MAX_BEATS) {
     const addBtn = document.createElement('button');
     addBtn.className =
-      'add-beat-btn mx-2 flex-shrink-0 w-10 h-10 rounded-full bg-blue-600 hover:bg-blue-700 text-white text-lg flex items-center justify-center';
+      'add-beat-btn add-beat-btn--tail mx-2 flex-shrink-0 w-10 h-10 rounded-full bg-blue-600 hover:bg-blue-700 text-white text-lg flex items-center justify-center';
     addBtn.setAttribute('data-draft', 'true');
     addBtn.setAttribute('title', 'Add beat');
     addBtn.textContent = '+';
@@ -3733,7 +3819,17 @@ function renderDraftStoryboard() {
   // Update render button state (draft mode)
   updateRenderArticleButtonState();
   setupStoryboardInspectorBindings();
-  refreshStoryboardInspector(getSelectedStoryboardCard() || getStoryboardCards()[0] || null);
+  clearPlaybackActiveStoryboardCard();
+  if (!getSelectedStoryboardCard()) {
+    storyboardSelectionAuthority = 'auto';
+  }
+  const nextSelectedCard = getSelectedStoryboardCard() || getStoryboardCards()[0] || null;
+  if (nextSelectedCard) {
+    setActiveStoryboardCard(nextSelectedCard, { syncPreview: false });
+  } else {
+    applyStoryboardCardVisualState();
+    refreshStoryboardInspector(null);
+  }
   ensureStoryboardDeckBindings();
   scheduleStoryboardDeckSelection();
 
@@ -4513,7 +4609,7 @@ function focusStoryboardCardForTarget(beatIdOrIndex, isDraft) {
     : `#storyboard-row .beat-card[data-sentence-index="${beatIdOrIndex}"]`;
   const card = document.querySelector(selector);
   if (card) {
-    setActiveStoryboardCard(card, { scroll: true });
+    setActiveStoryboardCard(card, { scroll: true, explicit: true });
   }
 }
 
@@ -4983,11 +5079,14 @@ function updateStoryboardCardForSentence(shot) {
 
   const sentenceText = window.currentStorySession?.story?.sentences?.[shot.sentenceIndex] || '';
   const durationMap = getStoryboardTimelineDurationMap(window.currentStorySession);
+  card.dataset.storyboardMode = 'session';
+  card.dataset.missingClip = shot?.selectedClip?.url ? 'false' : 'true';
   card.innerHTML = buildStoryboardCardMarkup({
     beatLabel: `Beat ${Number(shot.sentenceIndex) + 1}`,
     text: sentenceText,
     clip: shot.selectedClip || null,
     emptyLabel: 'Select clip',
+    compact: true,
   });
   applyStoryboardCardDurationState(card, durationMap?.get(Number(shot.sentenceIndex)));
   if (window.BEAT_PREVIEW_ENABLED) {
@@ -5006,7 +5105,8 @@ function updateStoryboardCardForSentence(shot) {
         console.warn('[article] Failed to refresh beat preview after clip swap:', error)
       );
   }
-  setActiveStoryboardCard(card);
+  applyStoryboardCardVisualState();
+  setActiveStoryboardCard(card, { explicit: true });
   updateRenderArticleButtonState();
 }
 

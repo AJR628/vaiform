@@ -1,0 +1,31 @@
+---
+globs: src/http/**, src/controllers/**, src/middleware/**
+alwaysApply: false
+---
+
+VAIFORM — API ENVELOPE / MIDDLEWARE / CONTROLLER RULES
+
+Applies to:
+- src/http/**
+- src/controllers/**
+- src/middleware/**
+
+Rules:
+- All default-reachable JSON API responses must use the canonical envelope:
+  - success: { success: true, data, requestId }
+  - failure: { success: false, error, detail, fields?, requestId }
+- Prefer src/http/respond.js helpers for JSON responses.
+- Never reintroduce:
+  - ok/reason
+  - code/message
+  - issues/details
+- Keep 5xx detail sanitized; do not leak raw provider/internal exceptions.
+- Preserve requestId propagation.
+- Use canonical middleware/modules only:
+  - requireAuth.js
+  - planGuards.js
+  - validate.middleware.js + src/schemas/*.schema.js
+  - idempotency.firestore.js
+- Do not introduce duplicate auth/validation/idempotency/policy helpers.
+- Preserve standard middleware order where applicable:
+  reqId -> requestContext -> cors -> requireAuth -> plan guards -> idempotency -> validate -> controller

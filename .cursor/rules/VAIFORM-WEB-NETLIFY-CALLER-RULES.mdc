@@ -1,0 +1,24 @@
+---
+globs: web/public/**, web/scripts/**, netlify.toml
+alwaysApply: false
+---
+
+VAIFORM — WEB / NETLIFY / CALLER RULES
+
+Applies to:
+- web/public/**
+- web/scripts/**
+- netlify.toml
+
+Rules:
+- Browser callers must use same-origin /api/* only.
+- Do not call hardcoded backend origins from web/public.
+- Do not add _redirects under web/.
+- Do not reintroduce Vite/Rollup or a new build pipeline unless explicitly requested.
+- Preserve current caller-consumed response field names.
+- Keep frontend logic consuming backend truth, not recreating it.
+- For preview/storyboard/render UI work:
+  - do not recreate backend timing truth in the frontend
+  - consume playbackTimelineV1 / previewReadinessV1
+  - do not weaken preview parity
+  - keep UI/layout changes scoped to UI unless contract changes are explicitly approved

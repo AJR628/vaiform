@@ -1,0 +1,23 @@
+---
+globs: src/utils/ffmpeg*.js, finalize worker/runtime files
+alwaysApply: false
+---
+
+VAIFORM — FFMPEG / FINALIZE / WORKER RULES
+
+Applies to:
+- src/utils/ffmpeg*.js
+- story-finalize.worker.js
+- src/services/story-finalize.*
+- src/services/story.service.js when finalize/render behavior is touched
+
+Rules:
+- Do not change render/finalize semantics casually.
+- Before modifying ffmpeg/finalize behavior, audit:
+  - current caller-backed render path
+  - finalize/runtime docs
+  - current service/worker ownership
+- Preserve portrait/render invariants unless explicitly changing them with evidence.
+- Do not weaken queue/admission/idempotency/settlement behavior.
+- If touching filter graph generation, summarize intended graph/arg changes before implementing.
+- If touching finalize contract behavior, update owning canonical docs first.

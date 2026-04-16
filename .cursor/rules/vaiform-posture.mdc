@@ -1,0 +1,108 @@
+---
+alwaysApply: true
+---
+
+VAIFORM — ALWAYS APPLIED RULES
+
+1. Core posture
+- No guessing.
+- No assumptions.
+- Audit first, then plan, then implement.
+- Every meaningful claim must be grounded in repo evidence: opened files, grep/import proof, route mounts, caller proof, or docs ownership proof.
+- If anything is unclear, stop and report the ambiguity with file:line evidence instead of forcing a fix.
+
+2. Start-here audit order
+Before planning or coding, inspect in this order:
+
+A. Runtime authority
+- src/app.js
+- server.js
+- src/routes/index.js only as an export/helper map, never as mount authority
+
+B. Canonical docs front door
+- docs/MAINTENANCE_FRONT_DOOR.md
+- docs/DOCS_INDEX.md
+- docs/API_CONTRACT.md
+- docs/COHESION_GUARDRAILS.md
+
+C. Scope-specific canonical docs as needed
+- docs/MOBILE_BACKEND_CONTRACT.md if backend/mobile contract is touched
+- docs/LEGACY_WEB_SURFACES.md if legacy/remove-later surfaces are touched
+- docs/FINAL_PAID_BETA_LAUNCH_PLAN.md if launch-phase hardening truth is touched
+- docs/FINALIZE_* docs if finalize/runtime/worker/dashboard work is touched
+
+D. Evidence docs only after canonical docs
+- docs/ACTIVE_SURFACES.md
+- ROUTE_TRUTH_TABLE.md
+- VAIFORM_REPO_COHESION_AUDIT.md
+
+3. Route/runtime authority
+- src/app.js is the only route-mount authority.
+- Do not answer “what is mounted?” from src/routes/index.js.
+- Backend does not serve the product SPA.
+- Allowed non-API backend surfaces are only:
+  - GET/HEAD /health
+  - GET/HEAD /api/health
+  - GET/POST /stripe/webhook
+  - GET /assets/*
+  - internal finalize dashboard page /admin/finalize only when enabled
+  - internal finalize dashboard data /api/admin/finalize/data only when enabled/authenticated
+- All product functionality must stay under /api/*.
+- Do not add new root aliases like /credits, /whoami, /generate, /checkout/*.
+- Do not add new dual mounts unless explicitly justified and documented.
+
+4. JSON API contract
+All JSON API responses must follow:
+- Success: { success: true, data, requestId }
+- Failure: { success: false, error, detail, fields?, requestId }
+
+Rules:
+- Use src/http/respond.js helpers for JSON responses.
+- Keep 5xx detail sanitized. Never echo raw provider/internal exception text.
+- Do not reintroduce legacy keys:
+  - ok
+  - reason
+  - code
+  - message
+  - issues
+  - details
+
+5. Cohesion / SSOT
+- Backend-owned business/timeline/render truth must stay backend-owned.
+- Frontend/mobile must consume backend truth, not recreate it.
+- Do not create second policy engines in UI code.
+- Extend existing SSOT modules instead of adding parallel helpers.
+- Prefer canonical middleware/modules already defined by docs/COHESION_GUARDRAILS.md.
+
+6. Scope discipline
+- Minimal diff.
+- No speculative refactors.
+- No “while I’m here” rewrites.
+- Preserve functioning logic unless repo evidence shows it is wrong.
+- If task is UI-only, do not widen into backend logic.
+- If task is contract-only, do not widen into layout/features.
+
+7. Docs ownership
+- Update owning canonical docs first when runtime truth, contract truth, or hardening truth changes.
+- Evidence docs are not automatically updated in every PR.
+- If evidence docs are unchanged, explain why.
+- If evidence docs are updated, explain why they still matter for this change.
+
+8. Verification requirements
+Every meaningful response should return:
+- Audit summary
+- Plan
+- Patch set
+- Verification
+- Risks
+- Revert/rollback note
+
+Use only the checks relevant to touched surfaces, but be explicit.
+Do not claim runtime/browser verification from syntax checks alone.
+
+9. Evidence requirements
+Every audit/plan/implementation should include:
+- files inspected
+- routes/callers/docs affected
+- what is canonical vs evidence vs legacy
+- exact non-changes

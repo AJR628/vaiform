@@ -1,0 +1,21 @@
+---
+globs: web/public/creative.html- web/public/creative.css- web/public/js/pages/creative/creative.article.mjs- related storyboard/preview UI files
+alwaysApply: false
+---
+
+VAIFORM — STORYBOARD / PREVIEW / RENDER UI RULES
+
+Applies to:
+- web/public/creative.html
+- web/public/creative.css
+- web/public/js/pages/creative/creative.article.mjs
+- related storyboard/preview UI files
+
+Rules:
+- playbackTimelineV1 remains backend-owned timing truth.
+- previewReadinessV1 remains backend-owned readiness truth.
+- Frontend must consume these truths, not recreate them.
+- UI/layout changes must not weaken preview parity or render gating.
+- Duration-based visual widths may be transitional, but must derive from backend-owned timing data only.
+- Keep selected-clip actions scoped to selection, not duplicated everywhere.
+- Do not change backend render/finalize semantics in a UI pass.
