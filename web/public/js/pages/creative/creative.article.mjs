@@ -328,6 +328,7 @@ let playbackActiveStoryboardCardKey = null;
 let storyboardSelectionAuthority = 'auto';
 let storyboardPreviewBindingsAttached = false;
 let storyboardInspectorBindingsAttached = false;
+let storyboardOverviewBindingsAttached = false;
 let storyboardPreviewActiveSentenceIndex = null;
 let storyboardPreviewActiveSegmentIndex = null;
 let storyboardPreviewPendingSeekSec = null;
@@ -792,7 +793,7 @@ function setPlaybackActiveStoryboardCard(card, { scroll = false } = {}) {
   const nextKey = getStoryboardCardKey(card);
   playbackActiveStoryboardCardKey = nextKey || null;
   applyStoryboardCardVisualState();
-  if (scroll && card) {
+  if (scroll && card && !isStoryboardSessionOverviewMode()) {
     card.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
   }
 }
@@ -809,24 +810,6 @@ function shouldAllowStoryboardAutoSelection() {
   return !audio || audio.paused;
 }
 
-function getStoryboardTimelineDurationMap(session = window.currentStorySession) {
-  const timeline = getPlaybackTimeline(session);
-  if (!timeline) return null;
-
-  const durations = new Map();
-  timeline.segments.forEach((segment) => {
-    const ownerSentenceIndex = Number.isFinite(Number(segment?.ownerSentenceIndex))
-      ? Number(segment.ownerSentenceIndex)
-      : Number(segment?.sentenceIndex);
-    const durationSec = Number(segment?.durationSec);
-    if (!Number.isFinite(ownerSentenceIndex) || !Number.isFinite(durationSec) || durationSec <= 0) {
-      return;
-    }
-    durations.set(ownerSentenceIndex, (durations.get(ownerSentenceIndex) || 0) + durationSec);
-  });
-  return durations.size ? durations : null;
-}
-
 function formatStoryboardTileDuration(durationSec) {
   const safeDuration = Number(durationSec);
   if (!Number.isFinite(safeDuration) || safeDuration <= 0) return '';
@@ -834,34 +817,139 @@ function formatStoryboardTileDuration(durationSec) {
   return `${Math.round(safeDuration * 10) / 10}s`;
 }
 
-function getStoryboardTileWidthRem(durationSec) {
-  const safeDuration = Number(durationSec);
-  if (!Number.isFinite(safeDuration) || safeDuration <= 0) return null;
-  const clampedDuration = Math.max(0.75, Math.min(8, safeDuration));
-  return (5.35 + clampedDuration * 0.82).toFixed(2);
+function isStoryboardSessionOverviewMode(row = document.getElementById('storyboard-row')) {
+  return (
+    row?.dataset?.storyboardMode === 'session' && row?.dataset?.storyboardLayout === 'overview'
+  );
 }
 
-function applyStoryboardCardDurationState(card, durationSec) {
-  if (!card) return;
+function getStoryboardOverviewElements() {
+  return {
+    control: document.getElementById('storyboard-overview-control'),
+    playToggle: document.getElementById('storyboard-overview-play-toggle'),
+    currentTime: document.getElementById('storyboard-overview-current-time'),
+    totalTime: document.getElementById('storyboard-overview-total-time'),
+    rail: document.getElementById('storyboard-overview-rail'),
+    progress: document.getElementById('storyboard-overview-progress'),
+    playhead: document.getElementById('storyboard-overview-playhead'),
+    scrubber: document.getElementById('storyboard-overview-scrubber'),
+    addButton: document.getElementById('storyboard-overview-add-beat'),
+  };
+}
 
-  const safeDuration = Number(durationSec);
+function getStoryboardOverviewSpans(session = window.currentStorySession) {
+  const timeline = getPlaybackTimeline(session);
+  const totalDurationSec = Number(timeline?.totalDurationSec);
+  if (
+    !timeline ||
+    !Array.isArray(timeline.segments) ||
+    !Number.isFinite(totalDurationSec) ||
+    totalDurationSec <= 0
+  ) {
+    return null;
+  }
+
+  const spansByOwner = new Map();
+  timeline.segments.forEach((segment) => {
+    const ownerSentenceIndex = Number.isFinite(Number(segment?.ownerSentenceIndex))
+      ? Number(segment.ownerSentenceIndex)
+      : Number(segment?.sentenceIndex);
+    const startSec = Number(segment?.globalStartSec);
+    const endSec = Number(segment?.globalEndSec);
+    const durationSec = Number(segment?.durationSec);
+    if (
+      !Number.isFinite(ownerSentenceIndex) ||
+      !Number.isFinite(startSec) ||
+      !Number.isFinite(endSec) ||
+      !Number.isFinite(durationSec) ||
+      durationSec <= 0 ||
+      endSec <= startSec
+    ) {
+      return;
+    }
+
+    const existing = spansByOwner.get(ownerSentenceIndex);
+    if (!existing) {
+      spansByOwner.set(ownerSentenceIndex, {
+        ownerSentenceIndex,
+        startSec,
+        endSec,
+        durationSec,
+      });
+      return;
+    }
+
+    existing.startSec = Math.min(existing.startSec, startSec);
+    existing.endSec = Math.max(existing.endSec, endSec);
+    existing.durationSec += durationSec;
+  });
+
+  const spans = Array.from(spansByOwner.values())
+    .sort((a, b) => a.startSec - b.startSec || a.ownerSentenceIndex - b.ownerSentenceIndex)
+    .map((span) => ({
+      ...span,
+      widthPct: (span.durationSec / totalDurationSec) * 100,
+    }));
+
+  return spans.length ? spans : null;
+}
+
+function getStoryboardOverviewSpanForSentenceIndex(
+  sentenceIndex,
+  session = window.currentStorySession
+) {
+  return (
+    getStoryboardOverviewSpans(session)?.find(
+      (span) => span.ownerSentenceIndex === Number(sentenceIndex)
+    ) || null
+  );
+}
+
+function getStoryboardOverviewSpanForTime(timeSec, session = window.currentStorySession) {
+  const safeTime = Number(timeSec);
+  if (!Number.isFinite(safeTime)) return null;
+  const spans = getStoryboardOverviewSpans(session);
+  if (!spans?.length) return null;
+  return (
+    spans.find((span, index) => {
+      if (index === spans.length - 1) {
+        return safeTime >= span.startSec && safeTime <= span.endSec;
+      }
+      return safeTime >= span.startSec && safeTime < span.endSec;
+    }) || null
+  );
+}
+
+function applyStoryboardOverviewState(card, overviewSpan, { timelineReady = true } = {}) {
+  if (!card) return;
   const durationBadge = card.querySelector('[data-role="tile-duration"]');
-  if (!Number.isFinite(safeDuration) || safeDuration <= 0) {
-    card.style.removeProperty('--storyboard-tile-width');
+  if (!timelineReady || !overviewSpan) {
+    card.style.removeProperty('--storyboard-overview-width-pct');
     delete card.dataset.durationSec;
+    card.dataset.overviewChrome = 'label';
     durationBadge?.setAttribute('hidden', 'hidden');
     if (durationBadge) durationBadge.textContent = '';
     return;
   }
 
-  const widthRem = getStoryboardTileWidthRem(safeDuration);
-  if (widthRem) {
-    card.style.setProperty('--storyboard-tile-width', `${widthRem}rem`);
+  card.style.setProperty('--storyboard-overview-width-pct', `${overviewSpan.widthPct}`);
+  card.dataset.durationSec = String(overviewSpan.durationSec);
+
+  if (overviewSpan.widthPct >= 18) {
+    card.dataset.overviewChrome = 'full';
+  } else if (overviewSpan.widthPct >= 9) {
+    card.dataset.overviewChrome = 'label';
+  } else {
+    card.dataset.overviewChrome = 'none';
   }
-  card.dataset.durationSec = String(safeDuration);
+
   if (durationBadge) {
-    durationBadge.textContent = formatStoryboardTileDuration(safeDuration);
-    durationBadge.removeAttribute('hidden');
+    durationBadge.textContent = formatStoryboardTileDuration(overviewSpan.durationSec);
+    if (card.dataset.overviewChrome === 'full') {
+      durationBadge.removeAttribute('hidden');
+    } else {
+      durationBadge.setAttribute('hidden', 'hidden');
+    }
   }
 }
 
@@ -917,6 +1005,16 @@ function buildStoryboardCardMarkup({
     </div>
     ${copyMarkup}
   `;
+}
+
+function buildStoryboardOverviewCardMarkup({ beatLabel, text, clip, emptyLabel = 'Select clip' }) {
+  return buildStoryboardCardMarkup({
+    beatLabel,
+    text,
+    clip,
+    emptyLabel,
+    compact: true,
+  });
 }
 
 function getStoryboardInspectorElements() {
@@ -1086,6 +1184,70 @@ function getStoryboardPreviewElements() {
     statusCopy: document.getElementById('storyboard-preview-status-copy'),
     retryButton: document.getElementById('storyboard-sync-retry-btn'),
   };
+}
+
+function updateStoryboardOverviewPlayhead(
+  timeSec,
+  session = window.currentStorySession,
+  { timelineReady = hasCurrentStoryPreviewSync(session) } = {}
+) {
+  const { control, currentTime, totalTime, scrubber } = getStoryboardOverviewElements();
+  if (!control || !currentTime || !totalTime || !scrubber) return;
+
+  const timeline = getPlaybackTimeline(session);
+  const totalDurationSec = Number(timeline?.totalDurationSec);
+  if (!timelineReady || !Number.isFinite(totalDurationSec) || totalDurationSec <= 0) {
+    control.style.setProperty('--storyboard-overview-progress-pct', '0%');
+    control.style.setProperty('--storyboard-overview-playhead-pct', '0%');
+    currentTime.textContent = '--:--';
+    totalTime.textContent = '--:--';
+    scrubber.setAttribute('aria-valuemax', '0');
+    scrubber.setAttribute('aria-valuenow', '0');
+    scrubber.setAttribute('aria-valuetext', 'Timeline unavailable');
+    return;
+  }
+
+  const safeTime = Math.max(0, Math.min(totalDurationSec, Number(timeSec) || 0));
+  const ratio = totalDurationSec > 0 ? safeTime / totalDurationSec : 0;
+  const pct = `${Math.max(0, Math.min(100, ratio * 100)).toFixed(4)}%`;
+  control.style.setProperty('--storyboard-overview-progress-pct', pct);
+  control.style.setProperty('--storyboard-overview-playhead-pct', pct);
+  currentTime.textContent = formatSecondsLabel(safeTime);
+  totalTime.textContent = formatSecondsLabel(totalDurationSec);
+  scrubber.setAttribute('aria-valuemax', String(totalDurationSec));
+  scrubber.setAttribute('aria-valuenow', String(safeTime));
+  scrubber.setAttribute(
+    'aria-valuetext',
+    `${formatSecondsLabel(safeTime)} of ${formatSecondsLabel(totalDurationSec)}`
+  );
+}
+
+function refreshStoryboardOverviewControl(session = window.currentStorySession) {
+  const { control, playToggle, scrubber, addButton } = getStoryboardOverviewElements();
+  const { audio } = getStoryboardPreviewElements();
+  if (!control || !playToggle || !scrubber || !addButton) return;
+
+  const overviewSpans = getStoryboardOverviewSpans(session);
+  const timelineReady = hasCurrentStoryPreviewSync(session) && !!overviewSpans?.length;
+  const sentenceCount = Array.isArray(session?.story?.sentences)
+    ? session.story.sentences.length
+    : 0;
+  const insertAfterIndex = Math.max(sentenceCount - 1, 0);
+
+  control.dataset.storyboardMode = 'session';
+  control.dataset.storyboardLayout = 'overview';
+  control.dataset.timelineReady = timelineReady ? 'true' : 'false';
+  playToggle.disabled = !timelineReady;
+  playToggle.textContent = audio && !audio.paused && timelineReady ? 'Pause' : 'Play';
+  playToggle.setAttribute(
+    'aria-label',
+    audio && !audio.paused && timelineReady ? 'Pause synced preview' : 'Play synced preview'
+  );
+  scrubber.tabIndex = timelineReady ? 0 : -1;
+  addButton.hidden = sentenceCount <= 0;
+  addButton.dataset.insertAfterIndex = String(insertAfterIndex);
+
+  updateStoryboardOverviewPlayhead(audio?.currentTime || 0, session, { timelineReady });
 }
 
 function getSessionShotBySentenceIndex(session, sentenceIndex) {
@@ -1319,15 +1481,20 @@ function syncStoryboardPreviewAtTime(
 ) {
   if (!hasCurrentStoryPreviewSync(window.currentStorySession)) return;
   const caption = findCaptionAtTime(timeSec, window.currentStorySession);
-  if (!caption) return;
-  const card = getStoryboardCardBySentenceIndex(caption.sentenceIndex);
+  const overviewSpan = getStoryboardOverviewSpanForTime(timeSec, window.currentStorySession);
+  const targetSentenceIndex = Number.isFinite(Number(overviewSpan?.ownerSentenceIndex))
+    ? Number(overviewSpan.ownerSentenceIndex)
+    : Number(caption?.sentenceIndex);
+  if (!Number.isFinite(targetSentenceIndex)) return;
+  const card = getStoryboardCardBySentenceIndex(targetSentenceIndex);
   if (card) {
     setPlaybackActiveStoryboardCard(card, { scroll });
     if (!getSelectedStoryboardCard() || storyboardSelectionAuthority !== 'explicit') {
       setActiveStoryboardCard(card, { syncPreview: false });
     }
   }
-  updateStoryboardPreviewBeat(caption.sentenceIndex);
+  updateStoryboardOverviewPlayhead(timeSec, window.currentStorySession, { timelineReady: true });
+  updateStoryboardPreviewBeat(targetSentenceIndex);
   updateStoryboardPreviewSegment(findPlaybackSegmentAtTime(timeSec, window.currentStorySession), {
     audioTime: timeSec,
     autoplay,
@@ -1380,6 +1547,7 @@ function refreshStoryboardPreview(session = window.currentStorySession) {
       statusCopy.textContent =
         'Vaiform will sync narration and timing before the preview is ready to watch.';
     }
+    refreshStoryboardOverviewControl(session);
     return;
   }
 
@@ -1414,11 +1582,12 @@ function refreshStoryboardPreview(session = window.currentStorySession) {
       }
       retryButton?.classList.remove('hidden');
     }
+    refreshStoryboardOverviewControl(session);
     return;
   }
 
   blocked.classList.add('hidden');
-  audio.classList.remove('hidden');
+  audio.classList.add('hidden');
   retryButton?.classList.add('hidden');
 
   const nextAudioUrl = voiceSync.previewAudioUrl || '';
@@ -1438,6 +1607,7 @@ function refreshStoryboardPreview(session = window.currentStorySession) {
     ? Number(audio.currentTime)
     : getCaptionStartTimeForSentenceIndex(sentenceIndex, session);
   syncStoryboardPreviewAtTime(activeTimeSec, { autoplay: !audio.paused, forceSeek: audio.paused });
+  refreshStoryboardOverviewControl(session);
 }
 
 function syncStoryboardPreviewToCard(card, { autoplay = false } = {}) {
@@ -1471,6 +1641,35 @@ function syncStoryboardPreviewFromAudio({ scroll = false, forceSeek = false } = 
   const audio = document.getElementById('storyboard-preview-audio');
   if (!audio || !hasCurrentStoryPreviewSync(window.currentStorySession)) return;
   syncStoryboardPreviewAtTime(audio.currentTime, { scroll, autoplay: !audio.paused, forceSeek });
+}
+
+function seekStoryboardOverviewToRatio(ratio) {
+  const audio = document.getElementById('storyboard-preview-audio');
+  const timeline = getPlaybackTimeline(window.currentStorySession);
+  const overviewSpans = getStoryboardOverviewSpans(window.currentStorySession);
+  const totalDurationSec = Number(timeline?.totalDurationSec);
+  if (
+    !audio ||
+    !overviewSpans?.length ||
+    !Number.isFinite(totalDurationSec) ||
+    totalDurationSec <= 0
+  ) {
+    return;
+  }
+
+  const clampedRatio = Math.max(0, Math.min(1, Number(ratio) || 0));
+  audio.currentTime = clampedRatio * totalDurationSec;
+  syncStoryboardPreviewFromAudio({ forceSeek: true });
+}
+
+function toggleStoryboardOverviewPlayback() {
+  const { audio } = getStoryboardPreviewElements();
+  if (!audio || !hasCurrentStoryPreviewSync(window.currentStorySession)) return;
+  if (audio.paused) {
+    audio.play().catch(() => {});
+  } else {
+    audio.pause();
+  }
 }
 
 async function retryStoryboardPreviewSync() {
@@ -1516,26 +1715,104 @@ function setupStoryboardPreviewBindings() {
   const { frame: previewVideo, audio, retryButton } = getStoryboardPreviewElements();
   if (!previewVideo || !audio || !retryButton) return;
 
-  const syncFromAudio = () => syncStoryboardPreviewFromAudio();
+  const syncFromAudio = () => {
+    syncStoryboardPreviewFromAudio();
+    refreshStoryboardOverviewControl(window.currentStorySession);
+  };
   audio.addEventListener('loadedmetadata', syncFromAudio);
   audio.addEventListener('timeupdate', syncFromAudio);
-  audio.addEventListener('seeked', () =>
-    syncStoryboardPreviewFromAudio({ scroll: true, forceSeek: true })
-  );
-  audio.addEventListener('seeking', () => syncStoryboardPreviewFromAudio({ forceSeek: true }));
+  audio.addEventListener('seeked', () => {
+    syncStoryboardPreviewFromAudio({ scroll: true, forceSeek: true });
+    refreshStoryboardOverviewControl(window.currentStorySession);
+  });
+  audio.addEventListener('seeking', () => {
+    syncStoryboardPreviewFromAudio({ forceSeek: true });
+    refreshStoryboardOverviewControl(window.currentStorySession);
+  });
   audio.addEventListener('play', () => {
     const previewVideo = document.getElementById('storyboard-preview-video');
     if (previewVideo && !previewVideo.classList.contains('hidden')) {
       previewVideo.play().catch(() => {});
     }
+    refreshStoryboardOverviewControl(window.currentStorySession);
   });
-  audio.addEventListener('pause', pauseStoryboardPreviewVideo);
-  audio.addEventListener('ended', pauseStoryboardPreviewVideo);
+  audio.addEventListener('pause', () => {
+    pauseStoryboardPreviewVideo();
+    refreshStoryboardOverviewControl(window.currentStorySession);
+  });
+  audio.addEventListener('ended', () => {
+    pauseStoryboardPreviewVideo();
+    refreshStoryboardOverviewControl(window.currentStorySession);
+  });
   previewVideo.addEventListener('loadedmetadata', () => {
     applyStoryboardPreviewPendingSeek(previewVideo, { autoplay: !audio.paused });
   });
   retryButton.addEventListener('click', retryStoryboardPreviewSync);
   storyboardPreviewBindingsAttached = true;
+}
+
+function setupStoryboardOverviewBindings() {
+  if (storyboardOverviewBindingsAttached) return;
+  const { playToggle, rail, scrubber } = getStoryboardOverviewElements();
+  if (!playToggle || !rail || !scrubber) return;
+
+  let scrubPointerId = null;
+
+  const getRatioFromClientX = (clientX) => {
+    const rect = rail.getBoundingClientRect();
+    if (!rect.width) return null;
+    return (clientX - rect.left) / rect.width;
+  };
+
+  const seekFromPointer = (clientX) => {
+    const ratio = getRatioFromClientX(clientX);
+    if (ratio == null) return;
+    seekStoryboardOverviewToRatio(ratio);
+  };
+
+  playToggle.addEventListener('click', toggleStoryboardOverviewPlayback);
+  scrubber.addEventListener('pointerdown', (event) => {
+    if (scrubber.tabIndex < 0) return;
+    scrubPointerId = event.pointerId;
+    scrubber.setPointerCapture?.(event.pointerId);
+    seekFromPointer(event.clientX);
+    event.preventDefault();
+  });
+  scrubber.addEventListener('pointermove', (event) => {
+    if (scrubPointerId !== event.pointerId) return;
+    seekFromPointer(event.clientX);
+  });
+  const finishScrub = (event) => {
+    if (scrubPointerId !== event.pointerId) return;
+    scrubber.releasePointerCapture?.(event.pointerId);
+    scrubPointerId = null;
+  };
+  scrubber.addEventListener('pointerup', finishScrub);
+  scrubber.addEventListener('pointercancel', finishScrub);
+  scrubber.addEventListener('keydown', (event) => {
+    if (scrubber.tabIndex < 0) return;
+    const audio = document.getElementById('storyboard-preview-audio');
+    const timeline = getPlaybackTimeline(window.currentStorySession);
+    const totalDurationSec = Number(timeline?.totalDurationSec);
+    if (!audio || !Number.isFinite(totalDurationSec) || totalDurationSec <= 0) return;
+    let nextTime = Number(audio.currentTime) || 0;
+    if (event.key === 'ArrowLeft') {
+      nextTime -= 1;
+    } else if (event.key === 'ArrowRight') {
+      nextTime += 1;
+    } else if (event.key === 'Home') {
+      nextTime = 0;
+    } else if (event.key === 'End') {
+      nextTime = totalDurationSec;
+    } else {
+      return;
+    }
+    event.preventDefault();
+    audio.currentTime = Math.max(0, Math.min(totalDurationSec, nextTime));
+    syncStoryboardPreviewFromAudio({ forceSeek: true });
+  });
+
+  storyboardOverviewBindingsAttached = true;
 }
 
 function setupStoryboardInspectorBindings() {
@@ -1598,7 +1875,7 @@ function setActiveStoryboardCard(
   }
   applyStoryboardCardVisualState();
   refreshStoryboardInspector(card);
-  if (scroll) {
+  if (scroll && !isStoryboardSessionOverviewMode()) {
     card.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
   }
   if (syncPreview) {
@@ -1615,7 +1892,10 @@ function handleStoryboardCardPrimaryInteraction(card, event) {
   if (interactive) return;
   event?.stopPropagation?.();
   setActiveStoryboardCard(card, { explicit: true });
-  if (window.matchMedia('(hover: hover) and (pointer: fine)').matches) {
+  if (
+    !isStoryboardSessionOverviewMode() &&
+    window.matchMedia('(hover: hover) and (pointer: fine)').matches
+  ) {
     showBeatFocusPreview(card);
   }
 }
@@ -1650,7 +1930,14 @@ function ensureStoryboardDeckBindings() {
   const row = document.getElementById('storyboard-row');
   if (!scrollEl || !row) return;
 
-  scrollEl.addEventListener('scroll', scheduleStoryboardDeckSelection, { passive: true });
+  scrollEl.addEventListener(
+    'scroll',
+    () => {
+      if (isStoryboardSessionOverviewMode(row)) return;
+      scheduleStoryboardDeckSelection();
+    },
+    { passive: true }
+  );
   window.addEventListener('resize', scheduleStoryboardDeckSelection);
   storyboardDeckListenersAttached = true;
 }
@@ -3337,8 +3624,9 @@ if (window.__beatPreviewDebug === true) {
 async function renderStoryboard(session) {
   const storyboardRow = document.getElementById('storyboard-row');
   const storyboardEl = document.getElementById('storyboard');
+  const overviewControl = document.getElementById('storyboard-overview-control');
 
-  if (!storyboardRow || !storyboardEl) {
+  if (!storyboardRow || !storyboardEl || !overviewControl) {
     console.error('[article] Storyboard elements not found');
     return;
   }
@@ -3346,11 +3634,16 @@ async function renderStoryboard(session) {
   // Clear existing cards
   storyboardRow.innerHTML = '';
   storyboardRow.dataset.storyboardMode = 'session';
+  storyboardRow.dataset.storyboardLayout = 'overview';
 
   const sentences = session.story?.sentences || [];
   const shots = session.shots || [];
-  const durationMap = getStoryboardTimelineDurationMap(session);
-  const showInlineSessionInsertButtons = !window.matchMedia('(max-width: 919px)').matches;
+  const overviewSpans = getStoryboardOverviewSpans(session);
+  const overviewReady = hasCurrentStoryPreviewSync(session) && !!overviewSpans?.length;
+  storyboardRow.dataset.timelineReady = overviewReady ? 'true' : 'false';
+  overviewControl.dataset.storyboardMode = 'session';
+  overviewControl.dataset.storyboardLayout = 'overview';
+  overviewControl.dataset.timelineReady = overviewReady ? 'true' : 'false';
 
   // Guard: handle mismatched counts gracefully
   if (sentences.length !== shots.length) {
@@ -3367,116 +3660,23 @@ async function renderStoryboard(session) {
     card.className = 'beat-card relative flex-shrink-0';
     card.setAttribute('data-sentence-index', idx);
     card.dataset.storyboardMode = 'session';
+    card.dataset.storyboardLayout = 'overview';
     card.dataset.missingClip = shot?.selectedClip?.url ? 'false' : 'true';
 
-    /*
-      Legacy session-card markup from the previous tile model.
-      Session-mode cells now render exclusively via buildStoryboardCardMarkup(..., compact: true).
-    if (!shot || !shot.selectedClip) {
-      // Placeholder for missing clip
-      card.innerHTML = `
-                        <div class="relative w-full h-40 beat-video-container bg-gray-800 flex items-center justify-center">
-                            <p class="text-xs text-gray-400 text-center px-2">No clip found</p>
-                            <div class="beat-controls">
-                                <button
-                                    class="delete-beat-btn absolute top-1 right-1 z-50"
-                                    data-sentence-index="${idx}"
-                                    title="Delete beat"
-                                >âœ•</button>
-                            </div>
-                        </div>
-                        <div 
-                            class="beat-text p-2 text-xs text-gray-200 h-24 overflow-hidden cursor-text"
-                            data-sentence-index="${idx}"
-                            title="Click to edit"
-                        >
-                            ${escapeHtml(sentence)}
-                        </div>
-                        <button
-                            class="swap-clip-btn mt-1 mx-2 mb-2 w-[calc(100%-1rem)] text-xs py-1 rounded bg-slate-700 hover:bg-slate-600 text-white"
-                            data-sentence-index="${idx}"
-                        >
-                            Swap clip
-                        </button>
-                    `;
-    } else {
-      const clip = shot.selectedClip;
-      const videoUrl = clip.url || '';
-      const thumbUrl = clip.thumbUrl || '';
-
-      card.innerHTML = `
-                        <div class="relative w-full h-40 beat-video-container overflow-hidden">
-                            <video
-                                src="${videoUrl}"
-                                ${thumbUrl ? `poster="${thumbUrl}"` : ''}
-                                muted
-                                loop
-                                preload="none"
-                                class="w-full h-full object-cover transition-transform duration-150 storyboard-video"
-                                data-index="${idx}"
-                                aria-label="Preview for: ${sentence.substring(0, 50)}"
-                            ></video>
-                            <div class="beat-controls">
-                                <button
-                                    class="delete-beat-btn absolute top-1 right-1 z-50"
-                                    data-sentence-index="${idx}"
-                                    title="Delete beat"
-                                >âœ•</button>
-                            </div>
-                        </div>
-                        <div 
-                            class="beat-text p-2 text-xs text-gray-200 h-24 overflow-hidden cursor-text"
-                            data-sentence-index="${idx}"
-                            title="Click to edit"
-                        >
-                            ${escapeHtml(sentence)}
-                        </div>
-                        <button
-                            class="swap-clip-btn mt-1 mx-2 mb-2 w-[calc(100%-1rem)] text-xs py-1 rounded bg-slate-700 hover:bg-slate-600 text-white"
-                            data-sentence-index="${idx}"
-                        >
-                            Swap clip
-                        </button>
-                    `;
-    }
-    */
-
-    card.innerHTML = buildStoryboardCardMarkup({
+    const overviewSpan = overviewSpans?.find((span) => span.ownerSentenceIndex === idx) || null;
+    card.innerHTML = buildStoryboardOverviewCardMarkup({
       beatLabel: `Beat ${idx + 1}`,
       text: sentence,
       clip: shot?.selectedClip || null,
       emptyLabel: 'Select clip',
-      compact: true,
     });
     bindStoryboardCardSelection(card);
-    applyStoryboardCardDurationState(card, durationMap?.get(idx));
+    applyStoryboardOverviewState(card, overviewSpan, { timelineReady: overviewReady });
     storyboardRow.appendChild(card);
-
-    if (showInlineSessionInsertButtons) {
-      const addBtn = document.createElement('button');
-      addBtn.className = 'add-beat-btn add-beat-btn--inline flex-shrink-0';
-      addBtn.setAttribute('data-insert-after-index', idx);
-      addBtn.setAttribute('title', 'Add clip');
-      addBtn.textContent = '+';
-      storyboardRow.appendChild(addBtn);
-    }
   });
-
-  // Add final "Add beat" button after the last card
-  if (sentences.length > 0) {
-    const finalAddBtn = document.createElement('button');
-    finalAddBtn.className = 'add-beat-btn add-beat-btn--tail flex-shrink-0';
-    finalAddBtn.setAttribute('data-insert-after-index', sentences.length - 1);
-    finalAddBtn.setAttribute('title', 'Add clip');
-    finalAddBtn.textContent = '+';
-    storyboardRow.appendChild(finalAddBtn);
-  }
 
   // Show storyboard
   storyboardEl.classList.remove('hidden');
-
-  // Setup hover interactions (desktop-only)
-  setupStoryboardHover();
 
   // Setup swap button click handlers
   setupSwapButtonHandlers();
@@ -3484,6 +3684,7 @@ async function renderStoryboard(session) {
   // Update render button state (session exists)
   updateRenderArticleButtonState();
   setupStoryboardPreviewBindings();
+  setupStoryboardOverviewBindings();
   setupStoryboardInspectorBindings();
   if (!getSelectedStoryboardCard()) {
     storyboardSelectionAuthority = 'auto';
@@ -3687,8 +3888,9 @@ function setupVideoCutsPanelListeners() {
 function renderDraftStoryboard() {
   const storyboardRow = document.getElementById('storyboard-row');
   const storyboardEl = document.getElementById('storyboard');
+  const overviewControl = document.getElementById('storyboard-overview-control');
 
-  if (!storyboardRow || !storyboardEl) {
+  if (!storyboardRow || !storyboardEl || !overviewControl) {
     console.error('[article] Storyboard elements not found');
     return;
   }
@@ -3696,6 +3898,11 @@ function renderDraftStoryboard() {
   // Clear existing cards
   storyboardRow.innerHTML = '';
   storyboardRow.dataset.storyboardMode = 'draft';
+  storyboardRow.dataset.storyboardLayout = 'cards';
+  delete storyboardRow.dataset.timelineReady;
+  overviewControl.dataset.storyboardMode = 'draft';
+  overviewControl.dataset.storyboardLayout = 'cards';
+  overviewControl.dataset.timelineReady = 'false';
 
   const beats = window.draftStoryboard.beats || [];
 
@@ -5085,17 +5292,21 @@ function updateStoryboardCardForSentence(shot) {
   if (!card) return;
 
   const sentenceText = window.currentStorySession?.story?.sentences?.[shot.sentenceIndex] || '';
-  const durationMap = getStoryboardTimelineDurationMap(window.currentStorySession);
+  const overviewSpan = getStoryboardOverviewSpanForSentenceIndex(
+    Number(shot.sentenceIndex),
+    window.currentStorySession
+  );
+  const overviewReady = hasCurrentStoryPreviewSync(window.currentStorySession) && !!overviewSpan;
   card.dataset.storyboardMode = 'session';
+  card.dataset.storyboardLayout = 'overview';
   card.dataset.missingClip = shot?.selectedClip?.url ? 'false' : 'true';
-  card.innerHTML = buildStoryboardCardMarkup({
+  card.innerHTML = buildStoryboardOverviewCardMarkup({
     beatLabel: `Beat ${Number(shot.sentenceIndex) + 1}`,
     text: sentenceText,
     clip: shot.selectedClip || null,
     emptyLabel: 'Select clip',
-    compact: true,
   });
-  applyStoryboardCardDurationState(card, durationMap?.get(Number(shot.sentenceIndex)));
+  applyStoryboardOverviewState(card, overviewSpan, { timelineReady: overviewReady });
   if (window.BEAT_PREVIEW_ENABLED) {
     const rawStyle =
       window.currentStorySession?.overlayCaption || window.currentStorySession?.captionStyle || {};
@@ -5114,6 +5325,7 @@ function updateStoryboardCardForSentence(shot) {
   }
   applyStoryboardCardVisualState();
   setActiveStoryboardCard(card, { explicit: true });
+  refreshStoryboardOverviewControl(window.currentStorySession);
   updateRenderArticleButtonState();
 }
 
@@ -5341,6 +5553,7 @@ function setupStoryboardHover() {
   const storyboardRow = document.getElementById('storyboard-row');
   const storyboardEl = document.getElementById('storyboard');
   if (!storyboardRow) return;
+  if (isStoryboardSessionOverviewMode(storyboardRow)) return;
 
   // Check hover capability (desktop only)
   const canHover = window.matchMedia('(hover: hover) and (pointer: fine)').matches;

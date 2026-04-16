@@ -92,96 +92,11 @@
         z-index: 9999;
       }
 
-      .add-beat-btn {
-        transition: transform 0.2s ease;
-        cursor: pointer;
-      }
-
-      .add-beat-btn:hover {
-        transform: scale(1.06);
-      }
-
       .beat-text-editing {
         outline: 2px solid #2563eb;
         outline-offset: -2px;
         background-color: rgba(37, 99, 235, 0.08);
         border-radius: 8px;
-      }
-
-      .beat-video-container {
-        aspect-ratio: 9 / 16;
-        height: auto !important;
-        background-color: #000;
-        overflow: hidden;
-      }
-
-      .beat-caption-overlay {
-        position: absolute;
-        left: 50%;
-        top: calc(var(--y-pct) * 100%);
-        width: calc(var(--raster-w-ratio) * 100%);
-        height: calc(var(--raster-h-ratio) * 100%);
-        transform: translateX(-50%);
-        pointer-events: none;
-        z-index: 10;
-        object-fit: contain;
-        image-rendering: -webkit-optimize-contrast;
-        image-rendering: crisp-edges;
-      }
-
-      .beat-controls {
-        position: absolute;
-        inset: 0;
-        z-index: 50;
-        pointer-events: none;
-      }
-
-      .beat-controls .delete-beat-btn {
-        pointer-events: auto;
-      }
-
-      .beat-card {
-        transition: transform 180ms cubic-bezier(0.4, 0, 0.2, 1);
-        will-change: transform;
-      }
-
-      .beat-card.beat-hovered {
-        transform: translateY(-1px);
-        transform-origin: top center;
-        z-index: 80;
-        overflow: visible;
-      }
-
-      .beat-card.squish-left-1 {
-        transform: none;
-      }
-
-      .beat-card.squish-left-2 {
-        transform: none;
-      }
-
-      .beat-card.squish-right-1 {
-        transform: none;
-      }
-
-      .beat-card.squish-right-2 {
-        transform: none;
-      }
-
-      .storyboard-scroll-wrapper {
-        overflow-x: auto;
-        overflow-y: visible;
-        padding-top: 6px;
-        padding-bottom: 10px;
-        width: 100%;
-      }
-
-      #storyboard-row {
-        overflow: visible;
-      }
-
-      #storyboard.storyboard-hovering .storyboard-scroll-wrapper {
-        padding-bottom: 12px;
       }
 
       #beat-focus-modal {
@@ -488,19 +403,52 @@
                       >
                         Vaiform will sync narration and timing before the preview is ready to watch.
                       </p>
-                      <button
-                        id="storyboard-sync-retry-btn"
-                        type="button"
-                        class="creative-secondary-button hidden"
-                      >
-                        Retry sync
-                      </button>
                     </div>
                   </div>
+                </div>
 
-                  <div class="creative-storyboard-transport-bar">
-                    <div class="creative-storyboard-transport-copy">
-                      <p class="creative-storyboard-section-kicker">Now previewing</p>
+                <div class="creative-storyboard-timeline-shell">
+                  <div
+                    id="storyboard-overview-control"
+                    class="creative-storyboard-overview-control"
+                    data-storyboard-mode="session"
+                    data-timeline-ready="false"
+                  >
+                    <div class="creative-storyboard-overview-topline">
+                      <button
+                        id="storyboard-overview-play-toggle"
+                        type="button"
+                        class="creative-storyboard-overview-play-button"
+                        aria-label="Play synced preview"
+                        disabled
+                      >
+                        Play
+                      </button>
+                      <span
+                        id="storyboard-overview-current-time"
+                        class="creative-storyboard-overview-time"
+                        aria-live="off"
+                        >--:--</span
+                      >
+                      <span
+                        id="storyboard-overview-total-time"
+                        class="creative-storyboard-overview-time creative-storyboard-overview-time--end"
+                        aria-live="off"
+                        >--:--</span
+                      >
+                      <button
+                        id="storyboard-overview-add-beat"
+                        type="button"
+                        class="add-beat-btn add-beat-btn--overview"
+                        title="Add clip"
+                        aria-label="Add clip"
+                      >
+                        +
+                      </button>
+                    </div>
+
+                    <div class="creative-storyboard-overview-status">
+                      <p class="creative-storyboard-section-kicker">Timeline</p>
                       <h3 id="storyboard-preview-heading" class="creative-storyboard-section-title">
                         Preview follows synced narration timing
                       </h3>
@@ -509,28 +457,53 @@
                       </p>
                     </div>
 
+                    <div id="storyboard-scroll" class="storyboard-scroll-wrapper">
+                      <div class="creative-storyboard-overview-rail" id="storyboard-overview-rail">
+                        <div
+                          id="storyboard-overview-progress"
+                          class="creative-storyboard-overview-progress"
+                          aria-hidden="true"
+                        ></div>
+                        <div
+                          id="storyboard-row"
+                          class="flex gap-3 pb-2"
+                          data-storyboard-layout="overview"
+                        ></div>
+                        <div
+                          id="storyboard-overview-playhead"
+                          class="creative-storyboard-overview-playhead"
+                          aria-hidden="true"
+                        ></div>
+                        <div
+                          id="storyboard-overview-scrubber"
+                          class="creative-storyboard-overview-scrubber"
+                          role="slider"
+                          tabindex="0"
+                          aria-label="Storyboard timeline"
+                          aria-valuemin="0"
+                          aria-valuemax="0"
+                          aria-valuenow="0"
+                          aria-valuetext="Timeline unavailable"
+                        ></div>
+                      </div>
+                    </div>
+
+                    <div class="creative-storyboard-overview-footer">
+                      <button
+                        id="storyboard-sync-retry-btn"
+                        type="button"
+                        class="creative-secondary-button hidden"
+                      >
+                        Retry sync
+                      </button>
+                    </div>
+
                     <audio
                       id="storyboard-preview-audio"
                       class="creative-storyboard-preview-audio hidden"
                       controls
                       preload="none"
                     ></audio>
-                  </div>
-                </div>
-
-                <div class="creative-storyboard-timeline-shell">
-                  <div class="creative-storyboard-timeline-header">
-                    <div>
-                      <p class="creative-storyboard-section-kicker">Timeline</p>
-                      <h3 class="creative-storyboard-section-title">Select a clip to edit</h3>
-                    </div>
-                    <p class="creative-storyboard-section-copy">
-                      The active tile stays synced with preview playback.
-                    </p>
-                  </div>
-
-                  <div id="storyboard-scroll" class="storyboard-scroll-wrapper">
-                    <div id="storyboard-row" class="flex gap-3 pb-2"></div>
                   </div>
                 </div>
 
