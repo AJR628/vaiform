@@ -890,14 +890,17 @@ body.creative-studio-page {
   scroll-snap-type: x proximity;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
-  padding: 0.42rem;
-  padding-bottom: 0.46rem;
-  border-radius: 22px;
+  padding: 0.34rem;
+  padding-bottom: 0.38rem;
+  border-radius: 18px;
   border: 1px solid var(--creative-border);
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.28), rgba(255, 255, 255, 0)),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0)),
+    linear-gradient(180deg, rgba(15, 23, 42, 0.1), rgba(15, 23, 42, 0)),
     var(--creative-surface-muted);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.14),
+    inset 0 -1px 0 rgba(15, 23, 42, 0.08);
 }
 
 .storyboard-scroll-wrapper::-webkit-scrollbar {
@@ -910,6 +913,12 @@ body.creative-studio-page {
   display: flex;
   align-items: stretch;
   gap: 0.32rem;
+}
+
+#storyboard-row[data-storyboard-mode='session'] {
+  align-items: center;
+  gap: 0;
+  padding-bottom: 0;
 }
 
 .beat-card {
@@ -960,23 +969,90 @@ body.creative-studio-page {
 }
 
 .beat-card[data-storyboard-mode='session'] {
+  position: relative;
   gap: 0;
   padding: 0;
   background: transparent !important;
   border: 0 !important;
   box-shadow: none;
-  border-radius: 16px !important;
+  border-radius: 0 !important;
+  height: var(--storyboard-session-strip-height, 3.05rem);
 }
 
 .beat-card[data-storyboard-mode='session'] .beat-video-container {
-  min-height: 7.05rem;
-  border-radius: 14px;
-  border-color: rgba(148, 163, 184, 0.28);
-  background: #0b1220;
+  min-height: 100%;
+  height: 100%;
+  border-radius: 0;
+  border-color: rgba(148, 163, 184, 0.22);
+  border-right-width: 0;
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.06), rgba(15, 23, 42, 0.26)), #0b1220;
+  box-shadow: none;
+}
+
+.beat-card[data-storyboard-mode='session']:first-of-type .beat-video-container {
+  border-top-left-radius: 10px;
+  border-bottom-left-radius: 10px;
+}
+
+.beat-card[data-storyboard-mode='session']:last-of-type .beat-video-container {
+  border-top-right-radius: 10px;
+  border-bottom-right-radius: 10px;
+  border-right-width: 1px;
 }
 
 .beat-card[data-storyboard-mode='session'][data-missing-clip='true'] .beat-video-container {
   border-style: dashed;
+  background: linear-gradient(180deg, rgba(30, 41, 59, 0.32), rgba(15, 23, 42, 0.12)), #0b1220;
+}
+
+.beat-card[data-storyboard-mode='session'].is-active,
+.beat-card[data-storyboard-mode='session'].is-selected {
+  box-shadow: none;
+  transform: none;
+}
+
+.beat-card[data-storyboard-mode='session'].is-selected .beat-video-container {
+  border-color: rgba(59, 130, 246, 0.72);
+  box-shadow:
+    inset 0 0 0 2px rgba(96, 165, 250, 0.92),
+    0 0 0 1px rgba(96, 165, 250, 0.18);
+  z-index: 2;
+}
+
+.beat-card[data-storyboard-mode='session'].is-playback-active:not(.is-selected)
+  .beat-video-container {
+  border-color: rgba(59, 130, 246, 0.44);
+  box-shadow: inset 0 -2px 0 rgba(59, 130, 246, 0.88);
+}
+
+.beat-card[data-storyboard-mode='session'] .beat-card-chrome {
+  inset: auto 0.22rem 0.18rem 0.22rem;
+  align-items: flex-end;
+  gap: 0.2rem;
+}
+
+.beat-card[data-storyboard-mode='session'] .beat-card-chip,
+.beat-card[data-storyboard-mode='session'] .beat-card-duration {
+  min-height: 1.05rem;
+  padding: 0.08rem 0.34rem;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.76);
+  font-size: 0.58rem;
+  letter-spacing: 0.04em;
+}
+
+.beat-card[data-storyboard-mode='session'] .storyboard-video,
+.beat-card[data-storyboard-mode='session'] .storyboard-video-placeholder {
+  min-height: 100%;
+}
+
+.beat-card[data-storyboard-mode='session'] .storyboard-video-placeholder {
+  padding: 0.4rem;
+  font-size: 0.6rem;
+  line-height: 1.2;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: rgba(226, 232, 240, 0.78);
 }
 
 .beat-text {
@@ -1142,6 +1218,14 @@ body.creative-studio-page {
   width: 2.3rem;
   height: 2.3rem;
   margin-left: 0.2rem !important;
+}
+
+#storyboard-row[data-storyboard-mode='session'] .add-beat-btn--tail {
+  width: 1.95rem;
+  height: var(--storyboard-session-strip-height, 3.05rem);
+  margin-left: 0.22rem !important;
+  border-radius: 10px;
+  font-size: 0.92rem;
 }
 
 .delete-beat-btn {
@@ -1510,6 +1594,14 @@ body.creative-studio-page {
 
   .creative-stage-footer[data-active-step='storyboard'] .creative-primary-button {
     min-height: 2.8rem;
+  }
+
+  #storyboard-row[data-storyboard-mode='session'] .add-beat-btn--inline {
+    display: none;
+  }
+
+  #storyboard-row[data-storyboard-mode='session'] .beat-card[data-storyboard-mode='session'] {
+    height: 2.85rem;
   }
 
   .add-beat-btn--inline {

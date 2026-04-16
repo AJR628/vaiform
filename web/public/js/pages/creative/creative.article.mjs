@@ -875,6 +875,15 @@ function buildStoryboardCardMarkup({
   const safeLabel = escapeHtml(beatLabel);
   const safeText = escapeHtml(String(text || '').trim() || 'Add text...');
   const hasClip = !!clip?.url;
+  const videoContainerClass = compact
+    ? 'relative w-full beat-video-container beat-video-container--filmstrip overflow-hidden'
+    : 'relative w-full h-40 beat-video-container overflow-hidden';
+  const videoClass = compact
+    ? 'w-full h-full object-cover transition-transform duration-150 storyboard-video storyboard-video--filmstrip'
+    : 'w-full h-full object-cover transition-transform duration-150 storyboard-video';
+  const placeholderClass = compact
+    ? 'storyboard-video-placeholder storyboard-video-placeholder--filmstrip'
+    : 'storyboard-video-placeholder';
   const videoMarkup = hasClip
     ? `
       <video
@@ -883,11 +892,11 @@ function buildStoryboardCardMarkup({
         muted
         loop
         preload="none"
-        class="w-full h-full object-cover transition-transform duration-150 storyboard-video"
+        class="${videoClass}"
         aria-label="Preview for: ${safeText.slice(0, 50)}"
       ></video>
     `
-    : `<div class="storyboard-video-placeholder">${escapeHtml(emptyLabel)}</div>`;
+    : `<div class="${placeholderClass}">${escapeHtml(emptyLabel)}</div>`;
 
   const copyMarkup = compact
     ? ''
@@ -899,7 +908,7 @@ function buildStoryboardCardMarkup({
   `;
 
   return `
-    <div class="relative w-full h-40 beat-video-container overflow-hidden">
+    <div class="${videoContainerClass}">
       ${videoMarkup}
       <div class="beat-card-chrome">
         <span class="beat-card-chip">${safeLabel}</span>
@@ -1620,28 +1629,18 @@ function bindStoryboardCardSelection(card) {
 function scheduleStoryboardDeckSelection() {
   if (storyboardDeckRaf) cancelAnimationFrame(storyboardDeckRaf);
   storyboardDeckRaf = requestAnimationFrame(() => {
-    const scrollEl = document.getElementById('storyboard-scroll');
     const cards = getStoryboardCards();
-    if (!scrollEl || cards.length === 0) return;
+    if (cards.length === 0) return;
     if (!shouldAllowStoryboardAutoSelection()) return;
     if (getSelectedStoryboardCard()) return;
-
-    const scrollRect = scrollEl.getBoundingClientRect();
-    const scrollCenter = scrollRect.left + scrollRect.width / 2;
-    let winner = cards[0];
-    let winnerDistance = Number.POSITIVE_INFINITY;
-
-    cards.forEach((card) => {
-      const rect = card.getBoundingClientRect();
-      const center = rect.left + rect.width / 2;
-      const distance = Math.abs(center - scrollCenter);
-      if (distance < winnerDistance) {
-        winnerDistance = distance;
-        winner = card;
-      }
-    });
-
-    setActiveStoryboardCard(winner, { syncPreview: false });
+    const fallbackCard =
+      getPlaybackActiveStoryboardCard() ||
+      getStoryboardCardBySentenceIndex(storyboardPreviewActiveSentenceIndex) ||
+      cards[0] ||
+      null;
+    if (fallbackCard) {
+      setActiveStoryboardCard(fallbackCard, { syncPreview: false });
+    }
   });
 }
 
@@ -3346,10 +3345,12 @@ async function renderStoryboard(session) {
 
   // Clear existing cards
   storyboardRow.innerHTML = '';
+  storyboardRow.dataset.storyboardMode = 'session';
 
   const sentences = session.story?.sentences || [];
   const shots = session.shots || [];
   const durationMap = getStoryboardTimelineDurationMap(session);
+  const showInlineSessionInsertButtons = !window.matchMedia('(max-width: 919px)').matches;
 
   // Guard: handle mismatched counts gracefully
   if (sentences.length !== shots.length) {
@@ -3368,6 +3369,9 @@ async function renderStoryboard(session) {
     card.dataset.storyboardMode = 'session';
     card.dataset.missingClip = shot?.selectedClip?.url ? 'false' : 'true';
 
+    /*
+      Legacy session-card markup from the previous tile model.
+      Session-mode cells now render exclusively via buildStoryboardCardMarkup(..., compact: true).
     if (!shot || !shot.selectedClip) {
       // Placeholder for missing clip
       card.innerHTML = `
@@ -3435,6 +3439,7 @@ async function renderStoryboard(session) {
                         </button>
                     `;
     }
+    */
 
     card.innerHTML = buildStoryboardCardMarkup({
       beatLabel: `Beat ${idx + 1}`,
@@ -3447,13 +3452,14 @@ async function renderStoryboard(session) {
     applyStoryboardCardDurationState(card, durationMap?.get(idx));
     storyboardRow.appendChild(card);
 
-    // Add "Add beat" button after each card
-    const addBtn = document.createElement('button');
-    addBtn.className = 'add-beat-btn add-beat-btn--inline flex-shrink-0';
-    addBtn.setAttribute('data-insert-after-index', idx);
-    addBtn.setAttribute('title', 'Add clip');
-    addBtn.textContent = '+';
-    storyboardRow.appendChild(addBtn);
+    if (showInlineSessionInsertButtons) {
+      const addBtn = document.createElement('button');
+      addBtn.className = 'add-beat-btn add-beat-btn--inline flex-shrink-0';
+      addBtn.setAttribute('data-insert-after-index', idx);
+      addBtn.setAttribute('title', 'Add clip');
+      addBtn.textContent = '+';
+      storyboardRow.appendChild(addBtn);
+    }
   });
 
   // Add final "Add beat" button after the last card
@@ -3689,6 +3695,7 @@ function renderDraftStoryboard() {
 
   // Clear existing cards
   storyboardRow.innerHTML = '';
+  storyboardRow.dataset.storyboardMode = 'draft';
 
   const beats = window.draftStoryboard.beats || [];
 
