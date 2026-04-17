@@ -612,20 +612,24 @@ body.creative-studio-page {
   object-fit: cover;
   background: #0f172a;
   opacity: 0;
+  visibility: hidden;
   pointer-events: none;
   z-index: 1;
 }
 
 .creative-storyboard-preview-video.is-active {
   opacity: 1;
+  visibility: visible;
 }
 
 .creative-storyboard-preview-video.is-standby {
   opacity: 0;
+  visibility: hidden;
 }
 
 .creative-storyboard-preview-video.is-hidden {
   opacity: 0;
+  visibility: hidden;
 }
 
 .creative-storyboard-preview-overlay {

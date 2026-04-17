@@ -332,7 +332,17 @@ let storyboardOverviewBindingsAttached = false;
 let storyboardPreviewActiveSentenceIndex = null;
 let storyboardPreviewActiveSegmentIndex = null;
 const STORYBOARD_PREVIEW_SLOT_KEYS = ['a', 'b'];
-const STORYBOARD_PREVIEW_SEEK_EPSILON_SEC = 0.05;
+const STORYBOARD_PREVIEW_NORMAL_DRIFT_TOLERANCE_SEC = 0.22;
+const STORYBOARD_PREVIEW_HARD_SEEK_TOLERANCE_SEC = 0.06;
+const STORYBOARD_PREVIEW_BOUNDARY_WARMUP_LEAD_SEC = 0.35;
+const STORYBOARD_PREVIEW_SYNC_INTENTS = {
+  normalPlayback: 'normal_playback',
+  explicitSeek: 'explicit_seek',
+  cardJump: 'card_jump',
+  overviewScrub: 'overview_scrub',
+  boundaryHandoff: 'boundary_handoff',
+  refresh: 'refresh',
+};
 let storyboardPreviewActiveSlotKey = STORYBOARD_PREVIEW_SLOT_KEYS[0];
 let storyboardPreviewSlotRequestToken = 0;
 const storyboardPreviewSlotState = {
@@ -346,6 +356,8 @@ const storyboardPreviewSlotState = {
     ready: false,
     autoplayWanted: false,
     pendingSwap: false,
+    syncIntent: STORYBOARD_PREVIEW_SYNC_INTENTS.refresh,
+    isWarmup: false,
   },
   b: {
     key: 'b',
@@ -357,6 +369,8 @@ const storyboardPreviewSlotState = {
     ready: false,
     autoplayWanted: false,
     pendingSwap: false,
+    syncIntent: STORYBOARD_PREVIEW_SYNC_INTENTS.refresh,
+    isWarmup: false,
   },
 };
 let storyboardSyncInFlight = false;
@@ -1441,6 +1455,101 @@ function getStoryboardPreviewDesiredSeekSec(segment, audioTime = 0) {
   return Math.max(0, clipStartSec + audioOffsetSec);
 }
 
+function getStoryboardPreviewSyncIntent({
+  intent = STORYBOARD_PREVIEW_SYNC_INTENTS.normalPlayback,
+  forceSeek = false,
+} = {}) {
+  if (forceSeek) return STORYBOARD_PREVIEW_SYNC_INTENTS.explicitSeek;
+  return intent;
+}
+
+function getStoryboardPreviewSyncPolicy(intent = STORYBOARD_PREVIEW_SYNC_INTENTS.normalPlayback) {
+  switch (intent) {
+    case STORYBOARD_PREVIEW_SYNC_INTENTS.explicitSeek:
+    case STORYBOARD_PREVIEW_SYNC_INTENTS.cardJump:
+    case STORYBOARD_PREVIEW_SYNC_INTENTS.overviewScrub:
+    case STORYBOARD_PREVIEW_SYNC_INTENTS.boundaryHandoff:
+      return {
+        sameClipToleranceSec: STORYBOARD_PREVIEW_HARD_SEEK_TOLERANCE_SEC,
+        shouldForceSameClipCorrection: true,
+        shouldWarmNextSegment: false,
+      };
+    case STORYBOARD_PREVIEW_SYNC_INTENTS.refresh:
+      return {
+        sameClipToleranceSec: 0.12,
+        shouldForceSameClipCorrection: false,
+        shouldWarmNextSegment: false,
+      };
+    case STORYBOARD_PREVIEW_SYNC_INTENTS.normalPlayback:
+    default:
+      return {
+        sameClipToleranceSec: STORYBOARD_PREVIEW_NORMAL_DRIFT_TOLERANCE_SEC,
+        shouldForceSameClipCorrection: false,
+        shouldWarmNextSegment: true,
+      };
+  }
+}
+
+function getNextPlaybackSegment(segment, session = window.currentStorySession) {
+  const timeline = getPlaybackTimeline(session);
+  if (!timeline?.segments?.length) return null;
+  const segmentIndex = Number(segment?.segmentIndex);
+  if (!Number.isFinite(segmentIndex)) return null;
+  const currentPosition = timeline.segments.findIndex(
+    (entry) => Number(entry?.segmentIndex) === segmentIndex
+  );
+  if (currentPosition < 0) return null;
+  return timeline.segments[currentPosition + 1] || null;
+}
+
+function maybeWarmStoryboardPreviewNextSegment(
+  segment,
+  {
+    audioTime = 0,
+    autoplay = false,
+    intent = STORYBOARD_PREVIEW_SYNC_INTENTS.normalPlayback,
+    session = window.currentStorySession,
+  } = {}
+) {
+  const policy = getStoryboardPreviewSyncPolicy(intent);
+  if (!autoplay || !policy.shouldWarmNextSegment) return;
+
+  const segmentEndSec = Number(segment?.globalEndSec);
+  if (!Number.isFinite(segmentEndSec)) return;
+  const remainingSec = segmentEndSec - (Number(audioTime) || 0);
+  if (remainingSec <= 0 || remainingSec > STORYBOARD_PREVIEW_BOUNDARY_WARMUP_LEAD_SEC) return;
+
+  const nextSegment = getNextPlaybackSegment(segment, session);
+  const nextClipUrl = typeof nextSegment?.clipUrl === 'string' ? nextSegment.clipUrl : '';
+  if (!nextSegment || !nextClipUrl) return;
+
+  const activeSlot = getStoryboardPreviewActiveSlot();
+  if (activeSlot?.clipUrl === nextClipUrl) return;
+
+  const standbySlot = getStoryboardPreviewStandbySlot();
+  if (!standbySlot) return;
+
+  const nextSeekSec = getStoryboardPreviewDesiredSeekSec(
+    nextSegment,
+    Math.max(Number(audioTime) || 0, Number(nextSegment?.globalStartSec) || 0)
+  );
+  const standbyMatchesWarmTarget =
+    standbySlot.clipUrl === nextClipUrl &&
+    Math.abs((Number(standbySlot.desiredSeekSec) || 0) - nextSeekSec) <=
+      STORYBOARD_PREVIEW_HARD_SEEK_TOLERANCE_SEC &&
+    standbySlot.ready &&
+    standbySlot.isWarmup;
+  if (standbyMatchesWarmTarget) return;
+
+  prepareStoryboardPreviewSlot(standbySlot.key, nextSegment, {
+    desiredSeekSec: nextSeekSec,
+    autoplay: false,
+    swapWhenReady: false,
+    intent: STORYBOARD_PREVIEW_SYNC_INTENTS.boundaryHandoff,
+    isWarmup: true,
+  });
+}
+
 function invalidateStoryboardPreviewSlot(slotKey) {
   const slot = storyboardPreviewSlotState[slotKey];
   if (!slot) return;
@@ -1448,6 +1557,8 @@ function invalidateStoryboardPreviewSlot(slotKey) {
   slot.ready = false;
   slot.autoplayWanted = false;
   slot.pendingSwap = false;
+  slot.syncIntent = STORYBOARD_PREVIEW_SYNC_INTENTS.refresh;
+  slot.isWarmup = false;
 }
 
 function resetStoryboardPreviewSlot(slotKey, { clearSource = true } = {}) {
@@ -1487,6 +1598,8 @@ function cancelStoryboardPreviewStandbyRequest() {
   standbySlot.ready = false;
   standbySlot.autoplayWanted = false;
   standbySlot.pendingSwap = false;
+  standbySlot.syncIntent = STORYBOARD_PREVIEW_SYNC_INTENTS.refresh;
+  standbySlot.isWarmup = false;
   standbyVideo?.pause();
 }
 
@@ -1512,15 +1625,18 @@ function finalizeStoryboardPreviewSlot(slotKey, requestToken) {
   if (!slot || !video || slot.requestToken !== requestToken) return;
   if (video.readyState < 1) return;
 
+  const policy = getStoryboardPreviewSyncPolicy(slot.syncIntent);
   const desiredSeekSec = Math.max(0, Number(slot.desiredSeekSec) || 0);
   const currentTime = Number(video.currentTime) || 0;
-  if (Math.abs(currentTime - desiredSeekSec) > STORYBOARD_PREVIEW_SEEK_EPSILON_SEC) {
+  if (Math.abs(currentTime - desiredSeekSec) > policy.sameClipToleranceSec) {
     try {
       video.currentTime = desiredSeekSec;
     } catch {
       return;
     }
-    if (Math.abs((Number(video.currentTime) || 0) - desiredSeekSec) > STORYBOARD_PREVIEW_SEEK_EPSILON_SEC) {
+    if (
+      Math.abs((Number(video.currentTime) || 0) - desiredSeekSec) > policy.sameClipToleranceSec
+    ) {
       return;
     }
   }
@@ -1535,6 +1651,7 @@ function finalizeStoryboardPreviewSlot(slotKey, requestToken) {
     const previousActiveSlot = storyboardPreviewSlotState[previousActiveSlotKey];
     if (previousActiveSlotKey !== slotKey && previousActiveSlot) {
       previousActiveSlot.autoplayWanted = false;
+      previousActiveSlot.isWarmup = false;
       const previousVideo = getStoryboardPreviewSlotVideo(previousActiveSlotKey);
       previousVideo?.pause();
     }
@@ -1551,7 +1668,13 @@ function finalizeStoryboardPreviewSlot(slotKey, requestToken) {
 function prepareStoryboardPreviewSlot(
   slotKey,
   segment,
-  { desiredSeekSec = 0, autoplay = false, swapWhenReady = false } = {}
+  {
+    desiredSeekSec = 0,
+    autoplay = false,
+    swapWhenReady = false,
+    intent = STORYBOARD_PREVIEW_SYNC_INTENTS.normalPlayback,
+    isWarmup = false,
+  } = {}
 ) {
   const slot = storyboardPreviewSlotState[slotKey];
   const video = getStoryboardPreviewSlotVideo(slotKey);
@@ -1573,6 +1696,8 @@ function prepareStoryboardPreviewSlot(
   slot.ready = false;
   slot.autoplayWanted = autoplay;
   slot.pendingSwap = swapWhenReady;
+  slot.syncIntent = intent;
+  slot.isWarmup = isWarmup;
 
   const nextPoster = segment?.clipThumbUrl || '';
   if (nextPoster) {
@@ -1594,7 +1719,15 @@ function prepareStoryboardPreviewSlot(
   }
 }
 
-function syncStoryboardPreviewExistingActiveSlot(slotKey, segment, { desiredSeekSec = 0, autoplay = false } = {}) {
+function syncStoryboardPreviewExistingActiveSlot(
+  slotKey,
+  segment,
+  {
+    desiredSeekSec = 0,
+    autoplay = false,
+    intent = STORYBOARD_PREVIEW_SYNC_INTENTS.normalPlayback,
+  } = {}
+) {
   const slot = storyboardPreviewSlotState[slotKey];
   const video = getStoryboardPreviewSlotVideo(slotKey);
   if (!slot || !video) return;
@@ -1606,6 +1739,8 @@ function syncStoryboardPreviewExistingActiveSlot(slotKey, segment, { desiredSeek
   slot.ready = false;
   slot.autoplayWanted = autoplay;
   slot.pendingSwap = false;
+  slot.syncIntent = intent;
+  slot.isWarmup = false;
   finalizeStoryboardPreviewSlot(slotKey, slot.requestToken);
 }
 
@@ -1635,7 +1770,12 @@ function updateStoryboardPreviewBeat(sentenceIndex, { autoplay = false } = {}) {
 
 function updateStoryboardPreviewSegment(
   segment,
-  { audioTime = 0, autoplay = false, forceSeek = false } = {}
+  {
+    audioTime = 0,
+    autoplay = false,
+    forceSeek = false,
+    intent = STORYBOARD_PREVIEW_SYNC_INTENTS.normalPlayback,
+  } = {}
 ) {
   const segmentIndex = Number(segment?.segmentIndex);
   const clipUrl = typeof segment?.clipUrl === 'string' ? segment.clipUrl : '';
@@ -1647,22 +1787,44 @@ function updateStoryboardPreviewSegment(
 
   const desiredSeekSec = getStoryboardPreviewDesiredSeekSec(segment, audioTime);
   const activeSlot = getStoryboardPreviewActiveSlot();
+  const baseIntent = getStoryboardPreviewSyncIntent({ intent, forceSeek });
+  const resolvedIntent =
+    baseIntent === STORYBOARD_PREVIEW_SYNC_INTENTS.normalPlayback &&
+    autoplay &&
+    !!activeSlot?.clipUrl &&
+    activeSlot.clipUrl !== clipUrl
+      ? STORYBOARD_PREVIEW_SYNC_INTENTS.boundaryHandoff
+      : baseIntent;
+  const policy = getStoryboardPreviewSyncPolicy(resolvedIntent);
   const activeClipMatches = activeSlot?.clipUrl === clipUrl;
   if (activeClipMatches) {
     cancelStoryboardPreviewStandbyRequest();
+    const driftSec = Math.abs((Number(activeSlot.video?.currentTime) || 0) - desiredSeekSec);
+    const activeSegmentChanged = activeSlot.segmentIndex !== segmentIndex;
     const activeNeedsSeek =
-      forceSeek ||
-      activeSlot.segmentIndex !== segmentIndex ||
-      Math.abs((Number(activeSlot.video?.currentTime) || 0) - desiredSeekSec) >
-        STORYBOARD_PREVIEW_SEEK_EPSILON_SEC;
+      policy.shouldForceSameClipCorrection ||
+      !activeSlot.ready ||
+      driftSec > policy.sameClipToleranceSec ||
+      (activeSegmentChanged && driftSec > policy.sameClipToleranceSec);
     if (activeNeedsSeek) {
-      syncStoryboardPreviewExistingActiveSlot(activeSlot.key, segment, { desiredSeekSec, autoplay });
+      syncStoryboardPreviewExistingActiveSlot(activeSlot.key, segment, {
+        desiredSeekSec,
+        autoplay,
+        intent: resolvedIntent,
+      });
     } else {
       storyboardPreviewSlotState[activeSlot.key].segmentIndex = segmentIndex;
       storyboardPreviewSlotState[activeSlot.key].autoplayWanted = autoplay;
+      storyboardPreviewSlotState[activeSlot.key].syncIntent = resolvedIntent;
+      storyboardPreviewSlotState[activeSlot.key].isWarmup = false;
       storyboardPreviewActiveSegmentIndex = segmentIndex;
       syncStoryboardPreviewActivePlayback({ autoplay });
     }
+    maybeWarmStoryboardPreviewNextSegment(segment, {
+      audioTime,
+      autoplay,
+      intent: resolvedIntent,
+    });
     return;
   }
 
@@ -1672,12 +1834,19 @@ function updateStoryboardPreviewSegment(
     desiredSeekSec,
     autoplay,
     swapWhenReady: true,
+    intent: resolvedIntent,
+    isWarmup: false,
   });
 }
 
 function syncStoryboardPreviewAtTime(
   timeSec,
-  { autoplay = false, scroll = false, forceSeek = false } = {}
+  {
+    autoplay = false,
+    scroll = false,
+    forceSeek = false,
+    intent = STORYBOARD_PREVIEW_SYNC_INTENTS.normalPlayback,
+  } = {}
 ) {
   if (!hasCurrentStoryPreviewSync(window.currentStorySession)) return;
   const caption = findCaptionAtTime(timeSec, window.currentStorySession);
@@ -1711,6 +1880,7 @@ function syncStoryboardPreviewAtTime(
     audioTime: timeSec,
     autoplay,
     forceSeek,
+    intent,
   });
 }
 
@@ -1814,7 +1984,13 @@ function refreshStoryboardPreview(session = window.currentStorySession) {
   const activeTimeSec = Number.isFinite(Number(audio.currentTime))
     ? Number(audio.currentTime)
     : getCaptionStartTimeForSentenceIndex(sentenceIndex, session);
-  syncStoryboardPreviewAtTime(activeTimeSec, { autoplay: !audio.paused, forceSeek: audio.paused });
+  syncStoryboardPreviewAtTime(activeTimeSec, {
+    autoplay: !audio.paused,
+    forceSeek: audio.paused,
+    intent: audio.paused
+      ? STORYBOARD_PREVIEW_SYNC_INTENTS.refresh
+      : STORYBOARD_PREVIEW_SYNC_INTENTS.normalPlayback,
+  });
   refreshStoryboardOverviewControl(session);
 }
 
@@ -1839,16 +2015,26 @@ function syncStoryboardPreviewToCard(card, { autoplay = false } = {}) {
       audioTime: timeSec,
       autoplay,
       forceSeek: true,
+      intent: STORYBOARD_PREVIEW_SYNC_INTENTS.cardJump,
     });
     return;
   }
   refreshStoryboardPreview(window.currentStorySession);
 }
 
-function syncStoryboardPreviewFromAudio({ scroll = false, forceSeek = false } = {}) {
+function syncStoryboardPreviewFromAudio({
+  scroll = false,
+  forceSeek = false,
+  intent = STORYBOARD_PREVIEW_SYNC_INTENTS.normalPlayback,
+} = {}) {
   const audio = document.getElementById('storyboard-preview-audio');
   if (!audio || !hasCurrentStoryPreviewSync(window.currentStorySession)) return;
-  syncStoryboardPreviewAtTime(audio.currentTime, { scroll, autoplay: !audio.paused, forceSeek });
+  syncStoryboardPreviewAtTime(audio.currentTime, {
+    scroll,
+    autoplay: !audio.paused,
+    forceSeek,
+    intent,
+  });
 }
 
 function seekStoryboardOverviewToRatio(ratio) {
@@ -1867,7 +2053,10 @@ function seekStoryboardOverviewToRatio(ratio) {
 
   const clampedRatio = Math.max(0, Math.min(1, Number(ratio) || 0));
   audio.currentTime = clampedRatio * totalDurationSec;
-  syncStoryboardPreviewFromAudio({ forceSeek: true });
+  syncStoryboardPreviewFromAudio({
+    forceSeek: true,
+    intent: STORYBOARD_PREVIEW_SYNC_INTENTS.overviewScrub,
+  });
 }
 
 function toggleStoryboardOverviewPlayback() {
@@ -1940,17 +2129,26 @@ function setupStoryboardPreviewBindings() {
   if (!frames.every(Boolean) || !audio || !retryButton) return;
 
   const syncFromAudio = () => {
-    syncStoryboardPreviewFromAudio();
+    syncStoryboardPreviewFromAudio({
+      intent: STORYBOARD_PREVIEW_SYNC_INTENTS.normalPlayback,
+    });
     refreshStoryboardOverviewControl(window.currentStorySession);
   };
   audio.addEventListener('loadedmetadata', syncFromAudio);
   audio.addEventListener('timeupdate', syncFromAudio);
   audio.addEventListener('seeked', () => {
-    syncStoryboardPreviewFromAudio({ scroll: true, forceSeek: true });
+    syncStoryboardPreviewFromAudio({
+      scroll: true,
+      forceSeek: true,
+      intent: STORYBOARD_PREVIEW_SYNC_INTENTS.explicitSeek,
+    });
     refreshStoryboardOverviewControl(window.currentStorySession);
   });
   audio.addEventListener('seeking', () => {
-    syncStoryboardPreviewFromAudio({ forceSeek: true });
+    syncStoryboardPreviewFromAudio({
+      forceSeek: true,
+      intent: STORYBOARD_PREVIEW_SYNC_INTENTS.explicitSeek,
+    });
     refreshStoryboardOverviewControl(window.currentStorySession);
   });
   audio.addEventListener('play', () => {
@@ -2041,7 +2239,10 @@ function setupStoryboardOverviewBindings() {
     }
     event.preventDefault();
     audio.currentTime = Math.max(0, Math.min(totalDurationSec, nextTime));
-    syncStoryboardPreviewFromAudio({ forceSeek: true });
+    syncStoryboardPreviewFromAudio({
+      forceSeek: true,
+      intent: STORYBOARD_PREVIEW_SYNC_INTENTS.overviewScrub,
+    });
   });
 
   storyboardOverviewBindingsAttached = true;
