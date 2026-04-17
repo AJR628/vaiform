@@ -1315,6 +1315,15 @@ function findPlaybackSegmentAtTime(timeSec, session = window.currentStorySession
   return timeline.segments[0] || null;
 }
 
+function getStoryboardPlaybackSentenceIndex(segment) {
+  const ownerSentenceIndex = Number(
+    Number.isFinite(Number(segment?.ownerSentenceIndex))
+      ? segment.ownerSentenceIndex
+      : segment?.sentenceIndex
+  );
+  return Number.isFinite(ownerSentenceIndex) ? ownerSentenceIndex : null;
+}
+
 function findCaptionAtTime(timeSec, session = window.currentStorySession) {
   const timeline = getCaptionTimeline(session);
   if (!timeline.length) return null;
@@ -1481,21 +1490,33 @@ function syncStoryboardPreviewAtTime(
 ) {
   if (!hasCurrentStoryPreviewSync(window.currentStorySession)) return;
   const caption = findCaptionAtTime(timeSec, window.currentStorySession);
-  const overviewSpan = getStoryboardOverviewSpanForTime(timeSec, window.currentStorySession);
-  const targetSentenceIndex = Number.isFinite(Number(overviewSpan?.ownerSentenceIndex))
-    ? Number(overviewSpan.ownerSentenceIndex)
-    : Number(caption?.sentenceIndex);
-  if (!Number.isFinite(targetSentenceIndex)) return;
-  const card = getStoryboardCardBySentenceIndex(targetSentenceIndex);
-  if (card) {
-    setPlaybackActiveStoryboardCard(card, { scroll });
-    if (!getSelectedStoryboardCard() || storyboardSelectionAuthority !== 'explicit') {
-      setActiveStoryboardCard(card, { syncPreview: false });
-    }
+  const playbackSegment = findPlaybackSegmentAtTime(timeSec, window.currentStorySession);
+  const playbackSentenceIndex = getStoryboardPlaybackSentenceIndex(playbackSegment);
+  const captionSentenceIndex = Number.isFinite(Number(caption?.sentenceIndex))
+    ? Number(caption.sentenceIndex)
+    : null;
+
+  const playbackCard = Number.isFinite(playbackSentenceIndex)
+    ? getStoryboardCardBySentenceIndex(playbackSentenceIndex)
+    : null;
+  if (playbackCard) {
+    setPlaybackActiveStoryboardCard(playbackCard, { scroll });
   }
+
+  const selectedFallbackCard = Number.isFinite(captionSentenceIndex)
+    ? getStoryboardCardBySentenceIndex(captionSentenceIndex)
+    : null;
+  if (
+    selectedFallbackCard &&
+    (!getSelectedStoryboardCard() || storyboardSelectionAuthority !== 'explicit')
+  ) {
+    setActiveStoryboardCard(selectedFallbackCard, { syncPreview: false });
+  }
+
+  if (!Number.isFinite(captionSentenceIndex)) return;
   updateStoryboardOverviewPlayhead(timeSec, window.currentStorySession, { timelineReady: true });
-  updateStoryboardPreviewBeat(targetSentenceIndex);
-  updateStoryboardPreviewSegment(findPlaybackSegmentAtTime(timeSec, window.currentStorySession), {
+  updateStoryboardPreviewBeat(captionSentenceIndex);
+  updateStoryboardPreviewSegment(playbackSegment, {
     audioTime: timeSec,
     autoplay,
     forceSeek,
@@ -1670,6 +1691,22 @@ function toggleStoryboardOverviewPlayback() {
   } else {
     audio.pause();
   }
+}
+
+async function fetchCanonicalStorySession(sessionId, apiFetch) {
+  const sessionResp = await apiFetch(`/story/${sessionId}`, {
+    method: 'GET',
+  });
+  if (!sessionResp?.success || !sessionResp?.data) {
+    throw new Error(
+      sessionResp?.error || sessionResp?.detail || 'Failed to refresh storyboard session'
+    );
+  }
+
+  const prev = window.currentStorySession;
+  const nextSession = sessionResp.data;
+  preserveCaptionOverrides(nextSession, prev);
+  return nextSession;
 }
 
 async function retryStoryboardPreviewSync() {
@@ -5244,22 +5281,9 @@ async function handleClipOptionClick(e) {
       throw new Error(resp.error || 'Failed to update clip');
     }
 
-    // Update local session
-    const updatedShot = resp.data.shots?.find((s) => s.sentenceIndex === sentenceIndex);
-    if (updatedShot && window.currentStorySession && window.currentStorySession.shots) {
-      const idx = window.currentStorySession.shots.findIndex(
-        (s) => s.sentenceIndex === sentenceIndex
-      );
-      if (idx !== -1) {
-        window.currentStorySession.shots[idx] = updatedShot;
-      }
-    }
-
-    // Update storyboard card
-    if (updatedShot) {
-      updateStoryboardCardForSentence(updatedShot);
-      refreshStoryboardPreview(window.currentStorySession);
-    }
+    const canonicalSession = await fetchCanonicalStorySession(sessionId, apiFetch);
+    window.currentStorySession = canonicalSession;
+    await renderStoryboard(canonicalSession);
 
     // Close picker
     // (picker already declared above at line 6179)
