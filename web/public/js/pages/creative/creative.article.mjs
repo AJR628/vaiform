@@ -331,8 +331,34 @@ let storyboardInspectorBindingsAttached = false;
 let storyboardOverviewBindingsAttached = false;
 let storyboardPreviewActiveSentenceIndex = null;
 let storyboardPreviewActiveSegmentIndex = null;
-let storyboardPreviewPendingSeekSec = null;
-let storyboardPreviewPendingAutoplay = false;
+const STORYBOARD_PREVIEW_SLOT_KEYS = ['a', 'b'];
+const STORYBOARD_PREVIEW_SEEK_EPSILON_SEC = 0.05;
+let storyboardPreviewActiveSlotKey = STORYBOARD_PREVIEW_SLOT_KEYS[0];
+let storyboardPreviewSlotRequestToken = 0;
+const storyboardPreviewSlotState = {
+  a: {
+    key: 'a',
+    elementId: 'storyboard-preview-video-a',
+    requestToken: 0,
+    segmentIndex: null,
+    clipUrl: '',
+    desiredSeekSec: 0,
+    ready: false,
+    autoplayWanted: false,
+    pendingSwap: false,
+  },
+  b: {
+    key: 'b',
+    elementId: 'storyboard-preview-video-b',
+    requestToken: 0,
+    segmentIndex: null,
+    clipUrl: '',
+    desiredSeekSec: 0,
+    ready: false,
+    autoplayWanted: false,
+    pendingSwap: false,
+  },
+};
 let storyboardSyncInFlight = false;
 let storyboardSyncErrorMessage = '';
 const STORY_SYNC_TIMEOUT_MS = 35000;
@@ -1170,7 +1196,9 @@ function refreshStoryboardInspector(card = null) {
 
 function getStoryboardPreviewElements() {
   return {
-    frame: document.getElementById('storyboard-preview-video'),
+    frames: STORYBOARD_PREVIEW_SLOT_KEYS.map((slotKey) =>
+      document.getElementById(storyboardPreviewSlotState[slotKey].elementId)
+    ),
     overlay: document.getElementById('storyboard-preview-overlay'),
     blocked: document.getElementById('storyboard-preview-blocked'),
     audio: document.getElementById('storyboard-preview-audio'),
@@ -1184,6 +1212,39 @@ function getStoryboardPreviewElements() {
     statusCopy: document.getElementById('storyboard-preview-status-copy'),
     retryButton: document.getElementById('storyboard-sync-retry-btn'),
   };
+}
+
+function getStoryboardPreviewSlotVideo(slotKey) {
+  return document.getElementById(storyboardPreviewSlotState[slotKey]?.elementId || '');
+}
+
+function getStoryboardPreviewSlot(slotKey) {
+  const slot = storyboardPreviewSlotState[slotKey];
+  if (!slot) return null;
+  return {
+    ...slot,
+    video: getStoryboardPreviewSlotVideo(slotKey),
+  };
+}
+
+function getStoryboardPreviewActiveSlot() {
+  return getStoryboardPreviewSlot(storyboardPreviewActiveSlotKey);
+}
+
+function getStoryboardPreviewStandbySlot() {
+  const standbyKey = STORYBOARD_PREVIEW_SLOT_KEYS.find((slotKey) => slotKey !== storyboardPreviewActiveSlotKey);
+  return standbyKey ? getStoryboardPreviewSlot(standbyKey) : null;
+}
+
+function setStoryboardPreviewSlotVisibility() {
+  STORYBOARD_PREVIEW_SLOT_KEYS.forEach((slotKey) => {
+    const video = getStoryboardPreviewSlotVideo(slotKey);
+    if (!video) return;
+    const slot = storyboardPreviewSlotState[slotKey];
+    video.classList.toggle('is-active', slotKey === storyboardPreviewActiveSlotKey && !!slot.clipUrl);
+    video.classList.toggle('is-standby', slotKey !== storyboardPreviewActiveSlotKey && !!slot.clipUrl);
+    video.classList.toggle('is-hidden', !slot.clipUrl);
+  });
 }
 
 function updateStoryboardOverviewPlayhead(
@@ -1339,10 +1400,8 @@ function findCaptionAtTime(timeSec, session = window.currentStorySession) {
 }
 
 function pauseStoryboardPreviewVideo() {
-  const previewVideo = document.getElementById('storyboard-preview-video');
-  if (previewVideo) {
-    previewVideo.pause();
-  }
+  const activeSlot = getStoryboardPreviewActiveSlot();
+  activeSlot?.video?.pause();
 }
 
 function getStoryboardPreviewVideoUrl(previewVideo) {
@@ -1370,37 +1429,184 @@ function copyStoryboardOverlay(fromOverlay, toOverlay) {
   toOverlay.style.display = 'block';
 }
 
-function clearStoryboardPreviewPendingSeek() {
-  storyboardPreviewPendingSeekSec = null;
-  storyboardPreviewPendingAutoplay = false;
+function getNextStoryboardPreviewRequestToken() {
+  storyboardPreviewSlotRequestToken += 1;
+  return storyboardPreviewSlotRequestToken;
 }
 
-function queueStoryboardPreviewSeek(seekSec, { autoplay = false } = {}) {
-  storyboardPreviewPendingSeekSec = Math.max(0, Number(seekSec) || 0);
-  storyboardPreviewPendingAutoplay = storyboardPreviewPendingAutoplay || autoplay;
+function getStoryboardPreviewDesiredSeekSec(segment, audioTime = 0) {
+  const globalStartSec = Number(segment?.globalStartSec) || 0;
+  const clipStartSec = Number(segment?.clipStartSec) || 0;
+  const audioOffsetSec = Math.max(0, (Number(audioTime) || 0) - globalStartSec);
+  return Math.max(0, clipStartSec + audioOffsetSec);
 }
 
-function applyStoryboardPreviewPendingSeek(previewVideo, { autoplay = false } = {}) {
-  if (!previewVideo) return;
-  const pendingSeekSec = Number(storyboardPreviewPendingSeekSec);
-  const nextAutoplay = autoplay || storyboardPreviewPendingAutoplay;
-  if (Number.isFinite(pendingSeekSec)) {
+function invalidateStoryboardPreviewSlot(slotKey) {
+  const slot = storyboardPreviewSlotState[slotKey];
+  if (!slot) return;
+  slot.requestToken = getNextStoryboardPreviewRequestToken();
+  slot.ready = false;
+  slot.autoplayWanted = false;
+  slot.pendingSwap = false;
+}
+
+function resetStoryboardPreviewSlot(slotKey, { clearSource = true } = {}) {
+  const slot = storyboardPreviewSlotState[slotKey];
+  const video = getStoryboardPreviewSlotVideo(slotKey);
+  if (!slot) return;
+  invalidateStoryboardPreviewSlot(slotKey);
+  slot.segmentIndex = null;
+  slot.clipUrl = '';
+  slot.desiredSeekSec = 0;
+  if (video) {
+    video.pause();
+    if (clearSource && getStoryboardPreviewVideoUrl(video)) {
+      video.removeAttribute('src');
+      video.removeAttribute('poster');
+      video.load();
+    }
+  }
+  setStoryboardPreviewSlotVisibility();
+}
+
+function resetStoryboardPreviewSlots({ clearSource = true } = {}) {
+  STORYBOARD_PREVIEW_SLOT_KEYS.forEach((slotKey) =>
+    resetStoryboardPreviewSlot(slotKey, { clearSource })
+  );
+  storyboardPreviewActiveSlotKey = STORYBOARD_PREVIEW_SLOT_KEYS[0];
+  storyboardPreviewActiveSegmentIndex = null;
+  setStoryboardPreviewSlotVisibility();
+}
+
+function cancelStoryboardPreviewStandbyRequest() {
+  const standbyKey = STORYBOARD_PREVIEW_SLOT_KEYS.find((slotKey) => slotKey !== storyboardPreviewActiveSlotKey);
+  const standbySlot = standbyKey ? storyboardPreviewSlotState[standbyKey] : null;
+  const standbyVideo = standbyKey ? getStoryboardPreviewSlotVideo(standbyKey) : null;
+  if (!standbySlot) return;
+  standbySlot.requestToken = getNextStoryboardPreviewRequestToken();
+  standbySlot.ready = false;
+  standbySlot.autoplayWanted = false;
+  standbySlot.pendingSwap = false;
+  standbyVideo?.pause();
+}
+
+function syncStoryboardPreviewActivePlayback({ autoplay = false } = {}) {
+  const activeSlot = getStoryboardPreviewActiveSlot();
+  if (!activeSlot?.video) return;
+  if (!activeSlot.clipUrl) {
+    activeSlot.video.pause();
+    return;
+  }
+  if (autoplay) {
+    activeSlot.video.play().catch(() => {});
+    return;
+  }
+  if (!activeSlot.video.paused) {
+    activeSlot.video.pause();
+  }
+}
+
+function finalizeStoryboardPreviewSlot(slotKey, requestToken) {
+  const slot = storyboardPreviewSlotState[slotKey];
+  const video = getStoryboardPreviewSlotVideo(slotKey);
+  if (!slot || !video || slot.requestToken !== requestToken) return;
+  if (video.readyState < 1) return;
+
+  const desiredSeekSec = Math.max(0, Number(slot.desiredSeekSec) || 0);
+  const currentTime = Number(video.currentTime) || 0;
+  if (Math.abs(currentTime - desiredSeekSec) > STORYBOARD_PREVIEW_SEEK_EPSILON_SEC) {
     try {
-      previewVideo.currentTime = pendingSeekSec;
-      clearStoryboardPreviewPendingSeek();
+      video.currentTime = desiredSeekSec;
     } catch {
       return;
     }
-  }
-  if (nextAutoplay) {
-    if (!previewVideo.classList.contains('hidden')) {
-      previewVideo.play().catch(() => {});
+    if (Math.abs((Number(video.currentTime) || 0) - desiredSeekSec) > STORYBOARD_PREVIEW_SEEK_EPSILON_SEC) {
+      return;
     }
+  }
+
+  slot.ready = true;
+  if (slot.pendingSwap) {
+    const previousActiveSlotKey = storyboardPreviewActiveSlotKey;
+    storyboardPreviewActiveSlotKey = slotKey;
+    storyboardPreviewActiveSegmentIndex = slot.segmentIndex;
+    slot.pendingSwap = false;
+    setStoryboardPreviewSlotVisibility();
+    const previousActiveSlot = storyboardPreviewSlotState[previousActiveSlotKey];
+    if (previousActiveSlotKey !== slotKey && previousActiveSlot) {
+      previousActiveSlot.autoplayWanted = false;
+      const previousVideo = getStoryboardPreviewSlotVideo(previousActiveSlotKey);
+      previousVideo?.pause();
+    }
+    syncStoryboardPreviewActivePlayback({ autoplay: slot.autoplayWanted });
     return;
   }
-  if (!previewVideo.paused) {
-    previewVideo.pause();
+
+  if (slotKey === storyboardPreviewActiveSlotKey) {
+    storyboardPreviewActiveSegmentIndex = slot.segmentIndex;
+    syncStoryboardPreviewActivePlayback({ autoplay: slot.autoplayWanted });
   }
+}
+
+function prepareStoryboardPreviewSlot(
+  slotKey,
+  segment,
+  { desiredSeekSec = 0, autoplay = false, swapWhenReady = false } = {}
+) {
+  const slot = storyboardPreviewSlotState[slotKey];
+  const video = getStoryboardPreviewSlotVideo(slotKey);
+  if (!slot || !video) return;
+
+  const clipUrl = typeof segment?.clipUrl === 'string' ? segment.clipUrl : '';
+  const segmentIndex = Number(segment?.segmentIndex);
+  if (!clipUrl || !Number.isFinite(segmentIndex)) {
+    resetStoryboardPreviewSlot(slotKey);
+    return;
+  }
+
+  const requestToken = getNextStoryboardPreviewRequestToken();
+  const clipChanged = slot.clipUrl !== clipUrl;
+  slot.requestToken = requestToken;
+  slot.segmentIndex = segmentIndex;
+  slot.clipUrl = clipUrl;
+  slot.desiredSeekSec = Math.max(0, Number(desiredSeekSec) || 0);
+  slot.ready = false;
+  slot.autoplayWanted = autoplay;
+  slot.pendingSwap = swapWhenReady;
+
+  const nextPoster = segment?.clipThumbUrl || '';
+  if (nextPoster) {
+    video.setAttribute('poster', nextPoster);
+  } else {
+    video.removeAttribute('poster');
+  }
+
+  if (clipChanged) {
+    video.pause();
+    video.src = clipUrl;
+    video.load();
+  }
+
+  setStoryboardPreviewSlotVisibility();
+
+  if (!clipChanged || video.readyState >= 1) {
+    finalizeStoryboardPreviewSlot(slotKey, requestToken);
+  }
+}
+
+function syncStoryboardPreviewExistingActiveSlot(slotKey, segment, { desiredSeekSec = 0, autoplay = false } = {}) {
+  const slot = storyboardPreviewSlotState[slotKey];
+  const video = getStoryboardPreviewSlotVideo(slotKey);
+  if (!slot || !video) return;
+
+  slot.requestToken = getNextStoryboardPreviewRequestToken();
+  slot.segmentIndex = Number(segment?.segmentIndex);
+  slot.clipUrl = typeof segment?.clipUrl === 'string' ? segment.clipUrl : '';
+  slot.desiredSeekSec = Math.max(0, Number(desiredSeekSec) || 0);
+  slot.ready = false;
+  slot.autoplayWanted = autoplay;
+  slot.pendingSwap = false;
+  finalizeStoryboardPreviewSlot(slotKey, slot.requestToken);
 }
 
 function updateStoryboardPreviewBeat(sentenceIndex, { autoplay = false } = {}) {
@@ -1431,57 +1637,42 @@ function updateStoryboardPreviewSegment(
   segment,
   { audioTime = 0, autoplay = false, forceSeek = false } = {}
 ) {
-  const { frame: previewVideo } = getStoryboardPreviewElements();
-  if (!previewVideo) return;
-
   const segmentIndex = Number(segment?.segmentIndex);
   const clipUrl = typeof segment?.clipUrl === 'string' ? segment.clipUrl : '';
   if (!Number.isFinite(segmentIndex) || !clipUrl) {
-    const previousVideoUrl = getStoryboardPreviewVideoUrl(previewVideo);
-    if (previousVideoUrl) {
-      previewVideo.pause();
-      previewVideo.removeAttribute('src');
-      previewVideo.load();
-    }
-    previewVideo.classList.add('hidden');
-    storyboardPreviewActiveSegmentIndex = null;
-    clearStoryboardPreviewPendingSeek();
+    resetStoryboardPreviewSlots();
     clearPlaybackActiveStoryboardCard();
     return;
   }
 
-  const nextPoster = segment?.clipThumbUrl || '';
-  const previousVideoUrl = getStoryboardPreviewVideoUrl(previewVideo);
-  const clipChanged = previousVideoUrl !== clipUrl;
-  const segmentChanged = storyboardPreviewActiveSegmentIndex !== segmentIndex;
-  const globalStartSec = Number(segment?.globalStartSec) || 0;
-  const clipStartSec = Number(segment?.clipStartSec) || 0;
-  const audioOffsetSec = Math.max(0, (Number(audioTime) || 0) - globalStartSec);
-  const desiredSeekSec = Math.max(0, clipStartSec + audioOffsetSec);
-
-  previewVideo.classList.remove('hidden');
-
-  if (clipChanged) {
-    previewVideo.src = clipUrl;
-    if (nextPoster) {
-      previewVideo.setAttribute('poster', nextPoster);
+  const desiredSeekSec = getStoryboardPreviewDesiredSeekSec(segment, audioTime);
+  const activeSlot = getStoryboardPreviewActiveSlot();
+  const activeClipMatches = activeSlot?.clipUrl === clipUrl;
+  if (activeClipMatches) {
+    cancelStoryboardPreviewStandbyRequest();
+    const activeNeedsSeek =
+      forceSeek ||
+      activeSlot.segmentIndex !== segmentIndex ||
+      Math.abs((Number(activeSlot.video?.currentTime) || 0) - desiredSeekSec) >
+        STORYBOARD_PREVIEW_SEEK_EPSILON_SEC;
+    if (activeNeedsSeek) {
+      syncStoryboardPreviewExistingActiveSlot(activeSlot.key, segment, { desiredSeekSec, autoplay });
     } else {
-      previewVideo.removeAttribute('poster');
+      storyboardPreviewSlotState[activeSlot.key].segmentIndex = segmentIndex;
+      storyboardPreviewSlotState[activeSlot.key].autoplayWanted = autoplay;
+      storyboardPreviewActiveSegmentIndex = segmentIndex;
+      syncStoryboardPreviewActivePlayback({ autoplay });
     }
-    queueStoryboardPreviewSeek(desiredSeekSec, { autoplay });
-    previewVideo.load();
-  } else if (segmentChanged || forceSeek) {
-    queueStoryboardPreviewSeek(desiredSeekSec, { autoplay });
-    if (previewVideo.readyState >= 1) {
-      applyStoryboardPreviewPendingSeek(previewVideo, { autoplay });
-    }
-  } else if (autoplay && previewVideo.paused) {
-    previewVideo.play().catch(() => {});
-  } else if (!autoplay && !previewVideo.paused) {
-    previewVideo.pause();
+    return;
   }
 
-  storyboardPreviewActiveSegmentIndex = segmentIndex;
+  const standbySlot = getStoryboardPreviewStandbySlot();
+  if (!standbySlot) return;
+  prepareStoryboardPreviewSlot(standbySlot.key, segment, {
+    desiredSeekSec,
+    autoplay,
+    swapWhenReady: true,
+  });
 }
 
 function syncStoryboardPreviewAtTime(
@@ -1525,7 +1716,7 @@ function syncStoryboardPreviewAtTime(
 
 function refreshStoryboardPreview(session = window.currentStorySession) {
   const {
-    frame: previewVideo,
+    frames,
     blocked,
     audio,
     duration,
@@ -1537,7 +1728,7 @@ function refreshStoryboardPreview(session = window.currentStorySession) {
     retryButton,
   } = getStoryboardPreviewElements();
 
-  if (!previewVideo || !blocked || !audio || !duration || !charge || !renderEstimate) return;
+  if (!frames.every(Boolean) || !blocked || !audio || !duration || !charge || !renderEstimate) return;
 
   const voiceSync = getStoryVoiceSync(session);
   const previewBlockedMessage = getStoryPreviewBlockedMessage(session);
@@ -1554,12 +1745,10 @@ function refreshStoryboardPreview(session = window.currentStorySession) {
 
   if (!session?.id) {
     blocked.classList.remove('hidden');
-    previewVideo.classList.add('hidden');
     audio.classList.add('hidden');
     audio.pause();
     pauseStoryboardPreviewVideo();
-    storyboardPreviewActiveSegmentIndex = null;
-    clearStoryboardPreviewPendingSeek();
+    resetStoryboardPreviewSlots();
     clearPlaybackActiveStoryboardCard();
     if (statusKicker) statusKicker.textContent = 'Synced preview';
     if (statusTitle)
@@ -1574,12 +1763,10 @@ function refreshStoryboardPreview(session = window.currentStorySession) {
 
   if (!previewReady) {
     blocked.classList.remove('hidden');
-    previewVideo.classList.add('hidden');
     audio.classList.add('hidden');
     audio.pause();
     pauseStoryboardPreviewVideo();
-    storyboardPreviewActiveSegmentIndex = null;
-    clearStoryboardPreviewPendingSeek();
+    resetStoryboardPreviewSlots();
     clearPlaybackActiveStoryboardCard();
 
     if (storyboardSyncInFlight) {
@@ -1749,8 +1936,8 @@ async function retryStoryboardPreviewSync() {
 
 function setupStoryboardPreviewBindings() {
   if (storyboardPreviewBindingsAttached) return;
-  const { frame: previewVideo, audio, retryButton } = getStoryboardPreviewElements();
-  if (!previewVideo || !audio || !retryButton) return;
+  const { frames, audio, retryButton } = getStoryboardPreviewElements();
+  if (!frames.every(Boolean) || !audio || !retryButton) return;
 
   const syncFromAudio = () => {
     syncStoryboardPreviewFromAudio();
@@ -1767,10 +1954,7 @@ function setupStoryboardPreviewBindings() {
     refreshStoryboardOverviewControl(window.currentStorySession);
   });
   audio.addEventListener('play', () => {
-    const previewVideo = document.getElementById('storyboard-preview-video');
-    if (previewVideo && !previewVideo.classList.contains('hidden')) {
-      previewVideo.play().catch(() => {});
-    }
+    syncStoryboardPreviewActivePlayback({ autoplay: true });
     refreshStoryboardOverviewControl(window.currentStorySession);
   });
   audio.addEventListener('pause', () => {
@@ -1781,10 +1965,21 @@ function setupStoryboardPreviewBindings() {
     pauseStoryboardPreviewVideo();
     refreshStoryboardOverviewControl(window.currentStorySession);
   });
-  previewVideo.addEventListener('loadedmetadata', () => {
-    applyStoryboardPreviewPendingSeek(previewVideo, { autoplay: !audio.paused });
+  STORYBOARD_PREVIEW_SLOT_KEYS.forEach((slotKey) => {
+    const previewVideo = getStoryboardPreviewSlotVideo(slotKey);
+    previewVideo?.addEventListener('loadedmetadata', () => {
+      finalizeStoryboardPreviewSlot(slotKey, storyboardPreviewSlotState[slotKey].requestToken);
+    });
+    previewVideo?.addEventListener('seeked', () => {
+      finalizeStoryboardPreviewSlot(slotKey, storyboardPreviewSlotState[slotKey].requestToken);
+    });
+    previewVideo?.addEventListener('error', () => {
+      if (storyboardPreviewActiveSlotKey !== slotKey) return;
+      storyboardPreviewSlotState[slotKey].ready = false;
+    });
   });
   retryButton.addEventListener('click', retryStoryboardPreviewSync);
+  setStoryboardPreviewSlotVisibility();
   storyboardPreviewBindingsAttached = true;
 }
 
