@@ -85,19 +85,17 @@ function buildShot(id, sentenceIndex, query, durationSec = 4) {
 function buildSyncedSession(overrides = {}) {
   const baseNow = '2026-03-19T00:00:00.000Z';
   const story = overrides.story || { sentences: ['Beat one'] };
-  const sentences = Array.isArray(story?.sentences) && story.sentences.length > 0
-    ? story.sentences
-    : ['Beat one'];
-  const shots = Array.isArray(overrides.shots) && overrides.shots.length > 0
-    ? overrides.shots
-    : sentences.map((text, index) => buildShot(`clip-${index + 1}`, index, text, 4));
+  const sentences =
+    Array.isArray(story?.sentences) && story.sentences.length > 0 ? story.sentences : ['Beat one'];
+  const shots =
+    Array.isArray(overrides.shots) && overrides.shots.length > 0
+      ? overrides.shots
+      : sentences.map((text, index) => buildShot(`clip-${index + 1}`, index, text, 4));
 
   let cursor = 0;
   const captions = sentences.map((text, index) => {
     const shot = shots.find((candidate) => candidate?.sentenceIndex === index);
-    const durationSec = Number(
-      shot?.durationSec ?? shot?.selectedClip?.duration ?? 4
-    );
+    const durationSec = Number(shot?.durationSec ?? shot?.selectedClip?.duration ?? 4);
     const startTimeSec = cursor;
     cursor += durationSec;
     return {
@@ -182,19 +180,18 @@ function buildFinalizeAttemptDoc({
         : state === 'running'
           ? 'started'
           : 'queued');
-  const resolvedRenderRecovery =
-    renderRecovery ||
-    {
-      state: state === 'done' ? 'done' : state === 'failed' || state === 'expired' ? 'failed' : 'pending',
-      attemptId,
-      shortId: state === 'done' ? shortId : null,
-      startedAt: startedAt || createdAt,
-      updatedAt,
-      finishedAt: state === 'done' ? finishedAt || updatedAt : null,
-      failedAt: state === 'failed' || state === 'expired' ? finishedAt || updatedAt : null,
-      code: state === 'failed' || state === 'expired' ? 'STORY_FINALIZE_FAILED' : null,
-      message: state === 'failed' || state === 'expired' ? 'Failed to finalize story' : null,
-    };
+  const resolvedRenderRecovery = renderRecovery || {
+    state:
+      state === 'done' ? 'done' : state === 'failed' || state === 'expired' ? 'failed' : 'pending',
+    attemptId,
+    shortId: state === 'done' ? shortId : null,
+    startedAt: startedAt || createdAt,
+    updatedAt,
+    finishedAt: state === 'done' ? finishedAt || updatedAt : null,
+    failedAt: state === 'failed' || state === 'expired' ? finishedAt || updatedAt : null,
+    code: state === 'failed' || state === 'expired' ? 'STORY_FINALIZE_FAILED' : null,
+    message: state === 'failed' || state === 'expired' ? 'Failed to finalize story' : null,
+  };
   return {
     flow: 'story.finalize',
     uid,
@@ -213,7 +210,8 @@ function buildFinalizeAttemptDoc({
     startedAt: startedAt ? timestamp(startedAt) : null,
     finishedAt: finishedAt ? timestamp(finishedAt) : null,
     expiresAt: timestamp('2026-03-19T01:00:00.000Z'),
-    availableAfter: resolvedJobState === 'retry_scheduled' ? timestamp('2026-03-19T00:01:00.000Z') : null,
+    availableAfter:
+      resolvedJobState === 'retry_scheduled' ? timestamp('2026-03-19T00:01:00.000Z') : null,
     usageReservation: {
       estimatedSec: 8,
       reservedSec: state === 'queued' || state === 'running' ? 8 : 0,
@@ -316,6 +314,7 @@ const unauthorizedRoutes = [
     '/api/caption/preview',
     { ssotVersion: 3, mode: 'raster', measure: 'server', text: 'Hello', placement: 'bottom' },
   ],
+  ['POST', '/api/story/preview', { sessionId: 'story-unauth' }],
   ['POST', '/api/story/finalize', { sessionId: 'story-unauth' }],
   ['GET', '/api/shorts/mine', undefined],
   ['GET', '/api/shorts/short-unauth', undefined],
@@ -953,10 +952,109 @@ test('GET /api/story/:sessionId omits playbackTimelineV1 when synced clip covera
     assert.equal(result.json.data.previewReadinessV1.ready, false);
     assert.equal(result.json.data.previewReadinessV1.reasonCode, 'MISSING_CLIP_COVERAGE');
     assert.deepEqual(result.json.data.previewReadinessV1.missingBeatIndices, [1]);
-    assert.equal(Object.prototype.hasOwnProperty.call(result.json.data, 'playbackTimelineV1'), false);
+    assert.equal(
+      Object.prototype.hasOwnProperty.call(result.json.data, 'playbackTimelineV1'),
+      false
+    );
   } finally {
     restoreEnv();
   }
+});
+
+test('GET /api/story/:sessionId returns mobile-safe draftPreviewV1 and captionOverlayV1 projections', async () => {
+  seedStorySession(
+    'user-1',
+    buildSyncedSession({
+      id: 'story-preview-safe-projection',
+      draftPreviewV1: {
+        version: 1,
+        state: 'stale',
+        fingerprint: 'internal-fingerprint',
+        previewId: 'internal-preview-id',
+        artifact: {
+          url: 'https://cdn.example.com/stale-base.mp4',
+          storagePath: 'artifacts/user-1/story-preview-safe-projection/previews/old/base.mp4',
+          contentType: 'video/mp4',
+          durationSec: 4,
+          width: 1080,
+          height: 1920,
+        },
+      },
+      overlayCaption: {
+        placement: 'center',
+        fontPx: 80,
+        color: '#ffffff',
+      },
+    })
+  );
+
+  const result = await requestJson('/api/story/story-preview-safe-projection');
+
+  assert.equal(result.status, 200);
+  assert.equal(result.json.success, true);
+  assert.equal(result.json.data.draftPreviewV1.state, 'stale');
+  assert.equal(
+    Object.prototype.hasOwnProperty.call(result.json.data.draftPreviewV1, 'artifact'),
+    false
+  );
+  assert.equal(
+    Object.prototype.hasOwnProperty.call(result.json.data.draftPreviewV1, 'fingerprint'),
+    false
+  );
+  assert.equal(
+    Object.prototype.hasOwnProperty.call(result.json.data.draftPreviewV1, 'previewId'),
+    false
+  );
+  assert.equal(result.json.data.captionOverlayV1.version, 1);
+  assert.deepEqual(result.json.data.captionOverlayV1.frame, { width: 1080, height: 1920 });
+  assert.equal(
+    Object.prototype.hasOwnProperty.call(result.json.data.captionOverlayV1.segments[0], 'tokens'),
+    false
+  );
+});
+
+test('POST /api/story/preview requires idempotency and returns blocked state without exposing unsafe fields', async () => {
+  const missingKey = await requestJson('/api/story/preview', {
+    method: 'POST',
+    body: { sessionId: 'story-preview-missing-key' },
+  });
+
+  assert.equal(missingKey.status, 400);
+  assert.equal(missingKey.json.success, false);
+  assert.equal(missingKey.json.error, 'MISSING_IDEMPOTENCY_KEY');
+
+  seedStorySession(
+    'user-1',
+    buildSyncedSession({
+      id: 'story-preview-blocked',
+    })
+  );
+
+  const result = await requestJson('/api/story/preview', {
+    method: 'POST',
+    headers: {
+      'X-Idempotency-Key': 'idem-story-preview-blocked',
+      'x-client': 'mobile',
+    },
+    body: { sessionId: 'story-preview-blocked' },
+  });
+
+  assert.equal(result.status, 200);
+  assert.equal(result.json.success, true);
+  assert.equal(result.json.data.draftPreviewV1.state, 'blocked');
+  assert.equal(result.json.data.draftPreviewV1.blocked.reasonCode, 'PREVIEW_AUDIO_STORAGE_MISSING');
+  assert.equal(
+    Object.prototype.hasOwnProperty.call(result.json.data.draftPreviewV1, 'artifact'),
+    false
+  );
+  assert.equal(
+    Object.prototype.hasOwnProperty.call(result.json.data.draftPreviewV1, 'fingerprint'),
+    false
+  );
+  assert.equal(result.json.data.captionOverlayV1.version, 1);
+
+  const stored = readStorySession('user-1', 'story-preview-blocked');
+  assert.equal(stored.draftPreviewV1.state, 'blocked');
 });
 
 test('GET /api/story/:sessionId returns canonical pending when session recovery is missing but an active lock + attempt exist', async () => {
@@ -1082,8 +1180,14 @@ test('GET /api/story/:sessionId returns canonical done + shortId when the settle
   assert.equal(result.json.data.renderRecovery.state, 'done');
   assert.equal(result.json.data.renderRecovery.attemptId, 'idem-recovery-canonical-done');
   assert.equal(result.json.data.renderRecovery.shortId, 'short-canonical-done');
-  assert.equal(readDoc('idempotency', 'user-1:idem-recovery-canonical-done').result.shortId, 'short-canonical-done');
-  assert.equal(readDoc('shorts', 'short-canonical-done').finalizeAttemptId, 'idem-recovery-canonical-done');
+  assert.equal(
+    readDoc('idempotency', 'user-1:idem-recovery-canonical-done').result.shortId,
+    'short-canonical-done'
+  );
+  assert.equal(
+    readDoc('shorts', 'short-canonical-done').finalizeAttemptId,
+    'idem-recovery-canonical-done'
+  );
 });
 
 test('GET /api/story/:sessionId does not leak a stale shortId from session recovery when canonical attempt lineage is retry_scheduled', async () => {
@@ -1772,7 +1876,10 @@ test('POST /api/story/sync preserves current voiceSync but returns blocked previ
     assert.equal(result.json.data.previewReadinessV1.ready, false);
     assert.equal(result.json.data.previewReadinessV1.reasonCode, 'MISSING_CLIP_COVERAGE');
     assert.deepEqual(result.json.data.previewReadinessV1.missingBeatIndices, [1]);
-    assert.equal(Object.prototype.hasOwnProperty.call(result.json.data, 'playbackTimelineV1'), false);
+    assert.equal(
+      Object.prototype.hasOwnProperty.call(result.json.data, 'playbackTimelineV1'),
+      false
+    );
   } finally {
     restoreEnv();
   }
@@ -1886,7 +1993,9 @@ test('POST /api/story/finalize returns 202 pending first, then same-key replay r
     assert.equal(acceptedAttempt.executionAttempts.length, 1);
     assert.equal(acceptedAttempt.executionAttempts[0].executionAttemptId, 'idem-finalize-1:exec:1');
     assert.ok(
-      ['created', 'claimed', 'running', 'succeeded'].includes(acceptedAttempt.executionAttempts[0].state)
+      ['created', 'claimed', 'running', 'succeeded'].includes(
+        acceptedAttempt.executionAttempts[0].state
+      )
     );
 
     await waitFor(() => readDoc('idempotency', 'user-1:idem-finalize-1')?.state === 'done', {
@@ -2211,7 +2320,9 @@ test('POST /api/story/finalize preserves caller behavior while retrying with can
     assert.equal(first.json.finalize.attemptId, 'idem-finalize-retry-lineage');
 
     await waitFor(
-      () => readDoc('idempotency', 'user-1:idem-finalize-retry-lineage')?.executionAttempts?.length === 2,
+      () =>
+        readDoc('idempotency', 'user-1:idem-finalize-retry-lineage')?.executionAttempts?.length ===
+        2,
       { timeoutMs: 1000, intervalMs: 20 }
     );
 
@@ -2220,17 +2331,29 @@ test('POST /api/story/finalize preserves caller behavior while retrying with can
     assert.equal(retriedAttempt.externalAttemptId, 'idem-finalize-retry-lineage');
     assert.equal(retriedAttempt.jobState, 'retry_scheduled');
     assert.equal(retriedAttempt.executionAttempts.length, 2);
-    assert.equal(retriedAttempt.executionAttempts[0].executionAttemptId, 'idem-finalize-retry-lineage:exec:1');
+    assert.equal(
+      retriedAttempt.executionAttempts[0].executionAttemptId,
+      'idem-finalize-retry-lineage:exec:1'
+    );
     assert.equal(retriedAttempt.executionAttempts[0].state, 'failed_retryable');
-    assert.equal(retriedAttempt.executionAttempts[1].executionAttemptId, 'idem-finalize-retry-lineage:exec:2');
+    assert.equal(
+      retriedAttempt.executionAttempts[1].executionAttemptId,
+      'idem-finalize-retry-lineage:exec:2'
+    );
     assert.equal(retriedAttempt.executionAttempts[1].state, 'created');
-    assert.equal(retriedAttempt.currentExecution.executionAttemptId, 'idem-finalize-retry-lineage:exec:2');
+    assert.equal(
+      retriedAttempt.currentExecution.executionAttemptId,
+      'idem-finalize-retry-lineage:exec:2'
+    );
     assert.equal(retriedAttempt.currentExecution.state, 'created');
 
-    await waitFor(() => readDoc('idempotency', 'user-1:idem-finalize-retry-lineage')?.state === 'done', {
-      timeoutMs: 1500,
-      intervalMs: 20,
-    });
+    await waitFor(
+      () => readDoc('idempotency', 'user-1:idem-finalize-retry-lineage')?.state === 'done',
+      {
+        timeoutMs: 1500,
+        intervalMs: 20,
+      }
+    );
 
     const replay = await requestJson('/api/story/finalize', {
       method: 'POST',
@@ -2253,7 +2376,10 @@ test('POST /api/story/finalize preserves caller behavior while retrying with can
     assert.equal(settledAttempt.executionAttempts.length, 2);
     assert.equal(settledAttempt.executionAttempts[0].state, 'failed_retryable');
     assert.equal(settledAttempt.executionAttempts[1].state, 'succeeded');
-    assert.equal(settledAttempt.currentExecution.executionAttemptId, 'idem-finalize-retry-lineage:exec:2');
+    assert.equal(
+      settledAttempt.currentExecution.executionAttemptId,
+      'idem-finalize-retry-lineage:exec:2'
+    );
     assert.equal(settledAttempt.currentExecution.state, 'succeeded');
   } finally {
     stopFinalizeWorkerRuntime('contract_finalize_retry_lineage_cleanup');
@@ -2352,17 +2478,23 @@ test('POST /api/story/finalize returns 409 FINALIZE_ALREADY_ACTIVE for a differe
     assert.equal(acceptedAttempt.jobId, 'idem-finalize-conflict-a');
     assert.equal(acceptedAttempt.externalAttemptId, 'idem-finalize-conflict-a');
     assert.equal(acceptedAttempt.executionAttempts.length, 1);
-    assert.equal(acceptedAttempt.executionAttempts[0].executionAttemptId, 'idem-finalize-conflict-a:exec:1');
+    assert.equal(
+      acceptedAttempt.executionAttempts[0].executionAttemptId,
+      'idem-finalize-conflict-a:exec:1'
+    );
 
     const usageDoc = readDoc('users', 'user-1');
     assert.equal(usageDoc.usage.cycleReservedSec, 4);
     assert.equal(readDoc('idempotency', 'user-1:idem-finalize-conflict-b'), null);
 
     release();
-    await waitFor(() => readDoc('idempotency', 'user-1:idem-finalize-conflict-a')?.state === 'done', {
-      timeoutMs: 1000,
-      intervalMs: 20,
-    });
+    await waitFor(
+      () => readDoc('idempotency', 'user-1:idem-finalize-conflict-a')?.state === 'done',
+      {
+        timeoutMs: 1000,
+        intervalMs: 20,
+      }
+    );
   } finally {
     stopFinalizeWorkerRuntime('contract_finalize_conflict_cleanup');
   }

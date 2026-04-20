@@ -1,3 +1,4 @@
+/* eslint-disable no-irregular-whitespace */
 /**
  * Story-based video pipeline service
  * Orchestrates: input Ã¢â€ â€™ story Ã¢â€ â€™ visual plan Ã¢â€ â€™ stock search Ã¢â€ â€™ timeline Ã¢â€ â€™ render
@@ -16,6 +17,7 @@ import {
   concatenateAudioFiles,
   concatenateClips,
   concatenateClipsVideoOnly,
+  muxVideoWithAudio,
   trimClipToSegment,
   extractSegmentFromFile,
   fetchClipsToTmp,
@@ -35,6 +37,7 @@ import { VOICE_PRESETS, getVoicePreset } from '../constants/voice.presets.js';
 import { buildKaraokeASSFromTimestamps } from '../utils/karaoke.ass.js';
 import { wrapTextWithFont } from '../utils/caption.wrap.js';
 import { deriveCaptionWrapWidthPx } from '../utils/caption.wrapWidth.js';
+import { extractStyleOnly } from '../utils/caption-style-helper.js';
 import { compileCaptionSSOT } from '../captions/compile.js';
 import logger from '../observability/logger.js';
 import {
@@ -99,6 +102,16 @@ const DEFAULT_VOICE_PRESET_KEY = 'male_calm';
 const SYNC_PREVIEW_CONTENT_TYPE = 'audio/mpeg';
 const SYNC_AUDIO_CONTENT_TYPE = 'audio/mpeg';
 const SYNC_TIMING_CONTENT_TYPE = 'application/json';
+const DRAFT_PREVIEW_SCHEMA_VERSION = 1;
+const DRAFT_PREVIEW_RENDERER_VERSION = 'base-preview-v1';
+const DRAFT_PREVIEW_CONTENT_TYPE = 'video/mp4';
+const DRAFT_PREVIEW_WIDTH = 1080;
+const DRAFT_PREVIEW_HEIGHT = 1920;
+const DRAFT_PREVIEW_FPS = 24;
+const DRAFT_PREVIEW_CACHE_CONTROL = 'private,max-age=300';
+const CAPTION_OVERLAY_SCHEMA_VERSION = 1;
+const CAPTION_OVERLAY_CONTRACT_VERSION = 'caption-overlay-v1';
+const CAPTION_OVERLAY_RENDERER_VERSION = 'caption-overlay-v1';
 
 function safeJsonClone(value) {
   if (value == null) return value;
@@ -152,8 +165,12 @@ function normalizeVoiceSyncBeatIndices(indices, sentenceCount = 0) {
 
 function normalizeVoiceSyncSummary(session) {
   const current =
-    session?.voiceSync && typeof session.voiceSync === 'object' ? session.voiceSync : buildDefaultVoiceSync();
-  const sentenceCount = Array.isArray(session?.story?.sentences) ? session.story.sentences.length : 0;
+    session?.voiceSync && typeof session.voiceSync === 'object'
+      ? session.voiceSync
+      : buildDefaultVoiceSync();
+  const sentenceCount = Array.isArray(session?.story?.sentences)
+    ? session.story.sentences.length
+    : 0;
   return {
     ...buildDefaultVoiceSync(),
     ...current,
@@ -165,23 +182,33 @@ function normalizeVoiceSyncSummary(session) {
     staleBeatIndices: normalizeVoiceSyncBeatIndices(current.staleBeatIndices, sentenceCount),
     nextEstimatedChargeSec: (() => {
       const value = Number(current.nextEstimatedChargeSec);
-      return Number.isFinite(value) && value >= 0 ? billingMsToSeconds(secondsToBillingMs(value)) : null;
+      return Number.isFinite(value) && value >= 0
+        ? billingMsToSeconds(secondsToBillingMs(value))
+        : null;
     })(),
     totalDurationSec: (() => {
       const value = Number(current.totalDurationSec);
-      return Number.isFinite(value) && value > 0 ? billingMsToSeconds(secondsToBillingMs(value)) : null;
+      return Number.isFinite(value) && value > 0
+        ? billingMsToSeconds(secondsToBillingMs(value))
+        : null;
     })(),
     previewAudioDurationSec: (() => {
       const value = Number(current.previewAudioDurationSec);
-      return Number.isFinite(value) && value > 0 ? billingMsToSeconds(secondsToBillingMs(value)) : null;
+      return Number.isFinite(value) && value > 0
+        ? billingMsToSeconds(secondsToBillingMs(value))
+        : null;
     })(),
     lastChargeSec: (() => {
       const value = Number(current.lastChargeSec);
-      return Number.isFinite(value) && value >= 0 ? billingMsToSeconds(secondsToBillingMs(value)) : null;
+      return Number.isFinite(value) && value >= 0
+        ? billingMsToSeconds(secondsToBillingMs(value))
+        : null;
     })(),
     totalBilledSec: (() => {
       const value = Number(current.totalBilledSec);
-      return Number.isFinite(value) && value >= 0 ? billingMsToSeconds(secondsToBillingMs(value)) : 0;
+      return Number.isFinite(value) && value >= 0
+        ? billingMsToSeconds(secondsToBillingMs(value))
+        : 0;
     })(),
   };
 }
@@ -191,7 +218,12 @@ function isVoiceSyncCurrent(session) {
 }
 
 function estimateScopeDurationMs(sentences = [], indices = []) {
-  if (!Array.isArray(sentences) || sentences.length === 0 || !Array.isArray(indices) || indices.length === 0) {
+  if (
+    !Array.isArray(sentences) ||
+    sentences.length === 0 ||
+    !Array.isArray(indices) ||
+    indices.length === 0
+  ) {
     return 0;
   }
   let totalMs = 0;
@@ -250,8 +282,131 @@ function invalidateRenderedOutput(session, nextStatus = null) {
   delete session.finalVideo;
   delete session.renderedSegments;
   delete session.renderRecovery;
+  invalidateDraftPreviewBase(session, 'BASE_INPUT_CHANGED');
   session.status = nextStatus || deriveSessionEditingStatus(session);
   return session;
+}
+
+function normalizeDraftPreviewState(state) {
+  return ['not_requested', 'blocked', 'queued', 'running', 'ready', 'failed', 'stale'].includes(
+    state
+  )
+    ? state
+    : 'not_requested';
+}
+
+export function invalidateDraftPreviewBase(session, reasonCode = 'BASE_INPUT_CHANGED') {
+  if (!session || typeof session !== 'object') return session;
+  const current = session.draftPreviewV1;
+  const now = new Date().toISOString();
+  const staleArtifactStoragePaths = Array.isArray(current?.staleArtifactStoragePaths)
+    ? current.staleArtifactStoragePaths.filter(Boolean)
+    : [];
+  if (current?.artifact?.storagePath) {
+    staleArtifactStoragePaths.push(current.artifact.storagePath);
+  }
+  session.draftPreviewV1 = {
+    version: DRAFT_PREVIEW_SCHEMA_VERSION,
+    state: 'stale',
+    updatedAt: now,
+    rendererVersion: DRAFT_PREVIEW_RENDERER_VERSION,
+    staleReasonCode: reasonCode,
+    staleArtifactStoragePaths: Array.from(new Set(staleArtifactStoragePaths)).slice(-10),
+  };
+  return session;
+}
+
+function buildMobileDraftPreviewProjection(session) {
+  const preview = session?.draftPreviewV1;
+  const state = normalizeDraftPreviewState(preview?.state);
+  const rendererMatches = preview?.rendererVersion === DRAFT_PREVIEW_RENDERER_VERSION;
+  const projectedState = state === 'ready' && !rendererMatches ? 'stale' : state;
+  const projection = {
+    version: DRAFT_PREVIEW_SCHEMA_VERSION,
+    state: projectedState,
+    updatedAt: preview?.updatedAt ?? session?.updatedAt ?? null,
+  };
+
+  if (projectedState === 'ready' && preview?.artifact?.url) {
+    projection.artifact = {
+      url: preview.artifact.url,
+      contentType: preview.artifact.contentType || DRAFT_PREVIEW_CONTENT_TYPE,
+      durationSec: Number.isFinite(Number(preview.artifact.durationSec))
+        ? Number(preview.artifact.durationSec)
+        : null,
+      width: Number.isFinite(Number(preview.artifact.width))
+        ? Number(preview.artifact.width)
+        : DRAFT_PREVIEW_WIDTH,
+      height: Number.isFinite(Number(preview.artifact.height))
+        ? Number(preview.artifact.height)
+        : DRAFT_PREVIEW_HEIGHT,
+      createdAt: preview.artifact.createdAt ?? null,
+      expiresAt: preview.artifact.expiresAt ?? null,
+    };
+  }
+
+  if (projectedState === 'blocked' && preview?.blocked) {
+    projection.blocked = {
+      reasonCode: preview.blocked.reasonCode || 'PREVIEW_BLOCKED',
+      missingBeatIndices: Array.isArray(preview.blocked.missingBeatIndices)
+        ? preview.blocked.missingBeatIndices
+        : [],
+    };
+  }
+
+  if (['queued', 'running'].includes(projectedState) && preview?.job) {
+    projection.job = {
+      state: preview.job.state || projectedState,
+      attemptId: preview.job.attemptId || null,
+      retryAfterSec: Number.isFinite(Number(preview.job.retryAfterSec))
+        ? Number(preview.job.retryAfterSec)
+        : null,
+    };
+  }
+
+  if (projectedState === 'failed' && preview?.error) {
+    projection.error = {
+      code: preview.error.code || 'DRAFT_PREVIEW_FAILED',
+      message: preview.error.message || 'Failed to generate preview.',
+    };
+  }
+
+  return projection;
+}
+
+function buildCaptionOverlayProjection(session) {
+  const captions = Array.isArray(session?.captions) ? session.captions : [];
+  const style = extractStyleOnly(session?.overlayCaption || session?.captionStyle || {});
+  const segments = captions
+    .map((caption) => {
+      const beatIndex = Number(caption?.sentenceIndex);
+      const startSec = Number(caption?.startTimeSec);
+      const endSec = Number(caption?.endTimeSec);
+      const text = typeof caption?.text === 'string' ? caption.text : '';
+      if (!Number.isFinite(beatIndex) || !Number.isFinite(startSec) || !Number.isFinite(endSec)) {
+        return null;
+      }
+      return {
+        beatIndex,
+        startSec,
+        endSec,
+        text,
+      };
+    })
+    .filter(Boolean);
+
+  return {
+    version: CAPTION_OVERLAY_SCHEMA_VERSION,
+    contractVersion: CAPTION_OVERLAY_CONTRACT_VERSION,
+    rendererVersion: CAPTION_OVERLAY_RENDERER_VERSION,
+    frame: {
+      width: DRAFT_PREVIEW_WIDTH,
+      height: DRAFT_PREVIEW_HEIGHT,
+    },
+    placement: style.placement || 'bottom',
+    style,
+    segments,
+  };
 }
 
 function updateVoiceSyncEstimate(session) {
@@ -302,7 +457,10 @@ function markVoiceSyncStale(session, { scope = 'full', beatIndices = [] } = {}) 
 
 function resetVoiceSyncForNewScript(session) {
   session.voiceSync = buildDefaultVoiceSync();
-  invalidateRenderedOutput(session, Array.isArray(session?.story?.sentences) ? 'story_generated' : 'draft');
+  invalidateRenderedOutput(
+    session,
+    Array.isArray(session?.story?.sentences) ? 'story_generated' : 'draft'
+  );
   return updateVoiceSyncEstimate(session);
 }
 
@@ -408,7 +566,8 @@ function buildVoiceSyncPlan(session, { mode = 'stale', voicePreset, voicePacePre
     normalizedVoice.voicePresetKey !== resolvedVoicePresetKey(session?.voicePreset) ||
     normalizedVoice.voicePacePreset !== resolvedVoicePacePreset(session?.voicePacePreset);
 
-  let scope = mode === 'full' || voiceChanged || existingVoiceSync.state === 'never_synced' ? 'full' : 'beat';
+  let scope =
+    mode === 'full' || voiceChanged || existingVoiceSync.state === 'never_synced' ? 'full' : 'beat';
   let targetIndices =
     scope === 'full'
       ? storySentences.map((_, index) => index)
@@ -420,11 +579,12 @@ function buildVoiceSyncPlan(session, { mode = 'stale', voicePreset, voicePacePre
 
   const matchesStoredFingerprint =
     fullFingerprint === existingVoiceSync.currentFingerprint && !voiceChanged;
-  const nextEstimatedChargeSec =
-    matchesStoredFingerprint
-      ? 0
-      : targetIndices.length > 0
-      ? billingMsToSeconds(computeSyncChargeMs(estimateScopeDurationMs(storySentences, targetIndices)))
+  const nextEstimatedChargeSec = matchesStoredFingerprint
+    ? 0
+    : targetIndices.length > 0
+      ? billingMsToSeconds(
+          computeSyncChargeMs(estimateScopeDurationMs(storySentences, targetIndices))
+        )
       : 0;
 
   return {
@@ -785,6 +945,7 @@ export function sanitizeStorySessionForClient(session) {
   delete safeSession.renderedSegments;
   delete safeSession.playbackTimelineV1;
   delete safeSession.previewReadinessV1;
+  delete safeSession.captionOverlayV1;
   if (Array.isArray(safeSession.beats)) {
     safeSession.beats = safeSession.beats.map((beat) => {
       if (!beat || typeof beat !== 'object') return beat;
@@ -808,6 +969,8 @@ export function sanitizeStorySessionForClient(session) {
   }
 
   safeSession.voiceOptions = safeVoiceOptions();
+  safeSession.draftPreviewV1 = buildMobileDraftPreviewProjection(session);
+  safeSession.captionOverlayV1 = buildCaptionOverlayProjection(session);
   safeSession.previewReadinessV1 = {
     version: 1,
     ready: previewReadiness.ready === true,
@@ -2129,7 +2292,10 @@ function resolveStoryVideoCutsPlan({ session, sentences = session?.story?.senten
     process.env.ENABLE_VIDEO_CUTS_V1 === 'true' || process.env.ENABLE_VIDEO_CUTS_V1 === '1';
   const hasClipsForAllBeats = hasClipsForAllStoryBeats({ shots: session?.shots, beatCount });
   const canUseVideoCutsV1 =
-    enableVideoCutsV1 && hasClipsForAllBeats && beatCount >= 2 && session?.videoCutsV1Disabled !== true;
+    enableVideoCutsV1 &&
+    hasClipsForAllBeats &&
+    beatCount >= 2 &&
+    session?.videoCutsV1Disabled !== true;
 
   const plan = {
     source: 'classic',
@@ -2218,7 +2384,11 @@ function buildBeatDurationsFromSyncedCaptions(session, beatCount) {
     const sentenceIndex = Number(caption?.sentenceIndex);
     const startTimeSec = Number(caption?.startTimeSec);
     const endTimeSec = Number(caption?.endTimeSec);
-    if (!Number.isFinite(sentenceIndex) || !Number.isFinite(startTimeSec) || !Number.isFinite(endTimeSec)) {
+    if (
+      !Number.isFinite(sentenceIndex) ||
+      !Number.isFinite(startTimeSec) ||
+      !Number.isFinite(endTimeSec)
+    ) {
       continue;
     }
     captionBySentenceIndex.set(sentenceIndex, {
@@ -2361,7 +2531,9 @@ function buildStoryPlaybackTimelineV1(session, previewReadiness = null) {
       const durationSec = Number(segment?.durSec);
       const sentenceIndex = Number(segment?.sentenceIndex);
       const ownerSentenceIndex = Number(
-        Number.isFinite(Number(segment?.ownerSentenceIndex)) ? segment.ownerSentenceIndex : segment?.sentenceIndex
+        Number.isFinite(Number(segment?.ownerSentenceIndex))
+          ? segment.ownerSentenceIndex
+          : segment?.sentenceIndex
       );
       if (
         !clipUrl ||
@@ -2396,11 +2568,281 @@ function buildStoryPlaybackTimelineV1(session, previewReadiness = null) {
     version: 1,
     source: readiness.playbackSource,
     totalDurationSec:
-      timelineSegments.length > 0
-        ? timelineSegments[timelineSegments.length - 1].globalEndSec
-        : 0,
+      timelineSegments.length > 0 ? timelineSegments[timelineSegments.length - 1].globalEndSec : 0,
     segments: timelineSegments,
   };
+}
+
+function buildDraftPreviewFingerprint({ session, previewReadiness }) {
+  const syncSummary = normalizeVoiceSyncSummary(session);
+  return hashStableValue({
+    schemaVersion: DRAFT_PREVIEW_SCHEMA_VERSION,
+    rendererVersion: DRAFT_PREVIEW_RENDERER_VERSION,
+    sessionId: session?.id ?? null,
+    voiceSyncFingerprint: syncSummary.currentFingerprint ?? null,
+    previewAudioStoragePath: syncSummary.previewAudioStoragePath ?? null,
+    playbackSource: previewReadiness?.playbackSource ?? null,
+    segments: Array.isArray(previewReadiness?.segments)
+      ? previewReadiness.segments.map((segment) => ({
+          sentenceIndex: Number(segment?.sentenceIndex),
+          ownerSentenceIndex: Number(segment?.ownerSentenceIndex),
+          clipUrl: segment?.clipUrl ?? null,
+          inSec: Number(segment?.inSec),
+          durSec: Number(segment?.durSec),
+          globalStartSec: Number(segment?.globalStartSec),
+          globalEndSec: Number(segment?.globalEndSec),
+        }))
+      : [],
+  });
+}
+
+function buildDraftPreviewBlockedState({ reasonCode, missingBeatIndices = [] }) {
+  return {
+    version: DRAFT_PREVIEW_SCHEMA_VERSION,
+    state: 'blocked',
+    updatedAt: new Date().toISOString(),
+    rendererVersion: DRAFT_PREVIEW_RENDERER_VERSION,
+    blocked: {
+      reasonCode,
+      missingBeatIndices: Array.isArray(missingBeatIndices) ? missingBeatIndices : [],
+    },
+  };
+}
+
+export function prepareDraftPreviewRequest(session) {
+  if (!session || typeof session !== 'object') {
+    const error = new Error('SESSION_NOT_FOUND');
+    error.code = 'SESSION_NOT_FOUND';
+    error.status = 404;
+    throw error;
+  }
+  const previewReadiness = buildStoryPreviewReadiness(session);
+  if (!previewReadiness.ready) {
+    return {
+      ready: false,
+      blockedState: buildDraftPreviewBlockedState({
+        reasonCode: previewReadiness.reasonCode || 'PREVIEW_BLOCKED',
+        missingBeatIndices: previewReadiness.missingBeatIndices || [],
+      }),
+    };
+  }
+  const syncSummary = normalizeVoiceSyncSummary(session);
+  if (!syncSummary.previewAudioStoragePath) {
+    return {
+      ready: false,
+      blockedState: buildDraftPreviewBlockedState({
+        reasonCode: 'PREVIEW_AUDIO_STORAGE_MISSING',
+        missingBeatIndices: [],
+      }),
+    };
+  }
+  const fingerprint = buildDraftPreviewFingerprint({ session, previewReadiness });
+  const currentPreview = session.draftPreviewV1;
+  if (
+    currentPreview?.state === 'ready' &&
+    currentPreview?.fingerprint === fingerprint &&
+    currentPreview?.rendererVersion === DRAFT_PREVIEW_RENDERER_VERSION &&
+    currentPreview?.artifact?.url
+  ) {
+    return {
+      ready: true,
+      alreadyReady: true,
+      fingerprint,
+      session,
+    };
+  }
+  return {
+    ready: true,
+    alreadyReady: false,
+    fingerprint,
+    previewReadiness,
+  };
+}
+
+export function markDraftPreviewQueued({
+  session,
+  attemptId,
+  previewId,
+  fingerprint,
+  state = 'queued',
+}) {
+  const now = new Date().toISOString();
+  session.draftPreviewV1 = {
+    version: DRAFT_PREVIEW_SCHEMA_VERSION,
+    state,
+    updatedAt: now,
+    rendererVersion: DRAFT_PREVIEW_RENDERER_VERSION,
+    fingerprint,
+    previewId,
+    activeAttemptId: attemptId,
+    job: {
+      state,
+      attemptId,
+      retryAfterSec: 5,
+    },
+  };
+  return session;
+}
+
+export async function persistDraftPreviewFailure({
+  uid,
+  sessionId,
+  attemptId,
+  code = 'DRAFT_PREVIEW_FAILED',
+  message = 'Failed to generate preview.',
+}) {
+  const session = await loadStorySession({ uid, sessionId });
+  if (!session) return null;
+  if (session.draftPreviewV1?.activeAttemptId !== attemptId) return session;
+  session.draftPreviewV1 = {
+    ...session.draftPreviewV1,
+    state: 'failed',
+    updatedAt: new Date().toISOString(),
+    job: null,
+    error: {
+      code,
+      message,
+    },
+  };
+  await saveStorySession({ uid, sessionId, data: session });
+  return session;
+}
+
+export async function renderStoryDraftPreview({
+  uid,
+  sessionId,
+  attemptId,
+  previewId,
+  fingerprint,
+}) {
+  let session = await loadStorySession({ uid, sessionId });
+  if (!session) throw new Error('SESSION_NOT_FOUND');
+  const prepared = prepareDraftPreviewRequest(session);
+  if (!prepared.ready) {
+    session.draftPreviewV1 = prepared.blockedState;
+    await saveStorySession({ uid, sessionId, data: session });
+    const error = new Error(prepared.blockedState.blocked.reasonCode);
+    error.code = prepared.blockedState.blocked.reasonCode;
+    error.status = 409;
+    throw error;
+  }
+  if (prepared.fingerprint !== fingerprint) {
+    const error = new Error('DRAFT_PREVIEW_SUPERSEDED');
+    error.code = 'DRAFT_PREVIEW_SUPERSEDED';
+    error.status = 409;
+    throw error;
+  }
+  if (session.draftPreviewV1?.activeAttemptId !== attemptId) {
+    const error = new Error('DRAFT_PREVIEW_SUPERSEDED');
+    error.code = 'DRAFT_PREVIEW_SUPERSEDED';
+    error.status = 409;
+    throw error;
+  }
+
+  markDraftPreviewQueued({
+    session,
+    attemptId,
+    previewId,
+    fingerprint,
+    state: 'running',
+  });
+  await saveStorySession({ uid, sessionId, data: session });
+
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'vaiform-story-preview-'));
+  try {
+    const fetchedCache = new Map();
+    const trimmedPaths = [];
+    for (
+      let segmentIndex = 0;
+      segmentIndex < prepared.previewReadiness.segments.length;
+      segmentIndex += 1
+    ) {
+      const segment = prepared.previewReadiness.segments[segmentIndex];
+      let fetched = fetchedCache.get(segment.clipUrl);
+      if (!fetched) {
+        fetched = await fetchVideoToTmp(segment.clipUrl);
+        fetchedCache.set(segment.clipUrl, fetched);
+      }
+      const outSeg = path.join(tmpDir, `base_seg_${segmentIndex}.mp4`);
+      await trimClipToSegment({
+        path: fetched.path,
+        inSec: segment.inSec,
+        durSec: segment.durSec,
+        outPath: outSeg,
+        options: { width: DRAFT_PREVIEW_WIDTH, height: DRAFT_PREVIEW_HEIGHT },
+      });
+      trimmedPaths.push({ path: outSeg, durationSec: segment.durSec });
+    }
+
+    const videoOnlyPath = path.join(tmpDir, 'base_video_only.mp4');
+    const videoOnly = await concatenateClipsVideoOnly({
+      clips: trimmedPaths,
+      outPath: videoOnlyPath,
+      options: { width: DRAFT_PREVIEW_WIDTH, height: DRAFT_PREVIEW_HEIGHT, fps: DRAFT_PREVIEW_FPS },
+    });
+    const narrationPath = await downloadPrivateObjectToTmp({
+      bucketPath: normalizeVoiceSyncSummary(session).previewAudioStoragePath,
+      tmpDir,
+      name: 'preview_narration.mp3',
+    });
+    const basePath = path.join(tmpDir, 'base.mp4');
+    const muxed = await muxVideoWithAudio({
+      videoPath: videoOnlyPath,
+      audioPath: narrationPath,
+      outPath: basePath,
+      durationSec: videoOnly.durationSec,
+    });
+
+    session = await loadStorySession({ uid, sessionId });
+    if (!session) throw new Error('SESSION_NOT_FOUND');
+    const latest = prepareDraftPreviewRequest(session);
+    if (
+      !latest.ready ||
+      latest.fingerprint !== fingerprint ||
+      session.draftPreviewV1?.activeAttemptId !== attemptId
+    ) {
+      const error = new Error('DRAFT_PREVIEW_SUPERSEDED');
+      error.code = 'DRAFT_PREVIEW_SUPERSEDED';
+      error.status = 409;
+      throw error;
+    }
+
+    const storagePath = `artifacts/${uid}/${sessionId}/previews/${previewId}/base.mp4`;
+    const upload = await uploadPublic(basePath, storagePath, DRAFT_PREVIEW_CONTENT_TYPE, {
+      cacheControl: DRAFT_PREVIEW_CACHE_CONTROL,
+    });
+    const now = new Date().toISOString();
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+    session.draftPreviewV1 = {
+      version: DRAFT_PREVIEW_SCHEMA_VERSION,
+      state: 'ready',
+      updatedAt: now,
+      rendererVersion: DRAFT_PREVIEW_RENDERER_VERSION,
+      fingerprint,
+      previewId,
+      artifact: {
+        url: upload.publicUrl,
+        storagePath,
+        contentType: DRAFT_PREVIEW_CONTENT_TYPE,
+        durationSec: muxed.durationSec ?? videoOnly.durationSec,
+        width: DRAFT_PREVIEW_WIDTH,
+        height: DRAFT_PREVIEW_HEIGHT,
+        createdAt: now,
+        expiresAt,
+      },
+      job: null,
+    };
+    await saveStorySession({ uid, sessionId, data: session });
+    return session;
+  } finally {
+    try {
+      if (tmpDir && fs.existsSync(tmpDir)) {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+      }
+    } catch (cleanupErr) {
+      console.warn('[story.preview] Cleanup failed:', cleanupErr.message);
+    }
+  }
 }
 
 /**
@@ -2554,8 +2996,7 @@ function buildOwners(N, mergeSet) {
   const owners = [];
   let owner = 0;
   for (let k = 0; k < N; k++) {
-    if (k > 0 && mergeSet.has(k - 1)) {
-    } else {
+    if (!(k > 0 && mergeSet.has(k - 1))) {
       owner = k;
     }
     owners[k] = owner;
@@ -2697,11 +3138,7 @@ async function loadStoredBeatTimingData(session, beatIndex) {
   return await readPrivateJson(narration.timingStoragePath);
 }
 
-async function buildStoredRenderBeat({
-  session,
-  beatIndex,
-  tmpDir,
-}) {
+async function buildStoredRenderBeat({ session, beatIndex, tmpDir }) {
   const caption = session.captions.find((item) => item.sentenceIndex === beatIndex);
   if (!caption) {
     const error = new Error('VOICE_SYNC_CAPTION_MISSING');
@@ -2970,7 +3407,10 @@ export async function syncStoryVoice({
       0
     );
     const billedMs = computeSyncChargeMs(
-      plan.targetIndices.reduce((sum, beatIndex) => sum + (Number(beatDurationsMs[beatIndex]) || 0), 0)
+      plan.targetIndices.reduce(
+        (sum, beatIndex) => sum + (Number(beatDurationsMs[beatIndex]) || 0),
+        0
+      )
     );
 
     session.captions = buildCaptionsFromBeatDurations(session.story.sentences, beatDurationsMs);
@@ -2994,6 +3434,7 @@ export async function syncStoryVoice({
       lastSyncedAt: now,
       cached: false,
     };
+    invalidateDraftPreviewBase(session, 'VOICE_SYNC_CHANGED');
     session.status = session.finalVideo ? session.status : 'voice_synced';
     session.updatedAt = now;
     setHeuristicBillingEstimate(session);
@@ -3009,7 +3450,9 @@ export async function syncStoryVoice({
       if (fs.existsSync(previewTmpDir)) {
         fs.rmSync(previewTmpDir, { recursive: true, force: true });
       }
-    } catch {}
+    } catch {
+      // Best-effort temp cleanup.
+    }
   }
 }
 
@@ -3040,6 +3483,7 @@ async function renderStoryLegacy({ uid, sessionId }) {
   const N = session.story?.sentences?.length ?? 0;
   const enableVideoCutsV1 =
     process.env.ENABLE_VIDEO_CUTS_V1 === 'true' || process.env.ENABLE_VIDEO_CUTS_V1 === '1';
+  const voicePreset = getVoicePreset(session.voicePreset || DEFAULT_VOICE_PRESET_KEY);
   const sentences = session.story?.sentences ?? [];
   const currentSentencesHash = sentencesHash(sentences);
 
@@ -3156,7 +3600,9 @@ async function renderStoryLegacy({ uid, sessionId }) {
             if (!ttsDurationMs && ttsPath) {
               try {
                 ttsDurationMs = await getDurationMsFromMedia(ttsPath);
-              } catch (_) {}
+              } catch {
+                // Keep provider duration when probing fails.
+              }
             }
             const currentTextRaw = session.story?.sentences?.[b] ?? caption.text;
             let meta = null;
@@ -3208,7 +3654,7 @@ async function renderStoryLegacy({ uid, sessionId }) {
             const ttsDurationMs = await getDurationMsFromMedia(ttsPath);
             if (ttsDurationMs) durationSec = ttsDurationMs / 1000;
             else durationSec = caption.endTimeSec - caption.startTimeSec || shot?.durationSec || 3;
-          } catch (_) {
+          } catch {
             durationSec = caption.endTimeSec - caption.startTimeSec || shot?.durationSec || 3;
           }
         } else {
@@ -3898,7 +4344,9 @@ export async function renderStory({ uid, sessionId }) {
               : Math.max(
                   0,
                   Number(info.caption?.endTimeSec || 0) - Number(info.caption?.startTimeSec || 0)
-                ) || shot.durationSec || 3;
+                ) ||
+                shot.durationSec ||
+                3;
 
           const clipDurMs = await getDurationMsFromMedia(fetched.path);
           const clipDurSec = clipDurMs ? clipDurMs / 1000 : null;
@@ -3930,7 +4378,9 @@ export async function renderStory({ uid, sessionId }) {
           });
           renderedSegments.push({ path: segmentPath, durationSec });
         } catch (error) {
-          const caption = session.captions.find((item) => item.sentenceIndex === shot.sentenceIndex);
+          const caption = session.captions.find(
+            (item) => item.sentenceIndex === shot.sentenceIndex
+          );
           const errorMsg = error?.message || error?.stderr || String(error);
           console.warn(
             `[story.service] Render failed for segment ${index} (sentence "${caption?.text?.substring(0, 50) || shot.sentenceIndex}..."):`,
@@ -4040,6 +4490,7 @@ export async function renderStory({ uid, sessionId }) {
       durationSec,
       jobId,
     };
+    invalidateDraftPreviewBase(session, 'FINALIZE_COMPLETED');
     session.status = 'rendered';
     session.updatedAt = new Date().toISOString();
 
@@ -4116,8 +4567,10 @@ export async function finalizeStory({ uid, sessionId, options = {}, attemptId = 
     return await override({ uid, sessionId, options, attemptId });
   }
 
-  let session = await withFinalizeStage(FINALIZE_STAGES.HYDRATE_SESSION, { sessionId, attemptId }, () =>
-    loadStorySession({ uid, sessionId })
+  let session = await withFinalizeStage(
+    FINALIZE_STAGES.HYDRATE_SESSION,
+    { sessionId, attemptId },
+    () => loadStorySession({ uid, sessionId })
   );
   if (!session) throw new Error('SESSION_NOT_FOUND');
 
@@ -4149,14 +4602,18 @@ export async function finalizeStory({ uid, sessionId, options = {}, attemptId = 
 
     // Step 1: Generate story if not done
     if (!session.story) {
-      await withFinalizeStage(FINALIZE_STAGES.STORY_GENERATE, { sessionId, attemptId }, async () => {
-        await generateStory({
-          uid,
-          sessionId,
-          input: session.input.text,
-          inputType: session.input.type,
-        });
-      });
+      await withFinalizeStage(
+        FINALIZE_STAGES.STORY_GENERATE,
+        { sessionId, attemptId },
+        async () => {
+          await generateStory({
+            uid,
+            sessionId,
+            input: session.input.text,
+            inputType: session.input.type,
+          });
+        }
+      );
     }
 
     // Step 2: Plan shots if not done
@@ -4269,8 +4726,13 @@ export default {
   buildTimeline,
   generateCaptionTimings,
   renderStory,
+  renderStoryDraftPreview,
   finalizeStory,
   updateBeatText,
   updateVideoCuts,
+  prepareDraftPreviewRequest,
+  markDraftPreviewQueued,
+  invalidateDraftPreviewBase,
+  persistDraftPreviewFailure,
   saveStorySession,
 };

@@ -61,7 +61,8 @@ Existing endpoints may still emit these until migrated; new code and framework-l
 - `POST /api/checkout/start` now accepts `{ "plan": "creator" | "pro" }` only and returns the standard success envelope with `data.url`.
 - `POST /api/checkout/session` and `POST /api/checkout/subscription` have been removed from mounted runtime and must not be used by callers.
 - Additive session `billingEstimate` and additive billing payloads must stay nested under `data`; do not introduce top-level billing fields outside established finalize exceptions.
-- Additive story-session preview fields must stay nested under `data`. Current backend-owned fields are `playbackTimelineV1` for truthful render-aligned clip playback and `previewReadinessV1` for aligned-preview readiness state/reasoning.
+- Additive story-session preview fields must stay nested under `data`. Current backend-owned Step 3 playback fields are `draftPreviewV1` for mobile-safe base preview artifact state, `captionOverlayV1` for live caption overlay rendering truth, and `previewReadinessV1` for blocked/ready reasoning. `playbackTimelineV1` may still be returned as compatibility timing metadata, but it is no longer the mobile playback engine.
+- `POST /api/story/preview` is the base-preview generation route. It requires `X-Idempotency-Key`, returns the standard envelope with full session `data`, and may add top-level `preview = { state, attemptId }` on accepted/pending responses. Mobile polls preview state only through `GET /api/story/:sessionId`.
 - Established finalize top-level exceptions are:
   - `shortId` on terminal success replay
   - `finalize = { state, attemptId, pollSessionId }` on accepted and active-conflict responses

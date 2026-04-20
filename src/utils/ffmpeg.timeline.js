@@ -245,6 +245,40 @@ export async function concatenateClipsVideoOnly({ clips, outPath, options = {} }
 }
 
 /**
+ * Mux one video-only timeline with one narration audio track.
+ * @param {{ videoPath: string, audioPath: string, outPath: string, durationSec?: number }}
+ * @returns {Promise<{ durationSec: number | null }>}
+ */
+export async function muxVideoWithAudio({ videoPath, audioPath, outPath, durationSec = null }) {
+  if (!videoPath || !fs.existsSync(videoPath)) throw new Error('MUX_VIDEO_INPUT_REQUIRED');
+  if (!audioPath || !fs.existsSync(audioPath)) throw new Error('MUX_AUDIO_INPUT_REQUIRED');
+  const args = [
+    '-i',
+    videoPath,
+    '-i',
+    audioPath,
+    '-map',
+    '0:v:0',
+    '-map',
+    '1:a:0',
+    '-c:v',
+    'copy',
+    '-c:a',
+    'aac',
+    '-b:a',
+    '128k',
+    '-shortest',
+    '-movflags',
+    '+faststart',
+    outPath,
+  ];
+  await runFfmpeg(args);
+  return {
+    durationSec: Number.isFinite(Number(durationSec)) ? Number(durationSec) : null,
+  };
+}
+
+/**
  * Trim a clip to a segment starting at inSec with length durSec. Output starts at 0.
  * If source is shorter than requested durSec, pad last frame (tpad=stop_mode=clone) to reach durSec; do not clamp.
  * @param {{ path: string, inSec: number, durSec: number, outPath: string, options?: { width?: number, height?: number } }}
@@ -353,6 +387,7 @@ export default {
   concatenateClips,
   concatenateAudioFiles,
   concatenateClipsVideoOnly,
+  muxVideoWithAudio,
   trimClipToSegment,
   extractSegmentFromFile,
   fetchClipsToTmp,

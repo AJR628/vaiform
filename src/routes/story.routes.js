@@ -26,12 +26,16 @@ import {
   syncStoryVoice,
   refreshStorySessionHeuristicEstimate,
   sanitizeStorySessionForClient,
+  prepareDraftPreviewRequest,
+  markDraftPreviewQueued,
 } from '../services/story.service.js';
 import {
   failStorySyncAttempt,
   prepareStorySyncAttempt,
   settleStorySyncAttemptSuccess,
 } from '../services/story-sync.attempts.js';
+import { prepareStoryPreviewAttempt } from '../services/story-preview.attempts.js';
+import { notifyStoryPreviewRunner } from '../services/story-preview.runner.js';
 import {
   getCanonicalFinalizeStatusForSession,
   overlayCanonicalFinalizeStatusOnSession,
@@ -95,12 +99,7 @@ const sendMappedStoryFailure = (req, res, mapped) => {
   return fail(req, res, mapped.status, mapped.error, mapped.detail);
 };
 
-async function overlayCanonicalFinalizeRecoveryForResponse({
-  uid,
-  sessionId,
-  reply,
-  prepared,
-}) {
+async function overlayCanonicalFinalizeRecoveryForResponse({ uid, sessionId, reply, prepared }) {
   if (!reply?.body?.data || typeof reply.body.data !== 'object') return reply;
   if (!prepared || !['enqueued', 'active_same_key', 'done_same_key'].includes(prepared.kind)) {
     return reply;
@@ -214,7 +213,10 @@ function phase2StoryFailureFromError(error) {
       detail: 'Voice timing is stale. Re-sync before render.',
     };
   }
-  if (rawCode === 'VOICE_SYNC_TIMESTAMPS_UNAVAILABLE' || rawMessage === 'VOICE_SYNC_TIMESTAMPS_UNAVAILABLE') {
+  if (
+    rawCode === 'VOICE_SYNC_TIMESTAMPS_UNAVAILABLE' ||
+    rawMessage === 'VOICE_SYNC_TIMESTAMPS_UNAVAILABLE'
+  ) {
     return {
       status: 503,
       error: 'VOICE_SYNC_TIMESTAMPS_UNAVAILABLE',
@@ -228,7 +230,10 @@ function phase2StoryFailureFromError(error) {
       detail: 'Failed to generate synced narration.',
     };
   }
-  if (rawCode === 'VOICE_SYNC_DURATION_UNAVAILABLE' || rawMessage === 'VOICE_SYNC_DURATION_UNAVAILABLE') {
+  if (
+    rawCode === 'VOICE_SYNC_DURATION_UNAVAILABLE' ||
+    rawMessage === 'VOICE_SYNC_DURATION_UNAVAILABLE'
+  ) {
     return {
       status: 500,
       error: 'VOICE_SYNC_DURATION_UNAVAILABLE',
@@ -363,7 +368,12 @@ r.post('/start', async (req, res) => {
     return okStorySession(req, res, session);
   } catch (e) {
     console.error('[story][start] error:', e);
-    return failInternalServerError(req, res, 'STORY_START_FAILED', 'Failed to create story session');
+    return failInternalServerError(
+      req,
+      res,
+      'STORY_START_FAILED',
+      'Failed to create story session'
+    );
   }
 });
 
@@ -1030,6 +1040,106 @@ r.post('/update-beat-text', async (req, res) => {
   }
 });
 
+// POST /api/story/preview - Queue backend-owned base preview artifact generation.
+r.post('/preview', async (req, res) => {
+  const attemptId = String(req.get('X-Idempotency-Key') || '').trim();
+  if (!attemptId) {
+    return fail(req, res, 400, 'MISSING_IDEMPOTENCY_KEY', 'Provide X-Idempotency-Key header.');
+  }
+
+  const parsed = SessionSchema.safeParse(req.body || {});
+  if (!parsed.success) {
+    return fail(req, res, 400, 'INVALID_INPUT', 'Invalid request', zodFields(parsed.error));
+  }
+
+  const { sessionId } = parsed.data;
+  setRequestContextFromReq(req, { sessionId, attemptId });
+
+  try {
+    const session = await getStorySession({ uid: req.user.uid, sessionId });
+    if (!session) {
+      return fail(req, res, 404, 'SESSION_NOT_FOUND', 'Session not found');
+    }
+
+    const preparedPreview = prepareDraftPreviewRequest(session);
+    if (!preparedPreview.ready) {
+      session.draftPreviewV1 = preparedPreview.blockedState;
+      await saveStorySession({ uid: req.user.uid, sessionId, data: session });
+      return okStorySession(req, res, session);
+    }
+
+    if (preparedPreview.alreadyReady) {
+      return okStorySession(req, res, session);
+    }
+
+    const preparedAttempt = await prepareStoryPreviewAttempt({
+      uid: req.user.uid,
+      attemptId,
+      sessionId,
+      requestId: req.id ?? null,
+      requestFingerprint: preparedPreview.fingerprint,
+    });
+
+    if (preparedAttempt.kind === 'error') {
+      return fail(req, res, preparedAttempt.status, preparedAttempt.error, preparedAttempt.detail);
+    }
+
+    if (preparedAttempt.kind === 'failed_same_key') {
+      return fail(
+        req,
+        res,
+        500,
+        preparedAttempt.attempt?.failure?.error || 'DRAFT_PREVIEW_FAILED',
+        preparedAttempt.attempt?.failure?.detail || 'Failed to generate preview.'
+      );
+    }
+
+    if (preparedAttempt.kind === 'done_same_key') {
+      const currentSession = await getStorySession({ uid: req.user.uid, sessionId });
+      if (!currentSession) {
+        return fail(req, res, 404, 'SESSION_NOT_FOUND', 'Session not found');
+      }
+      return okStorySession(req, res, currentSession);
+    }
+
+    const activeAttempt = preparedAttempt.attempt;
+    markDraftPreviewQueued({
+      session,
+      attemptId: activeAttempt.attemptId,
+      previewId: activeAttempt.previewId,
+      fingerprint: activeAttempt.requestFingerprint,
+      state: activeAttempt.state === 'running' ? 'running' : 'queued',
+    });
+    await saveStorySession({ uid: req.user.uid, sessionId, data: session });
+    if (preparedAttempt.kind === 'enqueued') {
+      notifyStoryPreviewRunner();
+    }
+
+    return res.status(202).json({
+      success: true,
+      data: presentStorySession(session),
+      requestId: requestIdOf(req),
+      preview: {
+        state: 'pending',
+        attemptId: activeAttempt.attemptId,
+      },
+    });
+  } catch (e) {
+    logger.error('story.preview.failed', {
+      routeStatus: `${req.method} ${req.originalUrl}`,
+      sessionId,
+      attemptId,
+      error: e,
+    });
+    return failInternalServerError(
+      req,
+      res,
+      'STORY_PREVIEW_FAILED',
+      'Failed to queue story preview'
+    );
+  }
+});
+
 // POST /api/story/timeline - Build stitched video (Phase 4)
 r.post('/timeline', async (req, res) => {
   try {
@@ -1265,7 +1375,12 @@ r.post('/sync', async (req, res) => {
       routeStatus: `${req.method} ${req.originalUrl}`,
       error: e,
     });
-    return failInternalServerError(req, res, 'STORY_SYNC_FAILED', 'Failed to sync voice and timing');
+    return failInternalServerError(
+      req,
+      res,
+      'STORY_SYNC_FAILED',
+      'Failed to sync voice and timing'
+    );
   }
 });
 
@@ -1350,12 +1465,14 @@ r.post('/finalize', idempotencyFinalize({ getSession: getStorySession }), async 
         executionAttemptId: req.finalizePrepared?.attempt?.executionAttemptId ?? null,
         httpStatus: reply.status,
         stage: FINALIZE_STAGES.QUEUE_ENQUEUE,
-        jobState: req.finalizePrepared?.attempt?.jobState ?? req.finalizePrepared?.attempt?.state ?? 'queued',
+        jobState:
+          req.finalizePrepared?.attempt?.jobState ??
+          req.finalizePrepared?.attempt?.state ??
+          'queued',
         queuedAt: req.finalizePrepared?.attempt?.enqueuedAt ?? null,
-        durationMs:
-          Number.isFinite(Number(req.finalizeAdmissionStartedAt))
-            ? Date.now() - Number(req.finalizeAdmissionStartedAt)
-            : null,
+        durationMs: Number.isFinite(Number(req.finalizeAdmissionStartedAt))
+          ? Date.now() - Number(req.finalizeAdmissionStartedAt)
+          : null,
       });
       logger.info('story.finalize.accepted', {
         routeStatus: `${req.method} ${req.originalUrl}`,
@@ -1378,7 +1495,9 @@ r.post('/finalize', idempotencyFinalize({ getSession: getStorySession }), async 
         httpStatus: reply.status,
         stage: FINALIZE_STAGES.QUEUE_WAIT,
         jobState:
-          req.finalizePrepared?.attempt?.jobState ?? req.finalizePrepared?.attempt?.state ?? 'queued',
+          req.finalizePrepared?.attempt?.jobState ??
+          req.finalizePrepared?.attempt?.state ??
+          'queued',
         queuedAt: req.finalizePrepared?.attempt?.enqueuedAt ?? null,
       });
       logger.info('story.finalize.replay_pending', {
@@ -1401,7 +1520,9 @@ r.post('/finalize', idempotencyFinalize({ getSession: getStorySession }), async 
         httpStatus: reply.status,
         stage: FINALIZE_STAGES.QUEUE_WAIT,
         jobState:
-          req.finalizePrepared?.attempt?.jobState ?? req.finalizePrepared?.attempt?.state ?? 'queued',
+          req.finalizePrepared?.attempt?.jobState ??
+          req.finalizePrepared?.attempt?.state ??
+          'queued',
         failureReason: 'active_attempt_conflict',
       });
       logger.warn('story.finalize.conflict_active_attempt', {
@@ -1450,7 +1571,9 @@ r.post('/finalize', idempotencyFinalize({ getSession: getStorySession }), async 
         httpStatus: reply.status,
         stage: FINALIZE_STAGES.PERSIST_RECOVERY,
         jobState:
-          req.finalizePrepared?.attempt?.jobState ?? req.finalizePrepared?.attempt?.state ?? 'failed',
+          req.finalizePrepared?.attempt?.jobState ??
+          req.finalizePrepared?.attempt?.state ??
+          'failed',
         ...describeFinalizeError(
           {
             code: req.finalizePrepared?.attempt?.failure?.error || 'STORY_FINALIZE_FAILED',
@@ -1479,10 +1602,9 @@ r.post('/finalize', idempotencyFinalize({ getSession: getStorySession }), async 
         attemptId,
         httpStatus: reply.status,
         stage: FINALIZE_STAGES.QUEUE_ENQUEUE,
-        durationMs:
-          Number.isFinite(Number(req.finalizeAdmissionStartedAt))
-            ? Date.now() - Number(req.finalizeAdmissionStartedAt)
-            : null,
+        durationMs: Number.isFinite(Number(req.finalizeAdmissionStartedAt))
+          ? Date.now() - Number(req.finalizeAdmissionStartedAt)
+          : null,
         ...describeFinalizeError(
           {
             code: 'SERVER_BUSY',

@@ -5,16 +5,19 @@ import crypto from 'node:crypto';
  * Upload a local file path to Firebase Storage and make it public via token URL.
  * Returns { publicUrl, gsPath }.
  */
-export async function uploadPublic(localPath, destPath, contentType = 'video/mp4') {
+export async function uploadPublic(localPath, destPath, contentType = 'video/mp4', options = {}) {
   const bucket = admin.storage().bucket();
-  const file = bucket.file(destPath);
   const token = crypto.randomUUID();
+  const cacheControl =
+    typeof options.cacheControl === 'string' && options.cacheControl.trim().length > 0
+      ? options.cacheControl.trim()
+      : 'public,max-age=31536000,immutable';
 
   const uploadPromise = bucket.upload(localPath, {
     destination: destPath,
     metadata: {
       contentType,
-      cacheControl: 'public,max-age=31536000,immutable',
+      cacheControl,
       metadata: { firebaseStorageDownloadTokens: token },
     },
     resumable: false,

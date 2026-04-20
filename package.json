@@ -27,6 +27,7 @@
     "start": "node --import ./instrument.mjs server.js",
     "start:api": "node --import ./instrument.mjs server.js",
     "start:worker:finalize": "node story-finalize.worker.js",
+    "start:worker:preview": "node story-preview.worker.js",
     "sentry:verify": "node scripts/sentry.verify.mjs",
     "sentry:read": "node scripts/ops/sentry-reader.mjs",
     "format": "prettier --write .",
