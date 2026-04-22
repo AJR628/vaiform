@@ -6,8 +6,6 @@ import {
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 import { getSignaledProviders } from './shared-flow.js';
 
-const POLL_MS = 10_000;
-
 const els = {
   authButton: document.getElementById('auth-button'),
   authChip: document.getElementById('auth-chip'),
@@ -47,7 +45,6 @@ const els = {
 
 const state = {
   user: null,
-  pollTimer: null,
 };
 
 function describeAuthError(error) {
@@ -83,20 +80,6 @@ function setBanner(verdict, title, text) {
   els.statusBanner.className = `status-banner is-${verdict}`;
   els.statusTitle.textContent = title;
   els.statusText.textContent = text;
-}
-
-function clearPoll() {
-  if (state.pollTimer) {
-    clearInterval(state.pollTimer);
-    state.pollTimer = null;
-  }
-}
-
-function ensurePoll() {
-  clearPoll();
-  state.pollTimer = setInterval(() => {
-    void loadDashboard({ silent: true });
-  }, POLL_MS);
 }
 
 function metricCard(metric) {
@@ -358,14 +341,12 @@ async function fetchDashboardData() {
   };
 }
 
-async function loadDashboard({ silent = false } = {}) {
-  if (!silent) {
-    setBanner(
-      'loading',
-      'Loading shared finalize health...',
-      'Fetching live shared truth and Phase 6 summary.'
-    );
-  }
+async function loadDashboard() {
+  setBanner(
+    'loading',
+    'Loading shared finalize health...',
+    'Fetching live shared truth and Phase 6 summary.'
+  );
 
   const result = await fetchDashboardData().catch((error) => ({
     status: 0,
@@ -373,7 +354,6 @@ async function loadDashboard({ silent = false } = {}) {
   }));
 
   if (result.status === 401) {
-    clearPoll();
     els.dashboardContent.hidden = true;
     setNotice(
       'auth',
@@ -388,7 +368,6 @@ async function loadDashboard({ silent = false } = {}) {
   }
 
   if (result.status === 403) {
-    clearPoll();
     els.dashboardContent.hidden = true;
     setNotice(
       'error',
@@ -405,7 +384,6 @@ async function loadDashboard({ silent = false } = {}) {
   }
 
   if (result.status === 404) {
-    clearPoll();
     els.dashboardContent.hidden = true;
     setNotice(
       'error',
@@ -430,7 +408,6 @@ async function loadDashboard({ silent = false } = {}) {
   }
 
   renderDashboard(result.body.data);
-  ensurePoll();
 }
 
 async function handleAuthButton() {
