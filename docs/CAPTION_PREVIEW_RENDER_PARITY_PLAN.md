@@ -73,7 +73,7 @@ Product rule: native mobile Preview must not approximate final captions with Rea
 
 ## Phase 1A - Backend Caption/Karaoke Render-Input Helper Only
 
-Status: Not started
+Status: Completed
 
 Runtime behavior change: none expected.
 
@@ -107,23 +107,33 @@ Tests to run:
 
 Implementation notes:
 
-- Pending.
+- Added private `buildStoredRenderBeatCaptionInput()` helper in `src/services/story.service.js`.
+- `buildStoredRenderBeat()` now delegates only caption/karaoke input preparation to the helper.
+- Preserved `buildStoredRenderBeat()` return shape: `ttsPath`, `assPath`, `durationSec`, `caption`, `meta`, `sentenceText`, `overlayCaption`.
+- Left `renderStoryDraftPreview()`, `DRAFT_PREVIEW_RENDERER_VERSION`, preview routes, mobile code, billing/finalize, and voice-sync semantics unchanged.
+- Helper remains private; no service exports were added.
 
 Files changed:
 
-- Pending.
+- `src/services/story.service.js`
+- `docs/CAPTION_PREVIEW_RENDER_PARITY_PLAN.md`
 
 Tests run:
 
-- Pending.
+- `npm run test:contracts` - pass
+- `node --test --test-concurrency=1 test/contracts/story-preview.contract.test.js` - pass
+- `npm run check:format:changed -- --files src/services/story.service.js,docs/CAPTION_PREVIEW_RENDER_PARITY_PLAN.md` - pass
+- `npm run check:responses:changed -- --files src/services/story.service.js,docs/CAPTION_PREVIEW_RENDER_PARITY_PLAN.md` - pass
 
 Discoveries:
 
-- Pending.
+- No low-churn direct helper test target exists without exporting private internals or invoking heavy render/storage/FFmpeg paths.
+- Phase 1B must separately resolve how captioned preview will supply per-beat timing/audio inputs, because current preview uses combined preview narration while final render uses per-beat stored narration audio/timing.
 
 Rollback notes:
 
-- Revert helper extraction only. Because Phase 1A should not change runtime behavior or persisted preview artifacts, rollback should not require contract or mobile changes.
+- Revert the private helper extraction and restore the previous inline body in `buildStoredRenderBeat()`.
+- No persisted preview artifacts, mobile code, public contract docs, billing, finalize, or voice-sync rollback should be required.
 
 ## Phase 1B - Backend Captioned Preview Artifact
 
@@ -341,13 +351,13 @@ Rollback notes:
 
 ## Implementation Status Ledger
 
-| Phase    | Status      | Date | Files changed | Tests run | Manual verification | Notes/follow-ups |
-| -------- | ----------- | ---- | ------------- | --------- | ------------------- | ---------------- |
-| Phase 1A | Not started | -    | -             | -         | -                   | -                |
-| Phase 1B | Not started | -    | -             | -         | -                   | -                |
-| Phase 1C | Not started | -    | -             | -         | -                   | -                |
-| Phase 1D | Not started | -    | -             | -         | -                   | -                |
-| Phase 1E | Not started | -    | -             | -         | -                   | -                |
+| Phase    | Status      | Date       | Files changed                                                                 | Tests run                                                                                                                                                                                                                                                                                                                                             | Manual verification | Notes/follow-ups                                                     |
+| -------- | ----------- | ---------- | ----------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------- | -------------------------------------------------------------------- |
+| Phase 1A | Completed   | 2026-04-25 | `src/services/story.service.js`, `docs/CAPTION_PREVIEW_RENDER_PARITY_PLAN.md` | `npm run test:contracts`; `node --test --test-concurrency=1 test/contracts/story-preview.contract.test.js`; `npm run check:format:changed -- --files src/services/story.service.js,docs/CAPTION_PREVIEW_RENDER_PARITY_PLAN.md`; `npm run check:responses:changed -- --files src/services/story.service.js,docs/CAPTION_PREVIEW_RENDER_PARITY_PLAN.md` | Not applicable      | Private helper extraction only; no runtime behavior change expected. |
+| Phase 1B | Not started | -          | -                                                                             | -                                                                                                                                                                                                                                                                                                                                                     | -                   | -                                                                    |
+| Phase 1C | Not started | -          | -                                                                             | -                                                                                                                                                                                                                                                                                                                                                     | -                   | -                                                                    |
+| Phase 1D | Not started | -          | -                                                                             | -                                                                                                                                                                                                                                                                                                                                                     | -                   | -                                                                    |
+| Phase 1E | Not started | -          | -                                                                             | -                                                                                                                                                                                                                                                                                                                                                     | -                   | -                                                                    |
 
 ## Phase Completion Checklist
 

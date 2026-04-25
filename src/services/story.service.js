@@ -3105,6 +3105,41 @@ function buildCaptionMetaForBeat({ session, beatIndex, textRaw, overlayCaption }
   };
 }
 
+async function buildStoredRenderBeatCaptionInput({
+  session,
+  beatIndex,
+  caption,
+  timing,
+  audioPath,
+}) {
+  const overlayCaption = session.overlayCaption || session.captionStyle || {};
+  const textRaw = session.story?.sentences?.[beatIndex] ?? caption.text;
+  const captionMeta = buildCaptionMetaForBeat({
+    session,
+    beatIndex,
+    textRaw,
+    overlayCaption,
+  });
+
+  const assPath = await buildKaraokeASSFromTimestamps({
+    text: caption.text,
+    timestamps: timing.timestamps,
+    durationMs: timing.durationMs,
+    audioPath,
+    wrappedText: captionMeta.lines.join('\n'),
+    overlayCaption: captionMeta.effectiveStyle,
+    width: 1080,
+    height: 1920,
+  });
+
+  return {
+    assPath,
+    meta: captionMeta,
+    sentenceText: textRaw,
+    overlayCaption,
+  };
+}
+
 function buildCaptionsFromBeatDurations(sentences = [], beatDurationsMs = []) {
   let cursorMs = 0;
   return sentences.map((sentence, sentenceIndex) => {
@@ -3161,37 +3196,25 @@ async function buildStoredRenderBeat({ session, beatIndex, tmpDir }) {
     name: `voice_${beatIndex}.mp3`,
   });
   const timing = await loadStoredBeatTimingData(session, beatIndex);
-  const overlayCaption = session.overlayCaption || session.captionStyle || {};
-  const textRaw = session.story?.sentences?.[beatIndex] ?? caption.text;
-  const captionMeta = buildCaptionMetaForBeat({
+  const captionInput = await buildStoredRenderBeatCaptionInput({
     session,
     beatIndex,
-    textRaw,
-    overlayCaption,
-  });
-
-  const assPath = await buildKaraokeASSFromTimestamps({
-    text: caption.text,
-    timestamps: timing.timestamps,
-    durationMs: timing.durationMs,
+    caption,
+    timing,
     audioPath,
-    wrappedText: captionMeta.lines.join('\n'),
-    overlayCaption: captionMeta.effectiveStyle,
-    width: 1080,
-    height: 1920,
   });
 
   return {
     ttsPath: audioPath,
-    assPath,
+    assPath: captionInput.assPath,
     durationSec:
       Number(narration.durationSec) ||
       billingMsToSeconds(Number(timing.durationMs) || 0) ||
       Math.max(0, Number(caption.endTimeSec) - Number(caption.startTimeSec)),
     caption,
-    meta: captionMeta,
-    sentenceText: textRaw,
-    overlayCaption,
+    meta: captionInput.meta,
+    sentenceText: captionInput.sentenceText,
+    overlayCaption: captionInput.overlayCaption,
   };
 }
 
