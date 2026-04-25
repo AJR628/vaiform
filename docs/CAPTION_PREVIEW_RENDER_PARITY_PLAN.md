@@ -137,7 +137,7 @@ Rollback notes:
 
 ## Phase 1B - Backend Captioned Preview Artifact
 
-Status: Not started
+Status: Completed
 
 Goal: change preview artifact behind `draftPreviewV1.artifact.url` from base MP4 to backend-captioned preview MP4.
 
@@ -171,24 +171,40 @@ Tests to run:
 
 Implementation notes:
 
-- Pending.
+- Bumped draft preview renderer from `base-preview-v1` to `captioned-preview-v1`.
+- `renderStoryDraftPreview()` now renders captioned per-beat preview segments using stored per-beat narration audio/timing and `buildStoredRenderBeatCaptionInput()`.
+- Preview generation no longer downloads or muxes the combined private preview narration file.
+- Preview segments still come from existing `buildStoryPreviewReadiness()` planning; Phase 1B did not change clip selection, beat ordering, segment ordering, or `videoCutsV1`/classic readiness semantics except for missing per-beat artifact blocking.
+- Preserved `POST /api/story/preview`, preview attempt queue/runner, idempotency, `GET /api/story/:sessionId`, `draftPreviewV1.artifact.url`, mobile code, billing/finalize, and voice-sync semantics.
+- Old `base-preview-v1` ready artifacts project as stale through renderer-version mismatch.
+- Missing per-beat stored narration/timing/caption inputs block preview generation safely with `VOICE_SYNC_ARTIFACT_MISSING` and `missingBeatIndices`.
+- Phase 1B verifies backend artifact correctness only; full mobile visual parity is not complete until Phase 1D disables the React Native overlay.
 
 Files changed:
 
-- Pending.
+- `src/services/story.service.js`
+- `test/contracts/story-preview.contract.test.js`
+- `test/contracts/phase4a.contract.test.js`
+- `docs/CAPTION_PREVIEW_RENDER_PARITY_PLAN.md`
 
 Tests run:
 
-- Pending.
+- `npm run test:contracts` - pass
+- `node --test --test-concurrency=1 test/contracts/story-preview.contract.test.js` - pass
+- `npm run check:format:changed -- --files src/services/story.service.js,test/contracts/story-preview.contract.test.js,test/contracts/phase4a.contract.test.js,docs/CAPTION_PREVIEW_RENDER_PARITY_PLAN.md` - pass
+- `npm run check:responses:changed -- --files src/services/story.service.js,test/contracts/story-preview.contract.test.js,test/contracts/phase4a.contract.test.js,docs/CAPTION_PREVIEW_RENDER_PARITY_PLAN.md` - pass
 
 Discoveries:
 
-- Pending.
+- Phase 1B moved style/render-input dependencies into the private preview fingerprint for inputs now burned into pixels. Phase 1C can still add broader observability and any additional style invalidation coverage, but should account for the Phase 1B fingerprint baseline before adding duplicate logic.
+- Combined `voiceSync.previewAudioUrl` remains available for compatibility/readback, but captioned preview artifact rendering now uses per-beat stored narration audio/timing.
+- Native mobile may still draw the React Native preview caption overlay until Phase 1D, so visual parity should be judged against the backend `draftPreviewV1.artifact.url` MP4 directly after Phase 1B.
 
 Rollback notes:
 
 - Restore `base-preview-v1`.
 - Restore the old base preview render body.
+- Restore the old preview fingerprint/readiness behavior if the new per-beat artifact gate must be backed out.
 - If `captioned-preview-v1` artifacts exist, they should become stale after rollback because renderer version no longer matches.
 
 ## Phase 1C - Preview Fingerprint, Style Invalidation, Observability
@@ -351,13 +367,13 @@ Rollback notes:
 
 ## Implementation Status Ledger
 
-| Phase    | Status      | Date       | Files changed                                                                 | Tests run                                                                                                                                                                                                                                                                                                                                             | Manual verification | Notes/follow-ups                                                     |
-| -------- | ----------- | ---------- | ----------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------- | -------------------------------------------------------------------- |
-| Phase 1A | Completed   | 2026-04-25 | `src/services/story.service.js`, `docs/CAPTION_PREVIEW_RENDER_PARITY_PLAN.md` | `npm run test:contracts`; `node --test --test-concurrency=1 test/contracts/story-preview.contract.test.js`; `npm run check:format:changed -- --files src/services/story.service.js,docs/CAPTION_PREVIEW_RENDER_PARITY_PLAN.md`; `npm run check:responses:changed -- --files src/services/story.service.js,docs/CAPTION_PREVIEW_RENDER_PARITY_PLAN.md` | Not applicable      | Private helper extraction only; no runtime behavior change expected. |
-| Phase 1B | Not started | -          | -                                                                             | -                                                                                                                                                                                                                                                                                                                                                     | -                   | -                                                                    |
-| Phase 1C | Not started | -          | -                                                                             | -                                                                                                                                                                                                                                                                                                                                                     | -                   | -                                                                    |
-| Phase 1D | Not started | -          | -                                                                             | -                                                                                                                                                                                                                                                                                                                                                     | -                   | -                                                                    |
-| Phase 1E | Not started | -          | -                                                                             | -                                                                                                                                                                                                                                                                                                                                                     | -                   | -                                                                    |
+| Phase    | Status      | Date       | Files changed                                                                                                                                                             | Tests run                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | Manual verification                                    | Notes/follow-ups                                                                                           |
+| -------- | ----------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------- |
+| Phase 1A | Completed   | 2026-04-25 | `src/services/story.service.js`, `docs/CAPTION_PREVIEW_RENDER_PARITY_PLAN.md`                                                                                             | `npm run test:contracts`; `node --test --test-concurrency=1 test/contracts/story-preview.contract.test.js`; `npm run check:format:changed -- --files src/services/story.service.js,docs/CAPTION_PREVIEW_RENDER_PARITY_PLAN.md`; `npm run check:responses:changed -- --files src/services/story.service.js,docs/CAPTION_PREVIEW_RENDER_PARITY_PLAN.md`                                                                                                                                                                             | Not applicable                                         | Private helper extraction only; no runtime behavior change expected.                                       |
+| Phase 1B | Completed   | 2026-04-25 | `src/services/story.service.js`, `test/contracts/story-preview.contract.test.js`, `test/contracts/phase4a.contract.test.js`, `docs/CAPTION_PREVIEW_RENDER_PARITY_PLAN.md` | `npm run test:contracts`; `node --test --test-concurrency=1 test/contracts/story-preview.contract.test.js`; `npm run check:format:changed -- --files src/services/story.service.js,test/contracts/story-preview.contract.test.js,test/contracts/phase4a.contract.test.js,docs/CAPTION_PREVIEW_RENDER_PARITY_PLAN.md`; `npm run check:responses:changed -- --files src/services/story.service.js,test/contracts/story-preview.contract.test.js,test/contracts/phase4a.contract.test.js,docs/CAPTION_PREVIEW_RENDER_PARITY_PLAN.md` | Backend artifact manual verification still recommended | Captioned backend preview artifact landed; Phase 1D still must remove RN overlay for mobile visual parity. |
+| Phase 1C | Not started | -          | -                                                                                                                                                                         | -                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | -                                                      | -                                                                                                          |
+| Phase 1D | Not started | -          | -                                                                                                                                                                         | -                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | -                                                      | -                                                                                                          |
+| Phase 1E | Not started | -          | -                                                                                                                                                                         | -                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | -                                                      | -                                                                                                          |
 
 ## Phase Completion Checklist
 

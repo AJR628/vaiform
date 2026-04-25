@@ -17,7 +17,6 @@ import {
   concatenateAudioFiles,
   concatenateClips,
   concatenateClipsVideoOnly,
-  muxVideoWithAudio,
   trimClipToSegment,
   extractSegmentFromFile,
   fetchClipsToTmp,
@@ -103,7 +102,7 @@ const SYNC_PREVIEW_CONTENT_TYPE = 'audio/mpeg';
 const SYNC_AUDIO_CONTENT_TYPE = 'audio/mpeg';
 const SYNC_TIMING_CONTENT_TYPE = 'application/json';
 const DRAFT_PREVIEW_SCHEMA_VERSION = 1;
-const DRAFT_PREVIEW_RENDERER_VERSION = 'base-preview-v1';
+const DRAFT_PREVIEW_RENDERER_VERSION = 'captioned-preview-v1';
 const DRAFT_PREVIEW_CONTENT_TYPE = 'video/mp4';
 const DRAFT_PREVIEW_WIDTH = 1080;
 const DRAFT_PREVIEW_HEIGHT = 1920;
@@ -2575,12 +2574,18 @@ function buildStoryPlaybackTimelineV1(session, previewReadiness = null) {
 
 function buildDraftPreviewFingerprint({ session, previewReadiness }) {
   const syncSummary = normalizeVoiceSyncSummary(session);
+  const captionsBySentenceIndex = new Map(
+    (Array.isArray(session?.captions) ? session.captions : []).map((caption) => [
+      Number(caption?.sentenceIndex),
+      caption,
+    ])
+  );
   return hashStableValue({
     schemaVersion: DRAFT_PREVIEW_SCHEMA_VERSION,
     rendererVersion: DRAFT_PREVIEW_RENDERER_VERSION,
     sessionId: session?.id ?? null,
     voiceSyncFingerprint: syncSummary.currentFingerprint ?? null,
-    previewAudioStoragePath: syncSummary.previewAudioStoragePath ?? null,
+    captionStyle: session?.overlayCaption || session?.captionStyle || {},
     playbackSource: previewReadiness?.playbackSource ?? null,
     segments: Array.isArray(previewReadiness?.segments)
       ? previewReadiness.segments.map((segment) => ({
@@ -2591,9 +2596,50 @@ function buildDraftPreviewFingerprint({ session, previewReadiness }) {
           durSec: Number(segment?.durSec),
           globalStartSec: Number(segment?.globalStartSec),
           globalEndSec: Number(segment?.globalEndSec),
+          caption: (() => {
+            const caption = captionsBySentenceIndex.get(Number(segment?.sentenceIndex));
+            return {
+              text: caption?.text ?? null,
+              startTimeSec: Number(caption?.startTimeSec),
+              endTimeSec: Number(caption?.endTimeSec),
+            };
+          })(),
+          narration: (() => {
+            const narration = getBeatNarrationMeta(session, Number(segment?.sentenceIndex));
+            return {
+              fingerprint: narration?.fingerprint ?? null,
+              audioStoragePath: narration?.audioStoragePath ?? null,
+              timingStoragePath: narration?.timingStoragePath ?? null,
+              durationSec: Number(narration?.durationSec),
+            };
+          })(),
         }))
       : [],
   });
+}
+
+function validateDraftPreviewBeatRenderInputs({ session, previewReadiness }) {
+  const segments = Array.isArray(previewReadiness?.segments) ? previewReadiness.segments : [];
+  const captionsBySentenceIndex = new Map(
+    (Array.isArray(session?.captions) ? session.captions : []).map((caption) => [
+      Number(caption?.sentenceIndex),
+      caption,
+    ])
+  );
+  const missingBeatIndices = [];
+  for (const segment of segments) {
+    const beatIndex = Number(segment?.sentenceIndex);
+    if (!Number.isInteger(beatIndex)) continue;
+    const caption = captionsBySentenceIndex.get(beatIndex);
+    const narration = getBeatNarrationMeta(session, beatIndex);
+    if (!caption || !narration?.audioStoragePath || !narration?.timingStoragePath) {
+      missingBeatIndices.push(beatIndex);
+    }
+  }
+  return {
+    ready: missingBeatIndices.length === 0,
+    missingBeatIndices,
+  };
 }
 
 function buildDraftPreviewBlockedState({ reasonCode, missingBeatIndices = [] }) {
@@ -2626,13 +2672,13 @@ export function prepareDraftPreviewRequest(session) {
       }),
     };
   }
-  const syncSummary = normalizeVoiceSyncSummary(session);
-  if (!syncSummary.previewAudioStoragePath) {
+  const beatRenderInputs = validateDraftPreviewBeatRenderInputs({ session, previewReadiness });
+  if (!beatRenderInputs.ready) {
     return {
       ready: false,
       blockedState: buildDraftPreviewBlockedState({
-        reasonCode: 'PREVIEW_AUDIO_STORAGE_MISSING',
-        missingBeatIndices: [],
+        reasonCode: 'VOICE_SYNC_ARTIFACT_MISSING',
+        missingBeatIndices: beatRenderInputs.missingBeatIndices,
       }),
     };
   }
@@ -2751,46 +2797,83 @@ export async function renderStoryDraftPreview({
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'vaiform-story-preview-'));
   try {
     const fetchedCache = new Map();
-    const trimmedPaths = [];
+    const renderedSegments = [];
+    const captionsBySentenceIndex = new Map(
+      (Array.isArray(session?.captions) ? session.captions : []).map((caption) => [
+        Number(caption?.sentenceIndex),
+        caption,
+      ])
+    );
+    const colorMetaCache = new Map();
     for (
       let segmentIndex = 0;
       segmentIndex < prepared.previewReadiness.segments.length;
       segmentIndex += 1
     ) {
       const segment = prepared.previewReadiness.segments[segmentIndex];
+      const beatIndex = Number(segment.sentenceIndex);
+      const caption = captionsBySentenceIndex.get(beatIndex);
+      const narration = getBeatNarrationMeta(session, beatIndex);
+      if (!caption || !narration?.audioStoragePath || !narration?.timingStoragePath) {
+        const error = new Error('VOICE_SYNC_ARTIFACT_MISSING');
+        error.code = 'VOICE_SYNC_ARTIFACT_MISSING';
+        error.status = 409;
+        throw error;
+      }
       let fetched = fetchedCache.get(segment.clipUrl);
       if (!fetched) {
         fetched = await fetchVideoToTmp(segment.clipUrl);
         fetchedCache.set(segment.clipUrl, fetched);
       }
-      const outSeg = path.join(tmpDir, `base_seg_${segmentIndex}.mp4`);
+      const trimmedPath = path.join(tmpDir, `captioned_trim_${segmentIndex}.mp4`);
       await trimClipToSegment({
         path: fetched.path,
         inSec: segment.inSec,
         durSec: segment.durSec,
-        outPath: outSeg,
+        outPath: trimmedPath,
         options: { width: DRAFT_PREVIEW_WIDTH, height: DRAFT_PREVIEW_HEIGHT },
       });
-      trimmedPaths.push({ path: outSeg, durationSec: segment.durSec });
+      const audioPath = await downloadPrivateObjectToTmp({
+        bucketPath: narration.audioStoragePath,
+        tmpDir,
+        name: `preview_voice_${beatIndex}.mp3`,
+      });
+      const timing = await loadStoredBeatTimingData(session, beatIndex);
+      const captionInput = await buildStoredRenderBeatCaptionInput({
+        session,
+        beatIndex,
+        caption,
+        timing,
+        audioPath,
+      });
+      const durationSec = Number(segment.durSec);
+      const segmentPath = path.join(tmpDir, `captioned_segment_${segmentIndex}.mp4`);
+      await renderVideoQuoteOverlay({
+        videoPath: trimmedPath,
+        outPath: segmentPath,
+        width: DRAFT_PREVIEW_WIDTH,
+        height: DRAFT_PREVIEW_HEIGHT,
+        durationSec,
+        fps: DRAFT_PREVIEW_FPS,
+        text: caption.text,
+        captionText: caption.text,
+        ttsPath: audioPath,
+        assPath: captionInput.assPath,
+        overlayCaption: captionInput.overlayCaption,
+        keepVideoAudio: true,
+        bgAudioVolume: 0.5,
+        watermark: true,
+        padSec: 0,
+        colorMetaCache,
+      });
+      renderedSegments.push({ path: segmentPath, durationSec });
     }
 
-    const videoOnlyPath = path.join(tmpDir, 'base_video_only.mp4');
-    const videoOnly = await concatenateClipsVideoOnly({
-      clips: trimmedPaths,
-      outPath: videoOnlyPath,
+    const captionedPath = path.join(tmpDir, 'captioned.mp4');
+    const captioned = await concatenateClips({
+      clips: renderedSegments,
+      outPath: captionedPath,
       options: { width: DRAFT_PREVIEW_WIDTH, height: DRAFT_PREVIEW_HEIGHT, fps: DRAFT_PREVIEW_FPS },
-    });
-    const narrationPath = await downloadPrivateObjectToTmp({
-      bucketPath: normalizeVoiceSyncSummary(session).previewAudioStoragePath,
-      tmpDir,
-      name: 'preview_narration.mp3',
-    });
-    const basePath = path.join(tmpDir, 'base.mp4');
-    const muxed = await muxVideoWithAudio({
-      videoPath: videoOnlyPath,
-      audioPath: narrationPath,
-      outPath: basePath,
-      durationSec: videoOnly.durationSec,
     });
 
     session = await loadStorySession({ uid, sessionId });
@@ -2807,8 +2890,8 @@ export async function renderStoryDraftPreview({
       throw error;
     }
 
-    const storagePath = `artifacts/${uid}/${sessionId}/previews/${previewId}/base.mp4`;
-    const upload = await uploadPublic(basePath, storagePath, DRAFT_PREVIEW_CONTENT_TYPE, {
+    const storagePath = `artifacts/${uid}/${sessionId}/previews/${previewId}/captioned.mp4`;
+    const upload = await uploadPublic(captionedPath, storagePath, DRAFT_PREVIEW_CONTENT_TYPE, {
       cacheControl: DRAFT_PREVIEW_CACHE_CONTROL,
     });
     const now = new Date().toISOString();
@@ -2824,7 +2907,9 @@ export async function renderStoryDraftPreview({
         url: upload.publicUrl,
         storagePath,
         contentType: DRAFT_PREVIEW_CONTENT_TYPE,
-        durationSec: muxed.durationSec ?? videoOnly.durationSec,
+        durationSec:
+          captioned.durationSec ??
+          renderedSegments.reduce((sum, segment) => sum + (Number(segment.durationSec) || 0), 0),
         width: DRAFT_PREVIEW_WIDTH,
         height: DRAFT_PREVIEW_HEIGHT,
         createdAt: now,

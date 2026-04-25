@@ -113,6 +113,8 @@ function buildSyncedSession(overrides = {}) {
     narration: {
       fingerprint: `beat-sync-${overrides.id || 'session'}-${index}`,
       durationSec: caption.endTimeSec - caption.startTimeSec,
+      audioStoragePath: `artifacts/user-1/${overrides.id || 'session'}/sync/beat-${index}.mp3`,
+      timingStoragePath: `artifacts/user-1/${overrides.id || 'session'}/sync/beat-${index}.json`,
       syncedAt: baseNow,
     },
   }));
@@ -1013,6 +1015,60 @@ test('GET /api/story/:sessionId returns mobile-safe draftPreviewV1 and captionOv
   );
 });
 
+test('GET /api/story/:sessionId returns mobile-safe ready captioned draftPreviewV1 artifact', async () => {
+  seedStorySession(
+    'user-1',
+    buildSyncedSession({
+      id: 'story-preview-captioned-ready',
+      draftPreviewV1: {
+        version: 1,
+        state: 'ready',
+        updatedAt: '2026-03-19T00:00:00.000Z',
+        rendererVersion: 'captioned-preview-v1',
+        fingerprint: 'internal-fingerprint',
+        previewId: 'internal-preview-id',
+        artifact: {
+          url: 'https://cdn.example.com/captioned.mp4',
+          storagePath: 'artifacts/user-1/story-preview-captioned-ready/previews/id/captioned.mp4',
+          contentType: 'video/mp4',
+          durationSec: 4,
+          width: 1080,
+          height: 1920,
+          createdAt: '2026-03-19T00:00:00.000Z',
+          expiresAt: '2026-03-20T00:00:00.000Z',
+        },
+      },
+    })
+  );
+
+  const result = await requestJson('/api/story/story-preview-captioned-ready');
+
+  assert.equal(result.status, 200);
+  assert.equal(result.json.success, true);
+  assert.equal(result.json.data.draftPreviewV1.state, 'ready');
+  assert.deepEqual(result.json.data.draftPreviewV1.artifact, {
+    url: 'https://cdn.example.com/captioned.mp4',
+    contentType: 'video/mp4',
+    durationSec: 4,
+    width: 1080,
+    height: 1920,
+    createdAt: '2026-03-19T00:00:00.000Z',
+    expiresAt: '2026-03-20T00:00:00.000Z',
+  });
+  assert.equal(
+    Object.prototype.hasOwnProperty.call(result.json.data.draftPreviewV1, 'fingerprint'),
+    false
+  );
+  assert.equal(
+    Object.prototype.hasOwnProperty.call(result.json.data.draftPreviewV1, 'previewId'),
+    false
+  );
+  assert.equal(
+    Object.prototype.hasOwnProperty.call(result.json.data.draftPreviewV1.artifact, 'storagePath'),
+    false
+  );
+});
+
 test('POST /api/story/preview requires idempotency and returns blocked state without exposing unsafe fields', async () => {
   const missingKey = await requestJson('/api/story/preview', {
     method: 'POST',
@@ -1027,6 +1083,15 @@ test('POST /api/story/preview requires idempotency and returns blocked state wit
     'user-1',
     buildSyncedSession({
       id: 'story-preview-blocked',
+      beats: [
+        {
+          narration: {
+            fingerprint: 'beat-sync-story-preview-blocked-0',
+            durationSec: 4,
+            syncedAt: '2026-03-19T00:00:00.000Z',
+          },
+        },
+      ],
     })
   );
 
@@ -1042,7 +1107,8 @@ test('POST /api/story/preview requires idempotency and returns blocked state wit
   assert.equal(result.status, 200);
   assert.equal(result.json.success, true);
   assert.equal(result.json.data.draftPreviewV1.state, 'blocked');
-  assert.equal(result.json.data.draftPreviewV1.blocked.reasonCode, 'PREVIEW_AUDIO_STORAGE_MISSING');
+  assert.equal(result.json.data.draftPreviewV1.blocked.reasonCode, 'VOICE_SYNC_ARTIFACT_MISSING');
+  assert.deepEqual(result.json.data.draftPreviewV1.blocked.missingBeatIndices, [0]);
   assert.equal(
     Object.prototype.hasOwnProperty.call(result.json.data.draftPreviewV1, 'artifact'),
     false
@@ -1055,6 +1121,44 @@ test('POST /api/story/preview requires idempotency and returns blocked state wit
 
   const stored = readStorySession('user-1', 'story-preview-blocked');
   assert.equal(stored.draftPreviewV1.state, 'blocked');
+});
+
+test('POST /api/story/preview queues ready captioned preview work without rendering in the handler', async () => {
+  seedStorySession(
+    'user-1',
+    buildSyncedSession({
+      id: 'story-preview-queued',
+    })
+  );
+
+  try {
+    const result = await requestJson('/api/story/preview', {
+      method: 'POST',
+      headers: {
+        'X-Idempotency-Key': 'idem-story-preview-queued',
+        'x-client': 'mobile',
+      },
+      body: { sessionId: 'story-preview-queued' },
+    });
+
+    assert.equal(result.status, 202);
+    assert.equal(result.json.success, true);
+    assert.equal(result.json.preview.state, 'pending');
+    assert.equal(result.json.preview.attemptId, 'idem-story-preview-queued');
+    assert.equal(result.json.data.draftPreviewV1.state, 'queued');
+    assert.equal(
+      Object.prototype.hasOwnProperty.call(result.json.data.draftPreviewV1, 'artifact'),
+      false
+    );
+    assert.ok(
+      ['queued', 'running'].includes(
+        readDoc('storyPreviewAttempts', 'user-1:idem-story-preview-queued').state
+      )
+    );
+  } finally {
+    const { stopStoryPreviewRunner } = await import('../../src/services/story-preview.runner.js');
+    stopStoryPreviewRunner();
+  }
 });
 
 test('GET /api/story/:sessionId returns canonical pending when session recovery is missing but an active lock + attempt exist', async () => {
