@@ -34,7 +34,7 @@ jobs:
       - name: Tailwind mjs class sentinel
         run: |
           set -euo pipefail
-          grep -Fq '.h-\[420px\]' web/dist/tailwind.css || { echo "Missing sentinel .h-[420px]. Ensure tailwind.config.js content includes ./public/**/*.{html,js,mjs}"; exit 1; }
+          grep -Fq '.w-\[calc\(100\%-1rem\)\]' web/dist/tailwind.css || { echo "Missing sentinel .w-[calc(100%-1rem)]. Ensure tailwind.config.js content includes ./public/**/*.{html,js,mjs}"; exit 1; }
           grep -Fq '.dark\:bg-yellow-900\/20' web/dist/tailwind.css || { echo "Missing sentinel .dark:bg-yellow-900/20. Ensure tailwind.config.js content includes ./public/**/*.{html,js,mjs}"; exit 1; }
 
       - name: Netlify redirect SSOT guard
