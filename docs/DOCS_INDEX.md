@@ -46,6 +46,7 @@ Operational runbooks that stay current but are not the first contract docs:
 
 Phase-scoped or reference docs that remain useful, but must be re-verified against code before treating them as live truth:
 
+- backend repo `docs/CAPTION_PREVIEW_RENDER_PARITY_PLAN.md` - phase-scoped tracker for native Preview/final render caption parity; verify against code and canonical contract docs before treating as live truth.
 - backend repo `docs/CROSS_REPO_PRODUCTION_HARDENING_PLAN.md`
 - backend repo `docs/FINALIZE_FACTORY_CONVERSION_PLAN.md`
 - backend repo `docs/FINALIZE_JOB_MODEL_SPEC.md`
@@ -80,6 +81,7 @@ Operational runbooks:
 
 Phase/reference docs only. Re-verify against code before editing them as live truth:
 
+- `docs/CAPTION_PREVIEW_RENDER_PARITY_PLAN.md` - phase-scoped tracker for native Preview/final render caption parity; verify against code and canonical contract docs before treating as live truth.
 - `docs/CROSS_REPO_PRODUCTION_HARDENING_PLAN.md`
 - `docs/FINALIZE_FACTORY_CONVERSION_PLAN.md`
 - `docs/FINALIZE_JOB_MODEL_SPEC.md`
