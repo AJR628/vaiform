@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import fs from 'fs';
 import ffmpegPath from 'ffmpeg-static';
 
 export async function getDurationMsFromMedia(filePath) {
@@ -27,4 +28,44 @@ export async function getDurationMsFromMedia(filePath) {
   });
 }
 
-export default { getDurationMsFromMedia };
+export async function hasReadableVideoFrame(filePath, options = {}) {
+  if (!filePath || !fs.existsSync(filePath)) return false;
+  const timeoutMs = Math.max(1000, Number(options.timeoutMs) || 5000);
+  const maxStderrBytes = Math.max(0, Number(options.maxStderrBytes) || 2048);
+  return new Promise((resolve) => {
+    let settled = false;
+    let stderr = '';
+    let child = null;
+    const finish = (value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      resolve(value);
+    };
+    const timeout = setTimeout(() => {
+      try {
+        child?.kill('SIGKILL');
+      } catch {}
+      finish(false);
+    }, timeoutMs);
+
+    try {
+      child = spawn(
+        ffmpegPath,
+        ['-v', 'error', '-i', filePath, '-map', '0:v:0', '-frames:v', '1', '-f', 'null', '-'],
+        { stdio: ['ignore', 'ignore', 'pipe'] }
+      );
+      child.stderr.on('data', (d) => {
+        if (stderr.length < maxStderrBytes) {
+          stderr += d.toString().slice(0, maxStderrBytes - stderr.length);
+        }
+      });
+      child.on('close', (code) => finish(code === 0));
+      child.on('error', () => finish(false));
+    } catch {
+      finish(false);
+    }
+  });
+}
+
+export default { getDurationMsFromMedia, hasReadableVideoFrame };

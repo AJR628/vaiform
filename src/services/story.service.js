@@ -2805,6 +2805,7 @@ export async function renderStoryDraftPreview({
       ])
     );
     const colorMetaCache = new Map();
+    const videoProbeCache = new Map();
     for (
       let segmentIndex = 0;
       segmentIndex < prepared.previewReadiness.segments.length;
@@ -2826,13 +2827,44 @@ export async function renderStoryDraftPreview({
         fetchedCache.set(segment.clipUrl, fetched);
       }
       const trimmedPath = path.join(tmpDir, `captioned_trim_${segmentIndex}.mp4`);
-      await trimClipToSegment({
-        path: fetched.path,
-        inSec: segment.inSec,
-        durSec: segment.durSec,
-        outPath: trimmedPath,
-        options: { width: DRAFT_PREVIEW_WIDTH, height: DRAFT_PREVIEW_HEIGHT },
-      });
+      try {
+        await trimClipToSegment({
+          path: fetched.path,
+          inSec: segment.inSec,
+          durSec: segment.durSec,
+          outPath: trimmedPath,
+          options: {
+            width: DRAFT_PREVIEW_WIDTH,
+            height: DRAFT_PREVIEW_HEIGHT,
+            videoProbeCache,
+          },
+        });
+      } catch (trimError) {
+        const trimCode = trimError?.code || trimError?.message || 'TRIM_SEGMENT_FAILED';
+        if (String(trimCode).startsWith('TRIM_')) {
+          const error = new Error('Draft preview segment video input was invalid.');
+          error.code = 'DRAFT_PREVIEW_SEGMENT_VIDEO_MISSING';
+          error.status = 500;
+          error.cause = trimError;
+          logger.warn('story.preview.segment_video_missing', {
+            sessionId,
+            attemptId,
+            previewId,
+            segmentIndex,
+            beatIndex,
+            sentenceIndex: beatIndex,
+            inSec: Number(segment.inSec),
+            durSec: Number(segment.durSec),
+            clipUrl: segment.clipUrl,
+            sourceDurationSec: Number.isFinite(Number(trimError?.sourceDurationSec))
+              ? Number(trimError.sourceDurationSec)
+              : null,
+            trimCode,
+          });
+          throw error;
+        }
+        throw trimError;
+      }
       const audioPath = await downloadPrivateObjectToTmp({
         bucketPath: narration.audioStoragePath,
         tmpDir,

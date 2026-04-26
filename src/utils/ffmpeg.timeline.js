@@ -8,7 +8,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { fetchVideoToTmp } from './video.fetch.js';
-import { getDurationMsFromMedia } from './media.duration.js';
+import { getDurationMsFromMedia, hasReadableVideoFrame } from './media.duration.js';
 
 /**
  * Concatenate multiple video clips into a single continuous video
@@ -192,6 +192,52 @@ const DEFAULT_WIDTH = 1080;
 const DEFAULT_HEIGHT = 1920;
 const DEFAULT_FPS = 24;
 
+function codedError(code, message = code, details = {}) {
+  const error = new Error(message);
+  error.code = code;
+  Object.assign(error, details);
+  return error;
+}
+
+async function getCachedReadableVideoFrame(filePath, cache) {
+  if (cache?.has(filePath)) {
+    const cached = cache.get(filePath);
+    if (cached && typeof cached === 'object' && 'hasReadableVideoFrame' in cached) {
+      return cached.hasReadableVideoFrame === true;
+    }
+    return cached === true;
+  }
+  const hasFrame = await hasReadableVideoFrame(filePath);
+  if (cache?.set) {
+    const current = cache.get(filePath);
+    cache.set(
+      filePath,
+      current && typeof current === 'object'
+        ? { ...current, hasReadableVideoFrame: hasFrame }
+        : { hasReadableVideoFrame: hasFrame }
+    );
+  }
+  return hasFrame;
+}
+
+async function getCachedDurationMs(filePath, cache) {
+  if (cache?.has(filePath)) {
+    const cached = cache.get(filePath);
+    if (cached && typeof cached === 'object' && 'durationMs' in cached) {
+      return cached.durationMs;
+    }
+  }
+  const durationMs = await getDurationMsFromMedia(filePath);
+  if (cache?.set) {
+    const current = cache.get(filePath);
+    cache.set(
+      filePath,
+      current && typeof current === 'object' ? { ...current, durationMs } : { durationMs }
+    );
+  }
+  return durationMs;
+}
+
 /**
  * Concatenate video clips video-only (no audio). Use for global timeline from raw/trimmed clips.
  * Map only [outv]; do not inject anullsrc. Overlay step adds TTS per beat.
@@ -284,21 +330,44 @@ export async function muxVideoWithAudio({ videoPath, audioPath, outPath, duratio
  * @param {{ path: string, inSec: number, durSec: number, outPath: string, options?: { width?: number, height?: number } }}
  */
 export async function trimClipToSegment({ path: inPath, inSec, durSec, outPath, options = {} }) {
-  if (!inPath || !fs.existsSync(inPath)) throw new Error('TRIM_INPUT_REQUIRED');
+  if (!inPath || !fs.existsSync(inPath)) throw codedError('TRIM_INPUT_REQUIRED');
   const width = options.width || DEFAULT_WIDTH;
   const height = options.height || DEFAULT_HEIGHT;
-  const clipDurMs = await getDurationMsFromMedia(inPath);
-  const clipDurSec = clipDurMs != null ? clipDurMs / 1000 : 0;
-  const available = Math.max(0, clipDurSec - inSec);
-  const takeDur = Math.min(durSec, available);
-  const padDur = Math.max(0, durSec - takeDur);
+  const durationSec = Number(durSec);
+  const requestedInSec = Math.max(0, Number(inSec) || 0);
+  if (!Number.isFinite(durationSec) || durationSec <= 0) {
+    throw codedError('TRIM_DURATION_INVALID');
+  }
+  const videoProbeCache = options.videoProbeCache;
+  const sourceHasFrame = await getCachedReadableVideoFrame(inPath, videoProbeCache);
+  if (!sourceHasFrame) {
+    throw codedError('TRIM_SOURCE_VIDEO_MISSING');
+  }
+  const clipDurMs = await getCachedDurationMs(inPath, videoProbeCache);
+  const clipDurSec = clipDurMs != null ? clipDurMs / 1000 : null;
+  let effectiveInSec = requestedInSec;
+  if (Number.isFinite(clipDurSec) && clipDurSec > 0 && requestedInSec >= clipDurSec) {
+    const sliceWindow = Math.min(0.5, durationSec, clipDurSec);
+    effectiveInSec = Math.max(0, clipDurSec - sliceWindow);
+  }
+  const available =
+    Number.isFinite(clipDurSec) && clipDurSec > 0
+      ? Math.max(0, clipDurSec - effectiveInSec)
+      : durationSec;
+  const takeDur = Math.min(durationSec, available);
+  if (!Number.isFinite(takeDur) || takeDur <= 0) {
+    throw codedError('TRIM_SOURCE_DURATION_INVALID', 'TRIM_SOURCE_DURATION_INVALID', {
+      sourceDurationSec: clipDurSec,
+    });
+  }
+  const padDur = Math.max(0, durationSec - takeDur);
   const scalePad = `scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2,setsar=1`;
   const trimFilter = `trim=start=0:duration=${takeDur}`;
   const tpadFilter = padDur > 0 ? `,tpad=stop_mode=clone:stop_duration=${padDur}` : '';
   const filter = `[0:v]${trimFilter},${scalePad}${tpadFilter},setpts=PTS-STARTPTS[v]`;
   const args = [
     '-ss',
-    String(inSec),
+    String(effectiveInSec),
     '-i',
     inPath,
     '-filter_complex',
@@ -310,12 +379,25 @@ export async function trimClipToSegment({ path: inPath, inSec, durSec, outPath, 
     '-pix_fmt',
     'yuv420p',
     '-t',
-    String(durSec),
+    String(durationSec),
     '-movflags',
     '+faststart',
     outPath,
   ];
-  await runFfmpeg(args);
+  try {
+    await runFfmpeg(args);
+  } catch (cause) {
+    throw codedError('TRIM_SEGMENT_FAILED', 'TRIM_SEGMENT_FAILED', {
+      cause,
+      sourceDurationSec: clipDurSec,
+    });
+  }
+  const outputHasFrame = await hasReadableVideoFrame(outPath);
+  if (!outputHasFrame) {
+    throw codedError('TRIM_OUTPUT_VIDEO_MISSING', 'TRIM_OUTPUT_VIDEO_MISSING', {
+      sourceDurationSec: clipDurSec,
+    });
+  }
 }
 
 /**
