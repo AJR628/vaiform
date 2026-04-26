@@ -17,6 +17,8 @@ const LOCAL_WORKER_INFLIGHT_LIMIT = Math.max(
   1,
   Number(process.env.STORY_PREVIEW_LOCAL_WORKER_INFLIGHT_LIMIT || 1)
 );
+const fingerprintPrefix = (fingerprint) =>
+  typeof fingerprint === 'string' && fingerprint.length > 0 ? fingerprint.slice(0, 12) : null;
 
 export function createStoryPreviewRunner({ keepProcessAlive = false } = {}) {
   const runnerId = `story-preview-runner-${process.pid}-${Math.random().toString(36).slice(2, 10)}`;
@@ -68,7 +70,12 @@ export function createStoryPreviewRunner({ keepProcessAlive = false } = {}) {
       logger.info('story.preview.runner.started', {
         runnerId,
         attemptId: attempt.attemptId,
+        previewId: attempt.previewId,
         sessionId: attempt.sessionId,
+        requestId: attempt.requestId,
+        fingerprintPrefix: fingerprintPrefix(attempt.requestFingerprint),
+        outcome: 'started',
+        state: attempt.state,
       });
       const session = await renderStoryDraftPreview({
         uid: attempt.uid,
@@ -85,7 +92,13 @@ export function createStoryPreviewRunner({ keepProcessAlive = false } = {}) {
       logger.info('story.preview.runner.completed', {
         runnerId,
         attemptId: attempt.attemptId,
+        previewId: attempt.previewId,
         sessionId: attempt.sessionId,
+        requestId: attempt.requestId,
+        fingerprintPrefix: fingerprintPrefix(attempt.requestFingerprint),
+        outputDurationSec: Number(session?.draftPreviewV1?.artifact?.durationSec),
+        outcome: 'completed',
+        state: 'succeeded',
       });
     } catch (error) {
       const code = error?.code || error?.message || 'DRAFT_PREVIEW_FAILED';
@@ -100,7 +113,10 @@ export function createStoryPreviewRunner({ keepProcessAlive = false } = {}) {
         logger.error('story.preview.runner.failure_persist_failed', {
           runnerId,
           attemptId: attempt.attemptId,
+          previewId: attempt.previewId,
           sessionId: attempt.sessionId,
+          requestId: attempt.requestId,
+          fingerprintPrefix: fingerprintPrefix(attempt.requestFingerprint),
           error: persistError,
         });
       });
@@ -114,7 +130,13 @@ export function createStoryPreviewRunner({ keepProcessAlive = false } = {}) {
       logger.error('story.preview.runner.failed', {
         runnerId,
         attemptId: attempt.attemptId,
+        previewId: attempt.previewId,
         sessionId: attempt.sessionId,
+        requestId: attempt.requestId,
+        fingerprintPrefix: fingerprintPrefix(attempt.requestFingerprint),
+        failureCode: code,
+        outcome: state,
+        state,
         error,
       });
     } finally {

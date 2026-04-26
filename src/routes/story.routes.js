@@ -28,6 +28,8 @@ import {
   sanitizeStorySessionForClient,
   prepareDraftPreviewRequest,
   markDraftPreviewQueued,
+  invalidateDraftPreviewBase,
+  getDraftPreviewObservabilityMeta,
 } from '../services/story.service.js';
 import {
   failStorySyncAttempt,
@@ -61,6 +63,8 @@ r.use(requireAuth);
 const requestIdOf = (req) => req?.id ?? null;
 const presentStorySession = (session) => sanitizeStorySessionForClient(session);
 const okStorySession = (req, res, session) => ok(req, res, presentStorySession(session));
+const fingerprintPrefix = (fingerprint) =>
+  typeof fingerprint === 'string' && fingerprint.length > 0 ? fingerprint.slice(0, 12) : null;
 const zodFields = (error) => {
   const fields = {};
   for (const issue of error?.issues || []) {
@@ -515,6 +519,7 @@ r.post('/update-caption-style', async (req, res) => {
     delete session.finalVideo;
     delete session.renderedSegments;
     delete session.renderRecovery;
+    invalidateDraftPreviewBase(session, 'CAPTION_RENDER_INPUT_CHANGED');
     if (session.voiceSync?.state === 'current') {
       session.status = 'voice_synced';
     }
@@ -676,6 +681,7 @@ r.post('/update-caption-meta', requireAuth, async (req, res) => {
         delete session.finalVideo;
         delete session.renderedSegments;
         delete session.renderRecovery;
+        invalidateDraftPreviewBase(session, 'CAPTION_RENDER_INPUT_CHANGED');
         if (session.voiceSync?.state === 'current') {
           session.status = 'voice_synced';
         }
@@ -716,6 +722,7 @@ r.post('/update-caption-meta', requireAuth, async (req, res) => {
       delete session.finalVideo;
       delete session.renderedSegments;
       delete session.renderRecovery;
+      invalidateDraftPreviewBase(session, 'CAPTION_RENDER_INPUT_CHANGED');
       if (session.voiceSync?.state === 'current') {
         session.status = 'voice_synced';
       }
@@ -1062,14 +1069,50 @@ r.post('/preview', async (req, res) => {
     }
 
     const preparedPreview = prepareDraftPreviewRequest(session);
+    const previewMeta = getDraftPreviewObservabilityMeta();
     if (!preparedPreview.ready) {
       session.draftPreviewV1 = preparedPreview.blockedState;
       await saveStorySession({ uid: req.user.uid, sessionId, data: session });
+      logger.info('story.preview.request.blocked', {
+        uid: req.user.uid,
+        sessionId,
+        attemptId,
+        rendererVersion:
+          preparedPreview.blockedState?.rendererVersion || previewMeta.rendererVersion,
+        outcome: 'blocked',
+        blockedReason: preparedPreview.blockedState?.blocked?.reasonCode || 'PREVIEW_BLOCKED',
+      });
       return okStorySession(req, res, session);
     }
 
     if (preparedPreview.alreadyReady) {
+      logger.info('story.preview.cache.hit', {
+        uid: req.user.uid,
+        sessionId,
+        attemptId,
+        rendererVersion: session.draftPreviewV1?.rendererVersion || previewMeta.rendererVersion,
+        fingerprintPrefix: fingerprintPrefix(preparedPreview.fingerprint),
+        state: session.draftPreviewV1?.state || 'ready',
+        outcome: 'cache_hit',
+      });
       return okStorySession(req, res, session);
+    }
+
+    if (session.draftPreviewV1?.state === 'ready' && session.draftPreviewV1?.artifact?.url) {
+      logger.info('story.preview.stale.detected', {
+        uid: req.user.uid,
+        sessionId,
+        attemptId,
+        rendererVersion: previewMeta.rendererVersion,
+        previousRendererVersion: session.draftPreviewV1?.rendererVersion || null,
+        fingerprintPrefix: fingerprintPrefix(preparedPreview.fingerprint),
+        previousFingerprintPrefix: fingerprintPrefix(session.draftPreviewV1?.fingerprint),
+        staleReasonCode:
+          session.draftPreviewV1?.rendererVersion !== previewMeta.rendererVersion
+            ? 'RENDERER_VERSION_CHANGED'
+            : 'FINGERPRINT_CHANGED',
+        outcome: 'stale_detected',
+      });
     }
 
     const preparedAttempt = await prepareStoryPreviewAttempt({
@@ -1081,6 +1124,15 @@ r.post('/preview', async (req, res) => {
     });
 
     if (preparedAttempt.kind === 'error') {
+      logger.warn('story.preview.request.blocked', {
+        uid: req.user.uid,
+        sessionId,
+        attemptId,
+        rendererVersion: previewMeta.rendererVersion,
+        fingerprintPrefix: fingerprintPrefix(preparedPreview.fingerprint),
+        outcome: 'blocked',
+        blockedReason: preparedAttempt.error,
+      });
       return fail(req, res, preparedAttempt.status, preparedAttempt.error, preparedAttempt.detail);
     }
 
@@ -1114,6 +1166,16 @@ r.post('/preview', async (req, res) => {
     if (preparedAttempt.kind === 'enqueued') {
       notifyStoryPreviewRunner();
     }
+    logger.info('story.preview.request.queued', {
+      uid: req.user.uid,
+      sessionId,
+      attemptId: activeAttempt.attemptId,
+      previewId: activeAttempt.previewId,
+      rendererVersion: session.draftPreviewV1?.rendererVersion || previewMeta.rendererVersion,
+      fingerprintPrefix: fingerprintPrefix(activeAttempt.requestFingerprint),
+      state: activeAttempt.state,
+      outcome: preparedAttempt.kind,
+    });
 
     return res.status(202).json({
       success: true,

@@ -1,9 +1,33 @@
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
 import test from 'node:test';
+import { compileCaptionSSOT } from '../../src/captions/compile.js';
 import {
   prepareDraftPreviewRequest,
   sanitizeStorySessionForClient,
 } from '../../src/services/story.service.js';
+
+function buildCaptionMeta(textRaw, style = {}) {
+  const compiled = compileCaptionSSOT({
+    textRaw,
+    style,
+    frameW: 1080,
+    frameH: 1920,
+  });
+  return {
+    lines: compiled.lines,
+    effectiveStyle: compiled.effectiveStyle,
+    styleHash: compiled.styleHash,
+    wrapHash: compiled.wrapHash,
+    textHash: crypto
+      .createHash('sha256')
+      .update(textRaw.trim().toLowerCase())
+      .digest('hex')
+      .slice(0, 16),
+    maxWidthPx: compiled.maxWidthPx,
+    totalTextH: compiled.totalTextH,
+  };
+}
 
 function buildSession(overrides = {}) {
   return {
@@ -179,6 +203,93 @@ test('preview fingerprint changes when stored narration duration changes indepen
   assert.equal(baselineReady.ready, true);
   assert.equal(changedReady.ready, true);
   assert.notEqual(baselineReady.fingerprint, changedReady.fingerprint);
+});
+
+test('preview fingerprint changes when overlay caption render style changes', () => {
+  const baseline = prepareDraftPreviewRequest(buildSession());
+  const changed = prepareDraftPreviewRequest(
+    buildSession({
+      overlayCaption: { placement: 'bottom', yPct: 0.78, fontPx: 84 },
+    })
+  );
+
+  assert.equal(baseline.ready, true);
+  assert.equal(changed.ready, true);
+  assert.notEqual(baseline.fingerprint, changed.fingerprint);
+});
+
+test('preview fingerprint changes when persisted caption render meta changes', () => {
+  const captionMeta = buildCaptionMeta('Beat one', {
+    placement: 'bottom',
+    yPct: 0.78,
+    fontPx: 72,
+  });
+  const session = buildSession({
+    beats: [
+      {
+        captionMeta,
+        narration: {
+          fingerprint: 'beat-sync-story-test-0',
+          durationSec: 2,
+          audioStoragePath: 'artifacts/user-test/story-test/sync/beat-0.mp3',
+          timingStoragePath: 'artifacts/user-test/story-test/sync/beat-0.json',
+          syncedAt: '2026-01-01T00:00:00.000Z',
+        },
+      },
+      buildSession().beats[1],
+    ],
+  });
+  const changed = JSON.parse(JSON.stringify(session));
+  changed.beats[0].captionMeta.lines = ['Different persisted wrap'];
+
+  const baselineReady = prepareDraftPreviewRequest(session);
+  const changedReady = prepareDraftPreviewRequest(changed);
+
+  assert.equal(baselineReady.ready, true);
+  assert.equal(changedReady.ready, true);
+  assert.notEqual(baselineReady.fingerprint, changedReady.fingerprint);
+});
+
+test('preview fingerprint ignores irrelevant non-render session fields', () => {
+  const baseline = prepareDraftPreviewRequest(
+    buildSession({ updatedAt: '2026-01-01T00:00:00.000Z' })
+  );
+  const changed = prepareDraftPreviewRequest(
+    buildSession({ updatedAt: '2026-01-02T00:00:00.000Z' })
+  );
+
+  assert.equal(baseline.ready, true);
+  assert.equal(changed.ready, true);
+  assert.equal(baseline.fingerprint, changed.fingerprint);
+});
+
+test('prepareDraftPreviewRequest reuses current ready preview with same fingerprint', () => {
+  const session = buildSession();
+  const prepared = prepareDraftPreviewRequest(session);
+  session.draftPreviewV1 = {
+    version: 1,
+    state: 'ready',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+    rendererVersion: 'captioned-preview-v1.1',
+    fingerprint: prepared.fingerprint,
+    previewId: 'preview-private',
+    artifact: {
+      url: 'https://cdn.example.com/captioned.mp4',
+      storagePath: 'artifacts/user-test/story-test/previews/preview-private/captioned.mp4',
+      contentType: 'video/mp4',
+      durationSec: 4,
+      width: 1080,
+      height: 1920,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      expiresAt: '2026-01-02T00:00:00.000Z',
+    },
+  };
+
+  const reused = prepareDraftPreviewRequest(session);
+
+  assert.equal(reused.ready, true);
+  assert.equal(reused.alreadyReady, true);
+  assert.equal(reused.fingerprint, prepared.fingerprint);
 });
 
 test('captionOverlayV1 is a mobile-safe computed projection without token timing', () => {

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { compileCaptionSSOT } from '../../src/captions/compile.js';
 import {
   readDoc,
   readStorySession,
@@ -155,6 +156,44 @@ function buildSyncedSession(overrides = {}) {
     billingEstimate,
     ...overrides,
   });
+}
+
+function buildReadyDraftPreview({ previewId = 'preview-existing', durationSec = 4 } = {}) {
+  return {
+    version: 1,
+    state: 'ready',
+    updatedAt: '2026-03-19T00:00:00.000Z',
+    rendererVersion: 'captioned-preview-v1.1',
+    fingerprint: 'existing-preview-fingerprint',
+    previewId,
+    artifact: {
+      url: `https://cdn.example.com/${previewId}.mp4`,
+      storagePath: `artifacts/user-1/story/previews/${previewId}/captioned.mp4`,
+      contentType: 'video/mp4',
+      durationSec,
+      width: 1080,
+      height: 1920,
+      createdAt: '2026-03-19T00:00:00.000Z',
+      expiresAt: '2026-03-20T00:00:00.000Z',
+    },
+  };
+}
+
+function buildClientCaptionMeta(textRaw, style = {}) {
+  const compiled = compileCaptionSSOT({
+    textRaw,
+    style,
+    frameW: 1080,
+    frameH: 1920,
+  });
+  return {
+    lines: compiled.lines,
+    effectiveStyle: compiled.effectiveStyle,
+    styleHash: compiled.styleHash,
+    wrapHash: compiled.wrapHash,
+    maxWidthPx: compiled.maxWidthPx,
+    totalTextH: compiled.totalTextH,
+  };
 }
 
 function buildFinalizeAttemptDoc({
@@ -1779,6 +1818,125 @@ test('POST /api/story/update-caption-style returns the persisted overlayCaption 
   assert.equal(result.json.data.overlayCaption.fontPx, 72);
   assert.equal(result.json.data.overlayCaption.placement, 'top');
   assert.equal(result.json.data.overlayCaption.color, 'rgb(255,255,255)');
+});
+
+test('POST /api/story/update-caption-style stales ready preview without changing response shape', async () => {
+  seedStorySession(
+    'user-1',
+    buildSyncedSession({
+      id: 'story-caption-style-stale-preview',
+      draftPreviewV1: buildReadyDraftPreview({ previewId: 'preview-style-stale' }),
+      overlayCaption: {
+        fontFamily: 'DejaVu Sans',
+        fontPx: 64,
+        placement: 'bottom',
+      },
+    })
+  );
+
+  const result = await requestJson('/api/story/update-caption-style', {
+    method: 'POST',
+    body: {
+      sessionId: 'story-caption-style-stale-preview',
+      overlayCaption: {
+        fontPx: 72,
+        placement: 'top',
+      },
+    },
+  });
+
+  assert.equal(result.status, 200);
+  assert.equal(result.json.success, true);
+  assert.deepEqual(Object.keys(result.json.data).sort(), ['overlayCaption']);
+  assert.equal(result.json.data.overlayCaption.fontPx, 72);
+
+  const stored = readStorySession('user-1', 'story-caption-style-stale-preview');
+  assert.equal(stored.draftPreviewV1.state, 'stale');
+  assert.equal(stored.draftPreviewV1.staleReasonCode, 'CAPTION_RENDER_INPUT_CHANGED');
+  assert.equal(Object.prototype.hasOwnProperty.call(stored.draftPreviewV1, 'job'), false);
+  assert.equal(
+    Object.prototype.hasOwnProperty.call(stored.draftPreviewV1, 'activeAttemptId'),
+    false
+  );
+
+  const readback = await requestJson('/api/story/story-caption-style-stale-preview');
+  assert.equal(readback.status, 200);
+  assert.equal(readback.json.data.draftPreviewV1.state, 'stale');
+  assert.equal(
+    Object.prototype.hasOwnProperty.call(readback.json.data.draftPreviewV1, 'artifact'),
+    false
+  );
+});
+
+test('POST /api/story/update-caption-meta stales ready preview when meta is accepted', async () => {
+  seedStorySession(
+    'user-1',
+    buildSyncedSession({
+      id: 'story-caption-meta-stale-preview',
+      draftPreviewV1: buildReadyDraftPreview({ previewId: 'preview-meta-stale' }),
+    })
+  );
+
+  const result = await requestJson('/api/story/update-caption-meta', {
+    method: 'POST',
+    body: {
+      sessionId: 'story-caption-meta-stale-preview',
+      beatIndex: 0,
+      captionMeta: buildClientCaptionMeta('Beat one', {}),
+    },
+  });
+
+  assert.equal(result.status, 200);
+  assert.equal(result.json.success, true);
+  assert.deepEqual(Object.keys(result.json.data).sort(), ['captionMeta']);
+
+  const stored = readStorySession('user-1', 'story-caption-meta-stale-preview');
+  assert.equal(stored.draftPreviewV1.state, 'stale');
+  assert.equal(stored.draftPreviewV1.staleReasonCode, 'CAPTION_RENDER_INPUT_CHANGED');
+  assert.equal(Object.prototype.hasOwnProperty.call(stored.draftPreviewV1, 'job'), false);
+  assert.equal(
+    Object.prototype.hasOwnProperty.call(stored.draftPreviewV1, 'activeAttemptId'),
+    false
+  );
+});
+
+test('POST /api/story/update-caption-meta does not stale preview when all batch updates are skipped', async () => {
+  seedStorySession(
+    'user-1',
+    buildSyncedSession({
+      id: 'story-caption-meta-skipped-preview',
+      draftPreviewV1: buildReadyDraftPreview({ previewId: 'preview-meta-skipped' }),
+    })
+  );
+
+  const result = await requestJson('/api/story/update-caption-meta', {
+    method: 'POST',
+    body: {
+      sessionId: 'story-caption-meta-skipped-preview',
+      updates: [
+        {
+          beatIndex: 0,
+          captionMeta: {
+            ...buildClientCaptionMeta('Beat one', {}),
+            lines: ['This line intentionally does not match'],
+          },
+        },
+      ],
+    },
+  });
+
+  assert.equal(result.status, 200);
+  assert.equal(result.json.success, true);
+  assert.deepEqual(result.json.data.updates, []);
+
+  const stored = readStorySession('user-1', 'story-caption-meta-skipped-preview');
+  assert.equal(stored.draftPreviewV1.state, 'ready');
+  assert.equal(stored.draftPreviewV1.previewId, 'preview-meta-skipped');
+  assert.equal(Object.prototype.hasOwnProperty.call(stored.draftPreviewV1, 'job'), false);
+  assert.equal(
+    Object.prototype.hasOwnProperty.call(stored.draftPreviewV1, 'activeAttemptId'),
+    false
+  );
 });
 
 test('POST /api/story/sync requires X-Idempotency-Key', async () => {

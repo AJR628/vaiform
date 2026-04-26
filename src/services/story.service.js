@@ -112,6 +112,12 @@ const CAPTION_OVERLAY_SCHEMA_VERSION = 1;
 const CAPTION_OVERLAY_CONTRACT_VERSION = 'caption-overlay-v1';
 const CAPTION_OVERLAY_RENDERER_VERSION = 'caption-overlay-v1';
 
+function previewFingerprintPrefix(fingerprint) {
+  return typeof fingerprint === 'string' && fingerprint.length > 0
+    ? fingerprint.slice(0, 12)
+    : null;
+}
+
 function safeJsonClone(value) {
   if (value == null) return value;
   return JSON.parse(JSON.stringify(value));
@@ -2583,6 +2589,11 @@ function buildDraftPreviewFingerprint({ session, previewReadiness }) {
   return hashStableValue({
     schemaVersion: DRAFT_PREVIEW_SCHEMA_VERSION,
     rendererVersion: DRAFT_PREVIEW_RENDERER_VERSION,
+    renderConstants: {
+      width: DRAFT_PREVIEW_WIDTH,
+      height: DRAFT_PREVIEW_HEIGHT,
+      fps: DRAFT_PREVIEW_FPS,
+    },
     sessionId: session?.id ?? null,
     voiceSyncFingerprint: syncSummary.currentFingerprint ?? null,
     captionStyle: session?.overlayCaption || session?.captionStyle || {},
@@ -2597,11 +2608,32 @@ function buildDraftPreviewFingerprint({ session, previewReadiness }) {
           globalStartSec: Number(segment?.globalStartSec),
           globalEndSec: Number(segment?.globalEndSec),
           caption: (() => {
-            const caption = captionsBySentenceIndex.get(Number(segment?.sentenceIndex));
+            const beatIndex = Number(segment?.sentenceIndex);
+            const caption = captionsBySentenceIndex.get(beatIndex);
             return {
               text: caption?.text ?? null,
               startTimeSec: Number(caption?.startTimeSec),
               endTimeSec: Number(caption?.endTimeSec),
+              renderInput: (() => {
+                if (!caption) return null;
+                const textRaw = session.story?.sentences?.[beatIndex] ?? caption.text ?? '';
+                const overlayCaption = session.overlayCaption || session.captionStyle || {};
+                const meta = buildCaptionMetaForBeat({
+                  session,
+                  beatIndex,
+                  textRaw,
+                  overlayCaption,
+                });
+                return {
+                  lines: Array.isArray(meta?.lines) ? meta.lines : [],
+                  effectiveStyle: meta?.effectiveStyle || {},
+                  styleHash: meta?.styleHash ?? null,
+                  wrapHash: meta?.wrapHash ?? null,
+                  textHash: meta?.textHash ?? null,
+                  maxWidthPx: Number(meta?.maxWidthPx),
+                  totalTextH: Number(meta?.totalTextH),
+                };
+              })(),
             };
           })(),
           narration: (() => {
@@ -2705,6 +2737,12 @@ export function prepareDraftPreviewRequest(session) {
   };
 }
 
+export function getDraftPreviewObservabilityMeta() {
+  return {
+    rendererVersion: DRAFT_PREVIEW_RENDERER_VERSION,
+  };
+}
+
 export function markDraftPreviewQueued({
   session,
   attemptId,
@@ -2761,9 +2799,15 @@ export async function renderStoryDraftPreview({
   previewId,
   fingerprint,
 }) {
+  const renderStartedAt = Date.now();
+  const fingerprintPrefix = previewFingerprintPrefix(fingerprint);
+  let segmentCount = 0;
   let session = await loadStorySession({ uid, sessionId });
   if (!session) throw new Error('SESSION_NOT_FOUND');
   const prepared = prepareDraftPreviewRequest(session);
+  segmentCount = Array.isArray(prepared.previewReadiness?.segments)
+    ? prepared.previewReadiness.segments.length
+    : 0;
   if (!prepared.ready) {
     session.draftPreviewV1 = prepared.blockedState;
     await saveStorySession({ uid, sessionId, data: session });
@@ -2784,6 +2828,17 @@ export async function renderStoryDraftPreview({
     error.status = 409;
     throw error;
   }
+
+  logger.info('story.preview.render.started', {
+    uid,
+    sessionId,
+    attemptId,
+    previewId,
+    rendererVersion: DRAFT_PREVIEW_RENDERER_VERSION,
+    fingerprintPrefix,
+    segmentCount,
+    outcome: 'started',
+  });
 
   markDraftPreviewQueued({
     session,
@@ -2949,6 +3004,9 @@ export async function renderStoryDraftPreview({
     const upload = await uploadPublic(captionedPath, storagePath, DRAFT_PREVIEW_CONTENT_TYPE, {
       cacheControl: DRAFT_PREVIEW_CACHE_CONTROL,
     });
+    const outputDurationSec =
+      captioned.durationSec ??
+      renderedSegments.reduce((sum, segment) => sum + (Number(segment.durationSec) || 0), 0);
     const now = new Date().toISOString();
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
     session.draftPreviewV1 = {
@@ -2962,9 +3020,7 @@ export async function renderStoryDraftPreview({
         url: upload.publicUrl,
         storagePath,
         contentType: DRAFT_PREVIEW_CONTENT_TYPE,
-        durationSec:
-          captioned.durationSec ??
-          renderedSegments.reduce((sum, segment) => sum + (Number(segment.durationSec) || 0), 0),
+        durationSec: outputDurationSec,
         width: DRAFT_PREVIEW_WIDTH,
         height: DRAFT_PREVIEW_HEIGHT,
         createdAt: now,
@@ -2973,7 +3029,33 @@ export async function renderStoryDraftPreview({
       job: null,
     };
     await saveStorySession({ uid, sessionId, data: session });
+    logger.info('story.preview.render.completed', {
+      uid,
+      sessionId,
+      attemptId,
+      previewId,
+      rendererVersion: DRAFT_PREVIEW_RENDERER_VERSION,
+      fingerprintPrefix,
+      segmentCount,
+      outputDurationSec,
+      renderWallMs: Date.now() - renderStartedAt,
+      outcome: 'completed',
+    });
     return session;
+  } catch (error) {
+    logger.error('story.preview.render.failed', {
+      uid,
+      sessionId,
+      attemptId,
+      previewId,
+      rendererVersion: DRAFT_PREVIEW_RENDERER_VERSION,
+      fingerprintPrefix,
+      segmentCount,
+      renderWallMs: Date.now() - renderStartedAt,
+      outcome: 'failed',
+      failureCode: error?.code || error?.message || 'DRAFT_PREVIEW_FAILED',
+    });
+    throw error;
   } finally {
     try {
       if (tmpDir && fs.existsSync(tmpDir)) {
