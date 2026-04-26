@@ -94,7 +94,7 @@ test('old base renderer draftPreviewV1 projects stale and omits playable/private
   assert.equal(safe.draftPreviewV1.previewId, undefined);
 });
 
-test('captioned renderer draftPreviewV1 projects ready with mobile-safe artifact shape', () => {
+test('old captioned renderer draftPreviewV1 projects stale after timing stabilization', () => {
   const safe = sanitizeStorySessionForClient(
     buildSession({
       draftPreviewV1: {
@@ -102,6 +102,36 @@ test('captioned renderer draftPreviewV1 projects ready with mobile-safe artifact
         state: 'ready',
         updatedAt: '2026-01-01T00:00:00.000Z',
         rendererVersion: 'captioned-preview-v1',
+        fingerprint: 'private-fingerprint',
+        previewId: 'preview-private',
+        artifact: {
+          url: 'https://cdn.example.com/captioned.mp4',
+          storagePath: 'artifacts/user-test/story-test/previews/preview-private/captioned.mp4',
+          contentType: 'video/mp4',
+          durationSec: 4,
+          width: 1080,
+          height: 1920,
+          createdAt: '2026-01-01T00:00:00.000Z',
+          expiresAt: '2026-01-02T00:00:00.000Z',
+        },
+      },
+    })
+  );
+
+  assert.equal(safe.draftPreviewV1.state, 'stale');
+  assert.equal(safe.draftPreviewV1.artifact, undefined);
+  assert.equal(safe.draftPreviewV1.fingerprint, undefined);
+  assert.equal(safe.draftPreviewV1.previewId, undefined);
+});
+
+test('captioned renderer draftPreviewV1 projects ready with mobile-safe artifact shape', () => {
+  const safe = sanitizeStorySessionForClient(
+    buildSession({
+      draftPreviewV1: {
+        version: 1,
+        state: 'ready',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+        rendererVersion: 'captioned-preview-v1.1',
         fingerprint: 'private-fingerprint',
         previewId: 'preview-private',
         artifact: {
@@ -131,6 +161,24 @@ test('captioned renderer draftPreviewV1 projects ready with mobile-safe artifact
   assert.equal(safe.draftPreviewV1.fingerprint, undefined);
   assert.equal(safe.draftPreviewV1.previewId, undefined);
   assert.equal(Object.hasOwn(safe.draftPreviewV1.artifact, 'storagePath'), false);
+});
+
+test('preview fingerprint changes when stored narration duration changes independently of captions', () => {
+  const baseline = buildSession({
+    captions: [
+      { sentenceIndex: 0, text: 'Beat one', startTimeSec: 0, endTimeSec: 10 },
+      { sentenceIndex: 1, text: 'Beat two', startTimeSec: 10, endTimeSec: 20 },
+    ],
+  });
+  const changed = JSON.parse(JSON.stringify(baseline));
+  changed.beats[0].narration.durationSec = 3.29;
+
+  const baselineReady = prepareDraftPreviewRequest(baseline);
+  const changedReady = prepareDraftPreviewRequest(changed);
+
+  assert.equal(baselineReady.ready, true);
+  assert.equal(changedReady.ready, true);
+  assert.notEqual(baselineReady.fingerprint, changedReady.fingerprint);
 });
 
 test('captionOverlayV1 is a mobile-safe computed projection without token timing', () => {

@@ -1024,7 +1024,7 @@ test('GET /api/story/:sessionId returns mobile-safe ready captioned draftPreview
         version: 1,
         state: 'ready',
         updatedAt: '2026-03-19T00:00:00.000Z',
-        rendererVersion: 'captioned-preview-v1',
+        rendererVersion: 'captioned-preview-v1.1',
         fingerprint: 'internal-fingerprint',
         previewId: 'internal-preview-id',
         artifact: {

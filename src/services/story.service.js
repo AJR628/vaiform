@@ -102,7 +102,7 @@ const SYNC_PREVIEW_CONTENT_TYPE = 'audio/mpeg';
 const SYNC_AUDIO_CONTENT_TYPE = 'audio/mpeg';
 const SYNC_TIMING_CONTENT_TYPE = 'application/json';
 const DRAFT_PREVIEW_SCHEMA_VERSION = 1;
-const DRAFT_PREVIEW_RENDERER_VERSION = 'captioned-preview-v1';
+const DRAFT_PREVIEW_RENDERER_VERSION = 'captioned-preview-v1.1';
 const DRAFT_PREVIEW_CONTENT_TYPE = 'video/mp4';
 const DRAFT_PREVIEW_WIDTH = 1080;
 const DRAFT_PREVIEW_HEIGHT = 1920;
@@ -2821,6 +2821,36 @@ export async function renderStoryDraftPreview({
         error.status = 409;
         throw error;
       }
+      const audioPath = await downloadPrivateObjectToTmp({
+        bucketPath: narration.audioStoragePath,
+        tmpDir,
+        name: `preview_voice_${beatIndex}.mp3`,
+      });
+      const timing = await loadStoredBeatTimingData(session, beatIndex);
+      const durationDetails = resolveStoredRenderBeatDurationDetails({
+        narration,
+        timing,
+        caption,
+      });
+      const renderDurationSec = durationDetails.durationSec;
+      const captionSpanSec = Math.max(
+        0,
+        Number(caption.endTimeSec || 0) - Number(caption.startTimeSec || 0)
+      );
+      logger.debug('story.preview.segment_duration_resolved', {
+        sessionId,
+        attemptId,
+        previewId,
+        segmentIndex,
+        beatIndex,
+        sentenceIndex: beatIndex,
+        segmentDurSec: Number(segment.durSec),
+        renderDurationSec,
+        narrationDurationSec: Number(narration.durationSec),
+        timingDurationMs: Number(timing.durationMs),
+        captionSpanSec,
+        durationSource: durationDetails.durationSource,
+      });
       let fetched = fetchedCache.get(segment.clipUrl);
       if (!fetched) {
         fetched = await fetchVideoToTmp(segment.clipUrl);
@@ -2831,7 +2861,7 @@ export async function renderStoryDraftPreview({
         await trimClipToSegment({
           path: fetched.path,
           inSec: segment.inSec,
-          durSec: segment.durSec,
+          durSec: renderDurationSec,
           outPath: trimmedPath,
           options: {
             width: DRAFT_PREVIEW_WIDTH,
@@ -2854,7 +2884,7 @@ export async function renderStoryDraftPreview({
             beatIndex,
             sentenceIndex: beatIndex,
             inSec: Number(segment.inSec),
-            durSec: Number(segment.durSec),
+            durSec: renderDurationSec,
             clipUrl: segment.clipUrl,
             sourceDurationSec: Number.isFinite(Number(trimError?.sourceDurationSec))
               ? Number(trimError.sourceDurationSec)
@@ -2865,12 +2895,6 @@ export async function renderStoryDraftPreview({
         }
         throw trimError;
       }
-      const audioPath = await downloadPrivateObjectToTmp({
-        bucketPath: narration.audioStoragePath,
-        tmpDir,
-        name: `preview_voice_${beatIndex}.mp3`,
-      });
-      const timing = await loadStoredBeatTimingData(session, beatIndex);
       const captionInput = await buildStoredRenderBeatCaptionInput({
         session,
         beatIndex,
@@ -2878,14 +2902,13 @@ export async function renderStoryDraftPreview({
         timing,
         audioPath,
       });
-      const durationSec = Number(segment.durSec);
       const segmentPath = path.join(tmpDir, `captioned_segment_${segmentIndex}.mp4`);
       await renderVideoQuoteOverlay({
         videoPath: trimmedPath,
         outPath: segmentPath,
         width: DRAFT_PREVIEW_WIDTH,
         height: DRAFT_PREVIEW_HEIGHT,
-        durationSec,
+        durationSec: renderDurationSec,
         fps: DRAFT_PREVIEW_FPS,
         text: caption.text,
         captionText: caption.text,
@@ -2898,7 +2921,7 @@ export async function renderStoryDraftPreview({
         padSec: 0,
         colorMetaCache,
       });
-      renderedSegments.push({ path: segmentPath, durationSec });
+      renderedSegments.push({ path: segmentPath, durationSec: renderDurationSec });
     }
 
     const captionedPath = path.join(tmpDir, 'captioned.mp4');
@@ -3290,6 +3313,29 @@ async function loadStoredBeatTimingData(session, beatIndex) {
   return await readPrivateJson(narration.timingStoragePath);
 }
 
+function resolveStoredRenderBeatDurationDetails({ narration, timing, caption }) {
+  const narrationDurationSec = Number(narration?.durationSec);
+  if (Number.isFinite(narrationDurationSec) && narrationDurationSec > 0) {
+    return { durationSec: narrationDurationSec, durationSource: 'narration.durationSec' };
+  }
+
+  const timingDurationMs = Number(timing?.durationMs) || 0;
+  const timingDurationSec = billingMsToSeconds(timingDurationMs);
+  if (Number.isFinite(timingDurationSec) && timingDurationSec > 0) {
+    return { durationSec: timingDurationSec, durationSource: 'timing.durationMs' };
+  }
+
+  const captionSpanSec = Math.max(
+    0,
+    Number(caption?.endTimeSec || 0) - Number(caption?.startTimeSec || 0)
+  );
+  return { durationSec: captionSpanSec, durationSource: 'caption.span' };
+}
+
+function resolveStoredRenderBeatDurationSec({ narration, timing, caption }) {
+  return resolveStoredRenderBeatDurationDetails({ narration, timing, caption }).durationSec;
+}
+
 async function buildStoredRenderBeat({ session, beatIndex, tmpDir }) {
   const caption = session.captions.find((item) => item.sentenceIndex === beatIndex);
   if (!caption) {
@@ -3324,10 +3370,7 @@ async function buildStoredRenderBeat({ session, beatIndex, tmpDir }) {
   return {
     ttsPath: audioPath,
     assPath: captionInput.assPath,
-    durationSec:
-      Number(narration.durationSec) ||
-      billingMsToSeconds(Number(timing.durationMs) || 0) ||
-      Math.max(0, Number(caption.endTimeSec) - Number(caption.startTimeSec)),
+    durationSec: resolveStoredRenderBeatDurationSec({ narration, timing, caption }),
     caption,
     meta: captionInput.meta,
     sentenceText: captionInput.sentenceText,
