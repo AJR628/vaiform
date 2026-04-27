@@ -13,6 +13,15 @@
       "queryScope": "COLLECTION",
       "fields": [
         { "fieldPath": "flow", "order": "ASCENDING" },
+        { "fieldPath": "isActive", "order": "ASCENDING" },
+        { "fieldPath": "jobState", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "idempotency",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "flow", "order": "ASCENDING" },
         { "fieldPath": "state", "order": "ASCENDING" },
         { "fieldPath": "createdAt", "order": "ASCENDING" }
       ]

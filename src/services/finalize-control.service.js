@@ -5,6 +5,7 @@ import {
   describeFinalizeError,
   emitFinalizeEvent,
 } from '../observability/finalize-observability.js';
+import logger from '../observability/logger.js';
 import { getRequestContext } from '../observability/request-context.js';
 
 const ATTEMPTS_COLLECTION = 'idempotency';
@@ -14,6 +15,7 @@ const PROVIDER_STATES_COLLECTION = 'finalizeControlProviderStates';
 const TEST_MODE = process.env.NODE_ENV === 'test' && process.env.VAIFORM_TEST_MODE === '1';
 
 const BACKLOG_JOB_STATES = new Set(['queued', 'claimed', 'started', 'retry_scheduled']);
+const BACKLOG_JOB_STATE_VALUES = Object.freeze([...BACKLOG_JOB_STATES]);
 const RUNNING_JOB_STATES = new Set(['claimed', 'started']);
 const RETRY_SCHEDULED_JOB_STATES = new Set(['retry_scheduled']);
 const DEFAULT_SHARED_RENDER_LIMIT = 3;
@@ -84,10 +86,7 @@ function getSharedBacklogLimit() {
 }
 
 function getSharedOverloadRetryAfterSec() {
-  return numberFromEnv(
-    'STORY_FINALIZE_OVERLOAD_RETRY_AFTER_SEC',
-    DEFAULT_OVERLOAD_RETRY_AFTER_SEC
-  );
+  return numberFromEnv('STORY_FINALIZE_OVERLOAD_RETRY_AFTER_SEC', DEFAULT_OVERLOAD_RETRY_AFTER_SEC);
 }
 
 function getSharedRenderLeaseMs() {
@@ -511,9 +510,14 @@ export async function withSharedFinalizeRenderLease(
 }
 
 export async function captureFinalizeBacklogSnapshot({ now = Date.now() } = {}) {
+  const limit = getSharedBacklogLimit();
+  const queryLimit = limit + 1;
   const snapshot = await db
     .collection(ATTEMPTS_COLLECTION)
     .where('flow', '==', 'story.finalize')
+    .where('isActive', '==', true)
+    .where('jobState', 'in', BACKLOG_JOB_STATE_VALUES)
+    .limit(queryLimit)
     .get();
 
   let queued = 0;
@@ -521,8 +525,7 @@ export async function captureFinalizeBacklogSnapshot({ now = Date.now() } = {}) 
   let retryScheduled = 0;
   for (const doc of snapshot.docs) {
     const data = doc.data() || {};
-    if (data.isActive !== true) continue;
-    const jobState = normalizeString(data.jobState) || normalizeString(data.state);
+    const jobState = normalizeString(data.jobState);
     if (!BACKLOG_JOB_STATES.has(jobState)) continue;
     if (jobState === 'queued') queued += 1;
     if (RUNNING_JOB_STATES.has(jobState)) running += 1;
@@ -530,7 +533,17 @@ export async function captureFinalizeBacklogSnapshot({ now = Date.now() } = {}) 
   }
 
   const backlog = queued + running + retryScheduled;
-  const limit = getSharedBacklogLimit();
+  const overloaded = backlog >= limit;
+  logger.info('finalize.backlog.snapshot', {
+    metricType: 'finalize_backlog',
+    returnedDocCount: snapshot.docs.length,
+    queryLimit,
+    backlog,
+    queued,
+    running,
+    retryScheduled,
+    overloaded,
+  });
   return {
     backlogDefinition: 'queued + running + retry_scheduled',
     queued,
@@ -538,7 +551,7 @@ export async function captureFinalizeBacklogSnapshot({ now = Date.now() } = {}) 
     retryScheduled,
     backlog,
     limit,
-    overloaded: backlog >= limit,
+    overloaded,
     retryAfterSec: getSharedOverloadRetryAfterSec(),
     generatedAt: new Date(now).toISOString(),
   };
@@ -565,7 +578,9 @@ export async function reapExpiredSharedProviderLeases({
     const lease = normalizeProviderLease(doc.data(), doc.id);
     if (!lease || isProviderLeaseActive(lease, now)) continue;
     if (lease.state === 'leased' && lease.ownerId) {
-      released += (await updateExpiredProviderSlot(providerSlotRef(doc.id), lease, nowDate)) ? 1 : 0;
+      released += (await updateExpiredProviderSlot(providerSlotRef(doc.id), lease, nowDate))
+        ? 1
+        : 0;
     }
   }
   return released;
@@ -669,7 +684,11 @@ export async function tryAcquireSharedProviderLease({
   });
 }
 
-export async function releaseSharedProviderLease({ providerKey, ownerId, releaseState = 'released' } = {}) {
+export async function releaseSharedProviderLease({
+  providerKey,
+  ownerId,
+  releaseState = 'released',
+} = {}) {
   const normalizedProviderKey = normalizeString(providerKey);
   const normalizedOwnerId = normalizeString(ownerId);
   if (!normalizedProviderKey || !normalizedOwnerId) return false;
@@ -878,7 +897,9 @@ export async function reapSharedFinalizePressureState({ now = Date.now() } = {})
   };
 }
 
-export async function acquireFinalizeOpenAiAdmission({ ownerId = getFinalizeOwnerIdentity() } = {}) {
+export async function acquireFinalizeOpenAiAdmission({
+  ownerId = getFinalizeOwnerIdentity(),
+} = {}) {
   if (!isFinalizeSharedControlContext()) return { acquired: false, bypassed: true };
   return await tryAcquireSharedProviderLease({
     providerKey: PROVIDER_KEYS.OPENAI,
@@ -887,7 +908,9 @@ export async function acquireFinalizeOpenAiAdmission({ ownerId = getFinalizeOwne
   });
 }
 
-export async function releaseFinalizeOpenAiAdmission({ ownerId = getFinalizeOwnerIdentity() } = {}) {
+export async function releaseFinalizeOpenAiAdmission({
+  ownerId = getFinalizeOwnerIdentity(),
+} = {}) {
   if (!isFinalizeSharedControlContext()) return false;
   return await releaseSharedProviderLease({
     providerKey: PROVIDER_KEYS.OPENAI,
@@ -895,7 +918,10 @@ export async function releaseFinalizeOpenAiAdmission({ ownerId = getFinalizeOwne
   });
 }
 
-export function getFinalizeProviderRetryAfterSec(result, fallback = getSharedOverloadRetryAfterSec()) {
+export function getFinalizeProviderRetryAfterSec(
+  result,
+  fallback = getSharedOverloadRetryAfterSec()
+) {
   return retryAfterSecFromMs(result?.retryAfterMs, fallback);
 }
 
@@ -920,7 +946,10 @@ export async function releaseFinalizeStorySearchAdmission({
   });
 }
 
-export async function isFinalizeStorySearchProviderCooldownActive(provider, { now = Date.now() } = {}) {
+export async function isFinalizeStorySearchProviderCooldownActive(
+  provider,
+  { now = Date.now() } = {}
+) {
   if (!isFinalizeSharedControlContext()) return false;
   const providerState = await getFinalizeStorySearchProviderStatus(provider);
   return Boolean(

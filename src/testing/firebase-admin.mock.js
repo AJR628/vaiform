@@ -8,6 +8,7 @@ function ensureState() {
       collections: new Map(),
       storage: new Map(),
       authTokens: new Map(),
+      queryLog: [],
       bucketName: process.env.FIREBASE_STORAGE_BUCKET?.trim() || 'vaiform-test.appspot.com',
     };
   }
@@ -201,12 +202,15 @@ class FakeQuery {
   }
 
   where(field, op, value) {
-    if (op !== '==') {
+    if (op !== '==' && op !== 'in') {
       throw new Error(`Unsupported fake Firestore operator: ${op}`);
+    }
+    if (op === 'in' && !Array.isArray(value)) {
+      throw new Error('Fake Firestore "in" operator requires an array value');
     }
     return new FakeQuery(this.collectionName, {
       ...this,
-      filters: [...this.filters, { field, value }],
+      filters: [...this.filters, { field, op, value: cloneValue(value) }],
     });
   }
 
@@ -236,7 +240,11 @@ class FakeQuery {
     let docs = [...collection.entries()].map(([id, data]) => ({ id, data: cloneValue(data) }));
 
     for (const filter of this.filters) {
-      docs = docs.filter((entry) => getFieldValue(entry.data, filter.field) === filter.value);
+      docs = docs.filter((entry) => {
+        const fieldValue = getFieldValue(entry.data, filter.field);
+        if (filter.op === 'in') return filter.value.includes(fieldValue);
+        return fieldValue === filter.value;
+      });
     }
 
     if (this.order) {
@@ -264,6 +272,14 @@ class FakeQuery {
     if (Number.isInteger(this.limitCount) && this.limitCount >= 0) {
       docs = docs.slice(0, this.limitCount);
     }
+
+    ensureState().queryLog.push({
+      collectionName: this.collectionName,
+      filters: cloneValue(this.filters),
+      order: cloneValue(this.order),
+      limitCount: this.limitCount,
+      returnedDocCount: docs.length,
+    });
 
     return new FakeQuerySnapshot(docs.map((entry) => new FakeDocSnapshot(entry.id, entry.data)));
   }
@@ -423,6 +439,7 @@ export function resetMockFirebase() {
   state.collections.clear();
   state.storage.clear();
   state.authTokens.clear();
+  state.queryLog = [];
 }
 
 export function seedAuthToken(token, decoded) {
@@ -440,6 +457,10 @@ export function seedDoc(collectionName, id, data) {
 export function readDoc(collectionName, id) {
   const value = getCollectionMap(collectionName).get(id);
   return value == null ? null : cloneValue(value);
+}
+
+export function readQueryLog() {
+  return cloneValue(ensureState().queryLog);
 }
 
 export function seedStorageObject(filePath, body, metadata = {}) {

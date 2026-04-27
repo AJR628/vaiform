@@ -64,6 +64,14 @@ Degraded signals:
 - Shared pressure config: use the live `pressureConfig` control-room section as the current source of backlog/render/provider limits.
 - Local process safety: remember the render semaphore is still per-process only; treat it as a guardrail, not the whole-system limit.
 
+## Firestore Read Cost Guardrail
+
+- Root cause fixed in the active code path: finalize backlog and queue-metric snapshots used to query every historical `idempotency` doc with `flow == story.finalize`, then filter inactive/terminal attempts in JavaScript.
+- Current behavior: those snapshots query only active pressure states with `flow == story.finalize`, `isActive == true`, `jobState in [queued, claimed, started, retry_scheduled]`, and a bounded `limit`.
+- Expected impact: snapshot reads scale with active finalize queue pressure, not historical finalize attempt count.
+- Required index: `idempotency(flow ASC, isActive ASC, jobState ASC)` is source-controlled in root `firestore.indexes.json`.
+- Follow-up remains optional and separate: TTL/archive for old attempts or aggregate counters may still reduce storage and analytics cost, but they are not required for the active pressure read cap.
+
 ## Queue-Age Growth
 
 Symptoms:

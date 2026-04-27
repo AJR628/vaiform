@@ -12,6 +12,7 @@ import {
 } from '../contracts/helpers/phase4a-harness.js';
 import { runWithFinalizeObservabilityContext } from '../../src/observability/finalize-observability.js';
 import { setRuntimeOverride } from '../../src/testing/runtime-overrides.js';
+import { readQueryLog, seedDoc } from '../../src/testing/firebase-admin.mock.js';
 
 function withEnv(patch) {
   const previous = new Map();
@@ -74,6 +75,44 @@ function buildSearchSession(sessionId) {
   };
 }
 
+function seedFinalizeAttempt(id, patch = {}) {
+  const now = patch.createdAt || new Date('2026-04-27T12:00:00.000Z').toISOString();
+  seedDoc('idempotency', id, {
+    flow: 'story.finalize',
+    uid: 'user-1',
+    attemptId: id,
+    sessionId: `session-${id}`,
+    state: patch.state || 'queued',
+    jobState: patch.jobState || patch.state || 'queued',
+    isActive: patch.isActive === undefined ? true : patch.isActive,
+    createdAt: now,
+    enqueuedAt: patch.enqueuedAt || now,
+    updatedAt: now,
+    ...patch,
+  });
+}
+
+function latestIdempotencyQuery() {
+  return readQueryLog()
+    .filter((entry) => entry.collectionName === 'idempotency')
+    .at(-1);
+}
+
+function assertActiveFinalizeQueryShape(query, { expectedLimit }) {
+  assert.ok(query, 'expected an idempotency query to be recorded');
+  assert.equal(query.limitCount, expectedLimit);
+  assert.deepEqual(query.order, null);
+  assert.deepEqual(query.filters, [
+    { field: 'flow', op: '==', value: 'story.finalize' },
+    { field: 'isActive', op: '==', value: true },
+    {
+      field: 'jobState',
+      op: 'in',
+      value: ['queued', 'claimed', 'started', 'retry_scheduled'],
+    },
+  ]);
+}
+
 async function waitForAsync(predicate, { timeoutMs = 1000, intervalMs = 20 } = {}) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
@@ -95,6 +134,104 @@ test.after(async () => {
 
 test.beforeEach(() => {
   resetHarnessState();
+});
+
+test('finalize backlog snapshot uses bounded active-state query and ignores historical attempts', async () => {
+  const restoreEnv = withEnv({
+    STORY_FINALIZE_SHARED_BACKLOG_LIMIT: 4,
+  });
+
+  try {
+    const control = await import('../../src/services/finalize-control.service.js');
+
+    for (let i = 0; i < 25; i += 1) {
+      seedFinalizeAttempt(`historical-${i}`, {
+        state: 'done',
+        jobState: 'done',
+        isActive: false,
+      });
+    }
+    seedFinalizeAttempt('active-queued', { jobState: 'queued', state: 'queued' });
+    seedFinalizeAttempt('active-claimed', { jobState: 'claimed', state: 'running' });
+    seedFinalizeAttempt('active-started', { jobState: 'started', state: 'running' });
+    seedFinalizeAttempt('active-retry', { jobState: 'retry_scheduled', state: 'queued' });
+
+    const snapshot = await control.captureFinalizeBacklogSnapshot({
+      now: Date.parse('2026-04-27T12:05:00.000Z'),
+    });
+
+    assert.equal(snapshot.backlogDefinition, 'queued + running + retry_scheduled');
+    assert.equal(snapshot.queued, 1);
+    assert.equal(snapshot.running, 2);
+    assert.equal(snapshot.retryScheduled, 1);
+    assert.equal(snapshot.backlog, 4);
+    assert.equal(snapshot.limit, 4);
+    assert.equal(snapshot.overloaded, true);
+    assert.equal(snapshot.retryAfterSec, 30);
+    assert.equal(snapshot.generatedAt, '2026-04-27T12:05:00.000Z');
+
+    const query = latestIdempotencyQuery();
+    assertActiveFinalizeQueryShape(query, { expectedLimit: 5 });
+    assert.equal(query.returnedDocCount, 4);
+  } finally {
+    restoreEnv();
+  }
+});
+
+test('finalize queue metrics snapshot counts active pressure docs only', async () => {
+  const { captureFinalizeQueueMetricsSnapshot } = await import(
+    '../../src/services/story-finalize.attempts.js'
+  );
+
+  for (let i = 0; i < 25; i += 1) {
+    seedFinalizeAttempt(`inactive-${i}`, {
+      state: 'done',
+      jobState: i % 2 === 0 ? 'done' : 'failed',
+      isActive: false,
+    });
+  }
+  seedFinalizeAttempt('queued-oldest', {
+    jobState: 'queued',
+    state: 'queued',
+    createdAt: '2026-04-27T12:00:00.000Z',
+    enqueuedAt: '2026-04-27T12:00:00.000Z',
+  });
+  seedFinalizeAttempt('claimed-running', {
+    jobState: 'claimed',
+    state: 'running',
+    createdAt: '2026-04-27T12:01:00.000Z',
+  });
+  seedFinalizeAttempt('started-running', {
+    jobState: 'started',
+    state: 'running',
+    createdAt: '2026-04-27T12:02:00.000Z',
+  });
+  seedFinalizeAttempt('retry-later', {
+    jobState: 'retry_scheduled',
+    state: 'queued',
+    createdAt: '2026-04-27T12:03:00.000Z',
+    availableAfter: '2026-04-27T12:10:00.000Z',
+  });
+
+  const snapshot = await captureFinalizeQueueMetricsSnapshot({
+    now: Date.parse('2026-04-27T12:05:00.000Z'),
+  });
+
+  assert.equal(snapshot.queueDepth, 2);
+  assert.equal(snapshot.queueOldestAgeSeconds, 300);
+  assert.equal(snapshot.jobsRunning, 2);
+  assert.equal(snapshot.jobsRetryScheduled, 1);
+  assert.equal(snapshot.billingUnsettledJobs, 4);
+  assert.deepEqual(snapshot.jobStateCounts, {
+    queued: 1,
+    claimed: 1,
+    started: 1,
+    retry_scheduled: 1,
+  });
+
+  const query = latestIdempotencyQuery();
+  assertActiveFinalizeQueryShape(query, { expectedLimit: 100 });
+  assert.equal(query.returnedDocCount, 4);
 });
 
 test('shared render leases enforce global capacity by executionAttemptId and stale leases are reapable', async () => {

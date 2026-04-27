@@ -58,6 +58,13 @@ const numberFromEnv = (name, fallback) => {
   const raw = Number(process.env[name]);
   return Number.isFinite(raw) && raw > 0 ? raw : fallback;
 };
+const FINALIZE_QUEUE_METRICS_JOB_STATES = Object.freeze([
+  'queued',
+  'claimed',
+  'started',
+  'retry_scheduled',
+]);
+const FINALIZE_QUEUE_METRICS_QUERY_LIMIT = numberFromEnv('FINALIZE_QUEUE_METRICS_QUERY_LIMIT', 100);
 
 export const FINALIZE_ACCEPTED_STATUS = 202;
 export const FINALIZE_ACTIVE_STATES = new Set(['queued', 'running']);
@@ -85,7 +92,8 @@ export const FINALIZE_BUSY_RETRY_MS = numberFromEnv(
 
 const requestIdOf = (req) => req?.id ?? null;
 const attemptDocId = (uid, attemptId) => `${uid}:${attemptId}`;
-const attemptRef = (uid, attemptId) => db.collection(ATTEMPTS_COLLECTION).doc(attemptDocId(uid, attemptId));
+const attemptRef = (uid, attemptId) =>
+  db.collection(ATTEMPTS_COLLECTION).doc(attemptDocId(uid, attemptId));
 const sessionLockRef = (uid, sessionId) =>
   db.collection(SESSION_LOCKS_COLLECTION).doc(`${uid}:${sessionId}`);
 const buildExecutionAttemptId = (jobId, attemptNumber) => `${jobId}:exec:${attemptNumber}`;
@@ -113,7 +121,9 @@ const cloneValue = (value) => {
 const deepCloneValue = (value) => {
   if (Array.isArray(value)) return value.map((item) => deepCloneValue(item));
   if (value && typeof value === 'object') {
-    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, deepCloneValue(item)]));
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [key, deepCloneValue(item)])
+    );
   }
   return value ?? null;
 };
@@ -123,7 +133,8 @@ const jobStateFromCompatState = (data = {}) => {
   if (current) return current;
   switch (data?.state) {
     case 'queued':
-      return Number.isFinite(toMillis(data?.availableAfter)) && toMillis(data.availableAfter) > Date.now()
+      return Number.isFinite(toMillis(data?.availableAfter)) &&
+        toMillis(data.availableAfter) > Date.now()
         ? 'retry_scheduled'
         : 'queued';
     case 'running':
@@ -161,7 +172,8 @@ const normalizeExecutionAttempt = (execution, { jobId, attemptNumber, compat = {
       ? Number(execution.attemptNumber)
       : attemptNumber;
   const executionAttemptId =
-    typeof execution?.executionAttemptId === 'string' && execution.executionAttemptId.trim().length > 0
+    typeof execution?.executionAttemptId === 'string' &&
+    execution.executionAttemptId.trim().length > 0
       ? execution.executionAttemptId.trim()
       : buildExecutionAttemptId(jobId, number);
   return {
@@ -308,7 +320,9 @@ const buildCanonicalJobRecord = (data, id = null) => {
   });
   const jobState = jobStateFromCompatState(compat);
   const projection =
-    compat.projection && typeof compat.projection === 'object' ? deepCloneValue(compat.projection) : {};
+    compat.projection && typeof compat.projection === 'object'
+      ? deepCloneValue(compat.projection)
+      : {};
   if (!projection.renderRecovery) {
     projection.renderRecovery = buildCanonicalProjection({
       attempt: {
@@ -495,7 +509,8 @@ const appendExecutionAttempt = (attempt, patch = {}) => {
 };
 
 const getVoiceSyncAdmissionError = (session) => {
-  const state = typeof session?.voiceSync?.state === 'string' ? session.voiceSync.state : 'never_synced';
+  const state =
+    typeof session?.voiceSync?.state === 'string' ? session.voiceSync.state : 'never_synced';
   if (state === 'never_synced') {
     return {
       status: 409,
@@ -549,7 +564,9 @@ export const finalizeMeta = ({ attemptId, pollSessionId, state = 'pending' }) =>
   state,
   attemptId: typeof attemptId === 'string' && attemptId.trim().length > 0 ? attemptId.trim() : null,
   pollSessionId:
-    typeof pollSessionId === 'string' && pollSessionId.trim().length > 0 ? pollSessionId.trim() : null,
+    typeof pollSessionId === 'string' && pollSessionId.trim().length > 0
+      ? pollSessionId.trim()
+      : null,
 });
 
 export const finalizeSuccessEnvelope = (req, session, shortId) => ({
@@ -607,6 +624,9 @@ export async function captureFinalizeQueueMetricsSnapshot({ now = Date.now() } =
   const snapshot = await db
     .collection(ATTEMPTS_COLLECTION)
     .where('flow', '==', FLOW)
+    .where('isActive', '==', true)
+    .where('jobState', 'in', FINALIZE_QUEUE_METRICS_JOB_STATES)
+    .limit(FINALIZE_QUEUE_METRICS_QUERY_LIMIT)
     .get();
 
   let queueDepth = 0;
@@ -621,17 +641,21 @@ export async function captureFinalizeQueueMetricsSnapshot({ now = Date.now() } =
     if (attempt.jobState) {
       jobStateCounts[attempt.jobState] = (jobStateCounts[attempt.jobState] || 0) + 1;
     }
-    if (attempt.isActive !== true) continue;
     billingUnsettledJobs += 1;
     if (attempt.jobState === 'queued' || attempt.jobState === 'retry_scheduled') {
       queueDepth += 1;
-      const createdAtMs = toMillis(attempt.queue?.lastQueuedAt ?? attempt.enqueuedAt ?? attempt.createdAt);
+      const createdAtMs = toMillis(
+        attempt.queue?.lastQueuedAt ?? attempt.enqueuedAt ?? attempt.createdAt
+      );
       if (Number.isFinite(createdAtMs)) {
         oldestQueuedAtMs =
           oldestQueuedAtMs == null ? createdAtMs : Math.min(oldestQueuedAtMs, createdAtMs);
       }
       const availableAfterMs = toMillis(attempt.queue?.availableAfter ?? attempt.availableAfter);
-      if (attempt.jobState === 'retry_scheduled' || (Number.isFinite(availableAfterMs) && availableAfterMs > now)) {
+      if (
+        attempt.jobState === 'retry_scheduled' ||
+        (Number.isFinite(availableAfterMs) && availableAfterMs > now)
+      ) {
         jobsRetryScheduled += 1;
       }
     }
@@ -639,6 +663,16 @@ export async function captureFinalizeQueueMetricsSnapshot({ now = Date.now() } =
       jobsRunning += 1;
     }
   }
+
+  logger.info('finalize.queue_metrics.snapshot', {
+    metricType: 'finalize_queue_metrics',
+    returnedDocCount: snapshot.docs.length,
+    queryLimit: FINALIZE_QUEUE_METRICS_QUERY_LIMIT,
+    queueDepth,
+    jobsRunning,
+    jobsRetryScheduled,
+    billingUnsettledJobs,
+  });
 
   return {
     queueDepth,
@@ -671,7 +705,9 @@ export async function getFinalizeSessionLock({ uid, sessionId }) {
     uid: data.uid || uid || null,
     sessionId: data.sessionId || sessionId || null,
     attemptId:
-      typeof data.attemptId === 'string' && data.attemptId.trim().length > 0 ? data.attemptId.trim() : null,
+      typeof data.attemptId === 'string' && data.attemptId.trim().length > 0
+        ? data.attemptId.trim()
+        : null,
     state: data.state || null,
     createdAt: toIso(data.createdAt),
     updatedAt: toIso(data.updatedAt),
@@ -698,7 +734,9 @@ async function getActiveFinalizeAttemptForSession({ uid, sessionId, attemptId })
   if (!lockSnap.exists) return null;
   const lock = lockSnap.data() || {};
   const activeAttemptId =
-    typeof lock.attemptId === 'string' && lock.attemptId.trim().length > 0 ? lock.attemptId.trim() : null;
+    typeof lock.attemptId === 'string' && lock.attemptId.trim().length > 0
+      ? lock.attemptId.trim()
+      : null;
   if (!activeAttemptId || activeAttemptId === attemptId) {
     return null;
   }
@@ -888,7 +926,11 @@ export async function prepareFinalizeAttempt({
     };
   }
 
-  const activeSessionAttempt = await getActiveFinalizeAttemptForSession({ uid, sessionId, attemptId });
+  const activeSessionAttempt = await getActiveFinalizeAttemptForSession({
+    uid,
+    sessionId,
+    attemptId,
+  });
   if (activeSessionAttempt) {
     return { kind: 'active_other_key', attempt: activeSessionAttempt };
   }
@@ -1044,7 +1086,8 @@ export async function prepareFinalizeAttempt({
               state: 'pending',
               attemptId,
               previous:
-                reservationSession?.renderRecovery && typeof reservationSession.renderRecovery === 'object'
+                reservationSession?.renderRecovery &&
+                typeof reservationSession.renderRecovery === 'object'
                   ? reservationSession.renderRecovery
                   : {},
               shortId: null,
@@ -1431,7 +1474,8 @@ export async function finalizeAttemptFailure({
       stage,
       shortId: attempt?.shortId ?? null,
       durationMs:
-        Number.isFinite(toMillis(attempt?.finishedAt)) && Number.isFinite(toMillis(attempt?.enqueuedAt))
+        Number.isFinite(toMillis(attempt?.finishedAt)) &&
+        Number.isFinite(toMillis(attempt?.enqueuedAt))
           ? toMillis(attempt.finishedAt) - toMillis(attempt.enqueuedAt)
           : null,
       ...failureDetails,
@@ -1442,7 +1486,13 @@ export async function finalizeAttemptFailure({
   return attempt;
 }
 
-export async function settleFinalizeAttemptSuccess({ uid, attemptId, session, shortId, status = 200 }) {
+export async function settleFinalizeAttemptSuccess({
+  uid,
+  attemptId,
+  session,
+  shortId,
+  status = 200,
+}) {
   const currentAttempt = await getFinalizeAttempt({ uid, attemptId });
   if (!currentAttempt) {
     throw Object.assign(new Error('FINALIZE_ATTEMPT_NOT_FOUND'), {
@@ -1464,7 +1514,9 @@ export async function settleFinalizeAttemptSuccess({ uid, attemptId, session, sh
   }
 
   const estimatedMs = secondsToBillingMs(
-    currentAttempt?.usageReservation?.estimatedSec ?? currentAttempt?.usageReservation?.estimatedMs ?? 0
+    currentAttempt?.usageReservation?.estimatedSec ??
+      currentAttempt?.usageReservation?.estimatedMs ??
+      0
   );
   const billedMs = getBilledMsFromSession(session);
   if (!billedMs) {
@@ -1487,7 +1539,9 @@ export async function settleFinalizeAttemptSuccess({ uid, attemptId, session, sh
       estimatedSec,
       reservedSec: billingMsToSeconds(
         secondsToBillingMs(
-          currentAttempt?.usageReservation?.reservedSec ?? currentAttempt?.usageReservation?.reservedMs ?? 0
+          currentAttempt?.usageReservation?.reservedSec ??
+            currentAttempt?.usageReservation?.reservedMs ??
+            0
         )
       ),
       billedSec,
@@ -1687,7 +1741,9 @@ export async function settleFinalizeAttemptSuccess({ uid, attemptId, session, sh
     estimatedSec,
     reservedSec: billingMsToSeconds(
       secondsToBillingMs(
-        currentAttempt?.usageReservation?.reservedSec ?? currentAttempt?.usageReservation?.reservedMs ?? 0
+        currentAttempt?.usageReservation?.reservedSec ??
+          currentAttempt?.usageReservation?.reservedMs ??
+          0
       )
     ),
     billedSec,
@@ -1695,7 +1751,8 @@ export async function settleFinalizeAttemptSuccess({ uid, attemptId, session, sh
     usageLedgerApplied: true,
     billingMismatch: false,
     durationMs:
-      Number.isFinite(toMillis(attempt?.finishedAt)) && Number.isFinite(toMillis(attempt?.enqueuedAt))
+      Number.isFinite(toMillis(attempt?.finishedAt)) &&
+      Number.isFinite(toMillis(attempt?.enqueuedAt))
         ? toMillis(attempt.finishedAt) - toMillis(attempt.enqueuedAt)
         : null,
   });
@@ -1951,7 +2008,8 @@ export async function claimNextFinalizeAttempt({ runnerId, leaseMs = FINALIZE_RU
         queuedAt: claimed.enqueuedAt,
         startedAt: claimed.startedAt,
         durationMs:
-          Number.isFinite(toMillis(claimed.startedAt)) && Number.isFinite(toMillis(claimed.enqueuedAt))
+          Number.isFinite(toMillis(claimed.startedAt)) &&
+          Number.isFinite(toMillis(claimed.enqueuedAt))
             ? toMillis(claimed.startedAt) - toMillis(claimed.enqueuedAt)
             : null,
       });
@@ -1979,16 +2037,20 @@ export async function markFinalizeAttemptStarted({
     if (attempt.runnerId && runnerId && attempt.runnerId !== runnerId) return;
     const activeExecution = getCurrentExecutionAttempt(attempt);
     if (!activeExecution) return;
-    const executionAttempts = updateExecutionAttempt(attempt, activeExecution.executionAttemptId, (execution) => ({
-      ...execution,
-      state: 'running',
-      workerId: runnerId ?? execution.workerId ?? null,
-      startedAt: execution.startedAt ?? now,
-      lease: {
-        heartbeatAt: attempt.leaseHeartbeatAt ?? now,
-        expiresAt: attempt.leaseExpiresAt ?? null,
-      },
-    }));
+    const executionAttempts = updateExecutionAttempt(
+      attempt,
+      activeExecution.executionAttemptId,
+      (execution) => ({
+        ...execution,
+        state: 'running',
+        workerId: runnerId ?? execution.workerId ?? null,
+        startedAt: execution.startedAt ?? now,
+        lease: {
+          heartbeatAt: attempt.leaseHeartbeatAt ?? now,
+          expiresAt: attempt.leaseExpiresAt ?? null,
+        },
+      })
+    );
     const currentExecution =
       executionAttempts.find(
         (execution) => execution.executionAttemptId === activeExecution.executionAttemptId
@@ -2014,7 +2076,12 @@ export async function markFinalizeAttemptStarted({
   return await getFinalizeAttempt({ uid, attemptId });
 }
 
-export async function heartbeatFinalizeAttempt({ uid, attemptId, runnerId, leaseMs = FINALIZE_RUNNER_LEASE_MS }) {
+export async function heartbeatFinalizeAttempt({
+  uid,
+  attemptId,
+  runnerId,
+  leaseMs = FINALIZE_RUNNER_LEASE_MS,
+}) {
   await db.runTransaction(async (tx) => {
     const docRef = attemptRef(uid, attemptId);
     const docSnap = await tx.get(docRef);
@@ -2130,7 +2197,11 @@ export async function reapStaleFinalizeAttempts() {
     }
 
     const leaseExpiresAtMs = toMillis(attempt.leaseExpiresAt);
-    if (attempt.state === 'running' && Number.isFinite(leaseExpiresAtMs) && leaseExpiresAtMs <= Date.now()) {
+    if (
+      attempt.state === 'running' &&
+      Number.isFinite(leaseExpiresAtMs) &&
+      leaseExpiresAtMs <= Date.now()
+    ) {
       emitFinalizeEvent('warn', FINALIZE_EVENTS.WORKER_HEARTBEAT_MISSED, {
         sourceRole: FINALIZE_SOURCE_ROLES.WORKER,
         requestId: attempt.requestId ?? null,
