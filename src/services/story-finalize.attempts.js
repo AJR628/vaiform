@@ -1319,6 +1319,7 @@ export async function finalizeAttemptFailure({
   executionState = 'failed_terminal',
   failureReason = null,
   emitObservability = true,
+  refreshMetrics = true,
 }) {
   const now = new Date();
   const currentAttempt = await getFinalizeAttempt({ uid, attemptId });
@@ -1482,7 +1483,9 @@ export async function finalizeAttemptFailure({
       failureReason: failureReason || failureDetails.failureReason,
     });
   }
-  safeRefreshFinalizeQueueMetrics();
+  if (refreshMetrics) {
+    safeRefreshFinalizeQueueMetrics();
+  }
   return attempt;
 }
 
@@ -2150,20 +2153,23 @@ export async function reapStaleFinalizeAttempts() {
     .limit(100)
     .get();
 
+  let mutated = false;
   for (const doc of snapshot.docs) {
     const attempt = normalizeAttempt(doc.data(), doc.id);
     if (!attempt) continue;
 
     const expiresAtMs = toMillis(attempt.expiresAt);
     if (attempt.state === 'queued' && Number.isFinite(expiresAtMs) && expiresAtMs <= Date.now()) {
-      await finalizeAttemptFailure({
+      const failedAttempt = await finalizeAttemptFailure({
         uid: attempt.uid,
         attemptId: attempt.attemptId,
         status: 500,
         error: 'FINALIZE_ATTEMPT_EXPIRED',
         detail: 'Finalize attempt expired before completion.',
         state: 'expired',
+        refreshMetrics: false,
       });
+      mutated = mutated || failedAttempt?.isActive === false;
       emitFinalizeEvent('warn', FINALIZE_EVENTS.WORKER_HEARTBEAT_MISSED, {
         sourceRole: FINALIZE_SOURCE_ROLES.WORKER,
         requestId: attempt.requestId ?? null,
@@ -2221,14 +2227,16 @@ export async function reapStaleFinalizeAttempts() {
           }
         ),
       });
-      await finalizeAttemptFailure({
+      const failedAttempt = await finalizeAttemptFailure({
         uid: attempt.uid,
         attemptId: attempt.attemptId,
         status: 500,
         error: 'FINALIZE_WORKER_LOST',
         detail: 'Finalize worker stopped before completion.',
         executionState: 'abandoned',
+        refreshMetrics: false,
       });
+      mutated = mutated || failedAttempt?.isActive === false;
       await persistStoryRenderRecovery({
         uid: attempt.uid,
         sessionId: attempt.sessionId,
@@ -2241,5 +2249,7 @@ export async function reapStaleFinalizeAttempts() {
       }).catch(() => {});
     }
   }
-  safeRefreshFinalizeQueueMetrics();
+  if (mutated) {
+    safeRefreshFinalizeQueueMetrics();
+  }
 }

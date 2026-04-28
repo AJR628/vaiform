@@ -31,6 +31,7 @@ const LOCAL_WORKER_INFLIGHT_LIMIT = Math.max(
   1,
   Number(process.env.STORY_FINALIZE_LOCAL_WORKER_INFLIGHT_LIMIT || (TEST_MODE ? 2 : 6))
 );
+const FINALIZE_RUNNER_IDLE_POLL_MAX_MS = 5000;
 
 export function createStoryFinalizeRunner({ keepProcessAlive = false } = {}) {
   const runnerId = `story-finalize-runner-${process.pid}-${Math.random().toString(36).slice(2, 10)}`;
@@ -41,12 +42,23 @@ export function createStoryFinalizeRunner({ keepProcessAlive = false } = {}) {
   let pollTimer = null;
   let reaperTimer = null;
   let draining = false;
+  let consecutiveEmptyPolls = 0;
 
   const currentWorkerMetrics = () => ({
     workersActive: stopped ? 0 : 1,
     jobsRunning: inflight.size,
     workerSaturationRatio: Number((inflight.size / LOCAL_WORKER_INFLIGHT_LIMIT).toFixed(3)),
   });
+
+  const resetIdlePollBackoff = () => {
+    consecutiveEmptyPolls = 0;
+  };
+
+  const nextIdlePollDelayMs = () => {
+    consecutiveEmptyPolls += 1;
+    const multiplier = consecutiveEmptyPolls === 1 ? 2 : 5;
+    return Math.min(FINALIZE_RUNNER_POLL_MS * multiplier, FINALIZE_RUNNER_IDLE_POLL_MAX_MS);
+  };
 
   const schedulePoll = (delayMs = FINALIZE_RUNNER_POLL_MS) => {
     if (stopped) return;
@@ -169,7 +181,6 @@ export function createStoryFinalizeRunner({ keepProcessAlive = false } = {}) {
             shortId,
             status: 200,
           });
-          await refreshFinalizeQueueMetrics();
         } catch (error) {
           if (error?.code === 'SERVER_BUSY' || error?.message === 'SERVER_BUSY') {
             await markFinalizeAttemptQueuedForRetry({
@@ -177,7 +188,6 @@ export function createStoryFinalizeRunner({ keepProcessAlive = false } = {}) {
               attemptId: attempt.attemptId,
               runnerId,
             });
-            await refreshFinalizeQueueMetrics();
             return;
           }
 
@@ -241,7 +251,6 @@ export function createStoryFinalizeRunner({ keepProcessAlive = false } = {}) {
             failureReason: mapped.error,
             emitObservability: false,
           });
-          await refreshFinalizeQueueMetrics();
         } finally {
           clearInterval(heartbeat);
         }
@@ -252,6 +261,8 @@ export function createStoryFinalizeRunner({ keepProcessAlive = false } = {}) {
   const drainQueue = async () => {
     if (stopped || draining) return;
     draining = true;
+    let claimedAny = false;
+    let nextDelayMs = FINALIZE_RUNNER_POLL_MS;
     try {
       while (!stopped && inflight.size < LOCAL_WORKER_INFLIGHT_LIMIT) {
         const attempt = await claimNextFinalizeAttempt({
@@ -259,6 +270,8 @@ export function createStoryFinalizeRunner({ keepProcessAlive = false } = {}) {
           leaseMs: FINALIZE_RUNNER_LEASE_MS,
         });
         if (!attempt) break;
+        claimedAny = true;
+        resetIdlePollBackoff();
 
         const task = runAttempt(attempt)
           .catch((error) => {
@@ -287,6 +300,7 @@ export function createStoryFinalizeRunner({ keepProcessAlive = false } = {}) {
           })
           .finally(() => {
             inflight.delete(attempt.attemptId);
+            resetIdlePollBackoff();
             emitFinalizeEvent('debug', FINALIZE_EVENTS.WORKER_HEARTBEAT, {
               sourceRole: FINALIZE_SOURCE_ROLES.WORKER,
               requestId: attempt.requestId ?? null,
@@ -302,7 +316,12 @@ export function createStoryFinalizeRunner({ keepProcessAlive = false } = {}) {
           });
         inflight.set(attempt.attemptId, task);
       }
+      if (!claimedAny) {
+        nextDelayMs = nextIdlePollDelayMs();
+      }
     } catch (error) {
+      resetIdlePollBackoff();
+      nextDelayMs = FINALIZE_RUNNER_POLL_MS;
       emitFinalizeEvent('error', FINALIZE_EVENTS.WORKER_CLAIM_LOOP_ERROR, {
         sourceRole: FINALIZE_SOURCE_ROLES.WORKER,
         workerId: runnerId,
@@ -316,7 +335,7 @@ export function createStoryFinalizeRunner({ keepProcessAlive = false } = {}) {
       throw error;
     } finally {
       draining = false;
-      schedulePoll();
+      schedulePoll(nextDelayMs);
     }
   };
 
@@ -340,6 +359,7 @@ export function createStoryFinalizeRunner({ keepProcessAlive = false } = {}) {
     });
   };
 
+  resetIdlePollBackoff();
   schedulePoll(TEST_MODE ? 0 : FINALIZE_RUNNER_POLL_MS);
   scheduleReaper();
   emitFinalizeEvent('info', FINALIZE_EVENTS.WORKER_STARTED, {

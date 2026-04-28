@@ -274,6 +274,7 @@ class FakeQuery {
     }
 
     ensureState().queryLog.push({
+      atMs: Date.now(),
       collectionName: this.collectionName,
       filters: cloneValue(this.filters),
       order: cloneValue(this.order),

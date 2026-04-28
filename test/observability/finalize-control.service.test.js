@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  readDoc,
   readStorySession,
   resetHarnessState,
   seedStorySession,
@@ -96,6 +97,39 @@ function latestIdempotencyQuery() {
   return readQueryLog()
     .filter((entry) => entry.collectionName === 'idempotency')
     .at(-1);
+}
+
+function idempotencyQueries() {
+  return readQueryLog().filter((entry) => entry.collectionName === 'idempotency');
+}
+
+function hasFilter(query, field, op, value) {
+  return query.filters?.some(
+    (filter) =>
+      filter.field === field &&
+      filter.op === op &&
+      (Array.isArray(value)
+        ? JSON.stringify(filter.value) === JSON.stringify(value)
+        : filter.value === value)
+  );
+}
+
+function finalizeQueueMetricsQueries() {
+  return idempotencyQueries().filter(
+    (query) =>
+      hasFilter(query, 'flow', '==', 'story.finalize') &&
+      hasFilter(query, 'isActive', '==', true) &&
+      hasFilter(query, 'jobState', 'in', ['queued', 'claimed', 'started', 'retry_scheduled'])
+  );
+}
+
+function finalizeClaimQueries() {
+  return idempotencyQueries().filter(
+    (query) =>
+      hasFilter(query, 'flow', '==', 'story.finalize') &&
+      hasFilter(query, 'state', '==', 'queued') &&
+      query.limitCount === 10
+  );
 }
 
 function assertActiveFinalizeQueryShape(query, { expectedLimit }) {
@@ -232,6 +266,111 @@ test('finalize queue metrics snapshot counts active pressure docs only', async (
   const query = latestIdempotencyQuery();
   assertActiveFinalizeQueryShape(query, { expectedLimit: 100 });
   assert.equal(query.returnedDocCount, 4);
+});
+
+test('stale finalize reaper does not refresh queue metrics when no attempts mutate', async () => {
+  const { reapStaleFinalizeAttempts } = await import(
+    '../../src/services/story-finalize.attempts.js'
+  );
+
+  seedFinalizeAttempt('user-1:not-stale-queued', {
+    attemptId: 'not-stale-queued',
+    sessionId: 'story-not-stale-queued',
+    state: 'queued',
+    jobState: 'queued',
+    expiresAt: new Date(Date.now() + 60_000).toISOString(),
+  });
+
+  await reapStaleFinalizeAttempts();
+  await new Promise((resolve) => setTimeout(resolve, 25));
+
+  assert.equal(finalizeQueueMetricsQueries().length, 0);
+  assert.equal(readDoc('idempotency', 'user-1:not-stale-queued')?.state, 'queued');
+});
+
+test('stale finalize reaper mutates queued and running attempts and refreshes queue metrics once', async () => {
+  const { reapStaleFinalizeAttempts } = await import(
+    '../../src/services/story-finalize.attempts.js'
+  );
+  const staleIso = new Date(Date.now() - 60_000).toISOString();
+
+  seedFinalizeAttempt('user-1:stale-queued', {
+    attemptId: 'stale-queued',
+    sessionId: 'story-stale-queued',
+    state: 'queued',
+    jobState: 'queued',
+    expiresAt: staleIso,
+  });
+  seedFinalizeAttempt('user-1:stale-running', {
+    attemptId: 'stale-running',
+    sessionId: 'story-stale-running',
+    state: 'running',
+    jobState: 'started',
+    leaseExpiresAt: staleIso,
+    runnerId: 'lost-runner',
+  });
+
+  await reapStaleFinalizeAttempts();
+  await waitForAsync(() => finalizeQueueMetricsQueries().length === 1, {
+    timeoutMs: 500,
+    intervalMs: 10,
+  });
+
+  assert.equal(readDoc('idempotency', 'user-1:stale-queued')?.state, 'expired');
+  assert.equal(readDoc('idempotency', 'user-1:stale-queued')?.isActive, false);
+  assert.equal(readDoc('idempotency', 'user-1:stale-running')?.state, 'failed');
+  assert.equal(readDoc('idempotency', 'user-1:stale-running')?.isActive, false);
+  assert.equal(finalizeQueueMetricsQueries().length, 1);
+});
+
+test('finalize runner backs off empty claim polling and resets after a claim', async () => {
+  const { createStoryFinalizeRunner } = await import('../../src/services/story-finalize.runner.js');
+  const runner = createStoryFinalizeRunner();
+
+  try {
+    await waitForAsync(() => finalizeClaimQueries().length >= 2, {
+      timeoutMs: 250,
+      intervalMs: 10,
+    });
+
+    const emptyClaims = finalizeClaimQueries();
+    await new Promise((resolve) => setTimeout(resolve, 90));
+    assert.ok(
+      finalizeClaimQueries().length <= emptyClaims.length + 1,
+      'empty claim loops should slow down instead of polling at the active cadence'
+    );
+
+    seedFinalizeAttempt('user-1:runner-backoff-claim', {
+      attemptId: 'runner-backoff-claim',
+      sessionId: 'story-runner-backoff-claim',
+      state: 'queued',
+      jobState: 'queued',
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+    });
+
+    await waitForAsync(
+      () => readDoc('idempotency', 'user-1:runner-backoff-claim')?.state !== 'queued',
+      {
+        timeoutMs: 500,
+        intervalMs: 10,
+      }
+    );
+
+    const claimedQuery = finalizeClaimQueries().find((query) => query.returnedDocCount > 0);
+    assert.ok(claimedQuery, 'expected the runner to claim the queued attempt');
+    await waitForAsync(
+      () =>
+        finalizeClaimQueries().some(
+          (query) => query.atMs > claimedQuery.atMs && query.atMs - claimedQuery.atMs <= 75
+        ),
+      {
+        timeoutMs: 250,
+        intervalMs: 10,
+      }
+    );
+  } finally {
+    runner.stop();
+  }
 });
 
 test('shared render leases enforce global capacity by executionAttemptId and stale leases are reapable', async () => {
