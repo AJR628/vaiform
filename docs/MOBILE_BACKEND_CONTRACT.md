@@ -101,11 +101,11 @@ Route-authority note:
   - Backend returns: full session in `data`.
   - Mobile reads: `story.sentences`, `shots`, `overlayCaption.placement`, additive `billingEstimate.estimatedSec`, `voicePreset`, `voicePacePreset`, `voiceOptions`, `voiceSync`, synced `captions`, additive `draftPreviewV1`, additive `captionOverlayV1`, additive `previewReadinessV1`, `shot.selectedClip.thumbUrl`, `shot.searchQuery`, and `renderRecovery` during finalize recovery polling and same-session restart-safe finalize resume.
   - Additive preview fields:
-    - `draftPreviewV1`: mobile-safe backend-owned base preview artifact state. `artifact.url` is returned only when `state = "ready"`; stale, queued, running, blocked, failed, and not-requested states do not expose a playable URL.
-    - `captionOverlayV1`: computed mobile-safe overlay contract derived from backend-owned caption timing/style truth. It includes `frame`, `placement`, `style`, and `segments[]` without karaoke tokens in v1.
+    - `draftPreviewV1`: mobile-safe backend-owned captioned ready-preview video artifact state. `artifact.url` is returned only when `state = "ready"`; stale, queued, running, blocked, failed, and not-requested states do not expose a playable URL.
+    - `captionOverlayV1`: computed mobile-safe compatibility/timeline/style metadata derived from backend-owned caption timing/style truth. It includes `frame`, `placement`, `style`, and `segments[]` without karaoke tokens in v1, but it is not the ready-preview visual renderer.
     - `previewReadinessV1 = { version, ready, reasonCode, missingBeatIndices }`: backend-owned aligned-preview readiness metadata. Current reason codes are `VOICE_SYNC_NOT_CURRENT`, `PREVIEW_AUDIO_MISSING`, `CAPTIONS_INCOMPLETE`, `MISSING_CLIP_COVERAGE`, and `INVALID_PLAYBACK_SEGMENTS`.
     - `playbackTimelineV1`: retained as backend-derived timing/segment metadata for compatibility and rail/timing helpers; it is no longer the mobile playback engine.
-  - Mobile Step 3 playback truth is now `draftPreviewV1` plus `captionOverlayV1` through `client/screens/story-editor/step3.ts`, `client/screens/story-editor/useStep3SessionModel.ts`, and `client/screens/story-editor/useStep3PreviewArtifact.ts`.
+  - Mobile Step 3 ready-preview playback truth is now `draftPreviewV1.artifact.url` through `client/screens/story-editor/step3.ts`, `client/screens/story-editor/useStep3SessionModel.ts`, and `client/screens/story-editor/useStep3PreviewArtifact.ts`; `captionOverlayV1` remains metadata/compatibility support only.
   - Recovery role: this route remains the canonical finalize recovery contract. Additive `renderRecovery` fields still expose `{ state, attemptId, startedAt, updatedAt, shortId, finishedAt, failedAt, code, message }`, and mobile still trusts them only when `renderRecovery.attemptId` matches the active finalize attempt. Backend Phase 5 now derives that additive projection from canonical finalize attempt/job truth through `src/services/finalize-status.service.js`; session `renderRecovery` remains compatibility storage only.
   - Stable failure now: `404 SESSION_NOT_FOUND`.
   - Diagnostics note: failed recovery polls now keep `requestId` in normalized mobile failures and enrich diagnostics with `sessionId` plus the active finalize `attemptId`.
@@ -129,11 +129,14 @@ Route-authority note:
   - Contract rules:
     - Canonical session metadata remains Storage-backed `drafts/{uid}/{sessionId}/story.json`.
     - Preview attempts live separately in Firestore collections `storyPreviewAttempts` and `storyPreviewSessions`; they are queue/lease state, not a metadata SSOT.
-    - Base preview artifacts upload to immutable preview-id paths under `artifacts/{uid}/{sessionId}/previews/{previewId}/base.mp4`.
+    - Captioned preview artifacts upload to immutable preview-id paths under `artifacts/{uid}/{sessionId}/previews/{previewId}/captioned.mp4`.
+    - Current renderer truth is `captioned-preview-v1.2`; older renderer artifacts project stale through renderer-version mismatch.
+    - Preview generation consumes persisted synced per-beat narration audio/timing artifacts and does not call the TTS provider when voice sync is current.
+    - Preview and Final Render share caption/karaoke render-input truth and `videoCutsV1` timeline planning, but still produce separate MP4 artifacts through separate FFmpeg work.
     - Sanitized `draftPreviewV1` responses never include storage paths, bucket names, fingerprints, cleanup internals, or stale artifact URLs.
-    - `state = "stale"` means the old base preview is not an approval preview and must not be playable by mobile.
-    - Base preview invalidates for story text, beat insert/delete, selected clip changes, clip timing/cuts changes, current sync changes, and preview renderer version changes.
-    - Caption placement/style-only changes update `captionOverlayV1` without regenerating the base preview.
+    - `state = "stale"` means the old captioned preview is not an approval preview and must not be playable by mobile.
+    - Captioned preview invalidates for story text, beat insert/delete, selected clip changes, clip timing/cuts changes, current sync changes, caption render-input changes, and preview renderer version changes.
+    - Caption placement/style-only changes update `captionOverlayV1` and stale captioned preview when the changed render inputs affect burned preview pixels.
   - Stable failures now:
     - `400 MISSING_IDEMPOTENCY_KEY`
     - `400 INVALID_INPUT`
@@ -179,7 +182,7 @@ Route-authority note:
   - Mobile sends: `{ sessionId, mode: "full" | "stale", voicePreset?, voicePacePreset?: "normal" }` plus `X-Idempotency-Key`.
   - Backend returns: full session in `data`; same-key active replay returns `202` with additive top-level `sync: { state, attemptId, pollSessionId }`.
   - Mobile reads: `voiceSync.state`, `voiceSync.staleScope`, `voiceSync.staleBeatIndices`, `voiceSync.nextEstimatedChargeSec`, `voiceSync.lastChargeSec`, `voiceSync.totalDurationSec`, `voiceSync.previewAudioUrl`, `voiceSync.cached`, persisted `voicePreset`, persisted `voicePacePreset`, synced `captions`, and updated render `billingEstimate.estimatedSec`.
-  - Additive preview note: successful sync updates backend-owned caption timing and stales the base preview when the sync fingerprint changes. The next Step 3 approval preview is generated through `POST /api/story/preview` and read through `GET /api/story/:sessionId`.
+  - Additive preview note: successful sync stores per-beat audio/timing artifacts consumed by both preview and final render, updates backend-owned caption timing, and stales draft preview when the sync fingerprint changes. The next Step 3 approval preview is generated through `POST /api/story/preview` and read through `GET /api/story/:sessionId`.
   - Contract rules:
     - identical current sync fingerprint returns cached success and `0` charge
     - full script changes, beat insert/delete, or voice changes require full re-sync
@@ -273,7 +276,7 @@ Route-authority note:
     - genuinely new admissions may return `503 SERVER_BUSY` with `Retry-After` only when the shared finalize backlog gate is over cap
   - Mobile reads: `status`, `shortId`, additive `finalize.state`, `finalize.attemptId`, `finalize.pollSessionId`, additive `data.billing.billedSec` when available, and on failures `retryAfter`, `code/error`, `message/detail`.
   - Guardrails: Firestore-backed async finalize attempt SSOT, exact-once usage reservation/settlement/release helpers, session-scoped active-attempt lockout, backend lease/heartbeat reaping, shared Firestore-backed render leases owned by `executionAttemptId`, shared finalize backlog gating, and shared finalize-relevant OpenAI/story-search/TTS pressure with local process guards retained as secondary safety.
-  - Render truth rule: synced sessions now render from persisted synced narration/timing artifacts; finalize must not regenerate fresh narration timing for a supposedly current sync fingerprint.
+  - Render truth rule: synced sessions now render from persisted synced narration/timing artifacts; finalize must not regenerate fresh narration timing for a supposedly current sync fingerprint. Final Render shares the caption/karaoke and `videoCutsV1` source truth with backend preview, but still produces its own final MP4 artifact.
   - Admission precedence order is frozen to:
     1. same-key replay
     2. same-session active conflict
@@ -330,7 +333,7 @@ Route-authority note:
 | `GET /api/story/:sessionId`             | `MOBILE_CORE_NOW`  | Mobile script/editor and finalize-recovery truth (`client/screens/ScriptScreen.tsx:65-82`, `client/screens/story-editor/useStoryEditorSession.ts:36-78`, `client/screens/story-editor/useStoryEditorFinalize.ts:182-225`) | Harden now.                                                                        |
 | `POST /api/story/plan`                  | `MOBILE_CORE_NOW`  | Mobile storyboard step (`client/screens/ScriptScreen.tsx:126-159`)                                                                                                                                                        | Harden now.                                                                        |
 | `POST /api/story/search`                | `MOBILE_CORE_NOW`  | Mobile storyboard step (`client/screens/ScriptScreen.tsx:141-159`)                                                                                                                                                        | Harden now.                                                                        |
-| `POST /api/story/preview`               | `MOBILE_CORE_NOW`  | Mobile Step 3 base preview generation (`client/screens/StoryEditorScreen.tsx`, `client/screens/story-editor/useStep3PreviewArtifact.ts`, `client/api/client.ts`)                                                          | Harden now; backend-owned preview artifact path.                                   |
+| `POST /api/story/preview`               | `MOBILE_CORE_NOW`  | Mobile Step 3 captioned preview generation (`client/screens/StoryEditorScreen.tsx`, `client/screens/story-editor/useStep3PreviewArtifact.ts`, `client/api/client.ts`)                                                     | Harden now; backend-owned captioned preview artifact path.                         |
 | `POST /api/story/update-beat-text`      | `MOBILE_CORE_NOW`  | Mobile script/editor beat editing (`client/screens/ScriptScreen.tsx:174-236`, `client/screens/story-editor/useStoryEditorSession.ts:131-176`)                                                                             | Harden now.                                                                        |
 | `POST /api/story/delete-beat`           | `MOBILE_CORE_NOW`  | Mobile script/editor deletion (`client/screens/ScriptScreen.tsx:248-262`, `client/screens/story-editor/useStoryEditorSession.ts:190-231`)                                                                                 | Harden now.                                                                        |
 | `POST /api/story/search-shot`           | `MOBILE_CORE_NOW`  | Mobile clip picker (`client/screens/ClipSearchModal.tsx:49-80`)                                                                                                                                                           | Harden now.                                                                        |

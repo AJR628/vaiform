@@ -139,16 +139,16 @@ Goal: harden only the backend surface that the current mobile app actually depen
 
 ## Hybrid Step 3 Preview Hardening Landed
 
-- `DONE`: Mobile Step 3 no longer uses live multi-clip on-device playback as the active preview engine.
+- `DONE`: Mobile Step 3 no longer uses live multi-clip on-device playback or React Native ready-preview captions as the active preview engine.
   - Backend evidence: `src/routes/story.routes.js`, `src/services/story.service.js`, `src/services/story-preview.attempts.js`, `src/services/story-preview.runner.js`, `src/workers/story-preview.worker.js`
   - Mobile evidence: `client/screens/story-editor/useStep3SessionModel.ts`, `client/screens/story-editor/useStep3PreviewArtifact.ts`, `client/components/story-editor/StoryboardPreviewStage.tsx`
-  - Scope note: backend generates one base preview MP4 from selected clips, cuts/timing, and synced narration. Mobile plays that single artifact and renders live caption overlay from backend-owned `captionOverlayV1`.
+  - Scope note: backend generates one captioned preview MP4 from selected clips, cuts/timing, stored synced per-beat narration audio/timing, and backend-burned karaoke captions. Mobile plays `draftPreviewV1.artifact.url` as the ready-preview visual source; `captionOverlayV1` remains compatibility/timeline/style metadata.
 
 - `DONE`: Draft preview metadata stays additive under the canonical Storage-backed story session JSON at `drafts/{uid}/{sessionId}/story.json`.
   - Backend evidence: `src/utils/json.store.js`, `src/services/story.service.js`
   - Scope note: preview attempt/lease state uses Firestore as worker infrastructure only; it is not a second metadata source of truth.
 
-- `DONE`: Stale base previews are not returned as playable approval previews.
+- `DONE`: Stale captioned previews are not returned as playable approval previews.
   - Backend evidence: `src/services/story.service.js`
   - Mobile evidence: `client/screens/story-editor/step3.ts`, `client/components/story-editor/StoryboardPreviewStage.tsx`
   - Scope note: sanitized `draftPreviewV1.artifact.url` is returned only when `state = "ready"`; stale, queued, running, blocked, failed, and not-requested states render regeneration/status UI instead.

@@ -1,8 +1,8 @@
 # Caption Preview/Render Parity Plan
 
-- Status: Planned
+- Status: Completed / historical tracker
 - Owner repo: backend
-- Source of truth for: phase execution tracker for caption preview/render parity
+- Source of truth for: historical phase execution tracker for caption preview/render parity
 - Canonical contract docs:
   - backend `docs/API_CONTRACT.md`
   - backend `docs/MOBILE_BACKEND_CONTRACT.md`
@@ -10,9 +10,9 @@
   - mobile `docs/MOBILE_USED_SURFACES.md`
   - mobile `docs/DOCS_INDEX.md`
 
-This document is a phase-scoped implementation tracker, not permanent API contract truth. After implementation is complete and canonical docs are updated to match landed runtime behavior, archive or demote this plan.
+This document is a phase-scoped implementation tracker, not permanent API contract truth. Phase 1E aligned the canonical docs on 2026-04-29; keep this document as historical implementation context and use the canonical contract docs above for live API behavior.
 
-Line evidence below was re-audited against the local backend and mobile main checkouts on 2026-04-25.
+Line evidence below was re-audited against the local backend and mobile main checkouts on 2026-04-29.
 
 ## Goal
 
@@ -30,13 +30,13 @@ Product rule: native mobile Preview must not approximate final captions with Rea
 
 ## Current-State Summary
 
-- Backend preview currently uses `base-preview-v1`: `src/services/story.service.js:105-107`.
-- Backend preview currently produces an audio-included base MP4: `renderStoryDraftPreview()` trims clips and concatenates video-only segments at `src/services/story.service.js:2751-2782`, downloads preview narration at `src/services/story.service.js:2783-2787`, muxes video/audio at `src/services/story.service.js:2788-2794`, and uploads `previews/{previewId}/base.mp4` at `src/services/story.service.js:2810-2827`.
-- Backend preview currently does not burn captions/karaoke: the audited preview path above only trims, concatenates, muxes, and uploads; the caption/karaoke calls are absent from `src/services/story.service.js:2711-2834`.
-- Final render currently uses backend caption/karaoke generation: `buildStoredRenderBeat()` compiles caption SSOT at `src/services/story.service.js:3074-3105`, loads stored beat timing/audio at `src/services/story.service.js:3150-3164`, and calls `buildKaraokeASSFromTimestamps()` at `src/services/story.service.js:3173-3182`.
-- Final render burns caption/karaoke visuals through `renderVideoQuoteOverlay()`: `renderStory()` consumes `buildStoredRenderBeat()` output at `src/services/story.service.js:4239-4243` and passes `assPath`, `ttsPath`, and caption data into `renderVideoQuoteOverlay()` at `src/services/story.service.js:4309-4326` and `src/services/story.service.js:4361-4378`.
-- Mobile currently overlays React Native caption text in `StoryboardPreviewStage.tsx`: local caption style/placement is calculated at `client/components/story-editor/StoryboardPreviewStage.tsx:83-131`, backend preview video is rendered at `client/components/story-editor/StoryboardPreviewStage.tsx:151-160`, and RN caption text is overlaid at `client/components/story-editor/StoryboardPreviewStage.tsx:162-169`.
-- `captionOverlayV1` is metadata/timeline/style projection, not exact WYSIWYG visual truth: backend projection exposes `frame`, `placement`, `style`, and `segments` at `src/services/story.service.js:377-409`; mobile type contains style plus segment text/timing fields only at `client/types/story.ts:119-135`.
+- Backend preview currently uses `captioned-preview-v1.2`: `src/services/story.service.js:105`.
+- Backend preview now produces a backend-captioned MP4 behind `draftPreviewV1.artifact.url`: `renderStoryDraftPreview()` builds per-beat stored render inputs at `src/services/story.service.js:3017-3020` and `src/services/story.service.js:3244-3250`, burns captions/karaoke through `renderVideoQuoteOverlay()` at `src/services/story.service.js:3127-3144` and `src/services/story.service.js:3252-3269`, concatenates rendered segments at `src/services/story.service.js:3274-3279`, and uploads `previews/{previewId}/captioned.mp4` at `src/services/story.service.js:3295-3298`.
+- Final render uses the same stored caption/karaoke inputs: `buildStoredRenderBeat()` loads stored per-beat audio/timing and creates ASS input at `src/services/story.service.js:3713-3752`; `renderStory()` passes `ttsPath`, `assPath`, caption text, and overlay metadata into `renderVideoQuoteOverlay()` at `src/services/story.service.js:4856-4873` and `src/services/story.service.js:4907-4924`.
+- Voice sync is the TTS provider boundary: `syncStoryVoice()` calls `synthVoiceWithTimestamps()` only for beats that need regeneration at `src/services/story.service.js:3839-3865`, then stores private per-beat audio/timing at `src/services/story.service.js:3897-3918` and narration metadata at `src/services/story.service.js:3920-3928`.
+- Preview and Final Render share the `videoCutsV1` timeline model through `resolveStoryVideoCutsPlan()` and `buildStoryVideoCutsTimelinePlan()` at `src/services/story.service.js:2293-2448`.
+- Preview and Final Render still produce separate MP4 artifacts through separate FFmpeg work. Preview-to-final artifact promotion remains a future optimization/non-goal.
+- Mobile Phase 1D has been manually verified by AJ: ready preview renders only backend `draftPreviewV1.artifact.url`; React Native ready-preview caption overlays are removed from both active unified preview and the legacy fallback.
 
 ## Non-Goals
 
@@ -64,6 +64,10 @@ Product rule: native mobile Preview must not approximate final captions with Rea
 
 ## Compute/Billing Position For This Plan
 
+- Provider TTS synthesis happens during voice sync only when the sync fingerprint requires generation.
+- Preview and Final Render consume stored per-beat narration audio/timing from voice sync.
+- Preview and Final Render share caption/karaoke render-input truth and `videoCutsV1` timeline planning.
+- Preview and Final Render separately run FFmpeg and produce separate MP4 artifacts; this is local/server compute, not duplicate provider TTS cost.
 - Voice sync and final render remain the only billed operations in this plan.
 - Captioned preview remains included for now.
 - Preview must be explicit, queued, idempotent, cached/fingerprint-aware, and observable.
@@ -331,18 +335,18 @@ Tests run:
 
 Manual verification:
 
-- Pending AJ verification with `ENABLE_VIDEO_CUTS_V1=1` on a story where visual cuts cross caption boundaries.
-- Compare backend `draftPreviewV1.artifact.url` MP4 directly against Final Render for clip order, cut timing, caption timing, caption placement, and total duration. Ignore the React Native overlay until Phase 1D.
+- AJ manually verified backend preview/final parity after Phase 1D: backend-burned captions display in mobile preview, RN ready-preview captions are gone, and preview aligns with Final Render.
+- Verification target remains backend `draftPreviewV1.artifact.url` MP4 compared against Final Render for clip order, cut timing, caption timing, caption placement, and total duration.
 
 Rollback notes:
 
 - Restore renderer version `captioned-preview-v1.1`.
 - Revert preview `videoCutsV1` global-timeline rendering to the prior readiness-segment loop if the topology change must be backed out.
-- Keep Phase 1D not started; do not remove the React Native overlay as part of rollback.
+- Keep Phase 1D rollback separate; restoring mobile RN captions is only appropriate if backend captioned preview is explicitly rolled back.
 
 ## Phase 1D - Mobile Disables React Native Visual Caption Overlay
 
-Status: Not started
+Status: Completed
 
 Only start after backend captioned preview is verified.
 
@@ -370,19 +374,35 @@ Tests to run:
 
 Implementation notes:
 
-- Pending.
+- Completed in the mobile repo on 2026-04-28.
+- Ready unified preview renders only the backend preview video from `draftPreviewV1.artifact.url`.
+- Ready legacy fallback preview no longer overlays local React Native caption text because checked-in beta/release config did not prove the unified surface flag is always enabled.
+- `captionOverlayV1` and current caption metadata remain available upstream for timeline, voice modal, compatibility, and non-visual state.
+- AJ manually verified on mobile that backend-burned preview captions display, RN ready-preview captions are gone, and preview aligns with final render.
 
 Files changed:
 
-- Pending.
+- mobile `client/components/story-editor/StoryboardPreviewStage.tsx`
+- mobile `client/components/story-editor/StoryboardSurface.tsx`
+- mobile `client/components/story-editor/StoryboardSurface.test.tsx`
+- mobile `client/components/story-editor/StoryPreviewShell.tsx`
+- mobile `client/components/story-editor/StoryPreviewShell.test.tsx`
+- mobile `client/screens/StoryEditorScreen.tsx`
+- mobile `docs/MOBILE_USED_SURFACES.md`
+- mobile `docs/PREVIEW_FLOW_REFACTOR_PLAN.md`
 
 Tests run:
 
-- Pending.
+- mobile `npm run test:ci -- client/components/story-editor/StoryboardSurface.test.tsx client/components/story-editor/StoryPreviewShell.test.tsx` - pass
+- mobile `npm run test:ci -- client/screens/StoryEditorScreen.test.tsx` - pass
+- mobile `npm run test:ci` - pass
+- mobile `npm run check:types` - pass
+- mobile changed-file Prettier check - pass
 
 Discoveries:
 
-- Pending.
+- Backend `draftPreviewV1.artifact.url` is the only ready-preview visual caption source.
+- `captionOverlayV1` is compatibility/timeline/style metadata, not the ready-preview visual renderer.
 
 Rollback notes:
 
@@ -390,7 +410,7 @@ Rollback notes:
 
 ## Phase 1E - Canonical Docs Alignment And Final Verification
 
-Status: Not started
+Status: Completed
 
 Only update canonical docs after behavior lands and is verified.
 
@@ -417,23 +437,34 @@ Manual verification to record:
 
 Completion/archival notes:
 
-- Pending. Archive or demote this tracker after implementation completes and canonical docs match runtime truth.
+- Phase 1E completed on 2026-04-29. Canonical docs now describe captioned preview/final parity as landed runtime truth; this tracker is demoted to historical implementation context.
 
 Implementation notes:
 
-- Pending.
+- Removed or replaced stale `base-preview-v1`, `base.mp4`, and React Native overlay truth from canonical backend/mobile docs.
+- Recorded compute reuse truth: TTS provider calls happen during voice sync only when needed; preview and final consume stored per-beat narration audio/timing; preview/final share caption/karaoke and `videoCutsV1` source truth; preview/final still create separate MP4 artifacts through separate FFmpeg work.
+- Kept preview-to-final artifact promotion as an explicit future optimization/non-goal.
 
 Files changed:
 
-- Pending.
+- `docs/CAPTION_PREVIEW_RENDER_PARITY_PLAN.md`
+- `docs/API_CONTRACT.md`
+- `docs/MOBILE_BACKEND_CONTRACT.md`
+- `docs/MOBILE_HARDENING_PLAN.md`
+- `docs/ACTIVE_SURFACES.md`
+- mobile `docs/MOBILE_USED_SURFACES.md`
 
 Tests run:
 
-- Pending.
+- `npm run test:contracts` - pass
+- `node --test --test-concurrency=1 test/contracts/story-preview.contract.test.js` - pass
+- `node --test --test-concurrency=1 test/contracts/ffmpeg-timeline.contract.test.js` - pass
+- `npm run check:responses` - pass
+- changed-file format/response checks - pass
 
 Discoveries:
 
-- Pending.
+- A narrow no-provider-call test was skipped because the current proof would require invasive mocking/export seams around private render helpers or external storage/media dependencies. Phase 1E records code evidence instead.
 
 Rollback notes:
 
@@ -442,14 +473,14 @@ Rollback notes:
 
 ## Implementation Status Ledger
 
-| Phase                     | Status      | Date       | Files changed                                                                                                                                                                                                                                                                               | Tests run                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | Manual verification                                 | Notes/follow-ups                                                                                                                                                                                                                              |
-| ------------------------- | ----------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Phase 1A                  | Completed   | 2026-04-25 | `src/services/story.service.js`, `docs/CAPTION_PREVIEW_RENDER_PARITY_PLAN.md`                                                                                                                                                                                                               | `npm run test:contracts`; `node --test --test-concurrency=1 test/contracts/story-preview.contract.test.js`; `npm run check:format:changed -- --files src/services/story.service.js,docs/CAPTION_PREVIEW_RENDER_PARITY_PLAN.md`; `npm run check:responses:changed -- --files src/services/story.service.js,docs/CAPTION_PREVIEW_RENDER_PARITY_PLAN.md`                                                                                                                                                                                                                                                                                                                                                                                                 | Not applicable                                      | Private helper extraction only; no runtime behavior change expected.                                                                                                                                                                          |
-| Phase 1B                  | Completed   | 2026-04-25 | `src/services/story.service.js`, `src/utils/media.duration.js`, `src/utils/ffmpeg.timeline.js`, `test/contracts/ffmpeg-timeline.contract.test.js`, `test/contracts/story-preview.contract.test.js`, `test/contracts/phase4a.contract.test.js`, `docs/CAPTION_PREVIEW_RENDER_PARITY_PLAN.md` | `npm run test:contracts`; `node --test --test-concurrency=1 test/contracts/ffmpeg-timeline.contract.test.js`; `node --test --test-concurrency=1 test/contracts/story-preview.contract.test.js`; `npm run check:format:changed -- --files src/utils/media.duration.js,src/utils/ffmpeg.timeline.js,src/services/story.service.js,test/contracts/ffmpeg-timeline.contract.test.js,docs/CAPTION_PREVIEW_RENDER_PARITY_PLAN.md`; `npm run check:responses:changed -- --files src/utils/media.duration.js,src/utils/ffmpeg.timeline.js,src/services/story.service.js,test/contracts/ffmpeg-timeline.contract.test.js,docs/CAPTION_PREVIEW_RENDER_PARITY_PLAN.md`                                                                                           | AJ verified synced native/backend artifact manually | Captioned backend preview artifact landed; trim no-video stabilization added; timing stabilization bumped renderer to `captioned-preview-v1.1` and made preview duration truth mirror Final Render; RN overlay still expected until Phase 1D. |
-| Phase 1C                  | Completed   | 2026-04-26 | `src/services/story.service.js`, `src/routes/story.routes.js`, `src/services/story-preview.runner.js`, `test/contracts/story-preview.contract.test.js`, `test/contracts/phase4a.contract.test.js`, `docs/CAPTION_PREVIEW_RENDER_PARITY_PLAN.md`                                             | `node --test --test-concurrency=1 test/contracts/story-preview.contract.test.js`; `npm run test:contracts`; `node --test --test-concurrency=1 test/contracts/ffmpeg-timeline.contract.test.js`; `npm run check:format:changed -- --files src/services/story.service.js,src/routes/story.routes.js,src/services/story-preview.runner.js,test/contracts/story-preview.contract.test.js,test/contracts/phase4a.contract.test.js,docs/CAPTION_PREVIEW_RENDER_PARITY_PLAN.md`; `npm run check:responses:changed -- --files src/services/story.service.js,src/routes/story.routes.js,src/services/story-preview.runner.js,test/contracts/story-preview.contract.test.js,test/contracts/phase4a.contract.test.js,docs/CAPTION_PREVIEW_RENDER_PARITY_PLAN.md` | Replit/native stale/cache/log verification pending  | Existing private preview fingerprint now includes effective caption render inputs; caption style/meta edits stale previews without auto-rendering; preview observability added.                                                               |
-| Visual topology follow-up | Completed   | 2026-04-28 | `src/services/story.service.js`, `test/contracts/story-preview.contract.test.js`, `test/contracts/phase4a.contract.test.js`, `docs/CAPTION_PREVIEW_RENDER_PARITY_PLAN.md`                                                                                                                   | `npm run test:contracts`; `node --test --test-concurrency=1 test/contracts/story-preview.contract.test.js`; `node --test --test-concurrency=1 test/contracts/ffmpeg-timeline.contract.test.js`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | Pending AJ verification                             | Renderer bumped to `captioned-preview-v1.2`; preview and Final Render now share `videoCutsV1` visual timeline planning while Phase 1D remains not started.                                                                                    |
-| Phase 1D                  | Not started | -          | -                                                                                                                                                                                                                                                                                           | -                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | -                                                   | -                                                                                                                                                                                                                                             |
-| Phase 1E                  | Not started | -          | -                                                                                                                                                                                                                                                                                           | -                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | -                                                   | -                                                                                                                                                                                                                                             |
+| Phase                     | Status    | Date       | Files changed                                                                                                                                                                                                                                                                               | Tests run                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | Manual verification                                 | Notes/follow-ups                                                                                                                                                                                                                              |
+| ------------------------- | --------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Phase 1A                  | Completed | 2026-04-25 | `src/services/story.service.js`, `docs/CAPTION_PREVIEW_RENDER_PARITY_PLAN.md`                                                                                                                                                                                                               | `npm run test:contracts`; `node --test --test-concurrency=1 test/contracts/story-preview.contract.test.js`; `npm run check:format:changed -- --files src/services/story.service.js,docs/CAPTION_PREVIEW_RENDER_PARITY_PLAN.md`; `npm run check:responses:changed -- --files src/services/story.service.js,docs/CAPTION_PREVIEW_RENDER_PARITY_PLAN.md`                                                                                                                                                                                                                                                                                                                                                                                                 | Not applicable                                      | Private helper extraction only; no runtime behavior change expected.                                                                                                                                                                          |
+| Phase 1B                  | Completed | 2026-04-25 | `src/services/story.service.js`, `src/utils/media.duration.js`, `src/utils/ffmpeg.timeline.js`, `test/contracts/ffmpeg-timeline.contract.test.js`, `test/contracts/story-preview.contract.test.js`, `test/contracts/phase4a.contract.test.js`, `docs/CAPTION_PREVIEW_RENDER_PARITY_PLAN.md` | `npm run test:contracts`; `node --test --test-concurrency=1 test/contracts/ffmpeg-timeline.contract.test.js`; `node --test --test-concurrency=1 test/contracts/story-preview.contract.test.js`; `npm run check:format:changed -- --files src/utils/media.duration.js,src/utils/ffmpeg.timeline.js,src/services/story.service.js,test/contracts/ffmpeg-timeline.contract.test.js,docs/CAPTION_PREVIEW_RENDER_PARITY_PLAN.md`; `npm run check:responses:changed -- --files src/utils/media.duration.js,src/utils/ffmpeg.timeline.js,src/services/story.service.js,test/contracts/ffmpeg-timeline.contract.test.js,docs/CAPTION_PREVIEW_RENDER_PARITY_PLAN.md`                                                                                           | AJ verified synced native/backend artifact manually | Captioned backend preview artifact landed; trim no-video stabilization added; timing stabilization bumped renderer to `captioned-preview-v1.1` and made preview duration truth mirror Final Render; RN overlay still expected until Phase 1D. |
+| Phase 1C                  | Completed | 2026-04-26 | `src/services/story.service.js`, `src/routes/story.routes.js`, `src/services/story-preview.runner.js`, `test/contracts/story-preview.contract.test.js`, `test/contracts/phase4a.contract.test.js`, `docs/CAPTION_PREVIEW_RENDER_PARITY_PLAN.md`                                             | `node --test --test-concurrency=1 test/contracts/story-preview.contract.test.js`; `npm run test:contracts`; `node --test --test-concurrency=1 test/contracts/ffmpeg-timeline.contract.test.js`; `npm run check:format:changed -- --files src/services/story.service.js,src/routes/story.routes.js,src/services/story-preview.runner.js,test/contracts/story-preview.contract.test.js,test/contracts/phase4a.contract.test.js,docs/CAPTION_PREVIEW_RENDER_PARITY_PLAN.md`; `npm run check:responses:changed -- --files src/services/story.service.js,src/routes/story.routes.js,src/services/story-preview.runner.js,test/contracts/story-preview.contract.test.js,test/contracts/phase4a.contract.test.js,docs/CAPTION_PREVIEW_RENDER_PARITY_PLAN.md` | Replit/native stale/cache/log verification pending  | Existing private preview fingerprint now includes effective caption render inputs; caption style/meta edits stale previews without auto-rendering; preview observability added.                                                               |
+| Visual topology follow-up | Completed | 2026-04-28 | `src/services/story.service.js`, `test/contracts/story-preview.contract.test.js`, `test/contracts/phase4a.contract.test.js`, `docs/CAPTION_PREVIEW_RENDER_PARITY_PLAN.md`                                                                                                                   | `npm run test:contracts`; `node --test --test-concurrency=1 test/contracts/story-preview.contract.test.js`; `node --test --test-concurrency=1 test/contracts/ffmpeg-timeline.contract.test.js`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | AJ verified preview/final parity                    | Renderer bumped to `captioned-preview-v1.2`; preview and Final Render share `videoCutsV1` visual timeline planning.                                                                                                                           |
+| Phase 1D                  | Completed | 2026-04-28 | mobile `StoryboardPreviewStage.tsx`, `StoryboardSurface.tsx`, `StoryPreviewShell.tsx`, `StoryEditorScreen.tsx`, focused tests, and mobile docs                                                                                                                                              | mobile `npm run test:ci`; mobile `npm run check:types`; focused preview surface tests                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | AJ verified mobile preview/final parity             | RN ready-preview captions removed; backend `draftPreviewV1.artifact.url` is the only ready-preview visual caption source.                                                                                                                     |
+| Phase 1E                  | Completed | 2026-04-29 | backend/mobile canonical docs                                                                                                                                                                                                                                                               | `npm run test:contracts`; `node --test --test-concurrency=1 test/contracts/story-preview.contract.test.js`; `node --test --test-concurrency=1 test/contracts/ffmpeg-timeline.contract.test.js`; `npm run check:responses`; changed-file format/response checks                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | Phase 1D manual verification recorded               | Canonical docs alignment and compute reuse truth recorded; tracker demoted to historical context.                                                                                                                                             |
 
 ## Phase Completion Checklist
 
