@@ -102,7 +102,7 @@ const SYNC_PREVIEW_CONTENT_TYPE = 'audio/mpeg';
 const SYNC_AUDIO_CONTENT_TYPE = 'audio/mpeg';
 const SYNC_TIMING_CONTENT_TYPE = 'application/json';
 const DRAFT_PREVIEW_SCHEMA_VERSION = 1;
-const DRAFT_PREVIEW_RENDERER_VERSION = 'captioned-preview-v1.1';
+const DRAFT_PREVIEW_RENDERER_VERSION = 'captioned-preview-v1.2';
 const DRAFT_PREVIEW_CONTENT_TYPE = 'video/mp4';
 const DRAFT_PREVIEW_WIDTH = 1080;
 const DRAFT_PREVIEW_HEIGHT = 1920;
@@ -2382,6 +2382,71 @@ function resolveStoryVideoCutsPlan({ session, sentences = session?.story?.senten
   };
 }
 
+export function buildStoryVideoCutsTimelinePlan({
+  session,
+  sentences = session?.story?.sentences ?? [],
+  beatsDurSec,
+  playbackPlan = null,
+} = {}) {
+  const resolvedPlaybackPlan = playbackPlan || resolveStoryVideoCutsPlan({ session, sentences });
+  const normalizedBeatsDurSec = Array.isArray(beatsDurSec)
+    ? beatsDurSec.map((value) => Number(value))
+    : [];
+  if (
+    !resolvedPlaybackPlan.useVideoCutsV1 ||
+    normalizedBeatsDurSec.length === 0 ||
+    normalizedBeatsDurSec.some((value) => !Number.isFinite(value) || value <= 0)
+  ) {
+    return {
+      playbackPlan: resolvedPlaybackPlan,
+      source: resolvedPlaybackPlan.source,
+      useVideoCutsV1: false,
+      resolvedVideoCutsV1: null,
+      segments: [],
+      beatSlices: [],
+      totalDurationSec: 0,
+    };
+  }
+
+  const segments =
+    resolvedPlaybackPlan.source === 'auto'
+      ? computeVideoSegmentsFromCutsAutoBudget({
+          beatsDurSec: normalizedBeatsDurSec,
+          shots: session?.shots,
+          videoCutsV1: resolvedPlaybackPlan.resolvedVideoCutsV1,
+          sessionId: session?.id,
+          sentences,
+          sentencesHash: resolvedPlaybackPlan.currentSentencesHash,
+        })
+      : computeVideoSegmentsFromCuts({
+          beatsDurSec: normalizedBeatsDurSec,
+          shots: session?.shots,
+          videoCutsV1: resolvedPlaybackPlan.resolvedVideoCutsV1,
+        });
+
+  let cursorSec = 0;
+  const beatSlices = normalizedBeatsDurSec.map((durationSec, beatIndex) => {
+    const startSec = cursorSec;
+    cursorSec += durationSec;
+    return {
+      beatIndex,
+      startSec,
+      endSec: cursorSec,
+      durationSec,
+    };
+  });
+
+  return {
+    playbackPlan: resolvedPlaybackPlan,
+    source: resolvedPlaybackPlan.source,
+    useVideoCutsV1: true,
+    resolvedVideoCutsV1: resolvedPlaybackPlan.resolvedVideoCutsV1,
+    segments,
+    beatSlices,
+    totalDurationSec: cursorSec,
+  };
+}
+
 function buildBeatDurationsFromSyncedCaptions(session, beatCount) {
   if (!Array.isArray(session?.captions) || beatCount <= 0) return null;
   const captionBySentenceIndex = new Map();
@@ -2578,6 +2643,85 @@ function buildStoryPlaybackTimelineV1(session, previewReadiness = null) {
   };
 }
 
+function buildDraftPreviewRenderBeatDurationInputs({ session, beatCount }) {
+  if (!Number.isInteger(beatCount) || beatCount <= 0) return null;
+  const captionsBySentenceIndex = new Map(
+    (Array.isArray(session?.captions) ? session.captions : []).map((caption) => [
+      Number(caption?.sentenceIndex),
+      caption,
+    ])
+  );
+  const beatsDurSec = [];
+  for (let beatIndex = 0; beatIndex < beatCount; beatIndex += 1) {
+    const caption = captionsBySentenceIndex.get(beatIndex);
+    const narration = getBeatNarrationMeta(session, beatIndex);
+    if (!caption || !narration?.audioStoragePath || !narration?.timingStoragePath) {
+      return null;
+    }
+    const details = resolveStoredRenderBeatDurationDetails({
+      narration,
+      timing: null,
+      caption,
+    });
+    if (!Number.isFinite(details.durationSec) || details.durationSec <= 0) {
+      return null;
+    }
+    beatsDurSec.push(details.durationSec);
+  }
+  return beatsDurSec;
+}
+
+function buildDraftPreviewVisualTimelineFingerprintInput({ session, previewReadiness }) {
+  if (!previewReadiness?.ready || !Array.isArray(previewReadiness.segments)) {
+    return null;
+  }
+  const sentences = Array.isArray(session?.story?.sentences) ? session.story.sentences : [];
+  const beatCount = sentences.length;
+  const playbackPlan = resolveStoryVideoCutsPlan({ session, sentences });
+  if (!playbackPlan.useVideoCutsV1) {
+    return {
+      enabled: false,
+      source: playbackPlan.source,
+      segments: [],
+      beatSlices: [],
+    };
+  }
+  const beatsDurSec = buildDraftPreviewRenderBeatDurationInputs({ session, beatCount });
+  if (!Array.isArray(beatsDurSec) || beatsDurSec.length !== beatCount) {
+    return null;
+  }
+  try {
+    const timelinePlan = buildStoryVideoCutsTimelinePlan({
+      session,
+      sentences,
+      beatsDurSec,
+      playbackPlan,
+    });
+    return {
+      enabled: true,
+      source: timelinePlan.source,
+      resolvedVideoCutsV1: timelinePlan.resolvedVideoCutsV1,
+      beatSlices: timelinePlan.beatSlices.map((slice) => ({
+        beatIndex: slice.beatIndex,
+        startSec: Number(slice.startSec),
+        endSec: Number(slice.endSec),
+        durationSec: Number(slice.durationSec),
+      })),
+      segments: timelinePlan.segments.map((segment) => ({
+        sentenceIndex: Number(segment?.sentenceIndex),
+        ownerSentenceIndex: Number(segment?.ownerSentenceIndex),
+        clipUrl: segment?.clipUrl ?? null,
+        inSec: Number(segment?.inSec),
+        durSec: Number(segment?.durSec),
+        globalStartSec: Number(segment?.globalStartSec),
+        globalEndSec: Number(segment?.globalEndSec),
+      })),
+    };
+  } catch {
+    return null;
+  }
+}
+
 function buildDraftPreviewFingerprint({ session, previewReadiness }) {
   const syncSummary = normalizeVoiceSyncSummary(session);
   const captionsBySentenceIndex = new Map(
@@ -2598,6 +2742,10 @@ function buildDraftPreviewFingerprint({ session, previewReadiness }) {
     voiceSyncFingerprint: syncSummary.currentFingerprint ?? null,
     captionStyle: session?.overlayCaption || session?.captionStyle || {},
     playbackSource: previewReadiness?.playbackSource ?? null,
+    visualTimeline: buildDraftPreviewVisualTimelineFingerprintInput({
+      session,
+      previewReadiness,
+    }),
     segments: Array.isArray(previewReadiness?.segments)
       ? previewReadiness.segments.map((segment) => ({
           sentenceIndex: Number(segment?.sentenceIndex),
@@ -2851,132 +2999,276 @@ export async function renderStoryDraftPreview({
 
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'vaiform-story-preview-'));
   try {
-    const fetchedCache = new Map();
     const renderedSegments = [];
-    const captionsBySentenceIndex = new Map(
-      (Array.isArray(session?.captions) ? session.captions : []).map((caption) => [
-        Number(caption?.sentenceIndex),
-        caption,
-      ])
-    );
     const colorMetaCache = new Map();
     const videoProbeCache = new Map();
-    for (
-      let segmentIndex = 0;
-      segmentIndex < prepared.previewReadiness.segments.length;
-      segmentIndex += 1
-    ) {
-      const segment = prepared.previewReadiness.segments[segmentIndex];
-      const beatIndex = Number(segment.sentenceIndex);
-      const caption = captionsBySentenceIndex.get(beatIndex);
-      const narration = getBeatNarrationMeta(session, beatIndex);
-      if (!caption || !narration?.audioStoragePath || !narration?.timingStoragePath) {
-        const error = new Error('VOICE_SYNC_ARTIFACT_MISSING');
-        error.code = 'VOICE_SYNC_ARTIFACT_MISSING';
-        error.status = 409;
-        throw error;
-      }
-      const audioPath = await downloadPrivateObjectToTmp({
-        bucketPath: narration.audioStoragePath,
-        tmpDir,
-        name: `preview_voice_${beatIndex}.mp3`,
-      });
-      const timing = await loadStoredBeatTimingData(session, beatIndex);
-      const durationDetails = resolveStoredRenderBeatDurationDetails({
-        narration,
-        timing,
-        caption,
-      });
-      const renderDurationSec = durationDetails.durationSec;
-      const captionSpanSec = Math.max(
-        0,
-        Number(caption.endTimeSec || 0) - Number(caption.startTimeSec || 0)
+    const sentences = Array.isArray(session?.story?.sentences) ? session.story.sentences : [];
+    const playbackPlan = resolveStoryVideoCutsPlan({ session, sentences });
+
+    if (playbackPlan.useVideoCutsV1) {
+      const perBeat = [];
+      const beatsDurSecArr = [];
+      const readinessSegmentsByBeat = new Map(
+        prepared.previewReadiness.segments.map((segment) => [
+          Number(segment?.sentenceIndex),
+          segment,
+        ])
       );
-      logger.debug('story.preview.segment_duration_resolved', {
-        sessionId,
-        attemptId,
-        previewId,
-        segmentIndex,
-        beatIndex,
-        sentenceIndex: beatIndex,
-        segmentDurSec: Number(segment.durSec),
-        renderDurationSec,
-        narrationDurationSec: Number(narration.durationSec),
-        timingDurationMs: Number(timing.durationMs),
-        captionSpanSec,
-        durationSource: durationDetails.durationSource,
-      });
-      let fetched = fetchedCache.get(segment.clipUrl);
-      if (!fetched) {
-        fetched = await fetchVideoToTmp(segment.clipUrl);
-        fetchedCache.set(segment.clipUrl, fetched);
-      }
-      const trimmedPath = path.join(tmpDir, `captioned_trim_${segmentIndex}.mp4`);
-      try {
-        await trimClipToSegment({
-          path: fetched.path,
-          inSec: segment.inSec,
-          durSec: renderDurationSec,
-          outPath: trimmedPath,
-          options: {
-            width: DRAFT_PREVIEW_WIDTH,
-            height: DRAFT_PREVIEW_HEIGHT,
-            videoProbeCache,
-          },
+      for (let beatIndex = 0; beatIndex < sentences.length; beatIndex += 1) {
+        const info = await buildStoredRenderBeat({ session, beatIndex, tmpDir });
+        beatsDurSecArr.push(info.durationSec);
+        perBeat.push(info);
+
+        const readinessSegment = readinessSegmentsByBeat.get(beatIndex);
+        const captionSpanSec = Math.max(
+          0,
+          Number(info.caption?.endTimeSec || 0) - Number(info.caption?.startTimeSec || 0)
+        );
+        logger.debug('story.preview.segment_duration_resolved', {
+          sessionId,
+          attemptId,
+          previewId,
+          segmentIndex: beatIndex,
+          beatIndex,
+          sentenceIndex: beatIndex,
+          segmentDurSec: Number(readinessSegment?.durSec),
+          renderDurationSec: info.durationSec,
+          narrationDurationSec: Number(getBeatNarrationMeta(session, beatIndex)?.durationSec),
+          timingDurationMs: null,
+          captionSpanSec,
+          durationSource: 'stored_render_beat',
         });
-      } catch (trimError) {
-        const trimCode = trimError?.code || trimError?.message || 'TRIM_SEGMENT_FAILED';
-        if (String(trimCode).startsWith('TRIM_')) {
-          const error = new Error('Draft preview segment video input was invalid.');
-          error.code = 'DRAFT_PREVIEW_SEGMENT_VIDEO_MISSING';
-          error.status = 500;
-          error.cause = trimError;
-          logger.warn('story.preview.segment_video_missing', {
-            sessionId,
-            attemptId,
-            previewId,
-            segmentIndex,
-            beatIndex,
-            sentenceIndex: beatIndex,
-            inSec: Number(segment.inSec),
-            durSec: renderDurationSec,
-            clipUrl: segment.clipUrl,
-            sourceDurationSec: Number.isFinite(Number(trimError?.sourceDurationSec))
-              ? Number(trimError.sourceDurationSec)
-              : null,
-            trimCode,
+      }
+
+      const timelinePlan = buildStoryVideoCutsTimelinePlan({
+        session,
+        sentences,
+        beatsDurSec: beatsDurSecArr,
+        playbackPlan,
+      });
+      if (timelinePlan.segments.length === 0) {
+        throw new Error('VIDEO_CUTS_V1_NO_SEGMENTS');
+      }
+
+      const fetchedCache = new Map();
+      const trimmedPaths = [];
+      for (let segmentIndex = 0; segmentIndex < timelinePlan.segments.length; segmentIndex += 1) {
+        const segment = timelinePlan.segments[segmentIndex];
+        let fetched = fetchedCache.get(segment.clipUrl);
+        if (!fetched) {
+          fetched = await fetchVideoToTmp(segment.clipUrl);
+          fetchedCache.set(segment.clipUrl, fetched);
+        }
+        const trimmedPath = path.join(tmpDir, `captioned_v1_trim_${segmentIndex}.mp4`);
+        try {
+          await trimClipToSegment({
+            path: fetched.path,
+            inSec: segment.inSec,
+            durSec: segment.durSec,
+            outPath: trimmedPath,
+            options: {
+              width: DRAFT_PREVIEW_WIDTH,
+              height: DRAFT_PREVIEW_HEIGHT,
+              videoProbeCache,
+            },
           });
+        } catch (trimError) {
+          const trimCode = trimError?.code || trimError?.message || 'TRIM_SEGMENT_FAILED';
+          if (String(trimCode).startsWith('TRIM_')) {
+            const error = new Error('Draft preview segment video input was invalid.');
+            error.code = 'DRAFT_PREVIEW_SEGMENT_VIDEO_MISSING';
+            error.status = 500;
+            error.cause = trimError;
+            logger.warn('story.preview.segment_video_missing', {
+              sessionId,
+              attemptId,
+              previewId,
+              segmentIndex,
+              beatIndex: Number(segment.sentenceIndex),
+              sentenceIndex: Number(segment.sentenceIndex),
+              inSec: Number(segment.inSec),
+              durSec: Number(segment.durSec),
+              clipUrl: segment.clipUrl,
+              sourceDurationSec: Number.isFinite(Number(trimError?.sourceDurationSec))
+                ? Number(trimError.sourceDurationSec)
+                : null,
+              trimCode,
+            });
+            throw error;
+          }
+          throw trimError;
+        }
+        trimmedPaths.push({ path: trimmedPath, durationSec: segment.durSec });
+      }
+
+      const globalTimelinePath = path.join(tmpDir, 'captioned_v1_global.mp4');
+      await concatenateClipsVideoOnly({
+        clips: trimmedPaths,
+        outPath: globalTimelinePath,
+        options: {
+          width: DRAFT_PREVIEW_WIDTH,
+          height: DRAFT_PREVIEW_HEIGHT,
+          fps: DRAFT_PREVIEW_FPS,
+        },
+      });
+
+      for (const slice of timelinePlan.beatSlices) {
+        const beatIndex = slice.beatIndex;
+        const info = perBeat[beatIndex];
+        const slicePath = path.join(tmpDir, `captioned_v1_slice_${beatIndex}.mp4`);
+        await extractSegmentFromFile({
+          path: globalTimelinePath,
+          startSec: slice.startSec,
+          durSec: slice.durationSec,
+          outPath: slicePath,
+          options: { width: DRAFT_PREVIEW_WIDTH, height: DRAFT_PREVIEW_HEIGHT },
+        });
+        const segmentPath = path.join(tmpDir, `captioned_segment_${beatIndex}.mp4`);
+        await renderVideoQuoteOverlay({
+          videoPath: slicePath,
+          outPath: segmentPath,
+          width: DRAFT_PREVIEW_WIDTH,
+          height: DRAFT_PREVIEW_HEIGHT,
+          durationSec: slice.durationSec,
+          fps: DRAFT_PREVIEW_FPS,
+          text: info.caption.text,
+          captionText: info.caption.text,
+          ttsPath: info.ttsPath,
+          assPath: info.assPath,
+          overlayCaption: info.overlayCaption,
+          keepVideoAudio: true,
+          bgAudioVolume: 0.5,
+          watermark: true,
+          padSec: 0,
+          colorMetaCache,
+        });
+        renderedSegments.push({ path: segmentPath, durationSec: slice.durationSec });
+      }
+    } else {
+      const fetchedCache = new Map();
+      const captionsBySentenceIndex = new Map(
+        (Array.isArray(session?.captions) ? session.captions : []).map((caption) => [
+          Number(caption?.sentenceIndex),
+          caption,
+        ])
+      );
+      for (
+        let segmentIndex = 0;
+        segmentIndex < prepared.previewReadiness.segments.length;
+        segmentIndex += 1
+      ) {
+        const segment = prepared.previewReadiness.segments[segmentIndex];
+        const beatIndex = Number(segment.sentenceIndex);
+        const caption = captionsBySentenceIndex.get(beatIndex);
+        const narration = getBeatNarrationMeta(session, beatIndex);
+        if (!caption || !narration?.audioStoragePath || !narration?.timingStoragePath) {
+          const error = new Error('VOICE_SYNC_ARTIFACT_MISSING');
+          error.code = 'VOICE_SYNC_ARTIFACT_MISSING';
+          error.status = 409;
           throw error;
         }
-        throw trimError;
+        const audioPath = await downloadPrivateObjectToTmp({
+          bucketPath: narration.audioStoragePath,
+          tmpDir,
+          name: `preview_voice_${beatIndex}.mp3`,
+        });
+        const timing = await loadStoredBeatTimingData(session, beatIndex);
+        const durationDetails = resolveStoredRenderBeatDurationDetails({
+          narration,
+          timing,
+          caption,
+        });
+        const renderDurationSec = durationDetails.durationSec;
+        const captionSpanSec = Math.max(
+          0,
+          Number(caption.endTimeSec || 0) - Number(caption.startTimeSec || 0)
+        );
+        logger.debug('story.preview.segment_duration_resolved', {
+          sessionId,
+          attemptId,
+          previewId,
+          segmentIndex,
+          beatIndex,
+          sentenceIndex: beatIndex,
+          segmentDurSec: Number(segment.durSec),
+          renderDurationSec,
+          narrationDurationSec: Number(narration.durationSec),
+          timingDurationMs: Number(timing.durationMs),
+          captionSpanSec,
+          durationSource: durationDetails.durationSource,
+        });
+        let fetched = fetchedCache.get(segment.clipUrl);
+        if (!fetched) {
+          fetched = await fetchVideoToTmp(segment.clipUrl);
+          fetchedCache.set(segment.clipUrl, fetched);
+        }
+        const trimmedPath = path.join(tmpDir, `captioned_trim_${segmentIndex}.mp4`);
+        try {
+          await trimClipToSegment({
+            path: fetched.path,
+            inSec: segment.inSec,
+            durSec: renderDurationSec,
+            outPath: trimmedPath,
+            options: {
+              width: DRAFT_PREVIEW_WIDTH,
+              height: DRAFT_PREVIEW_HEIGHT,
+              videoProbeCache,
+            },
+          });
+        } catch (trimError) {
+          const trimCode = trimError?.code || trimError?.message || 'TRIM_SEGMENT_FAILED';
+          if (String(trimCode).startsWith('TRIM_')) {
+            const error = new Error('Draft preview segment video input was invalid.');
+            error.code = 'DRAFT_PREVIEW_SEGMENT_VIDEO_MISSING';
+            error.status = 500;
+            error.cause = trimError;
+            logger.warn('story.preview.segment_video_missing', {
+              sessionId,
+              attemptId,
+              previewId,
+              segmentIndex,
+              beatIndex,
+              sentenceIndex: beatIndex,
+              inSec: Number(segment.inSec),
+              durSec: renderDurationSec,
+              clipUrl: segment.clipUrl,
+              sourceDurationSec: Number.isFinite(Number(trimError?.sourceDurationSec))
+                ? Number(trimError.sourceDurationSec)
+                : null,
+              trimCode,
+            });
+            throw error;
+          }
+          throw trimError;
+        }
+        const captionInput = await buildStoredRenderBeatCaptionInput({
+          session,
+          beatIndex,
+          caption,
+          timing,
+          audioPath,
+        });
+        const segmentPath = path.join(tmpDir, `captioned_segment_${segmentIndex}.mp4`);
+        await renderVideoQuoteOverlay({
+          videoPath: trimmedPath,
+          outPath: segmentPath,
+          width: DRAFT_PREVIEW_WIDTH,
+          height: DRAFT_PREVIEW_HEIGHT,
+          durationSec: renderDurationSec,
+          fps: DRAFT_PREVIEW_FPS,
+          text: caption.text,
+          captionText: caption.text,
+          ttsPath: audioPath,
+          assPath: captionInput.assPath,
+          overlayCaption: captionInput.overlayCaption,
+          keepVideoAudio: true,
+          bgAudioVolume: 0.5,
+          watermark: true,
+          padSec: 0,
+          colorMetaCache,
+        });
+        renderedSegments.push({ path: segmentPath, durationSec: renderDurationSec });
       }
-      const captionInput = await buildStoredRenderBeatCaptionInput({
-        session,
-        beatIndex,
-        caption,
-        timing,
-        audioPath,
-      });
-      const segmentPath = path.join(tmpDir, `captioned_segment_${segmentIndex}.mp4`);
-      await renderVideoQuoteOverlay({
-        videoPath: trimmedPath,
-        outPath: segmentPath,
-        width: DRAFT_PREVIEW_WIDTH,
-        height: DRAFT_PREVIEW_HEIGHT,
-        durationSec: renderDurationSec,
-        fps: DRAFT_PREVIEW_FPS,
-        text: caption.text,
-        captionText: caption.text,
-        ttsPath: audioPath,
-        assPath: captionInput.assPath,
-        overlayCaption: captionInput.overlayCaption,
-        keepVideoAudio: true,
-        bgAudioVolume: 0.5,
-        watermark: true,
-        padSec: 0,
-        colorMetaCache,
-      });
-      renderedSegments.push({ path: segmentPath, durationSec: renderDurationSec });
     }
 
     const captionedPath = path.join(tmpDir, 'captioned.mp4');
@@ -4473,8 +4765,6 @@ export async function renderStory({ uid, sessionId }) {
   const sentences = session.story?.sentences ?? [];
   const N = sentences.length;
   const playbackPlan = resolveStoryVideoCutsPlan({ session, sentences });
-  const source = playbackPlan.source;
-  const currentSentencesHash = playbackPlan.currentSentencesHash;
   const videoCutsV1ToUse = playbackPlan.resolvedVideoCutsV1;
   const useVideoCutsV1 = playbackPlan.useVideoCutsV1;
   if (playbackPlan.shouldPersistResolvedVideoCutsV1 && playbackPlan.resolvedVideoCutsV1) {
@@ -4511,21 +4801,13 @@ export async function renderStory({ uid, sessionId }) {
         throw new Error('VIDEO_CUTS_V1_SYNC_ARTIFACTS_INCOMPLETE');
       }
 
-      const segments =
-        source === 'auto'
-          ? computeVideoSegmentsFromCutsAutoBudget({
-              beatsDurSec: beatsDurSecArr,
-              shots: session.shots,
-              videoCutsV1: videoCutsV1ToUse,
-              sessionId: session.id,
-              sentences,
-              sentencesHash: currentSentencesHash,
-            })
-          : computeVideoSegmentsFromCuts({
-              beatsDurSec: beatsDurSecArr,
-              shots: session.shots,
-              videoCutsV1: videoCutsV1ToUse,
-            });
+      const timelinePlan = buildStoryVideoCutsTimelinePlan({
+        session,
+        sentences,
+        beatsDurSec: beatsDurSecArr,
+        playbackPlan,
+      });
+      const segments = timelinePlan.segments;
       if (segments.length === 0) {
         throw new Error('VIDEO_CUTS_V1_NO_SEGMENTS');
       }
@@ -4557,15 +4839,15 @@ export async function renderStory({ uid, sessionId }) {
         options: { width: 1080, height: 1920, fps: 24 },
       });
 
-      let beatStartSec = 0;
       const colorMetaCache = new Map();
       for (let beatIndex = 0; beatIndex < N; beatIndex += 1) {
         const info = perBeat[beatIndex];
-        const durationSec = beatsDurSecArr[beatIndex];
+        const slice = timelinePlan.beatSlices[beatIndex];
+        const durationSec = slice.durationSec;
         const slicePath = path.join(tmpDir, `v1_slice_${beatIndex}.mp4`);
         await extractSegmentFromFile({
           path: globalTimelinePath,
-          startSec: beatStartSec,
+          startSec: slice.startSec,
           durSec: durationSec,
           outPath: slicePath,
           options: { width: 1080, height: 1920 },
@@ -4590,7 +4872,6 @@ export async function renderStory({ uid, sessionId }) {
           colorMetaCache,
         });
         renderedSegments.push({ path: segmentPath, durationSec });
-        beatStartSec += durationSec;
       }
     } else {
       const colorMetaCache = new Map();
@@ -4995,6 +5276,7 @@ export default {
   finalizeStory,
   updateBeatText,
   updateVideoCuts,
+  buildStoryVideoCutsTimelinePlan,
   prepareDraftPreviewRequest,
   markDraftPreviewQueued,
   invalidateDraftPreviewBase,

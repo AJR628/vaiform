@@ -3,6 +3,7 @@ import crypto from 'node:crypto';
 import test from 'node:test';
 import { compileCaptionSSOT } from '../../src/captions/compile.js';
 import {
+  buildStoryVideoCutsTimelinePlan,
   prepareDraftPreviewRequest,
   sanitizeStorySessionForClient,
 } from '../../src/services/story.service.js';
@@ -88,6 +89,21 @@ function buildSession(overrides = {}) {
   };
 }
 
+function withEnv(patch) {
+  const previous = {};
+  for (const key of Object.keys(patch)) {
+    previous[key] = process.env[key];
+    if (patch[key] === undefined) delete process.env[key];
+    else process.env[key] = patch[key];
+  }
+  return () => {
+    for (const key of Object.keys(patch)) {
+      if (previous[key] === undefined) delete process.env[key];
+      else process.env[key] = previous[key];
+    }
+  };
+}
+
 test('old base renderer draftPreviewV1 projects stale and omits playable/private fields', () => {
   const session = buildSession({
     draftPreviewV1: {
@@ -148,7 +164,7 @@ test('old captioned renderer draftPreviewV1 projects stale after timing stabiliz
   assert.equal(safe.draftPreviewV1.previewId, undefined);
 });
 
-test('captioned renderer draftPreviewV1 projects ready with mobile-safe artifact shape', () => {
+test('captioned-preview-v1.1 draftPreviewV1 projects stale after visual topology renderer bump', () => {
   const safe = sanitizeStorySessionForClient(
     buildSession({
       draftPreviewV1: {
@@ -156,6 +172,36 @@ test('captioned renderer draftPreviewV1 projects ready with mobile-safe artifact
         state: 'ready',
         updatedAt: '2026-01-01T00:00:00.000Z',
         rendererVersion: 'captioned-preview-v1.1',
+        fingerprint: 'private-fingerprint',
+        previewId: 'preview-private',
+        artifact: {
+          url: 'https://cdn.example.com/captioned.mp4',
+          storagePath: 'artifacts/user-test/story-test/previews/preview-private/captioned.mp4',
+          contentType: 'video/mp4',
+          durationSec: 4,
+          width: 1080,
+          height: 1920,
+          createdAt: '2026-01-01T00:00:00.000Z',
+          expiresAt: '2026-01-02T00:00:00.000Z',
+        },
+      },
+    })
+  );
+
+  assert.equal(safe.draftPreviewV1.state, 'stale');
+  assert.equal(safe.draftPreviewV1.artifact, undefined);
+  assert.equal(safe.draftPreviewV1.fingerprint, undefined);
+  assert.equal(safe.draftPreviewV1.previewId, undefined);
+});
+
+test('captioned renderer draftPreviewV1 projects ready with mobile-safe artifact shape', () => {
+  const safe = sanitizeStorySessionForClient(
+    buildSession({
+      draftPreviewV1: {
+        version: 1,
+        state: 'ready',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+        rendererVersion: 'captioned-preview-v1.2',
         fingerprint: 'private-fingerprint',
         previewId: 'preview-private',
         artifact: {
@@ -185,6 +231,85 @@ test('captioned renderer draftPreviewV1 projects ready with mobile-safe artifact
   assert.equal(safe.draftPreviewV1.fingerprint, undefined);
   assert.equal(safe.draftPreviewV1.previewId, undefined);
   assert.equal(Object.hasOwn(safe.draftPreviewV1.artifact, 'storagePath'), false);
+});
+
+test('videoCutsV1 preview timeline uses global visual cuts and stored narration beat slices', () => {
+  const restoreEnv = withEnv({ ENABLE_VIDEO_CUTS_V1: '1' });
+  try {
+    const session = buildSession({
+      captions: [
+        { sentenceIndex: 0, text: 'Beat one', startTimeSec: 0, endTimeSec: 10 },
+        { sentenceIndex: 1, text: 'Beat two', startTimeSec: 10, endTimeSec: 20 },
+      ],
+      videoCutsV1Disabled: false,
+      videoCutsV1: {
+        version: 1,
+        source: 'manual',
+        boundaries: [{ leftBeat: 0, pos: { beatIndex: 1, pct: 0.5 } }],
+      },
+    });
+
+    const prepared = prepareDraftPreviewRequest(session);
+    const timelinePlan = buildStoryVideoCutsTimelinePlan({
+      session,
+      sentences: session.story.sentences,
+      beatsDurSec: session.beats.map((beat) => beat.narration.durationSec),
+    });
+
+    assert.equal(prepared.ready, true);
+    assert.equal(timelinePlan.useVideoCutsV1, true);
+    assert.deepEqual(
+      prepared.previewReadiness.segments.map((segment) => segment.durSec),
+      [15, 5]
+    );
+    assert.deepEqual(
+      timelinePlan.segments.map((segment) => segment.durSec),
+      [3, 1]
+    );
+    assert.deepEqual(
+      timelinePlan.beatSlices.map((slice) => ({
+        beatIndex: slice.beatIndex,
+        startSec: slice.startSec,
+        endSec: slice.endSec,
+        durationSec: slice.durationSec,
+      })),
+      [
+        { beatIndex: 0, startSec: 0, endSec: 2, durationSec: 2 },
+        { beatIndex: 1, startSec: 2, endSec: 4, durationSec: 2 },
+      ]
+    );
+  } finally {
+    restoreEnv();
+  }
+});
+
+test('preview fingerprint changes when active videoCutsV1 visual topology changes', () => {
+  const restoreEnv = withEnv({ ENABLE_VIDEO_CUTS_V1: '1' });
+  try {
+    const baseline = buildSession({
+      captions: [
+        { sentenceIndex: 0, text: 'Beat one', startTimeSec: 0, endTimeSec: 10 },
+        { sentenceIndex: 1, text: 'Beat two', startTimeSec: 10, endTimeSec: 20 },
+      ],
+      videoCutsV1Disabled: false,
+      videoCutsV1: {
+        version: 1,
+        source: 'manual',
+        boundaries: [{ leftBeat: 0, pos: { beatIndex: 1, pct: 0.5 } }],
+      },
+    });
+    const changed = JSON.parse(JSON.stringify(baseline));
+    changed.videoCutsV1.boundaries[0].pos.pct = 0.25;
+
+    const baselineReady = prepareDraftPreviewRequest(baseline);
+    const changedReady = prepareDraftPreviewRequest(changed);
+
+    assert.equal(baselineReady.ready, true);
+    assert.equal(changedReady.ready, true);
+    assert.notEqual(baselineReady.fingerprint, changedReady.fingerprint);
+  } finally {
+    restoreEnv();
+  }
 });
 
 test('preview fingerprint changes when stored narration duration changes independently of captions', () => {
@@ -270,7 +395,7 @@ test('prepareDraftPreviewRequest reuses current ready preview with same fingerpr
     version: 1,
     state: 'ready',
     updatedAt: '2026-01-01T00:00:00.000Z',
-    rendererVersion: 'captioned-preview-v1.1',
+    rendererVersion: 'captioned-preview-v1.2',
     fingerprint: prepared.fingerprint,
     previewId: 'preview-private',
     artifact: {
