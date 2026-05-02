@@ -1,0 +1,233 @@
+You are auditing the Vaiform backend repository only.
+
+Important: Do not analyze, reference, or discuss any mobile frontend repo. This audit is backend-only. You may discuss backend API contracts, backend routes, backend response envelopes, backend jobs, backend docs, backend tests, backend runtime, backend security, and backend production readiness. Do not mention or depend on any separate frontend/mobile repository.
+
+Your task:
+Run a deep production-readiness audit of this backend repo. Do not modify files. Do not “fix” anything yet. Produce a detailed report with exact file:line evidence.
+
+Primary goal:
+Determine whether the backend is cohesive, safe, maintainable, scalable, and ready for a small paid beta. Find anything messy, unsafe, duplicated, stale, orphaned, inconsistent, overcomplicated, under-tested, or risky.
+
+Audit scope:
+
+1. Backend architecture and active surfaces
+- Identify the actual active backend surfaces.
+- Compare code against docs such as:
+  - docs/ACTIVE_SURFACES.md
+  - docs/API_CONTRACT.md
+  - docs/CROSS_REPO_PRODUCTION_HARDENING_PLAN.md
+  - docs/COHESION_GUARDRAILS.md
+  - docs/DOCS_INDEX.md
+  - ROUTE_TRUTH_TABLE.md if present
+- Check whether route mounting is clean and follows the intended /api structure.
+- Look for legacy routes, duplicated mounts, dead surfaces, orphaned controllers, or hidden alternate paths.
+- Verify that backend root-level surfaces are intentionally limited.
+
+2. Response contract consistency
+- Audit success/failure response envelopes.
+- Canonical success should look like:
+  { success: true, data, requestId }
+- Canonical failure should look like:
+  { success: false, error, detail, fields?, requestId }
+- Find any routes/middleware/controllers still returning legacy shapes like ok/reason, code/message/details/issues, raw provider errors, or inconsistent status codes.
+- Check whether src/http/respond.js is used consistently where intended.
+- Identify any contract exceptions and whether they are documented.
+
+3. Auth, authorization, and user ownership
+- Audit auth middleware and any user/session ownership checks.
+- Look for routes where user-owned resources may be read, updated, finalized, downloaded, or deleted without strong owner verification.
+- Check whether failed auth responses use the canonical error shape.
+- Look for inconsistent use of uid/email/userId.
+- Identify any trust-boundary issues around request body ownership fields.
+
+4. Billing, Stripe, usage, and entitlement safety
+- Audit Stripe webhook handling, checkout, plan/credit/top-up logic, usage routes, and any entitlement logic.
+- Look for non-idempotent grant paths, duplicate event processing risk, missing transaction safety, or ambiguous purchase metadata.
+- Check separation between entitlement state and usage state.
+- Audit the migration or bridge from credits to time-based usage if present.
+- Look for places where usage can be double-charged, not charged, not refunded/released, or settled incorrectly.
+- Verify error handling around unknown price IDs, missing metadata, replayed webhook events, and failed finalize/render paths.
+
+5. Finalize/render/job pipeline
+- Audit the story/finalize flow, async worker, polling/recovery routes, job/session state, idempotency, queue/admission control, and render settlement.
+- Check whether POST finalize acceptance, pending state, recovery, retry, failure, and completion are coherent.
+- Verify API runtime vs worker runtime assumptions.
+- Check .replit, package.json scripts, server.js, worker entrypoints, and docs describing runtime topology.
+- Look for cases where a job can get stuck, be finalized twice, be charged twice, lose artifacts, fail without releasing reservation, or become unrecoverable.
+- Audit timeout, concurrency, admission-control, and expensive-route behavior.
+
+6. Firestore and Storage safety
+- Audit Firestore document paths, transactions, batched writes, indexes, and read/write patterns.
+- Look for high-read loops, unbounded queries, missing limits, missing composite index docs, or repeated reads that could become costly.
+- Check storage paths for user isolation and predictable naming issues.
+- Look for cleanup gaps around temp files, artifacts, failed renders, and partial uploads.
+- Identify places that could create billing surprises or operational risk at scale.
+
+7. Security and trust boundaries
+- Audit external URL fetching, link extraction, remote media fetching, SSRF protection, redirects, DNS/IP validation, content length limits, content type checks, and timeout behavior.
+- Check use of src/utils/outbound.fetch.js or equivalent trust-boundary helper.
+- Find any raw fetch/axios/request usage that bypasses the safe helper.
+- Audit logging for secrets, provider payloads, auth headers, personally identifying data, or excessive raw request bodies.
+- Check env var handling and startup sanity checks.
+- Look for missing rate limits, weak validation, or routes that accept large/expensive input without guardrails.
+
+8. Provider integrations
+- Audit OpenAI, ElevenLabs, Stripe, Firebase, media/search providers, and any other external services.
+- Check retry behavior, timeout handling, error classification, provider response validation, and fallback behavior.
+- Find places where provider errors leak directly to users.
+- Find hardcoded model IDs, prices, URLs, voices, limits, or magic constants that should be centralized or documented.
+- Verify expensive provider calls are gated by auth, entitlement/usage, validation, and admission control where appropriate.
+
+9. Validation and request parsing
+- Audit request body validation for every active route.
+- Check zod/schema/middleware usage if present.
+- Find missing required fields, overly permissive inputs, inconsistent enum handling, unsafe defaults, and mismatch between docs and code.
+- Look for body size limits and file/upload constraints.
+- Verify validation failures use the canonical response shape.
+
+10. Tests, scripts, CI, and verification
+- Audit existing tests and scripts.
+- Identify critical backend behavior that lacks coverage.
+- Check package.json scripts and CI-related scripts:
+  - lint
+  - format/check
+  - check-responses
+  - contract tests
+  - route checks
+  - hardcoded-origin checks
+  - netlify redirect checks if present
+- Identify flaky tests, missing tests, tests that do not assert the real contract, or scripts that no longer match the repo.
+- Recommend highest-value missing tests before paid beta.
+
+11. Docs drift and repo understandability
+- Audit whether docs match code.
+- Identify stale docs, missing diagrams, outdated route tables, obsolete phase plans, or unclear operational runbooks.
+- Check whether a future developer/agent could understand:
+  - active surfaces
+  - runtime topology
+  - response contract
+  - finalize flow
+  - billing/usage flow
+  - failure handling
+  - deployment assumptions
+- Recommend doc updates only where they reduce real confusion.
+
+12. Maintainability and cleanup
+- Find large files, duplicate helpers, duplicate response logic, duplicate route logic, stale adapters, dead feature flags, old compatibility shims, and unused code.
+- Do not recommend refactors just for style.
+- Only recommend cleanup if it improves safety, clarity, production readiness, or future maintainability.
+- Prioritize minimal cohesive changes over broad rewrites.
+
+Required output format:
+
+A. Executive summary
+- Overall backend readiness rating:
+  - Ready for small beta
+  - Mostly ready with blockers
+  - Not ready
+- Top 5 risks
+- Top 5 highest-leverage improvements
+
+B. Risk-ranked findings
+Group findings by severity:
+
+P0 — must fix before paid beta
+P1 — should fix before or during early beta
+P2 — cleanup/improvement
+P3 — optional/nice-to-have
+
+For each finding include:
+- Title
+- Severity
+- Why it matters
+- Exact evidence with file:line references
+- Affected route/service/module
+- Recommended minimal fix
+- Verification command or manual test
+- Whether docs need updating
+
+C. Evidence table
+Create a table with:
+- Area
+- File
+- Lines
+- Observation
+- Risk
+- Recommendation
+
+D. Active backend surface map
+List:
+- Mounted routes
+- Handler/controller/service path
+- Auth required?
+- Expensive provider call?
+- Usage/billing involved?
+- Response contract status
+- Test coverage status
+
+E. Dead/legacy/orphan candidate list
+For each candidate:
+- File/path
+- Why it appears dead or legacy
+- Evidence
+- Safe next step:
+  - delete
+  - gate
+  - document
+  - leave alone
+
+F. Backend contract audit
+List every inconsistent response shape, status code, or undocumented exception.
+
+G. Finalize/render pipeline audit
+Explain the current finalize lifecycle as implemented:
+- request accepted
+- idempotency behavior
+- reservation/charging behavior
+- worker processing
+- artifact creation
+- polling/recovery
+- success settlement
+- failure release/refund
+- stuck job handling
+
+Then list any gaps.
+
+H. Billing/usage audit
+Explain current billing/usage flow as implemented.
+Then list double-charge, no-charge, replay, refund/release, or entitlement risks.
+
+I. Security/trust-boundary audit
+List external fetches, provider calls, auth boundaries, and input validation risks.
+
+J. Highest-value test plan
+Recommend the next 10 backend tests to add, ordered by risk reduction.
+For each test:
+- Behavior tested
+- Files likely involved
+- Why it matters
+- Expected assertion shape
+
+K. Minimal implementation roadmap
+Create a phased plan:
+Phase 1: P0 blockers only
+Phase 2: P1 safety/contract fixes
+Phase 3: tests and docs
+Phase 4: cleanup/refactor candidates
+
+Each phase must include:
+- Specific files likely touched
+- What not to touch
+- Verification commands
+- Rollback notes
+
+Important rules:
+- Do not modify files.
+- Do not run destructive commands.
+- Do not invent findings without file:line evidence.
+- Do not recommend broad rewrites.
+- Do not analyze any separate frontend/mobile repo.
+- Do not suggest new features.
+- Prefer minimal, cohesive fixes.
+- If evidence is inconclusive, say so clearly and recommend the exact grep/test/audit needed.
+- Keep the report grounded in the actual repository.
