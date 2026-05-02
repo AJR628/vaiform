@@ -20,6 +20,8 @@ const OPENAI_RETRY_AFTER_SEC = 15;
 const OPENAI_STORY_TIMEOUT_MS = 20_000;
 const OPENAI_PLAN_TIMEOUT_MS = 20_000;
 const MAX_CONCURRENT_OPENAI_REQUESTS = 2;
+const MIN_STORY_DURATION_SEC = 18;
+const MAX_STORY_DURATION_SEC = 45;
 let activeOpenAiRequests = 0;
 
 const SCRIPT_STYLES = {
@@ -28,23 +30,24 @@ const SCRIPT_STYLES = {
   cozy: 'Write in a warm, friendly, relaxed tone. Use gentle language. Make it feel personal and comforting.',
 };
 
-// Heuristics for framework detection (strong signals only to reduce false positives)
-function detectFramework(line) {
-  const patterns = [
-    /\bdo\b.*\bthen\b.*\bthen\b/i, // Explicit "Do ... then ... then ..."
-    /\bstep\s*1\b|\bstep\s*2\b|\bstep\s*3\b/i, // Numbered steps
-    /\b1\)\s+|\b2\)\s+|\b3\)\s+/, // Parenthesized numbered list
-    /\bdo\s+\w+,\s*then\s+\w+,\s*then\s+\w+/i, // Comma-separated "do X, then Y, then Z"
-  ];
-  return patterns.some((p) => p.test(line));
-}
+const GENERIC_TEMPLATE_PATTERNS = [
+  /\bstep\s*1\b/i,
+  /\bstep\s*2\b/i,
+  /\bstep\s*3\b/i,
+  /\bin the next 30 seconds\b/i,
+  /\bhere'?s why\b/i,
+  /\bthink of it like\b/i,
+  /\bimagine\b/i,
+  /\bit'?s like\b/i,
+  /\blike a\b/i,
+  /\bin this video\b/i,
+  /\bin this article\b/i,
+  /\btoday we'?re going to\b/i,
+  /\blet me tell you\b/i,
+];
 
-// Heuristics for analogy detection (phrase-based to minimize false positives)
-function detectAnalogy(line) {
-  const analogyPhrases = /\b(it'?s like|like a|imagine|think of|as if)\b/i;
-  return analogyPhrases.test(line);
-  // Note: Domain keywords (sports/physics/cooking/games) are not used to avoid
-  // false positives on normal lines that mention these domains without analogies.
+function detectGenericTemplatePhrase(line) {
+  return GENERIC_TEMPLATE_PATTERNS.some((pattern) => pattern.test(line));
 }
 
 // Validate LLM output against caps (two-tier: hard vs soft)
@@ -67,17 +70,25 @@ function validateStoryOutput(hook, beats, outro) {
   if (!Array.isArray(hook) || !Array.isArray(beats) || !Array.isArray(outro)) {
     hardViolations.push('Missing or invalid hook/beats/outro arrays');
   }
-  if (hookArray.length !== 2) {
-    hardViolations.push(`Expected 2 hook strings, got ${hookArray.length}`);
+  if (hookArray.length < 1 || hookArray.length > 2) {
+    hardViolations.push(`Expected 1-2 hook strings, got ${hookArray.length}`);
   }
-  if (beatsArray.length !== 5) {
-    hardViolations.push(`Expected 5 beat strings, got ${beatsArray.length}`);
+  if (beatsArray.length < 2 || beatsArray.length > 6) {
+    hardViolations.push(`Expected 2-6 beat strings, got ${beatsArray.length}`);
   }
   if (outroArray.length !== 1) {
     hardViolations.push(`Expected 1 outro string, got ${outroArray.length}`);
   }
-  if (totalLines !== 8) {
-    hardViolations.push(`Expected 8 lines total, got ${totalLines}`);
+  if (totalLines < 4 || totalLines > 8) {
+    hardViolations.push(`Expected 4-8 lines total, got ${totalLines}`);
+  }
+  const nonStringLines = allLines.filter((l) => typeof l !== 'string');
+  if (nonStringLines.length > 0) {
+    hardViolations.push(`${nonStringLines.length} line(s) are not strings`);
+  }
+  const emptyLines = allLines.filter((l) => String(l).trim().length === 0);
+  if (emptyLines.length > 0) {
+    hardViolations.push(`${emptyLines.length} empty line(s)`);
   }
   if (maxLineLength > 160) {
     hardViolations.push(`Max line length ${maxLineLength} exceeds 160`);
@@ -95,27 +106,9 @@ function validateStoryOutput(hook, beats, outro) {
     );
   }
 
-  const beatsUnder90 = beatsArray.filter((b) => String(b).length <= 90).length;
-  if (beatsUnder90 < 3) {
-    softViolations.push(
-      `Only ${beatsUnder90} beat(s) <= 90 chars (need at least 3 for rhythmic variety)`
-    );
-  }
-
-  // Framework detection
-  const frameworkLines = allLines.filter((l) => detectFramework(String(l)));
-  if (frameworkLines.length === 0) {
-    softViolations.push('No framework line detected (need 2-3 step micro-framework)');
-  } else if (frameworkLines.length > 1) {
-    softViolations.push(`${frameworkLines.length} framework lines detected (should be exactly 1)`);
-  }
-
-  // Analogy detection
-  const analogyLines = allLines.filter((l) => detectAnalogy(String(l)));
-  if (analogyLines.length === 0) {
-    softViolations.push('No analogy line detected (need cross-domain synthesis)');
-  } else if (analogyLines.length > 1) {
-    softViolations.push(`${analogyLines.length} analogy lines detected (should be exactly 1)`);
+  const genericTemplateLines = allLines.filter((l) => detectGenericTemplatePhrase(String(l)));
+  if (genericTemplateLines.length > 0) {
+    softViolations.push(`${genericTemplateLines.length} line(s) contain generic template phrasing`);
   }
 
   // Optional: Check for banned terms
@@ -147,9 +140,7 @@ function validateStoryOutput(hook, beats, outro) {
       maxLineLength,
       totalChars,
       linesOver120: linesOver120.length,
-      beatsUnder90,
-      frameworkCount: frameworkLines.length,
-      analogyCount: analogyLines.length,
+      genericTemplateCount: genericTemplateLines.length,
     },
   };
 }
@@ -268,93 +259,89 @@ export async function generateStoryFromInput({ input, inputType, styleKey = 'def
 
   // Build system message with HOOK/BEATS/OUTRO structure
   const systemMessage = [
-    'You are a short-form video scriptwriter for vertical video (20–40 seconds).',
+    'You are a short-form video scriptwriter for vertical video (18-45 seconds).',
     '',
     'Your job is to turn dense content into a punchy, hook-driven VO script that stops scrollers and delivers a single clear transformation.',
     'You will be given structured info about content to turn into a script.',
     '',
     'CRITICAL: Return ONLY valid JSON with this exact shape:',
     '{',
-    '  "hook": ["sentence1", "sentence2"],',
-    '  "beats": ["beat1", "beat2", "beat3", "beat4", "beat5"],',
+    '  "hook": ["sentence1"],',
+    '  "beats": ["beat1", "beat2", "beat3"],',
     '  "outro": ["outro1"],',
     '  "totalDurationSec": number',
     '}',
     'No markdown, no extra prose, no explanations. Just JSON.',
     '',
     '=== HARD CONSTRAINTS (MUST COMPLY) ===',
-    '- You MUST output exactly 8 total strings: hook (2 strings) + beats (5 strings) + outro (1 string) = 8 total.',
-    '- Each string MUST be <= 120 characters (hard limit is 160; use 120 as safe buffer).',
-    '- Total characters of all 8 strings joined with newline separators must be <= 850.',
-    '- Each string is exactly ONE sentence. No semicolons. Minimal commas. Avoid run-ons.',
-    '- Before returning JSON, silently verify:',
-    '  • Count all strings in hook + beats + outro = exactly 8',
-    '  • Each string length <= 120',
-    '  • Total characters of all 8 strings joined with newline separators <= 850',
-    '- If any check fails, rewrite until compliant. Do not return non-compliant JSON.',
+    '- hook MUST contain 1-2 strings.',
+    '- beats MUST contain 2-6 strings.',
+    '- outro MUST contain exactly 1 string.',
+    '- Total strings across hook + beats + outro MUST be 4-8.',
+    '- Each string MUST be one sentence and <= 120 characters when possible.',
+    '- Hard line limit is 160 characters.',
+    '- Total characters of all strings joined with newline separators must be <= 850.',
+    '- Never pad the script just to reach 8 lines.',
+    '- Before returning JSON, silently verify the counts and character caps.',
+    '- If any hard check fails, rewrite until compliant. Do not return non-compliant JSON.',
     '',
-    '=== OVERALL STRUCTURE (8 Lines) ===',
-    '- Lines 1-2 (hook): State the problem and amplify the stakes.',
-    '- Lines 3-7 (beats): Teach 5 key points that lead to the solution.',
-    '- Line 8 (outro): Lock in the transformation or ask a reflective question.',
+    '=== LENGTH JUDGMENT ===',
+    '- 4-5 lines is best for one clear idea.',
+    '- 6-7 lines is best for tension, examples, or a useful turn.',
+    '- 8 lines is only for dense topics.',
+    '- Use fewer lines when the story is simple.',
+    '- Leave room for the user to add beats later.',
+    '- More lines are allowed only when the content genuinely needs them.',
+    '',
+    '=== STRUCTURE ===',
+    '- Hook: State the problem, surprising idea, or stakes in 1-2 short sentences.',
+    '- Beats: Teach the clearest supporting points with concrete source-grounded details.',
+    '- Outro: Lock in the transformation, reframe the point, or ask a reflective question.',
     '- Follow the Pyramid Principle: Start from the key message, then support it with concrete arguments.',
     '',
-    '=== HOOK RULES (Lines 1-2) ===',
-    '- Exactly 2 short sentences.',
-    '- Each sentence MUST be 12-18 words AND <= 120 characters.',
-    '- Speak directly to the viewer using "you" (not "we" or "this video").',
-    '- Line 1: State the problem in a sharp, concrete way, OR point out a common mistake, OR ask a short "what/how/why" question.',
-    '- Line 2: AMPLIFY the stakes - what happens if they never fix this?',
-    '- You may optionally mention how quickly they\'ll learn something, but avoid repetitive phrases like "in the next 30 seconds".',
-    '- NEVER use: "in this video", "in this article", "today we\'re going to talk about...", "this content explains...".',
+    '=== HOOK RULES ===',
+    '- Use 1-2 short sentences.',
+    '- Speak directly to the viewer using "you" when natural.',
+    '- State a sharp problem, common mistake, surprising fact, or short what/how/why question.',
+    '- Avoid repetitive timing and meta phrases like "in the next 30 seconds" or "in this video".',
     '',
-    '=== BEATS RULES (Lines 3-7) ===',
-    '- Exactly 5 sentences (one per line).',
-    '- Each sentence MUST be 10-18 words AND <= 120 characters.',
+    '=== BEATS RULES ===',
+    '- Use 2-6 sentences.',
     '- No long multi-clause paragraphs; avoid stacked commas and run-ons.',
     '- Use simple, conversational language.',
-    '- Line 3: Reveal the core surprising idea or fact (the key message).',
-    '- Line 4: Present a unique 2-3 step micro-framework or process (e.g., "Do A, then B, then C." or "Step 1: X. Step 2: Y. Step 3: Z.") - keep this line <= 120 chars.',
-    '- Line 5: Use cross-domain synthesis - explain the idea using an analogy from another domain (sports, physics, games, cooking, etc.). This is the ONLY analogy line.',
-    "- Lines 6-7: Connect the idea to the viewer's real life and consequences. Use concrete details or examples from the source content.",
-    '- At least 3 of the 5 beats must be <= 90 characters (for rhythmic variety).',
-    '- Avoid vague summaries or meta commentary about "the content" – just speak to the viewer.',
+    '- Avoid vague summaries or meta commentary about "the content"; speak to the viewer.',
+    '- Procedural steps are allowed only when the source is genuinely procedural.',
+    '- Analogies are allowed only when they are fresh, specific, and genuinely useful.',
     '',
-    '=== OUTRO RULES (Line 8) ===',
-    '- Exactly 1 short sentence.',
-    '- MUST be 10-18 words AND <= 120 characters.',
-    '- Choose ONE of the following styles:',
-    '  • METAPHOR that simplifies the big idea,',
-    '  • SHORT QUOTE that justifies your point (without inventing fake sources),',
-    '  • REFRAME that flips how the viewer sees the problem,',
-    '  • or a "WHAT / HOW / WHY" QUESTION that makes them think.',
+    '=== OUTRO RULES ===',
+    '- Use exactly 1 short sentence.',
+    '- Choose a reframe, consequence, clean payoff, or what/how/why question.',
     '- No generic CTAs like "follow for more" unless explicitly requested.',
     '',
     '=== PUNCHINESS RULES ===',
     '- NO hedging words: "maybe", "kinda", "sort of", "might", "perhaps", "possibly", "could be".',
-    '- NO meta phrases: "in this video", "this article", "today we\'re going to...", "this content explains...", "let me tell you about...".',
-    '- Use direct "you" language. Speak to the viewer, not about content.',
-    '- Avoid clickbaity exaggerations: "insane", "crazy trick", "you won\'t believe", "mind-blowing", "game-changing" (unless the content genuinely warrants it).',
-    '- Prefer active voice over passive voice.',
-    '- Use concrete nouns and verbs. Avoid abstract qualifiers.',
+    '- NO meta phrases: "in this video", "this article", "today we\'re going to", "this content explains", "let me tell you".',
+    '- Avoid generic template phrases like "Step 1" unless the source is genuinely procedural.',
+    '- Avoid default analogy phrases like "think of it like", "imagine", "it\'s like", or "like a" unless the comparison is specific and useful.',
+    '- Use direct language, active voice, concrete nouns, and concrete verbs.',
+    '- Avoid clickbaity exaggerations: "insane", "crazy trick", "you won\'t believe", "mind-blowing", "game-changing" unless the content genuinely warrants it.',
     '',
     `Target style: ${styleInstructions}`,
     '',
-    'Aim for ~45–90 words total. Hard character caps above override everything.',
+    'Aim for the cleanest script length, usually 45-90 words total. Hard character caps override everything.',
     'Use ONLY information that could reasonably come from the provided content. Do not invent facts.',
     '',
     '=== FINAL CHECKLIST ===',
     'Before returning JSON, verify:',
-    '1. hook.length === 2',
-    '2. beats.length === 5',
-    '3. outro.length === 1',
-    '4. All 8 strings are <= 120 characters',
-    '5. Total characters of all 8 strings joined with newline separators <= 850',
-    '6. At least 3 beats are <= 90 characters',
-    '7. Exactly one beat contains a 2-3 step framework',
-    '8. Exactly one beat contains an analogy',
-    '9. No hedging words, no meta phrases, no clickbait',
-    'If any check fails, rewrite and verify again before returning.',
+    '1. hook has 1-2 strings',
+    '2. beats has 2-6 strings',
+    '3. outro has exactly 1 string',
+    '4. Total strings are 4-8',
+    '5. Each string targets <= 120 characters and never exceeds 160 characters',
+    '6. Total characters joined with newline separators are <= 850',
+    '7. No required framework line and no required analogy line',
+    '8. No hedging words, generic meta phrases, or unsupported claims',
+    'If any hard check fails, rewrite and verify again before returning.',
   ].join('\n');
 
   // Build user message based on input type
@@ -378,7 +365,7 @@ export async function generateStoryFromInput({ input, inputType, styleKey = 'def
       'Return ONLY valid JSON (no markdown, no explanations).',
     ].join('\n');
   } else if (inputType === 'idea') {
-    userMessage = `Turn this into a 30-45 second vertical video script with a hook, rising tension, payoff, and a clean ending. Each line is one caption/clip:\n\n"${input}"`;
+    userMessage = `Turn this into an 18-45 second vertical video script with a hook, rising tension, payoff, and a clean ending. Use the cleanest 4-8 line shape for the idea, with each line as one caption/clip:\n\n"${input}"`;
   } else {
     // Fallback for link without extraction
     userMessage = `Now, using this content, write the script in that format:\n\n${sourceContent}`;
@@ -531,10 +518,12 @@ export async function generateStoryFromInput({ input, inputType, styleKey = 'def
           }
         }
 
-        // If no hard violations (or retry fixed them), check for soft violations
+        // If no hard violations (or retry fixed them), check for soft violations.
         if (!usedRetry) {
-          // Re-validate after potential retry (or if no retry was needed)
-          const finalValidation = validateStoryOutput(hook, beats, outro);
+          const currentHook = parsed.hook || [];
+          const currentBeats = parsed.beats || [];
+          const currentOutro = parsed.outro || [];
+          const finalValidation = validateStoryOutput(currentHook, currentBeats, currentOutro);
 
           // Soft violations: retry once, but allow fallback if persists
           if (finalValidation.softViolations.length > 0 && finalValidation.valid) {
@@ -542,40 +531,35 @@ export async function generateStoryFromInput({ input, inputType, styleKey = 'def
               softViolationCount: finalValidation.softViolations.length,
             });
 
-            // Prioritize soft violations (tweak B: must not include undefined)
+            // Prioritize soft violations (must not include undefined)
             const prioritizedSoftViolations = [];
             if (finalValidation.stats.linesOver120 > 0) {
               const found = finalValidation.softViolations.find((v) => v.includes('exceed 120'));
               if (found) prioritizedSoftViolations.push(found);
             }
-            if (finalValidation.stats.beatsUnder90 < 3) {
-              const found = finalValidation.softViolations.find((v) => v.includes('<= 90'));
-              if (found) prioritizedSoftViolations.push(found);
-            }
-            if (
-              finalValidation.stats.frameworkCount === 0 ||
-              finalValidation.stats.frameworkCount > 1
-            ) {
-              const found = finalValidation.softViolations.find((v) => v.includes('framework'));
-              if (found) prioritizedSoftViolations.push(found);
-            }
-            if (
-              finalValidation.stats.analogyCount === 0 ||
-              finalValidation.stats.analogyCount > 1
-            ) {
-              const found = finalValidation.softViolations.find((v) => v.includes('analogy'));
+            if (finalValidation.stats.genericTemplateCount > 0) {
+              const found = finalValidation.softViolations.find((v) =>
+                v.includes('generic template')
+              );
               if (found) prioritizedSoftViolations.push(found);
             }
             // Add remaining banned term violations
             prioritizedSoftViolations.push(
               ...finalValidation.softViolations.filter(
                 (v) =>
-                  (v.includes('hedging') || v.includes('meta') || v.includes('clickbait')) &&
+                  (v.includes('hedging') ||
+                    v.includes('meta') ||
+                    v.includes('clickbait') ||
+                    v.includes('generic template')) &&
                   !prioritizedSoftViolations.includes(v)
               )
             );
 
-            const fixMessage = `Your previous JSON had these quality issues: ${prioritizedSoftViolations.join('; ')}. Rewrite JSON only, fully compliant.`;
+            const qualityIssues =
+              prioritizedSoftViolations.length > 0
+                ? prioritizedSoftViolations
+                : finalValidation.softViolations;
+            const fixMessage = `Your previous JSON had these quality issues: ${qualityIssues.join('; ')}. Rewrite JSON only. Keep the same JSON shape, keep 4-8 total lines, do not pad, and avoid generic template phrasing.`;
 
             try {
               const retryContent = await makeRetryRequest(fixMessage, true);
@@ -618,15 +602,22 @@ export async function generateStoryFromInput({ input, inputType, styleKey = 'def
           }
         }
 
-        // Extract sentences from parsed (either original or retry)
+        // Extract sentences from parsed (either original or retry) only when hard-valid.
         const finalHook = parsed.hook || [];
         const finalBeats = parsed.beats || [];
         const finalOutro = parsed.outro || [];
-        sentences = [...finalHook, ...finalBeats, ...finalOutro].filter(Boolean);
-        totalDurationSec = Number(parsed.totalDurationSec) || 0;
-        logger.info('story.generate.output_shape', {
-          outputShape: usedRetry ? 'retry_hook_beats_outro' : 'hook_beats_outro',
-        });
+        const finalValidation = validateStoryOutput(finalHook, finalBeats, finalOutro);
+        if (finalValidation.valid) {
+          sentences = [...finalHook, ...finalBeats, ...finalOutro].filter(Boolean);
+          totalDurationSec = Number(parsed.totalDurationSec) || 0;
+          logger.info('story.generate.output_shape', {
+            outputShape: usedRetry ? 'retry_hook_beats_outro' : 'hook_beats_outro',
+          });
+        } else {
+          logger.warn('story.generate.structured_output_rejected', {
+            hardViolationCount: finalValidation.hardViolations.length,
+          });
+        }
       }
       // Fallback 1: Legacy sentences structure
       else if (parsed && parsed.sentences && Array.isArray(parsed.sentences)) {
@@ -636,8 +627,8 @@ export async function generateStoryFromInput({ input, inputType, styleKey = 'def
           outputShape: 'legacy_sentences',
         });
       }
-      // Fallback 2: Sentence splitting
-      else {
+      // Fallback 2: Source-derived sentence splitting
+      if (sentences.length === 0) {
         logger.warn('story.generate.output_shape_fallback', {
           outputShape: 'sentence_split',
         });
@@ -656,7 +647,8 @@ export async function generateStoryFromInput({ input, inputType, styleKey = 'def
           const words = text.split(/\s+/).filter((w) => w.length > 0);
           const wordsPerSentence = Math.ceil(words.length / 5);
           sentences = [];
-          for (let i = 0; i < words.length; i += wordsPerSentence) {
+          const step = Math.max(wordsPerSentence, 1);
+          for (let i = 0; i < words.length; i += step) {
             const chunk = words.slice(i, i + wordsPerSentence).join(' ');
             if (chunk.length > 10) sentences.push(chunk);
           }
@@ -670,23 +662,26 @@ export async function generateStoryFromInput({ input, inputType, styleKey = 'def
         .filter((s) => s.length >= 8 && s.length <= 150)
         .slice(0, 8);
 
-      // Ensure we have 4-8 sentences
+      // Require 4-8 usable sentences. Do not duplicate lines to pad invalid output.
       if (sentences.length < 4) {
-        // Pad with variations
-        while (sentences.length < 4 && sentences.length > 0) {
-          sentences.push(sentences[sentences.length - 1]);
-        }
+        throw new Error('STORY_OUTPUT_INVALID');
       }
 
       // Calculate duration if not provided (estimate 2.5 words per second)
       if (!totalDurationSec || totalDurationSec <= 0) {
         const totalWords = sentences.join(' ').split(/\s+/).length;
-        totalDurationSec = Math.max(30, Math.min(45, Math.ceil(totalWords / 2.5)));
+        totalDurationSec = Math.max(
+          MIN_STORY_DURATION_SEC,
+          Math.min(MAX_STORY_DURATION_SEC, Math.ceil(totalWords / 2.5))
+        );
       }
 
       return {
         sentences: sentences.slice(0, 8),
-        totalDurationSec: Math.max(30, Math.min(45, totalDurationSec)),
+        totalDurationSec: Math.max(
+          MIN_STORY_DURATION_SEC,
+          Math.min(MAX_STORY_DURATION_SEC, totalDurationSec)
+        ),
       };
     }
   );

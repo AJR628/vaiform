@@ -10,7 +10,13 @@
 
 This document freezes repo-proven truth before any script-quality runtime work starts.
 
-It is intentionally conservative:
+Post-approval implementation note:
+
+- The first script-generation prompt/validator pass is now implemented in `src/services/story.llm.service.js`.
+- Generated scripts may contain 4-8 total lines; 8 remains the edit ceiling, not the generation target.
+- The existing `/api/story/start` and `/api/story/generate` route contracts, LLM JSON shape, service return shape, and `styleKey` enum remain unchanged.
+
+The original audit scope was intentionally conservative:
 
 - no runtime code changes
 - no new route family
@@ -217,7 +223,7 @@ It is intentionally conservative:
 - No new prompt field beyond existing `styleKey`
 - No beat-remix endpoint
 - No beat-remix UI
-- No prompt/model tuning in the first slice
+- No additional prompt/model field or route-level tuning beyond the approved 4-8 line generation policy
 - No attempt to retire `update-script` in the same pass as beat-save normalization
 
 ## Phased Implementation Plan

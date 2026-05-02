@@ -333,6 +333,7 @@ const unauthorizedRoutes = [
   ['GET', '/api/story/story-unauth', undefined],
   ['POST', '/api/story/plan', { sessionId: 'story-unauth' }],
   ['POST', '/api/story/search', { sessionId: 'story-unauth' }],
+  ['POST', '/api/story/update-script', { sessionId: 'story-unauth', sentences: ['x'] }],
   [
     'POST',
     '/api/story/update-beat-text',
@@ -537,8 +538,6 @@ test('POST /api/story/generate preserves the generated story envelope mobile rea
         'Tiny habits start before you feel ready.',
         'Pick one cue you never miss.',
         'Shrink the action until it feels automatic.',
-        'Repeat it where friction is already low.',
-        'Stack wins before you chase intensity.',
         'Momentum grows because the start gets cheap.',
         'What habit becomes easy enough to keep tomorrow?',
       ],
@@ -564,9 +563,10 @@ test('POST /api/story/generate preserves the generated story envelope mobile rea
   assert.equal(result.json.success, true);
   assert.equal(result.json.data.status, 'story_generated');
   assert.equal(result.json.data.styleKey, 'default');
-  assert.equal(result.json.data.story.sentences.length, 8);
+  assert.ok(result.json.data.story.sentences.length >= 4);
+  assert.ok(result.json.data.story.sentences.length <= 8);
   assert.equal(result.json.data.billingEstimate.estimatedSec, null);
-  assert.equal(result.json.data.billingEstimate.heuristicEstimatedSec, 26);
+  assert.equal(result.json.data.billingEstimate.heuristicEstimatedSec, 20);
   assert.equal(capturedStyleKey, 'default');
 });
 
@@ -1518,6 +1518,103 @@ test('POST /api/story/update-beat-text updates narration without mutating visual
   assert.equal(result.json.data.shots[0].visualDescription, preservedShot.visualDescription);
   assert.deepEqual(result.json.data.shots[0].selectedClip, preservedShot.selectedClip);
   assert.deepEqual(result.json.data.shots[0].candidates, preservedShot.candidates);
+});
+
+test('POST /api/story/update-script replaces script and clears downstream state', async () => {
+  seedStorySession(
+    'user-1',
+    buildSyncedSession({
+      id: 'story-update-script',
+      story: {
+        sentences: ['Old beat one', 'Old beat two'],
+      },
+      plan: [{ sentenceIndex: 0, searchQuery: 'old plan' }],
+      shots: [buildShot('clip-1', 0, 'Old beat one'), buildShot('clip-2', 1, 'Old beat two')],
+      draftPreviewV1: buildReadyDraftPreview({ previewId: 'preview-update-script' }),
+      finalVideo: {
+        jobId: 'short-update-script',
+        url: 'https://cdn.example.com/short-update-script.mp4',
+        durationSec: 8,
+      },
+      renderedSegments: ['tmp/segment-1.mp4'],
+      renderRecovery: {
+        state: 'done',
+        attemptId: 'attempt-update-script',
+        shortId: 'short-update-script',
+      },
+      videoCutsV1: {
+        version: 1,
+        source: 'manual',
+        boundaries: [{ leftBeat: 0, pos: { beatIndex: 0, pct: 0.5 } }],
+      },
+      videoCutsV1Disabled: false,
+      playbackTimelineV1: { version: 1, beats: [] },
+      previewReadinessV1: { version: 1, ready: true },
+      captionOverlayV1: { version: 1, segments: [] },
+    })
+  );
+
+  const result = await requestJson('/api/story/update-script', {
+    method: 'POST',
+    body: {
+      sessionId: 'story-update-script',
+      sentences: ['New beat one', 'New beat two', 'New beat three'],
+    },
+  });
+
+  assert.equal(result.status, 200);
+  assert.equal(result.json.success, true);
+  assert.deepEqual(result.json.data.story.sentences, [
+    'New beat one',
+    'New beat two',
+    'New beat three',
+  ]);
+  assert.equal(result.json.data.status, 'story_generated');
+  assert.equal(result.json.data.voiceSync.state, 'never_synced');
+  assert.equal(result.json.data.draftPreviewV1.state, 'stale');
+
+  const stored = readStorySession('user-1', 'story-update-script');
+  assert.equal(stored.draftPreviewV1.state, 'stale');
+  assert.equal(stored.draftPreviewV1.staleReasonCode, 'BASE_INPUT_CHANGED');
+  assert.equal(stored.plan, undefined);
+  assert.equal(stored.shots, undefined);
+  assert.equal(stored.captions, undefined);
+  assert.equal(stored.videoCutsV1, undefined);
+  assert.equal(stored.videoCutsV1Disabled, undefined);
+  assert.equal(stored.playbackTimelineV1, undefined);
+  assert.equal(stored.previewReadinessV1, undefined);
+  assert.equal(stored.captionOverlayV1, undefined);
+  assert.equal(stored.finalVideo, undefined);
+  assert.equal(stored.renderedSegments, undefined);
+  assert.equal(stored.renderRecovery, undefined);
+  assert.equal(stored.voiceSync.state, 'never_synced');
+});
+
+test('POST /api/story/update-script rejects whitespace-only beats', async () => {
+  seedStorySession(
+    'user-1',
+    buildBaseSession({
+      id: 'story-update-script-whitespace',
+      story: {
+        sentences: ['Existing beat'],
+      },
+    })
+  );
+
+  const result = await requestJson('/api/story/update-script', {
+    method: 'POST',
+    body: {
+      sessionId: 'story-update-script-whitespace',
+      sentences: ['   '],
+    },
+  });
+
+  assert.equal(result.status, 400);
+  assert.equal(result.json.success, false);
+  assert.equal(result.json.error, 'INVALID_SENTENCE_TEXT');
+
+  const stored = readStorySession('user-1', 'story-update-script-whitespace');
+  assert.deepEqual(stored.story.sentences, ['Existing beat']);
 });
 
 test('POST /api/story/delete-beat returns the reduced sentences and reindexed shots', async () => {

@@ -826,8 +826,17 @@ function getNormalizedNarrationScript(session) {
 
 function validateStoryCharacterLimits(sentences = []) {
   const normalizedSentences = Array.isArray(sentences)
-    ? sentences.map((sentence) => normalizeNarrationText(sentence)).filter(Boolean)
+    ? sentences.map((sentence) => normalizeNarrationText(sentence))
     : [];
+
+  for (const sentence of normalizedSentences) {
+    if (!sentence) {
+      const error = new Error('INVALID_SENTENCE_TEXT');
+      error.code = 'INVALID_SENTENCE_TEXT';
+      error.status = 400;
+      throw error;
+    }
+  }
 
   if (normalizedSentences.length > MAX_BEATS) {
     const error = new Error('MAX_BEATS_EXCEEDED');
@@ -854,6 +863,19 @@ function validateStoryCharacterLimits(sentences = []) {
   }
 
   return normalizedSentences;
+}
+
+function clearScriptDerivedArtifacts(session) {
+  if (!session || typeof session !== 'object') return session;
+  delete session.plan;
+  delete session.shots;
+  delete session.captions;
+  delete session.videoCutsV1;
+  delete session.videoCutsV1Disabled;
+  delete session.playbackTimelineV1;
+  delete session.previewReadinessV1;
+  delete session.captionOverlayV1;
+  return session;
 }
 
 function withBillingEstimatePad(baseEstimatedSec, padSec) {
@@ -1248,10 +1270,7 @@ export async function updateStorySentences({ uid, sessionId, sentences }) {
   session.story.sentences = normalizedSentences;
   session.beats = [];
   resetVoiceSyncForNewScript(session);
-
-  // Clear plan and shots to force re-plan with new sentences
-  if (session.plan) delete session.plan;
-  if (session.shots) delete session.shots;
+  clearScriptDerivedArtifacts(session);
 
   session.status = 'story_generated';
   session.updatedAt = new Date().toISOString();

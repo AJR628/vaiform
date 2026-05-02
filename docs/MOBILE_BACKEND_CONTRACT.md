@@ -85,13 +85,15 @@ Route-authority note:
 
 - `POST /api/story/generate`
   - Mobile caller(s): mobile `client/screens/HomeScreen.tsx:131-149`
-  - Backend handler(s): `src/routes/story.routes.js:233-268`, `src/services/story.service.js:524-552`, `src/services/story.llm.service.js:223-323`
+  - Backend handler(s): `src/routes/story.routes.js:384-418`, `src/services/story.service.js:1209-1250`, `src/services/story.llm.service.js:228-684`
   - Mobile sends: `{ sessionId }` only. `styleKey` is stored at start-time and is not part of the generate request.
   - Backend returns: full session in `data`.
   - Mobile reads: success/failure only.
   - Guardrails:
     - `enforceScriptDailyCap(300)` remains the explicit daily quota gate.
     - transient LLM busy/timeout paths now return retryable `503 SERVER_BUSY` with `Retry-After: 15`.
+    - generated `story.sentences` may contain 4-8 script lines; 8 remains the edit ceiling, not the generation target.
+    - the route contract and LLM/service JSON object shapes are unchanged.
 
 - `GET /api/story/:sessionId`
   - Mobile caller(s): `client/screens/ScriptScreen.tsx:64-84`, `client/screens/story-editor/useStoryEditorSession.ts:36-78`, `client/screens/story-editor/useStoryEditorFinalize.ts:182-225`
@@ -159,9 +161,28 @@ Route-authority note:
 
 ### Story Editing And Caption Preview
 
+- `POST /api/story/update-script`
+  - Mobile caller(s): `client/screens/ScriptScreen.tsx:136-195`, `client/screens/ScriptScreen.tsx:304-354`, `client/screens/ScriptScreen.tsx:378-417`, `client/screens/ScriptScreen.tsx:425-497`
+  - Backend handler(s): `src/routes/story.routes.js:421-456`, `src/services/story.service.js:827-879`, `src/services/story.service.js:1253-1280`
+  - Mobile sends: `{ sessionId, sentences }`.
+  - Backend returns: full sanitized session in `data`.
+  - Mobile reads: full session from `data` to keep pre-storyboard add/edit/delete visible immediately, then refetches `GET /api/story/:sessionId` for SSOT.
+  - Contract rules:
+    - This is the only Script-screen mutation endpoint used before storyboard `shots` exist.
+    - It does not plan shots, search clips, call `insertBeatWithSearch`, or return partial `{ sentences, shots }`.
+    - Backend normalizes and validates all sentences, rejects whitespace-only beats, enforces `MAX_BEATS`, `MAX_BEAT_CHARS`, and `MAX_TOTAL_CHARS`.
+    - Full script replacement clears downstream `plan`, `shots`, `captions`, `videoCutsV1`, persisted preview/timeline projections, final output, rendered segment state, and render recovery; it also resets voice sync and marks `draftPreviewV1` stale.
+  - Stable failures now:
+    - `404 SESSION_NOT_FOUND`
+    - `400 INVALID_INPUT`
+    - `400 INVALID_SENTENCE_TEXT`
+    - `400 MAX_BEATS_EXCEEDED`
+    - `400 MAX_BEAT_CHARS_EXCEEDED`
+    - `400 MAX_TOTAL_CHARS_EXCEEDED`
+
 - `POST /api/story/update-beat-text`
-  - Mobile caller(s): `client/screens/ScriptScreen.tsx:174-236`, `client/screens/story-editor/useStoryEditorSession.ts:131-176`
-  - Backend handler(s): `src/routes/story.routes.js:833-856`, `src/services/story.service.js:1126-1160`
+  - Mobile caller(s): post-storyboard `client/screens/ScriptScreen.tsx:261-354`, `client/screens/story-editor/useStoryEditorSession.ts:131-176`
+  - Backend handler(s): `src/routes/story.routes.js:1011-1048`, `src/services/story.service.js:1830-1859`
   - Mobile sends: `{ sessionId, sentenceIndex, text }`.
   - Backend returns: partial `{ sentences, shots }` in `data`, not a full session.
   - Mobile reads:
@@ -197,8 +218,8 @@ Route-authority note:
     - `503 VOICE_SYNC_TIMESTAMPS_UNAVAILABLE`
 
 - `POST /api/story/delete-beat`
-  - Mobile caller(s): `client/screens/ScriptScreen.tsx:222-235`, `client/screens/story-editor/useStoryEditorSession.ts:190-231`
-  - Backend handler(s): `src/routes/story.routes.js:778-813`, `src/services/story.service.js:883-911`
+  - Mobile caller(s): post-storyboard `client/screens/ScriptScreen.tsx:378-402`, `client/screens/story-editor/useStoryEditorSession.ts:190-231`
+  - Backend handler(s): `src/routes/story.routes.js:980-1009`, `src/services/story.service.js:1781-1828`
   - Mobile sends: `{ sessionId, sentenceIndex }`.
   - Backend returns: partial `{ sentences, shots }` in `data`.
   - Mobile reads: success/failure only, then refetches `GET /api/story/:sessionId`.
@@ -331,6 +352,7 @@ Route-authority note:
 | `POST /api/story/start`                 | `MOBILE_CORE_NOW`  | Mobile home create flow (`client/screens/HomeScreen.tsx:101-149`)                                                                                                                                                         | Harden now.                                                                        |
 | `POST /api/story/generate`              | `MOBILE_CORE_NOW`  | Mobile create flow (`client/screens/HomeScreen.tsx:131-149`)                                                                                                                                                              | Harden now.                                                                        |
 | `GET /api/story/:sessionId`             | `MOBILE_CORE_NOW`  | Mobile script/editor and finalize-recovery truth (`client/screens/ScriptScreen.tsx:65-82`, `client/screens/story-editor/useStoryEditorSession.ts:36-78`, `client/screens/story-editor/useStoryEditorFinalize.ts:182-225`) | Harden now.                                                                        |
+| `POST /api/story/update-script`         | `MOBILE_CORE_NOW`  | Mobile pre-storyboard script add/edit/delete (`client/screens/ScriptScreen.tsx:136-195`, `client/screens/ScriptScreen.tsx:304-417`)                                                                                       | Harden now; full script replacement invalidates storyboard/preview/render state.   |
 | `POST /api/story/plan`                  | `MOBILE_CORE_NOW`  | Mobile storyboard step (`client/screens/ScriptScreen.tsx:126-159`)                                                                                                                                                        | Harden now.                                                                        |
 | `POST /api/story/search`                | `MOBILE_CORE_NOW`  | Mobile storyboard step (`client/screens/ScriptScreen.tsx:141-159`)                                                                                                                                                        | Harden now.                                                                        |
 | `POST /api/story/preview`               | `MOBILE_CORE_NOW`  | Mobile Step 3 captioned preview generation (`client/screens/StoryEditorScreen.tsx`, `client/screens/story-editor/useStep3PreviewArtifact.ts`, `client/api/client.ts`)                                                     | Harden now; backend-owned captioned preview artifact path.                         |
@@ -353,7 +375,6 @@ Route-authority note:
 | `POST /api/checkout/start`              | `LEGACY_WEB`       | Web pricing page only (`web/public/js/pricing.js`)                                                                                                                                                                        | Touch only for direct billing risk to mobile launch.                               |
 | `POST /api/checkout/portal`             | `LEGACY_WEB`       | Web pricing/account state only (`web/public/js/pricing.js`)                                                                                                                                                               | Touch only for direct billing risk to mobile launch.                               |
 | `POST /stripe/webhook`                  | `LEGACY_WEB`       | External Stripe caller; no mobile API caller (`src/app.js:111-116`)                                                                                                                                                       | Keep correct, but do not broaden launch scope around it.                           |
-| `POST /api/story/update-script`         | `REMOVE_LATER`     | No current mobile caller; no current `web/public` caller found in repo search                                                                                                                                             | Retire after freeze.                                                               |
 | `POST /api/story/timeline`              | `REMOVE_LATER`     | No current mobile caller; no current `web/public` caller found in repo search                                                                                                                                             | Retire after freeze.                                                               |
 | `POST /api/story/captions`              | `REMOVE_LATER`     | No current mobile caller; no current `web/public` caller found in repo search                                                                                                                                             | Retire after freeze.                                                               |
 | `POST /api/story/render`                | `REMOVE_LATER`     | No current mobile caller; no current `web/public` caller found in repo search                                                                                                                                             | Disabled by default; enable only with `ENABLE_STORY_RENDER_ROUTE=1`; remove later. |

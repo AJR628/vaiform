@@ -80,19 +80,21 @@ Goal: harden only the backend surface that the current mobile app actually depen
 ## Phase 2 Completed: Mutation Reliability + Admission-Control Review
 
 - `DONE`: Active mobile editor/search routes now return stable domain-level 4xx/404 responses instead of collapsing known failures into generic 500s.
-  - Backend routes: `src/routes/story.routes.js:578-827`, `src/routes/story.routes.js:1183-1213`
-  - Backend services: `src/services/story.service.js:677-949`
-  - Scope landed: `POST /api/story/search`, `POST /api/story/update-beat-text`, `POST /api/story/delete-beat`, `POST /api/story/search-shot`, `POST /api/story/update-shot`, and `GET /api/story/:sessionId`.
+  - Backend routes: `src/routes/story.routes.js:421-456`, `src/routes/story.routes.js:748-1048`, `src/routes/story.routes.js:1183-1213`
+  - Backend services: `src/services/story.service.js:827-879`, `src/services/story.service.js:1253-1280`, `src/services/story.service.js:1538-1859`
+  - Scope landed: `POST /api/story/update-script`, `POST /api/story/search`, `POST /api/story/update-beat-text`, `POST /api/story/delete-beat`, `POST /api/story/search-shot`, `POST /api/story/update-shot`, and `GET /api/story/:sessionId`.
+  - Update-script note: mobile now uses `POST /api/story/update-script` only before storyboard shots exist; backend rejects whitespace-only beats, enforces script limits, returns a full session, and clears downstream storyboard/preview/render state on full script replacement.
   - Guardrail: `GET /api/shorts/:jobId` stays runtime-unchanged; its current `404 NOT_FOUND` remains the intentional mobile pending-availability bridge.
 
 - `DONE`: Expensive mobile-used routes now have explicit admission-control coverage and deterministic transient busy/timeout behavior.
   - Review set landed on: `POST /api/story/generate`, `POST /api/story/plan`, `POST /api/story/search`, `POST /api/story/search-shot`, `POST /api/story/finalize`
   - Backend evidence:
-    - route mapping: `src/routes/story.routes.js:57-72`, `src/routes/story.routes.js:139-181`, `src/routes/story.routes.js:238-272`, `src/routes/story.routes.js:577-639`, `src/routes/story.routes.js:721-775`, `src/routes/story.routes.js:969-1028`
-    - LLM timeout/admission: `src/services/story.llm.service.js:153-208`, `src/services/story.llm.service.js:360-662`, `src/services/story.llm.service.js:675-727`
+    - route mapping: `src/routes/story.routes.js:60-75`, `src/routes/story.routes.js:136-185`, `src/routes/story.routes.js:384-418`, `src/routes/story.routes.js:748-809`, `src/routes/story.routes.js:812-945`, `src/routes/story.routes.js:980-1048`
+    - LLM timeout/admission and script-shape validation: `src/services/story.llm.service.js:53-146`, `src/services/story.llm.service.js:156-225`, `src/services/story.llm.service.js:228-684`, `src/services/story.llm.service.js:691-760`
     - search/provider timeout and cooldown: `src/services/story.service.js:92-156`, `src/services/story.service.js:682-903`, `src/services/pixabay.videos.provider.js:49-130`, `src/services/nasa.videos.provider.js:59-237`
   - Current semantics:
     - `generate` / `plan` keep their daily-cap `429` and now add retryable `503 SERVER_BUSY` with `Retry-After: 15` for transient LLM busy/timeout paths
+    - `generate` now asks for the cleanest 4-8 line script, keeps 8 as the edit ceiling rather than the target, and preserves the existing route response contract.
     - `search` / `search-shot` now preserve success when at least one consulted provider returns usable clips, and only return retryable `503 SERVER_BUSY` with `Retry-After: 15` when no usable results exist because all consulted providers failed transiently
     - `finalize` now preserves `402`, `404`, top-level `shortId` on terminal success replay, and deterministic same-attempt recovery, while render-slot saturation no longer returns route-level `503` because accepted work queues behind the async finalize runner
   - Validation-only note: `POST /api/caption/preview` already had backend auth, explicit `20/min` rate limiting, and a `200kb` body cap, so this phase verified that guardrail surface without widening its runtime behavior.
