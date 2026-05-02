@@ -226,7 +226,7 @@ async function postOpenAiJson(
 }
 
 /**
- * Generate a 4-8 sentence video script from input
+ * Generate a 4-8 beat video script from input
  * @param {string} input - User input (link content, idea, or paragraph)
  * @param {string} inputType - 'link' | 'idea' | 'paragraph'
  * @param {string} styleKey - Style key ('default', 'hype', 'cozy')
@@ -266,9 +266,9 @@ export async function generateStoryFromInput({ input, inputType, styleKey = 'def
     '',
     'CRITICAL: Return ONLY valid JSON with this exact shape:',
     '{',
-    '  "hook": ["sentence1"],',
+    '  "hook": ["hookBeat1"],',
     '  "beats": ["beat1", "beat2", "beat3"],',
-    '  "outro": ["outro1"],',
+    '  "outro": ["outroBeat1"],',
     '  "totalDurationSec": number',
     '}',
     'No markdown, no extra prose, no explanations. Just JSON.',
@@ -278,7 +278,7 @@ export async function generateStoryFromInput({ input, inputType, styleKey = 'def
     '- beats MUST contain 2-6 strings.',
     '- outro MUST contain exactly 1 string.',
     '- Total strings across hook + beats + outro MUST be 4-8.',
-    '- Each string MUST be one sentence and <= 120 characters when possible.',
+    '- Each beat is one focused narration unit. Usually write one sentence. Two short sentences are allowed when they improve rhythm, contrast, or story flow.',
     '- Hard line limit is 160 characters.',
     '- Total characters of all strings joined with newline separators must be <= 850.',
     '- Never pad the script just to reach 8 lines.',
@@ -294,19 +294,19 @@ export async function generateStoryFromInput({ input, inputType, styleKey = 'def
     '- More lines are allowed only when the content genuinely needs them.',
     '',
     '=== STRUCTURE ===',
-    '- Hook: State the problem, surprising idea, or stakes in 1-2 short sentences.',
+    '- Hook: State the problem, surprising idea, or stakes in 1-2 short focused narration units.',
     '- Beats: Teach the clearest supporting points with concrete source-grounded details.',
     '- Outro: Lock in the transformation, reframe the point, or ask a reflective question.',
     '- Follow the Pyramid Principle: Start from the key message, then support it with concrete arguments.',
     '',
     '=== HOOK RULES ===',
-    '- Use 1-2 short sentences.',
+    '- Use 1-2 short focused narration units.',
     '- Speak directly to the viewer using "you" when natural.',
     '- State a sharp problem, common mistake, surprising fact, or short what/how/why question.',
     '- Avoid repetitive timing and meta phrases like "in the next 30 seconds" or "in this video".',
     '',
     '=== BEATS RULES ===',
-    '- Use 2-6 sentences.',
+    '- Use 2-6 focused narration units.',
     '- No long multi-clause paragraphs; avoid stacked commas and run-ons.',
     '- Use simple, conversational language.',
     '- Avoid vague summaries or meta commentary about "the content"; speak to the viewer.',
@@ -314,7 +314,7 @@ export async function generateStoryFromInput({ input, inputType, styleKey = 'def
     '- Analogies are allowed only when they are fresh, specific, and genuinely useful.',
     '',
     '=== OUTRO RULES ===',
-    '- Use exactly 1 short sentence.',
+    '- Use exactly 1 short focused narration unit.',
     '- Choose a reframe, consequence, clean payoff, or what/how/why question.',
     '- No generic CTAs like "follow for more" unless explicitly requested.',
     '',
@@ -365,7 +365,7 @@ export async function generateStoryFromInput({ input, inputType, styleKey = 'def
       'Return ONLY valid JSON (no markdown, no explanations).',
     ].join('\n');
   } else if (inputType === 'idea') {
-    userMessage = `Turn this into an 18-45 second vertical video script with a hook, rising tension, payoff, and a clean ending. Use the cleanest 4-8 line shape for the idea, with each line as one caption/clip:\n\n"${input}"`;
+    userMessage = `Turn this into an 18-45 second vertical video script with a hook, rising tension, payoff, and a clean ending. Use the cleanest 4-8 line shape for the idea, with each line as one beat/narration unit:\n\n"${input}"`;
   } else {
     // Fallback for link without extraction
     userMessage = `Now, using this content, write the script in that format:\n\n${sourceContent}`;

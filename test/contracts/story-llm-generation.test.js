@@ -126,6 +126,27 @@ test('generateStoryFromInput accepts an 8-line hook/beats/outro story', async ()
   assert.equal(result.totalDurationSec, 36);
 });
 
+test('generateStoryFromInput accepts a hard-valid beat with two short sentences without retry', async () => {
+  const twoSentenceBeatStory = {
+    hook: ['Your onboarding drags because every choice appears at once.'],
+    beats: [
+      'Start with one useful action. Hide everything else.',
+      'Bring the next choice forward only after the first win lands.',
+    ],
+    outro: ['Momentum starts when the first step feels obvious.'],
+    totalDurationSec: 20,
+  };
+
+  const { calls, result } = await generateWithResponses(twoSentenceBeatStory);
+
+  assert.equal(calls.length, 1);
+  assert.deepEqual(result.sentences, [
+    ...twoSentenceBeatStory.hook,
+    ...twoSentenceBeatStory.beats,
+    ...twoSentenceBeatStory.outro,
+  ]);
+});
+
 test('generateStoryFromInput retries a 3-line structured story before accepting output', async () => {
   const threeLineStory = {
     hook: ['The setup is too short to ship.'],
