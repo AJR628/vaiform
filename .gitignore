@@ -136,6 +136,9 @@ out
 .replit
 *.replit
 
+# Replit prompt attachments
+attached_assets/Pasted-*.txt
+
 # Firebase & service accounts
 *.json
 !firebase.json
