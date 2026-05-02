@@ -2,7 +2,8 @@
 
 **Status:** Phase 1 implementation in progress.
 Commit 1 complete: `1c0b46f86009c3b0797d2974255ebe725b554993`.
-Commits 2–5 pending explicit greenlight, one at a time.
+Commits 2 and 5 complete in Batch A orphan-cleanup (pending checkpoint SHA).
+Commits 3 and 4 pending explicit greenlight.
 
 **Scope:** The seven allowed focus areas only. Evidence comes from independent grep/read inspection of the current repo, not from the prior audit.
 **Conservatism:** Where the original audit's recommendation conflicts with verified evidence, the verified evidence wins.
@@ -12,10 +13,10 @@ Commits 2–5 pending explicit greenlight, one at a time.
 | Commit | Status | Commit SHA | Notes |
 |---|---|---|---|
 | Commit 1 — Remove placeholder Netlify origin from CORS allow-list | Complete | `1c0b46f86009c3b0797d2974255ebe725b554993` | Removed only the placeholder CORS origin from `src/app.js`. Verification passed: `rg` zero matches, lint green with pre-existing warnings, app import smoke green. |
-| Commit 2 — Delete `src/controllers/health.controller.js` | Pending | — | Awaiting explicit greenlight. |
+| Commit 2 — Delete `src/controllers/health.controller.js` | Complete | pending checkpoint SHA | Batch A orphan-cleanup. Pre-checks confirmed zero importers; live `/health` and `/api/health` defined inline in `src/app.js:168-179`. |
 | Commit 3 — Remove `/api/limits` route | Pending | — | Awaiting explicit greenlight and caller re-check. |
 | Commit 4 — Fix `assets.controller.js` `req.session`/`req.isPro` no-ops | Pending | — | Awaiting explicit greenlight. |
-| Commit 5 — Delete or fix orphaned `image.fetch.js` | Pending | — | Awaiting explicit greenlight. |
+| Commit 5 — Delete orphaned `image.fetch.js` (Option A) | Complete | pending checkpoint SHA | Batch A orphan-cleanup. Pre-checks confirmed zero callers in `src/`/`test/`; only mentions are in archived audit docs and `docs/BETA_HARDENING_PLAN.md` exclusion list. |
 
 ---
 
@@ -85,6 +86,8 @@ Commits 2–5 pending explicit greenlight, one at a time.
 
 ### Commit 2 — Delete `src/controllers/health.controller.js` (proven unused)
 
+**Implementation status:** Complete in this Batch A orphan-cleanup commit.
+
 | Field | Value |
 |---|---|
 | **Goal** | Remove an unimported controller that violates the canonical `users/{uid}` schema and exposes an unauthenticated `register` write. |
@@ -138,6 +141,8 @@ Commits 2–5 pending explicit greenlight, one at a time.
 ---
 
 ### Commit 5 — Replace `src/utils/image.fetch.js` raw `fetch` with `fetchWithOutboundPolicy` (or delete file if confirmed orphan)
+
+**Implementation status:** Complete in this Batch A orphan-cleanup commit. Option A (delete) selected — pre-checks proved zero callers in `src/` and `test/`.
 
 | Field | Value |
 |---|---|
