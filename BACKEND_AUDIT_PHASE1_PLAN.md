@@ -1,8 +1,21 @@
 # Backend Audit — Phase 1 Verified Commit Plan
 
-**Status:** Read-only verification. **No source files modified. No commits made.**
+**Status:** Phase 1 implementation in progress.
+Commit 1 complete: `1c0b46f86009c3b0797d2974255ebe725b554993`.
+Commits 2–5 pending explicit greenlight, one at a time.
+
 **Scope:** The seven allowed focus areas only. Evidence comes from independent grep/read inspection of the current repo, not from the prior audit.
 **Conservatism:** Where the original audit's recommendation conflicts with verified evidence, the verified evidence wins.
+
+## Implementation progress
+
+| Commit | Status | Commit SHA | Notes |
+|---|---|---|---|
+| Commit 1 — Remove placeholder Netlify origin from CORS allow-list | Complete | `1c0b46f86009c3b0797d2974255ebe725b554993` | Removed only the placeholder CORS origin from `src/app.js`. Verification passed: `rg` zero matches, lint green with pre-existing warnings, app import smoke green. |
+| Commit 2 — Delete `src/controllers/health.controller.js` | Pending | — | Awaiting explicit greenlight. |
+| Commit 3 — Remove `/api/limits` route | Pending | — | Awaiting explicit greenlight and caller re-check. |
+| Commit 4 — Fix `assets.controller.js` `req.session`/`req.isPro` no-ops | Pending | — | Awaiting explicit greenlight. |
+| Commit 5 — Delete or fix orphaned `image.fetch.js` | Pending | — | Awaiting explicit greenlight. |
 
 ---
 
@@ -51,6 +64,8 @@
 ---
 
 ### Commit 1 — Remove placeholder Netlify origin from CORS allow-list
+
+**Implementation status:** Complete in `1c0b46f86009c3b0797d2974255ebe725b554993`.
 
 | Field | Value |
 |---|---|
