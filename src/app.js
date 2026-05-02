@@ -67,7 +67,6 @@ console.info(`[cfg] FRONTEND_URL -> ${FRONTEND}`);
 const ALLOWED_ORIGINS = [
   'https://vaiform.com',
   'https://www.vaiform.com', // www subdomain
-  'https://vaiform-user-name.netlify.app', // replace with your actual Netlify preview URL if used
   'http://localhost:3000',
   'http://localhost:8888', // local development
 ];
